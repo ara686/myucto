@@ -10,6 +10,7 @@ use MyInvoice\Service\Bank\BankStatementSource;
 use MyInvoice\Service\Bank\BankNoticeLifecycle;
 use MyInvoice\Service\Bank\EmailNoticeReconciler;
 use MyInvoice\Service\Vat\VatStatusService;
+use MyInvoice\Support\Sql\CreditNoteOffsetRemainderExpr;
 use PDO;
 
 /**
@@ -144,6 +145,13 @@ final class CashJournalRepository
         $vp = $isVatPayer ? 1 : 0; // literál pro DPH prorata v agregacích (R7)
         $payerAtIp = VatStatusService::payerAtExpr((string) $sid, 'ip.paid_on', (string) $vp);
         $payerAtBank = VatStatusService::payerAtExpr((string) $sid, 'bt2.posted_at', (string) $vp);
+        // inv_vat/inv_with_vat a pi_vat/pi_with_vat slouží jen k dělení úhrady na základ
+        // a DPH, proto nesou složení části dokladu placené penězi: faktura minus dobropisy
+        // započtené proti ní (CreditNoteOffsetRemainderExpr). Bez zápočtu = doklad sám.
+        $invVat = static fn (string $alias): string => CreditNoteOffsetRemainderExpr::vatSql('invoice', $alias);
+        $invGross = static fn (string $alias): string => CreditNoteOffsetRemainderExpr::grossSql('invoice', $alias);
+        $piVat = static fn (string $alias): string => CreditNoteOffsetRemainderExpr::vatSql('purchase_invoice', $alias);
+        $piGross = static fn (string $alias): string => CreditNoteOffsetRemainderExpr::grossSql('purchase_invoice', $alias);
         $legs = [];
 
         // ── Noha A — hotovost (cash_documents posted) ────────────────────────
@@ -159,12 +167,12 @@ final class CashJournalRepository
                     cd.purpose AS cash_purpose, cav.base_sum AS cash_vat_base, cav.vat_sum AS cash_vat_amount,
                     NULL AS bank_class, NULL AS bank_income_base, NULL AS bank_income_exempt,
                     cd.invoice_id AS invoice_id, ci.invoice_type AS inv_type,
-                    ci.total_without_vat AS inv_without_vat, ci.total_vat AS inv_vat,
-                    ci.total_with_vat AS inv_with_vat,
+                    ci.total_without_vat AS inv_without_vat, " . $invVat('ci') . " AS inv_vat,
+                    " . $invGross('ci') . " AS inv_with_vat,
                     ci.income_tax_exempt AS inv_exempt, ci.status AS inv_status,
                     cd.purchase_invoice_id AS purchase_invoice_id,
-                    cpi.total_without_vat AS pi_without_vat, cpi.total_vat AS pi_vat,
-                    cpi.total_with_vat AS pi_with_vat,
+                    cpi.total_without_vat AS pi_without_vat, " . $piVat('cpi') . " AS pi_vat,
+                    " . $piGross('cpi') . " AS pi_with_vat,
                     cpi.tax_deductible AS pi_deductible, cpi.document_kind AS pi_kind,
                     cpi.vat_deduction AS pi_vat_deduction, cpi.vat_deduction_percent AS pi_vat_deduction_percent,
                     cpi.is_fixed_asset AS pi_is_fixed_asset,
@@ -245,12 +253,12 @@ final class CashJournalRepository
                         binc.czk_base AS bank_income_base, binc.czk_exempt AS bank_income_exempt,
                         bi.id AS invoice_id,
                         bi.invoice_type AS inv_type,
-                        bi.total_without_vat AS inv_without_vat, bi.total_vat AS inv_vat,
-                        bi.total_with_vat AS inv_with_vat,
+                        bi.total_without_vat AS inv_without_vat, " . $invVat('bi') . " AS inv_vat,
+                        " . $invGross('bi') . " AS inv_with_vat,
                         bi.income_tax_exempt AS inv_exempt, bi.status AS inv_status,
                         bexp.any_pi_id AS purchase_invoice_id,
-                        bpi.total_without_vat AS pi_without_vat, bpi.total_vat AS pi_vat,
-                        bpi.total_with_vat AS pi_with_vat,
+                        bpi.total_without_vat AS pi_without_vat, " . $piVat('bpi') . " AS pi_vat,
+                        " . $piGross('bpi') . " AS pi_with_vat,
                         bpi.tax_deductible AS pi_deductible, bpi.document_kind AS pi_kind,
                         bpi.vat_deduction AS pi_vat_deduction, bpi.vat_deduction_percent AS pi_vat_deduction_percent,
                         bpi.is_fixed_asset AS pi_is_fixed_asset,
@@ -276,9 +284,10 @@ final class CashJournalRepository
                                    <> COALESCE(NULLIF(ibt.currency, ''), 'CZK')) AS cross_ccy,
                                -- Paid gross contains rounding. Only the stored VAT is
                                -- excluded from income (same rule as CashJournalService::prorateBase).
+                               -- Poměr DPH je poměr části faktury placené penězi (po zápočtu dobropisu).
                                SUM(ROUND(CASE WHEN i.income_tax_exempt = 1 THEN 0
                                               WHEN {$payerAtIp} = 1 AND i.total_with_vat <> 0
-                                                   THEN ip.amount * (1 - LEAST(1, GREATEST(0, i.total_vat / i.total_with_vat)))
+                                                   THEN ip.amount * (1 - LEAST(1, GREATEST(0, " . $invVat('i') . ' / ' . $invGross('i') . ")))
                                               ELSE ip.amount END
                                          * {$ipRateBank}, 2)) AS czk_base,
                                -- Osvobozená noha se dělí na základ/DPH STEJNĚ jako zdanitelná
@@ -288,7 +297,7 @@ final class CashJournalRepository
                                -- income_nontax v CashJournalService::bankIncomeAlloc().
                                SUM(ROUND(CASE WHEN i.income_tax_exempt <> 1 THEN 0
                                               WHEN {$payerAtIp} = 1 AND i.total_with_vat <> 0
-                                                   THEN ip.amount * (1 - LEAST(1, GREATEST(0, i.total_vat / i.total_with_vat)))
+                                                   THEN ip.amount * (1 - LEAST(1, GREATEST(0, " . $invVat('i') . ' / ' . $invGross('i') . ")))
                                               ELSE ip.amount END
                                          * {$ipRateBank}, 2)) AS czk_exempt,
                                MIN(ip.invoice_id) AS any_invoice_id
@@ -357,8 +366,8 @@ final class CashJournalRepository
                     NULL AS cash_purpose, NULL AS cash_vat_base, NULL AS cash_vat_amount,
                     NULL AS bank_class, NULL AS bank_income_base, NULL AS bank_income_exempt,
                     ip.invoice_id AS invoice_id, ii.invoice_type AS inv_type,
-                    ii.total_without_vat AS inv_without_vat, ii.total_vat AS inv_vat,
-                    ii.total_with_vat AS inv_with_vat,
+                    ii.total_without_vat AS inv_without_vat, " . $invVat('ii') . " AS inv_vat,
+                    " . $invGross('ii') . " AS inv_with_vat,
                     ii.income_tax_exempt AS inv_exempt, ii.status AS inv_status,
                     NULL AS purchase_invoice_id, NULL AS pi_without_vat, NULL AS pi_vat, NULL AS pi_with_vat,
                     NULL AS pi_deductible, NULL AS pi_kind, NULL AS pi_vat_deduction,
@@ -398,8 +407,8 @@ final class CashJournalRepository
                     NULL AS bank_class, NULL AS bank_income_base, NULL AS bank_income_exempt,
                     NULL AS invoice_id, NULL AS inv_type, NULL AS inv_without_vat, NULL AS inv_vat, NULL AS inv_with_vat,
                     NULL AS inv_exempt, NULL AS inv_status,
-                    pi.id AS purchase_invoice_id, pi.total_without_vat AS pi_without_vat, pi.total_vat AS pi_vat,
-                    pi.total_with_vat AS pi_with_vat, pi.tax_deductible AS pi_deductible,
+                    pi.id AS purchase_invoice_id, pi.total_without_vat AS pi_without_vat, " . $piVat('pi') . " AS pi_vat,
+                    " . $piGross('pi') . " AS pi_with_vat, pi.tax_deductible AS pi_deductible,
                     pi.document_kind AS pi_kind, pi.vat_deduction AS pi_vat_deduction,
                     pi.vat_deduction_percent AS pi_vat_deduction_percent,
                     pi.is_fixed_asset AS pi_is_fixed_asset, NULL AS override_bucket,
@@ -445,8 +454,8 @@ final class CashJournalRepository
                     NULL AS cash_purpose, NULL AS cash_vat_base, NULL AS cash_vat_amount,
                     NULL AS bank_class, NULL AS bank_income_base, NULL AS bank_income_exempt,
                     gcn.id AS invoice_id, gcn.invoice_type AS inv_type,
-                    gcn.total_without_vat AS inv_without_vat, gcn.total_vat AS inv_vat,
-                    gcn.total_with_vat AS inv_with_vat,
+                    gcn.total_without_vat AS inv_without_vat, " . $invVat('gcn') . " AS inv_vat,
+                    " . $invGross('gcn') . " AS inv_with_vat,
                     gcn.income_tax_exempt AS inv_exempt, gcn.status AS inv_status,
                     NULL AS purchase_invoice_id, NULL AS pi_without_vat, NULL AS pi_vat, NULL AS pi_with_vat,
                     NULL AS pi_deductible, NULL AS pi_kind, NULL AS pi_vat_deduction,

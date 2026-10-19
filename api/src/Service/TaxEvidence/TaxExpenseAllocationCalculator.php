@@ -79,7 +79,49 @@ final class TaxExpenseAllocationCalculator
             return 0.0;
         }
 
-        return round($this->taxableAmount($supplierId, $invoice, $allocations, $paidAmountCzk, $isVatPayer, $year), 2);
+        return round($this->paymentTaxable($supplierId, $invoice, $allocations, $paidAmountCzk, $isVatPayer, $year), 2);
+    }
+
+    /**
+     * Daňová část úhrady faktury. Fakturu, kterou zčásti vyrovnal zápočet dobropisu
+     * (`credit_note_offsets`), zbývá penězi uhradit jen zbytek, a ten nemá složení celé
+     * faktury: dobropis z ní ubral část ve svém složení (jiná sazba, jen některé položky).
+     * Zbytek je faktura minus započtené dobropisy, brutto i daňová část prostým odečtením
+     * (zápočet vzniká vždy v plné výši dobropisu). Daňovou část každého dokladu počítá
+     * taxableAmount() i s řádkovým rozpisem a kráceným odpočtem; vydaná strana odečítá
+     * brutto a DPH ({@see \MyInvoice\Support\Sql\CreditNoteOffsetRemainderExpr}).
+     *
+     * Úhrada se pak dělí poměrem daňové části zbytku k brutto zbytku. Úhrada celého zbytku
+     * tak dostane přesně daňovou část zbytku, poměr rozhoduje jen u částečné úhrady. Bez
+     * zápočtu, nebo když zápočet vyrovnal celou fakturu, rozhoduje faktura sama.
+     *
+     * @param array<string,mixed> $invoice @param list<array<string,mixed>> $allocations
+     */
+    private function paymentTaxable(int $supplierId, array $invoice, array $allocations, float $paidAmount, bool $isVatPayer, int $year): float
+    {
+        $stmt = $this->db->pdo()->prepare(
+            "SELECT cn.id, cn.total_vat, cn.total_with_vat, cn.vat_deduction, cn.vat_deduction_percent
+               FROM credit_note_offsets o
+               JOIN purchase_invoices cn ON cn.id = o.credit_note_id AND cn.supplier_id = o.supplier_id
+              WHERE o.supplier_id = ? AND o.doc_type = 'purchase_invoice' AND o.invoice_id = ?
+              ORDER BY o.id"
+        );
+        $stmt->execute([$supplierId, (int) $invoice['id']]);
+        $notes = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        $remaining = abs((float) $invoice['total_with_vat']);
+        $taxable = abs($this->taxableAmount($supplierId, $invoice, $allocations, $remaining, $isVatPayer, $year));
+        foreach ($notes as $note) {
+            $noteGross = abs((float) $note['total_with_vat']);
+            $remaining -= $noteGross;
+            $taxable -= abs($this->taxableAmount(
+                $supplierId, $note, $this->allocations($supplierId, (int) $note['id']), $noteGross, $isVatPayer, $year,
+            ));
+        }
+        if ($notes === [] || $remaining < 0.005) {
+            return $this->taxableAmount($supplierId, $invoice, $allocations, $paidAmount, $isVatPayer, $year);
+        }
+        return $paidAmount * max(0.0, min($remaining, $taxable)) / $remaining;
     }
 
     /**
