@@ -196,6 +196,57 @@ final class CreditNoteOffsetVatSplitTest extends CashJournalTestCase
         self::assertEqualsWithDelta(0.0, $res['totals']['nezarazeno'], 0.005);
     }
 
+    /** @return iterable<string,array{0:string}> cesty úhrady přijaté faktury */
+    public static function purchasePaths(): iterable
+    {
+        foreach (self::paths() as $path => [$side, $instrument]) {
+            if ($side === 'purchase') {
+                yield $path => [$instrument];
+            }
+        }
+    }
+
+    /**
+     * Přijatý dobropis, který není daňovým výdajem, vrací nedaňovou část faktury a daňovou
+     * část zbytku nesnižuje. Vydaná strana obdobu nemá: osvobození příjmu nese faktura celá.
+     */
+    #[DataProvider('purchasePaths')]
+    public function testNonDeductibleCreditNoteKeepsTaxableRemainder(string $instrument): void
+    {
+        // Faktura s řádkovým rozpisem: služba 21 % 1 000 + 210 (daňový výdaj) a soukromá
+        // položka 0 % 1 000 (není výdajem) = 2 210. Dobropis vrací soukromou položku (−1 000)
+        // a jako ona není daňovým výdajem. Zaplacený zbytek 1 210 je celá služba.
+        $invoiceId = $this->document(false, [[21, 1.0, 1000.0], [0, 1.0, 1000.0]], false);
+        $creditNoteId = $this->document(false, [[0, -1.0, 1000.0]], true);
+        $pdo = $this->db->pdo();
+        $pdo->prepare('UPDATE purchase_invoices SET parent_purchase_invoice_id = ?, tax_deductible = 0 WHERE id = ?')
+            ->execute([$invoiceId, $creditNoteId]);
+        $pdo->prepare(
+            "INSERT INTO chart_of_accounts (supplier_id, account_code, name, account_type, normal_side, is_synthetic, is_active)
+             VALUES (?, '518', 'Ostatní služby', 'expense', 'debit', 1, 1)"
+        )->execute([$this->supplierId]);
+        $allocation = $pdo->prepare(
+            "INSERT INTO purchase_invoice_vat_allocations
+                (supplier_id, purchase_invoice_id, description, vat_rate, base_amount, vat_amount, total_amount,
+                 tax_treatment, account_code, order_index)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, '518', ?)"
+        );
+        $allocation->execute([$this->supplierId, $invoiceId, 'Služba', 21.0, 1000.0, 210.0, 1210.0, 'deductible', 1]);
+        $allocation->execute([$this->supplierId, $invoiceId, 'Soukromá položka', 0.0, 1000.0, 0.0, 1000.0, 'not_expense', 2]);
+
+        $result = $this->offsets->applyForPurchase($this->supplierId, $creditNoteId, $this->userId);
+        self::assertNotNull($result['offset_id'], (string) $result['reason']);
+
+        $this->pay(false, $instrument, $invoiceId, 1210.0);
+
+        $res = $this->fullYear($this->supplierId, true);
+        self::assertSame(1, $this->countRows($res), 'v peněžním deníku je jen skutečná úhrada zbytku, zápočet ne');
+        self::assertEqualsWithDelta(1000.0, $res['totals']['vydaj_danovy'], 0.005,
+            'nedaňový dobropis daňovou část zbytku nesnižuje: zbytek je celá služba');
+        self::assertEqualsWithDelta(210.0, $res['totals']['vydaj_nedanovy'], 0.005, 'mimo daňový výdaj je jen DPH služby');
+        self::assertEqualsWithDelta(0.0, $res['totals']['nezarazeno'], 0.005);
+    }
+
     // ── fixtures ─────────────────────────────────────────────────────────────
 
     /**
