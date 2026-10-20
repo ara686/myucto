@@ -10,10 +10,18 @@ namespace MyInvoice\Support\Sql;
  *
  * Zápočet není peněžní tok, peněžní deník bere jen úhradu zbytku faktury. Zbytek ale nemá
  * složení celé faktury: dobropis z ní ubral část ve SVÉM složení (jiná sazba DPH, jen
- * některé položky nebo kusy). Zbytek je proto faktura minus započtené dobropisy, brutto
- * i DPH prostým odečtením (zápočet vzniká vždy v plné výši dobropisu). Dělit zbytek poměrem
- * celé faktury nadsadí nebo podhodnotí daňový příjem a výdaj: u faktury se sazbami 21 %
- * a 0 %, ze které dobropis stornuje položku 21 %, by zbytek bez DPH nesl DPH.
+ * některé položky nebo kusy). Zbytek je proto faktura minus započtené dobropisy. Dělit zbytek
+ * poměrem celé faktury nadsadí nebo podhodnotí daňový příjem a výdaj: u faktury se sazbami
+ * 21 % a 0 %, ze které dobropis stornuje položku 21 %, by zbytek bez DPH nesl DPH.
+ *
+ * Brutto zbytku odečítá částku zápočtu (`credit_note_offsets.amount`), tedy tutéž veličinu,
+ * kterou od faktury odečítá noha C2 peněžního deníku i {@see PurchaseSettledExpr}. DPH zbytku
+ * odečítá DPH dobropisu: kryje-li zápočet celé brutto dobropisu (běžný případ), celé DPH
+ * dobropisu prostým odečtením, jinak (dobropis s odečtenou zálohou) jeho poměrnou část
+ * podle částky zápočtu. Znaménko dobropisu určuje jeho brutto, ne každý sloupec zvlášť
+ * (stejně jako {@see \MyInvoice\Service\Report\VatLedgerService::purchaseDocumentSignSql()}):
+ * opravný dobropis s brutto −395 a DPH +105 (vrací položku 0 %, doúčtuje položku 21 %)
+ * DPH zbytku zvýší.
  *
  * Bez zápočtu je to doklad sám. Doklad celý vyrovnaný zápočtem zbytek nemá, jeho případná
  * úhrada (přeplatek) se dělí podle dokladu. Dobropis se při zápočtu spotřebuje ve vlastním
@@ -37,7 +45,7 @@ final class CreditNoteOffsetRemainderExpr
      */
     public static function grossSql(string $docType, string $alias): string
     {
-        $remaining = self::remainingSql($docType, $alias, 'total_with_vat');
+        $remaining = self::remainingGrossSql($docType, $alias);
         return "(CASE WHEN {$remaining} > 0.005 THEN {$remaining} ELSE {$alias}.total_with_vat END)";
     }
 
@@ -49,18 +57,31 @@ final class CreditNoteOffsetRemainderExpr
      */
     public static function vatSql(string $docType, string $alias): string
     {
-        return '(CASE WHEN ' . self::remainingSql($docType, $alias, 'total_with_vat') . ' > 0.005
-                      THEN ' . self::remainingSql($docType, $alias, 'total_vat') . " ELSE {$alias}.total_vat END)";
+        return '(CASE WHEN ' . self::remainingGrossSql($docType, $alias) . ' > 0.005
+                      THEN ' . self::remainingVatSql($docType, $alias) . " ELSE {$alias}.total_vat END)";
+    }
+
+    /** Brutto dokladu minus částky zápočtů dobropisů proti němu. */
+    private static function remainingGrossSql(string $docType, string $alias): string
+    {
+        [$type] = self::document($docType);
+        return "({$alias}.total_with_vat - (SELECT COALESCE(SUM(cnr_o.amount), 0)
+                     FROM credit_note_offsets cnr_o
+                    WHERE cnr_o.supplier_id = {$alias}.supplier_id AND cnr_o.doc_type = '{$type}'
+                      AND cnr_o.invoice_id = {$alias}.id))";
     }
 
     /**
-     * Sloupec dokladu minus týž sloupec dobropisů započtených proti němu. Dobropis má brutto
-     * i DPH záporné (kladně uložený dobropis z cizího systému kladné), odečítá se velikost.
+     * DPH dokladu minus DPH započtených dobropisů. `SIGN(brutto) × DPH` je DPH dobropisu ve
+     * směru snížení faktury; poměrem se počítá jen zápočet, který se od brutto dobropisu liší.
      */
-    private static function remainingSql(string $docType, string $alias, string $column): string
+    private static function remainingVatSql(string $docType, string $alias): string
     {
         [$type, $table] = self::document($docType);
-        return "({$alias}.{$column} - (SELECT COALESCE(SUM(ABS(cnr_d.{$column})), 0)
+        return "({$alias}.total_vat - (SELECT COALESCE(SUM(
+                         CASE WHEN cnr_o.amount = ABS(cnr_d.total_with_vat)
+                              THEN SIGN(cnr_d.total_with_vat) * cnr_d.total_vat
+                              ELSE cnr_o.amount * cnr_d.total_vat / NULLIF(cnr_d.total_with_vat, 0) END), 0)
                      FROM credit_note_offsets cnr_o
                      JOIN {$table} cnr_d ON cnr_d.id = cnr_o.credit_note_id AND cnr_d.supplier_id = cnr_o.supplier_id
                     WHERE cnr_o.supplier_id = {$alias}.supplier_id AND cnr_o.doc_type = '{$type}'

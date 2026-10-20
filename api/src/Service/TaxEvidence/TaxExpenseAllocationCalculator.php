@@ -86,13 +86,18 @@ final class TaxExpenseAllocationCalculator
      * Daňová část úhrady faktury. Fakturu, kterou zčásti vyrovnal zápočet dobropisu
      * (`credit_note_offsets`), zbývá penězi uhradit jen zbytek, a ten nemá složení celé
      * faktury: dobropis z ní ubral část ve svém složení (jiná sazba, jen některé položky).
-     * Zbytek je faktura minus započtené dobropisy, brutto i daňová část prostým odečtením
-     * (zápočet vzniká vždy v plné výši dobropisu). Daňovou část každého dokladu počítá
-     * taxableAmount() i s řádkovým rozpisem a kráceným odpočtem; vydaná strana odečítá
-     * brutto a DPH ({@see \MyInvoice\Support\Sql\CreditNoteOffsetRemainderExpr}).
+     * Zbytek je faktura minus započtené dobropisy: brutto minus částka zápočtu (táž veličina,
+     * kterou od faktury odečítá noha C2 peněžního deníku), daňová část minus daňová část
+     * dobropisu. Kryje-li zápočet celé brutto dobropisu, odečte se celá daňová část dobropisu,
+     * jinak (dobropis s odečtenou zálohou) její poměrná část podle částky zápočtu. Daňovou
+     * část každého dokladu počítá taxableAmount() i s řádkovým rozpisem a kráceným odpočtem,
+     * bez ořezu a se znaménkem podle brutto dokladu: opravný dobropis s brutto −395 a DPH
+     * +105 sníží daňovou část o 500, ne o 395. Vydaná strana odečítá brutto a DPH týmž
+     * pravidlem ({@see \MyInvoice\Support\Sql\CreditNoteOffsetRemainderExpr}).
      *
-     * Úhrada se pak dělí poměrem daňové části zbytku k brutto zbytku. Úhrada celého zbytku
-     * tak dostane přesně daňovou část zbytku, poměr rozhoduje jen u částečné úhrady. Bez
+     * Úhrada se pak dělí poměrem daňové části zbytku k brutto zbytku; ořízne se až výsledek,
+     * jako na vydané straně v CashJournalService::prorateBase. Úhrada celého zbytku tak
+     * dostane přesně daňovou část zbytku, poměr rozhoduje jen u částečné úhrady. Bez
      * zápočtu, nebo když zápočet vyrovnal celou fakturu, rozhoduje faktura sama.
      *
      * @param array<string,mixed> $invoice @param list<array<string,mixed>> $allocations
@@ -100,7 +105,7 @@ final class TaxExpenseAllocationCalculator
     private function paymentTaxable(int $supplierId, array $invoice, array $allocations, float $paidAmount, bool $isVatPayer, int $year): float
     {
         $stmt = $this->db->pdo()->prepare(
-            "SELECT cn.id, cn.total_vat, cn.total_with_vat, cn.vat_deduction, cn.vat_deduction_percent
+            "SELECT o.amount AS offset_amount, cn.id, cn.total_vat, cn.total_with_vat, cn.vat_deduction, cn.vat_deduction_percent
                FROM credit_note_offsets o
                JOIN purchase_invoices cn ON cn.id = o.credit_note_id AND cn.supplier_id = o.supplier_id
               WHERE o.supplier_id = ? AND o.doc_type = 'purchase_invoice' AND o.invoice_id = ?
@@ -109,14 +114,18 @@ final class TaxExpenseAllocationCalculator
         $stmt->execute([$supplierId, (int) $invoice['id']]);
         $notes = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
-        $remaining = abs((float) $invoice['total_with_vat']);
-        $taxable = abs($this->taxableAmount($supplierId, $invoice, $allocations, $remaining, $isVatPayer, $year));
+        $remaining = (float) $invoice['total_with_vat'];
+        $taxable = $this->taxableAmount($supplierId, $invoice, $allocations, $remaining, $isVatPayer, $year, false);
         foreach ($notes as $note) {
+            $offset = (float) $note['offset_amount'];
             $noteGross = abs((float) $note['total_with_vat']);
-            $remaining -= $noteGross;
-            $taxable -= abs($this->taxableAmount(
-                $supplierId, $note, $this->allocations($supplierId, (int) $note['id']), $noteGross, $isVatPayer, $year,
-            ));
+            $noteTaxable = $this->taxableAmount(
+                $supplierId, $note, $this->allocations($supplierId, (int) $note['id']), $noteGross, $isVatPayer, $year, false,
+            );
+            $remaining -= $offset;
+            $taxable -= $noteGross >= 0.005 && abs($offset - $noteGross) >= 0.005
+                ? $noteTaxable * $offset / $noteGross
+                : $noteTaxable;
         }
         if ($notes === [] || $remaining < 0.005) {
             return $this->taxableAmount($supplierId, $invoice, $allocations, $paidAmount, $isVatPayer, $year);
@@ -248,9 +257,14 @@ final class TaxExpenseAllocationCalculator
      * Dřív záporné brutto vracelo nulu, takže vratka k přijatému dobropisu daňový výdaj
      * nesnížila. Zrcadlo CashJournalService::prorateBase na příjmové straně.
      *
+     * DPH se bere se znaménkem podle brutto dokladu a u úhrady se ořízne do [0, brutto].
+     * Bez ořezu ($clampVat = false) slouží jako složka zbytku po zápočtu (paymentTaxable):
+     * opravný doklad s opačným znaménkem DPH a brutto tam musí přispět skutečnou daňovou
+     * částí a výsledek pak může mít opačné znaménko než $paidAmount; ořízne se až zbytek.
+     *
      * @param array<string,mixed> $invoice @param list<array<string,mixed>> $allocations
      */
-    private function taxableAmount(int $supplierId, array $invoice, array $allocations, float $paidAmount, bool $isVatPayer, int $year): float
+    private function taxableAmount(int $supplierId, array $invoice, array $allocations, float $paidAmount, bool $isVatPayer, int $year, bool $clampVat = true): float
     {
         $signedGross = (float) $invoice['total_with_vat'];
         $sign = $signedGross < 0.0 ? -1.0 : 1.0;
@@ -264,7 +278,10 @@ final class TaxExpenseAllocationCalculator
             }
             // The paid gross can include document rounding. Only the stored VAT
             // is deductible; gross - net would wrongly treat rounding as VAT.
-            $vat = min($gross, max(0.0, $sign * (float) $invoice['total_vat']));
+            $vat = $sign * (float) $invoice['total_vat'];
+            if ($clampVat) {
+                $vat = min($gross, max(0.0, $vat));
+            }
             $deductible = $gross - $vat * $this->deductionRatio(
                 $supplierId,
                 (string) $invoice['vat_deduction'],

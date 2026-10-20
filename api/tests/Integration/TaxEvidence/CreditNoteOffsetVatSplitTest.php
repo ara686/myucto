@@ -73,6 +73,15 @@ final class CreditNoteOffsetVatSplitTest extends CashJournalTestCase
                 'by_rate' => [12 => [500.0, 60.0], 21 => [1000.0, 210.0]],
                 'payment' => [1500.0, 270.0],
             ],
+            // Faktura: položka 0 % 1 000 a služba 21 % 1 000 + 210 = 2 210. Opravný dobropis
+            // vrací položku 0 % (−1 000) a doúčtuje službu 21 % 500 + 105: brutto −395, DPH +105,
+            // tedy DPH a brutto s opačným znaménkem. Zaplacený zbytek 1 815 = 1 500 + DPH 315.
+            'sazby 0 % a 21 %, opravný dobropis s opačným znaménkem DPH a brutto' => [
+                'invoice' => [[0, 1.0, 1000.0], [21, 1.0, 1000.0]],
+                'credit_note' => [[0, -1.0, 1000.0], [21, 1.0, 500.0]],
+                'by_rate' => [0 => [0.0, 0.0], 21 => [1500.0, 315.0]],
+                'payment' => [1500.0, 315.0],
+            ],
             // Kontrola: faktura jen se sazbou 21 %, 10 ks × 100 = 1 000 + 210. Dobropis vrací
             // 4 ks: −400 − 84, týž poměr DPH. Zaplacený zbytek 726 = 600 + DPH 126.
             'jen sazba 21 %, dobropis vrací 4 z 10 ks' => [
@@ -84,14 +93,22 @@ final class CreditNoteOffsetVatSplitTest extends CashJournalTestCase
         ];
     }
 
+    /** @return iterable<string,array{0:string,1:string}> strana dokladu a cesta úhrady do peněžního deníku */
+    public static function paths(): iterable
+    {
+        foreach (['issued' => 'vydaná', 'purchase' => 'přijatá'] as $side => $sideLabel) {
+            foreach (['bank' => 'banka', 'cash' => 'pokladna', 'manual' => 'ruční úhrada'] as $instrument => $instrumentLabel) {
+                yield "{$sideLabel}, {$instrumentLabel}" => [$side, $instrument];
+            }
+        }
+    }
+
     /** @return iterable<string,array{0:string,1:string,2:array<string,mixed>}> */
     public static function cases(): iterable
     {
         foreach (self::shapes() as $shape => $documents) {
-            foreach (['issued' => 'vydaná', 'purchase' => 'přijatá'] as $side => $sideLabel) {
-                foreach (['bank' => 'banka', 'cash' => 'pokladna', 'manual' => 'ruční úhrada'] as $instrument => $instrumentLabel) {
-                    yield "{$sideLabel}, {$instrumentLabel}, {$shape}" => [$side, $instrument, $documents];
-                }
+            foreach (self::paths() as $path => [$side, $instrument]) {
+                yield "{$path}, {$shape}" => [$side, $instrument, $documents];
             }
         }
     }
@@ -137,6 +154,46 @@ final class CreditNoteOffsetVatSplitTest extends CashJournalTestCase
 
         self::assertSame($vatByRate, $this->vatByRate($issued, [$invoiceId, $creditNoteId]),
             'zápočet ani úhrada evidenci DPH po sazbách nemění');
+    }
+
+    /**
+     * Zápočet se od brutto dobropisu liší, když má dobropis odečtenou zálohu: zápočet je
+     * částka dobropisu k úhradě (CreditNoteOffsetService). Zbytek faktury je pak brutto minus
+     * částka zápočtu, tedy táž veličina, kterou od faktury odečítá noha C2 peněžního deníku,
+     * a DPH minus poměrná část DPH dobropisu podle částky zápočtu.
+     */
+    #[DataProvider('paths')]
+    public function testRemainderSplitFollowsOffsetAmount(string $side, string $instrument): void
+    {
+        $issued = $side === 'issued';
+        // Faktura: služba 21 % 1 000 + 210 a položka 0 % 1 000 = 2 210. Dobropis stornuje
+        // službu (−1 210); jako převzatý z cizího systému má polovinu vyrovnanou odečtenou
+        // zálohou (−605), k úhradě zbývá −605. Zápočet 605 = polovina služby, 500 + DPH 105.
+        $invoiceId = $this->document($issued, [[21, 1.0, 1000.0], [0, 1.0, 1000.0]], false);
+        $creditNoteId = $this->document($issued, [[21, -1.0, 1000.0]], true);
+        $this->db->pdo()->prepare($issued
+            ? 'UPDATE invoices SET parent_invoice_id = ?, advance_paid_amount = -605 WHERE id = ?'
+            : 'UPDATE purchase_invoices SET parent_purchase_invoice_id = ?, advance_paid_amount = -605 WHERE id = ?')
+            ->execute([$invoiceId, $creditNoteId]);
+
+        $result = $issued
+            ? $this->offsets->applyForInvoice($this->supplierId, $creditNoteId, $this->userId)
+            : $this->offsets->applyForPurchase($this->supplierId, $creditNoteId, $this->userId);
+        self::assertNotNull($result['offset_id'], (string) $result['reason']);
+        $offsets = $this->offsets->forDocument($this->supplierId, $issued ? 'invoice' : 'purchase_invoice', $invoiceId)['offsets'];
+        self::assertSame([605.0], array_column($offsets, 'amount'), 'zápočet = částka dobropisu k úhradě, ne jeho brutto');
+
+        // Zaplacený zbytek 1 605 = položka 0 % 1 000 + zbylá polovina služby 500 + DPH 105.
+        $this->pay($issued, $instrument, $invoiceId, 1605.0);
+
+        $res = $this->fullYear($this->supplierId, true);
+        $bucket = $issued ? 'prijem' : 'vydaj';
+        self::assertSame(1, $this->countRows($res), 'v peněžním deníku je jen skutečná úhrada zbytku, zápočet ne');
+        self::assertEqualsWithDelta(1500.0, $res['totals'][$bucket . '_danovy'], 0.005,
+            'daňová část úhrady = základ faktury minus poměrná část základu dobropisu podle zápočtu');
+        self::assertEqualsWithDelta(105.0, $res['totals'][$bucket . '_nedanovy'], 0.005,
+            'DPH úhrady = DPH faktury minus poměrná část DPH dobropisu podle zápočtu');
+        self::assertEqualsWithDelta(0.0, $res['totals']['nezarazeno'], 0.005);
     }
 
     // ── fixtures ─────────────────────────────────────────────────────────────
