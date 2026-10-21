@@ -216,7 +216,13 @@ využívají `BankAccountRegistrar`, `BankStatementImportWriter`, `BankSymbols`,
 `JournalEntryLinker`. Neověřená měnová vazba úhrady se neodhaduje.
 
 Osnova a období používají `ChartAccountCreator`, `MigrationPeriods` a
-`MigrationHomeCurrency`. Výslovný typ účtu a strana ze Stereo jsou volbami
+`MigrationHomeCurrency`. `ImportedAccountCode` sjednocuje čistě číselné analytiky
+do tečkovaného tvaru. Plán deníku, klíče a otisky zůstávají zdrojové; účetní
+zapisovač převádí původní kódy na cílová ID. Majetek a návrh mzdových předkontací
+čtou tutéž mapu skutečných cílových kódů přes `StereoNxImportMap::accountCodes()`.
+To zachovává i opakování starších importů bez přejmenování již převzatých účtů.
+Kolize po normalizaci a překročení cílové délky blokují plán před zápisem.
+Výslovný typ účtu a strana ze Stereo jsou volbami
 společného zapisovače, nikoli druhou implementací pravidel. Předvahu proti
 zdrojovému deníku porovnávají `TrialBalanceReconciliation` a
 `ReconciliationCriteria`. Karty majetku používají společné služby majetku,

@@ -14,6 +14,7 @@ use MyInvoice\Service\Accounting\PostingService;
 use MyInvoice\Service\Migration\MoneyS3\ImportProtocol;
 use MyInvoice\Service\Migration\Shared\ChartAccountCreator;
 use MyInvoice\Service\Migration\Shared\FiscalYearMismatchException;
+use MyInvoice\Service\Migration\Shared\ImportedAccountCode;
 use MyInvoice\Service\Migration\Shared\MigrationPeriods;
 use PDO;
 
@@ -268,11 +269,14 @@ final class StereoNxAccountingWriter
         }
         foreach ($chart as $source) {
             $code = (string) ($source['code'] ?? '');
+            $targetCode = ImportedAccountCode::normalize($code);
             $hash = (string) ($source['source_hash'] ?? '');
             $mapped = $this->mapped($supplierId, $ico, $companyIndex, self::MAP_ACCOUNT, $code, $hash);
             if ($mapped !== null) {
                 $target = $this->accounts->findById($supplierId, $mapped);
-                if ($target === null || (string) $target['account_code'] !== $code) {
+                // Starší převody uchovaly kód bez tečky. Doložená vazba je nadále
+                // platná; opakovaný import nesmí přejmenovat účet ani vytvořit nový.
+                if ($target === null || !in_array((string) $target['account_code'], [$code, $targetCode], true)) {
                     throw new StereoNxException('mapped_target_changed', 'Dříve převedený účet byl změněn nebo odstraněn.');
                 }
                 $ids[$code] = $mapped;
@@ -280,9 +284,13 @@ final class StereoNxAccountingWriter
                 continue;
             }
 
-            $existing = $this->accounts->findByCode($supplierId, $code);
+            if ($code !== $targetCode && isset($ids[$code])) {
+                throw new StereoNxException('account_code_normalization_conflict',
+                    "Účet {$code} už v cílové osnově existuje bez importní vazby. Před převodem na {$targetCode} vyřešte jeho přiřazení.");
+            }
+            $existing = $this->accounts->findByCode($supplierId, $targetCode);
             if ($existing === null) {
-                $existing = $this->createAccount($source, $supplierId, $ids);
+                $existing = $this->createAccount(array_replace($source, ['code' => $targetCode]), $supplierId, $ids);
                 $stats['accounts_created']++;
             } else {
                 $stats['accounts_existing']++;
@@ -365,6 +373,7 @@ final class StereoNxAccountingWriter
                 'opening_account_mismatch' => "{$count} počátečních kontací nepoužívá nastavený počáteční účet rozvažný.",
                 'chart_account_missing' => "{$count} řádků účtové osnovy nemá kód účtu.",
                 'chart_account_duplicate' => "Účtová osnova obsahuje {$count} duplicitních kódů.",
+                'chart_account_normalization_collision' => "U {$count} účtů vzniká po doplnění tečky shodný kód. Vyřešte kolizi účtů ve zdroji; převod je nesloučí.",
                 'chart_account_type_unknown' => "U {$count} účtů nelze určit zdrojový typ.",
                 'chart_tax_flag_invalid' => "U {$count} účtů není určen daňový příznak.",
                 'target_account_code_too_long' => "{$count} kódů účtů překračuje délku podporovanou MyÚčtem.",

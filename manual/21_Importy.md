@@ -870,6 +870,19 @@ storna. Záporné kontace zůstávají na původních stranách MD/Dal, takže s
 obraty. Období určuje datum účetního případu; případný rozpor se samostatným
 zdrojovým rokem se objeví v protokolu.
 
+Čistě číselné analytiky se do účtového rozvrhu zapisují s tečkou za prvními
+třemi číslicemi: například `022024` jako `022.024` a `548000` jako `548.000`.
+Úvodní nuly analytiky zůstávají zachované. Syntetické účty (`343`), již
+tečkované analytiky a označení s písmeny (`221kb`) se nepřejmenovávají.
+Deník, účty na kartách majetku a návrh mzdových předkontací používají odpovídající
+cílové kódy; importní vazby uchovávají původní označení ze Stereo.
+
+Pokud by dva zdrojové účty po doplnění tečky dostaly stejný kód, převod se
+zastaví a vyžádá vyřešení kolize. Stejně se postupuje, pokud v cíli existuje
+odpovídající účet bez tečky a bez doložené importní vazby. Účty se automaticky
+neslučují. Opakovaný import firmy převzaté se starším označením použije původní
+importní vazby; již převzaté účty ani historické zápisy nepřejmenuje.
+
 Vedle deníku se přebírají adresář, vydané a přijaté faktury, ověřené bankovní
 výpisy a pohyby a pokladní doklady. Doklady se propojí s jejich převzatými
 kontacemi, aby se nevytvořilo duplicitní zaúčtování. Úhrady se párují jen při
