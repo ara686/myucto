@@ -4,12 +4,13 @@ import { RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '@/composables/useToast'
 import { formatDate } from '@/composables/useFormat'
-import { stereoNxApi, type StereoCompany, type StereoPreview, type StereoProtocolRun, type StereoReport, type StereoUpload } from '@/api/stereoNx'
+import { stereoNxApi, type StereoAccountMapping, type StereoAccountMappingProposal, type StereoCompany, type StereoPreview, type StereoProtocolRun, type StereoReport, type StereoUpload } from '@/api/stereoNx'
 import type { MoneyS3Step } from '@/api/moneyS3'
 import { btnOutline, ICONS } from '@/components/ui/buttonStyles'
 import ActionBar, { type ActionItem } from '@/components/ui/ActionBar.vue'
 import MoneyS3Protocol from '@/components/migration/MoneyS3Protocol.vue'
 import StereoNxSummary from '@/components/migration/StereoNxSummary.vue'
+import StereoNxAccountMapping from '@/components/migration/StereoNxAccountMapping.vue'
 import ImportJobProgress from '@/components/exchange/ImportJobProgress.vue'
 import CompanyProfileBox from '@/components/settings/CompanyProfileBox.vue'
 import type { FileImportJob } from '@/api/imports'
@@ -37,6 +38,13 @@ const cleanupWarning = ref('')
 const reportCompany = ref<{ name: string; ico: string } | null>(null)
 const blankCountryIsCz = ref(false)
 const matchBankAccountSeries = ref(false)
+const accountingMode = ref<string | null>(null)
+const needsMapping = computed(() => accountingMode.value === 'double_entry')
+const dryStep = computed(() => needsMapping.value ? 4 : 3)
+const importStep = computed(() => needsMapping.value ? 5 : 4)
+const mappingProposal = ref<StereoAccountMappingProposal | null>(null)
+const accountMapping = ref<StereoAccountMapping | null>(null)
+const mappingValid = ref(false)
 const profileFilled = ref<string[]>([])
 const selectedProfileFields = ref<string[]>([])
 // Zkouška i převod běží na serveru jako job; stav jobu pro ukazatel průběhu.
@@ -49,8 +57,8 @@ const downloadingPdf = ref(false)
 const pdfError = ref('')
 let pdfRequest = 0
 const downloadReference = computed(() => {
-  const reference = currentStep.value === 3 && dryReport.value ? dryReportReference.value
-    : currentStep.value === 4 ? (importReport.value ? importReportReference.value : dryReport.value ? dryReportReference.value : null) : null
+  const reference = currentStep.value === dryStep.value && dryReport.value ? dryReportReference.value
+    : currentStep.value === importStep.value ? (importReport.value ? importReportReference.value : dryReport.value ? dryReportReference.value : null) : null
   return reference?.supplierId === supplier.currentSupplierId ? reference : null
 })
 watch(downloadReference, () => {
@@ -82,7 +90,7 @@ async function downloadProtocol(): Promise<void> {
  * Job spuštěný z průvodce: zkouška i převod běží na serveru dál, i když uživatel stránku
  * opustí. Po návratu ho průvodce podle tohoto záznamu naváže, i s volbami, se kterými běžel.
  */
-interface StoredRun { supplierId: number; token: string; jobId: number; mode: 'dry_run' | 'import'; company: number; blankCountryIsCz: boolean; matchBankAccountSeries?: boolean; deleteAfterImport: boolean; reportCompany?: { name: string; ico: string } | null }
+interface StoredRun { supplierId: number; token: string; jobId: number; mode: 'dry_run' | 'import'; company: number; blankCountryIsCz: boolean; matchBankAccountSeries?: boolean; accountMapping?: StereoAccountMapping | null; accountingMode?: string | null; deleteAfterImport: boolean; reportCompany?: { name: string; ico: string } | null }
 const RUN_KEY = 'myucto.stereo-nx.job'
 function readRun(): StoredRun | null {
   try {
@@ -101,6 +109,17 @@ const selectedCompany = computed(() => companies.value.find(item => item.index =
 const bankAccountSeries = computed(() => selectedCompany.value?.bank_account_series)
 const bankSeriesAllowed = computed(() => !bankAccountSeries.value?.ambiguous && (!bankAccountSeries.value?.requires_confirmation || matchBankAccountSeries.value))
 watch(selected, () => { matchBankAccountSeries.value = false }, { flush: 'sync' })
+watch([selected, token, matchBankAccountSeries], () => {
+  mappingProposal.value = null
+  accountMapping.value = null
+  mappingValid.value = false
+}, { flush: 'sync' })
+function updateAccountMapping(value: StereoAccountMapping): void {
+  if (JSON.stringify(accountMapping.value) === JSON.stringify(value)) return
+  accountMapping.value = value
+  invalidateDryRun()
+  writeRun(null)
+}
 const modeMismatch = computed(() => !!selectedCompany.value?.identity.accounting_mode && !!target.value?.accounting_mode && selectedCompany.value.identity.accounting_mode !== target.value.accounting_mode)
 function modeLabel(mode: string | null | undefined): string {
   return mode === 'tax_evidence' || mode === 'double_entry' ? t(`stereo_nx.accounting_modes.${mode}`) : t('stereo_nx.accounting_modes.unknown')
@@ -113,24 +132,63 @@ const profileSuggestions = computed(() => profileFields.flatMap(field => {
 watch([selected, companies], () => {
   selectedProfileFields.value = profileSuggestions.value.filter(item => !item.current.trim()).map(item => item.field)
 })
-const canRun = computed(() => bankSeriesAllowed.value && !!token.value && selectedCompany.value?.matches_target === true && selectedCompany.value.identity.vat_payer && ['tax_evidence', 'double_entry'].includes(target.value?.accounting_mode ?? '') && !modeMismatch.value && target.value?.vat_payer)
+const companyReady = computed(() => bankSeriesAllowed.value && !!token.value && selectedCompany.value?.matches_target === true && selectedCompany.value.identity.vat_payer && ['tax_evidence', 'double_entry'].includes(target.value?.accounting_mode ?? '') && !modeMismatch.value && target.value?.vat_payer)
+const canRun = computed(() => companyReady.value && (!needsMapping.value || (!!accountMapping.value && mappingValid.value)))
 const canImport = computed(() => canRun.value && dryReport.value?.ok === true && confirmed.value)
 const backupHelpItems = computed(() => {
   const items = tm('stereo_nx.upload_help_items') as unknown
   return Array.isArray(items) ? items.map(item => rt(item as Parameters<typeof rt>[0])) : []
 })
-const steps = computed(() => [1, 2, 3, 4].map(number => ({ number, label: t(`stereo_nx.step${number}`) })))
+const steps = computed(() => [
+  { number: 1, label: t('stereo_nx.step1') },
+  { number: 2, label: t('stereo_nx.step2') },
+  ...(needsMapping.value ? [{ number: 3, label: t('stereo_nx.mapping.step') }] : []),
+  { number: dryStep.value, label: t('stereo_nx.step3') },
+  { number: importStep.value, label: t('stereo_nx.step4') },
+])
 
 function canGoTo(step: number): boolean {
   if (busy.value || step === currentStep.value) return false
   if (step === 1) return true
   if (step === 2) return !!token.value && companies.value.length > 0
-  if (step === 3) return canRun.value === true
+  if (needsMapping.value && step === 3) return companyReady.value === true
+  if (step === dryStep.value) return canRun.value === true
   return dryReport.value?.ok === true || importReport.value !== null
 }
 
 function goTo(step: number): void {
-  if (canGoTo(step)) currentStep.value = step
+  if (!canGoTo(step)) return
+  currentStep.value = step
+  if (needsMapping.value && step === 3 && !mappingProposal.value) void loadAccountMapping()
+}
+
+function continueFromCompany(): void {
+  currentStep.value = 3
+  if (needsMapping.value && !mappingProposal.value) void loadAccountMapping()
+}
+
+async function loadAccountMapping(): Promise<void> {
+  if (!token.value || selected.value === null || !companyReady.value) return
+  const supplierId = supplier.currentSupplierId
+  const uploadToken = token.value
+  const company = selected.value
+  const matchSeries = matchBankAccountSeries.value
+  busy.value = true
+  error.value = ''
+  try {
+    const proposal = await stereoNxApi.accountMapping(uploadToken, company, matchSeries)
+    if (supplier.currentSupplierId !== supplierId || token.value !== uploadToken || selected.value !== company || matchBankAccountSeries.value !== matchSeries) return
+    mappingProposal.value = proposal
+    if (!accountMapping.value) accountMapping.value = {
+      accounts: { ...proposal.accounts }, bank_accounts: { ...proposal.bank_accounts }, vat: proposal.vat ? { ...proposal.vat } : null,
+    }
+  } catch (caught) {
+    if (supplier.currentSupplierId !== supplierId || token.value !== uploadToken) return
+    error.value = message(caught)
+    toast.error(error.value)
+  } finally {
+    busy.value = false
+  }
 }
 
 const actions = computed<ActionItem[]>(() => {
@@ -138,11 +196,15 @@ const actions = computed<ActionItem[]>(() => {
     { key: 'upload', label: t('stereo_nx.upload'), icon: 'upload', tier: 'primary', variant: 'primary', disabled: !file.value || busy.value, loading: busy.value, run: () => { void upload() } },
   ]
   if (currentStep.value === 2) return [
-    { key: 'continue', label: t('stereo_nx.continue'), icon: 'check', tier: 'primary', variant: 'primary', disabled: !canRun.value || busy.value, run: () => { currentStep.value = 3 } },
+    { key: 'continue', label: t('stereo_nx.continue'), icon: 'check', tier: 'primary', variant: 'primary', disabled: !companyReady.value || busy.value, run: continueFromCompany },
     { key: 'read', label: t('stereo_nx.read_again'), icon: 'cycle', tier: 'secondary', variant: 'neutral', disabled: busy.value, run: () => { void preview() } },
   ]
-  if (currentStep.value === 3) return dryReport.value?.ok === true ? [
-    { key: 'continue', label: t('stereo_nx.continue'), icon: 'check', tier: 'primary', variant: 'primary', disabled: busy.value, run: () => { currentStep.value = 4 } },
+  if (needsMapping.value && currentStep.value === 3) return [
+    { key: 'continue', label: t('stereo_nx.continue'), icon: 'check', tier: 'primary', variant: 'primary', disabled: busy.value || !canRun.value, run: () => { currentStep.value = dryStep.value } },
+    { key: 'mapping-reload', label: t('stereo_nx.mapping.reload'), icon: 'cycle', tier: 'secondary', variant: 'neutral', disabled: busy.value, run: () => { void loadAccountMapping() } },
+  ]
+  if (currentStep.value === dryStep.value) return dryReport.value?.ok === true ? [
+    { key: 'continue', label: t('stereo_nx.continue'), icon: 'check', tier: 'primary', variant: 'primary', disabled: busy.value, run: () => { currentStep.value = importStep.value } },
     { key: 'rerun', label: t('stereo_nx.dry_run_again'), icon: 'cycle', tier: 'secondary', variant: 'neutral', disabled: busy.value, run: () => { void run('dry_run') } },
   ] : [
     { key: 'dry', label: t('stereo_nx.dry_run'), icon: 'play', tier: 'primary', variant: 'primary', disabled: busy.value || !canRun.value, loading: busy.value, run: () => { void run('dry_run') } },
@@ -152,7 +214,7 @@ const actions = computed<ActionItem[]>(() => {
   ]
   return [
     { key: 'import', label: t('stereo_nx.import'), icon: 'play', tier: 'primary', variant: 'warning', disabled: busy.value || !canImport.value, loading: busy.value, run: () => { void run('import') } },
-    { key: 'back', label: t('stereo_nx.dry_run_again'), icon: 'cycle', tier: 'secondary', variant: 'neutral', disabled: busy.value, run: () => { currentStep.value = 3 } },
+    { key: 'back', label: t('stereo_nx.dry_run_again'), icon: 'cycle', tier: 'secondary', variant: 'neutral', disabled: busy.value, run: () => { currentStep.value = dryStep.value } },
   ]
 })
 
@@ -163,6 +225,7 @@ function resetSelection(): void {
   token.value = null
   companies.value = []
   target.value = null
+  accountingMode.value = null
   selected.value = null
   progress.value = null
   dryReport.value = null
@@ -213,9 +276,12 @@ async function resumeRun(): Promise<void> {
   selected.value = stored.company
   blankCountryIsCz.value = stored.blankCountryIsCz
   matchBankAccountSeries.value = stored.matchBankAccountSeries === true
+  accountingMode.value = stored.accountingMode ?? target.value?.accounting_mode ?? null
+  accountMapping.value = stored.accountMapping ?? null
+  mappingValid.value = accountMapping.value !== null
   deleteAfterImport.value = hasUpload && stored.deleteAfterImport
   reportCompany.value = stored.reportCompany ?? null
-  currentStep.value = stored.mode === 'dry_run' ? 3 : 4
+  currentStep.value = stored.mode === 'dry_run' ? dryStep.value : importStep.value
   await run(stored.mode, stored.jobId)
 }
 
@@ -324,6 +390,7 @@ async function preview(): Promise<void> {
     if (supplier.currentSupplierId !== supplierId || token.value !== uploadToken) return
     companies.value = result.companies
     target.value = result.target
+    accountingMode.value = result.target.accounting_mode
     selected.value = result.companies.find(item => item.matches_target)?.index ?? null
     dryReport.value = null
     importReport.value = null
@@ -380,8 +447,8 @@ async function run(mode: 'dry_run' | 'import', resumeJobId: number | null = null
   error.value = ''
   cleanupWarning.value = ''
   try {
-    const jobId = resumeJobId ?? await stereoNxApi.start(uploadToken, company, mode, blankCountryIsCz.value, matchBankAccountSeries.value)
-    if (supplierId) writeRun({ supplierId, token: uploadToken, jobId, mode, company, blankCountryIsCz: blankCountryIsCz.value, matchBankAccountSeries: matchBankAccountSeries.value, deleteAfterImport: deleteAfterImport.value, reportCompany: selectedCompany.value ? { name: selectedCompany.value.identity.name, ico: selectedCompany.value.identity.ico } : reportCompany.value })
+    const jobId = resumeJobId ?? await stereoNxApi.start(uploadToken, company, mode, blankCountryIsCz.value, matchBankAccountSeries.value, needsMapping.value ? accountMapping.value ?? undefined : undefined)
+    if (supplierId) writeRun({ supplierId, token: uploadToken, jobId, mode, company, blankCountryIsCz: blankCountryIsCz.value, matchBankAccountSeries: matchBankAccountSeries.value, accountMapping: accountMapping.value, accountingMode: accountingMode.value, deleteAfterImport: deleteAfterImport.value, reportCompany: selectedCompany.value ? { name: selectedCompany.value.identity.name, ico: selectedCompany.value.identity.ico } : reportCompany.value })
     const report = await stereoNxApi.follow(uploadToken, jobId, current => {
       if (supplier.currentSupplierId === supplierId && token.value === uploadToken) job.value = current
     })
@@ -392,13 +459,13 @@ async function run(mode: 'dry_run' | 'import', resumeJobId: number | null = null
       dryReportReference.value = supplierId ? { supplierId, token: uploadToken, jobId } : null
       importReport.value = null
       confirmed.value = false
-      currentStep.value = 3
+      currentStep.value = dryStep.value
     } else {
       importReport.value = report
       importReportReference.value = supplierId ? { supplierId, token: uploadToken, jobId } : null
       dryReport.value = null
       confirmed.value = false
-      currentStep.value = 4
+      currentStep.value = importStep.value
       if (report.ok && report.database_writes === true && report.partial !== true && deleteAfterImport.value) {
         try {
           await stereoNxApi.remove(uploadToken)
@@ -446,11 +513,15 @@ async function removeUpload(upload: StereoUpload): Promise<void> {
       const successfulReport = importReport.value?.ok ? importReport.value : null
       const successfulCompany = reportCompany.value
       const successfulReference = importReportReference.value
+      const successfulAccountingMode = accountingMode.value
       resetSelection()
       importReport.value = successfulReport
       importReportReference.value = successfulReport ? successfulReference : null
       reportCompany.value = successfulCompany
-      if (successfulReport) currentStep.value = 4
+      if (successfulReport) {
+        accountingMode.value = successfulAccountingMode
+        currentStep.value = importStep.value
+      }
     }
     cleanupWarning.value = ''
     await refreshUploads()
@@ -559,7 +630,7 @@ const importProtocol = computed(() => importReport.value ? asProtocol(importRepo
       <p class="mt-1 text-sm text-neutral-500">{{ t('stereo_nx.intro') }}</p>
     </div>
 
-    <ol class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+    <ol class="grid grid-cols-2 gap-2" :class="needsMapping ? 'sm:grid-cols-5' : 'sm:grid-cols-4'">
       <li v-for="step in steps" :key="step.number">
         <button type="button" :data-testid="`stereo-step-${step.number}`" :disabled="!canGoTo(step.number)"
           class="flex w-full items-center rounded-lg border px-3 py-3 text-left text-sm transition-colors"
@@ -653,7 +724,12 @@ const importProtocol = computed(() => importReport.value ? asProtocol(importRepo
       <label class="mt-4 flex items-start gap-2 text-sm"><input v-model="blankCountryIsCz" type="checkbox" class="mt-1" :disabled="busy" @change="invalidateDryRun" />{{ t('stereo_nx.blank_country_is_cz') }}</label>
     </section>
 
-    <section v-else-if="currentStep === 3" data-testid="stereo-dry-report" class="rounded-lg border border-neutral-200 bg-surface p-5 shadow-sm">
+    <section v-else-if="needsMapping && currentStep === 3" class="rounded-lg border border-neutral-200 bg-surface p-5 shadow-sm">
+      <p v-if="busy" class="text-sm text-primary-700" role="status">{{ t('stereo_nx.mapping.loading') }}</p>
+      <StereoNxAccountMapping v-if="mappingProposal && accountMapping" :proposal="mappingProposal" :model-value="accountMapping" :disabled="busy" @update:model-value="updateAccountMapping" @valid="mappingValid = $event" />
+    </section>
+
+    <section v-else-if="currentStep === dryStep" data-testid="stereo-dry-report" class="rounded-lg border border-neutral-200 bg-surface p-5 shadow-sm">
       <h2 class="mb-1 text-lg font-semibold">{{ t('stereo_nx.dry_result') }}</h2>
       <p class="mb-4 text-sm text-neutral-500">{{ t('stereo_nx.dry_hint') }}</p>
       <ImportJobProgress v-if="busy && job" :job="job" :percent="null" :cancelling="false" :show-cancel="false"

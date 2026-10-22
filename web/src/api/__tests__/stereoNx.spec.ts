@@ -45,6 +45,20 @@ describe('stereoNxApi.run', () => {
     })
   })
 
+  it('loads mapping suggestions with bank-series approval and sends the confirmed config unchanged to either run mode', async () => {
+    const mapping = { accounts: { '501001': '501.001' }, bank_accounts: { SYN: '221.001' }, vat: { input: '343.100', output: '343.200', settlement: '343.900', unresolved: '343.999' } }
+    post.mockResolvedValueOnce({ data: { ...mapping, used_accounts: [], banks: [], unresolved: [], vat_counts: { input: 0, output: 0, settlement: 0, unresolved: 0 } } })
+    await stereoNxApi.accountMapping('synthetic-token', 0, true)
+    expect(post).toHaveBeenLastCalledWith('/admin/imports/stereo-nx/uploads/synthetic-token/account-mapping', { company: 0, match_bank_account_series: true })
+    for (const mode of ['dry_run', 'import'] as const) {
+      post.mockResolvedValueOnce({ data: { job_id: 8 } })
+      await stereoNxApi.start('synthetic-token', 0, mode, false, true, mapping)
+      expect(post).toHaveBeenLastCalledWith('/admin/imports/stereo-nx/uploads/synthetic-token/run', {
+        company: 0, mode, blank_country_is_cz: false, match_bank_account_series: true, account_mapping: mapping,
+      })
+    }
+  })
+
   it('job bez výsledku vrátí chybu serveru', async () => {
     post.mockResolvedValueOnce({ data: { job_id: 8 } })
     fetchImportJob.mockResolvedValueOnce(job('failed'))

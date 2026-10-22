@@ -1,19 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import StereoNxMigration from '../StereoNxMigration.vue'
+import type { StereoAccountMapping, StereoAccountMappingProposal } from '@/api/stereoNx'
 
 const m = vi.hoisted(() => ({
-  downloadProtocol: vi.fn(), uploads: vi.fn(), upload: vi.fn(), preview: vi.fn(), run: vi.fn(), remove: vi.fn(), fillCompanyProfile: vi.fn(),
+  downloadProtocol: vi.fn(), uploads: vi.fn(), upload: vi.fn(), preview: vi.fn(), run: vi.fn(), remove: vi.fn(), fillCompanyProfile: vi.fn(), accountMapping: vi.fn(),
   locale: { value: 'cs' }, toastError: vi.fn(), supplierStore: undefined as any,
   // Stránka job spustí (`start`) a sleduje (`follow`); testy dál pracují s jedním `run`.
-  jobs: new Map<number, [string, number, string, boolean, boolean]>(),
+  jobs: new Map<number, [string, number, string, boolean, boolean, StereoAccountMapping | undefined]>(),
 }))
 
 vi.mock('@/api/stereoNx', () => ({ stereoNxApi: {
-  downloadProtocol: m.downloadProtocol, uploads: m.uploads, upload: m.upload, preview: m.preview, run: m.run, remove: m.remove, fillCompanyProfile: m.fillCompanyProfile,
-  start: async (token: string, company: number, mode: string, blank: boolean, match: boolean = false) => {
+  downloadProtocol: m.downloadProtocol, uploads: m.uploads, upload: m.upload, preview: m.preview, run: m.run, remove: m.remove, fillCompanyProfile: m.fillCompanyProfile, accountMapping: m.accountMapping,
+  start: async (token: string, company: number, mode: string, blank: boolean, match: boolean = false, mapping?: StereoAccountMapping) => {
     const id = m.jobs.size + 1
-    m.jobs.set(id, [token, company, mode, blank, match])
+    m.jobs.set(id, [token, company, mode, blank, match, mapping])
     return id
   },
   follow: async (_token: string, id: number, onJob?: (job: object) => void) => {
@@ -44,6 +45,13 @@ const dryReport = { ok: true, counts: { issued: 1, purchases: 1, requires_draft:
   review_reasons: { vat_participation_unassigned: 1 }, errors: [], warnings: [],
   written: { issued: 1, purchases: 1 } }
 const importReport = { ...dryReport, database_writes: true, written: { issued: 1, purchases: 1 } }
+const mappingProposal: StereoAccountMappingProposal = {
+  accounts: { '343': '343', '501001': '501.001' }, bank_accounts: { SYN: '221.001' },
+  vat: { input: '343.100', output: '343.200', settlement: '343.900', unresolved: null },
+  used_accounts: [{ source_code: '343', name: 'Synthetic VAT', target_code: '343', count: 1 }, { source_code: '501001', name: 'Synthetic expense', target_code: '501.001', count: 1 }],
+  banks: [{ source_key: 'SYN', label: 'Synthetic bank', target_code: '221.001' }], unresolved: [], vat_counts: { input: 1, output: 0, settlement: 0, unresolved: 0 },
+}
+const doubleEntryPreview = { ...preview, companies: [{ ...company, identity: { ...company.identity, accounting_mode: 'double_entry' } }], target: { ...preview.target, accounting_mode: 'double_entry' } }
 
 function primaryButton(wrapper: Awaited<ReturnType<typeof mountPage>>, key: string) {
   const button = wrapper.get('[data-testid="stereo-actions"]').findAll('button').find(item => item.text().includes(`stereo_nx.${key}`))
@@ -69,6 +77,10 @@ async function reachDryRun(wrapper: Awaited<ReturnType<typeof mountPage>>) {
   expect(wrapper.get('[data-testid="stereo-company-select"]').element).toBeTruthy()
   await primaryButton(wrapper, 'continue').trigger('click')
   await flushPromises()
+  if (wrapper.find('[data-testid="stereo-account-mapping"]').exists()) {
+    await primaryButton(wrapper, 'continue').trigger('click')
+    await flushPromises()
+  }
   await primaryButton(wrapper, 'dry_run').trigger('click')
   await flushPromises()
 }
@@ -86,6 +98,7 @@ beforeEach(() => {
   m.downloadProtocol.mockResolvedValue(undefined)
   m.remove.mockResolvedValue(undefined)
   m.fillCompanyProfile.mockResolvedValue({ filled_fields: [] })
+  m.accountMapping.mockResolvedValue(mappingProposal)
 })
 
 afterEach(() => vi.clearAllMocks())
@@ -372,12 +385,89 @@ describe('Stereo NX migration wizard', () => {
     wrapper.unmount()
   })
 
-  it('allows a double-entry company to run the same dry-run workflow', async () => {
-    m.preview.mockResolvedValue({ ...preview, companies: [{ ...company, identity: { ...company.identity, accounting_mode: 'double_entry' } }], target: { ...preview.target, accounting_mode: 'double_entry' } })
+  it('adds a used-account mapping step for double entry and sends identical confirmed mappings to dry run and import', async () => {
+    m.preview.mockResolvedValue(doubleEntryPreview)
     const wrapper = await mountPage()
     await reachDryRun(wrapper)
+    expect(wrapper.find('[data-testid="stereo-step-5"]').exists()).toBe(true)
+    expect(m.accountMapping).toHaveBeenCalledWith(upload.token, 0, false)
+    expect(m.jobs.get(1)?.[5]).toEqual({ accounts: mappingProposal.accounts, bank_accounts: mappingProposal.bank_accounts, vat: mappingProposal.vat })
     expect(m.run).toHaveBeenCalledWith(upload.token, 0, 'dry_run', false, expect.any(Function))
+    await primaryButton(wrapper, 'continue').trigger('click')
+    await wrapper.get('[data-testid="stereo-import-confirm"]').setValue(true)
+    await primaryButton(wrapper, 'import').trigger('click')
+    await flushPromises()
+    expect(m.jobs.get(2)?.[5]).toEqual(m.jobs.get(1)?.[5])
+    expect(wrapper.find('[data-testid="stereo-import-report"]').exists()).toBe(true)
     wrapper.unmount()
+  })
+
+  it('invalidates a successful dry run after account edits and resumes the edited mapping for the next run', async () => {
+    m.preview.mockResolvedValue(doubleEntryPreview)
+    const wrapper = await mountPage()
+    await reachDryRun(wrapper)
+    await wrapper.get('[data-testid="stereo-step-3"]').trigger('click')
+    await wrapper.get('[data-testid="stereo-account-501001"]').setValue('501002')
+    expect(wrapper.get('[data-testid="stereo-step-5"]').attributes('disabled')).toBeDefined()
+    expect(sessionStorage.getItem('myucto.stereo-nx.job')).toBeNull()
+    await primaryButton(wrapper, 'continue').trigger('click')
+    await primaryButton(wrapper, 'dry_run').trigger('click')
+    await flushPromises()
+    expect(m.jobs.get(2)?.[5]?.accounts['501001']).toBe('501.002')
+    wrapper.unmount()
+    const resumed = await mountPage()
+    expect(resumed.find('[data-testid="stereo-step-5"]').exists()).toBe(true)
+    expect(resumed.find('[data-testid="stereo-dry-report"]').exists()).toBe(true)
+    await resumed.get('[data-testid="stereo-step-3"]').trigger('click')
+    await flushPromises()
+    expect((resumed.get('[data-testid="stereo-account-501001"]').element as HTMLInputElement).value).toBe('501.002')
+    resumed.unmount()
+  })
+
+  it('blocks continuing past mapping until unresolved VAT has an explicit target', async () => {
+    m.preview.mockResolvedValue(doubleEntryPreview)
+    m.accountMapping.mockResolvedValue({ ...mappingProposal, vat_counts: { ...mappingProposal.vat_counts, unresolved: 1 } })
+    const wrapper = await mountPage()
+    await openExisting(wrapper)
+    await primaryButton(wrapper, 'continue').trigger('click')
+    await flushPromises()
+    expect(primaryButton(wrapper, 'continue').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="stereo-step-4"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-testid="stereo-vat-unresolved"]').setValue('343.999')
+    expect(primaryButton(wrapper, 'continue').attributes('disabled')).toBeUndefined()
+    await primaryButton(wrapper, 'continue').trigger('click')
+    await primaryButton(wrapper, 'dry_run').trigger('click')
+    await flushPromises()
+    expect(m.jobs.get(1)?.[5]?.vat?.unresolved).toBe('343.999')
+    wrapper.unmount()
+  })
+
+  it.each(['automatic', 'manual'])('keeps double-entry results on step five after %s ZIP cleanup and resume', async cleanup => {
+    m.preview.mockResolvedValue(doubleEntryPreview)
+    m.remove.mockImplementation(async () => { m.uploads.mockResolvedValue([]) })
+    const wrapper = await mountPage()
+    await reachDryRun(wrapper)
+    await primaryButton(wrapper, 'continue').trigger('click')
+    await wrapper.get('[data-testid="stereo-import-confirm"]').setValue(true)
+    if (cleanup === 'automatic') await wrapper.get('[data-testid="stereo-delete-after-import"]').setValue(true)
+    await primaryButton(wrapper, 'import').trigger('click')
+    await flushPromises()
+    if (cleanup === 'manual') {
+      await wrapper.get('[data-testid="stereo-step-1"]').trigger('click')
+      await wrapper.get(`[data-testid="stereo-upload-remove-${upload.token}"]`).trigger('click')
+      await flushPromises()
+    }
+    expect(wrapper.find('[data-testid="stereo-step-5"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="stereo-import-report"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="stereo-protocol-pdf"]').trigger('click')
+    expect(m.downloadProtocol).toHaveBeenLastCalledWith(upload.token, 2, 'cs')
+    wrapper.unmount()
+    const resumed = await mountPage()
+    expect(resumed.find('[data-testid="stereo-step-5"]').exists()).toBe(true)
+    expect(resumed.find('[data-testid="stereo-import-report"]').exists()).toBe(true)
+    await resumed.get('[data-testid="stereo-protocol-pdf"]').trigger('click')
+    expect(m.downloadProtocol).toHaveBeenLastCalledWith(upload.token, 2, 'cs')
+    resumed.unmount()
   })
 
   it.each([

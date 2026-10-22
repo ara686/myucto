@@ -200,13 +200,20 @@ IČO, být plátcem DPH a cílová firma musí používat **daňovou evidenci** 
    údaje, označte pole, která chcete převzít z `firma.bin`, a potvrďte jejich
    převzetí. Pokud prázdná země protistrany ve zdroji znamená ČR, zaškrtněte
    odpovídající volbu.
-5. Krok **Zkouška nanečisto:** klikněte na **Zkouška nanečisto**. Projde stejnými
+5. V podvojném účetnictví projděte krok **Mapování účtů**. Obsahuje jen účty
+   skutečně použité v převáděném deníku. Cíl vyhledáte podle čísla nebo názvu;
+   u každého vidíte, zda se použije existující účet, nebo se založí nový a s jakým
+   názvem. Číselné analytiky se zapisují s tečkou za syntetikou.
+   Zkontrolujte analytiky vlastních bankovních účtů a rozdělení DPH na vstup,
+   výstup a zúčtování. Nerozpoznané kontace ukazují datum, doklad, popis, částku
+   a účty MD/D. Počáteční stav sám o sobě neurčuje roli DPH: vyžaduje váš výběr.
+6. Krok **Zkouška nanečisto:** klikněte na **Zkouška nanečisto**. Projde stejnými
    databázovými operacemi jako skutečný převod, ale změny vrátí zpět.
    Zkontrolujte rozsah dat, počty dokladů, konceptů a důvody ruční kontroly.
-6. Krok **Převod:** zaškrtněte potvrzení **Zkontroloval(a) jsem výsledek
+7. Krok **Převod:** zaškrtněte potvrzení **Zkontroloval(a) jsem výsledek
    a chci data převést do vybrané firmy.** a klikněte na **Spustit převod**.
    Volitelně zaškrtněte **Smazat nahranou zálohu po úspěšném importu**.
-7. Po dokončení projděte protokol převodu a odkazy na doklady a peněžní pohyby
+8. Po dokončení projděte protokol převodu a odkazy na doklady a peněžní pohyby
    k ruční kontrole.
 
 **Jak poznáte, že je hotovo:** Průvodce ohlásí **Převod dokončen.** a protokol
@@ -214,7 +221,7 @@ ukazuje u kroků stav **V pořádku**. Položky označené **Ke kontrole** projd
 ručně.
 
 > [!WARNING]
-> Změna vybrané firmy nebo výkladu prázdné země vyžaduje novou zkoušku nanečisto.
+> Změna vybrané firmy, výkladu prázdné země nebo mapování účtů vyžaduje novou zkoušku nanečisto.
 > Zálohu si uchovejte. Při nepřevedených nebo kontrolovaných údajích se
 > automatické smazání zálohy nenabídne.
 
@@ -787,8 +794,8 @@ běžící.
 
 ### 21.9.15 Převod ze Stereo NX: rozsah a pravidla
 
-Průvodce používá stejné čtyři kroky jako převody POHODA a PREMIER: nahrání
-zálohy, výběr firmy, zkoušku nanečisto a potvrzení importu. Rozsah převodu se
+Průvodce používá nahrání zálohy, výběr firmy, zkoušku nanečisto a potvrzení
+importu. V podvojném účetnictví je před zkouškou navíc mapování účtů. Rozsah převodu se
 řídí účetním režimem cílové firmy. U prázdného či nejednoznačného deníku import
 režim neodhaduje. Označení "EU" bez konkrétního státu volbou pro prázdnou zemi
 protistrany určeno není. Vyplněné firemní údaje ze zálohy nejsou předem označené.
@@ -813,6 +820,20 @@ rokům obsaženým v záloze. Smaže se pouze nahraná kopie ZIPu po potvrzeném
 dokladů; zkouška nanečisto ani neúspěšný převod ji nemažou. Pokud odstranění
 selže, import zůstává dokončený a zálohu lze odstranit ze seznamu. Převod zálohu
 pouze čte, původní data ani instalaci Stereo NX nemění.
+
+Mapování zachovává syntetiku účtu. Neaktivní cílový účet nelze vybrat. Řady
+stejného vlastního bankovního účtu sdílejí analytiku; různé bankovní účty mají
+analytiky oddělené. Rozdělení DPH vychází z doložených kontací dokladů,
+nikoliv jen ze strany MD/D. Nejednoznačné samovyměření nelze převést společným
+náhradním účtem. Automatické rozdělení lze vypnout a mapovat zdrojové účty
+ručně; nejednoznačné role potřebné pro další nativní účtování převod zastaví
+s vysvětlením. Původní datum, částka a identita zápisu se mapováním nemění.
+
+Účty nákladů a výnosů se přenášejí také na položky dokladů. Je-li účtů více,
+import je přiřadí podle částek pouze tehdy, když existuje jediné úplné řešení.
+Nejednoznačný nebo příliš rozsáhlý rozpis zůstane s upozorněním k ručnímu
+doplnění před další úpravou či zaúčtováním. Totéž platí pro více možných
+analytik pohledávek či závazků v nativních předkontacích.
 
 Souhrn zkoušky i importu zobrazuje počty v tabulkách. U podporovaných agend
 porovnáte sloupce **Ve zdroji**, **K převodu**, **Nepřevedeno** a **Ke kontrole**;
