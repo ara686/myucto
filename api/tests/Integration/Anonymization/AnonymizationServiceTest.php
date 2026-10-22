@@ -132,6 +132,12 @@ final class AnonymizationServiceTest extends TestCase
             count(TriggerMetadata::read($this->server, $this->source)),
             count(TriggerMetadata::read($this->server, $this->target)),
         );
+        $modes = fn (string $schema): array => [
+            array_column(TriggerMetadata::read($this->server, $schema), 'SQL_MODE', 'TRIGGER_NAME'),
+            $this->server->query('SELECT ROUTINE_NAME, SQL_MODE FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = ' . $this->server->quote($schema) . ' ORDER BY ROUTINE_NAME')->fetchAll(PDO::FETCH_KEY_PAIR),
+        ];
+        self::assertSame($modes($this->testDatabase), $modes($this->source), 'Trigger a rutina kopie musí běžet pod sql_mode originálu.');
+        self::assertSame($modes($this->source), $modes($this->target));
         self::assertNotFalse($this->scalar($this->target, "SELECT v FROM app_meta WHERE k = 'anonymized_clone'"));
 
         $chain = new ActivityLogHashChain(new Connection($this->targetConfig($this->target)));

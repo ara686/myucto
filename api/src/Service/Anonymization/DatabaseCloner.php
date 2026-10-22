@@ -31,7 +31,8 @@ final class DatabaseCloner
      *   source:string, charset:string, collation:string,
      *   tables: array<string, array{ddl:string, columns:string}>,
      *   system_versioned: list<string>, views: list<string>,
-     *   triggers: list<array{table:string, ddl:string}>, routines: list<string>
+     *   triggers: list<array{table:string, ddl:string, sql_mode:string}>, routines: list<string>,
+     *   routine_sql_modes: list<string>
      * }
      */
     public function plan(string $source): array
@@ -51,6 +52,7 @@ final class DatabaseCloner
             'views' => [],
             'triggers' => [],
             'routines' => [],
+            'routine_sql_modes' => [],
         ];
 
         $baseTables = [];
@@ -96,13 +98,15 @@ final class DatabaseCloner
             $plan['triggers'][] = [
                 'table' => (string) $trigger['EVENT_OBJECT_TABLE'],
                 'ddl' => $this->showCreate('TRIGGER', $source, (string) $trigger['TRIGGER_NAME']),
+                'sql_mode' => (string) $trigger['SQL_MODE'],
             ];
         }
 
-        $routines = $this->pdo->prepare('SELECT ROUTINE_NAME, ROUTINE_TYPE FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = ? ORDER BY ROUTINE_TYPE, ROUTINE_NAME');
+        $routines = $this->pdo->prepare('SELECT ROUTINE_NAME, ROUTINE_TYPE, SQL_MODE FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = ? ORDER BY ROUTINE_TYPE, ROUTINE_NAME');
         $routines->execute([$source]);
         foreach ($routines->fetchAll(PDO::FETCH_ASSOC) as $routine) {
             $plan['routines'][] = $this->showCreate((string) $routine['ROUTINE_TYPE'], $source, (string) $routine['ROUTINE_NAME']);
+            $plan['routine_sql_modes'][] = (string) $routine['SQL_MODE'];
         }
 
         return $plan;
@@ -146,7 +150,10 @@ final class DatabaseCloner
     }
 
     /**
-     * @param array{views: list<string>, triggers: list<array{table:string, ddl:string}>, routines: list<string>} $plan
+     * Trigger i rutina si berou sql_mode ze spojení, které je zakládá, a podle něj
+     * se pak vyhodnocuje jejich tělo. Zakládají se proto pod sql_mode originálu.
+     *
+     * @param array{views: list<string>, triggers: list<array{table:string, ddl:string, sql_mode?:string}>, routines: list<string>, routine_sql_modes?: list<string>} $plan
      */
     public function finalize(array $plan, string $target): void
     {
@@ -154,11 +161,19 @@ final class DatabaseCloner
         foreach ($plan['views'] as $ddl) {
             $this->pdo->exec($ddl);
         }
-        foreach ($plan['triggers'] as $trigger) {
-            $this->pdo->exec($trigger['ddl']);
-        }
-        foreach ($plan['routines'] as $ddl) {
-            $this->pdo->exec($ddl);
+        $session = (string) $this->pdo->query('SELECT @@SESSION.sql_mode')->fetchColumn();
+        $mode = $this->pdo->prepare('SET SESSION sql_mode = ?');
+        try {
+            foreach ($plan['triggers'] as $trigger) {
+                $mode->execute([$trigger['sql_mode'] ?? $session]);
+                $this->pdo->exec($trigger['ddl']);
+            }
+            foreach ($plan['routines'] as $index => $ddl) {
+                $mode->execute([$plan['routine_sql_modes'][$index] ?? $session]);
+                $this->pdo->exec($ddl);
+            }
+        } finally {
+            $mode->execute([$session]);
         }
     }
 
