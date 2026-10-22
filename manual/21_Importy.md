@@ -211,6 +211,8 @@ IČO, být plátcem DPH a cílová firma musí používat **daňovou evidenci** 
    podle českého IČO nebo ve VIES podle zahraničního DIČ. Porovnejte nalezený
    název a adresu s původními doklady a potvrďte navrženou zemi. Potvrzená karta
    se sbalí do řádku s názvem a zemí; detail můžete rozbalit a potvrzení zrušit.
+   Pokud registr nepomůže, použijte **Vybrat zemi ručně** a po kontrole původního
+   dokladu vyberte zemi a potvrďte ji samostatným tlačítkem.
    U karty bez převáděných dokladů je uvedeno, že jde pouze o záznam v adresáři.
    Načtení tohoto kroku data nepřevádí.
 7. Krok **Zkouška nanečisto:** klikněte na **Zkouška nanečisto**. Projde stejnými
@@ -869,7 +871,10 @@ Již známá země na historickém dokladu se touto volbou nepřepisuje.
 
 VIES ověřuje aktuální registraci DIČ, která sama nedokládá sídlo dodavatele ani
 stav k datu starší faktury. Potvrďte proto, že navržená země odpovídá původnímu
-dokladu. Neplatné DIČ nebo nedostupný registr ponechá zemi k ruční kontrole.
+dokladu. Nepotvrzené DIČ nebo nedostupný registr ponechá zemi k ruční kontrole.
+Zemi můžete vybrat ručně podle původního dokladu i bez kladné odpovědi VIES.
+Ruční výběr začíná prázdný a použije se až po výslovném potvrzení. Samotná volba
+země nepotvrzuje platnost DIČ ani registraci k DPH a vyžaduje novou zkoušku nanečisto.
 Vyhledání nemění označení plátce DPH, daňové zařazení ani existující kartu klienta.
 Pokud údaje nejsou dostatečné, opravte je ve zdroji nebo zkontrolujte převzatý
 koncept ručně. Změnou volby při opakovaném převodu se již importovaný doklad

@@ -34232,7 +34232,11 @@
       "reload": "Reload partners",
       "loading_partners": "Loading partners from the backup…",
       "expand": "Expand",
-      "collapse": "Collapse"
+      "collapse": "Collapse",
+      "manual_toggle": "Choose country manually",
+      "manual_country": "Country shown on the original document",
+      "manual_confirm": "Confirm country from document",
+      "manual_hint": "Choose the country from the original document. You confirm only the partner’s country, not its VAT registration or tax classification. The current VIES result may differ from the status at the time of a historical document."
     },
     "messages": {
       "detail_occurrences": "Occurrences: {count}",

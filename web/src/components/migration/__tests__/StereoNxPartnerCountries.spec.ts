@@ -1,11 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import StereoNxPartnerCountries from '../StereoNxPartnerCountries.vue'
+import CountrySelect from '@/components/ui/CountrySelect.vue'
 import type { StereoCountryCandidate } from '@/api/stereoNx'
 
 const m = vi.hoisted(() => ({ lookup: vi.fn(), vies: vi.fn(), create: vi.fn(), update: vi.fn() }))
 vi.mock('@/api/clients', () => ({ clientsApi: { lookupAres: m.lookup, lookupVies: m.vies, create: m.create, update: m.update } }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string, values?: Record<string, unknown>) => values ? `${key}: ${Object.entries(values).map(([name, value]) => `${name}=${value}`).join(', ')}` : key }) }))
+vi.mock('@/components/ui/CountrySelect.vue', () => ({ default: {
+  props: ['modelValue', 'disabled'], emits: ['update:modelValue'],
+  template: '<select :value="modelValue" :disabled="disabled" @change="$emit(\'update:modelValue\', $event.target.value)"><option value=""></option><option value="IE">Synthetic Ireland</option><option value="DE">Synthetic Germany</option><option value="EU">Invalid aggregate</option></select>',
+} }))
 
 const partner: StereoCountryCandidate = {
   source_key: 'synthetic-source-a', name: 'Synthetic partner', ico: '00000000', dic: 'CZ00000000',
@@ -310,5 +315,73 @@ describe('StereoNxPartnerCountries', () => {
     await wrapper.setProps({ modelValue: {} })
     expect(wrapper.find('[data-testid="stereo-country-body-0"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="stereo-country-undo-0"]').exists()).toBe(false)
+  })
+
+  it('allows an explicit manual IE country after VIES does not validate a synthetic Irish VAT ID without inferring or emitting it automatically', async () => {
+    m.vies.mockResolvedValue({ ...viesFound, valid: false, vat_number: 'IE0000000A', country: 'IE' })
+    const source = { ...foreignPartner, dic: 'IE0000000A' }
+    const wrapper = track([source], { unrelated: 'DE' })
+    expect(wrapper.find('[data-testid="stereo-country-manual-select-0"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="stereo-country-vies-0"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('stereo_nx.partner_countries.errors.vies_invalid')
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    await wrapper.get('[data-testid="stereo-country-manual-toggle-0"]').trigger('click')
+    const select = wrapper.get('[data-testid="stereo-country-manual-select-0"]')
+    expect((select.element as HTMLSelectElement).value).toBe('')
+    expect(wrapper.get('[data-testid="stereo-country-manual-confirm-0"]').attributes('disabled')).toBeDefined()
+    await select.setValue('IE')
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    await wrapper.get('[data-testid="stereo-country-manual-confirm-0"]').trigger('click')
+    expect(wrapper.emitted('update:modelValue')).toEqual([[{ unrelated: 'DE', [source.source_key]: 'IE' }]])
+    expect(m.create).not.toHaveBeenCalled()
+    expect(m.update).not.toHaveBeenCalled()
+  })
+
+  it('guards manual confirmation while disabled and clears drafts on partner reset instead of inheriting a VAT-prefix country', async () => {
+    const source = { ...foreignPartner, dic: 'IE0000000A' }
+    const wrapper = track([source])
+    await wrapper.get('[data-testid="stereo-country-manual-toggle-0"]').trigger('click')
+    await wrapper.get('[data-testid="stereo-country-manual-select-0"]').setValue('IE')
+    await wrapper.setProps({ disabled: true })
+    expect(wrapper.get('[data-testid="stereo-country-manual-select-0"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="stereo-country-manual-confirm-0"]').attributes('disabled')).toBeDefined()
+    wrapper.getComponent(CountrySelect).vm.$emit('update:modelValue', 'DE')
+    await wrapper.get('[data-testid="stereo-country-manual-confirm-0"]').trigger('click')
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    await wrapper.setProps({ disabled: false })
+    expect((wrapper.get('[data-testid="stereo-country-manual-select-0"]').element as HTMLSelectElement).value).toBe('IE')
+    await wrapper.setProps({ partners: [{ ...source, name: 'Changed source company' }] })
+    expect(wrapper.find('[data-testid="stereo-country-manual-select-0"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="stereo-country-manual-toggle-0"]').trigger('click')
+    expect((wrapper.get('[data-testid="stereo-country-manual-select-0"]').element as HTMLSelectElement).value).toBe('')
+    expect(wrapper.get('[data-testid="stereo-country-manual-confirm-0"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+  })
+
+  it('blocks aggregate EU and pending-lookups, then uses the same collapse and undo flow for a manual confirmation', async () => {
+    const wrapper = track()
+    await wrapper.get('[data-testid="stereo-country-manual-toggle-0"]').trigger('click')
+    await wrapper.get('[data-testid="stereo-country-manual-select-0"]').setValue('EU')
+    expect(wrapper.get('[data-testid="stereo-country-manual-confirm-0"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-testid="stereo-country-manual-select-0"]').setValue('IE')
+    let resolve!: (value: typeof found) => void
+    m.lookup.mockImplementationOnce(() => new Promise(done => { resolve = done }))
+    await wrapper.get('[data-testid="stereo-country-lookup-0"]').trigger('click')
+    expect(wrapper.get('[data-testid="stereo-country-manual-confirm-0"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-testid="stereo-country-manual-confirm-0"]').trigger('click')
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    resolve(found)
+    await flushPromises()
+    await wrapper.get('[data-testid="stereo-country-manual-confirm-0"]').trigger('click')
+    await wrapper.setProps({ modelValue: wrapper.emitted('update:modelValue')?.at(-1)?.[0] as Record<string, string> })
+    expect(wrapper.find('[data-testid="stereo-country-body-0"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="stereo-country-confirmed-0"]').text()).toContain('country=IE')
+    await wrapper.get('[data-testid="stereo-country-undo-0"]').trigger('click')
+    await wrapper.setProps({ modelValue: wrapper.emitted('update:modelValue')?.at(-1)?.[0] as Record<string, string> })
+    expect(wrapper.find('[data-testid="stereo-country-body-0"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="stereo-country-manual-select-0"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="stereo-country-manual-toggle-0"]').trigger('click')
+    expect((wrapper.get('[data-testid="stereo-country-manual-select-0"]').element as HTMLSelectElement).value).toBe('')
   })
 })

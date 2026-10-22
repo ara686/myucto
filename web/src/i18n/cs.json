@@ -34232,7 +34232,11 @@
       "reload": "Načíst protistrany znovu",
       "loading_partners": "Načítám protistrany ze zálohy…",
       "expand": "Rozbalit",
-      "collapse": "Sbalit"
+      "collapse": "Sbalit",
+      "manual_toggle": "Vybrat zemi ručně",
+      "manual_country": "Země podle původního dokladu",
+      "manual_confirm": "Potvrdit zemi podle dokladu",
+      "manual_hint": "Zemi vyberte podle původního dokladu. Potvrzujete pouze zemi protistrany, nikoli její plátcovství ani daňové zařazení. Současný výsledek VIES nemusí odpovídat stavu v době historického dokladu."
     },
     "messages": {
       "detail_occurrences": "Počet výskytů: {count}",

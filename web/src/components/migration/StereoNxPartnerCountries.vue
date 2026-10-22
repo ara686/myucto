@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { clientsApi, type AresLookupResult } from '@/api/clients'
 import type { StereoCountryCandidate } from '@/api/stereoNx'
 import { btnOutline, ICONS } from '@/components/ui/buttonStyles'
+import CountrySelect from '@/components/ui/CountrySelect.vue'
 
 interface CountryProposal {
   companyName: string
@@ -31,6 +32,8 @@ const states = ref(new Map<string, LookupState>())
 const documentSections = ref(new Set<string>())
 const documentLimits = ref(new Map<string, number>())
 const cardOpen = ref(new Map<string, boolean>())
+const manualOpen = ref(new Set<string>())
+const manualDrafts = ref(new Map<string, string>())
 const cardId = `stereo-country-card-${useId()}`
 const EMPTY_STATE: LookupState = { pending: false, proposal: null, error: null }
 const DOCUMENT_PAGE_SIZE = 50
@@ -48,7 +51,13 @@ const rows = computed(() => props.partners.map(partner => ({
 const confirmations = computed(() => new Map(props.partners.map(partner => [partner.source_key, currentCountry(partner.source_key)])))
 watch(confirmations, (next, previous) => {
   const opened = new Map(cardOpen.value)
-  for (const [key, country] of next) if (country !== previous.get(key)) opened.delete(key)
+  for (const [key, country] of next) if (country !== previous.get(key)) {
+    opened.delete(key)
+    manualOpen.value = new Set([...manualOpen.value].filter(openKey => openKey !== key))
+    const drafts = new Map(manualDrafts.value)
+    drafts.delete(key)
+    manualDrafts.value = drafts
+  }
   cardOpen.value = opened
 }, { flush: 'sync' })
 
@@ -61,6 +70,28 @@ function currentCountry(key: string): string {
 }
 function toggleCard(key: string): void {
   cardOpen.value = new Map(cardOpen.value).set(key, cardOpen.value.get(key) !== true)
+}
+function toggleManual(key: string): void {
+  if (blocked.value) return
+  const opened = new Set(manualOpen.value)
+  if (opened.has(key)) opened.delete(key)
+  else opened.add(key)
+  manualOpen.value = opened
+  manualDrafts.value = new Map(manualDrafts.value).set(key, '')
+}
+function setManualCountry(key: string, value: string): void {
+  if (blocked.value || !manualOpen.value.has(key)) return
+  manualDrafts.value = new Map(manualDrafts.value).set(key, text(value).toUpperCase())
+}
+function validManualCountry(key: string): boolean {
+  const country = manualDrafts.value.get(key) ?? ''
+  return /^[A-Z]{2}$/.test(country) && country !== 'EU'
+}
+function confirmManual(partner: StereoCountryCandidate): void {
+  if (blocked.value || !manualOpen.value.has(partner.source_key) || !validManualCountry(partner.source_key)) return
+  const country = manualDrafts.value.get(partner.source_key)!
+  if (currentCountry(partner.source_key) === country) return
+  emit('update:modelValue', { ...props.modelValue, [partner.source_key]: country })
 }
 function eligible(partner: StereoCountryCandidate): boolean {
   const ico = text(partner.ico)
@@ -90,6 +121,8 @@ watch(() => props.partners, () => {
   documentSections.value = new Set()
   documentLimits.value = new Map()
   cardOpen.value = new Map()
+  manualOpen.value = new Set()
+  manualDrafts.value = new Map()
 }, { deep: true, flush: 'sync' })
 watch(() => props.disabled, disabled => {
   if (!disabled) return
@@ -210,11 +243,18 @@ function loadMoreDocuments(key: string): void {
         <div class="flex flex-wrap items-center gap-2">
           <button type="button" :class="btnOutline('primary')" class="whitespace-nowrap" :data-testid="`stereo-country-lookup-${index}`" :disabled="blocked || !row.eligible" @click="lookup(row.partner)"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path :d="ICONS.search" /></svg>{{ t(row.lookup.error && row.lookup.registry !== 'vies' ? 'stereo_nx.partner_countries.lookup_again' : 'stereo_nx.partner_countries.lookup') }}</button>
           <button type="button" :class="btnOutline('primary')" class="whitespace-nowrap" :data-testid="`stereo-country-vies-${index}`" :disabled="blocked || !row.viesEligible" @click="lookupVies(row.partner)"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path :d="ICONS.search" /></svg>{{ t(row.lookup.error && row.lookup.registry === 'vies' ? 'stereo_nx.partner_countries.vies_again' : 'stereo_nx.partner_countries.vies_lookup') }}</button>
+          <button type="button" :class="btnOutline('neutral')" class="whitespace-nowrap" :data-testid="`stereo-country-manual-toggle-${index}`" :aria-expanded="manualOpen.has(row.partner.source_key)" :disabled="blocked" @click="toggleManual(row.partner.source_key)"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path :d="ICONS.edit" /></svg>{{ t('stereo_nx.partner_countries.manual_toggle') }}</button>
         </div>
         <p v-if="!row.eligible && !row.viesEligible" class="text-xs text-neutral-600">{{ t(row.vat.startsWith('XI') ? 'stereo_nx.partner_countries.xi_unsupported' : 'stereo_nx.partner_countries.ineligible') }}</p>
         <p v-if="row.viesEligible" class="text-xs text-neutral-600">{{ t('stereo_nx.partner_countries.vies_hint') }}</p>
         <p v-if="row.lookup.pending" class="text-sm text-primary-700" role="status" :data-testid="`stereo-country-pending-${index}`">{{ t(row.lookup.registry === 'vies' ? 'stereo_nx.partner_countries.vies_loading' : 'stereo_nx.partner_countries.loading') }}</p>
         <p v-if="row.lookup.error" class="rounded-md border border-warning-500/30 bg-warning-50 px-3 py-2 text-sm text-warning-700" role="alert" :data-testid="`stereo-country-error-${index}`">{{ t(`stereo_nx.partner_countries.errors.${row.lookup.error}`) }}</p>
+        <div v-if="manualOpen.has(row.partner.source_key)" class="space-y-3 rounded-lg border border-neutral-200 bg-neutral-50 p-4">
+          <p class="text-sm text-neutral-600">{{ t('stereo_nx.partner_countries.manual_hint') }}</p>
+          <label class="block max-w-sm text-sm font-medium">{{ t('stereo_nx.partner_countries.manual_country') }}<CountrySelect :model-value="manualDrafts.get(row.partner.source_key) ?? ''" :disabled="blocked" :data-testid="`stereo-country-manual-select-${index}`" class="mt-1" @update:model-value="setManualCountry(row.partner.source_key, $event)" /></label>
+          <p v-if="validManualCountry(row.partner.source_key)" class="text-sm text-neutral-600">{{ t(row.partner.documents.length ? 'stereo_nx.partner_countries.scope' : 'stereo_nx.partner_countries.directory_scope', { count: row.partner.documents.length, country: manualDrafts.get(row.partner.source_key) }) }}</p>
+          <div class="flex flex-wrap gap-2"><button type="button" :class="btnOutline('success')" class="whitespace-nowrap" :data-testid="`stereo-country-manual-confirm-${index}`" :disabled="blocked || !validManualCountry(row.partner.source_key) || row.country === manualDrafts.get(row.partner.source_key)" @click="confirmManual(row.partner)"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path :d="ICONS.check" /></svg>{{ t('stereo_nx.partner_countries.manual_confirm') }}</button></div>
+        </div>
         <div v-if="row.lookup.proposal" class="space-y-3 rounded-lg border border-primary-500/30 bg-primary-50/30 p-4" :data-testid="`stereo-country-proposal-${index}`">
           <h4 class="text-sm font-semibold">{{ t(row.lookup.proposal.registry === 'vies' ? 'stereo_nx.partner_countries.vies_proposal_title' : 'stereo_nx.partner_countries.proposal_title') }}</h4>
           <dl class="grid gap-x-4 gap-y-3 text-sm sm:grid-cols-2">

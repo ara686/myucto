@@ -4,6 +4,7 @@ import StereoNxMigration from '../StereoNxMigration.vue'
 import MoneyS3Protocol from '@/components/migration/MoneyS3Protocol.vue'
 import StereoNxMessages from '@/components/migration/StereoNxMessages.vue'
 import StereoNxPartnerCountries from '@/components/migration/StereoNxPartnerCountries.vue'
+import CountrySelect from '@/components/ui/CountrySelect.vue'
 import type { StereoAccountMapping, StereoAccountMappingProposal, StereoCountryCandidate, StereoPartnerCountries } from '@/api/stereoNx'
 
 const m = vi.hoisted(() => ({
@@ -71,7 +72,7 @@ function primaryButton(wrapper: Awaited<ReturnType<typeof mountPage>>, key: stri
 }
 
 async function mountPage() {
-  const wrapper = mount(StereoNxMigration, { global: { stubs: { RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' } } } })
+  const wrapper = mount(StereoNxMigration, { global: { stubs: { CountrySelect: true, RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' } } } })
   await flushPromises()
   return wrapper
 }
@@ -135,6 +136,32 @@ beforeEach(() => {
 afterEach(() => vi.clearAllMocks())
 
 describe('Stereo NX migration wizard', () => {
+  it('allows explicitly confirming the document country when VIES does not confirm a historical foreign VAT ID', async () => {
+    const historicalPartner = { ...countryCandidate, ico: '', dic: 'IE0000000A', source_country: 'EMU' }
+    m.partnerCountries.mockResolvedValue([historicalPartner])
+    m.lookupVies.mockResolvedValue({ valid: false, source: 'rest', country: 'IE', vat_number: historicalPartner.dic })
+    const wrapper = await mountPage()
+    await openExisting(wrapper)
+    await primaryButton(wrapper, 'continue').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="stereo-country-vies-0"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="stereo-country-error-0"]').exists()).toBe(true)
+    expect(wrapper.getComponent(StereoNxPartnerCountries).props('modelValue')).toEqual({})
+    await wrapper.get('[data-testid="stereo-country-manual-toggle-0"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.getComponent(CountrySelect).props('modelValue')).toBe('')
+    wrapper.getComponent(CountrySelect).vm.$emit('update:modelValue', 'IE')
+    await flushPromises()
+    expect(wrapper.getComponent(StereoNxPartnerCountries).props('modelValue')).toEqual({})
+    await wrapper.get('[data-testid="stereo-country-manual-confirm-0"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.getComponent(StereoNxPartnerCountries).props('modelValue')).toEqual({ 'synthetic-vendor': 'IE' })
+    await rerunFromCountries(wrapper)
+    expect(m.jobs.get(1)?.[6]).toEqual({ 'synthetic-vendor': 'IE' })
+    wrapper.unmount()
+  })
+
   it('requires a successful read-only country preview before the dry-run and allows retrying it', async () => {
     m.partnerCountries.mockRejectedValueOnce(new Error('Synthetic preview failure')).mockResolvedValueOnce([])
     const wrapper = await mountPage()
