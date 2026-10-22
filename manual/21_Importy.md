@@ -868,6 +868,8 @@ Tlačítkem **Stáhnout protokol PDF** uložíte výsledek dokončené zkoušky 
 importu, včetně neúspěšného běhu. PDF obsahuje všechny uvedené počty včetně nul,
 zprávy, důvody ruční kontroly a rekonciliaci; není omezené filtrem tabulky.
 V aplikaci jsou skupiny upozornění a informací sbalené, chyby jsou rozbalené.
+Dlouhé titulky se zobrazují na jednom řádku s výpustkou; celý titulek ukáže
+najetí ukazatele a úplné zprávy najdete v rozbaleném detailu.
 Zprávy lze filtrovat podle závažnosti nebo vyhledávat podle čísla dokladu,
 textu zprávy či důvodu kontroly.
 Podrobnosti se zobrazují po 50 záznamech; tlačítkem **Zobrazit dalších** zobrazíte

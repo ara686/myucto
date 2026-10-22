@@ -74,10 +74,14 @@ function kind(message: StereoNxProtocolMessage): string {
       </div>
       <p v-if="!matches.length" class="rounded-md border border-neutral-200 px-4 py-3 text-sm text-neutral-600" role="status">{{ t('stereo_nx.messages.no_results') }}</p>
       <details v-for="match in matches" :key="match.group.key" :open="isOpen(match.group)" :data-message-code="match.group.code" :data-message-level="match.group.level" class="overflow-hidden rounded-lg border border-neutral-200 bg-surface" @toggle="toggle(match.group, $event)">
-        <summary class="cursor-pointer px-4 py-3 text-sm font-medium" :class="levelClass(match.group.level)">
-          <span class="inline-flex max-w-full flex-wrap items-center gap-x-3 gap-y-1 align-middle"><span class="shrink-0 rounded-full bg-surface/70 px-2 py-0.5 text-xs" data-testid="stereo-message-group-level">{{ t(`stereo_nx.level.${match.group.level}`) }}</span><span class="min-w-0 break-words">{{ title(match.group) }}</span><span class="shrink-0 rounded-full bg-surface/70 px-2 py-0.5 text-xs tabular-nums" data-testid="stereo-message-group-count">{{ match.group.count }}</span><span v-if="query.trim()" class="text-xs font-normal">{{ t('stereo_nx.messages.matching_details', { count: match.details.length }) }}</span></span>
+        <summary class="flex cursor-pointer list-none items-center gap-3 px-4 py-3 text-sm font-medium [&::-webkit-details-marker]:hidden" :class="levelClass(match.group.level)">
+          <svg class="h-4 w-4 shrink-0 transition-transform" :class="isOpen(match.group) ? '' : '-rotate-90'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path :d="ICONS.chevron" /></svg>
+          <span class="shrink-0 whitespace-nowrap rounded-full bg-surface/70 px-2 py-0.5 text-xs" data-testid="stereo-message-group-level">{{ t(`stereo_nx.level.${match.group.level}`) }}</span>
+          <span class="min-w-0 flex-1 truncate" :title="title(match.group)">{{ title(match.group) }}</span>
+          <span class="shrink-0 whitespace-nowrap rounded-full bg-surface/70 px-2 py-0.5 text-xs tabular-nums" data-testid="stereo-message-group-count">{{ match.group.count }}</span>
         </summary>
         <div v-if="isOpen(match.group)" class="space-y-3 p-4">
+          <p v-if="query.trim()" class="text-xs text-neutral-600">{{ t('stereo_nx.messages.matching_details', { count: match.details.length }) }}</p>
           <p v-if="match.group.count > match.group.detailOccurrences" class="rounded-md bg-neutral-50 px-3 py-2 text-xs text-neutral-600" data-testid="stereo-message-partial-details">{{ t('stereo_nx.messages.available_details', { count: match.group.count, details: match.group.details.length, occurrences: match.group.detailOccurrences }) }}</p>
           <ul v-if="match.details.length" class="divide-y divide-neutral-200">
             <li v-for="(message, index) in shown(match)" :key="index" class="py-3 first:pt-0 last:pb-0" data-testid="stereo-message-row">

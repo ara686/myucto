@@ -56,13 +56,12 @@ describe('Stereo NX message groups', () => {
     expect(stereoNxMessageGroupTitle(empty!, t, () => false)).toBe('Translated stereo_nx.messages.untitled')
   })
 
-  it('compacts only fallback titles to 160 Unicode characters and preserves the original message', () => {
+  it('normalizes fallback whitespace while preserving the full Unicode title for the tooltip', () => {
     const text = `  A long\n\n  fallback ${'😀'.repeat(170)}`
     const source = message('unknown', text)
     const [group] = groupStereoNxMessages([source])
     const title = stereoNxMessageGroupTitle(group!, key => key, () => false)
-    expect(Array.from(title)).toHaveLength(160)
-    expect(title).toBe(`${Array.from(`A long fallback ${'😀'.repeat(170)}`).slice(0, 157).join('')}...`)
+    expect(title).toBe(`A long fallback ${'😀'.repeat(170)}`)
     expect(group?.details[0]?.text).toBe(text)
     const translated = 'Known translated cause '.repeat(20)
     expect(stereoNxMessageGroupTitle(group!, () => translated, () => true)).toBe(translated)

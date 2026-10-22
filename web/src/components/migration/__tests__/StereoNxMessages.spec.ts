@@ -142,12 +142,11 @@ describe('StereoNxMessages', () => {
     expect(wrapper.findAll('[data-testid="stereo-message-row"]')).toHaveLength(1)
   })
 
-  it('keeps a long unknown cause compact while collapsed and preserves its entire detail after opening', async () => {
+  it('provides the full long title as a tooltip and preserves its entire detail after opening', async () => {
     const text = `Long\n\n  fallback message ${'😀'.repeat(180)}`
     const wrapper = component([message('long-unknown', text)])
-    const header = wrapper.get('details summary')
-    expect(header.text()).not.toContain('😀'.repeat(180))
-    expect(header.text()).toContain('...')
+    const title = wrapper.get('details summary [title]')
+    expect(title.attributes('title')).toBe(`Long fallback message ${'😀'.repeat(180)}`)
     expect(wrapper.findAll('[data-testid="stereo-message-row"]')).toHaveLength(0)
     expect(wrapper.props('messages')[0]?.text).toBe(text)
     const group = await openGroup(wrapper, 'long-unknown')

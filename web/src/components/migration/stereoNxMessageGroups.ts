@@ -54,8 +54,7 @@ export function stereoNxMessageGroupTitle(group: StereoNxMessageGroup, translate
   const fallback = group.summaries.find(message => message.text.trim())?.text
     || group.details.find(message => message.text.trim())?.text
   if (!fallback) return translate('stereo_nx.messages.untitled')
-  const title = Array.from(fallback.replace(/\s+/gu, ' ').trim())
-  return title.length > 160 ? `${title.slice(0, 157).join('')}...` : title.join('')
+  return fallback.replace(/\s+/gu, ' ').trim()
 }
 
 export function stereoNxMessageDocument(message: StereoNxProtocolMessage): string {
