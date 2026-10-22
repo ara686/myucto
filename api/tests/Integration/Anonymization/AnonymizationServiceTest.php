@@ -156,6 +156,71 @@ final class AnonymizationServiceTest extends TestCase
         $service->run(new AnonymizationOptions(source: $this->source, target: (string) $this->config->get('db.name')), static function (): void {});
     }
 
+    /**
+     * Chyba po kopii tabulek nesmí nechat rozpracovanou kopii a nesmí sáhnout na originál.
+     * Testy přepisů jednotlivých grafů běží přes anonymizeCopy() a tuhle vlastnost
+     * {@see AnonymizationService::run()} ověřuje jen tenhle test.
+     */
+    public function testFailureAfterCopyDropsPartialTargetAndKeepsSource(): void
+    {
+        $cloner = new DatabaseCloner($this->server);
+        $plan = $cloner->plan($this->testDatabase);
+        $cloner->copyTables($plan, $this->source, static function (): void {});
+        $this->seedSource();
+        $period = (int) $this->scalar($this->source, 'SELECT COALESCE(MIN(id), 0) FROM accounting_periods');
+        $this->server->exec('SET SESSION FOREIGN_KEY_CHECKS = 0');
+        $this->server->prepare("INSERT INTO nonprofit_tax_drafts (supplier_id, period_id, source_input_hash, header_json, created_by) VALUES (?, ?, ?, '{}', 1)")
+            ->execute([$this->supplierId, $period, str_repeat('a', 64)]);
+        $this->server->exec('SET SESSION FOREIGN_KEY_CHECKS = 1');
+        try {
+            (new AnonymizationService($this->config))->run(new AnonymizationOptions(source: $this->source, target: $this->target, seed: 'integration'), static function (): void {});
+            self::fail('Nepodporované stránkované posouzení musí kopii zastavit.');
+        } catch (\RuntimeException $e) {
+            self::assertStringContainsString('stránkovaného daňového posouzení', $e->getMessage());
+        }
+        $exists = $this->server->prepare('SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ?');
+        $exists->execute([$this->target]);
+        self::assertSame(0, (int) $exists->fetchColumn(), 'Rozpracovaná kopie se musí zahodit.');
+        self::assertSame(self::COMPANY, $this->scalar($this->source, 'SELECT company_name FROM clients WHERE id = ' . $this->clientId));
+    }
+
+    /**
+     * Anonymizace na místě dělá s kopií bez triggerů totéž co run() mezi kopií tabulek
+     * a triggery. Databázi s triggery ani živou databázi instance nepřepíše.
+     */
+    public function testAnonymizeCopyTransformsTriggerlessCopyAndRefusesLiveOrFinalizedDatabase(): void
+    {
+        $cloner = new DatabaseCloner($this->server);
+        $plan = $cloner->plan($this->testDatabase);
+        $cloner->copyTables($plan, $this->source, static function (): void {});
+        $this->seedSource();
+        $service = new AnonymizationService($this->config);
+        $report = $service->anonymizeCopy(new AnonymizationOptions(source: $this->source, target: $this->source, seed: 'integration'), static function (): void {});
+
+        self::assertGreaterThan(0, array_sum($report['changed_rows']));
+        $dump = $this->tableTexts($this->source, ['clients', 'client_bank_accounts', 'payroll_employees', 'activity_log', 'supplier', 'users']);
+        foreach ([self::COMPANY, self::PERSON, self::EMAIL, self::ACCOUNT, $this->ico, $this->birthNumber] as $needle) {
+            self::assertStringNotContainsString($needle, $dump, "V kopii zůstal originální údaj {$needle}.");
+        }
+        $history = json_encode($this->server->query('SELECT description FROM ' . DatabaseCloner::quote($this->source) . '.journal_entries FOR SYSTEM_TIME ALL')->fetchAll(PDO::FETCH_COLUMN), JSON_UNESCAPED_UNICODE);
+        self::assertStringNotContainsString(self::EMAIL, $history);
+        self::assertSame('0', $this->scalar($this->source, 'SELECT COUNT(*) FROM sessions'));
+        self::assertNotFalse($this->scalar($this->source, "SELECT v FROM app_meta WHERE k = 'anonymized_clone'"));
+        self::assertTrue((new ActivityLogHashChain(new Connection($this->targetConfig($this->source))))->verify()['ok']);
+        self::assertSame([], TriggerMetadata::read($this->server, $this->source), 'Triggery zakládá až run().');
+
+        $cloner->finalize($plan, $this->source);
+        try {
+            $service->anonymizeCopy(new AnonymizationOptions(source: $this->source, target: $this->source), static function (): void {});
+            self::fail('Dokončenou databázi s triggery přepsat nesmí.');
+        } catch (\RuntimeException $e) {
+            self::assertStringContainsString('triggery', $e->getMessage());
+        }
+        $this->expectException(\InvalidArgumentException::class);
+        $live = (string) $this->config->get('db.name');
+        $service->anonymizeCopy(new AnonymizationOptions(source: $live, target: $live), static function (): void {});
+    }
+
     private function seedSource(): void
     {
         $pdo = $this->server;

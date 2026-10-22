@@ -80,78 +80,11 @@ final class AnonymizationService
 
         try {
             $cloner->copyTables($plan, $options->target, $log);
-            $protectedRows = CloneProtectedRows::create($pdo, $options->target);
-            $captureConnection = Connection::withoutSharedTestConnection(fn () => new Connection($this->targetConfig($options->target)));
-            try {
-                $payrollInputs = PayrollCostCenterCloneScrubber::capture($captureConnection);
-                $settlementInputs = SettlementCloneScrubber::captureInputs($captureConnection);
-                $securitiesDebtInputs = SecuritiesDebt504CloneScrubber::captureInputs($captureConnection);
-                $frameworkConversionInputs = FrameworkConversionCloneScrubber::captureInputs($captureConnection);
-                $capitalInputs = CapitalCloneScrubber::capture($captureConnection);
-                $membershipInputs = MembershipCloneScrubber::capture($captureConnection);
-                // Stránkované posouzení J6 nemá typový přepis grafu; kopie se zastaví dřív,
-                // než by jeho otisky zůstaly k pseudonymizovaným podkladům neplatné.
-                foreach (['nonprofit_tax_drafts', 'nonprofit_tax_snapshot_manifests', 'nonprofit_tax_calculation_manifests', 'nonprofit_tax_source_evidence_manifests'] as $pagedTable) {
-                    if ($captureConnection->pdo()->query('SELECT 1 FROM ' . $pagedTable . ' LIMIT 1')->fetchColumn() !== false) {
-                        throw new \RuntimeException('Anonymizace stránkovaného daňového posouzení neziskové organizace není podporována. Zdrojová databáze zůstala zachovaná.');
-                    }
-                }
-                $log('Zachytávám finanční archivy DPPO 504…');
-                $archiveCount = NonprofitDppoArchiveCloneCapture::capture($captureConnection, $protectedRows);
-                NonprofitTaxSavingsCloneScrubber::capture($captureConnection);
-                $dppoInputs = NonprofitDppoCloneScrubber::capture($captureConnection);
-                $nonprofitInputs = NonprofitFundingCloneScrubber::capture($captureConnection);
-            }
-            finally { $captureConnection->close(); }
-            $report = $this->anonymize($pdo, $options, $log, $protectedRows);
-            $log('Vypínám odchozí integrace…');
-            foreach (AnonymizationPolicy::POST_SQL as $sql) {
-                $pdo->exec($sql);
-            }
-            LegacyCostCenterCloneScrubber::run($pdo, $this->scrubber);
-            $payrollConnection = Connection::withoutSharedTestConnection(fn () => new Connection($this->targetConfig($options->target)));
-            try { PayrollCostCenterCloneScrubber::run($payrollConnection, $this->scrubber, $payrollInputs); } finally { $payrollConnection->close(); }
-            (new JointAllocationCloneScrubber($pdo, $this->scrubber))->run();
-            $registryMap = (new PropertyCloneScrubber($pdo, $this->scrubber))->run();
-            $versionMap = (new ChargesCloneScrubber($pdo, $this->scrubber))->run($registryMap);
-            $targetConnection = Connection::withoutSharedTestConnection(fn () => new Connection($this->targetConfig($options->target)));
-            try {
-                $issuanceMap = (new IssuanceCloneScrubber($targetConnection, $this->scrubber))->run($registryMap, $versionMap);
-                $paymentMap = (new PaymentsCloneScrubber($targetConnection, $this->scrubber))->run($issuanceMap,$registryMap,$settlementInputs);
-                (new ReceivablesCloneScrubber($targetConnection, $this->scrubber))->run($registryMap, $issuanceMap, $paymentMap);
-                SecuritiesDebt504CloneScrubber::run($targetConnection, $this->scrubber, $securitiesDebtInputs);
-                AccountDefinitionCloneScrubber::run($targetConnection, $this->scrubber);
-                FrameworkConversionCloneScrubber::run($targetConnection, $this->scrubber, $frameworkConversionInputs);
-                CapitalCloneScrubber::run($targetConnection, $this->scrubber, $capitalInputs);
-                $legalHashes = NonprofitDppoCloneScrubber::runProfiles($targetConnection, $this->scrubber, $dppoInputs);
-                MembershipCloneScrubber::run($targetConnection, $this->scrubber, $membershipInputs, $legalHashes);
-                NonprofitFundingCloneScrubber::run($targetConnection, $this->scrubber, $nonprofitInputs, $legalHashes);
-                $log('Přepisuji finanční archivy DPPO 504…');
-                $archivedSubmissions = (new NonprofitDppoArchiveCloneAdapter($targetConnection, $this->scrubber, $protectedRows))->run();
-                NonprofitTaxSavingsCloneScrubber::run($targetConnection, $this->scrubber);
-                $transport = (new TaxSubmissionTransportCloneScrubber($targetConnection))->run($archivedSubmissions);
-            } finally {
-                $targetConnection->close();
-            }
-            $protectedRows->drop();
-            $this->resealAuditChain($options->target, $log);
-            foreach ($plan['system_versioned'] as $table) {
-                $pdo->exec('DELETE HISTORY FROM ' . DatabaseCloner::quote($table));
-            }
+            $transformed = $this->transform($pdo, $options, $plan['system_versioned'], $log);
+            $report = $transformed['report'];
             $log('Zakládám pohledy, triggery a rutiny…');
             $cloner->finalize($plan, $options->target);
-            $pdo->prepare('REPLACE INTO app_meta (k, v) VALUES (?, ?)')->execute([
-                self::MARKER_KEY,
-                (string) json_encode([
-                    'created_at' => gmdate('c'),
-                    'tool' => 'anonymize-clone',
-                    'financial_archive' => [
-                        'archives' => $archiveCount,
-                        'submissions' => $transport['count'],
-                        'transport_root' => $transport['root'],
-                    ],
-                ], JSON_UNESCAPED_SLASHES),
-            ]);
+            $this->writeMarker($pdo, $transformed['archives'], $transformed['transport']);
         } catch (\Throwable $e) {
             $pdo->exec('DROP DATABASE IF EXISTS ' . DatabaseCloner::quote($options->target));
             throw $e;
@@ -175,6 +108,134 @@ final class AnonymizationService
         $report['seconds'] = round(microtime(true) - $started, 1);
 
         return $report;
+    }
+
+    /**
+     * Anonymizuje na místě kopii, kterou už {@see DatabaseCloner::copyTables()} založil
+     * a která ještě nemá triggery: zachycení, pseudonymizace, přepisy grafů, nové
+     * zapečetění auditní stopy a smazání historie proběhnou přesně jako v {@see run()}.
+     * Nekopíruje, nezakládá triggery a nesrovnává s originálem (kontrola úniků).
+     *
+     * Slouží testům přepisů jednotlivých grafů, kterým stačí kopie bez zakládání
+     * dalších databází. Cílem nesmí být databáze, se kterou instance pracuje.
+     *
+     * @param callable(string):void $log
+     * @return array{truncated:int, changed_rows:array<string,int>, dictionary:int, archives:int, submissions:int}
+     */
+    public function anonymizeCopy(AnonymizationOptions $options, callable $log): array
+    {
+        $target = $options->target;
+        $live = (string) $this->config->get('db.name', '');
+        if (!AnonymizationOptions::isSafeDatabaseName($target)
+            || ($live !== '' && strcasecmp($live, $target) === 0)
+            || in_array(strtolower($target), ['mysql', 'information_schema', 'performance_schema', 'sys'], true)) {
+            throw new \InvalidArgumentException("Databázi {$target} nelze anonymizovat na místě.");
+        }
+        $pdo = $this->serverPdo();
+        $cloner = new DatabaseCloner($pdo);
+        $plan = $cloner->plan($target);
+        if ($plan['triggers'] !== [] || $plan['views'] !== []) {
+            throw new \RuntimeException("Databáze {$target} už má triggery nebo pohledy, není to kopie před dokončením.");
+        }
+        $problems = $this->coverageProblems($pdo, $target);
+        if ($problems !== []) {
+            throw new \RuntimeException("Politika anonymizace nepokrývá strukturu databáze:\n  " . implode("\n  ", $problems));
+        }
+        // Stejný stav spojení, v jakém transformaci zanechá DatabaseCloner::copyTables().
+        $pdo->exec('USE ' . DatabaseCloner::quote($target));
+        $pdo->exec('SET SESSION FOREIGN_KEY_CHECKS = 0');
+        $transformed = $this->transform($pdo, $options, $plan['system_versioned'], $log);
+        $this->writeMarker($pdo, $transformed['archives'], $transformed['transport']);
+
+        return $transformed['report'] + ['archives' => $transformed['archives'], 'submissions' => $transformed['transport']['count']];
+    }
+
+    /**
+     * Vše mezi kopií tabulek a založením triggerů. Spojení musí stát v cílové databázi.
+     *
+     * @param list<string> $systemVersioned
+     * @param callable(string):void $log
+     * @return array{report:array{truncated:int, changed_rows:array<string,int>, dictionary:int}, archives:int, transport:array{count:int, root:?string}}
+     */
+    private function transform(PDO $pdo, AnonymizationOptions $options, array $systemVersioned, callable $log): array
+    {
+        $protectedRows = CloneProtectedRows::create($pdo, $options->target);
+        $captureConnection = Connection::withoutSharedTestConnection(fn () => new Connection($this->targetConfig($options->target)));
+        try {
+            $payrollInputs = PayrollCostCenterCloneScrubber::capture($captureConnection);
+            $settlementInputs = SettlementCloneScrubber::captureInputs($captureConnection);
+            $securitiesDebtInputs = SecuritiesDebt504CloneScrubber::captureInputs($captureConnection);
+            $frameworkConversionInputs = FrameworkConversionCloneScrubber::captureInputs($captureConnection);
+            $capitalInputs = CapitalCloneScrubber::capture($captureConnection);
+            $membershipInputs = MembershipCloneScrubber::capture($captureConnection);
+            // Stránkované posouzení J6 nemá typový přepis grafu; kopie se zastaví dřív,
+            // než by jeho otisky zůstaly k pseudonymizovaným podkladům neplatné.
+            foreach (['nonprofit_tax_drafts', 'nonprofit_tax_snapshot_manifests', 'nonprofit_tax_calculation_manifests', 'nonprofit_tax_source_evidence_manifests'] as $pagedTable) {
+                if ($captureConnection->pdo()->query('SELECT 1 FROM ' . $pagedTable . ' LIMIT 1')->fetchColumn() !== false) {
+                    throw new \RuntimeException('Anonymizace stránkovaného daňového posouzení neziskové organizace není podporována. Zdrojová databáze zůstala zachovaná.');
+                }
+            }
+            $log('Zachytávám finanční archivy DPPO 504…');
+            $archiveCount = NonprofitDppoArchiveCloneCapture::capture($captureConnection, $protectedRows);
+            NonprofitTaxSavingsCloneScrubber::capture($captureConnection);
+            $dppoInputs = NonprofitDppoCloneScrubber::capture($captureConnection);
+            $nonprofitInputs = NonprofitFundingCloneScrubber::capture($captureConnection);
+        }
+        finally { $captureConnection->close(); }
+        $report = $this->anonymize($pdo, $options, $log, $protectedRows);
+        $log('Vypínám odchozí integrace…');
+        foreach (AnonymizationPolicy::POST_SQL as $sql) {
+            $pdo->exec($sql);
+        }
+        LegacyCostCenterCloneScrubber::run($pdo, $this->scrubber);
+        $payrollConnection = Connection::withoutSharedTestConnection(fn () => new Connection($this->targetConfig($options->target)));
+        try { PayrollCostCenterCloneScrubber::run($payrollConnection, $this->scrubber, $payrollInputs); } finally { $payrollConnection->close(); }
+        (new JointAllocationCloneScrubber($pdo, $this->scrubber))->run();
+        $registryMap = (new PropertyCloneScrubber($pdo, $this->scrubber))->run();
+        $versionMap = (new ChargesCloneScrubber($pdo, $this->scrubber))->run($registryMap);
+        $targetConnection = Connection::withoutSharedTestConnection(fn () => new Connection($this->targetConfig($options->target)));
+        try {
+            $issuanceMap = (new IssuanceCloneScrubber($targetConnection, $this->scrubber))->run($registryMap, $versionMap);
+            $paymentMap = (new PaymentsCloneScrubber($targetConnection, $this->scrubber))->run($issuanceMap,$registryMap,$settlementInputs);
+            (new ReceivablesCloneScrubber($targetConnection, $this->scrubber))->run($registryMap, $issuanceMap, $paymentMap);
+            SecuritiesDebt504CloneScrubber::run($targetConnection, $this->scrubber, $securitiesDebtInputs);
+            AccountDefinitionCloneScrubber::run($targetConnection, $this->scrubber);
+            FrameworkConversionCloneScrubber::run($targetConnection, $this->scrubber, $frameworkConversionInputs);
+            CapitalCloneScrubber::run($targetConnection, $this->scrubber, $capitalInputs);
+            $legalHashes = NonprofitDppoCloneScrubber::runProfiles($targetConnection, $this->scrubber, $dppoInputs);
+            MembershipCloneScrubber::run($targetConnection, $this->scrubber, $membershipInputs, $legalHashes);
+            NonprofitFundingCloneScrubber::run($targetConnection, $this->scrubber, $nonprofitInputs, $legalHashes);
+            $log('Přepisuji finanční archivy DPPO 504…');
+            $archivedSubmissions = (new NonprofitDppoArchiveCloneAdapter($targetConnection, $this->scrubber, $protectedRows))->run();
+            NonprofitTaxSavingsCloneScrubber::run($targetConnection, $this->scrubber);
+            $transport = (new TaxSubmissionTransportCloneScrubber($targetConnection))->run($archivedSubmissions);
+        } finally {
+            $targetConnection->close();
+        }
+        $protectedRows->drop();
+        $this->resealAuditChain($options->target, $log);
+        foreach ($systemVersioned as $table) {
+            $pdo->exec('DELETE HISTORY FROM ' . DatabaseCloner::quote($table));
+        }
+
+        return ['report' => $report, 'archives' => $archiveCount, 'transport' => $transport];
+    }
+
+    /** @param array{count:int, root:?string} $transport */
+    private function writeMarker(PDO $pdo, int $archives, array $transport): void
+    {
+        $pdo->prepare('REPLACE INTO app_meta (k, v) VALUES (?, ?)')->execute([
+            self::MARKER_KEY,
+            (string) json_encode([
+                'created_at' => gmdate('c'),
+                'tool' => 'anonymize-clone',
+                'financial_archive' => [
+                    'archives' => $archives,
+                    'submissions' => $transport['count'],
+                    'transport_root' => $transport['root'],
+                ],
+            ], JSON_UNESCAPED_SLASHES),
+        ]);
     }
 
     /**
