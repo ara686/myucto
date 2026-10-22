@@ -33,9 +33,10 @@ final class StereoNxAccountingImporter
         private readonly PayrollMigrationModuleSetup $payrollSetup,
         private readonly StereoNxReconciler $reconciler,
         private readonly AccountingUnitSwitch $accountingUnit,
+        private readonly StereoNxAccountMappingService $accountMapping,
     ) {}
 
-    public function run(StereoNxBackup $backup, int $supplierId, int $userId, bool $dryRun, bool $blankCountryIsCz = false): array
+    public function run(StereoNxBackup $backup, int $supplierId, int $userId, bool $dryRun, bool $blankCountryIsCz = false, ?array $accountMapping = null): array
     {
         $report = ['ok' => false, 'dry_run' => $dryRun, 'database_writes' => false,
             'accounting_mode' => 'double_entry', 'preflight' => [], 'errors' => [], 'warnings' => [],
@@ -77,6 +78,18 @@ final class StereoNxAccountingImporter
                 'documents' => $this->accountingDocuments->prepare($backup, $blankCountryIsCz, $calendar),
                 'payments' => $this->accountingPayments->prepare($backup, $calendar),
             ];
+            $accountMapping = StereoNxAccountMappingService::configuration($accountMapping);
+            if ($accountMapping !== null) {
+                $plans['journal'] = (new StereoNxAccountMappingPlan())->apply($plans['journal'], $accountMapping, $plans['payments']);
+                $plans['journal'] = $this->accountMapping->resolveExistingTargets($plans['journal'], $supplierId,
+                    $backup->companyIdentity()['ico'], $backup->companyIndex());
+                $accountMapping = $plans['journal']['account_mapping'];
+                array_push($plans['journal']['warnings'], ...$this->accountMapping->validateTargets($plans['journal'], $supplierId));
+                $plans['journal']['account_mapping_names'] = StereoNxAccountMappingService::targetNames($plans['journal'], $plans['payments'], $accountMapping);
+                $plans['payments'] = $this->accountMapping->preparePayments($plans['payments'], $accountMapping, $supplierId);
+                $plans['documents'] = StereoNxAccountingDocuments::withAccountMapping($plans['documents'], $plans['journal']);
+                $report['account_mapping'] = $accountMapping;
+            }
             // Samostatný převod osob stále hlásí mzdy jako nepřevzaté. V účetním
             // převodu už měsíce posoudí a spočítá modul historických mezd.
             $plans['employees']['warnings'] = array_values(array_filter(
@@ -185,6 +198,9 @@ final class StereoNxAccountingImporter
                     'inventory' => $this->inventoryWriter, 'documents' => $this->accountingDocuments,
                     'payments' => $this->accountingPayments] as $key => $module) {
                     $result = $module->write($plans[$key], $supplierId, $userId);
+                    if ($key === 'journal' && $accountMapping !== null) {
+                        $this->accountMapping->applySettings($accountMapping, $supplierId, $identity['ico'], $backup->companyIndex(), $plans['journal']);
+                    }
                     foreach ($result['written'] ?? $result['counts'] ?? $result as $counter => $value) {
                         if (is_int($value)) $report['written'][$counter] = $value;
                     }

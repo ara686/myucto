@@ -3033,6 +3033,7 @@ final class Routes
         $app->get    ('/api/admin/imports/stereo-nx/uploads/{token:[a-f0-9]{32}}', [\MyInvoice\Action\Admin\Import\StereoNxMigrationAction::class, 'show']);
         $app->post   ('/api/admin/imports/stereo-nx/uploads/{token:[a-f0-9]{32}}/preview', [\MyInvoice\Action\Admin\Import\StereoNxMigrationAction::class, 'preview']);
         $app->post   ('/api/admin/imports/stereo-nx/uploads/{token:[a-f0-9]{32}}/company-profile', [\MyInvoice\Action\Admin\Import\StereoNxMigrationAction::class, 'fillCompanyProfile']);
+        $app->post   ('/api/admin/imports/stereo-nx/uploads/{token:[a-f0-9]{32}}/account-mapping', [\MyInvoice\Action\Admin\Import\StereoNxMigrationAction::class, 'accountMapping']);
         $app->post   ('/api/admin/imports/stereo-nx/uploads/{token:[a-f0-9]{32}}/run', [\MyInvoice\Action\Admin\Import\StereoNxMigrationAction::class, 'run']);
         $app->get    ('/api/admin/imports/stereo-nx/uploads/{token:[a-f0-9]{32}}/runs/{id:[0-9]+}', [\MyInvoice\Action\Admin\Import\StereoNxMigrationAction::class, 'result']);
         $app->get    ('/api/admin/imports/stereo-nx/uploads/{token:[a-f0-9]{32}}/runs/{id:[0-9]+}/pdf', [\MyInvoice\Action\Admin\Import\StereoNxMigrationAction::class, 'resultPdf']);

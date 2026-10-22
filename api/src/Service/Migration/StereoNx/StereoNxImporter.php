@@ -768,10 +768,12 @@ final class StereoNxImporter
                 $this->writer->insertIssuedItem($documentId, MigratedDocumentItem::issued(
                     $description, $quantity, $unit, $unitPrice, $rateId, $rate, $base, $vat, $gross, $code,
                     OssMigrationPolicy::DOMESTIC_COLUMNS,
+                    revenueAccountCode: $item['target_revenue_account_code'] ?? $item['revenue_account_code'] ?? null,
                 ), $i);
             } else {
                 $this->writer->insertPurchaseItem($documentId, MigratedDocumentItem::purchase(
                     $description, $quantity, $unit, $unitPrice, $rateId, $rate, $base, $vat, $gross, $code,
+                    expenseAccountCode: $item['target_expense_account_code'] ?? $item['expense_account_code'] ?? null,
                 ), $i);
             }
         }
@@ -814,10 +816,14 @@ final class StereoNxImporter
         $registered = (new BankAccountRegistrar($this->db, $this->bankAccounts))->register($ctx['supplier_id'], [
             $key => ['number' => $number, 'bank' => (string) ($record['bank_code'] ?? ''),
                 'iban' => (string) ($record['iban'] ?? ''), 'currency' => (string) ($record['currency'] ?? 'CZK'),
-                'label' => (string) ($record['label'] ?? 'Stereo NX'), 'suffix' => null],
+                'label' => (string) ($record['label'] ?? 'Stereo NX'), 'suffix' => $record['target_analytic_suffix'] ?? null],
         ]);
         $id = $registered[$key] ?? null;
         if ($id === null) throw new StereoNxException('bank_account_conflict', 'Vlastní bankovní účet nelze bezpečně přiřadit vybrané firmě.');
+        if (isset($record['target_analytic_suffix'])
+            && ($this->bankAccounts->find($ctx['supplier_id'], $id)['analytic_suffix'] ?? null) !== $record['target_analytic_suffix']) {
+            throw new StereoNxException('account_mapping_bank_collision', 'Bankovní účet nemohl získat potvrzenou analytiku.');
+        }
         $this->put($ctx, 'bank_account', $key, $hash, $id);
         $ctx['ids']['bank_account'][$key] = $id;
     }
@@ -1117,6 +1123,12 @@ final class StereoNxImporter
         // Ověřené korunové částky cizoměnového dokladu jsou součástí identity zdroje.
         // Změna těchto důkazů musí zastavit opakovaný převod před vrácením starého mapování.
         unset($record['row'], $record['header']);
+        // Potvrzené cílové účty jsou výsledek převodu, nikoli změna zdrojové zálohy.
+        unset($record['target_analytic_suffix']);
+        foreach ($record['items'] ?? [] as $index => $item) {
+            unset($record['items'][$index]['target_expense_account_code'],
+                $record['items'][$index]['target_revenue_account_code']);
+        }
         if ($omitDefaultDocumentFields) {
             // Kompatibilní otisk první verze plánu, která tato odvozená pole neměla.
             // Odlišná měna, kurz nebo dobropis v otisku naopak zůstávají.

@@ -834,6 +834,9 @@ import je přiřadí podle částek pouze tehdy, když existuje jediné úplné 
 Nejednoznačný nebo příliš rozsáhlý rozpis zůstane s upozorněním k ručnímu
 doplnění před další úpravou či zaúčtováním. Totéž platí pro více možných
 analytik pohledávek či závazků v nativních předkontacích.
+Starší doložené importní vazby se nepřejmenovávají. Existuje-li vedle dříve
+převzatého účtu bez tečky také jeho nativní varianta s tečkou, mapování se
+zastaví a vyžádá sjednocení vazeb. Tyto účty se neslučují automaticky.
 
 Souhrn zkoušky i importu zobrazuje počty v tabulkách. U podporovaných agend
 porovnáte sloupce **Ve zdroji**, **K převodu**, **Nepřevedeno** a **Ke kontrole**;

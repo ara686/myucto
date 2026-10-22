@@ -9,6 +9,7 @@ use MyInvoice\Action\Settings\SettingsAction;
 use MyInvoice\Infrastructure\Database\TransactionFailure;
 use MyInvoice\Service\Migration\StereoNx\StereoNxCompanyCompatibility;
 use MyInvoice\Service\Migration\StereoNx\StereoNxCompanyProfile;
+use MyInvoice\Service\Migration\StereoNx\StereoNxAccountMappingService;
 use MyInvoice\Http\Json;
 use MyInvoice\Http\SupplierGuard;
 use MyInvoice\Infrastructure\Config\RuntimePaths;
@@ -55,6 +56,7 @@ final class StereoNxMigrationAction
         private readonly LoggerInterface $log,
         private readonly SettingsAction $settings,
         private readonly StereoNxRunReportStore $runReports,
+        private readonly StereoNxAccountMappingService $accountMapping,
         private readonly StereoNxProtocolPdfRenderer $protocolPdf,
     ) {}
 
@@ -217,12 +219,35 @@ final class StereoNxMigrationAction
     }
 
     /**
-     * Ověří zálohu, firmu v ní a cílovou firmu a spustí zkoušku nanečisto nebo převod jako
-     * job na pozadí ({@see StereoNxImportJobService}). Stav jde přes společné
-     * GET /api/admin/imports/{id}, výsledek po doběhnutí přes {@see result()}.
+     * Navrhne cíle skutečně použitých účtů bez zápisu do cílové firmy.
      *
      * @param array<string,string> $args
      */
+    public function accountMapping(Request $request, Response $response, array $args): Response
+    {
+        if ($denied = $this->deny($request, $response)) return $denied;
+        $body = (array) ($request->getParsedBody() ?? []);
+        $company = filter_var($body['company'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]);
+        if (!is_int($company) || (isset($body['match_bank_account_series']) && !is_bool($body['match_bank_account_series']))) {
+            return Json::error($response, 'invalid_selection', 'Vyberte firmu a platné přiřazení bankovních řad.', 422);
+        }
+        try {
+            $sid = SupplierGuard::currentId($request);
+            $this->ready($sid, $args['token'], $this->userId($request));
+            $backup = StereoNxBackup::open(StereoNxUploads::archive($sid, $args['token']), $company, $this->password($request))
+                ->withBankAccountSeriesMatching(($body['match_bank_account_series'] ?? false) === true);
+            $target = $this->target($sid);
+            StereoNxCompanyCompatibility::assertAccountingMode($backup->companyIdentity(), $target['accounting_mode']);
+            if ($target['accounting_mode'] !== 'double_entry' || $backup->companyIdentity()['ico'] !== $target['ico']) {
+                return Json::error($response, 'target_mismatch', 'Mapování účtů vyžaduje shodnou firmu v podvojném účetnictví.', 422);
+            }
+            return Json::ok($response, $this->accountMapping->propose($backup, $sid));
+        } catch (StereoNxException $e) {
+            return $this->error($response, $e);
+        }
+    }
+
+    /** @param array<string,string> $args */
     public function run(Request $request, Response $response, array $args): Response
     {
         if ($denied = $this->deny($request, $response)) return $denied;
@@ -238,6 +263,7 @@ final class StereoNxMigrationAction
             return Json::error($response, 'invalid_selection', 'Vyberte firmu a režim převodu.', 422);
         }
         try {
+            $accountMapping = StereoNxAccountMappingService::configuration($body['account_mapping'] ?? null);
             $sid = SupplierGuard::currentId($request);
             $uid = $this->userId($request);
             $token = $args['token'];
@@ -249,6 +275,9 @@ final class StereoNxMigrationAction
             $identity = $backup->companyIdentity();
             $target = $this->target($sid);
             StereoNxCompanyCompatibility::assertAccountingMode($identity, $target['accounting_mode']);
+            if ($accountMapping !== null && $target['accounting_mode'] !== 'double_entry') {
+                return Json::error($response, 'account_mapping_invalid', 'Mapování účtů je dostupné jen pro podvojné účetnictví.', 422);
+            }
             if ($identity['ico'] !== $target['ico'] || !in_array($target['accounting_mode'], ['tax_evidence', 'double_entry'], true) || !$identity['vat_payer'] || !$target['vat_payer']) {
                 return Json::error($response, 'target_mismatch', 'Firma musí mít shodné IČO a být plátcem DPH v režimu daňové evidence nebo podvojného účetnictví.', 422);
             }
@@ -263,6 +292,7 @@ final class StereoNxMigrationAction
             if ($mode === 'import' && (($state['dry_run_company'] ?? null) !== $company
                 || ($state['dry_run_blank_country_is_cz'] ?? null) !== $blankCountryIsCz
                 || ($state['dry_run_match_bank_account_series'] ?? false) !== $matchBankAccountSeries
+                || ($state['dry_run_account_mapping_hash'] ?? StereoNxAccountMappingService::fingerprint(null)) !== StereoNxAccountMappingService::fingerprint($accountMapping)
                 || ($state['dry_run_accounting_mode'] ?? 'tax_evidence') !== $target['accounting_mode'])) {
                 return Json::error($response, 'dry_run_required', 'Před převodem spusťte úspěšnou zkoušku nanečisto pro zvolenou firmu.', 409);
             }
@@ -282,7 +312,8 @@ final class StereoNxMigrationAction
             }
         }
         $params = ['token' => $token, 'company' => $company, 'mode' => $mode, 'blank_country_is_cz' => $blankCountryIsCz,
-            'match_bank_account_series' => $matchBankAccountSeries, 'sha256' => $hash, 'accounting_mode' => $target['accounting_mode']];
+            'match_bank_account_series' => $matchBankAccountSeries, 'sha256' => $hash, 'accounting_mode' => $target['accounting_mode'],
+            'account_mapping' => $accountMapping];
         if ($password !== null) {
             $params['password_enc'] = $this->secrets->encryptFor($password, StereoNxImportJobService::passwordContext($sid, $token));
         }

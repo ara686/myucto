@@ -235,7 +235,10 @@ final class StereoNxAccountingWriter
             (string) $identity['ico'],
             $companyIndex,
             $stats,
+            $prepared['account_mapping']['accounts'] ?? [],
+            $prepared['account_mapping_names'] ?? [],
         );
+        $targetIds = $this->targetAccountIds($plan, $prepared['account_mapping_names'] ?? [], $supplierId, $stats, $prepared['account_mapping'] ?? []);
         $periods = $this->preparePeriods(
             $plan['entries'] ?? [],
             $supplierId,
@@ -254,29 +257,32 @@ final class StereoNxAccountingWriter
                 $accountIds,
                 $periods,
                 $stats,
+                $targetIds,
             );
         }
         return $stats;
     }
 
     /** @param list<array<string,mixed>> $chart @param array<string,int> $stats @return array<string,int> */
-    private function writeChart(array $chart, int $supplierId, string $ico, int $companyIndex, array &$stats): array
+    private function writeChart(array $chart, int $supplierId, string $ico, int $companyIndex, array &$stats, array $mapping = [], array $names = []): array
     {
         usort($chart, static fn (array $a, array $b): int => strlen((string) $a['code']) <=> strlen((string) $b['code']) ?: strcmp((string) $a['code'], (string) $b['code']));
         $ids = [];
         foreach ($this->accounts->codeToIdMap($supplierId) as $code => $row) {
             $ids[$code] = (int) $row['id'];
         }
+        $parents = $ids;
         foreach ($chart as $source) {
             $code = (string) ($source['code'] ?? '');
-            $targetCode = ImportedAccountCode::normalize($code);
+            $targetCode = $mapping[$code] ?? ImportedAccountCode::normalize($code);
             $hash = (string) ($source['source_hash'] ?? '');
             $mapped = $this->mapped($supplierId, $ico, $companyIndex, self::MAP_ACCOUNT, $code, $hash);
             if ($mapped !== null) {
                 $target = $this->accounts->findById($supplierId, $mapped);
                 // Starší převody uchovaly kód bez tečky. Doložená vazba je nadále
                 // platná; opakovaný import nesmí přejmenovat účet ani vytvořit nový.
-                if ($target === null || !in_array((string) $target['account_code'], [$code, $targetCode], true)) {
+                $allowed = array_key_exists($code, $mapping) ? [$targetCode] : [$code, $targetCode];
+                if ($target === null || !in_array((string) $target['account_code'], $allowed, true)) {
                     throw new StereoNxException('mapped_target_changed', 'Dříve převedený účet byl změněn nebo odstraněn.');
                 }
                 $ids[$code] = $mapped;
@@ -284,21 +290,51 @@ final class StereoNxAccountingWriter
                 continue;
             }
 
-            if ($code !== $targetCode && isset($ids[$code])) {
+            if (!array_key_exists($code, $mapping) && $code !== $targetCode && isset($ids[$code])) {
                 throw new StereoNxException('account_code_normalization_conflict',
                     "Účet {$code} už v cílové osnově existuje bez importní vazby. Před převodem na {$targetCode} vyřešte jeho přiřazení.");
             }
             $existing = $this->accounts->findByCode($supplierId, $targetCode);
             if ($existing === null) {
-                $existing = $this->createAccount(array_replace($source, ['code' => $targetCode]), $supplierId, $ids);
+                $existing = $this->createAccount(array_replace($source,
+                    ['code' => $targetCode, 'name' => $names[$targetCode] ?? $source['name']]), $supplierId, $parents);
                 $stats['accounts_created']++;
             } else {
                 $stats['accounts_existing']++;
             }
             $id = (int) $existing['id'];
+            $parents[$targetCode] = $id;
             $ids[$code] = $id;
             $this->alignTaxDeductibility($supplierId, $id, $source, (string) $existing['account_type']);
             $this->map->put($supplierId, $ico, $companyIndex, self::MAP_ACCOUNT, $code, $hash, $id);
+        }
+        return $ids;
+    }
+
+    /** Cíle rozdělených bankovních a DPH kontací nemusí mít vlastní zdrojový účet. */
+    private function targetAccountIds(array $plan, array $names, int $supplierId, array &$stats, array $configuration): array
+    {
+        $chart = [];
+        foreach ($plan['chart'] ?? [] as $source) $chart[$source['code']] = $source;
+        $ids = array_map(static fn (array $row): int => (int) $row['id'], $this->accounts->codeToIdMap($supplierId));
+        foreach ($plan['entries'] ?? [] as $entry) {
+            foreach (['debit', 'credit'] as $side) {
+                $code = $entry['target_' . $side] ?? null;
+                if ($code === null || isset($ids[$code])) continue;
+                $source = $chart[$entry[$side]] ?? null;
+                if ($source === null) throw new StereoNxException('journal_account_missing', 'Chybí zdrojový účet pro cílovou kontaci.');
+                $account = $this->createAccount(array_replace($source,
+                    ['code' => $code, 'name' => $names[$code] ?? $source['name']]), $supplierId, $ids);
+                $ids[$code] = (int) $account['id'];
+                $stats['accounts_created']++;
+            }
+        }
+        foreach ([...array_values($configuration['bank_accounts'] ?? []), ...array_values($configuration['vat'] ?? [])] as $code) {
+            if ($code === null || isset($ids[$code])) continue;
+            $account = $this->createAccount(['code' => $code, 'name' => $names[$code] ?? 'Účet ' . $code,
+                'source_type' => 'R'], $supplierId, $ids);
+            $ids[$code] = (int) $account['id'];
+            $stats['accounts_created']++;
         }
         return $ids;
     }
@@ -527,7 +563,7 @@ final class StereoNxAccountingWriter
      * @param array<int,array<string,mixed>> $periods
      * @param array<string,int> $stats
      */
-    private function writeEntry(array $entry, int $supplierId, int $userId, string $ico, int $companyIndex, array $accountIds, array $periods, array &$stats): void
+    private function writeEntry(array $entry, int $supplierId, int $userId, string $ico, int $companyIndex, array $accountIds, array $periods, array &$stats, array $targetIds = []): void
     {
         $key = (string) $entry['source_key'];
         $hash = (string) $entry['source_hash'];
@@ -539,8 +575,8 @@ final class StereoNxAccountingWriter
         if ($amountCents <= 0) {
             throw new StereoNxException('journal_amount_unsupported', 'Kontace nemá kladnou podporovanou částku.');
         }
-        $debitId = $accountIds[$debit] ?? null;
-        $creditId = $accountIds[$credit] ?? null;
+        $debitId = isset($entry['target_debit']) ? ($targetIds[$entry['target_debit']] ?? null) : ($accountIds[$debit] ?? null);
+        $creditId = isset($entry['target_credit']) ? ($targetIds[$entry['target_credit']] ?? null) : ($accountIds[$credit] ?? null);
         if ($debitId === null || $creditId === null) {
             throw new StereoNxException('journal_account_missing', 'Kontace odkazuje na účet, který nebyl převeden.');
         }

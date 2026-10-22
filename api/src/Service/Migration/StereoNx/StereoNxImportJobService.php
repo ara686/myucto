@@ -100,6 +100,7 @@ final class StereoNxImportJobService extends AbstractImportJobService
         $matchBankAccountSeries = ($params['match_bank_account_series'] ?? false) === true;
         $hash = (string) ($params['sha256'] ?? '');
         $accountingMode = (string) ($params['accounting_mode'] ?? 'tax_evidence');
+        $accountMapping = $params['account_mapping'] ?? null;
 
         try {
             $password = isset($params['password_enc'])
@@ -122,13 +123,15 @@ final class StereoNxImportJobService extends AbstractImportJobService
         try {
             $backup = StereoNxBackup::open(StereoNxUploads::archive($supplierId, $token), $company, $password)
                 ->withBankAccountSeriesMatching($matchBankAccountSeries);
-            $report = StereoNxUploads::locked($supplierId, $token, function (array $locked) use ($jobId, $supplierId, $userId, $token, $company, $mode, $dryRun, $backup, $hash, $blankCountryIsCz, $matchBankAccountSeries, $accountingMode): array {
+            $accountMapping = StereoNxAccountMappingService::configuration($accountMapping);
+            $report = StereoNxUploads::locked($supplierId, $token, function (array $locked) use ($jobId, $supplierId, $userId, $token, $company, $mode, $dryRun, $backup, $hash, $blankCountryIsCz, $matchBankAccountSeries, $accountingMode, $accountMapping): array {
                 if (($locked['status'] ?? '') !== 'ready' || $hash === '' || !hash_equals((string) ($locked['sha256'] ?? ''), $hash)) {
                     throw new StereoNxException('upload_changed', 'Nahraná záloha se změnila.');
                 }
                 if ($mode === 'import' && (($locked['dry_run_company'] ?? null) !== $company
                     || ($locked['dry_run_blank_country_is_cz'] ?? null) !== $blankCountryIsCz
                     || ($locked['dry_run_match_bank_account_series'] ?? false) !== $matchBankAccountSeries
+                    || ($locked['dry_run_account_mapping_hash'] ?? StereoNxAccountMappingService::fingerprint(null)) !== StereoNxAccountMappingService::fingerprint($accountMapping)
                     || ($locked['dry_run_accounting_mode'] ?? 'tax_evidence') !== $accountingMode)) {
                     throw new StereoNxException('dry_run_required', 'Před převodem spusťte úspěšnou zkoušku nanečisto.');
                 }
@@ -137,17 +140,21 @@ final class StereoNxImportJobService extends AbstractImportJobService
                     'double_entry' => $this->accountingImporter,
                     default => throw new StereoNxException('target_mismatch', 'Nepodporovaný režim účetnictví.'),
                 };
-                $report = $importer->run($backup, $supplierId, $userId, $dryRun, $blankCountryIsCz);
+                $report = $accountingMode === 'double_entry'
+                    ? $this->accountingImporter->run($backup, $supplierId, $userId, $dryRun, $blankCountryIsCz, $accountMapping)
+                    : $importer->run($backup, $supplierId, $userId, $dryRun, $blankCountryIsCz);
                 if ($dryRun) {
                     $locked['dry_run_company'] = ($report['ok'] ?? false) === true ? $company : null;
                     $locked['dry_run_accounting_mode'] = ($report['ok'] ?? false) === true ? $accountingMode : null;
                     $locked['dry_run_blank_country_is_cz'] = ($report['ok'] ?? false) === true ? $blankCountryIsCz : null;
                     $locked['dry_run_match_bank_account_series'] = ($report['ok'] ?? false) === true ? $matchBankAccountSeries : null;
+                    $locked['dry_run_account_mapping_hash'] = ($report['ok'] ?? false) === true ? StereoNxAccountMappingService::fingerprint($accountMapping) : null;
                 } else {
                     $locked['dry_run_company'] = null;
                     $locked['dry_run_accounting_mode'] = null;
                     $locked['dry_run_blank_country_is_cz'] = null;
                     $locked['dry_run_match_bank_account_series'] = null;
+                    $locked['dry_run_account_mapping_hash'] = null;
                     $locked['imported_at'] = time();
                 }
                 StereoNxUploads::save($supplierId, $token, $locked);
