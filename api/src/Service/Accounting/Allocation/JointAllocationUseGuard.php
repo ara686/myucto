@@ -50,7 +50,7 @@ final class JointAllocationUseGuard
         $paymentReference = \MyInvoice\Service\Property\Payments\PaymentUseGuard::entryReferenceSql();
         $assetReserveEvidence = \MyInvoice\Service\Accounting\Closing\AssetReserveSourceRepository::assignmentEvidenceSql();
         $capitalEvidence = \MyInvoice\Service\Nonprofit\Capital\CapitalUseGuard::assignmentEvidenceSql();
-        $current = $pdo->prepare("SELECT l.id, e.id AS entry_id, e.period_id, c.batch_id AS source_batch_id, b.id AS allocation_batch_id, x.id AS cancellation_id, ({$paymentReference}) AS property_payment_in_use, ({$assetReserveEvidence}) AS asset_reserve_evidence_exists, ({$capitalEvidence}) AS capital_evidence_exists
+        $current = $pdo->prepare(\MyInvoice\Infrastructure\Database\SubqueryCache::OFF."SELECT l.id, e.id AS entry_id, e.period_id, c.batch_id AS source_batch_id, b.id AS allocation_batch_id, x.id AS cancellation_id, ({$paymentReference}) AS property_payment_in_use, ({$assetReserveEvidence}) AS asset_reserve_evidence_exists, ({$capitalEvidence}) AS capital_evidence_exists
             FROM journal_entry_lines l JOIN journal_entries e ON e.id = l.entry_id AND e.supplier_id = l.supplier_id
             LEFT JOIN joint_allocation_source_claims c ON c.line_id = l.id AND c.supplier_id = l.supplier_id
             LEFT JOIN joint_allocation_batches b ON b.journal_entry_id = e.id AND b.supplier_id = e.supplier_id

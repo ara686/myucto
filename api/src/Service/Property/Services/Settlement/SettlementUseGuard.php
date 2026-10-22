@@ -28,12 +28,12 @@ final class SettlementUseGuard
     }
     public function assertEntriesMutable(int $supplier,array $ids):void
     {
-        $this->transaction();foreach(array_chunk(array_values(array_unique($ids)),500) as $chunk){$row=$this->one('SELECT e.id FROM journal_entries e WHERE e.supplier_id=? AND e.id IN ('.implode(',',array_fill(0,count($chunk),'?')).') AND ('.self::entryReferenceSql().') ORDER BY e.id FOR UPDATE',[$supplier,...$chunk]);if($row)self::rejectEntry((int)$row['id']);}
+        $this->transaction();foreach(array_chunk(array_values(array_unique($ids)),500) as $chunk){$row=$this->one(\MyInvoice\Infrastructure\Database\SubqueryCache::OFF.'SELECT e.id FROM journal_entries e WHERE e.supplier_id=? AND e.id IN ('.implode(',',array_fill(0,count($chunk),'?')).') AND ('.self::entryReferenceSql().') ORDER BY e.id FOR UPDATE',[$supplier,...$chunk]);if($row)self::rejectEntry((int)$row['id']);}
     }
     public function mutableAssignmentEntries(int $supplier,array $lineIds):array
     {
         $this->transaction();if($lineIds===[])return [];
-        $rows=$this->rows('SELECT DISTINCT e.id,('.self::entryReferenceSql().') AS settlement_used FROM journal_entry_lines l JOIN journal_entries e ON e.supplier_id=l.supplier_id AND e.id=l.entry_id WHERE l.supplier_id=? AND l.id IN ('.implode(',',array_fill(0,count($lineIds),'?')).') ORDER BY e.id FOR UPDATE',[$supplier,...$lineIds]);
+        $rows=$this->rows(\MyInvoice\Infrastructure\Database\SubqueryCache::OFF.'SELECT DISTINCT e.id,('.self::entryReferenceSql().') AS settlement_used FROM journal_entry_lines l JOIN journal_entries e ON e.supplier_id=l.supplier_id AND e.id=l.entry_id WHERE l.supplier_id=? AND l.id IN ('.implode(',',array_fill(0,count($lineIds),'?')).') ORDER BY e.id FOR UPDATE',[$supplier,...$lineIds]);
         foreach($rows as $row)if((int)$row['settlement_used']!==0)self::rejectEntry((int)$row['id']);
         return array_map(fn($row)=>(int)$row['id'],$rows);
     }

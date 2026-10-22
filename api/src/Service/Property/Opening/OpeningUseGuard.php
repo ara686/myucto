@@ -13,7 +13,7 @@ final class OpeningUseGuard
     public function assertDescriptionMutable(int $supplier,int $entry):void
     {
         (new \MyInvoice\Service\Property\Payments\PaymentLocks($this->db))->acquire($supplier);
-        $q=$this->db->pdo()->prepare('SELECT e.id FROM journal_entries e WHERE e.supplier_id=? AND e.id=? AND ('.self::entryReferenceSql().') FOR UPDATE');$q->execute([$supplier,$entry]);if($q->fetchColumn()!==false)throw new \MyInvoice\Service\Accounting\PostingException('property_opening_owner_required','Počáteční stav lze změnit jen doloženou revizí převzetí.',409);
+        $q=$this->db->pdo()->prepare(\MyInvoice\Infrastructure\Database\SubqueryCache::OFF.'SELECT e.id FROM journal_entries e WHERE e.supplier_id=? AND e.id=? AND ('.self::entryReferenceSql().') FOR UPDATE');$q->execute([$supplier,$entry]);if($q->fetchColumn()!==false)throw new \MyInvoice\Service\Accounting\PostingException('property_opening_owner_required','Počáteční stav lze změnit jen doloženou revizí převzetí.',409);
     }
     public function assertGenericJournal(array $header):void
     {
@@ -26,7 +26,7 @@ final class OpeningUseGuard
         $q=$this->db->pdo()->prepare('SELECT journal_entry_id FROM property_opening_batches WHERE supplier_id=? AND id=? FOR UPDATE');$q->execute([$supplier,$batch]);$entry=(int)$q->fetchColumn();
         (new \MyInvoice\Service\Accounting\Allocation\JointAllocationUseGuard($this->db))->assertEntriesMutable($supplier,[$entry]);
         $q=$this->db->pdo()->prepare('SELECT e.id FROM journal_entries e WHERE e.supplier_id=? AND e.id=? AND ('.\MyInvoice\Service\Property\Payments\PaymentUseGuard::externalOpeningReferencesSql().') FOR UPDATE');$q->execute([$supplier,$entry]);if($q->fetchColumn()!==false)OpeningException::reject('external_source_use');
-        $q=$this->db->pdo()->prepare('SELECT e.id FROM journal_entries e WHERE e.supplier_id=? AND e.id=? AND ('.\MyInvoice\Service\Property\Services\Settlement\SettlementUseGuard::entryReferenceSql().') FOR UPDATE');$q->execute([$supplier,$entry]);if($q->fetchColumn()!==false)OpeningException::reject('already_used');
+        $q=$this->db->pdo()->prepare(\MyInvoice\Infrastructure\Database\SubqueryCache::OFF.'SELECT e.id FROM journal_entries e WHERE e.supplier_id=? AND e.id=? AND ('.\MyInvoice\Service\Property\Services\Settlement\SettlementUseGuard::entryReferenceSql().') FOR UPDATE');$q->execute([$supplier,$entry]);if($q->fetchColumn()!==false)OpeningException::reject('already_used');
         $queries=[
             "SELECT a.id FROM unit_payment_allocations a JOIN unit_payment_operations o ON o.id=a.operation_id AND o.supplier_id=a.supplier_id JOIN unit_payment_debts d ON d.id=a.debt_id AND d.supplier_id=a.supplier_id JOIN property_opening_items i ON i.id=d.opening_item_id AND i.supplier_id=d.supplier_id WHERE i.supplier_id=? AND i.batch_id=? AND o.status='posted' ORDER BY a.id FOR UPDATE",
             "SELECT e.id FROM unit_credit_events e JOIN unit_payment_operations o ON o.id=e.operation_id AND o.supplier_id=e.supplier_id JOIN unit_credit_lots c ON c.id=e.credit_id AND c.supplier_id=e.supplier_id JOIN property_opening_items i ON i.id=c.opening_item_id AND i.supplier_id=c.supplier_id WHERE i.supplier_id=? AND i.batch_id=? AND o.status='posted' ORDER BY e.id FOR UPDATE",

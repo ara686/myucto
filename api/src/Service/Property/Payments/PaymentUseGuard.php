@@ -24,7 +24,7 @@ final class PaymentUseGuard
             $marks=implode(',',array_fill(0,count($chunk),'?'));
             $from=$lines?'journal_entry_lines l JOIN journal_entries e ON e.id=l.entry_id AND e.supplier_id=l.supplier_id':'journal_entries e';
             $id=$lines?'l.id':'e.id';
-            $q=$this->db->pdo()->prepare("SELECT e.id FROM {$from} WHERE e.supplier_id=? AND {$id} IN ({$marks}) AND (".self::entryReferenceSql().") ORDER BY e.id FOR UPDATE");
+            $q=$this->db->pdo()->prepare(\MyInvoice\Infrastructure\Database\SubqueryCache::OFF."SELECT e.id FROM {$from} WHERE e.supplier_id=? AND {$id} IN ({$marks}) AND (".self::entryReferenceSql().") ORDER BY e.id FOR UPDATE");
             $q->execute([$supplier,...$chunk]);if($q->fetchColumn()!==false)self::reject();
         }
     }

@@ -126,6 +126,18 @@ final class PostingService
     /** @var array<int, array<string,string>> per-request cache supplier_id => [syntetika => jediná analytika]. */
     private array $singleAnalyticCache = [];
 
+    /**
+     * Mapa přesměru čtená aktuálním čtením (`FOR UPDATE`) v probíhající transakci.
+     * Zámky drží řádky osnovy a historie definic až do konce transakce, takže je jiná
+     * transakce nezmění. Změnu vlastní transakcí i konec transakce pozná čítač
+     * {@see \MyInvoice\Infrastructure\Database\LoggingPdo::tableWriteCount()}.
+     *
+     * @var array{key:string, writes:string, map:array<string,string>}|null
+     */
+    private ?array $currentAnalyticMemo = null;
+
+    private const SINGLE_ANALYTIC_TABLES = ['chart_of_accounts', 'accounting_account_definition_history', 'accounting_supplier_settings'];
+
     /** @var array<string,string> per-request cache "supplierId|code" => výsledný nedaňový účet. */
     private array $nonDeductibleAccountCache = [];
 
@@ -3141,11 +3153,20 @@ final class PostingService
         if (!$currentRead && isset($this->singleAnalyticCache[$cacheKey])) {
             return $this->singleAnalyticCache[$cacheKey];
         }
+        $pdo = $this->db->pdo();
+        $writes = null;
+        if ($currentRead && $pdo instanceof \MyInvoice\Infrastructure\Database\LoggingPdo && $pdo->statementsTracked() && $pdo->inTransaction()) {
+            $writes = implode('|', array_map($pdo->tableWriteCount(...), self::SINGLE_ANALYTIC_TABLES));
+            $memo = $this->currentAnalyticMemo;            if ($memo !== null && $memo['key'] === $cacheKey && $memo['writes'] === $writes) {
+                return $memo['map'];
+            }
+        }
         if (!$this->singleAnalyticRedirectEnabled($supplierId)) {
-            return $currentRead ? [] : ($this->singleAnalyticCache[$cacheKey] = []);
+            if (!$currentRead) return $this->singleAnalyticCache[$cacheKey] = [];
+            return $this->rememberCurrentAnalyticMap($cacheKey, $writes, []);
         }
         $excluded = implode(', ', array_fill(0, count(self::CONTEXT_DRIVEN_SYNTHETICS), '?'));
-        $stmt = $this->db->pdo()->prepare(
+        $stmt = $this->db->pdo()->prepare(\MyInvoice\Infrastructure\Database\SubqueryCache::OFF .
             "SELECT p.account_code AS synthetic, MIN(c.account_code) AS analytic
                FROM " . \MyInvoice\Repository\AccountDefinitionRepository::relation($date, $supplierId, $currentRead) . " p
                JOIN " . \MyInvoice\Repository\AccountDefinitionRepository::relation($date, $supplierId, $currentRead) . " c
@@ -3166,7 +3187,17 @@ final class PostingService
             $map[(string) $row['synthetic']] = (string) $row['analytic'];
         }
 
-        return $currentRead ? $map : ($this->singleAnalyticCache[$cacheKey] = $map);
+        return $currentRead ? $this->rememberCurrentAnalyticMap($cacheKey, $writes, $map) : ($this->singleAnalyticCache[$cacheKey] = $map);
+    }
+
+    /**
+     * @param array<string,string> $map
+     * @return array<string,string>
+     */
+    private function rememberCurrentAnalyticMap(string $cacheKey, ?string $writes, array $map): array
+    {
+        $this->currentAnalyticMemo = $writes === null ? null : ['key' => $cacheKey, 'writes' => $writes, 'map' => $map];
+        return $map;
     }
 
     /**

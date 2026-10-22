@@ -80,6 +80,7 @@ final class LoggingPdo extends PDO
     {
         $ok = parent::beginTransaction();
         if ($ok) $this->transactions->boundary(parent::inTransaction());
+        $this->bumpTableWrites();
         return $ok;
     }
 
@@ -99,6 +100,7 @@ final class LoggingPdo extends PDO
 
     public function commit(): bool
     {
+        $this->bumpTableWrites();
         $result = parent::commit();
         if ($result) $this->transactions->boundary(parent::inTransaction());
         $callbacks = $this->afterCommit;
@@ -111,6 +113,7 @@ final class LoggingPdo extends PDO
     public function rollBack(): bool
     {
         $this->afterCommit = [];
+        $this->bumpTableWrites();
         $ok = parent::rollBack();
         if ($ok) $this->transactions->boundary(parent::inTransaction());
         return $ok;
@@ -129,6 +132,7 @@ final class LoggingPdo extends PDO
             } elseif ($attribute === PDO::ATTR_AUTOCOMMIT && (!$before || !parent::inTransaction())) {
                 $this->transactions->boundary(parent::inTransaction());
             }
+            if ($attribute === PDO::ATTR_AUTOCOMMIT) $this->bumpTableWrites();
         }
     }
 
@@ -147,11 +151,53 @@ final class LoggingPdo extends PDO
     private function noteTransactionFailure(string $sql, bool $before, ?array $errorInfo = null): void
     {
         $this->transactions->failedStatement($sql, $before, parent::inTransaction(), $errorInfo);
+        // Deadlock nebo vypršený zámek mohou transakci odvolat: nic přečteného dřív neplatí.
+        $this->bumpTableWrites();
     }
 
     private function noteTransactionStatement(string $sql, bool $before): void
     {
         $this->transactions->statement($sql, $before, parent::inTransaction());
+        $this->noteTableWrites($sql);
+    }
+
+    private function noteTableWrites(string $sql): void
+    {
+        if ($this->tableWrites === []) {
+            return;
+        }
+        // Hranice transakce, rollback a DDL (implicitní commit) mění všechno.
+        if (preg_match('/^\s*(?:ROLLBACK|COMMIT|BEGIN|START|XA|ALTER|DROP|CREATE|RENAME|TRUNCATE|LOCK|UNLOCK|SET\s+(?:SESSION\s+|LOCAL\s+|@@(?:SESSION\.)?)?(?:AUTOCOMMIT|TRANSACTION))\b/i', $sql) === 1) {
+            $this->bumpTableWrites();
+            return;
+        }
+        if (preg_match('/^\s*(?:INSERT|REPLACE|UPDATE|DELETE|LOAD|CALL)\b/i', $sql) !== 1) {
+            return;
+        }
+        foreach ($this->tableWrites as $table => $count) {
+            if (stripos($sql, $table) !== false) $this->tableWrites[$table] = $count + 1;
+        }
+    }
+
+    private function bumpTableWrites(): void
+    {
+        foreach ($this->tableWrites as $table => $count) $this->tableWrites[$table] = $count + 1;
+    }
+
+    /** @var array<string,int> sledovaná tabulka => počet příkazů, které ji mohly změnit */
+    private array $tableWrites = [];
+
+    /**
+     * Čítač příkazů, které mohly změnit tabulku: zápis, který ji zmiňuje, a každá hranice
+     * transakce (begin, commit, rollback i k savepointu, DDL). Slouží k bezpečnému
+     * znovupoužití výsledku čteného s `FOR UPDATE` v téže transakci: dokud se čítač
+     * nezmění, transakce i data, která drží zamčená, zůstaly stejné. Počítá se až od
+     * prvního dotazu na tabulku, proto se porovnává jen se stavem zjištěným dřív.
+     */
+    public function tableWriteCount(string $table): int
+    {
+        $table = strtolower($table);
+        return $this->tableWrites[$table] ??= 0;
     }
 
     private function noteSchemaStatement(string $sql): void

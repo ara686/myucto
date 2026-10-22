@@ -18,5 +18,5 @@ final class FundingUseGuard
     public static function assertChargeMutable(Connection $db,int $supplier,int $charge):void
     {$q=$db->pdo()->prepare("SELECT fc.operation_id FROM property_funding_claims fc JOIN unit_charge_lines cl ON cl.supplier_id=fc.supplier_id AND cl.id=fc.source_id WHERE fc.supplier_id=? AND fc.source_kind='issued' AND cl.charge_id=? LIMIT 1 FOR UPDATE");$q->execute([$supplier,$charge]);if($q->fetchColumn()!==false)FundingException::reject('source_owned');}
     public static function assertEntriesMutable(Connection $db,int $supplier,array $ids):void
-    {if($ids===[])return;$q=$db->pdo()->prepare('SELECT e.id FROM journal_entries e WHERE e.supplier_id=? AND e.id IN ('.implode(',',array_fill(0,count($ids),'?')).') AND ('.self::entryReferenceSql().') LIMIT 1 FOR UPDATE');$q->execute([$supplier,...$ids]);if($q->fetchColumn()!==false)FundingException::reject('source_owned');}
+    {if($ids===[])return;$q=$db->pdo()->prepare(\MyInvoice\Infrastructure\Database\SubqueryCache::OFF.'SELECT e.id FROM journal_entries e WHERE e.supplier_id=? AND e.id IN ('.implode(',',array_fill(0,count($ids),'?')).') AND ('.self::entryReferenceSql().') LIMIT 1 FOR UPDATE');$q->execute([$supplier,...$ids]);if($q->fetchColumn()!==false)FundingException::reject('source_owned');}
 }
