@@ -27,6 +27,7 @@ final class FrameworkConversionWorkflowTest extends TestCase
         }
         $this->actor=(int)$p->query('SELECT id FROM users ORDER BY id LIMIT 1')->fetchColumn();self::assertGreaterThan(0,$this->actor);
         $variant='base';foreach(['ProfitTuple','CustomAnalytic','Offbalance','PendingRelease','Foreign'] as $name)if(str_contains($this->name(),$name))$variant=$name;
+        // FrameworkConversionCloneTest a HttpTest si třídu berou přes reflexi jako fixturu.
         if(!$this->preparedByPhpunit()){$p->beginTransaction();$this->closedSource($variant);if($variant==='Foreign')$this->foreignRates();return;}
         $converted=in_array($this->name(),self::CONVERTED,true);
         $data=$this->sharedFixture($p,$variant.($converted?'+converted':''),function()use($variant,$converted):array{
@@ -37,9 +38,6 @@ final class FrameworkConversionWorkflowTest extends TestCase
         $this->supplier=$data['supplier'];$this->source=$data['source'];$this->target=$data['target'];$this->converted=$data['converted']??null;
         if($variant==='Foreign')$this->foreignRates();
     }
-    /** FrameworkConversionCloneTest si třídu bere přes reflexi jako fixturu: tehdy vše postaru v jeho transakci, bez sdílení a konverze. */
-    private function preparedByPhpunit():bool
-    {foreach(debug_backtrace(DEBUG_BACKTRACE_PROVIDE_OBJECT) as $frame)if(($frame['function']??'')==='prepareTest'&&($frame['object']??null)===$this)return true;return false;}
     /** Kurzy jsou globální číselník: do sdílené fixture se necommitují, test si je vloží ve své transakci. */
     private function foreignRates():void
     {$this->db->pdo()->exec("INSERT INTO exchange_rates(rate_date,currency_code,rate) VALUES('2025-12-31','EUR',25),('2026-12-31','EUR',26) ON DUPLICATE KEY UPDATE rate=VALUES(rate)");}

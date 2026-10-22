@@ -46,6 +46,18 @@ trait SharedClassFixture
         return self::$sharedFixtures[$key]['data'];
     }
 
+    /**
+     * Volá setUp() PHPUnit pro tento test? Jiné testy si třídu berou přes reflexi jako
+     * fixturu (vlastní transakce, vlastní dodavatel) a musí dostat původní chování.
+     */
+    private function preparedByPhpunit(): bool
+    {
+        foreach (debug_backtrace(DEBUG_BACKTRACE_PROVIDE_OBJECT) as $frame) {
+            if (($frame['function'] ?? '') === 'prepareTest' && ($frame['object'] ?? null) === $this) return true;
+        }
+        return false;
+    }
+
     public static function tearDownAfterClass(): void
     {
         if (self::$sharedFixtures === []) return;
