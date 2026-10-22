@@ -18,7 +18,7 @@ final class AccountingFrameworkMigrationRuntimeTest extends TestCase
     private string $database;
     private string $rootDir;
     private Config $config;
-    private const MIGRATION = '2074_supplier_accounting_frameworks.sql';
+    private const MIGRATION = '2078_supplier_accounting_frameworks.sql';
 
     protected function setUp(): void
     {

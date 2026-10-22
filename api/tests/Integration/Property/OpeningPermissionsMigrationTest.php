@@ -16,7 +16,7 @@ use Slim\Psr7\Factory\ServerRequestFactory;
 
 final class OpeningPermissionsMigrationTest extends TestCase
 {
-    private const MIGRATION = '2091_property_opening.sql';
+    private const MIGRATION = '2095_property_opening.sql';
     private const KEYS = ['property.opening.manage', 'property.opening.post', 'property.opening.revise'];
     private ?PDO $server = null;
     private ?Connection $db = null;

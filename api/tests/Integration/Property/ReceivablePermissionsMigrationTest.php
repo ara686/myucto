@@ -16,7 +16,7 @@ use Slim\Psr7\Factory\ServerRequestFactory;
 
 final class ReceivablePermissionsMigrationTest extends TestCase
 {
-    private const MIGRATION = '2090_property_receivable_permissions.sql';
+    private const MIGRATION = '2094_property_receivable_permissions.sql';
     private const KEYS = ['property.receivables.manage', 'property.receivables.confirm', 'property.receivables.certificates'];
     private ?PDO $server = null;
     private ?Connection $db = null;

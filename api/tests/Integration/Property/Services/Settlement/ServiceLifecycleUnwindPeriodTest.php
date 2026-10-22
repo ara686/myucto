@@ -165,7 +165,7 @@ final class ServiceLifecycleUnwindPeriodTest extends TestCase
         };
         $count = fn () => (int)$this->db->pdo()->query('SELECT COUNT(*) FROM property_service_policy_versions WHERE supplier_id='.$f['supplier'])->fetchColumn();
 
-        $sql = file_get_contents(dirname(__DIR__, 6).'/db/migrations/2113_property_service_policy_versions.sql');
+        $sql = file_get_contents(dirname(__DIR__, 6).'/db/migrations/2117_property_service_policy_versions.sql');
         $statement = substr($sql, strpos($sql, 'INSERT IGNORE INTO property_service_policy_versions'));
 
         $raw($units[0], '2025-01-01', '2025-12-31', 'service_profit_and_loss');

@@ -10,7 +10,7 @@ use PHPUnit\Framework\TestCase;
 
 final class PaymentPermissionsMigrationTest extends TestCase
 {
-    private const MIGRATION = '2086_property_payment_permissions.sql';
+    private const MIGRATION = '2090_property_payment_permissions.sql';
     private ?PDO $server = null;
     private string $database = '';
 

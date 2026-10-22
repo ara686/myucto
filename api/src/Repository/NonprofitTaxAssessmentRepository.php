@@ -113,7 +113,7 @@ final class NonprofitTaxAssessmentRepository
             unset($row[$key . '_json']);
         }
         // Výslovně převedené legacy posouzení nese nový otisk stránkovaného grafu, ale jeho
-        // původní JSON zůstává bajtově stejný (hlídá trigger 2087). Legacy čtenáři proto
+        // původní JSON zůstává bajtově stejný (hlídá trigger v migraci 2129). Legacy čtenáři proto
         // dostávají původní otisk, aby převod nezměnil výsledek DPPO ani ověření financování.
         if (($row['storage_version'] ?? null) === 'paged_v2' && is_string($row['legacy_input_hash'] ?? null)) {
             $row['input_hash'] = $row['legacy_input_hash'];

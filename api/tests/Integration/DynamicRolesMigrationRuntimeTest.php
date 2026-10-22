@@ -135,12 +135,12 @@ final class DynamicRolesMigrationRuntimeTest extends TestCase
                 '1747_predefined_admin_roles.sql',
                 '1748_bank_rule_templates_tenant_scope.sql',
                 '2014_client_ai_extraction.sql',
-                '2080_property_registry.sql',
-                '2081_property_charge_versions.sql',
-                '2082_property_charge_issuance.sql',
-                '2086_property_payment_permissions.sql',
-                '2091_property_opening.sql',
-                '2105_property_funds_role_defaults.sql'
+                '2084_property_registry.sql',
+                '2085_property_charge_versions.sql',
+                '2086_property_charge_issuance.sql',
+                '2090_property_payment_permissions.sql',
+                '2095_property_opening.sql',
+                '2109_property_funds_role_defaults.sql'
             )"
         );
         $this->runMigrator();
@@ -161,7 +161,7 @@ final class DynamicRolesMigrationRuntimeTest extends TestCase
         self::assertSame(0, (int) $db->query("SELECT access_level FROM role_permissions WHERE role_id=" . (int) $roles['admin'] . " AND permission_key='property.funds.reverse'")->fetchColumn());
 
         $db->prepare("DELETE FROM role_permissions WHERE role_id=? AND permission_key='property.funds.post'")->execute([(int) $roles['admin']]);
-        $db->exec("DELETE FROM migrations WHERE filename='2105_property_funds_role_defaults.sql'");
+        $db->exec("DELETE FROM migrations WHERE filename='2109_property_funds_role_defaults.sql'");
         $this->runMigrator();
 
         self::assertSame(0, (int) $db->query("SELECT COUNT(*) FROM role_permissions WHERE role_id=" . (int) $roles['admin'] . " AND permission_key='property.funds.post'")->fetchColumn());
@@ -170,7 +170,7 @@ final class DynamicRolesMigrationRuntimeTest extends TestCase
         $settlements = "SELECT COUNT(*) FROM role_permissions WHERE role_id=" . (int) $roles['accountant'] . " AND permission_key='property.settlements.manage'";
         self::assertSame(1, (int) $db->query($settlements)->fetchColumn());
         $db->prepare("DELETE FROM role_permissions WHERE role_id=? AND permission_key='property.settlements.manage'")->execute([(int) $roles['accountant']]);
-        $db->exec("DELETE FROM migrations WHERE filename='2093_property_service_settlement_permissions.sql'");
+        $db->exec("DELETE FROM migrations WHERE filename='2097_property_service_settlement_permissions.sql'");
         $this->runMigrator();
         self::assertSame(0, (int) $db->query($settlements)->fetchColumn(), 'Opakovaný běh 2046 nesmí vrátit odebrané právo.');
         self::assertSame(1, (int) $db->query("SELECT COUNT(*) FROM role_permissions WHERE role_id=" . (int) $roles['accountant'] . " AND permission_key='property.settlements.post'")->fetchColumn());
@@ -336,19 +336,19 @@ final class DynamicRolesMigrationRuntimeTest extends TestCase
                 '1962_payroll_personnel_file.sql',
                 '2014_client_ai_extraction.sql',
                 '2015_client_bank_permissions.sql',
-                '2080_property_registry.sql',
-                '2081_property_charge_versions.sql',
-                '2082_property_charge_issuance.sql',
-                '2083_unit_payments.sql',
+                '2084_property_registry.sql',
+                '2085_property_charge_versions.sql',
+                '2086_property_charge_issuance.sql',
+                '2087_unit_payments.sql',
                 '2038_invoice_edit_issued_permission.sql',
-                '2086_property_payment_permissions.sql',
-                '2090_property_receivable_permissions.sql',
-                '2091_property_opening.sql',
-                '2093_property_service_settlement_permissions.sql',
+                '2090_property_payment_permissions.sql',
+                '2094_property_receivable_permissions.sql',
+                '2095_property_opening.sql',
+                '2097_property_service_settlement_permissions.sql',
                 '2056_price_list_role_permissions.sql',
                 '2057_operational_settings_role_permissions.sql',
-                '2105_property_funds_role_defaults.sql',
-                '2114_property_service_unwind_permission.sql',
+                '2109_property_funds_role_defaults.sql',
+                '2118_property_service_unwind_permission.sql',
             ]),
         ];
         $env = getenv();
