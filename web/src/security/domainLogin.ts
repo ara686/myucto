@@ -1,8 +1,9 @@
 import { authApi } from '@/api/auth'
 import { canonicalDomainLoginHandoffPath } from '@/security/clientRoutePolicy'
 
+import { CANONICAL_DOMAIN_LOGIN_KEY as CANONICAL_KEY } from '@/security/domainLoginContext'
+
 const TARGET_KEY = 'myinvoice.domain_login.target'
-const CANONICAL_KEY = 'myinvoice.domain_login.canonical'
 const TERMINAL_AUTHORIZATION_ERRORS = ['invalid_domain_login_request', 'canonical_origin_required', 'forbidden_supplier'] as const
 type TerminalAuthorizationCode = typeof TERMINAL_AUTHORIZATION_ERRORS[number]
 interface TerminalAuthorizationError { code: TerminalAuthorizationCode; message: string; status: number }
@@ -19,7 +20,6 @@ interface CanonicalState {
   state: string
   handoffPath: string | null
   ownedCsrf?: string
-  previousOwnedCsrf?: string
   redirectUrl?: string
   terminalError?: TerminalAuthorizationError
 }
@@ -67,7 +67,7 @@ export function captureCanonicalDomainLogin(
   saveCanonical({
     ...(previous?.requestToken === requestToken && previous.state === state
       ? previous
-      : { previousOwnedCsrf: previous?.ownedCsrf || previous?.previousOwnedCsrf }),
+      : {}),
     requestToken,
     state,
     handoffPath: canonicalDomainLoginHandoffPath(handoffPath),
@@ -94,17 +94,6 @@ export function pendingCanonicalDomainLoginQuery(): Record<string, string> | nul
   }
 }
 
-/** A restarted portal request can reuse only a session we already owned. */
-export function reconcileCanonicalDomainLoginSession(csrf: string): void {
-  const pending = readCanonical()
-  if (!pending?.previousOwnedCsrf) return
-  saveCanonical({
-    ...pending,
-    previousOwnedCsrf: undefined,
-    ...(pending.previousOwnedCsrf === csrf ? { ownedCsrf: csrf } : {}),
-  })
-}
-
 export function pendingCanonicalDomainLoginHandoff(): string | null {
   return readCanonical()?.handoffPath ?? null
 }
@@ -116,7 +105,7 @@ export function clearCanonicalDomainLogin(): void {
 /** Only a login response can establish ownership; /me and session status cannot. */
 export function recordCanonicalDomainLoginSession(csrf: string): void {
   const pending = readCanonical()
-  if (pending && !pending.redirectUrl && !pending.terminalError && csrf) saveCanonical({ ...pending, ownedCsrf: csrf, previousOwnedCsrf: undefined })
+  if (pending && !pending.redirectUrl && !pending.terminalError && csrf) saveCanonical({ ...pending, ownedCsrf: csrf })
 }
 
 export function canonicalDomainLoginSessionCsrf(): string | null {
@@ -127,7 +116,7 @@ export function canonicalDomainLoginSessionCsrf(): string | null {
 export function advanceCanonicalDomainLoginSession(previousCsrf: string, csrf: string): void {
   const pending = readCanonical()
   if (pending?.ownedCsrf === previousCsrf && previousCsrf && csrf) {
-    saveCanonical({ ...pending, ownedCsrf: csrf, previousOwnedCsrf: undefined })
+    saveCanonical({ ...pending, ownedCsrf: csrf })
   }
 }
 
@@ -248,8 +237,6 @@ function readCanonical(): CanonicalState | null {
       requestToken: value.requestToken,
       state: value.state,
       handoffPath: canonicalDomainLoginHandoffPath(value.handoffPath),
-      ...(typeof value.previousOwnedCsrf === 'string' && value.previousOwnedCsrf
-        ? { previousOwnedCsrf: value.previousOwnedCsrf } : {}),
       ...(typeof value.ownedCsrf === 'string' && value.ownedCsrf ? { ownedCsrf: value.ownedCsrf } : {}),
       ...(value.terminalError && TERMINAL_AUTHORIZATION_ERRORS.includes(value.terminalError.code)
         && typeof value.terminalError.message === 'string' && typeof value.terminalError.status === 'number'

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { authApi } from '@/api/auth'
-import { advanceCanonicalDomainLoginSession, authorizePendingDomainLogin, canonicalDomainLoginSessionCsrf, captureCanonicalDomainLogin, hasPendingCanonicalDomainLogin, hasPendingCanonicalDomainLoginCleanup, recordCanonicalDomainLoginSession, reconcileCanonicalDomainLoginSession, pendingCanonicalDomainLoginQuery } from '../domainLogin'
+import { advanceCanonicalDomainLoginSession, authorizePendingDomainLogin, canonicalDomainLoginSessionCsrf, captureCanonicalDomainLogin, hasPendingCanonicalDomainLogin, hasPendingCanonicalDomainLoginCleanup, recordCanonicalDomainLoginSession, pendingCanonicalDomainLoginQuery } from '../domainLogin'
 
 vi.mock('@/api/auth', () => ({ authApi: { domainLoginAuthorize: vi.fn(), logout: vi.fn(), sessionStatus: vi.fn() } }))
 const request = 'r'.repeat(43)
@@ -54,29 +54,24 @@ describe('portal-only canonical session ownership', () => {
     recordCanonicalDomainLoginSession('standalone')
     expect(canonicalDomainLoginSessionCsrf()).toBeNull()
   })
-  it('reconciles a restarted request only against the exact prior-owned session', async () => {
+  it('requires a new session even after restarting a previously owned request', async () => {
     recordCanonicalDomainLoginSession('owned')
     vi.mocked(authApi.domainLoginAuthorize).mockRejectedValueOnce(new Error('offline'))
     await expect(authorizePendingDomainLogin()).rejects.toThrow('offline')
     captureCanonicalDomainLogin('n'.repeat(43), state)
     expect(canonicalDomainLoginSessionCsrf()).toBeNull()
-    reconcileCanonicalDomainLoginSession('owned')
-    expect(canonicalDomainLoginSessionCsrf()).toBe('owned')
+    recordCanonicalDomainLoginSession('new')
     await authorizePendingDomainLogin()
-    expect(authApi.logout).toHaveBeenCalledWith('owned')
+    expect(authApi.logout).toHaveBeenCalledWith('new')
   })
-  it('preserves a replacement standalone session when reconciling a restarted request', async () => {
+  it('does not clean up an earlier session after starting a different request', async () => {
     recordCanonicalDomainLoginSession('owned')
     captureCanonicalDomainLogin('n'.repeat(43), state)
-    reconcileCanonicalDomainLoginSession('replacement')
-    expect(canonicalDomainLoginSessionCsrf()).toBeNull()
-    reconcileCanonicalDomainLoginSession('owned')
     expect(canonicalDomainLoginSessionCsrf()).toBeNull()
     await authorizePendingDomainLogin()
     expect(authApi.logout).not.toHaveBeenCalled()
   })
   it('never acquires generic refresh ownership and returns safe continuation query', () => {
-    reconcileCanonicalDomainLoginSession('standalone')
     expect(canonicalDomainLoginSessionCsrf()).toBeNull()
     captureCanonicalDomainLogin(request, state, '/profile/password?tab=passkeys')
     expect(pendingCanonicalDomainLoginQuery()).toEqual({
@@ -152,6 +147,17 @@ describe('portal-only canonical session ownership', () => {
     await expect(authorizePendingDomainLogin()).rejects.toMatchObject(failure)
     expect(authApi.domainLoginAuthorize).toHaveBeenCalledOnce()
     expect(authApi.logout).toHaveBeenCalledTimes(2)
+    expect(hasPendingCanonicalDomainLogin()).toBe(false)
+    expect(replace).not.toHaveBeenCalled()
+  })
+  it('uzavře expirovaný tok i po ztracené cookie, když logout i status potvrdí zánik relace', async () => {
+    const failure = { response: { status: 400, data: { error: { code: 'invalid_domain_login_request', message: 'Expired request.' } } } }
+    const absent = { response: { status: 401, data: { error: { code: 'unauthenticated' } } } }
+    recordCanonicalDomainLoginSession('owned')
+    vi.mocked(authApi.domainLoginAuthorize).mockRejectedValueOnce(failure)
+    vi.mocked(authApi.logout).mockRejectedValueOnce(absent)
+    vi.mocked(authApi.sessionStatus).mockRejectedValueOnce(absent)
+    await expect(authorizePendingDomainLogin()).rejects.toMatchObject(failure)
     expect(hasPendingCanonicalDomainLogin()).toBe(false)
     expect(replace).not.toHaveBeenCalled()
   })

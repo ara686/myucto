@@ -18,7 +18,7 @@ vi.mock('@/security/webauthn', () => ({ isWebAuthnAvailable: () => false }))
 vi.mock('@/security/domainLogin', () => ({
   captureCanonicalDomainLogin: vi.fn(), hasPendingCanonicalDomainLogin: () => true,
   hasPendingCanonicalDomainLoginCleanup: () => false,
-  reconcileCanonicalDomainLoginSession: vi.fn(),
+  canonicalDomainLoginSessionCsrf: () => 'fresh-flow-csrf',
   pendingCanonicalDomainLoginHandoff: () => m.handoff,
 }))
 vi.mock('vue-router', () => ({ useRoute: () => ({ query: {} }), useRouter: () => ({ replace: m.replace }) }))
