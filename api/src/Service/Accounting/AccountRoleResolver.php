@@ -16,9 +16,13 @@ final class AccountRoleResolver
         return new self(new AccountingFrameworkService($db, new AccountingFrameworkRepository($db)));
     }
 
+    /** @var array<string,AccountingRoleProfile> rámec firmy k datu po dobu jedné operace */
+    private array $profiles = [];
+
     public function forDate(int $supplierId, string $date): AccountingRoleProfile
     {
-        return new AccountingRoleProfile($this->frameworks->forDate($supplierId, $date));
+        // Instance žije jen po dobu jedné operace (fromConnection), důkazy se ptají po řádcích.
+        return $this->profiles[$supplierId . '|' . $date] ??= new AccountingRoleProfile($this->frameworks->forDate($supplierId, $date));
     }
 
     public function resolve(int $supplierId, string $role, string $date, ?string $legacy500Account = null): string

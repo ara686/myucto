@@ -12,6 +12,33 @@ final class AccountDefinitionRepository
     /** Jen sloupce, které relace čtou: celý řádek nese LONGTEXT a mezivýsledek okna by skončil v dočasné tabulce na disku. */
     private const HISTORY_COLUMNS='d.id,d.supplier_id,d.account_id,d.effective_from,d.name,d.normal_side,d.tax_deductibility,d.is_active';
     public function __construct(private readonly Connection $db) {}
+
+    private const CURRENT_TABLES=['chart_of_accounts','accounting_account_definition_history'];
+
+    /**
+     * Osnova firmy platná k datu čtená aktuálním čtením ({@see relation()} s `FOR UPDATE`),
+     * řádky podle id. Zámky drží osnovu i historii definic do konce transakce, takže v ní
+     * se stejné čtení opakuje jen po změně některé z tabulek nebo po hranici transakce
+     * ({@see \MyInvoice\Infrastructure\Database\LoggingPdo::tableWriteCount()}).
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    public function currentForDate(int $supplier,string $date): array
+    {
+        $pdo=$this->db->pdo();
+        if(!$pdo->inTransaction())throw new \LogicException('Current account definitions require caller locks.');
+        $read=function()use($pdo,$supplier,$date):array{$q=$pdo->prepare('SELECT * FROM '.self::relation($date,$supplier,true).' a WHERE supplier_id=? ORDER BY id FOR UPDATE');$q->execute([$supplier]);return array_column($q->fetchAll(PDO::FETCH_ASSOC),null,'id');};
+        if(!$pdo instanceof \MyInvoice\Infrastructure\Database\LoggingPdo||!$pdo->statementsTracked())return $read();
+        $writes=implode('|',array_map($pdo->tableWriteCount(...),self::CURRENT_TABLES));$key=$supplier.'|'.$date;
+        self::$currentMemo??=new \WeakMap();$memo=self::$currentMemo[$pdo]??null;
+        if($memo===null||$memo['writes']!==$writes)$memo=['writes'=>$writes,'rows'=>[]];
+        $memo['rows'][$key]??=$read();self::$currentMemo[$pdo]=$memo;
+        return $memo['rows'][$key];
+    }
+
+    /** @var \WeakMap<\PDO,array{writes:string,rows:array<string,array<int,array<string,mixed>>>}>|null */
+    private static ?\WeakMap $currentMemo=null;
+
     public static function date(string $date): string
     {
         $parsed=\DateTimeImmutable::createFromFormat('!Y-m-d',$date);

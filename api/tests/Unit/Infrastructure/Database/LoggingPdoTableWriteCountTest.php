@@ -28,6 +28,42 @@ final class LoggingPdoTableWriteCountTest extends TestCase
         }
     }
 
+    /** Souhrnný čítač mění každý zápis do jakékoli tabulky i každá hranice transakce, čtení nikdy. */
+    public function testWriteCountChangesOnAnyWriteOrBoundary(): void
+    {
+        $file = tempnam(sys_get_temp_dir(), 'writes');
+        $plain = new PDO('sqlite:' . $file);
+        $plain->exec('CREATE TABLE first_table (id INTEGER PRIMARY KEY)');
+        $plain->exec('CREATE TABLE second_table (id INTEGER PRIMARY KEY)');
+        $plain = null;
+        try {
+            $pdo = new LoggingPdo('sqlite:' . $file, '', '', [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION], new NullLogger());
+            $pdo->beginTransaction();
+            $count = $pdo->writeCount();
+            $pdo->query('SELECT * FROM first_table')->fetchAll();
+            $pdo->prepare('SELECT * FROM second_table WHERE id = ?')->execute([1]);
+            $pdo->exec('SAVEPOINT memo');
+            self::assertSame($count, $pdo->writeCount(), 'Čtení ani savepoint data nemění.');
+            $pdo->prepare('INSERT INTO second_table (id) VALUES (?)')->execute([1]);
+            self::assertSame(++$count, $pdo->writeCount(), 'Zápis do kterékoli tabulky.');
+            $pdo->exec('DELETE FROM first_table');
+            self::assertSame(++$count, $pdo->writeCount());
+            $pdo->exec('ROLLBACK TO SAVEPOINT memo');
+            self::assertGreaterThan($count, $count = $pdo->writeCount(), 'Návrat k savepointu.');
+            try {
+                $pdo->exec('INSERT INTO missing_table VALUES (1)');
+            } catch (\PDOException) {
+            }
+            self::assertGreaterThan($count, $count = $pdo->writeCount(), 'Nepovedený příkaz.');
+            $pdo->commit();
+            self::assertGreaterThan($count, $pdo->writeCount(), 'Konec transakce.');
+            $pdo = null;
+        } finally {
+            gc_collect_cycles();
+            @unlink($file);
+        }
+    }
+
     private function assertCounts(LoggingPdo $pdo): void
     {
         $pdo->beginTransaction();

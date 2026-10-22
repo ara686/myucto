@@ -22,11 +22,41 @@ final class PaymentJournalProof
     {
         return $this->readMany($supplier,$entryIds,true);
     }
+    /** Tabulky, ze kterých se důkaz zápisu skládá. */
+    private const TABLES=['journal_entries','journal_entry_lines','chart_of_accounts','journal_entry_line_dimensions','journal_entry_line_dimension_splits'];
+
+    /**
+     * Důkazy zápisů přečtené aktuálním čtením (`FOR UPDATE`) v probíhající transakci.
+     * Zámky drží přečtené řádky do konce transakce a zápisy SVJ jdou přes zámek období,
+     * jiná transakce je tedy nezmění. Změnu vlastní transakcí, savepoint i konec
+     * transakce pozná {@see \MyInvoice\Infrastructure\Database\LoggingPdo::tableWriteCount()}.
+     *
+     * @var \WeakMap<\PDO,array{writes:string,entries:array<string,array>}>|null
+     */
+    private static ?\WeakMap $currentMemo=null;
+
     private function readMany(int $supplier,array $entryIds,bool $currentRead):array
     {
-        $suffix=$currentRead?' FOR UPDATE':'';
-        if(!$this->db->pdo()->inTransaction()) throw new \LogicException('Payment ledger proof requires period-first owner locks.');
+        $pdo=$this->db->pdo();
+        if(!$pdo->inTransaction()) throw new \LogicException('Payment ledger proof requires period-first owner locks.');
         foreach($entryIds as $id)PropertyInput::id($id,'journal_entry_id');
+        if(!$currentRead||!$pdo instanceof \MyInvoice\Infrastructure\Database\LoggingPdo||!$pdo->statementsTracked())return $this->readFresh($supplier,$entryIds,$currentRead);
+        $writes=implode('|',array_map($pdo->tableWriteCount(...),self::TABLES));
+        self::$currentMemo??=new \WeakMap();
+        $memo=self::$currentMemo[$pdo]??null;
+        if($memo===null||$memo['writes']!==$writes)$memo=['writes'=>$writes,'entries'=>[]];
+        $entryIds=array_values(array_unique($entryIds));sort($entryIds,SORT_NUMERIC);
+        $missing=array_values(array_filter($entryIds,fn(int $id)=>!isset($memo['entries'][$supplier.'|'.$id])));
+        if($missing!==[])foreach($this->readFresh($supplier,$missing,true) as $id=>$proof)$memo['entries'][$supplier.'|'.$id]=$proof;
+        self::$currentMemo[$pdo]=$memo;
+        $out=[];
+        foreach($entryIds as $id)$out[$id]=$memo['entries'][$supplier.'|'.$id];
+        return $out;
+    }
+
+    private function readFresh(int $supplier,array $entryIds,bool $currentRead):array
+    {
+        $suffix=$currentRead?' FOR UPDATE':'';
         $entryIds=array_values(array_unique($entryIds));sort($entryIds,SORT_NUMERIC);$out=[];
         foreach(array_chunk($entryIds,500) as $chunk){
             $marks=implode(',',array_fill(0,count($chunk),'?'));

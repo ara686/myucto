@@ -36,9 +36,7 @@ final class PaymentWorkflowJournalPlan
         $q = $this->db->pdo()->prepare('SELECT id FROM accounting_periods WHERE supplier_id=? AND starts_on<=? AND ends_on>=? ORDER BY starts_on,id FOR UPDATE');
         $q->execute([$supplier, $date, $date]);
         $period = (int) $q->fetchColumn();
-        $q = $this->db->pdo()->prepare('SELECT id,account_code,account_type,is_active FROM ' . \MyInvoice\Repository\AccountDefinitionRepository::relation($date, $supplier, true) . ' a WHERE supplier_id=? ORDER BY id FOR UPDATE');
-        $q->execute([$supplier]);
-        $accounts = array_column($q->fetchAll(PDO::FETCH_ASSOC), null, 'account_code');
+        $accounts = array_column((new \MyInvoice\Repository\AccountDefinitionRepository($this->db))->currentForDate($supplier, $date), null, 'account_code');
         foreach ($lines as $index => &$line) {
             $account = $accounts[$line['account_code']] ?? null;
             if ($account === null || empty($account['is_active']) || !in_array($account['account_type'], ['asset', 'liability', 'equity'], true)) {

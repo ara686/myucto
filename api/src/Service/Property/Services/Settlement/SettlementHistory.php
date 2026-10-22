@@ -11,7 +11,25 @@ final class SettlementHistory
     public function __construct(private readonly Connection $db){}
     public function lifecycle(int $supplier,int $case):array
     {return(new \MyInvoice\Repository\Property\Services\Settlement\ServiceLifecycleRepository($this->db))->current($supplier,$case);}
+    /**
+     * Ověřené vyúčtování čtené aktuálním čtením. Důkaz prochází žádost, deník, účinky,
+     * kredity, nároky i podklady nákladu; v jedné transakci se opakuje jen po zápisu nebo
+     * hranici transakce ({@see \MyInvoice\Infrastructure\Database\LoggingPdo::writeCount()}).
+     *
+     * @var \WeakMap<\PDO,array{writes:int,applications:array<string,array>}>|null
+     */
+    private static ?\WeakMap $currentMemo=null;
     public function application(int $supplier,int $id,bool $current):array
+    {
+        $pdo=$this->db->pdo();
+        if(!$current||!$pdo instanceof \MyInvoice\Infrastructure\Database\LoggingPdo||!$pdo->statementsTracked()||!$pdo->inTransaction())return $this->readApplication($supplier,$id,$current);
+        $key=$supplier.'|'.$id;self::$currentMemo??=new \WeakMap();$memo=self::$currentMemo[$pdo]??null;
+        if($memo!==null&&$memo['writes']===$pdo->writeCount()&&isset($memo['applications'][$key]))return $memo['applications'][$key];
+        $application=$this->readApplication($supplier,$id,true);
+        $writes=$pdo->writeCount();$memo=self::$currentMemo[$pdo]??null;if($memo===null||$memo['writes']!==$writes)$memo=['writes'=>$writes,'applications'=>[]];$memo['applications'][$key]=$application;self::$currentMemo[$pdo]=$memo;
+        return $application;
+    }
+    private function readApplication(int $supplier,int $id,bool $current):array
     {
         if(!$this->db->pdo()->inTransaction())throw new \LogicException('Settlement history requires a stable transaction.');$suffix=$current?' FOR UPDATE':'';
         $row=$this->one('SELECT * FROM property_service_settlement_applications WHERE supplier_id=? AND id=?'.$suffix,[$supplier,$id]);if(!$row)SettlementEvidence::reject('application_not_found');

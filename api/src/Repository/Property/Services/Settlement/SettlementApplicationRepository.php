@@ -214,7 +214,7 @@ final class SettlementApplicationRepository
     }
     private function validateJournal(array $header,array $lines):void
     {
-        PostingService::assertBalanced($lines);foreach($lines as $line){$account=$this->one('SELECT * FROM '.\MyInvoice\Repository\AccountDefinitionRepository::relation($header['entry_date'],(int)$header['supplier_id'],true).' a WHERE supplier_id=? AND id=? FOR UPDATE',[$header['supplier_id'],$line['account_id']]);if(!$account||!$account['is_active']||$account['account_code']!==$line['account_code'])SettlementEvidence::reject('account_unavailable');}
+        PostingService::assertBalanced($lines);$accounts=(new \MyInvoice\Repository\AccountDefinitionRepository($this->db))->currentForDate((int)$header['supplier_id'],$header['entry_date']);foreach($lines as $line){$account=$accounts[(int)$line['account_id']]??null;if(!$account||!$account['is_active']||$account['account_code']!==$line['account_code'])SettlementEvidence::reject('account_unavailable');}
     }
     private function request(int $supplier,int $document,?int $reversal,int $expected,array $request,array $preview,string $token,int $actor):int
     {

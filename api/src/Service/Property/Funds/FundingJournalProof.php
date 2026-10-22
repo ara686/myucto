@@ -6,9 +6,31 @@ use MyInvoice\Service\Property\PropertyInput;
 final class FundingJournalProof
 {
     public function __construct(private readonly Connection $db){}
+    /** Účet osnovy platný k datu; osnova se čte aktuálním čtením jednou za transakci a změnu. */
+    private function activeAccount(int $supplier,string $date,string $account):array|false
+    {
+        foreach((new \MyInvoice\Repository\AccountDefinitionRepository($this->db))->currentForDate($supplier,$date) as $row)if($row['account_code']===$account)return ['id'=>$row['id'],'is_active'=>$row['is_active']];
+        return false;
+    }
+    /**
+     * Zamčený řádek osnovy podle kódu. Důkaz plánu čte tytéž účty u každé operace fondu;
+     * zámek drží transakce, proto se čtení opakuje jen po zápisu do osnovy.
+     *
+     * @var \WeakMap<\PDO,array{writes:int,rows:array<string,array|false>}>|null
+     */
+    private static ?\WeakMap $accounts=null;
+    private function account(int $supplier,string $account):array|false
+    {
+        $pdo=$this->db->pdo();$read=function()use($pdo,$supplier,$account):array|false{$q=$pdo->prepare('SELECT id FROM chart_of_accounts a WHERE supplier_id=? AND account_code=? FOR UPDATE');$q->execute([$supplier,$account]);return $q->fetch(\PDO::FETCH_ASSOC);};
+        if(!$pdo instanceof \MyInvoice\Infrastructure\Database\LoggingPdo||!$pdo->statementsTracked()||!$pdo->inTransaction())return $read();
+        $writes=$pdo->tableWriteCount('chart_of_accounts');self::$accounts??=new \WeakMap();$memo=self::$accounts[$pdo]??null;
+        if($memo===null||$memo['writes']!==$writes)$memo=['writes'=>$writes,'rows'=>[]];
+        $key=$supplier.'|'.$account;if(!array_key_exists($key,$memo['rows']))$memo['rows'][$key]=$read();self::$accounts[$pdo]=$memo;
+        return $memo['rows'][$key];
+    }
     private function row(int $supplier,string $date,string $account,string $side,string $cents,array $dimensions=[],array $context=[],bool $active=false):array
     {
-        $table=$active?\MyInvoice\Repository\AccountDefinitionRepository::relation($date,$supplier,true):'chart_of_accounts';$fields=$active?'id,is_active':'id';$q=$this->db->pdo()->prepare('SELECT '.$fields.' FROM '.$table.' a WHERE supplier_id=? AND account_code=? FOR UPDATE');$q->execute([$supplier,$account]);$found=$q->fetch(\PDO::FETCH_ASSOC);if(!$found||($active&&!$found['is_active']))FundingException::reject('account_missing',['account_code'=>$account]);$line=['account_id'=>(int)$found['id'],'account_code'=>$account,'side'=>$side,'amount'=>bcdiv($cents,'100',2),'dimensions'=>$dimensions,'dimension_origins'=>array_fill_keys(array_keys($dimensions),['origin'=>'module','ref'=>'property_funding'])];foreach(['dimension_splits','dimension_split_origins','cost_center','project_id'] as $field)if(($context[$field]??null)!==null&&$context[$field]!==[])$line[$field]=$context[$field];return $line;
+        $found=$active?$this->activeAccount($supplier,$date,$account):$this->account($supplier,$account);if(!$found||($active&&!$found['is_active']))FundingException::reject('account_missing',['account_code'=>$account]);$line=['account_id'=>(int)$found['id'],'account_code'=>$account,'side'=>$side,'amount'=>bcdiv($cents,'100',2),'dimensions'=>$dimensions,'dimension_origins'=>array_fill_keys(array_keys($dimensions),['origin'=>'module','ref'=>'property_funding'])];foreach(['dimension_splits','dimension_split_origins','cost_center','project_id'] as $field)if(($context[$field]??null)!==null&&$context[$field]!==[])$line[$field]=$context[$field];return $line;
     }
     public function lines(int $supplier,array $plan,bool $active=false):array
     {

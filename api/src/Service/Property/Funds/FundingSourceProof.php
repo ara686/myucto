@@ -45,7 +45,18 @@ final class FundingSourceProof
     {
         $effects=[];foreach($registry['calculation']['lines'] as $allocation){$unit=$allocation['unit_id'];$amount=$allocation['amount_cents'];if($amount==='0')continue;$groups=$registry['units'][$unit]['revision']['state']['ownerships'];$weights=[];foreach($groups as $i=>$group)$weights[]=['id'=>$i+1,'attributes'=>['share'=>$group['share']]];$parts=ChargeCalculator::calculate(['method'=>'share','mode'=>'total_budget','amount'=>bcdiv($amount,'100',2),'rounding'=>ChargeCalculator::ROUNDING],$weights);foreach($parts['lines'] as $part)if($part['amount_cents']!=='0')$effects[]=['unit_id'=>$unit,'account_code'=>'379.920','amount_cents'=>$part['amount_cents'],'source_kind'=>null,'source_id'=>null,'parties'=>$groups[$part['unit_id']-1]];}return $effects;
     }
+    /** @var \WeakMap<\PDO,array{writes:string,rows:array<string,array<int,int>>}>|null dimenze jednotek čtené se zámkem v probíhající transakci */
+    private static ?\WeakMap $unitDimensions=null;
     public function dimensions(int $supplier,int $unit):array
+    {
+        $pdo=$this->db->pdo();
+        if(!$pdo instanceof \MyInvoice\Infrastructure\Database\LoggingPdo||!$pdo->statementsTracked()||!$pdo->inTransaction())return $this->readDimensions($supplier,$unit);
+        $writes=$pdo->tableWriteCount('property_objects').'|'.$pdo->tableWriteCount('dimension_values');self::$unitDimensions??=new \WeakMap();$memo=self::$unitDimensions[$pdo]??null;
+        if($memo===null||$memo['writes']!==$writes)$memo=['writes'=>$writes,'rows'=>[]];
+        $memo['rows'][$supplier.'|'.$unit]??=$this->readDimensions($supplier,$unit);self::$unitDimensions[$pdo]=$memo;
+        return $memo['rows'][$supplier.'|'.$unit];
+    }
+    private function readDimensions(int $supplier,int $unit):array
     {$row=$this->one('SELECT v.type_id,v.id FROM property_objects o JOIN dimension_values v ON v.id=o.dimension_value_id AND v.supplier_id=o.supplier_id WHERE o.supplier_id=? AND o.id=? AND o.kind=\'unit\' FOR UPDATE',[$supplier,$unit]);return[(int)$row['type_id']=>(int)$row['id']];}
     public function advance(int $supplier,array $pointer,string $date,?string $effectiveAt=null):array
     {

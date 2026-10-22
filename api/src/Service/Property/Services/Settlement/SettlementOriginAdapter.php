@@ -12,7 +12,25 @@ use PDO;
 final class SettlementOriginAdapter
 {
     public function __construct(private readonly Connection $db, private readonly \MyInvoice\Repository\Property\Payments\PaymentRepository $payments) {}
+    /**
+     * Aktuální důkaz původu se skládá z mnoha zamčených tabulek (předpisy, platby, deník,
+     * počáteční stavy, životní cyklus služby). V jedné transakci se počítá znovu jen po
+     * zápisu nebo hranici transakce ({@see \MyInvoice\Infrastructure\Database\LoggingPdo::writeCount()}).
+     *
+     * @var \WeakMap<\PDO,array{writes:int,results:array<string,array>}>|null
+     */
+    private static ?\WeakMap $currentMemo=null;
     public function current(int $supplier,int $unit,int $service,string $date,array $selectors):array
+    {
+        $pdo=$this->db->pdo();
+        if(!$pdo instanceof \MyInvoice\Infrastructure\Database\LoggingPdo||!$pdo->statementsTracked()||!$pdo->inTransaction())return $this->currentFresh($supplier,$unit,$service,$date,$selectors);
+        $key=md5(serialize([$supplier,$unit,$service,$date,$selectors]));self::$currentMemo??=new \WeakMap();$memo=self::$currentMemo[$pdo]??null;
+        if($memo!==null&&$memo['writes']===$pdo->writeCount()&&isset($memo['results'][$key]))return $memo['results'][$key];
+        $result=$this->currentFresh($supplier,$unit,$service,$date,$selectors);
+        $writes=$pdo->writeCount();$memo=self::$currentMemo[$pdo]??null;if($memo===null||$memo['writes']!==$writes)$memo=['writes'=>$writes,'results'=>[]];$memo['results'][$key]=$result;self::$currentMemo[$pdo]=$memo;
+        return $result;
+    }
+    private function currentFresh(int $supplier,int $unit,int $service,string $date,array $selectors):array
     {
         try{return $this->currentLocked($supplier,$unit,$service,$date,$selectors);}
         catch(\Throwable $failure){\MyInvoice\Infrastructure\Database\TransactionFailure::rollbackIfAborted($this->db->pdo(),$failure);throw $failure;}

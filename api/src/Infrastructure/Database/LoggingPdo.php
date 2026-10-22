@@ -163,7 +163,7 @@ final class LoggingPdo extends PDO
 
     private function noteTableWrites(string $sql): void
     {
-        if ($this->tableWrites === []) {
+        if ($this->tableWrites === [] && !$this->writesTracked) {
             return;
         }
         // Hranice transakce, rollback a DDL (implicitní commit) mění všechno.
@@ -174,6 +174,7 @@ final class LoggingPdo extends PDO
         if (preg_match('/^\s*(?:INSERT|REPLACE|UPDATE|DELETE|LOAD|CALL)\b/i', $sql) !== 1) {
             return;
         }
+        $this->writes++;
         foreach ($this->tableWrites as $table => $count) {
             if (stripos($sql, $table) !== false) $this->tableWrites[$table] = $count + 1;
         }
@@ -181,7 +182,22 @@ final class LoggingPdo extends PDO
 
     private function bumpTableWrites(): void
     {
+        $this->writes++;
         foreach ($this->tableWrites as $table => $count) $this->tableWrites[$table] = $count + 1;
+    }
+
+    private int $writes = 0;
+    private bool $writesTracked = false;
+
+    /**
+     * Čítač všech příkazů, které mohly změnit jakákoli data spojení: každý zápis a každá
+     * hranice transakce včetně savepointu a nepovedeného příkazu. Pro paměť výsledku,
+     * který se skládá z mnoha tabulek a jejich výčet by se snadno rozešel s kódem.
+     */
+    public function writeCount(): int
+    {
+        $this->writesTracked = true;
+        return $this->writes;
     }
 
     /** @var array<string,int> sledovaná tabulka => počet příkazů, které ji mohly změnit */
