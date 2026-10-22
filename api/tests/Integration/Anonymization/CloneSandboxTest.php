@@ -48,6 +48,8 @@ final class CloneSandboxTest extends TestCase
                 CloneSandbox::release($this->server, $schema);
             }
         }
+        // dropAll() ukončí spojení stojící v zahazovaných databázích.
+        $this->server->exec('USE ' . DatabaseCloner::quote((string) Config::load(Bootstrap::rootDir())->get('db.name')));
         CloneSandbox::dropAll();
         foreach ($this->fresh as $schema) {
             OwnedTestDatabaseCleanup::drop($this->server, $schema, $this->fresh);
