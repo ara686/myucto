@@ -216,6 +216,11 @@ IČO, být plátcem DPH a cílová firma musí používat **daňovou evidenci** 
 8. Po dokončení projděte protokol převodu a odkazy na doklady a peněžní pohyby
    k ruční kontrole.
 
+Protokol sdružuje zprávy podle závažnosti a důvodu a uvádí počet výskytů. U
+kontrolovaných dokladů a pohybů najdete úplný text souvisejících zpráv včetně
+čísla dokladu; důvody jsou uspořádané po skupinách, aby šlo rychle projít všechny
+položky stejného typu.
+
 **Jak poznáte, že je hotovo:** Průvodce ohlásí **Převod dokončen.** a protokol
 ukazuje u kroků stav **V pořádku**. Položky označené **Ke kontrole** projděte
 ručně.
@@ -862,6 +867,11 @@ kontrol rekonciliace zůstávají uvedené.
 Tlačítkem **Stáhnout protokol PDF** uložíte výsledek dokončené zkoušky nebo
 importu, včetně neúspěšného běhu. PDF obsahuje všechny uvedené počty včetně nul,
 zprávy, důvody ruční kontroly a rekonciliaci; není omezené filtrem tabulky.
+V aplikaci jsou skupiny upozornění a informací sbalené, chyby jsou rozbalené.
+Zprávy lze filtrovat podle závažnosti nebo vyhledávat podle čísla dokladu,
+textu zprávy či důvodu kontroly.
+Podrobnosti se zobrazují po 50 záznamech; tlačítkem **Zobrazit dalších** zobrazíte
+následující. PDF obsahuje úplný rozpis bez tohoto stránkování.
 Protokol zůstává dostupný i po odstranění nahraného ZIPu. Zkouška nanečisto
 v PDF zřetelně označuje plánovaný zápis, nikoli vytvořené záznamy.
 Uložený protokol je součástí exportu instance a jeho obnovy. Smazáním úlohy
