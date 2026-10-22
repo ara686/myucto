@@ -229,7 +229,7 @@ final class StereoNxImporter
      *
      * @return array<string,mixed>
      */
-    public function run(StereoNxBackup $backup, int $supplierId, int $userId, bool $dryRun, bool $blankCountryIsCz = false): array
+    public function run(StereoNxBackup $backup, int $supplierId, int $userId, bool $dryRun, bool $blankCountryIsCz = false, array $partnerCountries = []): array
     {
         $statsClientIds = [];
         $report = [
@@ -241,7 +241,9 @@ final class StereoNxImporter
             StereoNxCompanyCompatibility::assertAccountingMode($backup->companyIdentity(), 'tax_evidence');
             $backup->assertBankAccountSeriesReady();
             array_push($report['warnings'], ...$backup->bankAccountSeriesWarnings());
-            $plan = $this->sourcePlan->build($backup, $blankCountryIsCz);
+            $plan = $this->sourcePlan->build($backup, $blankCountryIsCz, $partnerCountries);
+            $report['partner_country_candidates'] = $plan['partner_country_candidates'];
+            array_push($report['warnings'], ...$plan['partner_country_warnings']);
             $report['counts'] = $plan['counts'] ?? [];
             $reviewReasons = [];
             foreach (['issued' => 'issued', 'purchases' => 'purchase'] as $section => $kind) {

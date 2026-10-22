@@ -36,7 +36,7 @@ final class StereoNxAccountingImporter
         private readonly StereoNxAccountMappingService $accountMapping,
     ) {}
 
-    public function run(StereoNxBackup $backup, int $supplierId, int $userId, bool $dryRun, bool $blankCountryIsCz = false, ?array $accountMapping = null): array
+    public function run(StereoNxBackup $backup, int $supplierId, int $userId, bool $dryRun, bool $blankCountryIsCz = false, ?array $accountMapping = null, array $partnerCountries = []): array
     {
         $report = ['ok' => false, 'dry_run' => $dryRun, 'database_writes' => false,
             'accounting_mode' => 'double_entry', 'preflight' => [], 'errors' => [], 'warnings' => [],
@@ -52,15 +52,7 @@ final class StereoNxAccountingImporter
                     throw new StereoNxException('source_decode', 'Některou tabulku NX1 nelze úplně načíst.');
                 }
             }
-            $partners = StereoNxSourcePlan::partners(iterator_to_array($backup->rows('LAdresy'), false), $blankCountryIsCz);
-            $report['counts']['clients'] = count($partners);
-            foreach ($partners as $partner) {
-                if ($partner['country_unresolved']) {
-                    $report['warnings'][] = ['level' => 'warning', 'code' => 'partner_country_unresolved',
-                        'message' => 'Země některé protistrany zůstává k ruční kontrole v adresáři.'];
-                    break;
-                }
-            }
+            $partnerCountries = StereoNxPartnerCountries::configuration($partnerCountries);
             $payrollMonths = iterator_to_array($backup->rows('MMzdy'), false);
             $calendar = $this->journal->calendar($supplierId);
             $plans = [
@@ -75,9 +67,10 @@ final class StereoNxAccountingImporter
                         ? iterator_to_array($backup->rows('MOdvPar'), false) : [],
                 ], $backup->companyIdentity(), $backup->companyIndex()),
                 'inventory' => $this->inventoryWriter->prepare($backup),
-                'documents' => $this->accountingDocuments->prepare($backup, $blankCountryIsCz, $calendar),
+                'documents' => $this->accountingDocuments->prepare($backup, $blankCountryIsCz, $calendar, $partnerCountries),
                 'payments' => $this->accountingPayments->prepare($backup, $calendar),
             ];
+            $report['partner_country_candidates'] = $plans['documents']['partner_country_candidates'];
             $accountMapping = StereoNxAccountMappingService::configuration($accountMapping);
             if ($accountMapping !== null) {
                 $plans['journal'] = (new StereoNxAccountMappingPlan())->apply($plans['journal'], $accountMapping, $plans['payments']);

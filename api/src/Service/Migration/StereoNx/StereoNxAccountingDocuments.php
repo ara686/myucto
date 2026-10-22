@@ -16,7 +16,7 @@ final class StereoNxAccountingDocuments
     ) {}
 
     /** @return array<string,mixed> */
-    public function prepare(StereoNxBackup $backup, bool $blankCountryIsCz = false, ?FiscalCalendar $calendar = null): array
+    public function prepare(StereoNxBackup $backup, bool $blankCountryIsCz = false, ?FiscalCalendar $calendar = null, array $partnerCountries = []): array
     {
         $tables = [];
         $available = array_flip($backup->tableNames());
@@ -24,7 +24,7 @@ final class StereoNxAccountingDocuments
             'Spfp', 'Cpz', 'CPZZ', 'ZAZPVDPH', 'CBanka', 'CBankap', 'CPokl', 'Cdenik'] as $name) {
             $tables[$name] = isset($available[$name]) ? iterator_to_array($backup->rows($name), false) : [];
         }
-        $source = $this->sourcePlan->fromTables($tables, $backup->companyIdentity(), $blankCountryIsCz, true, $calendar);
+        $source = $this->sourcePlan->fromTables($tables, $backup->companyIdentity(), $blankCountryIsCz, true, $calendar, $partnerCountries);
         $source['source_company_index'] = $backup->companyIndex();
         $warnings = [];
         $foreignDocuments = 0;
@@ -34,6 +34,8 @@ final class StereoNxAccountingDocuments
                 if (($document['currency_code'] ?? 'CZK') !== 'CZK') $foreignDocuments++;
                 foreach (array_unique(array_map('strval', $document['review_codes'] ?? [])) as $code) {
                     $warnings[] = ['level' => 'warning', 'code' => $code,
+                        'source_key' => (string) ($document['source_key'] ?? ''),
+                        'partner_source_key' => (string) ($document['partner_key'] ?? ''),
                         'document_no' => (string) ($document['document_no'] ?? ''),
                         'message' => 'Doklad ' . (string) ($document['document_no'] ?? '') . ' vyžaduje kontrolu: '
                             . StereoNxImporter::reviewLabel($code) . '.'];
@@ -54,7 +56,11 @@ final class StereoNxAccountingDocuments
                 'message' => 'Účetní deník Stereo NX je převzat v Kč; cizoměnové zůstatky pro kurzové přecenění je nutné zkontrolovat a případně doplnit.',
                 'count' => $foreignDocuments];
         }
+        $countryCandidates = StereoNxPartnerCountries::candidates($source['clients'] ?? [], $source['issued'] ?? [],
+            $source['purchases'] ?? [], StereoNxPartnerCountries::configuration($partnerCountries));
+        array_push($warnings, ...StereoNxPartnerCountries::directoryWarnings($source['clients'] ?? [], $countryCandidates));
         return [
+            'partner_country_candidates' => $countryCandidates,
             'identity' => $source['identity'],
             'source_company_index' => $backup->companyIndex(),
             'counts' => ['issued' => count($source['issued'] ?? []), 'purchases' => count($source['purchases'] ?? []),
