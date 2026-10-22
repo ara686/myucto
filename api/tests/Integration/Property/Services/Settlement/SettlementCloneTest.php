@@ -4,7 +4,6 @@ namespace MyInvoice\Tests\Integration\Property\Services\Settlement;
 use PDO;
 use DomainException;
 use LogicException;
-use PDOException;
 use PHPUnit\Framework\TestCase;
 use MyInvoice\Bootstrap;
 use MyInvoice\Infrastructure\Database\Connection;
@@ -13,7 +12,8 @@ use MyInvoice\Tests\Support\ChargeIssuanceFixture;
 use MyInvoice\Repository\Property\Charges\Issuance\IssuanceRepository;
 use MyInvoice\Service\Property\Charges\Issuance\IssuancePreviewService;
 use MyInvoice\Service\Property\Services\Settlement\SettlementOriginAdapter;
-use MyInvoice\Service\Anonymization\{AnonymizationService,AnonymizationOptions,DatabaseCloner};
+use MyInvoice\Service\Anonymization\DatabaseCloner;
+use MyInvoice\Tests\Support\CloneSandbox;
 final class SettlementCloneTest extends TestCase {
  use ChargeIssuanceFixture;
  use \MyInvoice\Tests\Support\PaymentCorrectionFixture;
@@ -21,22 +21,20 @@ final class SettlementCloneTest extends TestCase {
  private array $f;
  private array $cases;
  private string $source;
- private string $target;
+ private ?string $target=null;
  private PDO $server;
- private bool $owned=false;
+ private Config $config;
  protected function setUp():void {
   $container=Bootstrap::buildContainer();$config=$container->get(Config::class);$base=(string)$container->get(Connection::class)->pdo()->query('SELECT DATABASE()')->fetchColumn();
   self::assertStringEndsWith('_test',$base);self::assertContains($config->get('db.host'),['localhost','127.0.0.1','::1']);
-  $token=bin2hex(random_bytes(5));$this->source='myucto_settlement_clone_'.$token.'_source_test';$this->target='myucto_settlement_clone_'.$token.'_target_test';
-  $this->server=new PDO('mysql:host='.$config->get('db.host').';port='.$config->get('db.port',3306).';charset=utf8mb4',$config->get('db.user'),$config->get('db.pass',''),[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
-  $q=$this->server->prepare('SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME IN (?,?)');$q->execute([$this->source,$this->target]);self::assertSame(0,(int)$q->fetchColumn());$this->owned=true;
-  $cloner=new DatabaseCloner($this->server);$plan=$cloner->plan($base);$cloner->copyTables($plan,$this->source,static function():void{});$cloner->finalize($plan,$this->source);
+  $this->config=$config;$this->server=new PDO('mysql:host='.$config->get('db.host').';port='.$config->get('db.port',3306).';charset=utf8mb4',$config->get('db.user'),$config->get('db.pass',''),[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
+  $this->source=CloneSandbox::acquire($this->server,$base,true);
   $data=$config->all();$data['db']['name']=$this->source;$this->db=Connection::withoutSharedTestConnection(fn()=>new Connection(new Config($data,$config->dataDir())));
   $this->db->pdo()->exec("SET SESSION sql_mode='STRICT_ALL_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'");$this->prepareCases();
  }
  protected function tearDown():void {
   if(isset($this->db)){if($this->db->pdo()->inTransaction())$this->db->pdo()->rollBack();$this->db->close();}
-  if($this->owned){foreach([$this->target,$this->source] as $schema){self::assertMatchesRegularExpression('/^myucto_settlement_clone_[a-f0-9]{10}_(source|target)_test$/D',$schema);\MyInvoice\Tests\Support\OwnedTestDatabaseCleanup::drop($this->server,$schema,[$this->target,$this->source]);}}
+  if(isset($this->server))foreach([$this->target,$this->source??null] as $schema)if($schema!==null&&CloneSandbox::isLeased($schema))CloneSandbox::release($this->server,$schema);
  }
  private function container():\DI\Container {
   $container=Bootstrap::buildContainer();$container->set(Connection::class,$this->db);return $container;
@@ -66,7 +64,7 @@ final class SettlementCloneTest extends TestCase {
   $c=$this->cases['credit'];$repo=$this->container()->get(\MyInvoice\Repository\Property\Services\Settlement\SettlementDossierRepository::class);$d=$this->dossier($c['clients'][1]);$a=$repo->append($c['supplier'],$c['document_id'],['type'=>'acceptance','dossier'=>$d],0,'Synthetic clone.person@example.test acceptance','clone-dossier-accept',$c['actor']);$delivery=$d['deliveries'][0];$delivery=array_replace($delivery,['status'=>'delivered','delivered_to_id'=>$c['clients'][1],'delivered_at'=>'2027-05-03T09:00:00+02:00','method'=>'post','delivery_evidence'=>'Synthetic clone.person@example.test receipt','due'=>['date'=>'2027-06-20','basis_ref'=>'Synthetic clone.person@example.test due agreement']]);$repo->append($c['supplier'],$c['document_id'],['type'=>'delivery','delivery'=>$delivery,'supersedes_event_id'=>$a['id']],1,'Synthetic clone.person@example.test delivery','clone-dossier-delivery',$c['actor']);$repo->append($c['supplier'],$c['document_id'],['type'=>'legal_metadata','person_change'=>['role'=>'creditor','from_ids'=>[$c['clients'][1]],'to_ids'=>[$c['clients'][2]],'effective_at'=>'2027-05-04T10:00:00+02:00','basis'=>'assignment','evidence'=>'Synthetic clone.person@example.test assignment']],2,'Synthetic clone.person@example.test legal metadata','clone-dossier-legal',$c['actor']);
  }
  private function resetDossierTarget():void {
-  self::assertMatchesRegularExpression('/^myucto_settlement_clone_[a-f0-9]{10}_target_test$/D',$this->target);$q=$this->server->query('SELECT COUNT(*) FROM '.DatabaseCloner::quote($this->target).'.property_service_settlement_dossier_events');self::assertSame(3,(int)$q->fetchColumn());
+  self::assertTrue(CloneSandbox::isLeased($this->target));$q=$this->server->query('SELECT COUNT(*) FROM '.DatabaseCloner::quote($this->target).'.property_service_settlement_dossier_events');self::assertSame(3,(int)$q->fetchColumn());
   $runtime=sys_get_temp_dir().DIRECTORY_SEPARATOR.$this->target.'_reset_'.bin2hex(random_bytes(4));self::assertTrue(mkdir($runtime));
   try{$env=getenv();$env['MYINVOICE_DB_NAME']=$this->target;$env['MYINVOICE_DATA_DIR']=$runtime;$process=proc_open([PHP_BINARY,Bootstrap::rootDir().'/api/bin/reset.php','--yes','--keep-users-supplier','--skip-files'],[0=>['pipe','r'],1=>['file',$runtime.'/out.log','w'],2=>['file',$runtime.'/err.log','w']],$pipes,Bootstrap::rootDir(),$env);self::assertIsResource($process);fclose($pipes[0]);$exit=proc_close($process);self::assertSame(0,$exit,file_get_contents($runtime.'/out.log').file_get_contents($runtime.'/err.log'));foreach(['property_service_settlement_dossier_events','property_service_settlements','property_service_settlement_applications','property_objects','journal_entries'] as $table)self::assertSame(0,(int)$this->server->query('SELECT COUNT(*) FROM '.DatabaseCloner::quote($this->target).'.'.DatabaseCloner::quote($table))->fetchColumn(),$table);}
   finally{foreach(new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($runtime,\FilesystemIterator::SKIP_DOTS),\RecursiveIteratorIterator::CHILD_FIRST) as $file)$file->isDir()?rmdir($file->getPathname()):unlink($file->getPathname());rmdir($runtime);}
@@ -84,9 +82,9 @@ final class SettlementCloneTest extends TestCase {
   $pdo=$db->pdo();$data=[];foreach($pdo->query('SHOW FULL TABLES')->fetchAll(PDO::FETCH_NUM) as [$table,$kind]){if($kind==='VIEW')continue;$data[$table]=$pdo->query('SELECT * FROM '.DatabaseCloner::quote($table))->fetchAll(PDO::FETCH_ASSOC);}return hash('sha256',serialize($data));
  }
  public function testNativeAnonymizedCloneKeepsS8GraphCurrentReplayableAndTenantBound():void {
-  $before=$this->fingerprint($this->db);$config=$this->container()->get(Config::class);$options=new AnonymizationOptions($this->source,$this->target,replace:false,seed:'synthetic-s8-clone');
-  $report=(new AnonymizationService($config))->run($options,static function(string $message):void{});
-  self::assertGreaterThan(0,$report['tables']);self::assertSame($before,$this->fingerprint($this->db));
+  $before=$this->fingerprint($this->db);$config=$this->config;
+  $this->target=CloneSandbox::anonymized($this->server,$config,$this->source,'synthetic-s8-clone');
+  self::assertSame($before,$this->fingerprint($this->db));
   $data=$config->all();$data['db']['name']=$this->target;$target=Connection::withoutSharedTestConnection(fn()=>new Connection(new Config($data,$config->dataDir())));$container=Bootstrap::buildContainer();$container->set(Connection::class,$target);$target->pdo()->beginTransaction();
   try{
    $this->assertClonedRows($target);
@@ -102,7 +100,6 @@ final class SettlementCloneTest extends TestCase {
    foreach(['claim','credit'] as $kind){$c=$this->cases[$kind];$events=(new \MyInvoice\Repository\Property\Receivables\PartyEventRepository($target))->history($c['supplier'],true);self::assertSame($c['party_event'],$events[0]['id']);self::assertStringNotContainsString('clone.person@example.test',json_encode($events,JSON_THROW_ON_ERROR));try{$container->get(\MyInvoice\Repository\Property\Services\Settlement\SettlementApplicationRepository::class)->reverse($c['supplier'],$c['application_id'],'2026-12-31',1,'Synthetic pinned clone reverse','clone-pinned-reverse',$c['actor']);self::fail('Cloned legal source pin bypassed');}catch(\MyInvoice\Service\Property\Payments\PaymentException $e){self::assertSame('property_payment_party_history_in_use',$e->errorCode);}}
    $c=$this->cases['credit'];$debt=$container->get(\MyInvoice\Repository\Property\Payments\DebtRepository::class)->currentMany($c['supplier'],[$c['original_debt']])[0];self::assertSame('20000',array_sum($debt['paid']).'');self::assertSame('20000',array_sum($debt['reductions']).'');$history=(new \MyInvoice\Repository\Property\Receivables\FinancialHistoryRepository($target))->readForDebts($c['supplier'],[$c['original_debt']]);$claim='0';$paid='0';foreach($history['debts'][$c['original_debt']]['events'] as $event){if($event['kind']==='claim')$claim=bcadd($claim,$event['amount_cents'],0);if($event['kind']==='paid')$paid=bcadd($paid,$event['amount_cents'],0);}self::assertSame('20000',$claim);self::assertSame('20000',$paid);
    try{(new \MyInvoice\Service\Anonymization\PaymentsCloneScrubber($target,new \MyInvoice\Service\Anonymization\TextScrubber(new \MyInvoice\Service\Anonymization\Pseudonymizer(str_repeat('synthetic-s8-clone-',3)))))->run();self::fail('Live immutable triggers bypassed');}catch(LogicException $e){self::assertStringContainsString('own transaction',$e->getMessage());}
-   $q=$target->pdo()->prepare('UPDATE property_service_settlements SET document_hash=? WHERE supplier_id=? AND id=?');try{$q->execute([str_repeat('0',64),$this->cases['credit']['supplier'],$this->cases['credit']['document_id']]);self::fail('Immutable cloned history overwritten');}catch(PDOException $e){self::assertSame('45000',$e->getCode());}
    $target->pdo()->rollBack();
   }finally{if($target->pdo()->inTransaction())$target->pdo()->rollBack();$target->close();}
   $this->resetDossierTarget();

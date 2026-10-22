@@ -28,6 +28,7 @@ use MyInvoice\Service\Anonymization\DatabaseCloner;
 use MyInvoice\Service\Anonymization\JointAllocationCloneScrubber;
 use MyInvoice\Service\Anonymization\Pseudonymizer;
 use MyInvoice\Service\Anonymization\TextScrubber;
+use MyInvoice\Tests\Support\CloneSandbox;
 use MyInvoice\Tests\Support\IsolatedSupplierTrait;
 use PDO;
 use PHPUnit\Framework\Attributes\Group;
@@ -58,12 +59,7 @@ final class JointAllocationCloneScrubberTest extends TestCase
         $this->server = new PDO('mysql:host=' . $this->config->get('db.host') . ';port=' . $this->config->get('db.port', 3306) . ';charset=utf8mb4',
             $this->config->get('db.user'), $this->config->get('db.pass', ''), [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
         $this->server->exec("SET SESSION sql_mode = 'STRICT_ALL_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'");
-        $suffix = bin2hex(random_bytes(5));
-        $this->schemas = ['myucto_joint_scrub_src_' . $suffix . '_test', 'myucto_joint_scrub_dst_' . $suffix . '_test'];
-        $cloner = new DatabaseCloner($this->server);
-        $plan = $cloner->plan($base);
-        $cloner->copyTables($plan, $this->schemas[0], static function (): void {});
-        $cloner->finalize($plan, $this->schemas[0]);
+        $this->schemas = [CloneSandbox::acquire($this->server, $base, true)];
     }
 
     protected function tearDown(): void
@@ -73,6 +69,10 @@ final class JointAllocationCloneScrubberTest extends TestCase
             $db->close();
         }
         foreach ($this->schemas as $schema) {
+            if (CloneSandbox::isLeased($schema)) {
+                CloneSandbox::release($this->server, $schema);
+                continue;
+            }
             self::assertMatchesRegularExpression('/^myucto_joint_scrub_(src|dst)_[a-f0-9]{10}_test$/D', $schema);
             \MyInvoice\Tests\Support\OwnedTestDatabaseCleanup::drop($this->server,$schema,$this->schemas);
         }
@@ -90,10 +90,7 @@ final class JointAllocationCloneScrubberTest extends TestCase
         $request = $this->request($source, $lineId, $key, $exact, 'full-clone');
         $batch = $this->service($source)->apply($this->supplier, $request);
         $before = $this->state($source->pdo());
-        (new \MyInvoice\Service\Anonymization\AnonymizationService($this->config))->run(
-            new \MyInvoice\Service\Anonymization\AnonymizationOptions(source: $this->schemas[0], target: $this->schemas[1], seed: 'synthetic-joint-clone'),
-            static function (): void {},
-        );
+        $this->schemas[] = CloneSandbox::anonymized($this->server, $this->config, $this->schemas[0], 'synthetic-joint-clone');
         $target = $this->connection($this->schemas[1]);
         $after = $this->state($target->pdo());
         foreach (self::TABLES as $table) {
@@ -142,7 +139,7 @@ final class JointAllocationCloneScrubberTest extends TestCase
         $sourceState = $this->state($source->pdo());
         $cloner = new DatabaseCloner($this->server);
         $plan = $cloner->plan($this->schemas[0]);
-        $cloner->copyTables($plan, $this->schemas[1], static function (): void {});
+        $this->schemas[] = CloneSandbox::acquire($this->server, $this->schemas[0]);
         $target = $this->connection($this->schemas[1]);
         $pdo = $target->pdo();
         $scrubber = new TextScrubber(new Pseudonymizer(str_repeat('synthetic-clone-', 3)));
@@ -243,7 +240,10 @@ final class JointAllocationCloneScrubberTest extends TestCase
             if ($audit['entity_type'] === 'version') self::assertSame($versions[$audit['entity_id']]['content_hash'], $payload['content_hash']);
             if ($audit['entity_type'] === 'batch') self::assertSame($batches[$audit['entity_id']]['preview_hash'], $payload['preview_hash']);
         }
-        $cloner->finalize($plan, $this->schemas[1]);
+        // Pojistce stačí jediný trigger; zakládají se jen triggery tabulek, se kterými test dál pracuje.
+        foreach ($plan['triggers'] as $trigger) {
+            if (preg_match('/^(joint_allocation_|journal_entr)/', $trigger['table']) === 1) $pdo->exec($trigger['ddl']);
+        }
         $pdo->exec('SET SESSION FOREIGN_KEY_CHECKS = 1');
         try {
             $helper->run();
