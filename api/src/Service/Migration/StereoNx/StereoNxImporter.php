@@ -959,6 +959,8 @@ final class StereoNxImporter
         $existing = $this->mapped($ctx, $mapKind, $key, $hash);
         if ($existing !== null) {
             $this->validateExistingPayment($ctx['supplier_id'], $kind, $movementType, $docId, $movementId, $amount, $existing);
+            // Koncept mohl být mezitím vystaven; ověřená úhrada musí znovu obnovit jeho stav i datum.
+            $ctx['touched_documents'][$kind][$docId] = $docId;
             return;
         }
         try {

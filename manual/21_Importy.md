@@ -1012,6 +1012,12 @@ Pokud se tyto podklady neshodují nebo část skupiny nelze převést, zůstane
 celá skupina k ruční kontrole. Týká se to i úhrad zálohových dokladů;
 neověřená část skupiny se automaticky nespáruje.
 
+Ověřené úhrady určují uhrazenou částku, stav zaplacení a datum poslední
+platby i při opakovaném importu již spárovaných plateb. To umožňuje dorovnat
+stav faktury, která byla po prvním převodu potvrzena z konceptu. Doklad,
+který stále vyžaduje kontrolu jako koncept, si tento stav zachová. Historické
+úhrady se přebírají bez poděkování za úhradu a bez zakládání e-mailů do fronty.
+
 Cizoměnové faktury s doloženou měnou a kurzem se převezmou; neověřené členění DPH
 zůstává konceptem. Potřebné měny musí existovat v Nastavení měn cílové firmy.
 Zdrojový účetní deník neobsahuje cizoměnové částky, proto se přebírá v CZK. Před

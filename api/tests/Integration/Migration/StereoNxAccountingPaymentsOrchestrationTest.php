@@ -115,6 +115,75 @@ final class StereoNxAccountingPaymentsOrchestrationTest extends TestCase
         self::assertSame($after, $this->snapshot());
     }
 
+    public function testRepeatRefreshesValidatedPaymentAfterDraftInvoiceWasIssued(): void
+    {
+        $tables = self::tables();
+        $tables['Svfp'] = [];
+        $backup = $this->backup($tables);
+        $first = $this->importer->run($backup, $this->supplierId, $this->userId, false, true);
+        self::assertTrue($first['ok'], json_encode($first['errors'], JSON_UNESCAPED_UNICODE));
+        $invoice = $this->issuedPaymentState();
+        self::assertSame('draft', $invoice['status']);
+        self::assertSame(121.0, (float) $invoice['paid_total']);
+        self::assertSame((float) $invoice['amount_to_pay'], (float) $invoice['paid_total']);
+        // Uživatel zkontroloval a vystavil převzatý koncept. Původní platba zůstala beze změny.
+        $this->db->pdo()->prepare("UPDATE invoices SET status='issued',paid_at=NULL WHERE supplier_id=? AND id=?")
+            ->execute([$this->supplierId, $invoice['id']]);
+        $before = $this->paymentRecordSnapshot();
+        $repeat = $this->importer->run($backup, $this->supplierId, $this->userId, false, true);
+        self::assertTrue($repeat['ok'], json_encode($repeat['errors'], JSON_UNESCAPED_UNICODE));
+        $invoice = $this->issuedPaymentState();
+        self::assertSame('paid', $invoice['status']);
+        self::assertSame('2025-03-15', substr((string) $invoice['paid_at'], 0, 10));
+        self::assertSame(121.0, (float) $invoice['paid_total']);
+        self::assertSame(0, $repeat['written']['payments']);
+        self::assertSame(0, $repeat['written']['bank_transactions']);
+        self::assertSame(0, $repeat['written']['cash_transactions']);
+        self::assertSame($before, $this->paymentRecordSnapshot(), 'Přepočet nesmí přidat platbu, pohyb, vazbu ani účetní zápis.');
+    }
+
+    public function testRepeatOfValidatedPaymentKeepsTrueDraftInvoiceForReview(): void
+    {
+        $tables = self::tables();
+        $tables['Svfp'] = [];
+        $backup = $this->backup($tables);
+        $first = $this->importer->run($backup, $this->supplierId, $this->userId, false, true);
+        self::assertTrue($first['ok'], json_encode($first['errors'], JSON_UNESCAPED_UNICODE));
+        self::assertSame('draft', $this->issuedPaymentState()['status']);
+        $before = $this->paymentRecordSnapshot();
+        $repeat = $this->importer->run($backup, $this->supplierId, $this->userId, false, true);
+        self::assertTrue($repeat['ok'], json_encode($repeat['errors'], JSON_UNESCAPED_UNICODE));
+        self::assertSame('draft', $this->issuedPaymentState()['status']);
+        self::assertSame(121.0, (float) $this->issuedPaymentState()['paid_total']);
+        self::assertSame(0, $repeat['written']['payments']);
+        self::assertSame($before, $this->paymentRecordSnapshot());
+    }
+
+    private function issuedPaymentState(): array
+    {
+        $query = $this->db->pdo()->prepare("SELECT id,status,paid_total,paid_at,amount_to_pay FROM invoices WHERE supplier_id=? AND varsymbol='VF-1'");
+        $query->execute([$this->supplierId]);
+        $row = $query->fetch(\PDO::FETCH_ASSOC);
+        self::assertIsArray($row);
+        return $row;
+    }
+
+    private function paymentRecordSnapshot(): array
+    {
+        $out = [];
+        foreach (['invoice_payments', 'payment_matches', 'journal_entries', 'journal_entry_lines',
+            'journal_entry_document_links', 'stereo_nx_import_map', 'cash_documents'] as $table) {
+            $order = $table === 'stereo_nx_import_map' ? 'kind,source_key' : 'id';
+            $q = $this->db->pdo()->prepare("SELECT * FROM {$table} WHERE supplier_id=? ORDER BY {$order}");
+            $q->execute([$this->supplierId]);
+            $out[$table] = $q->fetchAll(\PDO::FETCH_ASSOC);
+        }
+        $q = $this->db->pdo()->prepare('SELECT bt.* FROM bank_transactions bt JOIN bank_statements bs ON bs.id=bt.statement_id WHERE bs.supplier_id=? ORDER BY bt.id');
+        $q->execute([$this->supplierId]);
+        $out['bank_transactions'] = $q->fetchAll(\PDO::FETCH_ASSOC);
+        return $out;
+    }
+
     public function testReconciliationDetectsBalancedChangeToImportedJournal(): void
     {
         $backup = $this->backup(self::tables());
