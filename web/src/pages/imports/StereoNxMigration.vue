@@ -10,6 +10,7 @@ import { btnOutline, ICONS } from '@/components/ui/buttonStyles'
 import ActionBar, { type ActionItem } from '@/components/ui/ActionBar.vue'
 import MoneyS3Protocol from '@/components/migration/MoneyS3Protocol.vue'
 import StereoNxSummary from '@/components/migration/StereoNxSummary.vue'
+import StereoNxMessages from '@/components/migration/StereoNxMessages.vue'
 import StereoNxAccountMapping from '@/components/migration/StereoNxAccountMapping.vue'
 import ImportJobProgress from '@/components/exchange/ImportJobProgress.vue'
 import CompanyProfileBox from '@/components/settings/CompanyProfileBox.vue'
@@ -547,40 +548,67 @@ function reportMessage(item: unknown): string {
 
 function asProtocol(report: StereoReport, mode: 'dry_run' | 'import'): StereoProtocolRun {
   const messages: MoneyS3Step['messages'] = []
-  const seen = new Set<string>()
-  const reviewedDocuments = report.review_documents ?? []
+  const reviewedRecords = [...(report.review_documents ?? []), ...(report.review_movements ?? [])]
+  const reviewDetails = new Map<string, Set<string>>()
+  const reviewIndices = new Map<string, number[]>()
+  for (const [index, record] of reviewedRecords.entries()) {
+    for (const code of new Set(record.review_codes)) {
+      for (const [field, value] of [['source_key', record.source_key], ['document_no', record.document_no]] as const) {
+        if (!value) continue
+        const key = JSON.stringify([field, value, code])
+        const indices = reviewIndices.get(key) ?? []
+        indices.push(index)
+        reviewIndices.set(key, indices)
+      }
+    }
+  }
   const addMessage = (item: unknown, fallback: 'error' | 'warning' | 'info'): void => {
-    // Server uchovává důvod v reportu; v UI se stejný doklad zobrazuje s důvody
-    // v části Kontrola dokladů, a proto ho neopakujeme v souhrnu.
-    if (item && typeof item === 'object' && 'document_no' in item && typeof item.document_no === 'string'
-      && 'code' in item && typeof item.code === 'string'
-      && reviewedDocuments.some(document => document.document_no === item.document_no && document.review_codes.includes(item.code as string))) return
     const message = reportMessage(item)
-    const level = typeof item === 'object' && item && 'level' in item && item.level === 'error' ? 'error'
-      : typeof item === 'object' && item && 'level' in item && item.level === 'warning' ? 'warning'
-      : typeof item === 'object' && item && 'level' in item && item.level === 'info' ? 'info' : fallback
-    const key = `${level}:${message}`
-    if (seen.has(key)) return
-    seen.add(key)
-    messages.push({ level, code: key, text: message, context: {} })
+    const fields = item && typeof item === 'object' ? item as Record<string, unknown> : {}
+    const level = fields.level === 'error' || fields.level === 'warning' || fields.level === 'info' ? fields.level : fallback
+    const code = typeof fields.code === 'string' && fields.code.trim() ? fields.code : `text:${message}`
+    const context: Record<string, unknown> = {}
+    for (const key of ['document_no', 'source_key'] as const) {
+      if (typeof fields[key] === 'string') context[key] = fields[key]
+    }
+    if (typeof fields.count === 'number' && Number.isFinite(fields.count) && Number.isInteger(fields.count) && fields.count > 0) {
+      context.count = fields.count
+    }
+    // Podrobnou zprávu přesuneme ke stejnému důvodu kontroly, aby zůstala
+    // dostupná a tentýž výskyt se nepočítal dvakrát. Číslo bez identity stačí
+    // pouze tehdy, když ve výběru odpovídá právě jednomu záznamu.
+    if (level === 'warning' && (context.count === undefined || context.count === 1) && (context.source_key || context.document_no)) {
+      const field = context.source_key ? 'source_key' : 'document_no'
+      const matches = reviewIndices.get(JSON.stringify([field, context[field], code])) ?? []
+      if (matches.length === 1) {
+        const key = JSON.stringify([matches[0], code])
+        const details = reviewDetails.get(key) ?? new Set<string>()
+        details.add(message)
+        reviewDetails.set(key, details)
+        return
+      }
+    }
+    messages.push({ level, code, text: message, context })
   }
   for (const item of report.preflight ?? []) addMessage(item, 'info')
   for (const item of report.errors ?? []) addMessage(item, 'error')
   for (const item of report.warnings ?? []) addMessage(item, 'warning')
   const reasons = { ...report.review_reasons }
   for (const [code, count] of Object.entries(report.movement_review_reasons ?? {})) reasons[code] = (reasons[code] ?? 0) + count
-  const reviewMessages: MoneyS3Step['messages'] = Object.entries(reasons).map(([code, count]) => ({
-    level: 'warning', code, text: t('stereo_nx.review_count', { reason: reviewLabel(code), count }), context: {},
+  const reviewMessages: MoneyS3Step['messages'] = Object.entries(reasons).filter(([, count]) => count > 0).map(([code, count]) => ({
+    level: 'warning', code, text: t('stereo_nx.review_count', { reason: reviewLabel(code), count }), context: { summary: true, count },
   }))
-  for (const document of [...(report.review_documents ?? []), ...(report.review_movements ?? [])]) {
-    reviewMessages.push({
-      level: 'warning', code: document.source_key,
-      text: t('stereo_nx.review_document', {
-        kind: t(`stereo_nx.document_kind.${document.kind}`),
-        number: document.document_no || t('stereo_nx.unnumbered_document'),
-        reasons: document.review_codes.map(reviewLabel).join(', '),
-      }), context: {},
-    })
+  for (const [index, document] of reviewedRecords.entries()) {
+    for (const code of new Set(document.review_codes)) {
+      const details = reviewDetails.get(JSON.stringify([index, code]))
+      reviewMessages.push({
+        level: 'warning', code,
+        text: details ? [...details].join('\n') : t('stereo_nx.review_document', {
+          kind: t(`stereo_nx.document_kind.${document.kind}`),
+          number: document.document_no || t('stereo_nx.unnumbered_document'), reasons: reviewLabel(code),
+        }), context: { document_no: document.document_no || t('stereo_nx.unnumbered_document'), kind: document.kind, source_key: document.source_key },
+      })
+    }
   }
   const steps: MoneyS3Step[] = [
     { key: 'source_summary', status: report.ok ? 'ok' : 'error', counts: report.counts ?? {}, messages },
@@ -740,6 +768,7 @@ const importProtocol = computed(() => importReport.value ? asProtocol(importRepo
         <p v-if="dryReport.date_bounds" class="mb-4 text-sm text-neutral-600">{{ t('stereo_nx.date_bounds', { from: formatDate(dryReport.date_bounds.from), to: formatDate(dryReport.date_bounds.to) }) }}</p>
         <MoneyS3Protocol v-if="dryProtocol" :run="dryProtocol" prefix="stereo_nx">
           <template #steps="{ steps: protocolSteps }"><StereoNxSummary :steps="protocolSteps" /></template>
+          <template #messages="{ messages: protocolMessages }"><StereoNxMessages :messages="protocolMessages" /></template>
         </MoneyS3Protocol>
       </template>
     </section>
@@ -752,6 +781,7 @@ const importProtocol = computed(() => importReport.value ? asProtocol(importRepo
         <p v-if="importReport.date_bounds" class="mb-4 text-sm text-neutral-600">{{ t('stereo_nx.date_bounds', { from: formatDate(importReport.date_bounds.from), to: formatDate(importReport.date_bounds.to) }) }}</p>
         <MoneyS3Protocol v-if="importProtocol" :run="importProtocol" prefix="stereo_nx">
           <template #steps="{ steps: protocolSteps }"><StereoNxSummary :steps="protocolSteps" /></template>
+          <template #messages="{ messages: protocolMessages }"><StereoNxMessages :messages="protocolMessages" /></template>
         </MoneyS3Protocol>
         <div v-if="importReport.ok && importReport.database_writes && ((importReport.written?.historical_payroll_created ?? 0) + (importReport.written?.historical_payroll_existing ?? 0) > 0)" class="mt-4 flex flex-wrap gap-2">
           <RouterLink to="/payroll/imports?tab=takeover" :class="btnOutline('neutral')" class="whitespace-nowrap" data-testid="stereo-payroll-link"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path :d="ICONS.eye" /></svg>{{ t('stereo_nx.open_payroll') }}</RouterLink>
@@ -771,6 +801,7 @@ const importProtocol = computed(() => importReport.value ? asProtocol(importRepo
         <p v-if="dryReport?.date_bounds" class="mb-4 text-sm text-neutral-600">{{ t('stereo_nx.date_bounds', { from: formatDate(dryReport.date_bounds.from), to: formatDate(dryReport.date_bounds.to) }) }}</p>
         <MoneyS3Protocol v-if="dryProtocol" :run="dryProtocol" prefix="stereo_nx">
           <template #steps="{ steps: protocolSteps }"><StereoNxSummary :steps="protocolSteps" /></template>
+          <template #messages="{ messages: protocolMessages }"><StereoNxMessages :messages="protocolMessages" /></template>
         </MoneyS3Protocol>
         <label class="mt-5 flex cursor-pointer items-start gap-3 rounded-lg border border-warning-500/30 bg-warning-50 p-4 text-sm text-warning-700"><input v-model="confirmed" data-testid="stereo-import-confirm" type="checkbox" class="mt-1" :disabled="busy" />{{ t('stereo_nx.confirm') }}</label>
         <p v-if="dryReport?.partial" class="mt-3 text-sm text-warning-700">{{ t('stereo_nx.partial_backup_kept') }}</p>

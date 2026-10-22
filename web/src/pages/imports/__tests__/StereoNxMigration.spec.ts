@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import StereoNxMigration from '../StereoNxMigration.vue'
 import MoneyS3Protocol from '@/components/migration/MoneyS3Protocol.vue'
+import StereoNxMessages from '@/components/migration/StereoNxMessages.vue'
 import type { StereoAccountMapping, StereoAccountMappingProposal } from '@/api/stereoNx'
 
 const m = vi.hoisted(() => ({
@@ -282,7 +283,9 @@ describe('Stereo NX migration wizard', () => {
       ['stereo_nx.steps.would_write', 'stereo_nx.counts.assets_created', '0'],
       ['stereo_nx.steps.would_write', 'stereo_nx.counts.custom_metric', '9'],
     ])
-    expect(wrapper.text()).toContain('stereo_nx.review_count')
+    expect(wrapper.getComponent(StereoNxMessages).props('messages')).toContainEqual(expect.objectContaining({
+      code: 'vat_participation_unassigned', context: { summary: true, count: 1 },
+    }))
     wrapper.unmount()
   })
 
@@ -515,15 +518,82 @@ describe('Stereo NX migration wizard', () => {
     wrapper.unmount()
   })
 
-  it('keeps document review reasons in the review step without a generic duplicate in summary', async () => {
+  it('keeps specific document review details under their cause without counting a duplicate in summary', async () => {
     m.run.mockResolvedValue({ ...dryReport,
       warnings: [{ level: 'warning', code: 'issued_lines_aggregated', document_no: 'TEST', message: 'Specific draft warning' }],
       review_documents: [{ kind: 'issued', source_key: 'synthetic-issued', document_no: 'TEST', review_codes: ['issued_lines_aggregated'], target_id: null }],
     })
     const wrapper = await mountPage()
     await reachDryRun(wrapper)
-    expect(wrapper.get('[data-testid="stereo-dry-report"]').text()).not.toContain('Specific draft warning')
-    expect(wrapper.get('[data-testid="stereo-dry-report"]').text()).toContain('stereo_nx.review_document')
+    const run = wrapper.getComponent(MoneyS3Protocol).props('run')
+    expect(run.protocol?.steps.find(step => step.key === 'source_summary')?.messages).toEqual([])
+    const details = wrapper.getComponent(StereoNxMessages).props('messages').filter(item => item.code === 'issued_lines_aggregated')
+    expect(details).toEqual([expect.objectContaining({ level: 'warning', text: 'Specific draft warning',
+      context: { document_no: 'TEST', kind: 'issued', source_key: 'synthetic-issued' } })])
+    wrapper.unmount()
+  })
+
+  it('preserves warning cause codes and separates document identities with the same displayed number', async () => {
+    m.run.mockResolvedValue({ ...dryReport, review_reasons: {},
+      warnings: [
+        { level: 'warning', code: 'document_rounding_account_review', document_no: 'SYN-1', source_key: 'source-A', message: 'Rounding A' },
+        { level: 'warning', code: 'document_rounding_account_review', document_no: 'SYN-1', source_key: 'source-B', message: 'Rounding B' },
+        { level: 'info', code: 'document_items_reconstructed', document_no: 'SYN-2', message: 'Reconstructed items' },
+      ],
+    })
+    const wrapper = await mountPage()
+    await reachDryRun(wrapper)
+    const messages = wrapper.getComponent(StereoNxMessages).props('messages')
+    expect(messages).toEqual([
+      expect.objectContaining({ level: 'warning', code: 'document_rounding_account_review', context: { document_no: 'SYN-1', source_key: 'source-A' } }),
+      expect.objectContaining({ level: 'warning', code: 'document_rounding_account_review', context: { document_no: 'SYN-1', source_key: 'source-B' } }),
+      expect.objectContaining({ level: 'info', code: 'document_items_reconstructed' }),
+    ])
+    expect(wrapper.text()).not.toContain('source-A')
+    wrapper.unmount()
+  })
+
+  it('preserves aggregate warning occurrence counts without hiding their full text', async () => {
+    m.run.mockResolvedValue({ ...dryReport, review_reasons: {}, warnings: [
+      { level: 'warning', code: 'bank_currency_unresolved', message: 'Seven synthetic movements need review', count: 7 },
+    ] })
+    const wrapper = await mountPage()
+    await reachDryRun(wrapper)
+    expect(wrapper.getComponent(StereoNxMessages).props('messages')).toEqual([
+      expect.objectContaining({ code: 'bank_currency_unresolved', text: 'Seven synthetic movements need review', context: { count: 7 } }),
+    ])
+    wrapper.unmount()
+  })
+
+  it('groups repeated legacy warnings without silently dropping their occurrences', async () => {
+    m.run.mockResolvedValue({ ...dryReport, review_reasons: {}, warnings: [
+      'Repeated synthetic warning', 'Repeated synthetic warning', 'Different synthetic warning',
+    ] })
+    const wrapper = await mountPage()
+    await reachDryRun(wrapper)
+    const messages = wrapper.getComponent(StereoNxMessages).props('messages')
+    expect(messages.filter(item => item.text === 'Repeated synthetic warning')).toHaveLength(2)
+    expect(wrapper.get('details[data-message-code="text:Repeated synthetic warning"] [data-testid="stereo-message-group-count"]').text()).toBe('2')
+    expect(wrapper.findAll('details[data-message-level="warning"]')).toHaveLength(2)
+    wrapper.unmount()
+  })
+
+  it('keeps ambiguous warning identities separate and emits one review detail per cause', async () => {
+    m.run.mockResolvedValue({ ...dryReport, review_reasons: { issued_lines_missing: 2 },
+      warnings: [{ level: 'warning', code: 'issued_lines_missing', document_no: 'SYN-1', message: 'Unattributed detail' }],
+      review_documents: [
+        { kind: 'issued', source_key: 'source-A', document_no: 'SYN-1', review_codes: ['issued_lines_missing', 'partner_country_unresolved'], target_id: null },
+        { kind: 'issued', source_key: 'source-B', document_no: 'SYN-1', review_codes: ['issued_lines_missing'], target_id: null },
+      ],
+    })
+    const wrapper = await mountPage()
+    await reachDryRun(wrapper)
+    const messages = wrapper.getComponent(StereoNxMessages).props('messages')
+    const missing = messages.filter(item => item.code === 'issued_lines_missing')
+    expect(missing).toHaveLength(4)
+    expect(missing.find(item => item.context.summary)).toEqual(expect.objectContaining({ context: { summary: true, count: 2 } }))
+    expect(missing.find(item => item.text === 'Unattributed detail')).toBeDefined()
+    expect(messages.filter(item => item.code === 'partner_country_unresolved')).toHaveLength(1)
     wrapper.unmount()
   })
 

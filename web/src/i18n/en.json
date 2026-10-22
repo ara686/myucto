@@ -34184,6 +34184,32 @@
     }
   },
   "stereo_nx": {
+    "messages": {
+      "detail_occurrences": "Occurrences: {count}",
+      "title": "Messages by cause",
+      "all": "All",
+      "filter_label": "Filter messages by severity",
+      "levels": {
+        "error": "Errors",
+        "warning": "Warnings",
+        "info": "Information"
+      },
+      "search_label": "Search messages",
+      "search_placeholder": "Document number or message text…",
+      "clear_search": "Clear search",
+      "no_results": "No messages match the selected severity and search text.",
+      "empty": "The report contains no messages.",
+      "untitled": "Other messages",
+      "matching_details": "Matching detailed messages: {count}",
+      "available_details": "The summary reports {count} occurrences; the available breakdown covers {occurrences} occurrences.",
+      "shown_details": "Showing {shown} of {total} detailed messages",
+      "load_more": "Show {count} more",
+      "causes": {
+        "document_rounding_account_review": "Rounding account needs review",
+        "document_item_account_ambiguous": "Ambiguous document item account",
+        "document_items_reconstructed": "Document items reconstructed from the accounting journal"
+      }
+    },
     "mapping": {
       "vat_unresolved_account_name": "VAT – manually assigned entries",
       "reverse_charge_hint": "The two VAT sides of a debit 343 / credit 343 entry cannot be safely distinguished. A single shared target account would merge them. Disable automatic VAT separation and check the manual source account mapping.",

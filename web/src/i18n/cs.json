@@ -34184,6 +34184,32 @@
     }
   },
   "stereo_nx": {
+    "messages": {
+      "detail_occurrences": "Počet výskytů: {count}",
+      "title": "Zprávy podle důvodu",
+      "all": "Vše",
+      "filter_label": "Filtrovat zprávy podle závažnosti",
+      "levels": {
+        "error": "Chyby",
+        "warning": "Upozornění",
+        "info": "Informace"
+      },
+      "search_label": "Hledat ve zprávách",
+      "search_placeholder": "Číslo dokladu nebo text zprávy…",
+      "clear_search": "Vymazat hledání",
+      "no_results": "Pro vybranou závažnost a hledaný text nebyly nalezeny žádné zprávy.",
+      "empty": "Protokol neobsahuje žádné zprávy.",
+      "untitled": "Další zprávy",
+      "matching_details": "Nalezené podrobné zprávy: {count}",
+      "available_details": "Souhrn uvádí {count} výskytů; dostupný rozpis pokrývá {occurrences} výskytů.",
+      "shown_details": "Zobrazeno {shown} z {total} podrobných zpráv",
+      "load_more": "Zobrazit dalších {count}",
+      "causes": {
+        "document_rounding_account_review": "Účet zaokrouhlení vyžaduje kontrolu",
+        "document_item_account_ambiguous": "Nejednoznačný účet položky dokladu",
+        "document_items_reconstructed": "Položky dokladu sestavené z účetního deníku"
+      }
+    },
     "mapping": {
       "vat_unresolved_account_name": "DPH – ručně přiřazené kontace",
       "reverse_charge_hint": "U zápisu MD 343 / D 343 nelze bezpečně rozlišit obě strany DPH. Jeden společný cílový účet by je sloučil. Vypněte automatické rozlišení DPH a zkontrolujte ruční mapování zdrojových účtů.",
