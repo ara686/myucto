@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import StereoNxMigration from '../StereoNxMigration.vue'
+import MoneyS3Protocol from '@/components/migration/MoneyS3Protocol.vue'
 import type { StereoAccountMapping, StereoAccountMappingProposal } from '@/api/stereoNx'
 
 const m = vi.hoisted(() => ({
@@ -523,6 +524,28 @@ describe('Stereo NX migration wizard', () => {
     await reachDryRun(wrapper)
     expect(wrapper.get('[data-testid="stereo-dry-report"]').text()).not.toContain('Specific draft warning')
     expect(wrapper.get('[data-testid="stereo-dry-report"]').text()).toContain('stereo_nx.review_document')
+    wrapper.unmount()
+  })
+
+  it.each(['dry_run', 'import'] as const)('keeps reconstructed document information informational in the %s protocol', async mode => {
+    m.run.mockImplementation(async (_token: string, _company: number, runMode: string) => ({ ...dryReport,
+      counts: { issued: 1 }, review_reasons: {}, database_writes: runMode === 'import',
+      warnings: [{ level: 'info', code: 'document_items_reconstructed', message: 'Synthetic reconstructed document details' }],
+    }))
+    const wrapper = await mountPage()
+    await reachDryRun(wrapper)
+    if (mode === 'import') {
+      await primaryButton(wrapper, 'continue').trigger('click')
+      await wrapper.get('[data-testid="stereo-import-confirm"]').setValue(true)
+      await primaryButton(wrapper, 'import').trigger('click')
+      await flushPromises()
+    }
+    const run = wrapper.getComponent(MoneyS3Protocol).props('run')
+    expect(run.protocol?.steps.find(step => step.key === 'source_summary')?.messages).toEqual([
+      expect.objectContaining({ level: 'info', text: 'Synthetic reconstructed document details' }),
+    ])
+    expect(run.status).toBe('completed')
+    expect(run.protocol?.status).toBe('completed')
     wrapper.unmount()
   })
 

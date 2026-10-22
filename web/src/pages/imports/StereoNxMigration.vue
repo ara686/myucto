@@ -557,7 +557,8 @@ function asProtocol(report: StereoReport, mode: 'dry_run' | 'import'): StereoPro
       && reviewedDocuments.some(document => document.document_no === item.document_no && document.review_codes.includes(item.code as string))) return
     const message = reportMessage(item)
     const level = typeof item === 'object' && item && 'level' in item && item.level === 'error' ? 'error'
-      : typeof item === 'object' && item && 'level' in item && item.level === 'warning' ? 'warning' : fallback
+      : typeof item === 'object' && item && 'level' in item && item.level === 'warning' ? 'warning'
+      : typeof item === 'object' && item && 'level' in item && item.level === 'info' ? 'info' : fallback
     const key = `${level}:${message}`
     if (seen.has(key)) return
     seen.add(key)

@@ -834,6 +834,12 @@ import je přiřadí podle částek pouze tehdy, když existuje jediné úplné 
 Nejednoznačný nebo příliš rozsáhlý rozpis zůstane s upozorněním k ručnímu
 doplnění před další úpravou či zaúčtováním. Totéž platí pro více možných
 analytik pohledávek či závazků v nativních předkontacích.
+Pokud ve zdroji chybí původní položky a je k dispozici jediná ověřená sazební
+rekapitulace, import může vytvořit samostatný náhradní řádek pro každý doložený
+nákladový či výnosový účet. Součty i následný běžný přepočet musí přesně zachovat
+základy podle účtů, DPH a cenu celkem. Jinak zůstane upozornění k ručnímu rozpisu.
+Protokol vytvoření řádků výslovně uvádí; upozornění na chybějící původní položky
+zůstává, protože texty a obsah původních položek nelze z deníku obnovit.
 Starší doložené importní vazby se nepřejmenovávají. Existuje-li vedle dříve
 převzatého účtu bez tečky také jeho nativní varianta s tečkou, mapování se
 zastaví a vyžádá sjednocení vazeb. Tyto účty se neslučují automaticky.

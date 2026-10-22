@@ -138,6 +138,16 @@ final class StereoNxAccountingDocuments
                             $documentPlan['records'][$part][$index]['items'][$itemIndex]['target_' . $field] = $account;
                         }
                         $needsAllocation = false;
+                    } else {
+                        $reconstructed = StereoNxRecapAccountItems::reconstruct($document, $amountsByDocument[$key] ?? [], $field);
+                        if ($reconstructed !== null) {
+                            $documentPlan['records'][$part][$index]['target_items'] = $reconstructed;
+                            $documentPlan['warnings'][] = ['level' => 'info', 'code' => 'document_items_reconstructed',
+                                'source_key' => $document['source_key'], 'document_no' => (string) ($document['document_no'] ?? ''),
+                                'message' => 'Doklad ' . (string) ($document['document_no'] ?? '')
+                                    . ' má náhradní účetní položky vytvořené podle kontací deníku (' . implode(', ', $accounts) . ').'];
+                            $needsAllocation = false;
+                        }
                     }
                 }
                 if ($needsAllocation) {
@@ -163,7 +173,7 @@ final class StereoNxAccountingDocuments
         if (count($remaining) > 12 || ($document['currency_code'] ?? 'CZK') !== 'CZK') return null;
         $amounts = [];
         foreach ($document['items'] ?? [] as $index => $item) {
-            $base = self::itemMoneyCents($item['total_without_vat'] ?? null);
+            $base = StereoNxRecapAmounts::moneyCents($item['total_without_vat'] ?? null);
             if ($base === null) return null;
             if ($field === 'expense_account_code') {
                 $deduction = $item['vat_deduction'] ?? 'full';
@@ -172,7 +182,7 @@ final class StereoNxAccountingDocuments
                 if (!in_array($deduction, ['full', 'reduced', 'none'], true)) return null;
                 if ($deduction === 'none') {
                     if (abs((float) ($item['source_self_assessed_vat'] ?? 0)) > 0.004) return null;
-                    $base = self::itemMoneyCents($item['total_with_vat'] ?? null);
+                    $base = StereoNxRecapAmounts::moneyCents($item['total_with_vat'] ?? null);
                     if ($base === null) return null;
                 }
             }
@@ -232,12 +242,6 @@ final class StereoNxAccountingDocuments
         };
         $search(0, $remaining, []);
         return !$exhausted && $solutions === 1 ? $solution : null;
-    }
-
-    private static function itemMoneyCents(mixed $value): ?int
-    {
-        if ((!is_int($value) && !is_float($value)) || !is_finite((float) $value) || abs($value) > 999999999999.99) return null;
-        return (int) round($value * 100, 0, PHP_ROUND_HALF_UP);
     }
 
     /** @param array<string,mixed> $plan @return array<string,mixed> */

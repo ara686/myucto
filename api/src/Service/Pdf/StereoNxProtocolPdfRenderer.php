@@ -82,7 +82,10 @@ final class StereoNxProtocolPdfRenderer extends ReportPdfRendererBase
             }
             if ($rows !== []) $sections[] = ['title' => $title, 'headers' => [$labels['account'], $labels['target'], $labels['source']], 'rows' => $rows];
         }
-        $hasWarnings = !empty($report['warnings']) || !empty($report['review_reasons']) || !empty($report['movement_review_reasons']) || !empty($report['partial']);
+        $hasWarnings = !empty($report['review_reasons']) || !empty($report['movement_review_reasons']) || !empty($report['partial']);
+        foreach (($report['warnings'] ?? []) as $item) {
+            if (!is_array($item) || ($item['level'] ?? '') !== 'info') $hasWarnings = true;
+        }
         foreach (($report['preflight'] ?? []) as $item) {
             if (is_array($item) && ($item['level'] ?? '') === 'warning') $hasWarnings = true;
         }

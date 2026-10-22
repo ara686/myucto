@@ -53,6 +53,16 @@ final class StereoNxProtocolPdfRendererTest extends TestCase
         self::assertStringNotContainsString('Dokončeno s upozorněními', $html);
     }
 
+    public function testReconstructedItemsInfoInWarningsCollectionRemainsInformational(): void
+    {
+        $data = ['report' => ['ok' => true, 'warnings' => [['level' => 'info',
+            'code' => 'document_items_reconstructed', 'message' => 'Syntetické řádky vytvořeny z deníku.']]]];
+        $html = (new StereoNxProtocolPdfRenderer())->renderHtml($data);
+        self::assertStringContainsString('<strong>Dokončeno</strong>', $html);
+        self::assertStringNotContainsString('Dokončeno s upozorněními', $html);
+        self::assertStringContainsString('Syntetické řádky vytvořeny z deníku.', $html);
+    }
+
     public function testPdfContainsDiacriticsAndCompleteLongProtocol(): void
     {
         $data = $this->data();

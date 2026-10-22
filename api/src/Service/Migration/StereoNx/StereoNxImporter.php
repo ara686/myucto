@@ -603,7 +603,7 @@ final class StereoNxImporter
         $stmt = $this->db->pdo()->prepare("SELECT id FROM {$table} WHERE supplier_id = ? AND varsymbol = ? LIMIT 1");
         $stmt->execute([$ctx['supplier_id'], $number]);
         if ($stmt->fetchColumn() !== false) throw new StereoNxException('document_number_taken', 'Číslo zdrojového dokladu už ve firmě používá jiný doklad.');
-        $items = $record['items'] ?? [];
+        $items = $record['target_items'] ?? $record['items'] ?? [];
         if (!is_array($items)) throw new StereoNxException('document_items_invalid', 'Položky dokladu nejsou platné.');
         $base = $this->money($record['total_without_vat'] ?? null);
         $vat = $this->money($record['total_vat'] ?? null);
@@ -1124,7 +1124,7 @@ final class StereoNxImporter
         // Změna těchto důkazů musí zastavit opakovaný převod před vrácením starého mapování.
         unset($record['row'], $record['header']);
         // Potvrzené cílové účty jsou výsledek převodu, nikoli změna zdrojové zálohy.
-        unset($record['target_analytic_suffix']);
+        unset($record['target_analytic_suffix'], $record['target_items']);
         foreach ($record['items'] ?? [] as $index => $item) {
             unset($record['items'][$index]['target_expense_account_code'],
                 $record['items'][$index]['target_revenue_account_code']);
