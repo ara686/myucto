@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace MyInvoice\Tests\Support;
 
+use MyInvoice\Bootstrap;
 use MyInvoice\Infrastructure\Config\Config;
 use MyInvoice\Infrastructure\Database\TriggerMetadata;
 use MyInvoice\Service\Anonymization\AnonymizationOptions;
@@ -45,8 +46,6 @@ final class CloneSandbox
     /** @var array<string,int> zapůjčená databáze => 1 s triggery, 0 bez nich */
     private static array $leased = [];
 
-    private static ?PDO $server = null;
-
     private static bool $shutdownRegistered = false;
 
     /** Počet založení a obnov od začátku procesu (pro test pomocníka). */
@@ -57,7 +56,6 @@ final class CloneSandbox
         if (!str_ends_with($source, '_test')) {
             throw new \LogicException('Kopírovat lze jen testovací databázi.');
         }
-        self::$server ??= $server;
         $schema = null;
         while ($schema === null && self::$idle[(int) $triggers] !== []) {
             $candidate = array_pop(self::$idle[(int) $triggers]);
@@ -129,13 +127,25 @@ final class CloneSandbox
         OwnedTestDatabaseCleanup::drop($server, $schema, $ownedSchemas);
     }
 
+    /** Vrátí všechny zapůjčené databáze, třeba v úklidu testu, který si názvy nedrží. */
+    public static function releaseAll(PDO $server): void
+    {
+        foreach (array_keys(self::$leased) as $schema) {
+            self::release($server, $schema);
+        }
+    }
+
     /** Zahodí všechny databáze procesu. Volá se na konci procesu, test pomocníka i dřív. */
     public static function dropAll(): void
     {
-        $server = self::$server;
-        if ($server === null) {
+        if (self::$owned === []) {
             return;
         }
+        // Vlastní spojení: spojení testů mohla skončit (release() ukončuje spojení
+        // stojící ve vracené databázi) a na konci procesu už nemusí žít žádné.
+        $config = Config::load(Bootstrap::rootDir());
+        $server = new PDO('mysql:host=' . $config->get('db.host') . ';port=' . $config->get('db.port', 3306) . ';charset=utf8mb4',
+            (string) $config->get('db.user'), (string) $config->get('db.pass', ''), [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
         foreach (array_keys(self::$owned) as $schema) {
             OwnedTestDatabaseSessions::close($server, [$schema]);
             self::drop($server, $schema);
