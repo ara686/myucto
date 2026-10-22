@@ -85,6 +85,7 @@ final class AuthMiddleware implements MiddlewareInterface
     private const SESSION_IGNORED_PATHS = [
         'GET' => [
             '/api/auth/setup-status',
+            '/api/auth/domain-context',
         ],
         'POST' => [
             '/api/auth/login',

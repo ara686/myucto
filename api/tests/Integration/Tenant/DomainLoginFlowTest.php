@@ -8,6 +8,7 @@ use MyInvoice\Action\Auth\DomainLoginAction;
 use MyInvoice\Bootstrap;
 use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Middleware\TenantDomainMiddleware;
+use MyInvoice\Middleware\DomainLoginSessionMiddleware;
 use MyInvoice\Repository\SupplierDomainRepository;
 use MyInvoice\Service\ActivityLogger;
 use MyInvoice\Service\Auth\DomainLoginException;
@@ -224,7 +225,7 @@ final class DomainLoginFlowTest extends TestCase
         $verifier = self::opaqueToken();
         $flow = $this->start($verifier);
         $authorized = $this->login->authorize(
-            $this->canonicalRequest(),
+            $this->verifiedRequest($flow),
             $flow['request_token'],
             $flow['state'],
             ['id' => $this->userId],
@@ -418,7 +419,7 @@ final class DomainLoginFlowTest extends TestCase
     private function authorize(array $flow): array
     {
         return $this->login->authorize(
-            $this->canonicalRequest(),
+            $this->verifiedRequest($flow),
             $flow['request_token'],
             $flow['state'],
             [
@@ -478,6 +479,15 @@ final class DomainLoginFlowTest extends TestCase
                 'portal',
                 'active',
             ));
+    }
+
+    /** @param array{request_token:string,state:string} $flow */
+    private function verifiedRequest(array $flow): \Psr\Http\Message\ServerRequestInterface
+    {
+        return $this->canonicalRequest()->withAttribute(DomainLoginSessionMiddleware::ATTR_VERIFIED_FLOW, [
+            'request_token_hash' => hash('sha256', $flow['request_token']),
+            'state_hash' => hash('sha256', $flow['state']),
+        ]);
     }
 
     private function canonicalRequest(): \Psr\Http\Message\ServerRequestInterface
