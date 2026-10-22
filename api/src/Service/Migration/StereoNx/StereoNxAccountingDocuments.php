@@ -80,6 +80,7 @@ final class StereoNxAccountingDocuments
     {
         $accountsByDocument = [];
         $amountsByDocument = [];
+        $postingsByDocument = [];
         foreach ($journalPrepared['accounting_plan']['entries'] ?? [] as $entry) {
             if (($entry['is_opening'] ?? false) || (int) ($entry['amount_cents'] ?? 0) === 0) continue;
             $parts = json_decode((string) $entry['source_key'], true, flags: JSON_THROW_ON_ERROR);
@@ -99,6 +100,8 @@ final class StereoNxAccountingDocuments
                 $signedAmount = (int) $entry['amount_cents'] * ($field === $normalSide ? 1 : -1)
                     * (($entry['is_red_storno'] ?? false) ? -1 : 1);
                 $amountsByDocument[$key][$account] = ($amountsByDocument[$key][$account] ?? 0) + $signedAmount;
+                $postingsByDocument[$key][] = ['account' => $account, 'amount_cents' => $signedAmount,
+                    'control' => substr((string) ($entry[$field === 'target_debit' ? 'credit' : 'debit'] ?? ''), 0, 3)];
             }
         }
 
@@ -112,6 +115,18 @@ final class StereoNxAccountingDocuments
                 }
                 $key = json_encode([$agenda, $parts[1], $parts[2]], JSON_THROW_ON_ERROR);
                 $accounts = array_values($accountsByDocument[$key] ?? []);
+                $amounts = $amountsByDocument[$key] ?? [];
+                $rounding = self::separateRounding($document, $field, $amounts, $postingsByDocument[$key] ?? [], $accountMapping, $allocationBudget);
+                if ($rounding !== null) {
+                    $amounts = $rounding['amounts'];
+                    $accounts = array_map('strval', array_keys($amounts));
+                    $documentPlan['warnings'][] = ['level' => 'warning', 'code' => 'document_rounding_account_review',
+                        'source_key' => $document['source_key'], 'document_no' => (string) ($document['document_no'] ?? ''),
+                        'source_rounding_account' => $rounding['account'], 'rounding_amount' => $rounding['amount_cents'] / 100,
+                        'message' => 'Doklad ' . (string) ($document['document_no'] ?? '') . ': zaokrouhlení '
+                            . number_format($rounding['amount_cents'] / 100, 2, ',', ' ') . ' Kč je účtováno na '
+                            . $rounding['account'] . ' a není další položkou. Před přeúčtováním zkontrolujte účet zaokrouhlení.'];
+                }
                 sort($accounts, SORT_STRING);
                 $needsAllocation = false;
                 foreach ($document['items'] ?? [] as $itemIndex => $item) {
@@ -131,7 +146,7 @@ final class StereoNxAccountingDocuments
                     }
                 }
                 if ($needsAllocation) {
-                    $allocation = self::allocateItemAccounts($document, $field, $amountsByDocument[$key] ?? [],
+                    $allocation = self::allocateItemAccounts($document, $field, $amounts,
                         $accountMapping, $allocationBudget);
                     if ($allocation !== null) {
                         foreach ($allocation as $itemIndex => $account) {
@@ -139,7 +154,7 @@ final class StereoNxAccountingDocuments
                         }
                         $needsAllocation = false;
                     } else {
-                        $reconstructed = StereoNxRecapAccountItems::reconstruct($document, $amountsByDocument[$key] ?? [], $field);
+                        $reconstructed = StereoNxRecapAccountItems::reconstruct($document, $amounts, $field);
                         if ($reconstructed !== null) {
                             $documentPlan['records'][$part][$index]['target_items'] = $reconstructed;
                             $documentPlan['warnings'][] = ['level' => 'info', 'code' => 'document_items_reconstructed',
@@ -164,13 +179,54 @@ final class StereoNxAccountingDocuments
     }
 
     /**
+     * Zaokrouhlení hlavičky není zdanitelná položka. Samotná shoda malé částky
+     * nestačí: zbytek musí jednoznačně odpovídat položkám a kandidát musí být jediný.
+     * Kontace deníku i zaokrouhlení hlavičky zůstávají beze změny. Kontrola účtu
+     * při nativním přeúčtování zůstává nutná; core používá vlastní 548/648.
+     */
+    public static function separateRounding(array $document, string $field, array $amounts, array $postings, array $mapping, int &$budget): ?array
+    {
+        if (($document['currency_code'] ?? 'CZK') !== 'CZK') return null;
+        $rounding = StereoNxRecapAmounts::moneyCents($document['rounding'] ?? 0);
+        $base = StereoNxRecapAmounts::moneyCents($document['total_without_vat'] ?? null);
+        if ($rounding === null || $rounding === 0 || $base === null || $base === 0) return null;
+        $signedRounding = ($document['target_document_kind'] ?? '') === 'credit_note' && $base > 0 ? -$rounding : $rounding;
+        $control = $field === 'revenue_account_code' ? '311' : '321';
+        $candidates = [];
+        foreach ($postings as $posting) {
+            if ($posting['control'] === $control && $posting['amount_cents'] === $signedRounding) $candidates[$posting['account']] = true;
+        }
+        if (count($candidates) > 12) return null;
+        $proof = null;
+        foreach ($candidates as $account => $_) {
+            $remaining = $amounts;
+            $remaining[$account] -= $signedRounding;
+            $remaining = array_filter($remaining, static fn (int $amount): bool => $amount !== 0);
+            if ($remaining === []) continue;
+            $uncertain = false;
+            $allocation = self::allocateItemAccounts($document, $field, $remaining, $mapping, $budget, $uncertain);
+            // Více možných rozpisů ani nedokončené hledání jiného kandidáta
+            // nejsou důkazem jeho neplatnosti.
+            if ($uncertain) return null;
+            if ($allocation === null && StereoNxRecapAccountItems::reconstruct($document, $remaining, $field) === null) continue;
+            if ($proof !== null) return null;
+            $proof = ['account' => (string) $account, 'amount_cents' => $rounding, 'amounts' => $remaining];
+        }
+        return $proof;
+    }
+
+    /**
      * Explicitní účty mají přednost. Zbytek řešíme v haléřích jako rozdělení částek
      * do souhrnů účtů; nalezení jedné možnosti nestačí, musí být jediná.
      * @return array<int,string>|null
      */
-    private static function allocateItemAccounts(array $document, string $field, array $remaining, array $mapping, int &$budget): ?array
+    private static function allocateItemAccounts(array $document, string $field, array $remaining, array $mapping, int &$budget, bool &$uncertain = false): ?array
     {
-        if (count($remaining) > 12 || ($document['currency_code'] ?? 'CZK') !== 'CZK') return null;
+        $uncertain = false;
+        if (count($remaining) > 12 || ($document['currency_code'] ?? 'CZK') !== 'CZK') {
+            $uncertain = true;
+            return null;
+        }
         $amounts = [];
         foreach ($document['items'] ?? [] as $index => $item) {
             $base = StereoNxRecapAmounts::moneyCents($item['total_without_vat'] ?? null);
@@ -204,7 +260,11 @@ final class StereoNxAccountingDocuments
                 $unknown[] = ['index' => $index, 'amount' => $amounts[$index]];
             }
         }
-        if (count($unknown) > 24 || array_sum($remaining) !== array_sum(array_column($unknown, 'amount'))) return null;
+        if (count($unknown) > 24) {
+            $uncertain = true;
+            return null;
+        }
+        if (array_sum($remaining) !== array_sum(array_column($unknown, 'amount'))) return null;
         usort($unknown, static fn (array $a, array $b): int => abs($b['amount']) <=> abs($a['amount']) ?: $a['index'] <=> $b['index']);
         $positive = $negative = [count($unknown) => 0];
         for ($i = count($unknown) - 1; $i >= 0; $i--) {
@@ -241,6 +301,7 @@ final class StereoNxAccountingDocuments
             }
         };
         $search(0, $remaining, []);
+        $uncertain = $exhausted || $solutions > 1;
         return !$exhausted && $solutions === 1 ? $solution : null;
     }
 

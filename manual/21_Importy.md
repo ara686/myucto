@@ -834,6 +834,11 @@ import je přiřadí podle částek pouze tehdy, když existuje jediné úplné 
 Nejednoznačný nebo příliš rozsáhlý rozpis zůstane s upozorněním k ručnímu
 doplnění před další úpravou či zaúčtováním. Totéž platí pro více možných
 analytik pohledávek či závazků v nativních předkontacích.
+Zaokrouhlení se nepřidává jako další zdanitelná položka. Pokud odpovídá
+zaokrouhlení v hlavičce a po jeho oddělení deník jednoznačně souhlasí s položkami,
+import přiřadí položkám skutečné nákladové či výnosové účty. Původní zaokrouhlení
+i jeho zápis v deníku zachová. Protokol uvede částku a účet zaokrouhlení ke kontrole
+před přeúčtováním: běžné účtování v aplikaci používá účty 548/648.
 Pokud ve zdroji chybí původní položky a je k dispozici jediná ověřená sazební
 rekapitulace, import může vytvořit samostatný náhradní řádek pro každý doložený
 nákladový či výnosový účet. Součty i následný běžný přepočet musí přesně zachovat
