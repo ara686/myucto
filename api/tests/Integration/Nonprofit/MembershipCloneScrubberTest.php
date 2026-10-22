@@ -34,6 +34,7 @@ use MyInvoice\Service\Tax\Nonprofit\SourceFacts\MembershipJ6SourceFacts;
 use MyInvoice\Tests\Support\OwnedTestDatabaseCleanup;
 use PDO;
 use PHPUnit\Framework\TestCase;
+use MyInvoice\Tests\Support\CloneSandbox;
 
 final class MembershipCloneScrubberTest extends TestCase
 {
@@ -49,17 +50,10 @@ final class MembershipCloneScrubberTest extends TestCase
         self::assertContains($config->get('db.host'), ['localhost', '127.0.0.1', '::1']);
         $server = new PDO('mysql:host=' . $config->get('db.host') . ';port=' . $config->get('db.port', 3306) . ';charset=utf8mb4',
             $config->get('db.user'), $config->get('db.pass', ''), [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
-        $schema = 'myucto_membership_clone_' . bin2hex(random_bytes(6)) . '_test';
-        self::assertMatchesRegularExpression('/^myucto_membership_clone_[a-f0-9]{12}_test$/D', $schema);
-        $exists = $server->prepare('SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME=?');
-        $exists->execute([$schema]);
-        self::assertSame(0, (int) $exists->fetchColumn());
-        $ownedSchemas = [$schema];
+        $schema = CloneSandbox::acquire($server, $sourceSchema);
         $target = null;
         $hashMap = null;
         try {
-            $cloner = new DatabaseCloner($server);
-            $cloner->copyTables($cloner->plan($sourceSchema), $schema, static function (): void {});
             $oldName = getenv('MYINVOICE_DB_NAME');
             $oldMysqlName = getenv('MYSQL_DATABASE');
             putenv('MYINVOICE_DB_NAME=' . $schema);
@@ -264,9 +258,7 @@ final class MembershipCloneScrubberTest extends TestCase
                 $hashMap->drop();
             }
             if ($target instanceof Connection) $target->close();
-            OwnedTestDatabaseCleanup::drop($server, $schema, $ownedSchemas);
-            $exists->execute([$schema]);
-            self::assertSame(0, (int) $exists->fetchColumn());
+            CloneSandbox::release($server, $schema);
         }
     }
 

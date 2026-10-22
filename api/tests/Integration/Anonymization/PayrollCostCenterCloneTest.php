@@ -18,6 +18,7 @@ use MyInvoice\Service\Payroll\PayrollPeriodOwnershipService;
 use MyInvoice\Tests\Support\{OwnedTestDatabaseCleanup, PayrollFullFlowTrait};
 use PDO;
 use PHPUnit\Framework\TestCase;
+use MyInvoice\Tests\Support\CloneSandbox;
 
 final class PayrollCostCenterCloneTest extends TestCase
 {
@@ -29,16 +30,9 @@ final class PayrollCostCenterCloneTest extends TestCase
         self::assertStringEndsWith('_test', $base->get('db.name'));
         self::assertContains($base->get('db.host'), ['localhost', '127.0.0.1', '::1']);
         $server = new PDO('mysql:host='.$base->get('db.host').';port='.$base->get('db.port',3306).';charset=utf8mb4', $base->get('db.user'), $base->get('db.pass',''), [PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
-        $prefix = 'myucto_payroll_cc_'.bin2hex(random_bytes(5));
-        $source = $prefix.'_source_test';
-        $target = $prefix.'_target_test';
-        $proof = $prefix.'_proof_test';
         $previous = getenv('MYINVOICE_DB_NAME');
         try {
-            $cloner = new DatabaseCloner($server);
-            $plan = $cloner->plan($base->get('db.name'));
-            $cloner->copyTables($plan, $source, static fn(string $message) => null);
-            $cloner->finalize($plan, $source);
+            $source = CloneSandbox::acquire($server, (string) $base->get('db.name'), true);
             $this->selectDatabase($source);
             $this->bootPayrollFullFlow();
             $pdo = $this->db->pdo();
@@ -78,8 +72,8 @@ final class PayrollCostCenterCloneTest extends TestCase
             $pdo->commit();
             $this->db->close();
             $sourceConfig = Config::load(Bootstrap::rootDir());
-            $this->assertSourceProofMutants($server,$sourceConfig,$source,$proof);
-            (new AnonymizationService($sourceConfig))->run(new AnonymizationOptions($source,$target,seed:'synthetic-payroll-clone'), static fn(string $message) => null);
+            $this->assertSourceProofMutants($server,$sourceConfig,$source);
+            $target = CloneSandbox::anonymized($server,$sourceConfig,$source,'synthetic-payroll-clone');
             $this->selectDatabase($target);
             $this->attachClonedRun();
             $pdo = $this->db->pdo();
@@ -121,16 +115,13 @@ final class PayrollCostCenterCloneTest extends TestCase
         } finally {
             if(isset($this->db))$this->tearDownPayrollFullFlow();
             $this->selectDatabase(is_string($previous)?$previous:'');
-            OwnedTestDatabaseCleanup::drop($server,$proof,[$proof]);
-            OwnedTestDatabaseCleanup::drop($server,$target,[$target]);
-            OwnedTestDatabaseCleanup::drop($server,$source,[$source]);
+            CloneSandbox::releaseAll($server);
         }
     }
 
-    private function assertSourceProofMutants(PDO $server,Config $config,string $source,string $proof): void
+    private function assertSourceProofMutants(PDO $server,Config $config,string $source): void
     {
-        $cloner=new DatabaseCloner($server);
-        $cloner->copyTables($cloner->plan($source),$proof,static fn(string $message)=>null);
+        $proof=CloneSandbox::acquire($server,$source);
         $data=$config->all();$data['db']['name']=$proof;
         $connection=Connection::withoutSharedTestConnection(static fn()=>new Connection(new Config($data)));
         try {
