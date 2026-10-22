@@ -6,8 +6,12 @@ namespace MyInvoice\Infrastructure\Database;
 
 final class TransactionSavepointTracker
 {
+    private const PARSED_LIMIT = 2048;
+
     private bool $active = false;
     private array $markers = [];
+    /** @var array<string,array{0:list<array{0:string,1:string}>,1:string,2:list<string>}|null> */
+    private static array $parsed = [];
 
     public function boundary(bool $active): void
     {
@@ -34,13 +38,9 @@ final class TransactionSavepointTracker
         if (!$before || !$this->active || !$after) $this->boundary($after);
         if (!$after) return;
         if ($this->markers === [] && stripos($sql, 'SAVEPOINT') === false) return;
-        $tokens = self::tokens($sql);
-        if ($tokens === null || $tokens === []) { $this->boundary($after); return; }
-        if (end($tokens) === ['symbol', ';']) array_pop($tokens);
-        if ($tokens === []) { $this->boundary($after); return; }
-        if (array_any($tokens, static fn (array $token): bool => $token === ['symbol', ';'])) { $this->boundary($after); return; }
-        $head = $tokens[0][0] === 'word' ? strtoupper($tokens[0][1]) : '';
-        $words = array_map(static fn (array $token): string => in_array($token[0], ['word', 'identifier'], true) ? strtoupper($token[1]) : '', $tokens);
+        $parsed = self::parsed($sql);
+        if ($parsed === null) { $this->boundary($after); return; }
+        [$tokens, $head, $words] = $parsed;
         if ($head === 'SAVEPOINT' && count($tokens) === 2 && ($name = self::identifier($tokens[1])) !== null) {
             unset($this->markers[$name]);
             $this->markers[$name] = new \stdClass();
@@ -74,12 +74,9 @@ final class TransactionSavepointTracker
     {
         if (($before && !$after) || (int) ($errorInfo[1] ?? 0) === 1213) { $this->boundary($after); return; }
         if ($this->markers === []) return;
-        $tokens = self::tokens($sql);
-        if ($tokens === null) { $this->boundary($after); return; }
-        if ($tokens !== [] && end($tokens) === ['symbol', ';']) array_pop($tokens);
-        if ($tokens === [] || array_any($tokens, static fn (array $token): bool => $token === ['symbol', ';'])) { $this->boundary($after); return; }
-        $head = $tokens[0][0] === 'word' ? strtoupper($tokens[0][1]) : '';
-        $words = array_map(static fn (array $token): string => in_array($token[0], ['word', 'identifier'], true) ? strtoupper($token[1]) : '', $tokens);
+        $parsed = self::parsed($sql);
+        if ($parsed === null) { $this->boundary($after); return; }
+        [$tokens, $head, $words] = $parsed;
         if ($head === 'SAVEPOINT' && count($tokens) === 2 && self::identifier($tokens[1]) !== null) return;
         if ($head === 'RELEASE' && count($tokens) === 3 && $words[1] === 'SAVEPOINT' && self::identifier($tokens[2]) !== null) return;
         if (!self::ordinaryStatement($head, $words)) $this->boundary($after);
@@ -110,6 +107,27 @@ final class TransactionSavepointTracker
     private static function name(string $name): ?string
     {
         return $name !== '' && preg_match('/^[A-Za-z0-9_$]+$/D', $name) === 1 ? strtolower($name) : null;
+    }
+
+    /**
+     * Rozbor příkazu: tokeny bez koncového středníku, první slovo a slova velkými písmeny.
+     * Null znamená, že příkaz nejde bezpečně rozebrat, je prázdný nebo jich nese víc.
+     *
+     * Je to čistá funkce textu příkazu a připravené dotazy se opakují, proto se rozbor
+     * pamatuje: uvnitř savepointu se jinak každý příkaz znovu procházel znak po znaku.
+     *
+     * @return array{0:list<array{0:string,1:string}>,1:string,2:list<string>}|null
+     */
+    private static function parsed(string $sql): ?array
+    {
+        if (array_key_exists($sql, self::$parsed)) return self::$parsed[$sql];
+        if (count(self::$parsed) >= self::PARSED_LIMIT) self::$parsed = [];
+        $tokens = self::tokens($sql);
+        if ($tokens !== null && $tokens !== [] && end($tokens) === ['symbol', ';']) array_pop($tokens);
+        if ($tokens === null || $tokens === [] || in_array(['symbol', ';'], $tokens, true)) return self::$parsed[$sql] = null;
+        $head = $tokens[0][0] === 'word' ? strtoupper($tokens[0][1]) : '';
+        $words = array_map(static fn (array $token): string => in_array($token[0], ['word', 'identifier'], true) ? strtoupper($token[1]) : '', $tokens);
+        return self::$parsed[$sql] = [$tokens, $head, $words];
     }
 
     private static function tokens(string $sql): ?array
