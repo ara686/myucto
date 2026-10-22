@@ -34259,6 +34259,12 @@
       "shown_details": "Zobrazeno {shown} z {total} podrobných zpráv",
       "load_more": "Zobrazit dalších {count}",
       "causes": {
+        "bank_opening_conflict": "Počáteční stav banky koliduje s jiným zůstatkem",
+        "cash_opening_balance": "Počáteční stav pokladny zastoupený v otevíracím zápisu",
+        "cash_opening_unverified": "Neověřený počáteční stav pokladny",
+        "bank_opening_balance": "Počáteční zůstatek banky převzatý bez peněžního pohybu",
+        "bank_opening_unverified": "Neověřený počáteční stav banky",
+        "bank_opening_repair_required": "Dříve převzatý počáteční stav banky vyžaduje opravu",
         "document_rounding_account_review": "Účet zaokrouhlení vyžaduje kontrolu",
         "document_item_account_ambiguous": "Nejednoznačný účet položky dokladu",
         "document_items_reconstructed": "Položky dokladu sestavené z účetního deníku",
@@ -34538,6 +34544,8 @@
     "open_payroll": "Otevřít převzaté mzdy",
     "written_title": "Nově uložené záznamy",
     "counts": {
+      "cash_openings": "Počáteční stavy pokladny",
+      "bank_openings": "Počáteční zůstatky banky",
       "identity": "Identifikační údaje zaměstnanců",
       "person_card": "Osobní údaje zaměstnanců",
       "tax_declarations": "Prohlášení poplatníka",

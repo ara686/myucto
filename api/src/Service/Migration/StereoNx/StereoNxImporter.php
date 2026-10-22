@@ -165,6 +165,8 @@ final class StereoNxImporter
             'new_documents' => ['issued' => [], 'purchase' => []], 'new_statements' => [],
             'touched_documents' => ['issued' => [], 'purchase' => []], 'touched_statements' => [], 'zero_cash' => [],
             'bank_writer' => new BankStatementImportWriter($this->db, 'stereo-nx'),
+            'bank_statement_records' => array_column($plan['bank_statements'] ?? [], null, 'source_key'),
+            'cash_numbers' => [],
             'written' => ['bank_accounts' => 0, 'bank_statements' => 0, 'bank_transactions' => 0,
                 'cash_transactions' => 0, 'payments' => 0, 'skipped_zero_cash' => 0],
         ];
@@ -194,7 +196,16 @@ final class StereoNxImporter
         foreach ($plan['bank_transactions'] ?? [] as $record) $this->importBankTransaction($context, $record);
         foreach ($plan['cash_transactions'] ?? [] as $record) $this->importCashTransaction($context, $record);
         foreach ($plan['payments'] ?? [] as $record) $this->importPayment($context, $record);
-        $linkReviews = (new StereoNxMovementJournalLinks($this->db, $this->map))->write($context, $plan);
+        $linkPlan = $plan;
+        if (($plan['cash_openings'] ?? []) !== []) {
+            $context['written']['cash_openings'] = (new StereoNxCashOpeningWriter($this->db, $this->map))
+                ->write($context, $plan['cash_openings'], $plan['journal_plan'] ?? []);
+            // Počáteční stav má informační vazbu na opening, běžné pohyby vlastní kontaci.
+            $openingKeys = array_fill_keys(array_column(array_column($plan['cash_openings'], 'movement'), 'source_key'), true);
+            $linkPlan['cash_transactions'] = array_values(array_filter($plan['cash_transactions'] ?? [],
+                static fn (array $movement): bool => !isset($openingKeys[$movement['source_key']])));
+        }
+        $linkReviews = (new StereoNxMovementJournalLinks($this->db, $this->map))->write($context, $linkPlan);
         $allReviews = [];
         foreach ([...($plan['reviews'] ?? []), ...$linkReviews] as $review) {
             $reviewKey = $review['kind'] . ':' . $review['source_key'];
@@ -206,6 +217,10 @@ final class StereoNxImporter
         }
         $plan['reviews'] = array_values($allReviews);
         $this->refreshBalances($context);
+        if (($plan['bank_openings'] ?? []) !== []) {
+            $context['written']['bank_openings'] = (new StereoNxBankOpeningWriter($this->db, $this->map))
+                ->write($context, $plan['bank_openings'], $plan['journal_plan'] ?? []);
+        }
         $reviews = [];
         foreach ($plan['reviews'] ?? [] as $review) {
             $kind = (string) ($review['kind'] ?? ''); $key = (string) ($review['source_key'] ?? '');
@@ -919,6 +934,7 @@ final class StereoNxImporter
             mb_substr((string) ($record['description'] ?? 'Stereo NX'), 0, 255), $amount, $draft, $ctx['user_id']);
         $this->put($ctx, 'cash', $key, $hash, $id);
         $ctx['ids']['cash'][$key] = $id;
+        $ctx['cash_numbers'][$key] = $number;
         $ctx['written']['cash_transactions']++;
     }
 
@@ -1120,7 +1136,7 @@ final class StereoNxImporter
      * hash porovnává jejich kanonický obsah, ne raw hlavičku programu.
      * @param array<string,mixed> $record
      */
-    private static function sourceHash(array $record, bool $legacyEuReview = true, bool $omitDefaultDocumentFields = false): string
+    public static function sourceHash(array $record, bool $legacyEuReview = true, bool $omitDefaultDocumentFields = false): string
     {
         // Ověřené korunové částky cizoměnového dokladu jsou součástí identity zdroje.
         // Změna těchto důkazů musí zastavit opakovaný převod před vrácením starého mapování.

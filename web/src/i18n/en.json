@@ -34259,6 +34259,12 @@
       "shown_details": "Showing {shown} of {total} detailed messages",
       "load_more": "Show {count} more",
       "causes": {
+        "bank_opening_conflict": "Opening bank balance conflicts with another balance",
+        "cash_opening_balance": "Opening cash balance represented by the opening journal entry",
+        "cash_opening_unverified": "Unverified opening cash balance",
+        "bank_opening_balance": "Opening bank balance transferred without a cash movement",
+        "bank_opening_unverified": "Unverified opening bank balance",
+        "bank_opening_repair_required": "A previously imported opening bank balance requires repair",
         "document_rounding_account_review": "Rounding account needs review",
         "document_item_account_ambiguous": "Ambiguous document item account",
         "document_items_reconstructed": "Document items reconstructed from the accounting journal",
@@ -34538,6 +34544,8 @@
     "open_payroll": "Open transferred wages",
     "written_title": "New records saved",
     "counts": {
+      "cash_openings": "Opening cash balances",
+      "bank_openings": "Opening bank balances",
       "identity": "Employee identification details",
       "person_card": "Employee personal details",
       "tax_declarations": "Employee tax declarations",

@@ -973,6 +973,32 @@ faktur se zachovají při úplné shodě s rekapitulací DPH. Neověřené typy,
 záloh a daňové členění zůstávají konceptem s konkrétním důvodem kontroly; nejde
 automaticky o stornované doklady.
 
+Doložený výpis obsahující pouze počáteční stav banky se převezme jako výchozí
+zůstatek, nikoli jako příjmový bankovní pohyb. Hlavička má shodný počáteční
+a konečný zůstatek, nulové příjmy a výdaje a žádné transakce. Datum je den před
+datem počátečního stavu ve zdroji, aby se následné skutečné pohyby téhož dne
+započítaly do zůstatku. Počáteční zápis v převzatém účetním deníku zůstává
+zachovaný. Protokol uvádí tyto záznamy samostatně jako **Počáteční zůstatky
+banky** a jejich převzetí označuje informací **Počáteční zůstatek banky převzatý
+bez peněžního pohybu**. Nejde o upozornění na chybějící příjem.
+
+Není-li počáteční stav doložený jednoznačně, protokol uvede **Neověřený
+počáteční stav banky** a vyžádá kontrolu zdroje. Pokud byl stejný počáteční stav
+dříve převzat jako bankovní pohyb, opakovaný import se zastaví s požadavkem
+na opravu dřívějšího převodu. Původní pohyb ani účetní zápisy automaticky nemaže.
+
+Doložený počáteční stav pokladny se převezme jako potvrzený evidenční pokladní
+doklad s účelem **Ostatní**. Informativní vazba ho spojí s přesnou kontací
+převzatého otevíracího zápisu. Vlastní účetní zápis nevzniká a původní otevírací
+zápis se nemění. Protokol uvádí **Počáteční stavy pokladny** samostatně;
+takový doklad není tržbou ani neověřeným běžným pokladním pohybem.
+
+Stejné pravidlo lze při opakování převodu použít i na nezměněný koncept,
+který předchozí import vytvořil z téhož doloženého počátečního stavu. Pokud
+částka, datum, měna, pokladna, doklad nebo převzatá kontace nesouhlasí, převod
+se zastaví k ruční kontrole. Nejasný zdrojový počáteční stav zůstává konceptem
+s upozorněním **Neověřený počáteční stav pokladny**.
+
 Záporné bankovní výdaje zachovávají svůj finanční dopad a vazbu na původní
 kontace. U přijatých dokladů se rozlišuje úhrada záporného dokladu a snížení
 dřívější úhrady běžné faktury; kontrola saldokonta používá čistý součet včetně

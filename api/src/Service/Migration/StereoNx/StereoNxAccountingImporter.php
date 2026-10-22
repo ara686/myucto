@@ -89,6 +89,8 @@ final class StereoNxAccountingImporter
                 $plans['employees']['warnings'],
                 static fn (array $warning): bool => $warning['code'] !== 'historical_payroll_skipped',
             ));
+            $plans['payments'] = StereoNxBankOpeningPlan::resolve($plans['payments'], $plans['journal']);
+            $plans['payments'] = StereoNxCashOpeningPlan::resolve($plans['payments'], $plans['journal']);
             $plans['payments'] = $this->accountingPayments->resolveNonVatCash($plans['payments'], $plans['journal']);
             $plans['payments']['documents'] = $plans['documents']['records'];
             $plans['payments']['journal_plan'] = $plans['journal'];
@@ -134,7 +136,7 @@ final class StereoNxAccountingImporter
                 $report['warnings'][] = ['level' => 'warning', 'code' => 'agenda_not_transferred',
                     'message' => $label . ': ' . $count . ' zdrojových záznamů nebylo převedeno.'];
             }
-            $report['partial'] = $report['not_transferred'] !== [] || $report['warnings'] !== [];
+            $report['partial'] = self::isPartialReport($report);
             $report['date_bounds'] = $plans['journal']['date_bounds'] ?? null;
             $documentDates = [];
             foreach (['issued', 'purchases'] as $kind) {
@@ -240,7 +242,7 @@ final class StereoNxAccountingImporter
                     }
                 }
                 unset($review);
-                $report['partial'] = $report['partial'] || $report['warnings'] !== [];
+                $report['partial'] = $report['partial'] || self::isPartialReport($report);
                 if ($dryRun) {
                     $nested ? $pdo->exec('ROLLBACK TO SAVEPOINT stereo_nx_accounting') : $pdo->rollBack();
                     if ($nested) $pdo->exec('RELEASE SAVEPOINT stereo_nx_accounting');
@@ -278,6 +280,13 @@ final class StereoNxAccountingImporter
             unset($review);
         }
         return $report;
+    }
+
+    /** Informační potvrzení převodu samo o sobě neznamená neúplný import. */
+    public static function isPartialReport(array $report): bool
+    {
+        return ($report['not_transferred'] ?? []) !== [] || array_any($report['warnings'] ?? [],
+            static fn (array $warning): bool => ($warning['level'] ?? 'warning') !== 'info');
     }
 
     /** Doklady mohou mít jiné datum než jejich kontace v převzatém deníku. */
