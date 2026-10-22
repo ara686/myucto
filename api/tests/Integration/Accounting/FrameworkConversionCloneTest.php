@@ -7,7 +7,7 @@ use MyInvoice\Infrastructure\Config\Config;
 use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Repository\AccountDefinitionRepository as R;
 use MyInvoice\Service\Anonymization\{AnonymizationService,AnonymizationOptions,DatabaseCloner};
-use MyInvoice\Tests\Support\OwnedTestDatabaseCleanup;
+use MyInvoice\Tests\Support\CloneSandbox;
 use PDO;
 use PHPUnit\Framework\TestCase;
 final class FrameworkConversionCloneTest extends TestCase
@@ -26,7 +26,7 @@ final class FrameworkConversionCloneTest extends TestCase
         $token=bin2hex(random_bytes(5));$this->owned=['myucto_nno_conversion_clone_'.$token.'_source_test','myucto_nno_conversion_clone_'.$token.'_target_test'];
         $this->server=new PDO('mysql:host='.$this->config->get('db.host').';port='.$this->config->get('db.port',3306).';charset=utf8mb4',$this->config->get('db.user'),$this->config->get('db.pass',''),[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
         $q=$this->server->prepare('SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME IN (?,?)');$q->execute($this->owned);self::assertSame(0,(int)$q->fetchColumn());
-        $cloner=new DatabaseCloner($this->server);$plan=$cloner->plan($base);$cloner->copyTables($plan,$this->owned[0],static function():void{});$cloner->finalize($plan,$this->owned[0]);
+        $this->owned[0]=CloneSandbox::acquire($this->server,$base,true);
         putenv('MYINVOICE_DB_NAME='.$this->owned[0]);$this->fixture=new FrameworkConversionWorkflowTest('testNext504ForeignNativeCaseUsesProvedConversionOpening');
         Connection::withoutSharedTestConnection(fn()=>(new \ReflectionMethod($this->fixture,'setUp'))->invoke($this->fixture));$this->source=(new \ReflectionProperty($this->fixture,'db'))->getValue($this->fixture);
     }
@@ -36,7 +36,7 @@ final class FrameworkConversionCloneTest extends TestCase
             if(isset($this->fixture))(new \ReflectionMethod($this->fixture,'tearDown'))->invoke($this->fixture);
             if(isset($this->source))$this->source->close();
             if($this->target!==null){if($this->target->pdo()->inTransaction())$this->target->pdo()->rollBack();$this->target->close();}
-            if(isset($this->server))foreach(array_reverse($this->owned) as $name)OwnedTestDatabaseCleanup::drop($this->server,$name,$this->owned);
+            if(isset($this->server))foreach(array_reverse($this->owned) as $name)CloneSandbox::dropOrRelease($this->server,$name,$this->owned);
         }finally{if(isset($this->priorDatabase))putenv($this->priorDatabase===false?'MYINVOICE_DB_NAME':'MYINVOICE_DB_NAME='.$this->priorDatabase);}
     }
     private function call(string $method,mixed ...$args): mixed{return(new \ReflectionMethod($this->fixture,$method))->invoke($this->fixture,...$args);}
@@ -52,7 +52,7 @@ final class FrameworkConversionCloneTest extends TestCase
     }
     private function cloneTarget():\Psr\Container\ContainerInterface
     {
-        $before=$this->fingerprint($this->source);(new AnonymizationService($this->config))->run(new AnonymizationOptions($this->owned[0],$this->owned[1],seed:'synthetic-conversion-clone'),static function():void{});self::assertSame($before,$this->fingerprint($this->source));
+        $before=$this->fingerprint($this->source);$this->owned[1]=CloneSandbox::anonymized($this->server,$this->config,$this->owned[0],'synthetic-conversion-clone');self::assertSame($before,$this->fingerprint($this->source));
         putenv('MYINVOICE_DB_NAME='.$this->owned[1]);$container=Connection::withoutSharedTestConnection(function(){$container=Bootstrap::buildContainer();$this->target=$container->get(Connection::class);return $container;});$this->target->pdo()->beginTransaction();self::assertSame($this->owned[1],$this->target->pdo()->query('SELECT DATABASE()')->fetchColumn());return $container;
     }
     public function testActualFullClonePreservesFinancialOriginProofAndOwnedCancellation():void

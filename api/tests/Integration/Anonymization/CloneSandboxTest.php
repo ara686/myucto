@@ -176,8 +176,8 @@ final class CloneSandboxTest extends TestCase
     /** @return array{tables:string, objects:string, rows:array<string,string>, increments:array<string,int>} */
     private function state(string $database): array
     {
-        $state = (new \ReflectionMethod(CloneSandbox::class, 'state'))->invoke(null, $this->server, new DatabaseCloner($this->server), $database, true);
-        unset($state['plan']);
+        $state = (new \ReflectionMethod(CloneSandbox::class, 'state'))->invoke(null, $this->server, $database, true);
+        unset($state['layout']);
 
         return $state;
     }

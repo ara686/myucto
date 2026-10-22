@@ -83,11 +83,17 @@ final class CloneSandbox
      * {@see AnonymizationService::run()} mezi kopií tabulek a založením triggerů.
      * Kopii triggery nezakládá a nehledá úniky proti originálu; to ověřuje
      * {@see \MyInvoice\Tests\Integration\Anonymization\AnonymizationServiceTest}.
+     * Když transformace selže, databázi vrátí a výjimku pustí dál.
      */
     public static function anonymized(PDO $server, Config $config, string $source, string $seed): string
     {
         $target = self::acquire($server, $source);
-        (new AnonymizationService($config))->anonymizeCopy(new AnonymizationOptions($source, $target, seed: $seed), static function (): void {});
+        try {
+            (new AnonymizationService($config))->anonymizeCopy(new AnonymizationOptions($source, $target, seed: $seed), static function (): void {});
+        } catch (\Throwable $e) {
+            self::release($server, $target);
+            throw $e;
+        }
 
         return $target;
     }
@@ -178,8 +184,8 @@ final class CloneSandbox
     private static function restore(PDO $server, string $source, string $schema, bool $triggers): bool
     {
         $cloner = new DatabaseCloner($server);
-        $expected = self::state($server, $cloner, $source, $triggers);
-        $actual = self::state($server, $cloner, $schema, true);
+        $expected = self::state($server, $source, $triggers);
+        $actual = self::state($server, $schema, true);
         if ($expected['tables'] !== $actual['tables']) {
             return false;
         }
@@ -201,7 +207,7 @@ final class CloneSandbox
             return true;
         }
 
-        $versioned = array_fill_keys($expected['plan']['system_versioned'], true);
+        $versioned = array_fill_keys($expected['layout']['versioned'], true);
         $server->exec('USE ' . DatabaseCloner::quote($schema));
         $server->exec('SET SESSION FOREIGN_KEY_CHECKS = 0');
         $server->exec("SET SESSION system_versioning_alter_history = 'KEEP'");
@@ -225,7 +231,7 @@ final class CloneSandbox
                 } else {
                     $server->exec('TRUNCATE TABLE ' . $name);
                 }
-                $columns = $expected['plan']['tables'][$table]['columns'];
+                $columns = $expected['layout']['columns'][$table];
                 $server->exec('INSERT INTO ' . $name . ' (' . $columns . ') SELECT ' . $columns
                     . ' FROM ' . DatabaseCloner::quote($source) . '.' . $name);
             }
@@ -234,11 +240,12 @@ final class CloneSandbox
             }
             if ($triggers) {
                 if (!$objectsMatch) {
-                    $cloner->finalize($expected['plan'], $schema);
+                    $cloner->finalize($cloner->plan($source), $schema);
                 } else {
-                    foreach ($expected['plan']['triggers'] as $trigger) {
-                        if (isset($dirty[$trigger['table']])) {
-                            $server->exec($trigger['ddl']);
+                    // Pořadí triggerů jedné tabulky a události dává pořadí zakládání.
+                    foreach ($expected['layout']['triggers'] as $trigger) {
+                        if (isset($dirty[(string) $trigger['EVENT_OBJECT_TABLE']])) {
+                            $server->exec(self::showCreate($server, 'TRIGGER', $source, (string) $trigger['TRIGGER_NAME']));
                         }
                     }
                 }
@@ -248,7 +255,7 @@ final class CloneSandbox
             $server->exec('SET SESSION system_versioning_alter_history = DEFAULT');
         }
         ++self::$writes;
-        $after = self::state($server, $cloner, $schema, true);
+        $after = self::state($server, $schema, true);
 
         return $after['tables'] === $expected['tables']
             && $after['objects'] === $expected['objects']
@@ -276,27 +283,79 @@ final class CloneSandbox
     }
 
     /**
+     * Struktura databáze přímo z katalogu. Plán {@see DatabaseCloner::plan()} čte navíc
+     * celé definice všech 539 triggerů a stál by na každé srovnání půl sekundy.
+     *
+     * @return array{tables:array<string,string>, columns:array<string,string>, versioned:list<string>, triggers:list<array<string,mixed>>, views:list<string>, routines:list<string>}
+     */
+    private static function layout(PDO $server, string $database): array
+    {
+        // sql_mode a znakovou sadu dostane trigger od spojení, které ho zakládá, ani
+        // čerstvá kopie je nepřebírá. Srovnává se definice a pořadí.
+        $triggers = array_map(static fn (array $t): array => array_intersect_key($t, array_flip(['TRIGGER_NAME', 'EVENT_OBJECT_TABLE', 'ACTION_TIMING', 'EVENT_MANIPULATION', 'ACTION_ORDER', 'ACTION_STATEMENT', 'DEFINER'])), TriggerMetadata::read($server, $database));
+        $layout = ['tables' => [], 'columns' => [], 'versioned' => [], 'triggers' => $triggers, 'views' => [], 'routines' => []];
+        foreach ((new DatabaseCloner($server))->tableTypes($database) as $name => $type) {
+            if ($type === 'VIEW') {
+                $layout['views'][] = self::showCreate($server, 'VIEW', $database, $name);
+                continue;
+            }
+            $ddl = self::showCreate($server, 'TABLE', $database, $name);
+            $layout['tables'][$name] = $ddl;
+            if ($type === 'SYSTEM VERSIONED' || preg_match('/\bWITH SYSTEM VERSIONING\b/i', $ddl) === 1) {
+                $layout['versioned'][] = $name;
+            }
+        }
+        $columns = $server->prepare("SELECT TABLE_NAME, COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND UPPER(EXTRA) NOT LIKE '%GENERATED%' ORDER BY TABLE_NAME, ORDINAL_POSITION");
+        $columns->execute([$database]);
+        $byTable = [];
+        foreach ($columns->fetchAll(PDO::FETCH_NUM) as [$table, $column]) {
+            $byTable[(string) $table][] = DatabaseCloner::quote((string) $column);
+        }
+        foreach (array_keys($layout['tables']) as $table) {
+            $layout['columns'][$table] = implode(', ', $byTable[$table] ?? []);
+        }
+        $routines = $server->prepare('SELECT ROUTINE_TYPE, ROUTINE_NAME FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = ? ORDER BY ROUTINE_TYPE, ROUTINE_NAME');
+        $routines->execute([$database]);
+        foreach ($routines->fetchAll(PDO::FETCH_NUM) as [$type, $name]) {
+            $layout['routines'][] = self::showCreate($server, (string) $type, $database, (string) $name);
+        }
+
+        return $layout;
+    }
+
+    private static function showCreate(PDO $server, string $kind, string $database, string $name): string
+    {
+        $row = $server->query('SHOW CREATE ' . $kind . ' ' . DatabaseCloner::quote($database) . '.' . DatabaseCloner::quote($name))->fetch(PDO::FETCH_ASSOC);
+        foreach (is_array($row) ? $row : [] as $key => $value) {
+            if ((str_starts_with(strtolower((string) $key), 'create ') || $key === 'SQL Original Statement') && is_string($value) && $value !== '') {
+                return $value;
+            }
+        }
+        throw new \RuntimeException("Nelze načíst definici {$kind} {$name}.");
+    }
+
+    /**
      * Definice tabulek bez AUTO_INCREMENT, pohledy s triggery a rutinami (bez `$objects`
      * prázdné), otisk obsahu každé tabulky a AUTO_INCREMENT zvlášť.
      *
-     * @return array{plan:array, tables:string, objects:string, rows:array<string,string>, increments:array<string,int>}
+     * @return array{layout:array, tables:string, objects:string, rows:array<string,string>, increments:array<string,int>}
      */
-    private static function state(PDO $server, DatabaseCloner $cloner, string $database, bool $objects): array
+    private static function state(PDO $server, string $database, bool $objects): array
     {
-        $plan = $cloner->plan($database);
+        $layout = self::layout($server, $database);
         $tables = [];
         $increments = [];
-        foreach ($plan['tables'] as $table => $definition) {
-            if (preg_match('/\sAUTO_INCREMENT=(\d+)/', $definition['ddl'], $m) === 1) {
+        foreach ($layout['tables'] as $table => $ddl) {
+            if (preg_match('/\sAUTO_INCREMENT=(\d+)/', $ddl, $m) === 1) {
                 $increments[$table] = (int) $m[1];
             }
-            $tables[$table] = preg_replace('/\sAUTO_INCREMENT=\d+/', '', $definition['ddl']);
+            $tables[$table] = preg_replace('/\sAUTO_INCREMENT=\d+/', '', $ddl);
         }
         $rows = [];
         if ($tables !== []) {
             $quoted = DatabaseCloner::quote($database) . '.';
             $names = array_keys($tables);
-            $versioned = array_fill_keys($plan['system_versioned'], true);
+            $versioned = array_fill_keys($layout['versioned'], true);
             $plain = array_values(array_filter($names, static fn (string $t): bool => !isset($versioned[$t])));
             $checksums = [];
             if ($plain !== []) {
@@ -307,7 +366,7 @@ final class CloneSandbox
             // CHECKSUM TABLE počítá i historii a čas verze. Čerstvá kopie verzované tabulky
             // nese jen aktuální řádky, srovnávají se proto jen ty.
             foreach (array_keys($versioned) as $table) {
-                $values = implode(', ', array_map(static fn (string $c): string => 'QUOTE(' . $c . ')', explode(', ', $plan['tables'][$table]['columns'])));
+                $values = implode(', ', array_map(static fn (string $c): string => 'QUOTE(' . $c . ')', explode(', ', $layout['columns'][$table])));
                 $checksums[$table] = (string) $server->query("SELECT CONCAT(COALESCE(SUM(CRC32(r)), 0), '/', COALESCE(BIT_XOR(CONV(SUBSTR(MD5(r), 1, 16), 16, 10)), 0))"
                     . " FROM (SELECT CONCAT_WS(',', " . $values . ') r FROM ' . $quoted . DatabaseCloner::quote($table) . ') x')->fetchColumn();
             }
@@ -321,11 +380,19 @@ final class CloneSandbox
         }
 
         return [
-            'plan' => $plan,
-            'tables' => hash('sha256', json_encode([$plan['charset'], $plan['collation'], $tables, $plan['system_versioned']], JSON_THROW_ON_ERROR)),
-            'objects' => hash('sha256', json_encode($objects ? [$plan['views'], $plan['triggers'], $plan['routines']] : [[], [], []], JSON_THROW_ON_ERROR)),
+            'layout' => $layout,
+            'tables' => hash('sha256', json_encode([self::collation($server, $database), $tables, $layout['versioned']], JSON_THROW_ON_ERROR)),
+            'objects' => hash('sha256', json_encode($objects ? [$layout['views'], $layout['triggers'], $layout['routines']] : [[], [], []], JSON_THROW_ON_ERROR)),
             'rows' => $rows,
             'increments' => $increments,
         ];
+    }
+
+    private static function collation(PDO $server, string $database): string
+    {
+        $schema = $server->prepare('SELECT CONCAT(DEFAULT_CHARACTER_SET_NAME, \'/\', DEFAULT_COLLATION_NAME) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ?');
+        $schema->execute([$database]);
+
+        return (string) $schema->fetchColumn();
     }
 }
