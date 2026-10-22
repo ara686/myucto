@@ -50,7 +50,7 @@ final class JointAllocationUseGuard
         $paymentReference = \MyInvoice\Service\Property\Payments\PaymentUseGuard::entryReferenceSql();
         $assetReserveEvidence = \MyInvoice\Service\Accounting\Closing\AssetReserveSourceRepository::assignmentEvidenceSql();
         $capitalEvidence = \MyInvoice\Service\Nonprofit\Capital\CapitalUseGuard::assignmentEvidenceSql();
-        $current = $pdo->prepare(\MyInvoice\Infrastructure\Database\SubqueryCache::OFF."SELECT l.id, e.id AS entry_id, e.period_id, c.batch_id AS source_batch_id, b.id AS allocation_batch_id, x.id AS cancellation_id, ({$paymentReference}) AS property_payment_in_use, ({$assetReserveEvidence}) AS asset_reserve_evidence_exists, ({$capitalEvidence}) AS capital_evidence_exists
+        $current = $pdo->prepare("SELECT l.id, e.id AS entry_id, e.period_id, c.batch_id AS source_batch_id, b.id AS allocation_batch_id, x.id AS cancellation_id
             FROM journal_entry_lines l JOIN journal_entries e ON e.id = l.entry_id AND e.supplier_id = l.supplier_id
             LEFT JOIN joint_allocation_source_claims c ON c.line_id = l.id AND c.supplier_id = l.supplier_id
             LEFT JOIN joint_allocation_batches b ON b.journal_entry_id = e.id AND b.supplier_id = e.supplier_id
@@ -61,6 +61,23 @@ final class JointAllocationUseGuard
         if (count($rows) !== count($lineIds)) {
             throw new PostingException('allocation_source_changed', 'Řádek nebo jeho účetní období se změnily. Načtěte aktuální stav.', 409);
         }
+        // Odkazy na zápis závisí jen na hlavičce, proto se vyhodnocují jednou za zápis,
+        // ne za každý jeho řádek (uzávěrkový zápis jich mívá stovky).
+        $entryIds = array_values(array_unique(array_map('intval', array_column($rows, 'entry_id'))));
+        sort($entryIds, SORT_NUMERIC);
+        $entryMarks = implode(',', array_fill(0, count($entryIds), '?'));
+        $references = $pdo->prepare(\MyInvoice\Infrastructure\Database\SubqueryCache::OFF."SELECT e.id, ({$paymentReference}) AS property_payment_in_use, ({$assetReserveEvidence}) AS asset_reserve_evidence_exists, ({$capitalEvidence}) AS capital_evidence_exists
+            FROM journal_entries e WHERE e.supplier_id = ? AND e.id IN ({$entryMarks}) ORDER BY e.id FOR UPDATE");
+        $references->execute([$supplierId, ...$entryIds]);
+        $byEntry = array_column($references->fetchAll(PDO::FETCH_ASSOC), null, 'id');
+        foreach ($rows as &$row) {
+            $reference = $byEntry[$row['entry_id']] ?? null;
+            if ($reference === null) {
+                throw new PostingException('allocation_source_changed', 'Řádek nebo jeho účetní období se změnily. Načtěte aktuální stav.', 409);
+            }
+            $row += array_diff_key($reference, ['id' => true]);
+        }
+        unset($row);
         foreach ($rows as $row) {
             \MyInvoice\Service\Property\Payments\PaymentUseGuard::assertEntryReferenceMutable((bool) $row['property_payment_in_use']);
             if (!$allPeriods && !in_array((int) $row['period_id'], $periodIds, true)) {

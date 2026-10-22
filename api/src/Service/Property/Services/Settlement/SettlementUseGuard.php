@@ -33,7 +33,10 @@ final class SettlementUseGuard
     public function mutableAssignmentEntries(int $supplier,array $lineIds):array
     {
         $this->transaction();if($lineIds===[])return [];
-        $rows=$this->rows(\MyInvoice\Infrastructure\Database\SubqueryCache::OFF.'SELECT DISTINCT e.id,('.self::entryReferenceSql().') AS settlement_used FROM journal_entry_lines l JOIN journal_entries e ON e.supplier_id=l.supplier_id AND e.id=l.entry_id WHERE l.supplier_id=? AND l.id IN ('.implode(',',array_fill(0,count($lineIds),'?')).') ORDER BY e.id FOR UPDATE',[$supplier,...$lineIds]);
+        // Odkaz závisí jen na zápisu: nejdřív zápisy řádků, potom jedno vyhodnocení za zápis.
+        $entries=array_map(fn($row)=>(int)$row['id'],$this->rows('SELECT DISTINCT e.id FROM journal_entry_lines l JOIN journal_entries e ON e.supplier_id=l.supplier_id AND e.id=l.entry_id WHERE l.supplier_id=? AND l.id IN ('.implode(',',array_fill(0,count($lineIds),'?')).') ORDER BY e.id FOR UPDATE',[$supplier,...$lineIds]));
+        if($entries===[])return [];
+        $rows=$this->rows(\MyInvoice\Infrastructure\Database\SubqueryCache::OFF.'SELECT e.id,('.self::entryReferenceSql().') AS settlement_used FROM journal_entries e WHERE e.supplier_id=? AND e.id IN ('.implode(',',array_fill(0,count($entries),'?')).') ORDER BY e.id FOR UPDATE',[$supplier,...$entries]);
         foreach($rows as $row)if((int)$row['settlement_used']!==0)self::rejectEntry((int)$row['id']);
         return array_map(fn($row)=>(int)$row['id'],$rows);
     }
