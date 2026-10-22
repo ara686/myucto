@@ -26,12 +26,6 @@ final class OpeningCloneBatchProofTest extends PropertyCloneBatchFixtureTestCase
         foreach(self::$fixtures as $f){$old=$f['batch']['snapshot_hash'];$q=$db->pdo()->prepare('SELECT snapshot_hash,snapshot_json FROM property_opening_batches WHERE supplier_id=? AND id=?');$q->execute([$f['supplier'],$f['batch']['id']]);$row=$q->fetch(PDO::FETCH_ASSOC);self::assertNotSame($old,$row['snapshot_hash']);self::assertSame($hashes[$old],$row['snapshot_hash']);self::assertStringNotContainsString('person@example.test',$row['snapshot_json']);}
         self::assertLessThanOrEqual(4*count(self::$fixtures)+2,$batches,'Opening and debt proof decoding must be bounded per tenant, including both native credit-origin checks. Observed '.$batches);
     }
-    public function testActualWholeClonePreservesAllOpeningProofsAfterBatching():void
-    {
-        $before=$this->financial(self::$source);$source=$this->fingerprint(self::$source);$target=self::newSchema();$report=(new AnonymizationService(self::$config))->run(new AnonymizationOptions((string)self::$config->get('db.name'),$target,seed:'synthetic-payments-clone-batch'),static function():void{});
-        $db=self::connect($target);$this->targets[]=$db;self::assertGreaterThan(0,$report['tables']);self::assertSame($before,$this->financial($db));self::assertSame($source,$this->fingerprint(self::$source));self::assertGreaterThan(0,(int)$db->pdo()->query('SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE()')->fetchColumn());
-        $rows=$db->pdo()->query('SELECT snapshot_json FROM property_opening_batches')->fetchAll(PDO::FETCH_COLUMN);self::assertStringNotContainsString('person@example.test',implode('', $rows));self::assertNotSame($source,$this->fingerprint($db));
-    }
     public function testOpeningBatchRejectsRehashedPhysicalCorruptionAndRollsBack():void
     {
         $source=$this->fingerprint(self::$source);$db=$this->copy();$args=$this->prefix($db);$q=$db->pdo()->query('SELECT id,supplier_id,fact_json FROM property_opening_components ORDER BY id LIMIT 1');$row=$q->fetch(PDO::FETCH_ASSOC);$fact=json_decode($row['fact_json'],true,flags:JSON_THROW_ON_ERROR);$fact['ledger_line']['amount']=bcadd($fact['ledger_line']['amount'],'1',2);$db->pdo()->prepare('UPDATE property_opening_components SET fact_json=?,fact_hash=? WHERE supplier_id=? AND id=?')->execute([json_encode($fact,JSON_THROW_ON_ERROR),PropertyInput::hash($fact),$row['supplier_id'],$row['id']]);$before=$this->fingerprint($db);

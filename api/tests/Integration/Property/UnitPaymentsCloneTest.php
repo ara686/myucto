@@ -9,6 +9,7 @@ use MyInvoice\Service\Anonymization\DatabaseCloner;
 use MyInvoice\Service\Accounting\PostingService;
 use MyInvoice\Service\Property\Payments\{PaymentLocks,PaymentSourceProof,PaymentException};
 use MyInvoice\Repository\Property\Payments\PaymentRepository;
+use MyInvoice\Tests\Support\CloneSandbox;
 use PDO;
 use PHPUnit\Framework\TestCase;
 final class UnitPaymentsCloneTest extends TestCase
@@ -28,13 +29,9 @@ final class UnitPaymentsCloneTest extends TestCase
         $source = (string) $container->get(Connection::class)->pdo()->query('SELECT DATABASE()')->fetchColumn();
         self::assertStringEndsWith('_test', $source);
         self::assertContains($config->get('db.host'), ['localhost', '127.0.0.1', '::1']);
-        $this->ownedSchema = 'myucto_payment_clone_' . bin2hex(random_bytes(5)) . '_test';
         $this->server = new PDO('mysql:host=' . $config->get('db.host') . ';port=' . $config->get('db.port', 3306) . ';charset=utf8mb4',
             $config->get('db.user'), $config->get('db.pass', ''), [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
-        $cloner = new DatabaseCloner($this->server);
-        $plan = $cloner->plan($source);
-        $cloner->copyTables($plan, $this->ownedSchema, static function (): void {});
-        $cloner->finalize($plan, $this->ownedSchema);
+        $this->ownedSchema = CloneSandbox::acquire($this->server, $source, true);
         $data = $config->all();
         $data['db']['name'] = $this->ownedSchema;
         for ($i = 0; $i < 2; ++$i) {
@@ -53,9 +50,9 @@ final class UnitPaymentsCloneTest extends TestCase
             $db->close();
         }
         $ownedSchemas=array_values(array_filter([$this->targetSchema,$this->ownedSchema??null],static fn($schema)=>$schema!==null));
-        if($this->targetSchema!==null){self::assertMatchesRegularExpression('/^myucto_payment_clone_[a-f0-9]{10}_test_copy_test$/D',$this->targetSchema);\MyInvoice\Tests\Support\OwnedTestDatabaseCleanup::drop($this->server,$this->targetSchema,$ownedSchemas);}
-        self::assertMatchesRegularExpression('/^myucto_payment_clone_[a-f0-9]{10}_test$/D', $this->ownedSchema);
-        \MyInvoice\Tests\Support\OwnedTestDatabaseCleanup::drop($this->server,$this->ownedSchema,$ownedSchemas);
+        if($this->targetSchema!==null){if(!CloneSandbox::isLeased($this->targetSchema))self::assertMatchesRegularExpression('/^myucto_payment_clone_[a-f0-9]{10}_test_copy_test$/D',$this->targetSchema);CloneSandbox::dropOrRelease($this->server,$this->targetSchema,$ownedSchemas);}
+        if(!CloneSandbox::isLeased($this->ownedSchema)) self::assertMatchesRegularExpression('/^myucto_payment_clone_[a-f0-9]{10}_test$/D', $this->ownedSchema);
+        CloneSandbox::dropOrRelease($this->server,$this->ownedSchema,$ownedSchemas);
     }
 
 
@@ -78,7 +75,7 @@ final class UnitPaymentsCloneTest extends TestCase
             'legal'=>['certain'=>true,'unconditional'=>true,'scope_cents'=>'1000','mutuality_evidence'=>'Synthetic reciprocal parties person@example.test','eligibility_evidence'=>'Synthetic enforceability','declaration_evidence'=>'Synthetic declaration','delivery_evidence'=>'Synthetic receipt','delivered_at'=>'2026-02-01T10:00:00+01:00','effect_evidence'=>'Synthetic effect date','early_performance_evidence'=>'Synthetic agreed early performance']];
         $setoffRepo=$this->paymentFixtureContainer()->get(\MyInvoice\Repository\Property\Payments\CreditSetoffRepository::class);$setoff=$setoffRepo->apply($f['supplier'],$setoffRequest,$setoffRepo->preview($f['supplier'],$setoffRequest)['preview_hash'],'setoff',$f['actor']);
         $sourceHash=$this->fingerprint($source->pdo());
-        $cloner=new DatabaseCloner($this->server);$plan=$cloner->plan($this->ownedSchema);$this->targetSchema=$this->ownedSchema.'_copy_test';$cloner->copyTables($plan,$this->targetSchema,static function():void{});
+        $cloner=new DatabaseCloner($this->server);$plan=$cloner->plan($this->ownedSchema);$this->targetSchema=CloneSandbox::acquire($this->server,$this->ownedSchema);
         $config=Bootstrap::buildContainer()->get(Config::class);$data=$config->all();$data['db']['name']=$this->targetSchema;$target=Connection::withoutSharedTestConnection(fn()=>new Connection(new Config($data,$config->dataDir())));$this->connections[]=$target;
         $settlementInputs=\MyInvoice\Service\Anonymization\SettlementCloneScrubber::captureInputs($target);
         $scrubber=new \MyInvoice\Service\Anonymization\TextScrubber(new \MyInvoice\Service\Anonymization\Pseudonymizer(str_repeat('synthetic-payments-',3)));
@@ -123,7 +120,7 @@ final class UnitPaymentsCloneTest extends TestCase
         $base=$this->settledPaymentFixture('100000','0');$request=$this->negativePaymentCorrection($base,'800','20000');$request['reason']='Synthetic relief person@example.test';
         $repo=$this->correctionWriter();$hash=$repo->preview($f['supplier'],$request)['preview_hash'];$done=$repo->apply($f['supplier'],$request,$hash,'opaque-correction',$f['actor']);
         $reservation=$this->correctionPayments()->reserve($f['supplier'],$done['credit_id'],1,['amount_cents'=>'1000','party_ids'=>[$f['clients'][1]],'disposition'=>'Synthetic reservation','recipient_account'=>'1000000005/0100'],'reserve',$f['actor']);$source->pdo()->commit();$before=$this->fingerprint($source->pdo());
-        $cloner=new DatabaseCloner($this->server);$plan=$cloner->plan($this->ownedSchema);$this->targetSchema=$this->ownedSchema.'_copy_test';$cloner->copyTables($plan,$this->targetSchema,static function():void{});
+        $cloner=new DatabaseCloner($this->server);$plan=$cloner->plan($this->ownedSchema);$this->targetSchema=CloneSandbox::acquire($this->server,$this->ownedSchema);
         $config=Bootstrap::buildContainer()->get(Config::class);$data=$config->all();$data['db']['name']=$this->targetSchema;$target=Connection::withoutSharedTestConnection(fn()=>new Connection(new Config($data,$config->dataDir())));$this->connections[]=$target;
         $settlementInputs=\MyInvoice\Service\Anonymization\SettlementCloneScrubber::captureInputs($target);
         $scrubber=new \MyInvoice\Service\Anonymization\TextScrubber(new \MyInvoice\Service\Anonymization\Pseudonymizer(str_repeat('synthetic-correction-',3)));

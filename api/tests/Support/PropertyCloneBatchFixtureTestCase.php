@@ -12,7 +12,7 @@ use MyInvoice\Service\Accounting\ChartOfAccountsSeeder;
 use MyInvoice\Service\Anonymization\{AnonymizationOptions,AnonymizationService,ChargesCloneScrubber,DatabaseCloner,IssuanceCloneScrubber,PaymentsCloneScrubber,PropertyCloneScrubber,Pseudonymizer,SettlementCloneScrubber,TextScrubber};
 use MyInvoice\Service\Property\Opening\{OpeningException,OpeningReadProof};
 use MyInvoice\Service\Property\PropertyInput;
-use MyInvoice\Tests\Support\{OwnedTestDatabaseCleanup,PropertyChargeFixture};
+use MyInvoice\Tests\Support\{CloneSandbox,PropertyChargeFixture};
 use PDO;
 use PHPUnit\Framework\TestCase;
 abstract class PropertyCloneBatchFixtureTestCase extends TestCase
@@ -25,23 +25,24 @@ abstract class PropertyCloneBatchFixtureTestCase extends TestCase
     protected static array $fixtures=[];
     protected static array $plan=[];
     protected array $targets=[];
+    /** Kopie zapůjčené testem, vrací se v tearDown(). */
+    protected array $leased=[];
     public static function setUpBeforeClass():void
     {
         self::$fixtures=[];self::$owned=[];
         $c=Bootstrap::buildContainer();$config=$c->get(Config::class);$source=$c->get(Connection::class)->pdo()->query('SELECT DATABASE()')->fetchColumn();
         self::assertStringEndsWith('_test',$source);self::assertContains($config->get('db.host'),['localhost','127.0.0.1','::1']);
         self::$server=new PDO('mysql:host='.$config->get('db.host').';port='.$config->get('db.port',3306).';charset=utf8mb4',$config->get('db.user'),$config->get('db.pass',''),[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
-        $schema=self::newSchema();$cloner=new DatabaseCloner(self::$server);self::$plan=$cloner->plan($source);$cloner->copyTables(self::$plan,$schema,static function():void{});
+        $schema=CloneSandbox::acquire(self::$server,$source);self::$owned[]=$schema;self::$plan=(new DatabaseCloner(self::$server))->plan($source);
         $data=$config->all();$data['db']['name']=$schema;self::$config=new Config($data,$config->dataDir());self::$source=self::connect($schema);
         self::$source->pdo()->exec("SET SESSION sql_mode='STRICT_ALL_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'");
     }
     public static function tearDownAfterClass():void
     {
         if(isset(self::$source)){if(self::$source->pdo()->inTransaction())self::$source->pdo()->rollBack();self::$source->close();}
-        if(isset(self::$server))foreach(array_reverse(self::$owned) as $schema)OwnedTestDatabaseCleanup::drop(self::$server,$schema,self::$owned);
+        if(isset(self::$server))foreach(array_reverse(self::$owned) as $schema)CloneSandbox::dropOrRelease(self::$server,$schema,self::$owned);self::$owned=[];
     }
-    protected static function newSchema():string{$schema='myucto_payments_clone_batch_'.bin2hex(random_bytes(5)).'_test';$q=self::$server->prepare('SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME=?');$q->execute([$schema]);self::assertSame(0,(int)$q->fetchColumn());self::$owned[]=$schema;return $schema;}
-    protected static function connect(string $schema):Connection{$data=self::$config->all();$data['db']['name']=$schema;return Connection::withoutSharedTestConnection(fn()=>new Connection(new Config($data,self::$config->dataDir())));}
+        protected static function connect(string $schema):Connection{$data=self::$config->all();$data['db']['name']=$schema;return Connection::withoutSharedTestConnection(fn()=>new Connection(new Config($data,self::$config->dataDir())));}
     protected function setUp():void
     {
         if(self::$fixtures!==[])return;
@@ -57,10 +58,15 @@ abstract class PropertyCloneBatchFixtureTestCase extends TestCase
             $repo=$c->get(OpeningRepository::class);$preview=$repo->preview($s,$request);$batch=$repo->apply($s,$request,$preview['preview_hash'],'clone-batch-fixture',$f['actor']);self::assertSame('posted',$batch['status']);self::$fixtures[]=$f+['count'=>$count,'batch'=>$batch];
         }$db->pdo()->commit();(new DatabaseCloner(self::$server))->finalize(self::$plan,(string)self::$config->get('db.name'));}catch(\Throwable $e){if($db->pdo()->inTransaction())$db->pdo()->rollBack();throw $e;}
     }
-    protected function tearDown():void{foreach($this->targets as $db){if($db->pdo()->inTransaction())$db->pdo()->rollBack();$db->close();}$this->targets=[];}
+    protected function tearDown():void{foreach($this->targets as $db){if($db->pdo()->inTransaction())$db->pdo()->rollBack();$db->close();}$this->targets=[];foreach($this->leased as $schema)CloneSandbox::release(self::$server,$schema);$this->leased=[];}
     protected function copy():Connection
     {
-        $schema=self::newSchema();$cloner=new DatabaseCloner(self::$server);$cloner->copyTables($cloner->plan((string)self::$config->get('db.name')),$schema,static function():void{});$db=self::connect($schema);$this->targets[]=$db;return $db;
+        $schema=CloneSandbox::acquire(self::$server,(string)self::$config->get('db.name'));$this->leased[]=$schema;$db=self::connect($schema);$this->targets[]=$db;return $db;
+    }
+    /** Kopie zdroje přepsaná celou produkční transformací anonymizace (bez triggerů). */
+    protected function anonymized(string $seed):Connection
+    {
+        $schema=CloneSandbox::anonymized(self::$server,self::$config,(string)self::$config->get('db.name'),$seed);$this->leased[]=$schema;$db=self::connect($schema);$this->targets[]=$db;return $db;
     }
     protected function prefix(Connection $db):array
     {

@@ -12,7 +12,7 @@ final class NativePropertyReset
 {
     public static function run(string $schema, bool $keep): array
     {
-        Assert::assertMatchesRegularExpression('/^myucto_(workflow_clone|s5_lifecycle)_[a-f0-9]{10}_test$/D', $schema);
+        Assert::assertMatchesRegularExpression('/^myucto_(workflow_clone|s5_lifecycle|clonesandbox)_[a-f0-9]{10}_test$/D', $schema);
         $dir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . $schema . '_reset_' . bin2hex(random_bytes(4));
         mkdir($dir);
         try {

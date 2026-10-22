@@ -14,6 +14,7 @@ use MyInvoice\Service\Property\Charges\Issuance\IssuancePreviewService;
 use MyInvoice\Service\Property\Charges\Issuance\IssuanceUseGuard;
 use MyInvoice\Service\Property\Charges\Issuance\IssuanceException;
 use MyInvoice\Tests\Support\ChargeIssuanceFixture;
+use MyInvoice\Tests\Support\CloneSandbox;
 use PDO;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -32,11 +33,9 @@ final class ChargeIssuanceCloneTest extends TestCase
         $container=Bootstrap::buildContainer(); $config=$container->get(Config::class);
         $source=(string)$container->get(Connection::class)->pdo()->query('SELECT DATABASE()')->fetchColumn();
         self::assertStringEndsWith('_test',$source); self::assertContains($config->get('db.host'),['localhost','127.0.0.1','::1']);
-        $this->schema='myucto_issue_clone_'.bin2hex(random_bytes(5)).'_test';
         $this->server=new PDO('mysql:host='.$config->get('db.host').';port='.$config->get('db.port',3306).';charset=utf8mb4',
             $config->get('db.user'),$config->get('db.pass',''),[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
-        $cloner=new DatabaseCloner($this->server); $plan=$cloner->plan($source);
-        $cloner->copyTables($plan,$this->schema,static function(): void {}); $cloner->finalize($plan,$this->schema);
+        $this->schema=CloneSandbox::acquire($this->server,$source,true);
         $data=$config->all(); $data['db']['name']=$this->schema;
         for($i=0;$i<2;$i++) {
             $db=Connection::withoutSharedTestConnection(fn()=>new Connection(new Config($data,$config->dataDir())));
@@ -51,10 +50,10 @@ final class ChargeIssuanceCloneTest extends TestCase
     {
         foreach($this->connections as $db) { if($db->pdo()->inTransaction()) $db->pdo()->rollBack(); $db->close(); }
         $ownedSchemas=array_values(array_filter([$this->targetSchema,$this->schema??null],static fn($schema)=>$schema!==null));
-        if($this->targetSchema!==null) { self::assertMatchesRegularExpression('/^myucto_issue_clone_[a-f0-9]{10}_test_copy_test$/D',$this->targetSchema); \MyInvoice\Tests\Support\OwnedTestDatabaseCleanup::drop($this->server,$this->targetSchema,$ownedSchemas); }
+        if($this->targetSchema!==null) { if(!CloneSandbox::isLeased($this->targetSchema)) self::assertMatchesRegularExpression('/^myucto_issue_clone_[a-f0-9]{10}_test_copy_test$/D',$this->targetSchema); CloneSandbox::dropOrRelease($this->server,$this->targetSchema,$ownedSchemas); }
         if(isset($this->schema,$this->server)) {
-            self::assertMatchesRegularExpression('/^myucto_issue_clone_[a-f0-9]{10}_test$/D',$this->schema);
-            \MyInvoice\Tests\Support\OwnedTestDatabaseCleanup::drop($this->server,$this->schema,$ownedSchemas);
+            if(!CloneSandbox::isLeased($this->schema)) self::assertMatchesRegularExpression('/^myucto_issue_clone_[a-f0-9]{10}_test$/D',$this->schema);
+            CloneSandbox::dropOrRelease($this->server,$this->schema,$ownedSchemas);
         }
     }
 
@@ -84,8 +83,7 @@ final class ChargeIssuanceCloneTest extends TestCase
             'idempotency_key'=>'opaque-evidence'];
         $writer->recordEvidence($f['supplier'],$posted['charges'][1]['id'],$eventInput,$f['actor']);
         $sourceHash=$this->fingerprint($source->pdo());
-        $cloner=new DatabaseCloner($this->server); $plan=$cloner->plan($this->schema); $this->targetSchema=$this->schema.'_copy_test';
-        $cloner->copyTables($plan,$this->targetSchema,static function(): void {});
+        $cloner=new DatabaseCloner($this->server); $plan=$cloner->plan($this->schema); $this->targetSchema=CloneSandbox::acquire($this->server,$this->schema);
         $config=Bootstrap::buildContainer()->get(Config::class); $data=$config->all(); $data['db']['name']=$this->targetSchema;
         $target=Connection::withoutSharedTestConnection(fn()=>new Connection(new Config($data,$config->dataDir()))); $this->connections[]=$target;
         $pseudonymizer=new \MyInvoice\Service\Anonymization\Pseudonymizer(str_repeat('synthetic-issuance-',3));
@@ -166,11 +164,8 @@ final class ChargeIssuanceCloneTest extends TestCase
         $original=$this->writer($source)->post($f['supplier'],$original['id'],
             array_map(fn($charge)=>['id'=>$charge['id'],'row_version'=>1],$original['charges']),$f['actor']);
         $sourceHash=$this->fingerprint($source->pdo());
-        $this->targetSchema=$this->schema.'_copy_test';$config=Bootstrap::buildContainer()->get(Config::class);
-        (new \MyInvoice\Service\Anonymization\AnonymizationService($config))->run(
-            new \MyInvoice\Service\Anonymization\AnonymizationOptions(source:$this->schema,target:$this->targetSchema,seed:'synthetic-issuance-full-service'),
-            static function(): void {},
-        );
+        $config=Bootstrap::buildContainer()->get(Config::class);
+        $this->targetSchema=CloneSandbox::anonymized($this->server,$config,$this->schema,'synthetic-issuance-full-service');
         $data=$config->all();$data['db']['name']=$this->targetSchema;
         $target=Connection::withoutSharedTestConnection(fn()=>new Connection(new Config($data,$config->dataDir())));$this->connections[]=$target;
         $anonymous=(new \MyInvoice\Repository\Property\Charges\Issuance\IssuanceReadRepository($target))->batch($f['supplier'],$original['id']);

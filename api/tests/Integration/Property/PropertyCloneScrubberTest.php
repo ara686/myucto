@@ -18,6 +18,7 @@ use MyInvoice\Service\Property\PropertyException;
 use MyInvoice\Service\Property\PropertyImportService;
 use MyInvoice\Service\Property\PropertyInput;
 use MyInvoice\Tests\Support\IsolatedSupplierTrait;
+use MyInvoice\Tests\Support\CloneSandbox;
 use PDO;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -42,18 +43,15 @@ final class PropertyCloneScrubberTest extends TestCase
             $this->config->get('db.user'), $this->config->get('db.pass', ''), [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
         $prefix = 'myucto_property_clone_' . bin2hex(random_bytes(5));
         $this->schemas = [$prefix . '_source_test', $prefix . '_target_test', $prefix . '_partial_test'];
-        $cloner = new DatabaseCloner($this->server);
-        $plan = $cloner->plan($source);
-        $cloner->copyTables($plan, $this->schemas[0], static function (): void {});
-        $cloner->finalize($plan, $this->schemas[0]);
+        $this->schemas[0] = CloneSandbox::acquire($this->server, $source, true);
     }
 
     protected function tearDown(): void
     {
         foreach ($this->connections as $db) { if ($db->pdo()->inTransaction()) $db->pdo()->rollBack(); $db->close(); }
         foreach (array_reverse($this->schemas) as $schema) {
-            self::assertMatchesRegularExpression('/^myucto_property_clone_[a-f0-9]{10}_(source|target|partial)_test$/D', $schema);
-            \MyInvoice\Tests\Support\OwnedTestDatabaseCleanup::drop($this->server,$schema,$this->schemas);
+            if (!CloneSandbox::isLeased($schema)) self::assertMatchesRegularExpression('/^myucto_property_clone_[a-f0-9]{10}_(source|target|partial)_test$/D', $schema);
+            CloneSandbox::dropOrRelease($this->server,$schema,$this->schemas);
         }
     }
 
@@ -64,7 +62,7 @@ final class PropertyCloneScrubberTest extends TestCase
         $sourceHash = $this->fingerprint($source->pdo());
         $cloner = new DatabaseCloner($this->server);
         $plan = $cloner->plan($this->schemas[0]);
-        $cloner->copyTables($plan, $this->schemas[1], static function (): void {});
+        $this->schemas[1] = CloneSandbox::acquire($this->server, $this->schemas[0]);
         $target = $this->connect($this->schemas[1]);
         $pdo = $target->pdo();
         $scrubber = new TextScrubber(new Pseudonymizer(str_repeat('synthetic-property-', 3)));
@@ -140,10 +138,7 @@ final class PropertyCloneScrubberTest extends TestCase
         $source = $this->connect($this->schemas[0]);
         [$supplier, $actor, , , , $unit, , , , $originalImport, $imported] = $this->fixture($source);
         $sourceHash = $this->fingerprint($source->pdo());
-        (new \MyInvoice\Service\Anonymization\AnonymizationService($this->config))->run(
-            new \MyInvoice\Service\Anonymization\AnonymizationOptions(source: $this->schemas[0], target: $this->schemas[1], seed: 'synthetic-property-service'),
-            static function (): void {},
-        );
+        $this->schemas[1] = CloneSandbox::anonymized($this->server, $this->config, $this->schemas[0], 'synthetic-property-service');
         $target = $this->connect($this->schemas[1]);
         foreach ($target->pdo()->query('SELECT state_json,state_hash FROM property_revisions')->fetchAll(PDO::FETCH_ASSOC) as $row) {
             self::assertStringNotContainsString('registry-person@example.test', $row['state_json']);

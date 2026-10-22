@@ -28,8 +28,8 @@ final class PaymentsCloneBatchProofTest extends PropertyCloneBatchFixtureTestCas
     }
     public function testActualWholeClonePreservesNativeOwnerProofsAndFinancialGraph():void
     {
-        $before=$this->financial(self::$source);$source=$this->fingerprint(self::$source);$target=self::newSchema();$report=(new AnonymizationService(self::$config))->run(new AnonymizationOptions((string)self::$config->get('db.name'),$target,seed:'synthetic-payments-clone-batch'),static function():void{});
-        $db=self::connect($target);$this->targets[]=$db;self::assertGreaterThan(0,$report['tables']);self::assertSame($before,$this->financial($db));self::assertSame($source,$this->fingerprint(self::$source));self::assertGreaterThan(0,(int)$db->pdo()->query('SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE()')->fetchColumn());
+        $before=$this->financial(self::$source);$source=$this->fingerprint(self::$source);$db=$this->anonymized('synthetic-payments-clone-batch');
+        self::assertSame($before,$this->financial($db));self::assertSame($source,$this->fingerprint(self::$source));
         $rows=$db->pdo()->query('SELECT snapshot_json FROM property_opening_batches')->fetchAll(PDO::FETCH_COLUMN);self::assertStringNotContainsString('person@example.test',implode('', $rows));self::assertNotSame($source,$this->fingerprint($db));
     }
     public function testRehashedPhysicalProofCorruptionStillFailsAndCloneTransactionRollsBack():void

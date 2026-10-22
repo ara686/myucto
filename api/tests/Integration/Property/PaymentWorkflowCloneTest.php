@@ -10,6 +10,7 @@ use MyInvoice\Service\Property\Payments\{PaymentSourceProof, PaymentLocks, Payme
 use MyInvoice\Service\Property\Payments\Workflow\{PaymentWorkflowFacade, ClearingCells};
 use MyInvoice\Repository\Property\Payments\{ClearingRevisionRepository, PaymentRepository, PaymentWorkflowRepository};
 use MyInvoice\Service\Property\PropertyInput;
+use MyInvoice\Tests\Support\CloneSandbox;
 use PDO;
 use PHPUnit\Framework\TestCase;
 final class PaymentWorkflowCloneTest extends TestCase
@@ -28,13 +29,9 @@ final class PaymentWorkflowCloneTest extends TestCase
         $source = (string) $container->get(Connection::class)->pdo()->query('SELECT DATABASE()')->fetchColumn();
         self::assertStringEndsWith('_test', $source);
         self::assertContains($config->get('db.host'), ['localhost', '127.0.0.1', '::1']);
-        $this->ownedSchema = 'myucto_workflow_clone_' . bin2hex(random_bytes(5)) . '_test';
         $this->server = new PDO('mysql:host=' . $config->get('db.host') . ';port=' . $config->get('db.port', 3306) . ';charset=utf8mb4',
             $config->get('db.user'), $config->get('db.pass', ''), [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
-        $cloner = new DatabaseCloner($this->server);
-        $plan = $cloner->plan($source);
-        $cloner->copyTables($plan, $this->ownedSchema, static function (): void {});
-        $cloner->finalize($plan, $this->ownedSchema);
+        $this->ownedSchema = CloneSandbox::acquire($this->server, $source, true);
         $data = $config->all();
         $data['db']['name'] = $this->ownedSchema;
         for ($i = 0; $i < 2; ++$i) {
@@ -53,15 +50,17 @@ final class PaymentWorkflowCloneTest extends TestCase
             $db->close();
         }
         $ownedSchemas=array_values(array_filter([$this->targetSchema,$this->ownedSchema??null],static fn($schema)=>$schema!==null));
-        if($this->targetSchema!==null){self::assertMatchesRegularExpression('/^myucto_workflow_clone_[a-f0-9]{10}_test_copy_test$/D',$this->targetSchema);\MyInvoice\Tests\Support\OwnedTestDatabaseCleanup::drop($this->server,$this->targetSchema,$ownedSchemas);}
-        self::assertMatchesRegularExpression('/^myucto_workflow_clone_[a-f0-9]{10}_test$/D', $this->ownedSchema);
-        \MyInvoice\Tests\Support\OwnedTestDatabaseCleanup::drop($this->server,$this->ownedSchema,$ownedSchemas);
+        if($this->targetSchema!==null){if(!CloneSandbox::isLeased($this->targetSchema))self::assertMatchesRegularExpression('/^myucto_workflow_clone_[a-f0-9]{10}_test_copy_test$/D',$this->targetSchema);CloneSandbox::dropOrRelease($this->server,$this->targetSchema,$ownedSchemas);}
+        if(!CloneSandbox::isLeased($this->ownedSchema)) self::assertMatchesRegularExpression('/^myucto_workflow_clone_[a-f0-9]{10}_test$/D', $this->ownedSchema);
+        CloneSandbox::dropOrRelease($this->server,$this->ownedSchema,$ownedSchemas);
     }
 
 
     public static function resetModes(): array
     {
-        return ['keep users and supplier' => [true], 'full reset' => [false]];
+        // Rozdíl režimů (uživatelé a firma zůstanou, nebo ne) ověřuje ReceivableLifecycleTest.
+        // Tady jde o vyčištění plateb, revizí, rezervací a exportů, které na režimu nezávisí.
+        return ['full reset' => [false]];
     }
 
     #[\PHPUnit\Framework\Attributes\DataProvider('resetModes')]
@@ -127,12 +126,8 @@ final class PaymentWorkflowCloneTest extends TestCase
         $source->pdo()->commit();
         $original = $this->fingerprint($source->pdo());
 
-        $this->targetSchema = $this->ownedSchema . '_copy_test';
         $config = Bootstrap::buildContainer()->get(Config::class);
-        (new \MyInvoice\Service\Anonymization\AnonymizationService($config))->run(
-            new \MyInvoice\Service\Anonymization\AnonymizationOptions(source: $this->ownedSchema, target: $this->targetSchema, seed: 'synthetic-s4-native-full-pipeline'),
-            static function (): void {},
-        );
+        $this->targetSchema = CloneSandbox::anonymized($this->server, $config, $this->ownedSchema, 'synthetic-s4-native-full-pipeline');
         $data = $config->all();
         $data['db']['name'] = $this->targetSchema;
         $target = Connection::withoutSharedTestConnection(fn () => new Connection(new Config($data, $config->dataDir())));
@@ -192,7 +187,7 @@ final class PaymentWorkflowCloneTest extends TestCase
         $exportWriter=$this->container()->get(\MyInvoice\Repository\Property\Payments\PaymentExportRepository::class);$exportPreview=$exportWriter->preview($this->f['supplier'],$exportRequest);$export=$exportWriter->confirm($this->f['supplier'],$exportRequest,$exportPreview['preview_hash'],'clone-export',$this->f['actor']);
         $source->pdo()->commit(); $original=$this->fingerprint($source->pdo());
         $cloner=new DatabaseCloner($this->server); $plan=$cloner->plan($this->ownedSchema);
-        $this->targetSchema=$this->ownedSchema.'_copy_test'; $cloner->copyTables($plan,$this->targetSchema,static function():void{});
+        $this->targetSchema=CloneSandbox::acquire($this->server,$this->ownedSchema);
         $config=Bootstrap::buildContainer()->get(Config::class); $data=$config->all(); $data['db']['name']=$this->targetSchema;
         $target=Connection::withoutSharedTestConnection(fn()=>new Connection(new Config($data,$config->dataDir()))); $this->connections[]=$target;
         $settlementInputs=\MyInvoice\Service\Anonymization\SettlementCloneScrubber::captureInputs($target);

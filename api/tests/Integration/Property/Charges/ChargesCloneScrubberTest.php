@@ -12,6 +12,7 @@ use MyInvoice\Repository\Property\PropertyReadRepository;
 use MyInvoice\Repository\Property\PropertyRegistryRepository;
 use MyInvoice\Service\Anonymization\DatabaseCloner;
 use MyInvoice\Service\Property\PropertyException;
+use MyInvoice\Tests\Support\CloneSandbox;
 use MyInvoice\Tests\Support\IsolatedSupplierTrait;
 use PDO;
 use PHPUnit\Framework\Attributes\Group;
@@ -33,13 +34,9 @@ final class ChargesCloneScrubberTest extends TestCase
         $source = (string) $container->get(Connection::class)->pdo()->query('SELECT DATABASE()')->fetchColumn();
         self::assertStringEndsWith('_test', $source);
         self::assertContains($config->get('db.host'), ['localhost', '127.0.0.1', '::1']);
-        $this->ownedSchema = 'myucto_charge_clone_' . bin2hex(random_bytes(5)) . '_test';
         $this->server = new PDO('mysql:host=' . $config->get('db.host') . ';port=' . $config->get('db.port', 3306) . ';charset=utf8mb4',
             $config->get('db.user'), $config->get('db.pass', ''), [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
-        $cloner = new DatabaseCloner($this->server);
-        $plan = $cloner->plan($source);
-        $cloner->copyTables($plan, $this->ownedSchema, static function (): void {});
-        $cloner->finalize($plan, $this->ownedSchema);
+        $this->ownedSchema = CloneSandbox::acquire($this->server, $source, true);
         $data = $config->all();
         $data['db']['name'] = $this->ownedSchema;
         for ($i = 0; $i < 2; ++$i) {
@@ -58,9 +55,9 @@ final class ChargesCloneScrubberTest extends TestCase
             $db->close();
         }
         $ownedSchemas=array_values(array_filter([$this->targetSchema,$this->ownedSchema??null],static fn($schema)=>$schema!==null));
-        if($this->targetSchema!==null) { self::assertMatchesRegularExpression('/^myucto_charge_clone_[a-f0-9]{10}_test_clone_test$/D',$this->targetSchema); \MyInvoice\Tests\Support\OwnedTestDatabaseCleanup::drop($this->server,$this->targetSchema,$ownedSchemas); }
-        self::assertMatchesRegularExpression('/^myucto_charge_clone_[a-f0-9]{10}_test$/D', $this->ownedSchema);
-        \MyInvoice\Tests\Support\OwnedTestDatabaseCleanup::drop($this->server,$this->ownedSchema,$ownedSchemas);
+        if($this->targetSchema!==null) { if(!CloneSandbox::isLeased($this->targetSchema)) self::assertMatchesRegularExpression('/^myucto_charge_clone_[a-f0-9]{10}_test_clone_test$/D',$this->targetSchema); CloneSandbox::dropOrRelease($this->server,$this->targetSchema,$ownedSchemas); }
+        if(!CloneSandbox::isLeased($this->ownedSchema)) self::assertMatchesRegularExpression('/^myucto_charge_clone_[a-f0-9]{10}_test$/D', $this->ownedSchema);
+        CloneSandbox::dropOrRelease($this->server,$this->ownedSchema,$ownedSchemas);
     }
 
     public function testFullAnonymizationServicePreservesChargeCalculationAndRetryWithoutPersonalText(): void
@@ -75,12 +72,8 @@ final class ChargesCloneScrubberTest extends TestCase
         $original=(new \MyInvoice\Repository\Property\Charges\ChargeRepository($source))->saveVersion($f['supplier'],
             ['request'=>$request,'preview_hash'=>$preview['preview_hash'],'idempotency_key'=>'opaque-full-clone'],$f['actor']);
         $sourceHash=$this->fingerprint($source->pdo());
-        $this->targetSchema=$this->ownedSchema.'_clone_test';
         $config=Bootstrap::buildContainer()->get(Config::class);
-        (new \MyInvoice\Service\Anonymization\AnonymizationService($config))->run(
-            new \MyInvoice\Service\Anonymization\AnonymizationOptions(source:$this->ownedSchema,target:$this->targetSchema,seed:'synthetic-charge-full-service'),
-            static function(): void {},
-        );
+        $this->targetSchema=CloneSandbox::anonymized($this->server,$config,$this->ownedSchema,'synthetic-charge-full-service');
         $data=$config->all();$data['db']['name']=$this->targetSchema;
         $target=Connection::withoutSharedTestConnection(fn()=>new Connection(new Config($data,$config->dataDir())));$this->connections[]=$target;
         $reader=new \MyInvoice\Repository\Property\Charges\ChargeReadRepository($target);
@@ -120,8 +113,7 @@ final class ChargesCloneScrubberTest extends TestCase
         $second=$repo->saveVersion($f['supplier'],['request'=>$request,'preview_hash'=>$preview['preview_hash'],'idempotency_key'=>'opaque-second'],$f['actor']);
         $sourceHash=$this->fingerprint($source->pdo());
         $cloner=new DatabaseCloner($this->server); $plan=$cloner->plan($this->ownedSchema);
-        $targetSchema=$this->ownedSchema.'_clone_test'; $this->targetSchema=$targetSchema;
-        $cloner->copyTables($plan,$targetSchema,static function(): void {});
+        $targetSchema=CloneSandbox::acquire($this->server,$this->ownedSchema); $this->targetSchema=$targetSchema;
         $config=Bootstrap::buildContainer()->get(Config::class); $data=$config->all(); $data['db']['name']=$targetSchema;
         $target=Connection::withoutSharedTestConnection(fn()=>new Connection(new Config($data,$config->dataDir()))); $this->connections[]=$target;
         $pdo=$target->pdo(); $pdo->exec("SET SESSION sql_mode='STRICT_ALL_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'");
