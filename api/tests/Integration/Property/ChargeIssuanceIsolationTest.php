@@ -22,21 +22,41 @@ use PHPUnit\Framework\TestCase;
 final class ChargeIssuanceIsolationTest extends TestCase
 {
     use ChargeIssuanceFixture;
-    private PDO $server;
-    private string $schema;
+    private static ?PDO $server=null;
+    private static ?string $schema=null;
     private array $connections=[];
 
-    protected function setUp(): void
+    /**
+     * Souběh potřebuje dvě spojení nad potvrzenými daty, proto vlastní kopii testovací
+     * databáze. Stačí jedna kopie na třídu: každý test si zakládá vlastní firmu a počty
+     * ověřuje jen v ní.
+     */
+    public static function setUpBeforeClass(): void
     {
         $container=Bootstrap::buildContainer(); $config=$container->get(Config::class);
         $source=(string)$container->get(Connection::class)->pdo()->query('SELECT DATABASE()')->fetchColumn();
         self::assertStringEndsWith('_test',$source); self::assertContains($config->get('db.host'),['localhost','127.0.0.1','::1']);
-        $this->schema='myucto_issue_race_'.bin2hex(random_bytes(5)).'_test';
-        $this->server=new PDO('mysql:host='.$config->get('db.host').';port='.$config->get('db.port',3306).';charset=utf8mb4',
+        self::$schema='myucto_issue_race_'.bin2hex(random_bytes(5)).'_test';
+        self::$server=new PDO('mysql:host='.$config->get('db.host').';port='.$config->get('db.port',3306).';charset=utf8mb4',
             $config->get('db.user'),$config->get('db.pass',''),[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
-        $cloner=new DatabaseCloner($this->server); $plan=$cloner->plan($source);
-        $cloner->copyTables($plan,$this->schema,static function(): void {}); $cloner->finalize($plan,$this->schema);
-        $data=$config->all(); $data['db']['name']=$this->schema;
+        $cloner=new DatabaseCloner(self::$server); $plan=$cloner->plan($source);
+        try { $cloner->copyTables($plan,self::$schema,static function(): void {}); $cloner->finalize($plan,self::$schema); }
+        catch (\Throwable $e) { self::tearDownAfterClass(); throw $e; }
+    }
+
+    public static function tearDownAfterClass(): void
+    {
+        if(self::$schema!==null&&self::$server!==null) {
+            self::assertMatchesRegularExpression('/^myucto_issue_race_[a-f0-9]{10}_test$/D',self::$schema);
+            self::$server->exec('DROP DATABASE IF EXISTS '.DatabaseCloner::quote(self::$schema));
+        }
+        self::$schema=null; self::$server=null;
+    }
+
+    protected function setUp(): void
+    {
+        $config=Bootstrap::buildContainer()->get(Config::class);
+        $data=$config->all(); $data['db']['name']=self::$schema;
         for($i=0;$i<2;$i++) {
             $db=Connection::withoutSharedTestConnection(fn()=>new Connection(new Config($data,$config->dataDir())));
             $db->pdo()->exec("SET SESSION sql_mode='STRICT_ALL_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'");
@@ -49,10 +69,6 @@ final class ChargeIssuanceIsolationTest extends TestCase
     protected function tearDown(): void
     {
         foreach($this->connections as $db) { if($db->pdo()->inTransaction()) $db->pdo()->rollBack(); $db->close(); }
-        if(isset($this->schema,$this->server)) {
-            self::assertMatchesRegularExpression('/^myucto_issue_race_[a-f0-9]{10}_test$/D',$this->schema);
-            $this->server->exec('DROP DATABASE IF EXISTS '.DatabaseCloner::quote($this->schema));
-        }
     }
 
     public function testStaleCallerSnapshotCannotIssueSecondRevisionOrMissNewLedgerOwnership(): void

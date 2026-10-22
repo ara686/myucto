@@ -30,20 +30,48 @@ final class PaymentCorrectionOwnershipTest extends TestCase
 {
     use ChargeIssuanceFixture;
     use PaymentCorrectionFixture;
+    use \MyInvoice\Tests\Support\SharedFixtureSavepointTrait;
+
+    /** Testy, které samy ukončují a začínají transakci, si firmu staví vlastní. */
+    private const OWN_TRANSACTION = ['testIntentCannotSurviveRollbackAndNewTransactionOnSamePdo'];
 
     private Connection $db;
     private array $f;
+    private ?array $base = null;
+
+    /** Úhrada dluhu, nad kterou test staví: testy záměrů 900 Kč, varianty úlev podle dat, ostatní 10 Kč. */
+    private function settledPaid(): string
+    {
+        if (in_array($this->name(), ['testGenericReversalCannotDetachAnOwnedCorrection', 'testOwnedCorrectionAndReversalCompleteBothMirrors'], true)) return (string) $this->providedData()[0];
+        return str_contains($this->name(), 'Intent') || in_array($this->name(), ['testTypedWriterCompletesBothMirrorsOnceAndPreservesCallerSavepoint', 'testPersistedProofCannotBeChangedAfterIntentCreation'], true) ? '90000' : '1000';
+    }
+
+    private function settled(string $paid): array
+    {
+        if ($this->base !== null && $this->base['paid'] === $paid) return $this->base;
+        return $this->settledPaymentFixture($paid, '0');
+    }
 
     protected function setUp(): void
     {
         $this->db = Bootstrap::buildContainer()->get(Connection::class);
-        $this->db->pdo()->beginTransaction();
-        $this->f = $this->issuanceFixture($this->db);
+        $this->beginSharedFixtureTest($this->db->pdo());
+        if (in_array($this->name(), self::OWN_TRANSACTION, true)) {
+            $this->sharedClean();
+            $this->f = $this->issuanceFixture($this->db);
+        } else {
+            // Firma s předpisy a zaplaceným dluhem je stejná pro testy se stejnou úhradou; opravu si staví každý test sám.
+            $paid = $this->settledPaid();
+            [$this->f, $this->base] = $this->sharedFixture('settled|' . $paid, function () use ($paid): array {
+                $this->f = $this->issuanceFixture($this->db);
+                return [$this->f, $this->settledPaymentFixture($paid, '0') + ['paid' => $paid]];
+            });
+        }
     }
 
     protected function tearDown(): void
     {
-        if ($this->db->pdo()->inTransaction()) $this->db->pdo()->rollBack();
+        $this->endSharedFixtureTest($this->db->pdo());
     }
 
     public static function reductions(): array
@@ -54,7 +82,7 @@ final class PaymentCorrectionOwnershipTest extends TestCase
     #[DataProvider('reductions')]
     public function testGenericPostingCannotReduceRegisteredPrincipal(bool $distant, bool $mixed): void
     {
-        $base = $this->settledPaymentFixture('1000', '0');
+        $base = $this->settled('1000');
         $previous = $base['charge'];
         $revision = 1;
         if ($distant) {
@@ -73,7 +101,7 @@ final class PaymentCorrectionOwnershipTest extends TestCase
 
     public function testGenericReversalCannotDetachAnExistingPayment(): void
     {
-        $base = $this->settledPaymentFixture('1000', '0');
+        $base = $this->settled('1000');
         $this->assertBlocked('property_payment_source_immutable', fn () => $this->issuance()->reverse(
             $this->f['supplier'], $base['charge']['id'], $this->reverseInput($base['charge']), $this->f['actor'],
         ));
@@ -87,7 +115,7 @@ final class PaymentCorrectionOwnershipTest extends TestCase
     #[DataProvider('reliefs')]
     public function testGenericReversalCannotDetachAnOwnedCorrection(string $paid, string $relief): void
     {
-        $base = $this->settledPaymentFixture($paid, '0');
+        $base = $this->settled($paid);
         $request = $this->negativePaymentCorrection($base, '800', $relief);
         $writer = $this->correctionWriter();
         $done = $writer->apply($this->f['supplier'], $request, $writer->preview($this->f['supplier'], $request)['preview_hash'], 'owned-correction', $this->f['actor']);
@@ -101,7 +129,7 @@ final class PaymentCorrectionOwnershipTest extends TestCase
 
     public function testDirectS3ReversalWriterCannotConsumeAStoredRequestForPaidCharge(): void
     {
-        $base = $this->settledPaymentFixture('1000', '0');
+        $base = $this->settled('1000');
         $request = $this->reverseInput($base['charge']);
         $token = $request['idempotency_key'];
         unset($request['idempotency_key']);
@@ -115,7 +143,7 @@ final class PaymentCorrectionOwnershipTest extends TestCase
     #[DataProvider('reliefs')]
     public function testOwnedCorrectionAndReversalCompleteBothMirrors(string $paid, string $relief): void
     {
-        $base = $this->settledPaymentFixture($paid, '0');
+        $base = $this->settled($paid);
         $request = $this->negativePaymentCorrection($base, '800', $relief);
         $writer = $this->correctionWriter();
         $hash = $writer->preview($this->f['supplier'], $request)['preview_hash'];
@@ -273,7 +301,7 @@ final class PaymentCorrectionOwnershipTest extends TestCase
 
     private function intent(bool $reverse): PaymentCorrectionIntent|PaymentCorrectionReversalIntent
     {
-        $base = $this->settledPaymentFixture('90000', '0');
+        $base = $this->settled('90000');
         $request = $this->negativePaymentCorrection($base, '800', '10000');
         $writer = $this->correctionWriter();
         $snapshot = $writer->preview($this->f['supplier'], $request)['snapshot'];

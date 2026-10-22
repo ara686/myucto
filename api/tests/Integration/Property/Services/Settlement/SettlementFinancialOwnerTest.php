@@ -10,10 +10,16 @@ use MyInvoice\Service\Property\Services\Settlement\SettlementOriginAdapter;
 final class SettlementFinancialOwnerTest extends TestCase {
  use ChargeIssuanceFixture;
  use \MyInvoice\Tests\Support\PaymentCorrectionFixture;
+ use \MyInvoice\Tests\Support\SharedFixtureSavepointTrait;
  private array $f;
  private Connection $db;
- protected function setUp():void {$this->db=Bootstrap::buildContainer()->get(Connection::class);$configured=(string)getenv('MYINVOICE_DB_NAME');self::assertMatchesRegularExpression('/^[A-Za-z0-9_]+_test$/D',$configured);self::assertLessThanOrEqual(64,strlen($configured));self::assertSame($configured,(string)$this->db->pdo()->query('SELECT DATABASE()')->fetchColumn());self::assertSame($this->db->pdo(),Bootstrap::buildContainer()->get(Connection::class)->pdo());$this->db->pdo()->exec('SET SESSION sql_mode=\'STRICT_ALL_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION\'');$this->db->pdo()->beginTransaction();}
- protected function tearDown():void {if($this->db->pdo()->inTransaction())$this->db->pdo()->rollBack();}
+ protected function setUp():void {$this->db=Bootstrap::buildContainer()->get(Connection::class);$configured=(string)getenv('MYINVOICE_DB_NAME');self::assertMatchesRegularExpression('/^[A-Za-z0-9_]+_test$/D',$configured);self::assertLessThanOrEqual(64,strlen($configured));self::assertSame($configured,(string)$this->db->pdo()->query('SELECT DATABASE()')->fetchColumn());self::assertSame($this->db->pdo(),Bootstrap::buildContainer()->get(Connection::class)->pdo());$this->db->pdo()->exec('SET SESSION sql_mode=\'STRICT_ALL_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION\'');$this->beginSharedFixtureTest($this->db->pdo());}
+ protected function tearDown():void{$this->endSharedFixtureTest($this->db->pdo());}
+ /** Základ testu se staví jednou za třídu; fixtury samotné zůstávají pro ostatní třídy beze změny. */
+ private function shared(string $fixture,mixed ...$args):array
+ {
+  $state=$this->sharedFixture($fixture.'|'.serialize($args),fn()=>['data'=>$this->$fixture(...$args),'f'=>$this->f]);$this->f=$state['f'];return $state['data'];
+ }
  private function openingFixture():array {
   $f=$this->chargeFixture($this->db);$this->f=$f;$supplier=$f['supplier'];
   (new \MyInvoice\Repository\AccountingPeriodRepository($this->db))->create($supplier,2026,'2026-01-01','2026-12-31');
@@ -37,7 +43,7 @@ final class SettlementFinancialOwnerTest extends TestCase {
  }
 
  public function testNativeLatePaymentSettlesExactlyOnceAndReverses():void {
-  extract($this->appliedFixture());
+  extract($this->shared('appliedFixture'));
   self::assertSame($result,$owner->apply($f['supplier'],$saved['id'],$request,0,$preview['preview_hash'],'s8-apply',$f['actor']));
   self::assertSame($saved,$docRepo->find($f['supplier'],$saved['id'],true));
   $current=(new \MyInvoice\Repository\Property\Payments\DebtRepository($this->db))->currentMany($f['supplier'],[$debt])[0];
@@ -69,14 +75,14 @@ final class SettlementFinancialOwnerTest extends TestCase {
  return compact('f','document','docRepo','saved','source','debt','bank','r','payments','op','allocation','owner','request','preview','result');
  }
  public function testGenericReversalCannotDetachSettlementEffects():void {
-  extract($this->appliedFixture());$this->expectException(\MyInvoice\Service\Accounting\PostingException::class);
+  extract($this->shared('appliedFixture'));$this->expectException(\MyInvoice\Service\Accounting\PostingException::class);
   Bootstrap::buildContainer()->get(\MyInvoice\Service\Accounting\PostingService::class)->reverse($f['supplier'],$result['journal_entry_id'],['entry_date'=>'2026-12-31','posted_by'=>$f['actor']]);
  }
  public function testOriginalPaidAllocationCannotBeReversedWhileRelieved():void {
-  extract($this->appliedFixture());try{$payments->reverse($f['supplier'],$op['id'],$op['row_version'],'2026-12-31','Synthetic attempted bypass','bypass-reverse',$f['actor']);self::fail('Used allocation reversed');}catch(\MyInvoice\Service\Property\Payments\PaymentException $e){self::assertSame('property_payment_allocation_has_service_settlement',$e->errorCode);}
+  extract($this->shared('appliedFixture'));try{$payments->reverse($f['supplier'],$op['id'],$op['row_version'],'2026-12-31','Synthetic attempted bypass','bypass-reverse',$f['actor']);self::fail('Used allocation reversed');}catch(\MyInvoice\Service\Property\Payments\PaymentException $e){self::assertSame('property_payment_allocation_has_service_settlement',$e->errorCode);}
  }
  public function testGenericInsertCannotForgeSettlementSource():void {
-  extract($this->appliedFixture());$header=$preview['header'];$header['source_id']=null;$header['posted_at']='2026-12-31 12:00:00';$header['posted_by']=$f['actor'];
+  extract($this->shared('appliedFixture'));$header=$preview['header'];$header['source_id']=null;$header['posted_at']='2026-12-31 12:00:00';$header['posted_by']=$f['actor'];
   $this->expectException(\MyInvoice\Service\Accounting\PostingException::class);Bootstrap::buildContainer()->get(\MyInvoice\Repository\JournalEntryRepository::class)->insert($header,$preview['plan']['lines']);
  }
 
@@ -86,19 +92,19 @@ final class SettlementFinancialOwnerTest extends TestCase {
   self::assertSame($entries,(int)$this->db->pdo()->query('SELECT COUNT(*) FROM journal_entries WHERE supplier_id='.$supplier)->fetchColumn());
  }
  public function testChangedPhysicalSourceAfterPreviewRejectsWithoutWrites():void {
-  extract($this->appliedFixture(false));$entries=(int)$this->db->pdo()->query('SELECT COUNT(*) FROM journal_entries WHERE supplier_id='.$f['supplier'])->fetchColumn();
+  extract($this->shared('appliedFixture',false));$entries=(int)$this->db->pdo()->query('SELECT COUNT(*) FROM journal_entries WHERE supplier_id='.$f['supplier'])->fetchColumn();
   $this->db->pdo()->prepare('UPDATE bank_transactions SET amount=? WHERE id=?')->execute(['301.00',$bank]);
   try{$owner->apply($f['supplier'],$saved['id'],$request,0,$preview['preview_hash'],'changed-bank',$f['actor']);self::fail('Changed physical source accepted');}catch(\MyInvoice\Service\Property\Payments\PaymentException $e){self::assertContains($e->errorCode,['property_payment_source_clearing_mismatch','property_payment_source_changed']);}
   $this->assertNoApplication($f['supplier'],$entries);self::assertSame($saved,$docRepo->find($f['supplier'],$saved['id'],true));
  }
  public function testLateAdditionalPaymentAfterPreviewRejectsWithoutWrites():void {
-  extract($this->appliedFixture(false));$later=$r;$later['source']['id']=$this->correctionBank('100.00');$later['amount_cents']='10000';
+  extract($this->shared('appliedFixture',false));$later=$r;$later['source']['id']=$this->correctionBank('100.00');$later['amount_cents']='10000';
   $payments->apply($f['supplier'],$later,$payments->preview($f['supplier'],$later)['preview_hash'],'later-physical',$f['actor']);$entries=(int)$this->db->pdo()->query('SELECT COUNT(*) FROM journal_entries WHERE supplier_id='.$f['supplier'])->fetchColumn();
   try{$owner->apply($f['supplier'],$saved['id'],$request,0,$preview['preview_hash'],'stale-payment-preview',$f['actor']);self::fail('Stale allocation preview accepted');}catch(DomainException $e){self::assertContains($e->getMessage(),['settlement_preview_stale','settlement_relief_margin']);}
   $this->assertNoApplication($f['supplier'],$entries);
  }
  public function testOwnerRollbackRemovesAllFinancialEffectsAndReversal():void {
-  extract($this->appliedFixture(false));$entries=(int)$this->db->pdo()->query('SELECT COUNT(*) FROM journal_entries WHERE supplier_id='.$f['supplier'])->fetchColumn();$this->db->pdo()->exec('SAVEPOINT before_service_apply');
+  extract($this->shared('appliedFixture',false));$entries=(int)$this->db->pdo()->query('SELECT COUNT(*) FROM journal_entries WHERE supplier_id='.$f['supplier'])->fetchColumn();$this->db->pdo()->exec('SAVEPOINT before_service_apply');
   $result=$owner->apply($f['supplier'],$saved['id'],$request,0,$preview['preview_hash'],'rollback-apply',$f['actor']);$credit=$result['credit_ids'][0];
   $this->db->pdo()->exec('SAVEPOINT before_service_reverse');$owner->reverse($f['supplier'],$result['id'],'2026-12-31',1,'Synthetic rollback reversal','rollback-reverse',$f['actor']);
   $this->db->pdo()->exec('ROLLBACK TO SAVEPOINT before_service_reverse');self::assertSame('10000',$payments->credit($f['supplier'],$credit)['available_cents']);
@@ -108,12 +114,12 @@ final class SettlementFinancialOwnerTest extends TestCase {
   $current=(new \MyInvoice\Repository\Property\Payments\DebtRepository($this->db))->currentMany($f['supplier'],[$debt])[0];self::assertSame('30000',array_sum($current['paid']).'');self::assertSame([],$current['reductions']);
  }
  public function testSameAllocationCannotCreateAnotherSettlementCredit():void {
-  extract($this->appliedFixture());$count=(int)$this->db->pdo()->query('SELECT COUNT(*) FROM unit_credit_lots WHERE supplier_id='.$f['supplier'])->fetchColumn();
+  extract($this->shared('appliedFixture'));$count=(int)$this->db->pdo()->query('SELECT COUNT(*) FROM unit_credit_lots WHERE supplier_id='.$f['supplier'])->fetchColumn();
   try{$owner->apply($f['supplier'],$saved['id'],$request,0,$preview['preview_hash'],'second-apply',$f['actor']);self::fail('Second disposition accepted');}catch(DomainException $e){self::assertSame('settlement_version_conflict',$e->getMessage());}
   self::assertSame($count,(int)$this->db->pdo()->query('SELECT COUNT(*) FROM unit_credit_lots WHERE supplier_id='.$f['supplier'])->fetchColumn());
  }
  public function testGenericDetachAndReplaceCannotRewriteSettlement():void {
-  extract($this->appliedFixture());$journal=Bootstrap::buildContainer()->get(\MyInvoice\Repository\JournalEntryRepository::class);
+  extract($this->shared('appliedFixture'));$journal=Bootstrap::buildContainer()->get(\MyInvoice\Repository\JournalEntryRepository::class);
   foreach(['detach','replace'] as $action){try{if($action==='detach')$journal->detachSource($result['journal_entry_id'],$f['supplier']);else $journal->replace($result['journal_entry_id'],$preview['header'],$preview['plan']['lines']);self::fail('Generic '.$action.' accepted');}catch(\MyInvoice\Service\Accounting\PostingException $e){self::assertSame('property_service_settlement_owner_required',$e->errorCode);}}
  }
 
@@ -139,14 +145,14 @@ final class SettlementFinancialOwnerTest extends TestCase {
  }
 
  public function testNativeS3ApplicationReducesOriginalClaimAndReverses():void {
-  extract($this->nativeFixture('800000'));$source=$native['origins'][0];$owner=Bootstrap::buildContainer()->get(\MyInvoice\Repository\Property\Services\Settlement\SettlementApplicationRepository::class);
+  extract($this->shared('nativeFixture','800000'));$source=$native['origins'][0];$owner=Bootstrap::buildContainer()->get(\MyInvoice\Repository\Property\Services\Settlement\SettlementApplicationRepository::class);
   $r=['accounting_date'=>'2026-12-31','evidence'=>'Synthetic native service disposition','advances'=>[['origin_key'=>'s3_line:'.$source['id'],'applied_cents'=>'800000']],'reliefs'=>[],'opening_credits'=>[],'new_claim'=>null];
   $preview=$owner->preview($f['supplier'],$saved['id'],$r,0);$result=$owner->apply($f['supplier'],$saved['id'],$r,0,$preview['preview_hash'],'s3-service-apply',$f['actor']);self::assertSame([],$result['credit_ids']);self::assertSame([],$result['debt_ids']);
   $debt=(new \MyInvoice\Repository\Property\Payments\DebtRepository($this->db))->currentMany($f['supplier'],[$source['debt_id']])[0];self::assertSame('400000',$debt['reductions'][$source['id']]);self::assertSame([],$debt['paid']);
   $owner->reverse($f['supplier'],$result['id'],'2026-12-31',1,'Synthetic cancellation','s3-service-reverse',$f['actor']);$debt=(new \MyInvoice\Repository\Property\Payments\DebtRepository($this->db))->currentMany($f['supplier'],[$source['debt_id']])[0];self::assertSame([],$debt['reductions']);
  }
  public function testNativeS3NewClaimHasIndependentOriginAndCanReverseUnused():void {
-  extract($this->nativeFixture('1400000'));$source=$native['origins'][0];$owner=Bootstrap::buildContainer()->get(\MyInvoice\Repository\Property\Services\Settlement\SettlementApplicationRepository::class);
+  extract($this->shared('nativeFixture','1400000'));$source=$native['origins'][0];$owner=Bootstrap::buildContainer()->get(\MyInvoice\Repository\Property\Services\Settlement\SettlementApplicationRepository::class);
   $r=['accounting_date'=>'2026-12-31','evidence'=>'Synthetic native service disposition','advances'=>[['origin_key'=>'s3_line:'.$source['id'],'applied_cents'=>'1200000']],'reliefs'=>[],'opening_credits'=>[],'new_claim'=>['party_ids'=>[$f['clients'][1]],'evidence'=>'Synthetic independent settlement claim','due_date'=>'2027-04-30','account_code'=>'315.210'],'claim_title'=>['effective_at'=>'2026-12-31T12:00:00+01:00','title_ref'=>'Synthetic service settlement title','liability_groups'=>[['group_key'=>'A','role'=>'debtor','mode'=>'individual','basis'=>'documented_title','members'=>[$f['clients'][1]],'extent'=>['num'=>'1','den'=>'1'],'evidence_ref'=>'Synthetic title','legal_reason'=>'Synthetic service liability','valid_from'=>'2026-12-31T12:00:00+01:00','valid_to'=>null]],'legal'=>['basis'=>'legal_act','legal_act_date'=>'2026-12-31','evidence'=>'Synthetic service legal act','regime'=>'general'],'security'=>['kind'=>'unsecured','evidence'=>'Synthetic unsecured finding']]];
   $preview=$owner->preview($f['supplier'],$saved['id'],$r,0);$result=$owner->apply($f['supplier'],$saved['id'],$r,0,$preview['preview_hash'],'s3-new-claim-apply',$f['actor']);self::assertCount(1,$result['debt_ids']);
   $debt=(new \MyInvoice\Repository\Property\Payments\DebtRepository($this->db))->currentMany($f['supplier'],$result['debt_ids'])[0];self::assertTrue($debt['active']);self::assertNull($debt['snapshot']['charge_id']);self::assertSame('200000',$debt['snapshot']['amount_cents']);self::assertSame([],$debt['paid']);
@@ -169,14 +175,14 @@ final class SettlementFinancialOwnerTest extends TestCase {
   $this->paymentFixtureContainer()->get(\MyInvoice\Service\Accounting\PostingService::class)->postDocument($this->f['supplier'],'bank',$id,[['account_code'=>'221','side'=>str_starts_with($amount,'-')?'credit':'debit','amount'=>ltrim($amount,'-')],['account_code'=>'379.900','side'=>str_starts_with($amount,'-')?'debit':'credit','amount'=>ltrim($amount,'-')]],['entry_date'=>$date,'posted_by'=>$this->f['actor']]);return $id;
  }
  public function testPaidNewClaimBlocksSettlementReverseAndItsPaymentReversesNormally():void {
-  extract($this->newClaimFixture());$payments=$this->correctionPayments();$bank=$this->bankOn('1000.00','2026-12-31');
+  extract($this->shared('newClaimFixture'));$payments=$this->correctionPayments();$bank=$this->bankOn('1000.00','2026-12-31');
   $payment=['kind'=>'allocation','source'=>['kind'=>'bank','id'=>$bank,'expected_version'=>0],'amount_cents'=>'100000','accounting_date'=>'2026-12-31','reason'=>'Synthetic settlement claim payment','debts'=>$result['debt_ids'],'payment'=>['payer_id'=>$f['clients'][1],'debtor_id'=>$f['clients'][1],'received_at'=>'2026-12-31T13:00:00+01:00','choice'=>['claim_ids'=>$result['debt_ids'],'evidence'=>'Synthetic debtor disposition']]];
   $op=$payments->apply($f['supplier'],$payment,$payments->preview($f['supplier'],$payment)['preview_hash'],'newclaim-payment',$f['actor']);$current=(new \MyInvoice\Repository\Property\Payments\DebtRepository($this->db))->currentMany($f['supplier'],$result['debt_ids'])[0];self::assertSame('100000',array_sum($current['paid']).'');
   try{$owner->reverse($f['supplier'],$result['id'],'2026-12-31',1,'Synthetic forbidden paid claim reversal','newclaim-blocked-reverse',$f['actor']);self::fail('Paid claim reversed');}catch(DomainException $e){self::assertSame('settlement_claim_in_use',$e->getMessage());}
   $payments->reverse($f['supplier'],$op['id'],$op['row_version'],'2026-12-31','Synthetic payment cancellation','newclaim-payment-reverse',$f['actor']);$owner->reverse($f['supplier'],$result['id'],'2026-12-31',1,'Synthetic no downstream claim use','newclaim-unused-reverse',$f['actor']);
  }
  public function testReservedServiceCreditBlocksReverseUntilCancelled():void {
-  extract($this->appliedFixture());$credit=$payments->credit($f['supplier'],$result['credit_ids'][0]);
+  extract($this->shared('appliedFixture'));$credit=$payments->credit($f['supplier'],$result['credit_ids'][0]);
   \MyInvoice\Tests\Support\RefundAccountFixture::document($this->db->pdo(),$f['supplier'],$f['clients'][1]);$reservation=$payments->reserve($f['supplier'],$credit['id'],$credit['row_version'],['amount_cents'=>'10000','party_ids'=>[$f['clients'][1]],'disposition'=>'Synthetic bank refund instruction','recipient_account'=>'1000000005/0100'],'service-credit-reserve',$f['actor']);
   try{$owner->reverse($f['supplier'],$result['id'],'2026-12-31',1,'Synthetic forbidden reserved refund reversal','reserved-service-reverse',$f['actor']);self::fail('Reserved credit origin reversed');}catch(DomainException $e){self::assertSame('settlement_credit_in_use',$e->getMessage());}
   $payments->cancelReservation($f['supplier'],$reservation['id'],$reservation['row_version'],'Synthetic cancelled transfer','service-credit-cancel',$f['actor']);$owner->reverse($f['supplier'],$result['id'],'2026-12-31',1,'Synthetic available credit cancellation','available-service-reverse',$f['actor']);
@@ -185,28 +191,28 @@ final class SettlementFinancialOwnerTest extends TestCase {
 
 
  public function testChangedManualCostAfterDocumentCannotBecomeCurrentAuthority():void {
-  extract($this->nativeFixture('800000'));$source=$native['origins'][0];$owner=Bootstrap::buildContainer()->get(\MyInvoice\Repository\Property\Services\Settlement\SettlementApplicationRepository::class);$cost=$native['costs']['s3_line:'.$source['id']]['source_id'];$entry=(int)$this->db->pdo()->query('SELECT entry_id FROM journal_entry_lines WHERE id='.$cost)->fetchColumn();
+  extract($this->shared('nativeFixture','800000'));$source=$native['origins'][0];$owner=Bootstrap::buildContainer()->get(\MyInvoice\Repository\Property\Services\Settlement\SettlementApplicationRepository::class);$cost=$native['costs']['s3_line:'.$source['id']]['source_id'];$entry=(int)$this->db->pdo()->query('SELECT entry_id FROM journal_entry_lines WHERE id='.$cost)->fetchColumn();
   $this->db->pdo()->prepare('UPDATE journal_entry_lines SET amount=? WHERE supplier_id=? AND entry_id=?')->execute(['9000.00',$f['supplier'],$entry]);
   $r=['accounting_date'=>'2026-12-31','evidence'=>'Synthetic changed cost attempt','advances'=>[['origin_key'=>'s3_line:'.$source['id'],'applied_cents'=>'800000']],'reliefs'=>[],'opening_credits'=>[],'new_claim'=>null];
   $entries=(int)$this->db->pdo()->query('SELECT COUNT(*) FROM journal_entries WHERE supplier_id='.$f['supplier'])->fetchColumn();try{$owner->preview($f['supplier'],$saved['id'],$r,0);self::fail('Changed cost became current authority');}catch(DomainException $e){self::assertSame('settlement_document_cost_changed',$e->getMessage());}$this->assertNoApplication($f['supplier'],$entries);
  }
  public function testUsedManualCostDescriptionCannotChange():void {
-  extract($this->newClaimFixture());$cost=$preview['plan']['document']['cost']['source_id'];$entry=(int)$this->db->pdo()->query('SELECT entry_id FROM journal_entry_lines WHERE id='.$cost)->fetchColumn();$journal=Bootstrap::buildContainer()->get(\MyInvoice\Repository\JournalEntryRepository::class);
+  extract($this->shared('newClaimFixture'));$cost=$preview['plan']['document']['cost']['source_id'];$entry=(int)$this->db->pdo()->query('SELECT entry_id FROM journal_entry_lines WHERE id='.$cost)->fetchColumn();$journal=Bootstrap::buildContainer()->get(\MyInvoice\Repository\JournalEntryRepository::class);
   try{$journal->updateDescription($entry,$f['supplier'],'Synthetic replacement description',$f['actor']);self::fail('Used manual cost description changed');}catch(\MyInvoice\Service\Accounting\PostingException $e){self::assertSame('property_service_settlement_owner_required',$e->errorCode);}
  }
  public function testUsedS3IssuanceCannotReverse():void {
-  extract($this->newClaimFixture());$charge=(int)$this->db->pdo()->query('SELECT charge_id FROM unit_charge_lines WHERE id='.$source['id'])->fetchColumn();
+  extract($this->shared('newClaimFixture'));$charge=(int)$this->db->pdo()->query('SELECT charge_id FROM unit_charge_lines WHERE id='.$source['id'])->fetchColumn();
   try{Bootstrap::buildContainer()->get(\MyInvoice\Repository\Property\Charges\Issuance\IssuanceRepository::class)->reverse($f['supplier'],$charge,['row_version'=>2,'accounting_date'=>'2026-12-31','effective_at'=>'2026-12-31T20:00:00+01:00','reason'=>'Synthetic bypass attempt','evidence_ref'=>'Synthetic reversal evidence','idempotency_key'=>'used-s3-reverse'],$f['actor']);self::fail('Used S3 charge reversed');}catch(\MyInvoice\Service\Property\Charges\Issuance\IssuanceException $e){self::assertSame('property_payment_claim_has_service_settlement',$e->errorCode);}
  }
 
 
  public function testServiceCreditCannotFundRefundBeforeApplication():void {
-  extract($this->appliedFixture());$credit=$payments->credit($f['supplier'],$result['credit_ids'][0]);\MyInvoice\Tests\Support\RefundAccountFixture::document($this->db->pdo(),$f['supplier'],$f['clients'][1]);$reservation=$payments->reserve($f['supplier'],$credit['id'],$credit['row_version'],['amount_cents'=>'10000','party_ids'=>[$f['clients'][1]],'disposition'=>'Synthetic bank refund instruction','recipient_account'=>'1000000005/0100'],'service-credit-old-reserve',$f['actor']);$bank=$this->bankOn('-100.00','2026-02-01');
+  extract($this->shared('appliedFixture'));$credit=$payments->credit($f['supplier'],$result['credit_ids'][0]);\MyInvoice\Tests\Support\RefundAccountFixture::document($this->db->pdo(),$f['supplier'],$f['clients'][1]);$reservation=$payments->reserve($f['supplier'],$credit['id'],$credit['row_version'],['amount_cents'=>'10000','party_ids'=>[$f['clients'][1]],'disposition'=>'Synthetic bank refund instruction','recipient_account'=>'1000000005/0100'],'service-credit-old-reserve',$f['actor']);$bank=$this->bankOn('-100.00','2026-02-01');
   $refund=['kind'=>'refund','source'=>['kind'=>'bank','id'=>$bank,'expected_version'=>0],'amount_cents'=>'10000','accounting_date'=>'2026-02-01','reason'=>'Synthetic backdated refund','reservation_id'=>$reservation['id'],'expected_reservation_version'=>$reservation['row_version']];
   try{$payments->preview($f['supplier'],$refund);self::fail('Service credit funded a backdated refund');}catch(\MyInvoice\Service\Property\Payments\PaymentException $e){self::assertSame('property_payment_backdated_payment',$e->errorCode);}
  }
  public function testPostedServiceCreditRefundBlocksReverseAndCannotBePaidTwice():void {
-  extract($this->appliedFixture());$credit=$payments->credit($f['supplier'],$result['credit_ids'][0]);\MyInvoice\Tests\Support\RefundAccountFixture::document($this->db->pdo(),$f['supplier'],$f['clients'][1]);$reservation=$payments->reserve($f['supplier'],$credit['id'],$credit['row_version'],['amount_cents'=>'10000','party_ids'=>[$f['clients'][1]],'disposition'=>'Synthetic bank refund instruction','recipient_account'=>'1000000005/0100'],'service-credit-refund-reserve',$f['actor']);$bank=$this->bankOn('-100.00','2026-12-31');
+  extract($this->shared('appliedFixture'));$credit=$payments->credit($f['supplier'],$result['credit_ids'][0]);\MyInvoice\Tests\Support\RefundAccountFixture::document($this->db->pdo(),$f['supplier'],$f['clients'][1]);$reservation=$payments->reserve($f['supplier'],$credit['id'],$credit['row_version'],['amount_cents'=>'10000','party_ids'=>[$f['clients'][1]],'disposition'=>'Synthetic bank refund instruction','recipient_account'=>'1000000005/0100'],'service-credit-refund-reserve',$f['actor']);$bank=$this->bankOn('-100.00','2026-12-31');
   $refund=['kind'=>'refund','source'=>['kind'=>'bank','id'=>$bank,'expected_version'=>0],'amount_cents'=>'10000','accounting_date'=>'2026-12-31','reason'=>'Synthetic service credit refund','reservation_id'=>$reservation['id'],'expected_reservation_version'=>$reservation['row_version']];$preview=$payments->preview($f['supplier'],$refund);$op=$payments->apply($f['supplier'],$refund,$preview['preview_hash'],'service-credit-refund',$f['actor']);self::assertSame('0',$payments->credit($f['supplier'],$credit['id'])['balance_cents']);
   try{$owner->reverse($f['supplier'],$result['id'],'2026-12-31',1,'Synthetic attempted paid credit reversal','paid-credit-reverse',$f['actor']);self::fail('Paid credit reversed');}catch(DomainException $e){self::assertSame('settlement_credit_in_use',$e->getMessage());}
   try{$payments->apply($f['supplier'],$refund,$preview['preview_hash'],'service-credit-double-refund',$f['actor']);self::fail('Credit refunded twice');}catch(\MyInvoice\Service\Property\Payments\PaymentException $e){self::assertContains($e->errorCode,['property_payment_source_version_conflict','property_payment_reservation_version_conflict','property_payment_reservation_capacity']);}
@@ -215,7 +221,7 @@ final class SettlementFinancialOwnerTest extends TestCase {
 
 
  public function testCostStorageAnchorCannotCrossTenant():void {
-  extract($this->appliedFixture(false));$other=$this->chargeFixture($this->db);$q=$this->db->pdo()->prepare('SELECT * FROM property_service_settlements WHERE supplier_id=? AND id=?');$q->execute([$f['supplier'],$saved['id']]);$row=$q->fetch(PDO::FETCH_ASSOC);unset($row['id']);$row['supplier_id']=$other['supplier'];$row['unit_id']=$other['units']['U02'];$row['service_id']=$other['service']['id'];$row['created_by']=$other['actor'];$row['segment_key']='FOREIGN-COST';$row['idempotency_key']='foreign-cost-storage';
+  extract($this->shared('appliedFixture',false));$other=$this->chargeFixture($this->db);$q=$this->db->pdo()->prepare('SELECT * FROM property_service_settlements WHERE supplier_id=? AND id=?');$q->execute([$f['supplier'],$saved['id']]);$row=$q->fetch(PDO::FETCH_ASSOC);unset($row['id']);$row['supplier_id']=$other['supplier'];$row['unit_id']=$other['units']['U02'];$row['service_id']=$other['service']['id'];$row['created_by']=$other['actor'];$row['segment_key']='FOREIGN-COST';$row['idempotency_key']='foreign-cost-storage';
   try{$this->db->pdo()->prepare('INSERT INTO property_service_settlements ('.implode(',',array_keys($row)).') VALUES ('.implode(',',array_fill(0,count($row),'?')).')')->execute(array_values($row));self::fail('Foreign tenant cost storage anchor accepted');}catch(PDOException $e){self::assertSame('23000',$e->getCode());}
  }
 

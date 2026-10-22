@@ -17,6 +17,7 @@ final class OpeningAccessoryOriginNativeTest extends TestCase
 {
     use PropertyChargeFixture;
     use MyInvoice\Tests\Support\PaymentCorrectionFixture;
+    use MyInvoice\Tests\Support\SharedFixtureSavepointTrait { tearDownAfterClass as private sharedFixtureTearDownAfterClass; }
     private Connection $db;
     private array $f;
     private array $request;
@@ -41,10 +42,13 @@ final class OpeningAccessoryOriginNativeTest extends TestCase
             foreach($plan['tables'] as $name=>$table){$quoted=MyInvoice\Service\Anonymization\DatabaseCloner::quote($name);self::$server->exec('INSERT INTO `'.$schema.'`.'.$quoted.' ('.$table['columns'].') SELECT '.$table['columns'].' FROM '.MyInvoice\Service\Anonymization\DatabaseCloner::quote($source).'.'.$quoted);}
             self::$server->exec('SET SESSION FOREIGN_KEY_CHECKS=1');
             $data=$config->all();$data['db']['name']=$schema;self::$ownedConnection=Connection::withoutSharedTestConnection(fn()=>new Connection(new MyInvoice\Infrastructure\Config\Config($data,$config->dataDir())));
+            // Kopie schématu je bez triggerů a testy schéma nemění; dotaz do information_schema stojí přes sekundu, proto jednou za třídu.
+            self::assertSame(0,(int)self::$ownedConnection->pdo()->query('SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE()')->fetchColumn());
         }catch(\Throwable $e){self::tearDownAfterClass();throw $e;}
     }
     public static function tearDownAfterClass():void
     {
+        self::sharedFixtureTearDownAfterClass();
         if(self::$ownedConnection!==null){if(self::$ownedConnection->pdo()->inTransaction())self::$ownedConnection->pdo()->rollBack();self::$ownedConnection->close();self::$ownedConnection=null;}
         if(self::$ownedSchema!==null){
             $schema=self::$ownedSchema;self::assertMatchesRegularExpression('/^myucto_accessory_origin_[a-f0-9]{12}_test$/D',$schema);self::assertSame(self::$ownerToken,self::$server->query('SELECT token FROM `'.$schema.'`.`_accessory_origin_test_owner`')->fetchColumn());
@@ -54,11 +58,16 @@ final class OpeningAccessoryOriginNativeTest extends TestCase
     protected function setUp():void
     {
         $this->container=Bootstrap::buildContainer();$this->db=self::$ownedConnection;$this->container->set(Connection::class,$this->db);$pdo=$this->db->pdo();
-        self::assertStringEndsWith('_test',(string)getenv('MYINVOICE_DB_NAME'));self::assertSame(self::$ownedSchema,$pdo->query('SELECT DATABASE()')->fetchColumn());self::assertSame(0,(int)$pdo->query('SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE()')->fetchColumn());
-        $pdo->exec("SET SESSION sql_mode='STRICT_ALL_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'");$pdo->beginTransaction();
+        self::assertStringEndsWith('_test',(string)getenv('MYINVOICE_DB_NAME'));self::assertSame(self::$ownedSchema,$pdo->query('SELECT DATABASE()')->fetchColumn());
+        $pdo->exec("SET SESSION sql_mode='STRICT_ALL_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'");$this->beginSharedFixtureTest($pdo);
     }
-    protected function tearDown():void {if(isset($this->db)&&$this->db->pdo()->inTransaction())$this->db->pdo()->rollBack();}
+    protected function tearDown():void {if(isset($this->db))$this->endSharedFixtureTest($this->db->pdo());}
+    /** Počáteční stav s dluhem a kreditem je pro všechny testy stejný; staví se jednou za třídu. */
     private function fixture(int $count=1):void
+    {
+        [$this->f,$this->request,$this->batch,$this->debtId]=$this->sharedFixture('opening-'.$count,function()use($count):array{$this->buildFixture($count);return [$this->f,$this->request,$this->batch,$this->debtId];});
+    }
+    private function buildFixture(int $count):void
     {
         $db=$this->db;$pdo=$db->pdo();$container=$this->container;
    $f=$this->chargeFixture($db);$this->f=$f;$s=$f['supplier'];(new AccountingPeriodRepository($db))->create($s,2026,'2026-01-01','2026-12-31');(new ChartOfAccountsSeeder($db))->seedForSupplier($s,'2026-01-01');

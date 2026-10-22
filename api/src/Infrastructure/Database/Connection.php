@@ -252,10 +252,12 @@ final class Connection
      * naopak protáhne do dalšího testu — proto se tady rollbackuje a NAHLAS hlásí.
      * Ze stejného důvodu se vrací i session proměnné a named locks do výchozího stavu:
      * `SET FOREIGN_KEY_CHECKS = 0` nebo GET_LOCK dřív padly se spojením, teď ne.
+     * `$keepTransactions` nechá transakci třídy, která mezi testy vědomě drží sdílený
+     * základ v savepointech (Tests\Support\SharedFixtureSavepointTrait).
      *
      * @return list<string> DSN spojení, na kterých byla nalezena rozdělaná transakce
      */
-    public static function resetSharedTestSessions(): array
+    public static function resetSharedTestSessions(bool $keepTransactions = false): array
     {
         if (!self::$sharedTouched) {
             return [];
@@ -265,7 +267,7 @@ final class Connection
         $leaked = [];
         foreach (self::$sharedPdo as $dsn => $pdo) {
             try {
-                if ($pdo->inTransaction()) {
+                if ($pdo->inTransaction() && !$keepTransactions) {
                     $pdo->rollBack();
                     $leaked[] = $dsn;
                 }

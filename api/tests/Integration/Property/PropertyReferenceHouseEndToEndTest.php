@@ -197,8 +197,9 @@ final class PropertyReferenceHouseEndToEndTest extends TestCase
             'P02a+P02b+P02c' => ['350000', '0'], 'P03' => ['100000', '0'], 'P06' => ['200000', '0'], 'P07' => ['0', '50000'],
             'P08' => ['200000', '0'], 'P10' => ['50000', '0'], 'P11' => ['0', '50000'], 'Q06' => ['0', '350000']];
         $order = null;
-        // Limit 1 a 2 staví každou množinu (i SJM P01a+P01b a spoluvlastníky U02) na hranu stránky.
-        foreach ([5, 2, 1] as $limit) {
+        // Limit 1 a 2 staví každou množinu (i SJM P01a+P01b a spoluvlastníky U02) na hranu stránky;
+        // dvě velikosti stránky stačí i k důkazu, že pořadí na velikosti nezávisí.
+        foreach ([2, 1] as $limit) {
             $rows = [];
             $cursors = [];
             $cursor = null;

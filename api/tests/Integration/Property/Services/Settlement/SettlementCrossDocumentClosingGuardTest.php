@@ -9,6 +9,7 @@ use MyInvoice\Repository\Property\Services\Settlement\{SettlementApplicationRepo
 use PHPUnit\Framework\TestCase;
 final class SettlementCrossDocumentClosingGuardTest extends TestCase
 {
+    use \MyInvoice\Tests\Support\SharedFixtureSavepointTrait;
     private Connection $db;
     private \DI\Container $container;
     private SettlementHistoricalRolloverTest $fixture;
@@ -20,11 +21,19 @@ final class SettlementCrossDocumentClosingGuardTest extends TestCase
         self::assertSame(getenv('MYINVOICE_DB_NAME'),$this->db->pdo()->query('SELECT DATABASE()')->fetchColumn());
         self::assertStringEndsWith('_test',(string)getenv('MYINVOICE_DB_NAME'));
         $this->db->pdo()->exec("SET SESSION sql_mode='STRICT_ALL_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'");
-        $this->db->pdo()->beginTransaction();
+        $this->beginSharedFixtureTest($this->db->pdo());
         $this->fixture=new SettlementHistoricalRolloverTest('testNativeS6CloseOpenS8ApplyCloseOpenAndTypedReverseKeepExactCurrentHistory');
         foreach(['db'=>$this->db,'container'=>$this->container,'closing'=>$this->container->get(ClosingService::class)] as $key=>$value)(new \ReflectionProperty($this->fixture,$key))->setValue($this->fixture,$value);
     }
-    protected function tearDown():void {if($this->db->pdo()->inTransaction())$this->db->pdo()->rollBack();}
+    protected function tearDown():void {$this->endSharedFixtureTest($this->db->pdo());}
+    /** Základ testu se staví jednou za třídu i se stavem pomocné fixtury; fixtury samotné používají i jiné třídy. */
+    private function shared(string $method,mixed ...$args):array
+    {
+        $helper=new \ReflectionProperty($this->fixture,'f');
+        $state=$this->sharedFixture($method.'|'.serialize($args),function()use($method,$args,$helper):array{$data=$method==='newClaimFixture'?$this->newClaimFixture(...$args):$this->fixture($method,...$args);return['data'=>$data,'f'=>$this->f??null,'helper'=>$helper->isInitialized($this->fixture)?$helper->getValue($this->fixture):null];});
+        if($state['f']!==null)$this->f=$state['f'];if($state['helper']!==null)$helper->setValue($this->fixture,$state['helper']);
+        return $state['data'];
+    }
     private function fixture(string $method,mixed ...$args):mixed {if($method==='nativeFixture')return $this->nativeFixture(...$args);return(new \ReflectionMethod($this->fixture,$method))->invoke($this->fixture,...$args);}
     private function cloneDocument(array $data,string $segment):array
     {
@@ -33,7 +42,7 @@ final class SettlementCrossDocumentClosingGuardTest extends TestCase
     }
     public function testBatchedAssignmentGuardProtectsApplicationAndConsumedSource():void
     {
-        extract($this->fixture('appliedFixture',true));
+        extract($this->shared('appliedFixture',true));
         $application=(new \MyInvoice\Service\Property\Services\Settlement\SettlementHistory($this->db))->application($f['supplier'],$result['id'],true);
         $q=$this->db->pdo()->prepare('SELECT MIN(id) FROM journal_entry_lines WHERE supplier_id=? AND entry_id=?');
         $q->execute([$f['supplier'],$application['journal_entry_id']]);
@@ -47,7 +56,7 @@ final class SettlementCrossDocumentClosingGuardTest extends TestCase
     }
     public function testOpeningAdvanceCannotBeConsumedAcrossAnotherDocumentSegment():void
     {
-        $data=$this->fixture('appliedFixture',false);extract($data);
+        $data=$this->shared('appliedFixture',false);extract($data);
         $other=$this->cloneDocument($data,'SYNTHETIC-OTHER-SEGMENT');self::assertNotSame($saved['id'],$other['id']);
         $owner->apply($f['supplier'],$saved['id'],$request,0,$preview['preview_hash'],'first-segment',$f['actor']);
         $this->expectException(\DomainException::class);$this->expectExceptionMessage('settlement_origin_already_disposed');
@@ -55,11 +64,11 @@ final class SettlementCrossDocumentClosingGuardTest extends TestCase
     }
     public function testIndependentNativeSourceCanBeConsumed():void
     {
-        foreach([1,2] as $i){$data=$this->fixture('appliedFixture',false);extract($data);$done=$owner->apply($f['supplier'],$saved['id'],$request,0,$preview['preview_hash'],'independent-'.$i,$f['actor']);self::assertGreaterThan(0,$done['id']);}
+        $this->sharedClean();foreach([1,2] as $i){$data=$this->fixture('appliedFixture',false);extract($data);$done=$owner->apply($f['supplier'],$saved['id'],$request,0,$preview['preview_hash'],'independent-'.$i,$f['actor']);self::assertGreaterThan(0,$done['id']);}
     }
     public function testCostCannotBeConsumedAcrossIndependentAdvanceAndDocument():void
     {
-        extract($this->fixture('nativeFixture','800000'));
+        extract($this->shared('nativeFixture','800000'));
         $issue=$f['issue_request'];$issue['source_key']='SYNTHETIC-INDEPENDENT';$issue['case_identity']['case_ref']='SYNTHETIC-INDEPENDENT';$issue['case_identity']['title_ref']='Synthetic independent legal title';
         foreach($issue['units'] as &$unit)$unit['case_distinction']=['against_source_keys'=>[$f['issue_request']['source_key']],'legal_reason'=>'Separate synthetic service obligation under another title','evidence_ref'=>'Synthetic separate decision'];unset($unit);
         $repo=$this->container->get(\MyInvoice\Repository\Property\Charges\Issuance\IssuanceRepository::class);
@@ -86,7 +95,7 @@ final class SettlementCrossDocumentClosingGuardTest extends TestCase
     }
     public function testTypedReversePermitsCorrectedDocumentRevision():void
     {
-        $data=$this->fixture('appliedFixture',true);extract($data);$oldDocument=$docRepo->find($f['supplier'],$saved['id'],true);
+        $data=$this->shared('appliedFixture',true);extract($data);$oldDocument=$docRepo->find($f['supplier'],$saved['id'],true);
         $history=new \MyInvoice\Service\Property\Services\Settlement\SettlementHistory($this->db);
         $first=$history->application($f['supplier'],$result['id'],true);$old=$first['receipt'];
         $owner->reverse($f['supplier'],$result['id'],'2026-12-31',1,'Synthetic correction of settlement','correction-reverse',$f['actor']);
@@ -121,7 +130,7 @@ final class SettlementCrossDocumentClosingGuardTest extends TestCase
     }
     public function testForgedReversalReceiptCannotReleaseSources():void
     {
-        $data=$this->fixture('appliedFixture',true);extract($data);$pdo=$this->db->pdo();
+        $data=$this->shared('appliedFixture',true);extract($data);$pdo=$this->db->pdo();
         $fakeEntry=$this->container->get(\MyInvoice\Service\Accounting\PostingService::class)->postDocument($f['supplier'],'manual',null,[['account_code'=>'221','side'=>'debit','amount'=>'1.00'],['account_code'=>'321','side'=>'credit','amount'=>'1.00']],['entry_date'=>'2026-12-31','posted_by'=>$f['actor']]);
         $pdo->exec('SAVEPOINT forged_reverse');
         $pdo->prepare("INSERT INTO property_service_settlement_requests (supplier_id,document_id,reversal_of,expected_version,request_json,request_hash,preview_json,preview_hash,idempotency_key,created_by,recorded_at) SELECT supplier_id,document_id,?,1,request_json,request_hash,preview_json,preview_hash,'forged-reversal',created_by,recorded_at FROM property_service_settlement_requests WHERE supplier_id=? AND id=?")->execute([$result['id'],$f['supplier'],$result['request_id']]);$requestId=(int)$pdo->lastInsertId();
@@ -135,13 +144,13 @@ final class SettlementCrossDocumentClosingGuardTest extends TestCase
     }
     public function testSupersededUnusedDocumentCannotApply():void
     {
-        $data=$this->fixture('appliedFixture',false);extract($data);$facts=$document->snapshot();unset($facts['amounts']);$facts['evidence']='Synthetic superseding unused document';
+        $data=$this->shared('appliedFixture',false);extract($data);$facts=$document->snapshot();unset($facts['amounts']);$facts['evidence']='Synthetic superseding unused document';
         $new=$docRepo->save($f['supplier'],SettlementDocument::fromEvidence($facts),[$f['selector']],'2026-12-31',1,'unused-revision',$f['actor']);self::assertNotSame($saved['id'],$new['id']);
         $this->expectException(\DomainException::class);$this->expectExceptionMessage('settlement_document_superseded');$owner->preview($f['supplier'],$saved['id'],$request,0);
     }
     public function testNewClaimCorrectionLoopCreatesOnlyOneActiveDebt():void
     {
-        extract($this->newClaimFixture());$history=new \MyInvoice\Service\Property\Services\Settlement\SettlementHistory($this->db);$docRepo=$this->container->get(SettlementDocumentRepository::class);$document=$docRepo->find($f['supplier'],$saved['id'],true);
+        extract($this->shared('newClaimFixture'));$history=new \MyInvoice\Service\Property\Services\Settlement\SettlementHistory($this->db);$docRepo=$this->container->get(SettlementDocumentRepository::class);$document=$docRepo->find($f['supplier'],$saved['id'],true);
         self::assertCount(1,$result['debt_ids']);$firstDebt=$result['debt_ids'][0];$this->assertFinancialHistory($f['supplier'],$firstDebt,'200000','0');
         $owner->reverse($f['supplier'],$result['id'],'2026-12-31',1,'Synthetic new claim correction','new-claim-correction-reverse',$f['actor']);$this->assertFinancialHistory($f['supplier'],$firstDebt,'0','0');
         $facts=$document['document'];unset($facts['amounts']);$facts['evidence']='Synthetic corrected new claim evidence';
@@ -153,7 +162,7 @@ final class SettlementCrossDocumentClosingGuardTest extends TestCase
     }
     public function testSelectedPagedCurrentAndHistoricalReadsUseCorrectedGraph():void
     {
-        extract($this->newClaimFixture());$docRepo=$this->container->get(SettlementDocumentRepository::class);$original=$docRepo->find($f['supplier'],$saved['id'],true);
+        extract($this->shared('newClaimFixture'));$docRepo=$this->container->get(SettlementDocumentRepository::class);$original=$docRepo->find($f['supplier'],$saved['id'],true);
         $owner->reverse($f['supplier'],$result['id'],'2026-12-31',1,'Synthetic paged correction','paged-reverse',$f['actor']);$baseline=(new \MyInvoice\Service\Property\Receivables\PropertyReceivableProjection($this->db))->at($f['supplier'],'2027-01-01T12:00:00+01:00','2099-01-01T00:00:00Z',['unit_id'=>$f['units']['U02']],true);$baselineGross=$baseline['totals']['gross_receivable_cents'];$facts=$original['document'];unset($facts['amounts']);$facts['evidence']='Synthetic selected revision2';
         $next=$docRepo->save($f['supplier'],SettlementDocument::fromEvidence($facts),$original['origin_receipt']['request']['selectors'],'2026-12-31',1,'paged-revision',$f['actor']);$fresh=$owner->preview($f['supplier'],$next['id'],$r,0);$done=$owner->apply($f['supplier'],$next['id'],$r,0,$fresh['preview_hash'],'paged-corrected-apply',$f['actor']);
         $closure=(new \MyInvoice\Repository\Property\Receivables\PropertySaldoReadClosure($this->db))->units($f['supplier'],[$f['units']['U02']]);self::assertContains($done['debt_ids'][0],$closure->debtIds);self::assertContains($result['debt_ids'][0],$closure->debtIds);self::assertContains($source['debt_id'],$closure->debtIds);self::assertCount(2,$closure->rows['property_service_settlements']);self::assertCount(3,$closure->rows['property_service_settlement_applications']);
@@ -168,7 +177,7 @@ final class SettlementCrossDocumentClosingGuardTest extends TestCase
     }
     public function testSelectedProofRejectsMissingNativeBindingAndMixedTenant():void
     {
-        extract($this->newClaimFixture());$closure=(new \MyInvoice\Repository\Property\Receivables\PropertySaldoReadClosure($this->db))->units($f['supplier'],[$f['units']['U02']]);\MyInvoice\Repository\Property\Receivables\PropertySaldoReadProof::materializations($closure->rows);
+        extract($this->shared('newClaimFixture'));$closure=(new \MyInvoice\Repository\Property\Receivables\PropertySaldoReadClosure($this->db))->units($f['supplier'],[$f['units']['U02']]);\MyInvoice\Repository\Property\Receivables\PropertySaldoReadProof::materializations($closure->rows);
         $rows=$closure->rows;$rows['property_service_settlement_effects']=[];try{\MyInvoice\Repository\Property\Receivables\PropertySaldoReadProof::materializations($rows);self::fail('Missing S8 effect binding accepted');}catch(\DomainException $e){self::assertSame('settlement_history_corrupt',$e->getMessage());}
         $rows=$closure->rows;$rows['property_service_settlement_applications'][0]['supplier_id']++;try{\MyInvoice\Service\Property\Services\Settlement\SettlementHistory::selectedMaterializations($rows);self::fail('Mixed tenant context accepted');}catch(\DomainException $e){self::assertSame('settlement_history_corrupt',$e->getMessage());}
         $rows=$closure->rows;$rows['unit_payment_debts']=array_values(array_filter($rows['unit_payment_debts'],fn($row)=>(int)$row['id']!==$result['debt_ids'][0]));try{\MyInvoice\Repository\Property\Receivables\PropertySaldoReadProof::materializations($rows);self::fail('Missing generated S8 debt accepted');}catch(\DomainException $e){self::assertSame('settlement_claim_origin',$e->getMessage());}
@@ -178,19 +187,19 @@ final class SettlementCrossDocumentClosingGuardTest extends TestCase
     }
     public function testSelectedCreditPartyIdentityRequiresNativeBinding():void
     {
-        extract($this->fixture('appliedFixture',true));$closure=(new \MyInvoice\Repository\Property\Receivables\PropertySaldoReadClosure($this->db))->units($f['supplier'],[$f['units']['U02']]);\MyInvoice\Repository\Property\Receivables\PropertySaldoReadProof::materializations($closure->rows);self::assertNotEmpty($closure->rows['unit_credit_parties']);
+        extract($this->shared('appliedFixture',true));$closure=(new \MyInvoice\Repository\Property\Receivables\PropertySaldoReadClosure($this->db))->units($f['supplier'],[$f['units']['U02']]);\MyInvoice\Repository\Property\Receivables\PropertySaldoReadProof::materializations($closure->rows);self::assertNotEmpty($closure->rows['unit_credit_parties']);
         $rows=$closure->rows;$rows['unit_credit_parties']=[];try{\MyInvoice\Repository\Property\Receivables\PropertySaldoReadProof::materializations($rows);self::fail('Missing S8 creditor binding accepted');}catch(\DomainException $e){self::assertSame('settlement_credit_origin',$e->getMessage());}
         $rows=$closure->rows;$rows['unit_credit_lots']=array_values(array_filter($rows['unit_credit_lots'],fn($row)=>(int)$row['id']!==$result['credit_ids'][0]));try{\MyInvoice\Repository\Property\Receivables\PropertySaldoReadProof::materializations($rows);self::fail('Missing generated S8 credit lot accepted');}catch(\DomainException $e){self::assertSame('settlement_credit_origin',$e->getMessage());}
     }
     public function testUnappliedDocumentDoesNotPinSelectedFinancialGraph():void
     {
-        extract($this->fixture('nativeFixture','800000'));$q=$this->db->pdo()->prepare('SELECT entry_id FROM journal_entry_lines WHERE supplier_id=? AND id=?');$q->execute([$f['supplier'],$selector['cost_line_id']]);$entry=(int)$q->fetchColumn();
+        extract($this->shared('nativeFixture','800000'));$q=$this->db->pdo()->prepare('SELECT entry_id FROM journal_entry_lines WHERE supplier_id=? AND id=?');$q->execute([$f['supplier'],$selector['cost_line_id']]);$entry=(int)$q->fetchColumn();
         $this->container->get(\MyInvoice\Service\Accounting\PostingService::class)->reverse($f['supplier'],$entry,['entry_date'=>'2026-12-31','posted_by'=>$f['actor']]);
         $closure=(new \MyInvoice\Repository\Property\Receivables\PropertySaldoReadClosure($this->db))->units($f['supplier'],[$f['units']['U02']]);self::assertSame([],$closure->rows['property_service_settlements']);\MyInvoice\Repository\Property\Receivables\PropertySaldoReadProof::materializations($closure->rows);
     }
     public function testRevertOpenNextCannotDeleteOpeningCostConsumedBySettlement():void
     {
-        extract($this->fixture('nativeFixture','800000'));
+        extract($this->shared('nativeFixture','800000'));
         $q=$this->db->pdo()->prepare('SELECT id FROM accounting_periods WHERE supplier_id=? AND fiscal_year=?');$q->execute([$f['supplier'],2026]);$year=(int)$q->fetchColumn();
         $this->fixture('close',$year);$closing=$this->container->get(ClosingService::class);$opened=$closing->openNext($f['supplier'],$year,$this->fixture('rv',$year));
         $q=$this->db->pdo()->prepare("SELECT l.id FROM journal_entry_lines l JOIN chart_of_accounts a ON a.id=l.account_id WHERE l.supplier_id=? AND l.entry_id=? AND a.account_code='315.210' AND l.side='debit'");$q->execute([$f['supplier'],$opened['entry_id']]);$cost=(int)$q->fetchColumn();self::assertGreaterThan(0,$cost);

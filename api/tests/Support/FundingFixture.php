@@ -13,9 +13,19 @@ trait FundingFixture
     private \DI\Container $container;
     protected function setUp():void
     {
+        $this->fundingConnect();$this->db->pdo()->beginTransaction();$this->f=$this->fundingBase();
+    }
+    private function fundingConnect():void
+    {
         $this->container=Bootstrap::buildContainer();$this->db=$this->container->get(Connection::class);
-        self::assertStringEndsWith('_test',(string)$this->db->pdo()->query('SELECT DATABASE()')->fetchColumn());$this->db->pdo()->exec("SET SESSION sql_mode='STRICT_ALL_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'");$this->db->pdo()->beginTransaction();$this->f=$this->issuanceFixture($this->db);
+        self::assertStringEndsWith('_test',(string)$this->db->pdo()->query('SELECT DATABASE()')->fetchColumn());$this->db->pdo()->exec("SET SESSION sql_mode='STRICT_ALL_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'");
+    }
+    /** Firma SVJ s předpisy a účty fondů, nad kterou testy fondů staví. */
+    private function fundingBase():array
+    {
+        $this->f=$this->issuanceFixture($this->db);
         $accounts=new \MyInvoice\Repository\ChartOfAccountsRepository($this->db);foreach(['955.100','324.110','324.200','549.900','549.910','518.200','649.100','649.200'] as $code){if($accounts->findByCode($this->f['supplier'],$code))continue;$parent=$accounts->findByCode($this->f['supplier'],substr($code,0,3));$accounts->insert($this->f['supplier'],['account_code'=>$code,'name'=>'Synthetic '.$code,'account_type'=>$parent['account_type'],'normal_side'=>$parent['normal_side'],'parent_id'=>$parent['id']]);}
+        return $this->f;
     }
     protected function tearDown():void {if($this->db->pdo()->inTransaction())$this->db->pdo()->rollBack();}
     private function fundingOpening():void

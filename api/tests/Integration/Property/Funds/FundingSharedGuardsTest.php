@@ -14,6 +14,14 @@ use PHPUnit\Framework\TestCase;
 final class FundingSharedGuardsTest extends TestCase
 {
     use FundingFixture;
+    use \MyInvoice\Tests\Support\SharedFixtureSavepointTrait;
+
+    /** Firma s předpisy a účty fondů je pro všechny testy stejná; staví se jednou za třídu. */
+    protected function setUp():void
+    {
+        $this->fundingConnect();$this->beginSharedFixtureTest($this->db->pdo());$this->f=$this->sharedFixture('funding-base',fn():array=>$this->fundingBase());
+    }
+    protected function tearDown():void {$this->endSharedFixtureTest($this->db->pdo());}
 
     private function income(): array
     {

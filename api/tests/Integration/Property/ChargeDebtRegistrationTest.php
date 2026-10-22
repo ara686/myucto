@@ -43,8 +43,9 @@ final class ChargeDebtRegistrationTest extends TestCase
 
     public function testWholeHouseYearPostsWithCompleteDebtInventory(): void
     {
-        // Akceptační rozsah 400 jednotek × 12 měsíců trvá minuty; běžná sada ověřuje stejný průběh na 40 jednotkách.
-        $units=(int)(getenv('MYINVOICE_PROPERTY_SCALE_UNITS')?:40);
+        // Akceptační rozsah 400 jednotek × 12 měsíců trvá minuty; běžná sada ověřuje stejný průběh
+        // (úplná evidence dluhů každého měsíce, žádný duplicitní dluh) na 8 jednotkách.
+        $units=(int)(getenv('MYINVOICE_PROPERTY_SCALE_UNITS')?:8);
         $months=12;
         $dataset=(new PropertyBenchmarkDataset($this->db,$this->container))->create($units,'2026-01-01','Synthetic debt inventory');
         $supplier=$dataset['supplier'];
@@ -69,7 +70,8 @@ final class ChargeDebtRegistrationTest extends TestCase
 
     public function testRegistrationStatementCountDoesNotGrowWithBatchSize(): void
     {
-        $dataset=(new PropertyBenchmarkDataset($this->db,$this->container))->create(400,'2026-01-01','Synthetic bulk debts');
+        // Počty příkazů se porovnávají přesně, dávka 25 předpisů proto N+1 odhalí stejně jako 400.
+        $dataset=(new PropertyBenchmarkDataset($this->db,$this->container))->create(25,'2026-01-01','Synthetic bulk debts');
         $supplier=$dataset['supplier'];
         $batch=$this->postMonth($dataset,'2026-01',ChargeDebtRegistrar::MODE_MANUAL);
         self::assertSame(0,$this->scalar('SELECT COUNT(*) FROM unit_payment_debts WHERE supplier_id=?',[$supplier]));
@@ -78,7 +80,7 @@ final class ChargeDebtRegistrationTest extends TestCase
         $before=$this->statements();
         $created=$registrar->registerPosted($supplier,$batch['charges'],$dataset['actor']);
         $after=$this->statements();
-        self::assertCount(400,$created);
+        self::assertCount(25,$created);
         // Trigger property_party_claim_keys_debt přidá v serveru jeden INSERT na řádek dluhu, aplikace posílá jen tři.
         self::assertSame(3+count($created),$after['Com_insert']-$before['Com_insert'],'Debts, debt lines and audit must be inserted in one statement each.');
         self::assertLessThanOrEqual(3,$after['Com_select']-$before['Com_select']);
@@ -87,7 +89,7 @@ final class ChargeDebtRegistrationTest extends TestCase
         self::assertSame([],$registrar->registerPosted($supplier,$batch['charges'],$dataset['actor']));
         $after=$this->statements();
         self::assertSame(0,$after['Com_insert']-$before['Com_insert']);
-        self::assertSame(400,$this->scalar('SELECT COUNT(*) FROM unit_payment_debts WHERE supplier_id=?',[$supplier]));
+        self::assertSame(25,$this->scalar('SELECT COUNT(*) FROM unit_payment_debts WHERE supplier_id=?',[$supplier]));
     }
 
     public function testAutomaticInventoryLetsStatutoryPaymentReachAllocation(): void

@@ -9,6 +9,14 @@ use PHPUnit\Framework\TestCase;
 final class FundingBoundaryTest extends TestCase
 {
     use FundingFixture;
+    use \MyInvoice\Tests\Support\SharedFixtureSavepointTrait;
+
+    /** Firma s předpisy a účty fondů je pro všechny testy stejná; staví se jednou za třídu. */
+    protected function setUp():void
+    {
+        $this->fundingConnect();$this->beginSharedFixtureTest($this->db->pdo());$this->f=$this->sharedFixture('funding-base',fn():array=>$this->fundingBase());
+    }
+    protected function tearDown():void {$this->endSharedFixtureTest($this->db->pdo());}
     private function reject(callable $work,string $code):void {try{$work();self::fail('Invalid funding operation accepted: '.$code);}catch(FundingException $e){self::assertSame('property_funding_'.$code,$e->errorCode);}}
     private function draw():array {$this->fundingOpening();$cost=$this->fundingCost('2026-03-01','549.900','90000.00');return $this->fundingDraw('2026-03-01','repair','9000000',$cost);}
     public function testCostCannotBeCoveredTwiceAndOldRevisionCannotWrite():void
