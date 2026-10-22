@@ -17,6 +17,12 @@ use PHPUnit\Framework\TestCase;
 
 final class Fx504RevaluationTest extends TestCase
 {
+    use \MyInvoice\Tests\Support\SharedClassFixture;
+
+    /** Testy, které výchozí stav commitují (druhá session, READ ONLY transakce): staví si vlastní. U ověření důkazu jen varianta s commitem. */
+    private const OWN_FIXTURE = ['testCurrentPreviewSeesCommittedPostingAndCancellationAfterCallerSnapshot', 'testPublicPreviewRunsInsideNativeReadOnlyTransaction',
+        'testNativeCaseOriginLocksNewMembershipBeyondCallerSnapshot', 'testCasePostPreviewRunsInsideReadOnlyTransaction', 'testFxProofRejectsChangedAuthority'];
+
     private Connection $db;
     private int $supplier;
     private int $period;
@@ -35,7 +41,24 @@ final class Fx504RevaluationTest extends TestCase
         $pdo = $this->db->pdo();
         $this->originalIsolation = (int) $pdo->query('SELECT @@innodb_snapshot_isolation')->fetchColumn();
         $this->previousRate = $pdo->query("SELECT rate FROM exchange_rates WHERE rate_date='2098-12-31' AND currency_code='EUR'")->fetchColumn();
-        $pdo->beginTransaction();
+        if (in_array($this->name(), self::OWN_FIXTURE, true) && ($this->name() !== 'testFxProofRejectsChangedAuthority' || $this->providedData() === ['transaction'])) {
+            $pdo->beginTransaction();
+            $this->buildFixture($container);
+        } else {
+            $data = $this->sharedFixture($pdo, 'base', function () use ($container): array {
+                $this->buildFixture($container);
+                return [$this->supplier, ['supplier' => $this->supplier, 'period' => $this->period, 'dims' => $this->dims]];
+            });
+            ['supplier' => $this->supplier, 'period' => $this->period, 'dims' => $this->dims] = $data;
+        }
+        // Kurz je globální číselník: vždy jen v transakci testu (commitující testy ho v tearDown vrací).
+        $pdo->prepare("INSERT INTO exchange_rates(rate_date,currency_code,rate) VALUES ('2098-12-31','EUR',25) ON DUPLICATE KEY UPDATE rate=25")->execute();
+        $this->service = $container->get(Fx504Service::class);
+    }
+
+    private function buildFixture(\Psr\Container\ContainerInterface $container): void
+    {
+        $pdo = $this->db->pdo();
         $pdo->exec("INSERT INTO supplier(company_name,street,city,zip,email,country_id,default_currency_id,default_vat_rate_id,accounting_mode)
             SELECT 'Synthetic joint FX','Test 1','Test','10000','fx504@example.com',country_id,default_currency_id,default_vat_rate_id,'double_entry' FROM supplier ORDER BY id LIMIT 1");
         $this->supplier = (int) $pdo->lastInsertId();
@@ -52,9 +75,7 @@ final class Fx504RevaluationTest extends TestCase
             ['account_code' => '311', 'side' => 'debit', 'amount' => '24000.00', 'amount_foreign' => '1000.00', 'currency_code' => 'EUR', 'fx_rate' => '24.000000', 'dimensions' => $this->dims, 'dimension_origins' => array_fill_keys(array_keys($this->dims), ['origin' => 'explicit', 'ref' => 'synthetic-fx-source'])],
             ['account_code' => '645', 'side' => 'credit', 'amount' => '24000.00', 'dimensions' => $this->dims, 'dimension_origins' => array_fill_keys(array_keys($this->dims), ['origin' => 'explicit', 'ref' => 'synthetic-fx-source'])],
         ], ['entry_date' => '2098-06-01', 'posted' => true]);
-        $pdo->prepare("INSERT INTO exchange_rates(rate_date,currency_code,rate) VALUES ('2098-12-31','EUR',25) ON DUPLICATE KEY UPDATE rate=25")->execute();
         $pdo->prepare("UPDATE accounting_periods SET status='closing' WHERE supplier_id=? AND id=?")->execute([$this->supplier, $this->period]);
-        $this->service = $container->get(Fx504Service::class);
     }
 
     protected function tearDown(): void
@@ -220,13 +241,14 @@ final class Fx504RevaluationTest extends TestCase
         self::assertSame($before, $this->state());
     }
 
-    #[\PHPUnit\Framework\Attributes\TestWith([false])]
-    #[\PHPUnit\Framework\Attributes\TestWith([true])]
-    #[\PHPUnit\Framework\Attributes\TestWith([false, 'reviewed'])]
-    #[\PHPUnit\Framework\Attributes\TestWith([true, 'reviewed'])]
-    #[\PHPUnit\Framework\Attributes\TestWith([false, 'approved'])]
-    #[\PHPUnit\Framework\Attributes\TestWith([true, 'approved'])]
-    public function testPublicCloseOpenAndRevertCarriesFxTuple(bool $nextYear, string $sourceStatus = 'closed'): void
+    /**
+     * Náhled příštího roku je jen čtení a na stavu zdroje nezávisí, proto ho ověřuje uzavřená
+     * varianta před revertem. Reviewed/approved ověřují otevření i zablokovaný revert.
+     */
+    #[\PHPUnit\Framework\Attributes\TestWith(['closed'])]
+    #[\PHPUnit\Framework\Attributes\TestWith(['reviewed'])]
+    #[\PHPUnit\Framework\Attributes\TestWith(['approved'])]
+    public function testPublicCloseOpenAndRevertCarriesFxTuple(string $sourceStatus): void
     {
         $container = Bootstrap::buildContainer();
         $closing = $container->get(ClosingService::class);
@@ -266,13 +288,12 @@ final class Fx504RevaluationTest extends TestCase
         $lines = \MyInvoice\Service\Accounting\Closing\Fx504JournalProof::sourceLines($this->db, $journal, $this->supplier, (int) $mirror['id']);
         self::assertSame($this->dims, $lines[0]['dimensions']);
         self::assertSame(1000.0, $lines[0]['amount']);
-        if ($nextYear) {
+        if ($sourceStatus === 'closed') {
             $pdo->exec("INSERT INTO exchange_rates(rate_date,currency_code,rate) VALUES ('2099-12-31','EUR',26) ON DUPLICATE KEY UPDATE rate=26");
             $nextPreview = $closing->fxPreview($this->supplier, $opened['next_period_id']);
             self::assertSame('2000.00', $nextPreview['totals']['gain']);
             self::assertSame('1000.00', $nextPreview['positions'][0]['foreign_balance']);
             self::assertSame('24000.00', $nextPreview['positions'][0]['booked_czk']);
-            return;
         }
         if ($sourceStatus !== 'closed') {
             try {

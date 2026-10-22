@@ -25,7 +25,15 @@ final class AssetReserveClosedCorrectionTest extends TestCase
     private int $assetNumber = 0;
     private ?string $trigger = null;
     private bool $committed = false;
+    private bool $shared = false;
     private ?Connection $other = null;
+
+    /**
+     * Výchozí uzavřený stav (celá uzávěrka 2097 a otevření 2098), případně i po první
+     * opravě zdroje, se staví jednou za třídu ({@see SharedClassFixture}). Varianty s jinými
+     * parametry (mezi nimi i test, který změny commituje) si fixture staví samy.
+     */
+    use \MyInvoice\Tests\Support\SharedClassFixture;
 
     protected function setUp(): void
     {
@@ -37,6 +45,17 @@ final class AssetReserveClosedCorrectionTest extends TestCase
             $pdo->exec('CREATE TRIGGER ' . $this->trigger . " BEFORE UPDATE ON accounting_periods FOR EACH ROW BEGIN IF @asset_closed_fail=1 THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='Synthetic correction CAS failure'; END IF; END");
         }
         $pdo->beginTransaction();
+    }
+
+    private static function deleteSupplier(\PDO $pdo, int $supplier): void
+    {
+        foreach (['activity_log', 'journal_entries', 'document_dimensions', 'document_dimension_splits', 'assets'] as $table) $pdo->prepare('DELETE FROM ' . $table . ' WHERE supplier_id=?')->execute([$supplier]);
+        $pdo->prepare('DELETE FROM supplier WHERE id=?')->execute([$supplier]);
+    }
+
+    private function ownSupplier(): void
+    {
+        $pdo = $this->db->pdo();
         $pdo->exec("INSERT INTO supplier(company_name,street,city,zip,email,country_id,default_currency_id,default_vat_rate_id,accounting_mode)
             SELECT 'Synthetic asset reserve','Test 1','Test','10000','asset-reserve@example.com',country_id,default_currency_id,default_vat_rate_id,'double_entry' FROM supplier ORDER BY id LIMIT 1");
         $this->supplier = (int) $pdo->lastInsertId();
@@ -62,10 +81,7 @@ final class AssetReserveClosedCorrectionTest extends TestCase
             if ($this->other->pdo()->inTransaction()) $this->other->pdo()->rollBack();
             $this->other->close();
         }
-        if ($this->committed) {
-            foreach (['activity_log', 'journal_entries', 'document_dimensions', 'document_dimension_splits', 'assets'] as $table) $this->db->pdo()->prepare('DELETE FROM ' . $table . ' WHERE supplier_id=?')->execute([$this->supplier]);
-            $this->db->pdo()->prepare('DELETE FROM supplier WHERE id=?')->execute([$this->supplier]);
-        }
+        if ($this->committed && !$this->shared) self::deleteSupplier($this->db->pdo(), $this->supplier);
         $this->db->pdo()->exec('SET @asset_closed_fail=NULL');
         if ($this->trigger !== null) $this->db->pdo()->exec('DROP TRIGGER ' . $this->trigger);
     }
@@ -105,11 +121,8 @@ final class AssetReserveClosedCorrectionTest extends TestCase
 
     public function testPinnedPriorUsageAndCarryCannotBeReversedAfterCorrection(): void
     {
-        extract($this->closedFixture());
-        $preview = $service->assetReserveCorrectionPreview($this->supplier, $next, $request);
-        $request['reserve_source']['source_hash'] = $preview['source']['source_hash'];
-        $request['row_version'] = $this->container->get(AccountingPeriodRepository::class)->findById($this->supplier, $next)['row_version'];
-        $result = $service->correctAssetReserveSource($this->supplier, $next, $request);
+        extract($this->correctedFixture());
+        $result = $corrected;
         $guard = $this->container->get(\MyInvoice\Service\Accounting\Closing\AssetReserveSourceUseGuard::class);
         foreach ([$used['entry_id'], $closed['entry_id'], $result['entry_id']] as $id) {
             try { $guard->assertReversal($this->supplier, $id); self::fail('Pinned use/carry/transfer reversal must not resurrect consumed capacity.'); }
@@ -119,11 +132,7 @@ final class AssetReserveClosedCorrectionTest extends TestCase
 
     public function testReleasePreviewKeepsOriginalOriginAndCurrentHeadCells(): void
     {
-        extract($this->closedFixture());
-        $preview = $service->assetReserveCorrectionPreview($this->supplier, $next, $request);
-        $request['reserve_source']['source_hash'] = $preview['source']['source_hash'];
-        $request['row_version'] = $this->container->get(AccountingPeriodRepository::class)->findById($this->supplier, $next)['row_version'];
-        $service->correctAssetReserveSource($this->supplier, $next, $request);
+        extract($this->correctedFixture());
         $sources = $repo->reserveSources($this->supplier, '2098-12-31');
         self::assertCount(1, $sources);
         self::assertSame($created['entry_id'], $sources[0]['entry_id']);
@@ -133,11 +142,8 @@ final class AssetReserveClosedCorrectionTest extends TestCase
 
     public function testSecondCorrectionAfterFullUsageHasNoZeroJournalAndKeepsOriginalOrigin(): void
     {
-        extract($this->closedFixture());
-        $preview = $service->assetReserveCorrectionPreview($this->supplier, $next, $request);
-        $request['reserve_source']['source_hash'] = $preview['source']['source_hash'];
-        $request['row_version'] = $this->container->get(AccountingPeriodRepository::class)->findById($this->supplier, $next)['row_version'];
-        $first = $service->correctAssetReserveSource($this->supplier, $next, $request);
+        extract($this->correctedFixture());
+        $first = $corrected;
         $this->period = $next;
         $release = $this->sourceBody([], '120000.00');
         $release['rule_key'] = 'reserve.repairs.release';
@@ -205,11 +211,7 @@ final class AssetReserveClosedCorrectionTest extends TestCase
 
     public function testExactPinnedRewriteKeepsPhysicalIdentityAndRejectsFinancialChange(): void
     {
-        extract($this->closedFixture());
-        $preview = $service->assetReserveCorrectionPreview($this->supplier, $next, $request);
-        $request['reserve_source']['source_hash'] = $preview['source']['source_hash'];
-        $request['row_version'] = $this->container->get(AccountingPeriodRepository::class)->findById($this->supplier, $next)['row_version'];
-        $corrected = $service->correctAssetReserveSource($this->supplier, $next, $request);
+        extract($this->correctedFixture());
         $journal = $this->container->get(\MyInvoice\Repository\JournalEntryRepository::class);
         $entry = $journal->findForUpdate($corrected['entry_id'], $this->supplier);
         $lines = $repo->entryEvidence($this->supplier, $corrected['entry_id'])['lines'];
@@ -225,11 +227,7 @@ final class AssetReserveClosedCorrectionTest extends TestCase
 
     public function testActualAssignmentWriterCannotChangePinnedSourceTupleButExactNoopPasses(): void
     {
-        extract($this->closedFixture());
-        $preview = $service->assetReserveCorrectionPreview($this->supplier, $next, $request);
-        $request['reserve_source']['source_hash'] = $preview['source']['source_hash'];
-        $request['row_version'] = $this->container->get(AccountingPeriodRepository::class)->findById($this->supplier, $next)['row_version'];
-        $service->correctAssetReserveSource($this->supplier, $next, $request);
+        extract($this->correctedFixture());
         $assignments = $this->container->get(\MyInvoice\Repository\DimensionAssignmentRepository::class);
         self::assertFalse($assignments->replaceLineDimensions($this->supplier, $oldLine, $oldDimensions));
         $before = $this->history();
@@ -242,11 +240,7 @@ final class AssetReserveClosedCorrectionTest extends TestCase
 
     public function testActualAssetDeleteCannotRemoveAssociatedCardAfterClosedCorrection(): void
     {
-        extract($this->closedFixture());
-        $preview = $service->assetReserveCorrectionPreview($this->supplier, $next, $request);
-        $request['reserve_source']['source_hash'] = $preview['source']['source_hash'];
-        $request['row_version'] = $this->container->get(AccountingPeriodRepository::class)->findById($this->supplier, $next)['row_version'];
-        $service->correctAssetReserveSource($this->supplier, $next, $request);
+        extract($this->correctedFixture());
         $code = null;
         try { $this->container->get(AssetService::class)->delete($this->supplier, $asset); }
         catch (\MyInvoice\Service\Accounting\Assets\AssetException $e) { $code = $e->errorCode; }
@@ -351,11 +345,7 @@ final class AssetReserveClosedCorrectionTest extends TestCase
     #[\PHPUnit\Framework\Attributes\DataProvider('assetChanges')]
     public function testActualAssetFinancialChangeCannotInvalidateHistoricalSource(string $change): void
     {
-        extract($this->closedFixture());
-        $preview = $service->assetReserveCorrectionPreview($this->supplier, $next, $request);
-        $request['reserve_source']['source_hash'] = $preview['source']['source_hash'];
-        $request['row_version'] = $this->container->get(AccountingPeriodRepository::class)->findById($this->supplier, $next)['row_version'];
-        $service->correctAssetReserveSource($this->supplier, $next, $request);
+        extract($this->correctedFixture());
         $assets = $this->container->get(AssetService::class);
         $before = $assets->get($this->supplier, $asset);
         $code = null;
@@ -369,11 +359,7 @@ final class AssetReserveClosedCorrectionTest extends TestCase
 
     public function testPhysicalCarryDeletionCannotErasePinnedOpening(): void
     {
-        extract($this->closedFixture());
-        $preview = $service->assetReserveCorrectionPreview($this->supplier, $next, $request);
-        $request['reserve_source']['source_hash'] = $preview['source']['source_hash'];
-        $request['row_version'] = $this->container->get(AccountingPeriodRepository::class)->findById($this->supplier, $next)['row_version'];
-        $service->correctAssetReserveSource($this->supplier, $next, $request);
+        extract($this->correctedFixture());
         $stmt = $this->db->pdo()->prepare("SELECT id FROM journal_entries WHERE supplier_id=? AND period_id=? AND source_type='opening'");
         $stmt->execute([$this->supplier, $next]); $opening = (int) $stmt->fetchColumn();
         self::assertGreaterThan(0, $opening);
@@ -492,6 +478,7 @@ final class AssetReserveClosedCorrectionTest extends TestCase
     #[\PHPUnit\Framework\Attributes\DataProvider('frameworks')]
     public function testNewJournalAssignmentsDoNotLockOlderPeriodWithoutAssetClaims(string $framework): void
     {
+        $this->ownSupplier();
         $a = $this->db->pdo();
         $dims = $this->dimensions;
         if ($framework === 'cz_500') {
@@ -539,11 +526,7 @@ final class AssetReserveClosedCorrectionTest extends TestCase
     #[\PHPUnit\Framework\Attributes\DataProvider('directMutations')]
     public function testDirectJournalMutationCannotInvalidatePinnedEntry(string $mutation): void
     {
-        extract($this->closedFixture());
-        $preview = $service->assetReserveCorrectionPreview($this->supplier, $next, $request);
-        $request['reserve_source']['source_hash'] = $preview['source']['source_hash'];
-        $request['row_version'] = $this->container->get(AccountingPeriodRepository::class)->findById($this->supplier, $next)['row_version'];
-        $corrected = $service->correctAssetReserveSource($this->supplier, $next, $request);
+        extract($this->correctedFixture());
         $journal = $this->container->get(\MyInvoice\Repository\JournalEntryRepository::class);
         $entry = $journal->findForUpdate($corrected['entry_id'], $this->supplier);
         $lines = $repo->entryEvidence($this->supplier, $corrected['entry_id'])['lines'];
@@ -616,11 +599,7 @@ final class AssetReserveClosedCorrectionTest extends TestCase
 
     public function testAssignmentInsertCannotAddAnAxisToPinnedPhysicalLine(): void
     {
-        extract($this->closedFixture());
-        $preview = $service->assetReserveCorrectionPreview($this->supplier, $next, $request);
-        $request['reserve_source']['source_hash'] = $preview['source']['source_hash'];
-        $request['row_version'] = $this->container->get(AccountingPeriodRepository::class)->findById($this->supplier, $next)['row_version'];
-        $service->correctAssetReserveSource($this->supplier, $next, $request);
+        extract($this->correctedFixture());
         $pdo = $this->db->pdo();
         $pdo->prepare("INSERT INTO dimension_types(supplier_id,code,name,kind) VALUES (?,'extra_axis','Synthetic extra axis','custom')")->execute([$this->supplier]);
         $type = (int) $pdo->lastInsertId();
@@ -642,11 +621,7 @@ final class AssetReserveClosedCorrectionTest extends TestCase
     #[\PHPUnit\Framework\Attributes\DataProvider('pinnedReversalTargets')]
     public function testActualPostingCannotReversePinnedLineage(string $target): void
     {
-        extract($this->closedFixture());
-        $preview = $service->assetReserveCorrectionPreview($this->supplier, $next, $request);
-        $request['reserve_source']['source_hash'] = $preview['source']['source_hash'];
-        $request['row_version'] = $this->container->get(AccountingPeriodRepository::class)->findById($this->supplier, $next)['row_version'];
-        $corrected = $service->correctAssetReserveSource($this->supplier, $next, $request);
+        extract($this->correctedFixture());
         $pdo = $this->db->pdo();
         $stmt = $pdo->prepare("SELECT id FROM journal_entries WHERE supplier_id=? AND period_id=? AND source_type='opening'");
         $stmt->execute([$this->supplier, $next]); $opening = (int) $stmt->fetchColumn();
@@ -666,6 +641,44 @@ final class AssetReserveClosedCorrectionTest extends TestCase
     }
 
     private function closedFixture(bool $anotherReserve = false, bool $unusedCard = false, bool $reversedUse = false, bool $jointSource = false): array
+    {
+        if ($anotherReserve || $unusedCard || $reversedUse || $jointSource) {
+            $this->ownSupplier();
+            return $this->buildClosedFixture($anotherReserve, $unusedCard, $reversedUse, $jointSource);
+        }
+        return $this->sharedState('closed', fn (): array => $this->buildClosedFixture());
+    }
+
+    /** Výchozí uzavřený stav po první (úspěšné) opravě zdroje, z něhož vychází většina testů. */
+    private function correctedFixture(): array
+    {
+        return $this->sharedState('corrected', function (): array {
+            extract($this->buildClosedFixture());
+            $preview = $service->assetReserveCorrectionPreview($this->supplier, $next, $request);
+            $request['reserve_source']['source_hash'] = $preview['source']['source_hash'];
+            $request['row_version'] = $this->container->get(AccountingPeriodRepository::class)->findById($this->supplier, $next)['row_version'];
+            $corrected = $service->correctAssetReserveSource($this->supplier, $next, $request);
+            return get_defined_vars();
+        });
+    }
+
+    /** @param callable():array<string,mixed> $build */
+    private function sharedState(string $key, callable $build): array
+    {
+        $shared = $this->sharedFixture($this->db->pdo(), $key, function () use ($build): array {
+            $this->ownSupplier();
+            $data = $build();
+            unset($data['service'], $data['repo'], $data['this']);
+            return [$this->supplier, ['data' => $data, 'props' => ['supplier' => $this->supplier, 'sourcePeriod' => $this->sourcePeriod,
+                'period' => $this->period, 'kind' => $this->kind, 'dimensions' => $this->dimensions, 'assetNumber' => $this->assetNumber]]];
+        });
+        $this->shared = true;
+        foreach ($shared['props'] as $property => $value) $this->{$property} = $value;
+        return $shared['data'] + ['service' => $this->container->get(ClosingService::class),
+            'repo' => new \MyInvoice\Service\Accounting\Closing\LegalClosing504Repository($this->db, $this->container->get(\MyInvoice\Repository\JournalEntryRepository::class))];
+    }
+
+    private function buildClosedFixture(bool $anotherReserve = false, bool $unusedCard = false, bool $reversedUse = false, bool $jointSource = false): array
     {
         [$asset] = $this->asset(false);
         $oldDimensions = $this->dimensions;
