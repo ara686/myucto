@@ -73,6 +73,20 @@ trait PurchaseVatFixtureTrait
                      "dph-zarazeni@example.test", "cs", ?, 1, 1)'
         )->execute([$this->supplierId, $czId, $this->currencyId]);
         $this->vendorId = (int) $pdo->lastInsertId();
+
+        // Rozpis DPH odkazuje na účet 518. Čistá DB z migrací (CI) ho u první firmy
+        // nemusí mít; v transakci testu se doplní a rollback ho zase odebere.
+        $account = $pdo->prepare('SELECT id, is_active FROM chart_of_accounts WHERE supplier_id = ? AND account_code = ? LIMIT 1');
+        $account->execute([$this->supplierId, '518']);
+        $row = $account->fetch(\PDO::FETCH_ASSOC);
+        if ($row === false) {
+            $pdo->prepare(
+                "INSERT INTO chart_of_accounts (supplier_id, account_code, name, account_type, normal_side, is_synthetic, is_active)
+                 VALUES (?, '518', 'Ostatní služby', 'expense', 'debit', 1, 1)"
+            )->execute([$this->supplierId]);
+        } elseif ((int) $row['is_active'] !== 1) {
+            $pdo->prepare('UPDATE chart_of_accounts SET is_active = 1 WHERE id = ?')->execute([(int) $row['id']]);
+        }
     }
 
     private function tearDownPurchaseVatFixture(): void
