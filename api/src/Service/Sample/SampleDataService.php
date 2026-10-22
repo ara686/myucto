@@ -177,10 +177,10 @@ final class SampleDataService
             if ($preflight !== null) $preflight();
             $preflightPassed = true;
             $stmt = $pdo->prepare(
-                "DELETE al FROM activity_log al JOIN sample_data_entries sde
-                   ON sde.supplier_id=al.supplier_id AND sde.entity_id=al.entity_id
-                  AND (sde.entity_type=al.entity_type OR (sde.entity_type='payroll_person' AND al.entity_type='payroll_employee'))
-                  WHERE al.supplier_id=?"
+                "DELETE al FROM activity_log al
+                  WHERE al.supplier_id=?
+                    AND (EXISTS (SELECT 1 FROM sample_data_entries sde WHERE sde.supplier_id=al.supplier_id AND sde.entity_type=al.entity_type AND sde.entity_id=al.entity_id)
+                      OR (al.entity_type='payroll_employee' AND EXISTS (SELECT 1 FROM sample_data_entries sde WHERE sde.supplier_id=al.supplier_id AND sde.entity_type='payroll_person' AND sde.entity_id=al.entity_id)))"
             );
             $stmt->execute([$supplierId]);
             $result['activity_logs'] += $stmt->rowCount();
