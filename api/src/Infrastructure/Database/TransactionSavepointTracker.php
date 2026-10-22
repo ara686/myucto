@@ -7,6 +7,7 @@ namespace MyInvoice\Infrastructure\Database;
 final class TransactionSavepointTracker
 {
     private const PARSED_LIMIT = 2048;
+    private const PARSED_MAX_LENGTH = 4096;
 
     private bool $active = false;
     private array $markers = [];
@@ -121,13 +122,22 @@ final class TransactionSavepointTracker
     private static function parsed(string $sql): ?array
     {
         if (array_key_exists($sql, self::$parsed)) return self::$parsed[$sql];
-        if (count(self::$parsed) >= self::PARSED_LIMIT) self::$parsed = [];
         $tokens = self::tokens($sql);
         if ($tokens !== null && $tokens !== [] && end($tokens) === ['symbol', ';']) array_pop($tokens);
-        if ($tokens === null || $tokens === [] || in_array(['symbol', ';'], $tokens, true)) return self::$parsed[$sql] = null;
-        $head = $tokens[0][0] === 'word' ? strtoupper($tokens[0][1]) : '';
-        $words = array_map(static fn (array $token): string => in_array($token[0], ['word', 'identifier'], true) ? strtoupper($token[1]) : '', $tokens);
-        return self::$parsed[$sql] = [$tokens, $head, $words];
+        if ($tokens === null || $tokens === [] || in_array(['symbol', ';'], $tokens, true)) {
+            $result = null;
+        } else {
+            $head = $tokens[0][0] === 'word' ? strtoupper($tokens[0][1]) : '';
+            $words = array_map(static fn (array $token): string => in_array($token[0], ['word', 'identifier'], true) ? strtoupper($token[1]) : '', $tokens);
+            $result = [$tokens, $head, $words];
+        }
+        // Dlouhé příkazy (dávkové INSERTy s hodnotami v textu) se nepamatují, jinak by
+        // paměť rostla o celé texty a jejich tokeny.
+        if (strlen($sql) <= self::PARSED_MAX_LENGTH) {
+            if (count(self::$parsed) >= self::PARSED_LIMIT) self::$parsed = [];
+            self::$parsed[$sql] = $result;
+        }
+        return $result;
     }
 
     private static function tokens(string $sql): ?array
