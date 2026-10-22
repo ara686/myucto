@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace MyInvoice\Action\Auth;
 
 use MyInvoice\Http\Json;
+use MyInvoice\Repository\AccountingFrameworkRepository;
+use MyInvoice\Service\Accounting\AccountingFrameworkService;
+use MyInvoice\Service\Accounting\LegalFormProfileRecommendation;
 use MyInvoice\Infrastructure\Config\Config;
 use MyInvoice\Infrastructure\Cache\EntityCache;
 use MyInvoice\Infrastructure\Database\Connection;
@@ -89,7 +92,8 @@ final class MeAction
             // vede na jiný klíč a starou odpověď nemůže vrátit.
             $cacheKey = 'me:suppliers:' . ($allowed === [] ? 'all' : implode(',', $allowed))
                 . ':' . ($ossSelect === 'oss_enabled' ? '1' : '0') . ':client-ai'
-                . ':' . ($simplifiedSelect === 'simplified_hide_customer_default' ? '1' : '0');
+                . ':' . ($simplifiedSelect === 'simplified_hide_customer_default' ? '1' : '0')
+                . ':legal-form';
             $suppliers = (array) $this->cache->remember(
                 EntityCache::GROUP_SUPPLIER,
                 $cacheKey,
@@ -98,7 +102,7 @@ final class MeAction
                         // dic + adresa: dashboard pod názvem firmy vypisuje identifikaci
                         // (IČ · DIČ · adresa) na jeden řádek — bez nich by musel dělat
                         // druhý dotaz jen kvůli hlavičce stránky.
-                        'SELECT id, company_name, ic, dic, street, city, zip,
+                        'SELECT id, company_name, ic, dic, street, city, zip, legal_form,
                                 is_vat_payer, is_identified, taxpayer_type,
                                 default_payment_due_days, default_payment_due_unit, default_prices_include_vat, default_rounding_mode,
                                 allow_refund_invoices, auto_send_reminders, payment_thanks_enabled, payment_thanks_default_checked,
@@ -125,8 +129,17 @@ final class MeAction
             ));
         }
 
+        $frameworks = new AccountingFrameworkService($this->db, new AccountingFrameworkRepository($this->db));
+        $effectiveFrameworks = $frameworks->forDateForSuppliers(array_map(static fn (array $supplier): int => (int) $supplier['id'], $suppliers), date('Y-m-d'));
         foreach ($suppliers as &$s) {
             $s['id']                       = (int) $s['id'];
+            $s['accounting_framework']     = $effectiveFrameworks[$s['id']];
+            // Profil podle právní formy řídí, zda menu a router nabídnou agendy NNO a SVJ.
+            $s['entity_profile']           = LegalFormProfileRecommendation::forLegalForm(
+                isset($s['legal_form']) ? (string) $s['legal_form'] : null,
+                isset($s['accounting_mode']) ? (string) $s['accounting_mode'] : null,
+            )['entity_profile'];
+            unset($s['legal_form']);
             $s['is_vat_payer']             = (bool) $s['is_vat_payer'];
             // Identifikace firmy pro hlavičku dashboardu. `??` drží kompatibilitu
             // se záznamy, které mohou ještě viset v entity cache z doby před

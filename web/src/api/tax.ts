@@ -103,6 +103,14 @@ export interface TaxConstantsData {
   child_bonus_min: number
   fixed_asset_limit: number
   transition_receivables_max_years: number
+  nonprofit_reduction_rate: number
+  nonprofit_reduction_min: number
+  nonprofit_reduction_max: number
+  nonprofit_reduction_university_min: number
+  nonprofit_reduction_university_max: number
+  tax_loss_carry_years: number
+  tax_loss_carryback_years: number
+  tax_loss_carryback_limit: number
 }
 
 /** Pravděpodobný čistý příjem za minulý kalendářní měsíc (odhad, viz TaxOptimizer::estimateMonthly). */

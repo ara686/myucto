@@ -339,6 +339,8 @@ final class ReportXlsxExporter
      */
     public function balanceSheet(array $data, string $unit = 'czk'): array
     {
+        if (Statement504Presentation::accepts($data)) return (new Statement504XlsxExporter())->export($data, $unit, 'balance');
+        StatementExportPolicy::assertSupported($data);
         $thousands = $unit === 'thousands';
         if ($thousands) {
             foreach ($data['assets'] ?? [] as $i => $row) {
@@ -550,6 +552,8 @@ final class ReportXlsxExporter
      */
     public function incomeStatement(array $data, string $unit = 'czk'): array
     {
+        if (Statement504Presentation::accepts($data)) return (new Statement504XlsxExporter())->export($data, $unit, 'profit_loss');
+        StatementExportPolicy::assertSupported($data);
         $thousands = $unit === 'thousands';
         if ($thousands) {
             foreach ($data['rows'] ?? [] as $i => $row) {
@@ -636,6 +640,8 @@ final class ReportXlsxExporter
      */
     public function accountView(array $data, string $part, string $unit = 'czk'): array
     {
+        if (Statement504Presentation::accepts($data)) return (new Statement504XlsxExporter())->export($data, $unit, $part);
+        StatementExportPolicy::assertSupported($data);
         $thousands = $unit === 'thousands';
         $amount = fn (float|int $v): float|int => $thousands ? $this->toThousands($v) : (float) $v;
 

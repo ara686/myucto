@@ -1,0 +1,176 @@
+<script setup lang="ts">
+import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import ActionBar, { type ActionItem } from '@/components/ui/ActionBar.vue'
+import { formInput as field, formLabel } from '@/components/ui/formStyles'
+import ClientSearchSelect from '@/components/ui/ClientSearchSelect.vue'
+import { btnOutline, ICONS } from '@/components/ui/buttonStyles'
+import { accountingApi, type AccountingPeriod } from '@/api/accounting'
+import { membershipApi, type MemberRow } from '@/api/nonprofitMembership'
+import type { Client } from '@/api/clients'
+import { appIsoDate } from '@/utils/date'
+import { errorMessage } from './membershipFormat'
+import MembershipMemberDetail from './MembershipMemberDetail.vue'
+import MembershipReconciliation from './MembershipReconciliation.vue'
+
+const props = defineProps<{ supplier: number; canManage: boolean }>()
+const { t } = useI18n()
+
+
+const members = ref<MemberRow[]>([])
+const nextAfter = ref<number | null>(null)
+const periods = ref<AccountingPeriod[]>([])
+const loading = ref(false)
+const error = ref('')
+const notice = ref('')
+const selected = ref<{ id: number; label: string } | null>(null)
+const clientId = ref<number | null>(null)
+const clientLabel = ref('')
+const memberNumber = ref('')
+const creating = ref(false)
+const detailPane = ref<HTMLElement | null>(null)
+let alive = true
+let generation = 0
+let createTicket = 0
+
+const today = computed(() => appIsoDate())
+const numberValid = computed(() => memberNumber.value.trim().length > 0 && memberNumber.value.trim().length <= 80)
+const labelOf = (row: MemberRow) => row.company_name || t('nonprofitMembership.clientFallback', { id: row.client_id })
+
+function openMember(row: MemberRow) {
+  selected.value = { id: row.id, label: labelOf(row) }
+}
+
+watch(() => selected.value?.id, async id => {
+  if (id === undefined) return
+  await nextTick()
+  detailPane.value?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+})
+
+async function load(append = false) {
+  const ticket = ++generation, supplier = props.supplier
+  loading.value = true; error.value = ''
+  try {
+    const page = await membershipApi.members(supplier, append ? nextAfter.value ?? 0 : 0, 50)
+    if (!alive || ticket !== generation || supplier !== props.supplier) return
+    members.value = append ? [...members.value, ...page.items] : page.items
+    nextAfter.value = page.next_after_id
+  } catch (e) {
+    if (alive && ticket === generation) error.value = errorMessage(e) || t('nonprofitMembership.error')
+  } finally {
+    if (alive && ticket === generation) loading.value = false
+  }
+}
+
+async function loadPeriods() {
+  const ticket = generation, supplier = props.supplier
+  try {
+    const rows = await accountingApi.listPeriods()
+    if (!alive || ticket !== generation || supplier !== props.supplier) return
+    periods.value = rows
+  } catch {
+    if (alive && ticket === generation) periods.value = []
+  }
+}
+
+async function reloadAll() {
+  await Promise.all([load(), loadPeriods()])
+}
+
+function chooseClient(client: Client | null) {
+  clientLabel.value = client?.company_name ?? ''
+}
+
+async function create() {
+  if (!props.canManage || creating.value || !clientId.value || !numberValid.value) return
+  const ticket = ++createTicket, supplier = props.supplier, body = { client_id: clientId.value, member_number: memberNumber.value.trim() }, label = clientLabel.value
+  creating.value = true; error.value = ''; notice.value = ''
+  try {
+    const created = await membershipApi.createMember(supplier, body)
+    if (!alive || ticket !== createTicket || supplier !== props.supplier) return
+    notice.value = t('nonprofitMembership.memberCreated')
+    selected.value = { id: created.id, label: label || t('nonprofitMembership.clientFallback', { id: created.client_id }) }
+    clientId.value = null; clientLabel.value = ''; memberNumber.value = ''
+    await load()
+  } catch (e) {
+    if (alive && ticket === createTicket) error.value = errorMessage(e) || t('nonprofitMembership.error')
+  } finally {
+    if (alive && ticket === createTicket) creating.value = false
+  }
+}
+
+watch(() => props.supplier, () => {
+  generation++; createTicket++
+  members.value = []; nextAfter.value = null; periods.value = []; selected.value = null
+  clientId.value = null; clientLabel.value = ''; memberNumber.value = ''
+  creating.value = false; error.value = ''; notice.value = ''
+  void reloadAll()
+})
+onBeforeUnmount(() => { alive = false; generation++; createTicket++ })
+onMounted(() => { void reloadAll() })
+let firstActivation = true
+onActivated(() => {
+  if (firstActivation) { firstActivation = false; return }
+  void reloadAll()
+})
+
+const actions = computed<ActionItem[]>(() => [
+  { key: 'reload-members', label: t('nonprofitMembership.reload'), icon: 'cycle', disabled: loading.value, run: () => { void reloadAll() } },
+])
+const createActions = computed<ActionItem[]>(() => [
+  { key: 'create-member', label: t('nonprofitMembership.createMember'), icon: 'plus', tier: 'primary', variant: 'primary', show: props.canManage, disabled: creating.value || !clientId.value || !numberValid.value, disabledReason: t('nonprofitMembership.createNeedsInput'), run: () => { void create() } },
+])
+</script>
+
+<template>
+  <div class="space-y-5">
+    <h1 class="text-xl font-semibold">{{ t('nonprofitMembership.title') }}</h1>
+    <p class="text-sm text-neutral-500">{{ t('nonprofitMembership.help') }}</p>
+    <p v-if="!canManage" role="status" class="text-sm text-neutral-500" data-section="readonly">{{ t('nonprofitMembership.readonly') }}</p>
+    <p v-if="error" role="alert" class="rounded border border-danger-300 p-3" data-section="workspace-error">{{ error }}</p>
+    <p v-if="notice" role="status" class="text-sm text-success-700" data-section="workspace-notice">{{ notice }}</p>
+    <ActionBar :actions="actions" />
+
+    <section v-if="canManage" class="space-y-3 rounded-lg border bg-surface p-4" data-section="create-member">
+      <h2 class="font-semibold">{{ t('nonprofitMembership.createTitle') }}</h2>
+      <p class="text-sm text-neutral-500">{{ t('nonprofitMembership.createHelp') }}</p>
+      <fieldset :disabled="creating" class="grid gap-3 sm:grid-cols-2">
+        <label>{{ t('nonprofitMembership.client') }}
+          <ClientSearchSelect v-model="clientId" :selected-label="clientLabel || null" data-field="member-client" @selected="chooseClient" />
+        </label>
+        <label :class="formLabel">{{ t('nonprofitMembership.memberNumber') }}<input v-model="memberNumber" :class="field" maxlength="80" data-field="member-number" /></label>
+      </fieldset>
+      <ActionBar :actions="createActions" />
+    </section>
+
+    <MembershipReconciliation v-if="periods.length" :supplier="supplier" :periods="periods" />
+
+    <div :class="selected ? 'grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]' : ''" data-section="members-layout">
+    <div v-if="selected" ref="detailPane" class="min-w-0 scroll-mt-4 self-start lg:sticky lg:top-4 lg:order-last" data-section="member-detail-pane">
+      <MembershipMemberDetail
+        :key="selected.id"
+        :supplier="supplier" :can-manage="canManage" :member-id="selected.id" :label="selected.label" :periods="periods"
+        @changed="load()" @close="selected = null"
+      />
+    </div>
+    <section class="min-w-0 space-y-3" data-section="members">
+      <h2 class="font-semibold">{{ t('nonprofitMembership.members') }}</h2>
+      <p v-if="!members.length && !loading" class="text-sm text-neutral-500" data-section="members-empty">{{ t('nonprofitMembership.membersEmpty') }}</p>
+      <div v-for="row in members" :key="row.id" :class="['flex flex-wrap items-center justify-between gap-3 rounded border bg-surface p-3', selected?.id === row.id ? 'border-primary-400 ring-1 ring-primary-300' : '']" data-section="member-row" :data-member="row.id" :aria-current="selected?.id === row.id ? 'true' : undefined">
+        <div class="space-y-1 text-sm">
+          <p class="font-medium">{{ row.member_number }} · {{ labelOf(row) }}</p>
+          <p v-if="row.revision_no === null || row.effective_from === null || row.status === null" class="text-warning-700" data-field="member-revision">{{ t('nonprofitMembership.noRevision') }}</p>
+          <p v-else-if="row.effective_from > today" class="text-warning-700" data-field="member-revision">{{ t('nonprofitMembership.futureRevision', { status: t(`nonprofitMembership.status_${row.status}`), date: row.effective_from }) }}</p>
+          <p v-else data-field="member-revision">{{ t(`nonprofitMembership.status_${row.status}`) }} · {{ t('nonprofitMembership.sinceDate', { date: row.effective_from }) }}</p>
+        </div>
+        <button type="button" :class="btnOutline('primary')" data-action="open-member" @click="openMember(row)">
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" :d="ICONS.eye" /></svg>{{ t('nonprofitMembership.openMember') }}
+        </button>
+      </div>
+      <button v-if="nextAfter !== null" type="button" :class="btnOutline('neutral')" data-action="more-members" :disabled="loading" @click="load(true)">
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" :d="ICONS.chevron" /></svg>{{ t('nonprofitMembership.moreMembers') }}
+      </button>
+    </section>
+    </div>
+  </div>
+</template>

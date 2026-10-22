@@ -486,7 +486,7 @@ final class DimensionProfitService
         $monthSelect = $monthly ? "DATE_FORMAT(e.entry_date, '%Y-%m') AS month_key, " : '';
         $monthGroup = $monthly ? "DATE_FORMAT(e.entry_date, '%Y-%m'), " : '';
         $nonDeductible = NonDeductibleCostsService::predicate();
-        [$partsSql, $partsParams] = DimensionSplitAllocation::partsSql($typeId, null, $supplierId);
+        [$partsSql, $partsParams] = DimensionSplitAllocation::partsSql($typeId, null, $supplierId, [$from, $to]);
         // Rozdělení haléřů zůstává kladné; znaménko storna se přidá až k dílu řádku.
         $signedPart = '(CASE WHEN l.is_red_storno = 1 THEN -sp.amount ELSE sp.amount END)';
         $stmt = $this->db->pdo()->prepare(

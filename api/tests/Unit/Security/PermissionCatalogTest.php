@@ -31,6 +31,24 @@ final class PermissionCatalogTest extends TestCase
         }
     }
 
+    public static function disallowedRequestGrants(): array
+    {
+        return [
+            'client accounting' => ['client', 'accounting'],
+            'client lifecycle' => ['client', 'property.settlements.post'],
+            'staff client portal' => ['staff', 'documents.submit'],
+            'unknown permission' => ['staff', 'synthetic.unknown.permission'],
+        ];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('disallowedRequestGrants')]
+    public function testBrowserChecksRejectCatalogDisallowedGrants(string $type, string $key): void
+    {
+        $request = (new \Slim\Psr7\Factory\ServerRequestFactory())->createServerRequest('POST', '/')
+            ->withAttribute('auth.effective_role', new EffectiveRole(99, 'Synthetic inconsistent role', $type, true, [$key => 2]));
+        self::assertFalse(\MyInvoice\Security\RequestAuthorization::allows($request, $key, AccessLevel::WRITE));
+    }
+
     public function testPriceListCanBeDelegatedWithoutGivingItToClientsByDefault(): void
     {
         $catalog = new PermissionCatalog();

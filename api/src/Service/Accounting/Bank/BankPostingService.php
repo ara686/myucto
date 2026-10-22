@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MyInvoice\Service\Accounting\Bank;
 
 use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Service\Accounting\AccountRoleResolver;
 use MyInvoice\Infrastructure\Database\TransactionFailure;
 use MyInvoice\Repository\AccountingPeriodRepository;
 use MyInvoice\Repository\BankPostingRuleRepository;
@@ -724,7 +725,7 @@ final class BankPostingService
             $lines[] = $this->line($counter, 'credit', $alloc);
         }
 
-        $this->appendRounding($lines, $absAmount - round($allocSum, 2));
+        $this->appendRounding($lines, $absAmount - round($allocSum, 2), $supplierId, (string) $tx['posted_at']);
         return ['lines' => $lines];
     }
 
@@ -836,7 +837,7 @@ final class BankPostingService
                 $foreign,
             ),
         ];
-        $this->appendFxDifference($lines, $supplierId, 0.0, true);
+        $this->appendFxDifference($lines, $supplierId, (string) $tx['posted_at'], 0.0, true);
         return ['lines' => $lines];
     }
 
@@ -870,7 +871,7 @@ final class BankPostingService
         $receivable = $rule['credit_account_code'] ?? '311';
         $lines = [
             $this->line($bankAcc, 'debit', $net),
-            $this->line('568', 'debit', $fee),
+            $this->line(AccountRoleResolver::fromConnection($this->db)->resolve($supplierId, 'bank.fee', (string) $tx['posted_at']), 'debit', $fee),
         ];
         foreach ($allocations as $allocation) {
             $counter = $this->incomingCounterAccount($supplierId, (int) $allocation['invoice_id'], $receivable);
@@ -959,7 +960,7 @@ final class BankPostingService
         $lines[] = $this->line($bankAcc, 'credit', $absAmount);
 
         // diff = ΣMD − ΣD = allocSum − absAmount; záporné → 548 (odchozí náklad).
-        $this->appendRounding($lines, round($allocSum, 2) - $absAmount);
+        $this->appendRounding($lines, round($allocSum, 2) - $absAmount, $supplierId, (string) $tx['posted_at']);
         return ['lines' => $lines];
     }
 
@@ -1017,7 +1018,7 @@ final class BankPostingService
             );
         }
         $lines[] = $this->line($bankAcc, 'credit', $bankCzk);
-        $this->appendFxDifference($lines, $supplierId, 0.0, false);
+        $this->appendFxDifference($lines, $supplierId, (string) $tx['posted_at'], 0.0, false);
         return ['lines' => $lines];
     }
 
@@ -1084,7 +1085,7 @@ final class BankPostingService
             ),
             $this->line($bankAcc, 'credit', $bankCzk),
         ];
-        $this->appendFxDifference($lines, $supplierId, 0.0, false);
+        $this->appendFxDifference($lines, $supplierId, (string) $tx['posted_at'], 0.0, false);
         return ['lines' => $lines];
     }
 
@@ -1409,7 +1410,7 @@ final class BankPostingService
 
         $this->assertFxAllocation($absForeign, round($allocForeignSum, 2));
         $remainderCzk = round(($absForeign - round($allocForeignSum, 2)) * $paymentRate, 2);
-        $this->appendFxDifference($lines, $supplierId, $remainderCzk, true);
+        $this->appendFxDifference($lines, $supplierId, (string) $tx['posted_at'], $remainderCzk, true);
         return ['lines' => $lines];
     }
 
@@ -1497,7 +1498,7 @@ final class BankPostingService
         // skutečně inkasované částky — jinak jde spíš o špatně spárovaný doklad/přeplatek než
         // o kurzový rozdíl → ruční ověření (blokovaný návrh).
         $this->assertCrossCurrencySane($bankCzk, round($settledCzk, 2));
-        $this->appendFxDifference($lines, $supplierId, 0.0, true);
+        $this->appendFxDifference($lines, $supplierId, (string) $tx['posted_at'], 0.0, true);
         return ['lines' => $lines];
     }
 
@@ -1599,7 +1600,7 @@ final class BankPostingService
 
         $this->assertFxAllocation($absForeign, round($allocForeignSum, 2));
         $remainderCzk = round(($absForeign - round($allocForeignSum, 2)) * $paymentRate, 2);
-        $this->appendFxDifference($lines, $supplierId, $remainderCzk, false);
+        $this->appendFxDifference($lines, $supplierId, (string) $tx['posted_at'], $remainderCzk, false);
         return ['lines' => $lines];
     }
 
@@ -1696,21 +1697,22 @@ final class BankPostingService
      *
      * @param list<array{account_code:string, side:string, amount:float}> $lines
      */
-    private function appendFxDifference(array &$lines, int $supplierId, float $remainderCzk = 0.0, bool $incoming = true): void
+    private function appendFxDifference(array &$lines, int $supplierId, string $entryDate, float $remainderCzk = 0.0, bool $incoming = true): void
     {
         $balance = PostingService::balanceCents($lines);
         $diff = $balance['debit'] - $balance['credit'];
+        $profile = AccountRoleResolver::fromConnection($this->db)->forDate($supplierId, $entryDate);
         $remainderCents = (int) round(abs($remainderCzk) * 100.0);
         if ($remainderCents > 0) {
             $lines[] = $incoming
-                ? $this->line('648', 'credit', $remainderCents / 100.0)
-                : $this->line('548', 'debit', $remainderCents / 100.0);
+                ? $this->line($profile->account('rounding.gain'), 'credit', $remainderCents / 100.0)
+                : $this->line($profile->account('rounding.loss'), 'debit', $remainderCents / 100.0);
             $diff += $incoming ? -$remainderCents : $remainderCents;
         }
         if ($diff === 0) {
             return;
         }
-        [$loss, $gain] = $this->fxResultAccounts($supplierId);
+        [$loss, $gain] = $this->fxResultAccounts($supplierId, $entryDate);
         if ($diff > 0) {
             $lines[] = $this->line($gain, 'credit', $diff / 100.0);
         } else {
@@ -1719,17 +1721,18 @@ final class BankPostingService
     }
 
     /**
-     * Účty kurzového rozdílu z kontací fx.loss (MD 563) / fx.gain (D 663). Protiúčet je
-     * dynamický (saldokonto/banka daného případu), proto seed nese jen jednu stranu.
+     * FX role k datu platby zachovávají kontace 500. Protiúčet je dynamický
+     * (saldokonto/banka daného případu), proto seed nese jen jednu stranu.
      *
      * @return array{0:string, 1:string} [loss, gain]
      */
-    private function fxResultAccounts(int $supplierId): array
+    private function fxResultAccounts(int $supplierId, string $entryDate): array
     {
         $lossRule = $this->postingRules->resolve($supplierId, 'fx.loss');
         $gainRule = $this->postingRules->resolve($supplierId, 'fx.gain');
-        $loss = ($lossRule['debit_account_code'] ?? null) ?: '563';
-        $gain = ($gainRule['credit_account_code'] ?? null) ?: '663';
+        $profile = AccountRoleResolver::fromConnection($this->db)->forDate($supplierId, $entryDate);
+        $loss = $profile->account('fx.loss', $lossRule['debit_account_code'] ?? null);
+        $gain = $profile->account('fx.gain', $gainRule['credit_account_code'] ?? null);
         return [(string) $loss, (string) $gain];
     }
 
@@ -1995,7 +1998,7 @@ final class BankPostingService
             } catch (PostingException $e) {
                 return ['action' => 'skipped', 'reason' => $e->errorCode];
             }
-            $lines = $this->alignCardSettlement($supplierId, $lines, $clearing);
+            $lines = $this->alignCardSettlement($supplierId, $lines, $clearing, (string) $tx['posted_at']);
         }
         if ($lines !== null) {
             // Doklad dorazil k platbě, kterou účetní mezitím uzavřela bez dokladu — uzavření
@@ -2099,10 +2102,10 @@ final class BankPostingService
      * @param array{code:string, side:string, amount:float, currency_code:?string, fx_rate:?float, amount_foreign:?float} $clearing
      * @return list<array<string,mixed>>
      */
-    private function alignCardSettlement(int $supplierId, array $lines, array $clearing): array
+    private function alignCardSettlement(int $supplierId, array $lines, array $clearing, string $entryDate): array
     {
         $side = $clearing['side'] === 'debit' ? 'credit' : 'debit';
-        [$loss, $gain] = $this->fxResultAccounts($supplierId);
+        [$loss, $gain] = $this->fxResultAccounts($supplierId, $entryDate);
         $findLeg = static function (array $lines) use ($clearing, $side): ?int {
             foreach ($lines as $i => $l) {
                 if ((string) $l['account_code'] === $clearing['code'] && (string) $l['side'] === $side) {
@@ -2118,7 +2121,7 @@ final class BankPostingService
                 $lines,
                 static fn (array $l): bool => !in_array((string) $l['account_code'], [$loss, $gain], true),
             ));
-            $this->appendFxDifference($lines, $supplierId, 0.0, $side === 'debit');
+            $this->appendFxDifference($lines, $supplierId, $entryDate, 0.0, $side === 'debit');
             $idx = $findLeg($lines);
         }
         if ($idx !== null && $clearing['currency_code'] !== null) {
@@ -2128,12 +2131,22 @@ final class BankPostingService
         }
 
         $settings = $this->cardRegime?->settings($supplierId) ?? [];
-        $map = array_filter([
-            $loss => $settings['fx_loss_account_code'] ?? null,
-            $gain => $settings['fx_gain_account_code'] ?? null,
-            '548' => $settings['rounding_loss_account_code'] ?? null,
-            '648' => $settings['rounding_gain_account_code'] ?? null,
-        ], static fn (mixed $v): bool => is_string($v) && $v !== '');
+        $profile = AccountRoleResolver::fromConnection($this->db)->forDate($supplierId, $entryDate);
+        $roleSettings = [
+            $loss => ['fx.loss', 'fx_loss'],
+            $gain => ['fx.gain', 'fx_gain'],
+            $profile->account('rounding.loss') => ['rounding.loss', 'rounding_loss'],
+            $profile->account('rounding.gain') => ['rounding.gain', 'rounding_gain'],
+        ];
+        $map = [];
+        foreach ($lines as $line) {
+            $code = (string) $line['account_code'];
+            if ($code === $clearing['code'] || !isset($roleSettings[$code])) {
+                continue;
+            }
+            [$role, $field] = $roleSettings[$code];
+            $map[$code] = $profile->configuredAccount($role, $settings[$field . '_account_id'] ?? null, $settings[$field . '_account_code'] ?? $code);
+        }
         foreach ($lines as $i => $l) {
             $code = (string) $l['account_code'];
             if ($code !== $clearing['code'] && isset($map[$code])) {
@@ -3163,6 +3176,13 @@ final class BankPostingService
      * @param array{user_id?:?int, posted_by?:?int} $meta
      * @return array{entry_id:int, rule_id:?int, rule_hint:?array<string,mixed>}
      */
+    public function postPropertyClearing(\MyInvoice\Service\Property\Payments\Workflow\PaymentClearingIntent $intent): int
+    {
+        $intent->assertConnection($this->db);
+        $intent->current('bank');
+        return $this->journal->insertPropertyClearing($intent);
+    }
+
     public function postManual(int $supplierId, int $txId, array $input, array $meta): array
     {
         $pdo = $this->db->pdo();
@@ -3449,6 +3469,12 @@ final class BankPostingService
      */
     public function onIgnore(int $supplierId, int $txId): void
     {
+        (new DimensionPeriodGuard($this->db))->transaction(fn () => $this->onIgnoreLocked($supplierId, $txId));
+    }
+
+    private function onIgnoreLocked(int $supplierId, int $txId): void
+    {
+        (new \MyInvoice\Service\Property\Payments\Workflow\PaymentMutationContext($this->db))->assertSourceMutable($supplierId, 'bank', $txId);
         if ($this->supplierMode($supplierId) !== 'double_entry') {
             return;
         }
@@ -4576,7 +4602,7 @@ final class BankPostingService
      *
      * @param list<array{account_code:string, side:string, amount:float}> $lines
      */
-    private function appendRounding(array &$lines, float $diff): void
+    private function appendRounding(array &$lines, float $diff, int $supplierId, string $entryDate): void
     {
         $cents = (int) round($diff * 100.0);
         if ($cents === 0) {
@@ -4585,10 +4611,11 @@ final class BankPostingService
         if (abs($cents) > self::ROUNDING_TOLERANCE_CENTS) {
             throw new PostingException('allocation_mismatch', 'Alokace plateb se liší od částky o víc než 1 Kč.');
         }
+        $profile = AccountRoleResolver::fromConnection($this->db)->forDate($supplierId, $entryDate);
         if ($cents > 0) {
-            $lines[] = $this->line('648', 'credit', $cents / 100.0);
+            $lines[] = $this->line($profile->account('rounding.gain'), 'credit', $cents / 100.0);
         } else {
-            $lines[] = $this->line('548', 'debit', -$cents / 100.0);
+            $lines[] = $this->line($profile->account('rounding.loss'), 'debit', -$cents / 100.0);
         }
     }
 
@@ -4670,13 +4697,13 @@ final class BankPostingService
     /** @return array<string,mixed>|null */
     public function lockStatement(int $supplierId, int $statementId): ?array
     {
-        return (new BankTransactionContext($this->db))->statement($supplierId, $statementId);
+        return (new BankTransactionContext($this->db))->mutableStatement($supplierId, $statementId);
     }
 
     /** @return array<string,mixed>|null */
     public function lockTransaction(int $supplierId, int $txId): ?array
     {
-        return (new BankTransactionContext($this->db))->lock($supplierId, $txId);
+        return (new BankTransactionContext($this->db))->mutableTransaction($supplierId, $txId);
     }
 
     /** @return array<string,mixed>|null */

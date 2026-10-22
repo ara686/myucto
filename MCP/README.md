@@ -20,6 +20,7 @@ Uživatelský návod včetně příkladů dotazů je přímo v aplikaci:
 | Daně | **jen čtení** — odhad DPH (měsíc i kvartál), KH, SH, daň z příjmů, kalendář |
 | Účetnictví | **jen čtení** — obratovka, rozvaha, výsledovka, hlavní kniha, saldo, deník |
 | Ostatní pohledávky a závazky | čtení; zápis **jen konceptů**: založení, úprava, smazání, splátkový kalendář a opakování bez automatického účtování (`src/other-item-tools.mjs`) |
+| SVJ | **jen čtení**: registr a předpisy, karta jednotky s hrubými pohledávkami a oddělenými kredity, doložené role dlužníků a ručitelů, historie úhrad a rekonciliace |
 | Dimenze | **jen čtení**: typy a hodnoty, zisk a roční statistika, nepřímé cash flow, filtry výkazů a deníku, přiřazení dokladů a kontrola pravidel |
 | Statistika | tržby, zisk, trendy, top odběratelé i dodavatelé, cash flow, platební morálka |
 | Všechny firmy | **jen čtení**: manažerské součty za přesné období, vývoj, roční predikce, prognóza toků, zůstatky a rizika přístupných firem přes `group_dashboard`; původní měny i samostatný přepočet CZK |
@@ -54,6 +55,23 @@ smlouvy) a analytické účty účtové osnovy
 (`create_analytic_account`, `update_analytic_account`), které server povoluje
 výčtem metoda a cesta (`BEARER_WRITE_EXCEPTIONS`); do deníku nic nezapisují.
 Syntetické účty a mazání účtů zůstávají ve webovém rozhraní.
+
+Karta SVJ (`property_receivable_card`) vyžaduje `unit_id`, `as_of` a `known_at` včetně
+času a offsetu. Vrací doložený historický stav podle tehdejší znalosti. Zachovejte
+`null`, `precision`, `review_required` a `coverage`: neúplný podklad neznamená nulový
+dluh. Popisky osob a jednotek se načítají z aktuálních číselníků. Pohledávky a kredity nesčítejte do jediného čistého salda. `source_snapshot_hash`
+je otisk původní doménové projekce před kurátorováním, nikoli odpovědi MCP.
+
+Operace (`list_property_payment_operations`) jsou vzestupné a `next_cursor` patří do
+`after_id`; potvrzená workflow (`property_payment_history`) jsou sestupná a kurzor
+patří do `before_id`. Obě stránky mají `limit` 1 až 100, výchozí 25. Částky workflow
+odpovídají okamžiku potvrzení, nikoli dnešní dostupnosti kreditu. Rekonciliace
+(`property_receivable_reconciliation`) používá účetní datum a současnou znalost
+účetnictví (`current_ledger`), nepřebírá historickou znalost z karty. Karta a
+rekonciliace interně načítají historii celé firmy i při omezení na jednu jednotku.
+Karta není stránkovaná a limit operací neomezuje počet jejich alokací. Tyto výstupy
+nejsou potvrzením dluhu ani oprávněním k zápisu; ABO soubory a platební dispozice
+přes tyto nástroje nejsou dostupné.
 
 ## Instalace
 

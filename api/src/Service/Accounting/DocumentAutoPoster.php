@@ -67,8 +67,9 @@ final class DocumentAutoPoster
         }
 
         $lines = $sourceType === 'invoice'
-            ? $this->posting->buildFromInvoice($supplierId, $docId)
+            ? $this->posting->buildFromInvoice($supplierId, $docId, ['entry_date' => $meta['entry_date'] ?? $docDate])
             : $this->posting->buildFromPurchaseInvoice($supplierId, $docId, array_filter([
+                'entry_date' => $meta['entry_date'] ?? $docDate,
                 'debit_account_code' => $this->aiOverrides->debitOverrideForPurchase($supplierId, $docId),
             ], static fn (mixed $value): bool => $value !== null));
 

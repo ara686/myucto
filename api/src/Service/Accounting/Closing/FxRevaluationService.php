@@ -9,6 +9,7 @@ use MyInvoice\Repository\ChartOfAccountsRepository;
 use MyInvoice\Repository\ClosingRepository;
 use MyInvoice\Repository\PostingRuleRepository;
 use MyInvoice\Service\Accounting\ForeignCurrencyAccountPolicy;
+use MyInvoice\Service\Accounting\AccountRoleResolver;
 use MyInvoice\Service\Accounting\JournalLineAmount;
 use MyInvoice\Service\Currency\CnbExchangeRateClient;
 
@@ -57,14 +58,13 @@ final class FxRevaluationService
         };
     }
 
-    private const FALLBACK_LOSS_ACCOUNT = '563';
-    private const FALLBACK_GAIN_ACCOUNT = '663';
 
     public function __construct(
         private readonly ClosingRepository $repo,
         private readonly CnbExchangeRateClient $cnb,
         private readonly PostingRuleRepository $rules,
         private readonly ChartOfAccountsRepository $accounts,
+        private readonly AccountRoleResolver $roles,
     ) {}
 
     /**
@@ -306,9 +306,9 @@ final class FxRevaluationService
      * @param array<string,mixed> $preview výstup preview()
      * @return array{saldo: list<array<string,mixed>>, bank: list<array<string,mixed>>}
      */
-    public function buildEntries(int $supplierId, array $preview): array
+    public function buildEntries(int $supplierId, array $preview, string $entryDate): array
     {
-        [$lossAccount, $gainAccount] = $this->resultAccounts($supplierId);
+        [$lossAccount, $gainAccount] = $this->resultAccounts($supplierId, $entryDate);
 
         $saldo = [];
         foreach ($preview['saldo']['lines'] as $g) {
@@ -372,16 +372,17 @@ final class FxRevaluationService
     }
 
     /**
-     * Účty 563/663 z kontací fx.loss/fx.gain (seedy 1006), fallback 563/663.
+     * Rámec k datu zápisu určuje FX role; dosavadní kontace zůstávají platné pro 500.
      *
      * @return array{0: string, 1: string} [loss, gain]
      */
-    private function resultAccounts(int $supplierId): array
+    private function resultAccounts(int $supplierId, string $entryDate): array
     {
         $lossRule = $this->rules->resolve($supplierId, 'fx.loss');
         $gainRule = $this->rules->resolve($supplierId, 'fx.gain');
-        $loss = (string) (($lossRule['debit_account_code'] ?? null) ?: self::FALLBACK_LOSS_ACCOUNT);
-        $gain = (string) (($gainRule['credit_account_code'] ?? null) ?: self::FALLBACK_GAIN_ACCOUNT);
+        $profile = $this->roles->forDate($supplierId, $entryDate);
+        $loss = $profile->account('fx.loss', $lossRule['debit_account_code'] ?? null);
+        $gain = $profile->account('fx.gain', $gainRule['credit_account_code'] ?? null);
         return [$loss, $gain];
     }
 

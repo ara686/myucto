@@ -178,6 +178,15 @@ final class RequestAuthorization
     }
 
     /**
+     * Akceptace nativního výpočtu DPPO 504 odblokuje finalizaci, XML a podání. Jde o
+     * rozhodnutí správce firmy, nikoli delegované účetní role.
+     */
+    public static function canAcceptNonprofitDppoCalculation(Request $request): bool
+    {
+        return self::isCompanyAdmin($request);
+    }
+
+    /**
      * Správa automatického stavu tachometru (připojení účtu u zdroje, přiřazení aut, načtení):
      * patří k práci s knihou jízd, ne k administraci integrací.
      */
@@ -191,13 +200,8 @@ final class RequestAuthorization
         string $permission,
         AccessLevel $minimum = AccessLevel::READ,
     ): bool {
-        $role = self::effectiveRole($request);
-        if ($permission === 'bank' || str_starts_with($permission, 'bank.')
-            || $permission === 'stock' || str_starts_with($permission, 'stock.')) {
-            self::$catalog ??= new PermissionCatalog();
-            self::$checker ??= new PermissionChecker(self::$catalog);
-            return self::$checker->allows($role, $permission, $minimum);
-        }
-        return $role->isSuperadmin() || ($role->isActive && $role->level($permission)->allows($minimum));
+        self::$catalog ??= new PermissionCatalog();
+        self::$checker ??= new PermissionChecker(self::$catalog);
+        return self::$checker->allows(self::effectiveRole($request), $permission, $minimum);
     }
 }

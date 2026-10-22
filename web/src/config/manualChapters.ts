@@ -3,6 +3,8 @@ import { PAYROLL_MANUAL_CHAPTERS } from '@/config/payrollManualChapters'
 export type ManualChapterRule = [RegExp, string]
 
 export const MANUAL_CHAPTERS: ManualChapterRule[] = [
+  [/^\/property\/funds(?:\/|$)/, '118_Zalohy_a_prijmy_vlastniku'],
+  [/^\/property(?:\/|$)/, '116_Registr_domu_a_jednotek'],
   [/^\/imports\/money-s3(?:\/|$)/, '103_Prechod_z_Money_S3'],
   [/^\/imports\/pohoda(?:\/|$)/, '107_Prechod_z_POHODY'],
   [/^\/imports\/pamica(?:\/|$)/, '108_Prechod_z_PAMICA'],
@@ -40,6 +42,7 @@ export const MANUAL_CHAPTERS: ManualChapterRule[] = [
   [/^\/reports\/shv(?:\/|$)/, '44_Souhrnne_hlaseni'],
   [/^\/reports\/oss(?:\/|$)/, '45_OSS'],
   [/^\/reports\/income-tax(?:\/|$)/, '43_Dan_z_prijmu'],
+  [/^\/accounting\/nonprofit-dppo(?:\/|$)/, '43_Dan_z_prijmu'],
   // Oznámení podle § 38da a § 38e je popsané v kapitole o dani z příjmů,
   // ne u mezd: mzdových příjmů se obě podání netýkají.
   [/^\/reports\/foreign-income(?:\/|$)/, '43_Dan_z_prijmu'],
@@ -73,6 +76,8 @@ export const MANUAL_CHAPTERS: ManualChapterRule[] = [
   [/^\/accounting\/balance-inventory(?:\/|$)/, '69_Inventarizace_rozvahovych_uctu'],
   [/^\/accounting\/section18-statements(?:\/|$)/, '70_Vykazy_podle_paragrafu_18'],
   [/^\/reports\/related-parties(?:\/|$)/, '71_Propojene_osoby'],
+  [/^\/accounting\/nonprofit-capital(?:\/|$)/, '119_Investicni_zdroje_a_fondy'],
+  [/^\/accounting\/nonprofit-funding(?:\/|$)/, '117_Granty_a_ucelove_dary'],
   [/^\/accounting\/periods(?:\/|$)/, '72_Uzaverka'],
   [/^\/accounting\/journal(?:\/|$)/, '52_Ucetni_denik'],
   [/^\/accounting(?:\/|$)|^\/utilities(?:\/|$)/, '73_Ucetni_nastroje'],

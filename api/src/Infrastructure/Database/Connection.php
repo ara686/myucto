@@ -274,6 +274,11 @@ final class Connection
                     . " sql_mode = '" . self::SQL_MODE . "'"
                 );
                 $pdo->query('SELECT RELEASE_ALL_LOCKS()');
+                // Test s vlastní třídou příkazů trvale vypnul sledování transakcí;
+                // další test by na sdíleném spojení nemohl prokazovat savepointy.
+                if ($pdo instanceof LoggingPdo && !$pdo->statementsTracked()) {
+                    unset(self::$sharedPdo[$dsn]);
+                }
             } catch (\Throwable) {
                 // Spojení je rozbité (server odešel, killnutá session) — zahoď ho ze
                 // sdílené mapy, další pdo() postaví nové. Tichý catch je tu na místě:

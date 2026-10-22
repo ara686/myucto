@@ -124,14 +124,15 @@ final class SaldoRepository
      *
      * @return array{id:int, code:string, name:string, account_type:string, normal_side:?string}|null
      */
-    public function resolveAccount(int $supplierId, string $code): ?array
+    public function resolveAccount(int $supplierId, string $code, ?string $asOf = null): ?array
     {
+        $relation=AccountDefinitionRepository::relation($asOf??date('Y-m-d'),$supplierId);
         $stmt = $this->db->pdo()->prepare(
-            'SELECT id, account_code, name, account_type, normal_side
-               FROM chart_of_accounts
+            "SELECT id, account_code, name, account_type, normal_side
+               FROM {$relation} a
               WHERE supplier_id = ? AND account_code = ?
               ORDER BY is_synthetic DESC, id
-              LIMIT 1'
+              LIMIT 1"
         );
         $stmt->execute([$supplierId, $code]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);

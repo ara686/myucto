@@ -110,6 +110,18 @@ if (preg_match_all(
     }
 }
 
+if (str_contains($src, '\\MyInvoice\\Routes\\PropertyAccountingCatalogRoutes::register($app)')) {
+    $registrarApp = \Slim\Factory\AppFactory::create();
+    \MyInvoice\Routes\PropertyAccountingCatalogRoutes::register($registrarApp);
+    foreach ($registrarApp->getRouteCollector()->getRoutes() as $route) {
+        $callable = $route->getCallable();
+        $action = is_array($callable) ? $callable[0] . '::' . $callable[1] : null;
+        foreach ($route->getMethods() as $method) {
+            $routes[] = ['method' => $method, 'path' => $route->getPattern(), 'action' => $action];
+        }
+    }
+}
+
 // Normalize placeholdery: `{id:[0-9]+}` → `{id}`, `{entity_type:invoice|work_report}` → `{entity_type}`
 // Musí umět i jednu úroveň vnořených složených závorek (regex kvantifikátory typu
 // `{date:\d{4}-\d{2}-\d{2}}` nebo `{batchId:[a-fA-F0-9]{32}}`) — jinak se placeholder

@@ -12,7 +12,9 @@ import type { DomainContext } from '@/api/auth'
 import { useSupplierStore } from '@/stores/supplier'
 import { useSessionSecurityStore } from '@/stores/sessionSecurity'
 import { OPERATIONAL_SETTINGS_KEYS, type AccessLevel, type PermissionKey } from '@/security/permissions'
-import { ensureNamespaces, namespacesForRoute } from '@/i18n'
+import { ensureNamespaces, i18n, namespacesForRoute } from '@/i18n'
+import { hasFrameworkScope, type FrameworkScope } from '@/security/frameworkScope'
+import { useToast } from '@/composables/useToast'
 import { createWorkspaceRoutes } from './workspaceRoutes'
 import { workspaceShellRoutes } from './workspaceShellRoutes'
 import { switchSupplierForDeepLink } from './supplierDeepLink'
@@ -44,6 +46,7 @@ declare module 'vue-router' {
     commercialOnly?: boolean
     requiresNoStock?: boolean
     requiresOss?: boolean
+    frameworkScope?: FrameworkScope
     requiresAuth?: boolean
     public?: boolean
     totpSetupOnly?: boolean
@@ -165,11 +168,14 @@ const routePermissions: Record<string, [PermissionKey | readonly PermissionKey[]
   'accounting-general-ledger': ['accounting'], 'accounting-trial-balance': ['accounting'], 'accounting-account-statement': ['accounting'],
   'accounting-balance-sheet': ['accounting'], 'accounting-income-statement': ['accounting'], 'accounting-income-statement-by-function': ['accounting'], 'accounting-saldo': ['accounting'],
   'accounting-dimension-profit': ['accounting'], 'company-dimensions': ['accounting'],
+  'accounting-joint-allocations': ['accounting'],
+  'accounting-nonprofit-tax': ['accounting'], 'accounting-nonprofit-dppo': ['accounting'], 'accounting-nonprofit-funding': ['accounting'], 'accounting-nonprofit-capital': ['accounting'],
+  'accounting-nonprofit-membership': ['accounting'],
   'accounting-statement-mapping': ['accounting'],
   'accounting-document-completeness': ['accounting'],
   'accounting-balance-inventory': ['accounting'],
   'accounting-section18-statements': ['accounting'],
-  'accounting-periods': ['accounting'],
+  'accounting-periods': ['accounting'], 'accounting-securities-debt': ['accounting'], 'accounting-framework-conversion': ['accounting'],
   'accounting-monthly-check': ['accounting'], 'accounting-parallel-run': ['accounting'], 'accounting-monthly-report': ['accounting'], 'accounting-offsets': ['accounting.offsets'],
   'accounting-tax-base-adjustments': ['accounting'],
   'manual-posting-queue': ['accounting'],
@@ -192,7 +198,7 @@ const routePermissions: Record<string, [PermissionKey | readonly PermissionKey[]
   'stock-assemblies': ['stock'], 'eshop-set-editor': ['eshop'],
   'stock-takes': ['stock'], 'stock-take-detail': ['stock'], 'stock-reports': ['stock'], 'stock-intrastat': ['stock'], 'eshop-jobs': ['eshop'], 'eshop-integrations': ['eshop.integrations'], 'eshop-shoptet': ['eshop'], eshop: ['eshop'],
   'eshop-product-master-new': ['eshop.write', 'write'], 'eshop-product-master-detail': ['eshop'],
-  logbook: ['logbook'], stats: ['dashboard'], 'group-stats': ['dashboard.portfolio'], 'purchase-stats': ['dashboard'], 'dimension-stats': ['accounting'], 'bank-statements': ['bank'], 'bank-detail': ['bank'], gopay: ['bank'],
+  logbook: ['logbook'], 'property-registry': ['property'], 'property-charges': ['property'], 'property-charge-issues': ['property'], 'property-payments': ['property'], 'property-openings': ['property'], 'property-funds': ['property'], 'property-service-settlements': ['property'], 'property-service-lifecycles': ['property'], stats: ['dashboard'], 'group-stats': ['dashboard.portfolio'], 'purchase-stats': ['dashboard'], 'dimension-stats': ['accounting'], 'bank-statements': ['bank'], 'bank-detail': ['bank'], gopay: ['bank'],
   'admin-electronic-signatures': ['settings.signing', 'write'], 'admin-databox': ['settings.signing', 'write'], templates: ['accounting.templates'], tools: ['utilities'], 'crm-dashboard': ['dashboard.portfolio'], 'portfolio-overview': ['dashboard.portfolio'],
   'automation-cockpit': ['accounting'],
   'admin-settings': ['settings.company.write', 'write'], 'admin-branding': ['settings.branding', 'write'], 'admin-integrations': ['settings.company.write', 'write'], 'admin-codebooks': ['settings.company'], 'admin-bank-rule-templates': ['bank.rules'], 'admin-approvals': ['invoices.approval'], 'admin-support': ['profile'],
@@ -570,6 +576,14 @@ export async function authorizationGuard(
   // Nav sekci gatuje AppLayout; tady tvrdě blokujeme i přímý přístup přes URL.
   const requiresDoubleEntry = to.matched.some((r) => r.meta.requiresDoubleEntry)
   if (requiresDoubleEntry && useSupplierStore().currentSupplier?.accounting_mode !== 'double_entry') {
+    return { name: 'home' }
+  }
+
+  // Agendy NNO/504 a SVJ: menu je běžné firmě neukáže, přímá adresa ji vrátí
+  // na přehled s vysvětlením, proč stránka pro tuto firmu není.
+  const frameworkScope = [...to.matched].reverse().find(r => r.meta.frameworkScope)?.meta.frameworkScope
+  if (frameworkScope && !hasFrameworkScope(useSupplierStore().currentSupplier, frameworkScope)) {
+    useToast().warning(i18n.global.t(`nav.framework_scope_denied.${frameworkScope}`))
     return { name: 'home' }
   }
 

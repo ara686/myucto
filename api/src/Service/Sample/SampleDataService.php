@@ -76,7 +76,7 @@ final class SampleDataService
      *
      * @return array<string,int>
      */
-    public function purge(int $supplierId): array
+    public function purge(int $supplierId, ?callable $preflight = null): array
     {
         $pdo = $this->db->pdo();
 
@@ -171,8 +171,11 @@ final class SampleDataService
             'documents' => 0, 'document_links' => 0,
         ];
 
+        $preflightPassed = false;
         $pdo->beginTransaction();
         try {
+            if ($preflight !== null) $preflight();
+            $preflightPassed = true;
             $stmt = $pdo->prepare(
                 "DELETE al FROM activity_log al JOIN sample_data_entries sde
                    ON sde.supplier_id=al.supplier_id AND sde.entity_id=al.entity_id
@@ -362,6 +365,7 @@ final class SampleDataService
             $pdo->commit();
         } catch (\Throwable $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
+            if (!$preflightPassed) throw $e;
             throw new \RuntimeException(
                 'Ukázková data se nepodařilo odebrat — některý sample záznam je navázaný na '
                 . 'vaše vlastní data. Odeberte nejdřív tu vazbu, nebo použijte úplný reset '

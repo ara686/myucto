@@ -33,6 +33,22 @@ use MyInvoice\Service\Payroll\Ruleset\PayrollRulesetVersion;
  */
 final class TaxConstants
 {
+    private const NONPROFIT_REDUCTION_V1 = [
+        'nonprofit_reduction_rate' => 0.30,
+        'nonprofit_reduction_min' => 300000,
+        'nonprofit_reduction_max' => 1000000,
+        'nonprofit_reduction_university_min' => 1000000,
+        'nonprofit_reduction_university_max' => 3000000,
+    ];
+
+    public static function legacyNonprofitReduction(string $ruleset, int $year): array
+    {
+        if ($ruleset !== 'cz-dppo504-2026-v1' || !in_array($year, [2024, 2025, 2026], true)) {
+            throw new \OutOfRangeException('Unknown legacy nonprofit reduction ruleset or year.');
+        }
+        return self::NONPROFIT_REDUCTION_V1;
+    }
+
     /**
      * Roky, pro které existuje mzdový ruleset ({@see CzechPayrollRulesets}).
      * Pro ně je zdrojem mzdových hodnot ruleset, ne {@see self::TABLE}.
@@ -474,6 +490,7 @@ final class TaxConstants
             'separate_base_rate' => 0.15,
             'transition_receivables_max_years' => 9,
             'tax_loss_carry_years' => 5,
+            ...self::NONPROFIT_REDUCTION_V1,
             // Zpětné uplatnění ztráty (zák. 299/2020 Sb.) šlo i DO roku 2019 — sada se
             // čte za rok, od jehož základu se ztráta odečítá.
             'tax_loss_carryback_years' => 2,
@@ -612,6 +629,7 @@ final class TaxConstants
             'separate_base_rate' => 0.15,
             'transition_receivables_max_years' => 9,
             'tax_loss_carry_years' => 5,
+            ...self::NONPROFIT_REDUCTION_V1,
             'tax_loss_carryback_years' => 2,
             'tax_loss_carryback_limit' => 30000000,
             'tax_rate_low'        => 0.15,
@@ -737,6 +755,7 @@ final class TaxConstants
             'separate_base_rate' => 0.15,
             'transition_receivables_max_years' => 9,
             'tax_loss_carry_years' => 5,
+            ...self::NONPROFIT_REDUCTION_V1,
             'tax_loss_carryback_years' => 2,
             'tax_loss_carryback_limit' => 30000000,
             'tax_rate_low'        => 0.15,
@@ -857,6 +876,7 @@ final class TaxConstants
             'separate_base_rate' => 0.15,
             'transition_receivables_max_years' => 9,
             'tax_loss_carry_years' => 5,
+            ...self::NONPROFIT_REDUCTION_V1,
             'tax_loss_carryback_years' => 2,
             'tax_loss_carryback_limit' => 30000000,
             'tax_rate_low'        => 0.15,
@@ -978,6 +998,7 @@ final class TaxConstants
             'separate_base_rate' => 0.15,
             'transition_receivables_max_years' => 9,
             'tax_loss_carry_years' => 5,
+            ...self::NONPROFIT_REDUCTION_V1,
             'tax_loss_carryback_years' => 2,
             'tax_loss_carryback_limit' => 30000000,
             'tax_rate_low'        => 0.15,
@@ -1104,6 +1125,7 @@ final class TaxConstants
             'separate_base_rate' => 0.15,
             'transition_receivables_max_years' => 9,
             'tax_loss_carry_years' => 5,
+            ...self::NONPROFIT_REDUCTION_V1,
             // § 34 odst. 1 ZDP ve znění novely 299/2020 — ztrátu lze uplatnit i ZPĚTNĚ
             // ve 2 obdobích bezprostředně předcházejících, a to nejvýše v souhrnné výši
             // 30 000 000 Kč (limit se počítá na jednotlivou ztrátu, ne na rok uplatnění).
@@ -1298,6 +1320,7 @@ final class TaxConstants
             'separate_base_rate' => 0.15,
             'transition_receivables_max_years' => 9,
             'tax_loss_carry_years' => 5,
+            ...self::NONPROFIT_REDUCTION_V1,
             // § 34 odst. 1 ZDP ve znění novely 299/2020 — ztrátu lze uplatnit i ZPĚTNĚ
             // ve 2 obdobích bezprostředně předcházejících, a to nejvýše v souhrnné výši
             // 30 000 000 Kč (limit se počítá na jednotlivou ztrátu, ne na rok uplatnění).
@@ -1511,6 +1534,7 @@ final class TaxConstants
             'separate_base_rate' => 0.15,
             'transition_receivables_max_years' => 9,
             'tax_loss_carry_years' => 5,
+            ...self::NONPROFIT_REDUCTION_V1,
             // § 34 odst. 1 ZDP ve znění novely 299/2020 — ztrátu lze uplatnit i ZPĚTNĚ
             // ve 2 obdobích bezprostředně předcházejících, a to nejvýše v souhrnné výši
             // 30 000 000 Kč (limit se počítá na jednotlivou ztrátu, ne na rok uplatnění).

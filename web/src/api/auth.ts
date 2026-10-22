@@ -77,6 +77,9 @@ export interface SupplierBrief {
   payment_thanks_default_checked: boolean
   /** Režim účetnictví (Epic F1). 'double_entry' zpřístupní účetní UI (deník, osnova, období). */
   accounting_mode?: 'tax_evidence' | 'double_entry'
+  accounting_framework?: 'cz_500' | 'cz_504'
+  /** Profil podle právní formy (`LegalFormProfileRecommendation`); `undefined` = starší backend. */
+  entity_profile?: 'nonprofit' | 'svj' | 'unknown'
   /** Měsíc začátku účetního roku (1 = kalendářní rok, 2–12 = hospodářský rok; migrace 2003). */
   fiscal_year_start_month?: number
   /** Skladová evidence (Epic SKLAD) — gate sekce Sklad v menu + editorů. Funguje nezávisle na accounting_mode. */

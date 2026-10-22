@@ -60,7 +60,8 @@ const yearSelectOptions = computed<{ value: number; label: string }[]>(() => {
 })
 
 const supplierType: TaxpayerType = supplierStore.currentSupplier?.taxpayer_type === 'po' ? 'po' : 'fo'
-const type = ref<TaxpayerType>(supplierType)
+const type = ref<TaxpayerType>(route.query.type === 'po' ? 'po' : supplierType)
+watch(() => route.query.type, requested => { if (requested === 'po') type.value = 'po' })
 const variant = ref<TaxReturnVariant>('radne')
 // Pořadí dodatečného přiznání (E8): 0 = auto (poslední existující / založí č. 1).
 const dodatecneSeq = ref(0)
@@ -243,6 +244,7 @@ function hydrateInputs(loaded: Record<string, unknown>, suggestedTax: number | n
     merged.last_known_tax = suggestedTax
   }
   for (const k of Object.keys(inputs)) delete inputs[k]
+  if (state.value?.podklady.accounting_decree === '504') { merged.nonprofit = JSON.parse(JSON.stringify(loaded.nonprofit ?? {})); merged.puz_to_registry = false }
   Object.assign(inputs, merged)
   dirty.value = false
 }
@@ -331,7 +333,7 @@ async function finalize() {
   if (error.value) return
   saving.value = true
   try {
-    state.value = await taxReturnApi.finalize(type.value, year.value, state.value!.return.row_version, variant.value, seqParam())
+    state.value = await taxReturnApi.finalize(type.value, year.value, state.value!.return.row_version, variant.value, seqParam(), state.value!.nonprofit_filing_proof_hash)
     hydrateInputs(state.value.return.inputs, state.value.last_known_tax_suggested)
   } catch (e: any) {
     error.value = apiErrorMessage(e)
@@ -356,8 +358,8 @@ async function reopen() {
 }
 
 async function downloadXml() {
-  const url = !isFinal.value && type.value === 'fo'
-    ? taxReturnApi.previewXmlUrl(year.value, variant.value, seqParam())
+  const url = !isFinal.value && (type.value === 'fo' || (state.value?.podklady.accounting_decree === '504' && state.value.nonprofit_filing_proof_hash))
+    ? taxReturnApi.previewXmlUrl(year.value, variant.value, seqParam(), type.value)
     : taxReturnApi.xmlUrl(type.value, year.value, variant.value, seqParam())
   try {
     const headers = await downloadApiFile(url)
@@ -1060,7 +1062,7 @@ function tabLabel(k: TabKey): string { return t('taxReturn.tab_' + k) }
                   </select>
                   <span class="block text-[11px] text-neutral-400 mt-0.5">{{ t('taxReturn.bank_account_hint') }}</span></label>
               </div>
-              <label class="flex items-start gap-2 text-sm mt-3 cursor-pointer">
+              <label v-if="state?.podklady.accounting_decree !== '504'" class="flex items-start gap-2 text-sm mt-3 cursor-pointer">
                 <input type="checkbox" v-model="inputs.puz_to_registry" class="mt-0.5" />
                 <span>{{ t('taxReturn.puz_to_registry') }}
                   <span class="block text-[11px] text-neutral-400">{{ t('taxReturn.puz_to_registry_hint') }}</span></span>

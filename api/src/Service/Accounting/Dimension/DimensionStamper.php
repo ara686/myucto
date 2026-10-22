@@ -9,6 +9,7 @@ use MyInvoice\Repository\DimensionAssignmentRepository;
 use MyInvoice\Repository\DimensionRepository;
 use MyInvoice\Service\Accounting\JournalLineAmount;
 use MyInvoice\Service\Accounting\Product\IssuedDiscountAllocation;
+use MyInvoice\Service\Property\Charges\Issuance\IssuanceUseGuard;
 use MyInvoice\Service\Invoice\InvoiceItemKind;
 use PDO;
 
@@ -63,6 +64,8 @@ final class DimensionStamper
 
     /** @var array<int,bool> */
     private array $enabledCache = [];
+
+    private array $serviceCostCandidates = [];
 
     private ?DimensionRuleService $rules = null;
 
@@ -121,13 +124,14 @@ final class DimensionStamper
         if (!$hasExplicit && !$enabled) {
             return $resolved;
         }
-        [$header, $items, $splits] = $sourceId !== null && isset(self::SOURCES[$sourceType]) && $enabled
+        [$header, $items, $splits, , $headerOrigins, $splitOrigins] = $sourceId !== null && isset(self::SOURCES[$sourceType]) && $enabled
             ? $this->documentContext($supplierId, $sourceType, $sourceId, $itemAccounts)
-            : [[], [], []];
+            : [[], [], [], [], [], []];
         if ($header !== [] || $items !== [] || $hasExplicit) {
             $resolved = self::expandSplits(
-                self::assign($resolved, $header, $items, $this->accountTypes($supplierId), true)['lines'],
+                self::assign($resolved, $header, $items, $this->accountTypes($supplierId), true, $headerOrigins,$this->serviceCostAccounts($supplierId, $sourceType, $entryDate, $resolved))['lines'],
                 $splits,
+                $splitOrigins,
             );
         }
         if ($enabled && $entryDate !== null) {
@@ -153,11 +157,11 @@ final class DimensionStamper
         if (!isset(self::SOURCES[$sourceType]) || self::SOURCES[$sourceType][1] === null || !$this->enabled($supplierId)) {
             return [];
         }
-        [$header, , $splits, $byItem] = $this->documentContext($supplierId, $sourceType, $sourceId, null);
+        [$header, , $splits, $byItem, $headerOrigins, $splitOrigins, $byItemOrigins] = $this->documentContext($supplierId, $sourceType, $sourceId, null);
         $out = [];
         foreach ($byItem as $itemId => $dims) {
-            $line = self::expandSplits([['dimensions' => self::merge($header, $dims)]], $splits)[0];
-            $out[$itemId] = array_intersect_key($line, ['dimensions' => 1, 'dimension_splits' => 1]);
+            $line = self::expandSplits([['dimensions' => self::merge($header, $dims), 'dimension_origins' => array_replace($headerOrigins, $byItemOrigins[$itemId] ?? [])]], $splits, $splitOrigins)[0];
+            $out[$itemId] = array_intersect_key($line, ['dimensions' => 1, 'dimension_splits' => 1, 'dimension_origins' => 1, 'dimension_split_origins' => 1]);
         }
         return $out;
     }
@@ -185,7 +189,7 @@ final class DimensionStamper
      * @param list<array<int,float>> $splits zástupný index => hodnota => podíl
      * @return list<array<string,mixed>>
      */
-    public static function expandSplits(array $lines, array $splits): array
+    public static function expandSplits(array $lines, array $splits, array $splitOrigins = []): array
     {
         foreach ($lines as $i => $line) {
             $dims = (array) ($line['dimensions'] ?? []);
@@ -195,12 +199,17 @@ final class DimensionStamper
                     unset($dims[$typeId]);
                     if (!isset($lineSplits[$typeId]) && isset($splits[-(int) $valueId - 1])) {
                         $lineSplits[$typeId] = $splits[-(int) $valueId - 1];
+                        if ($splitOrigins !== []) {
+                            foreach ($lineSplits[$typeId] as $splitValueId => $_) $lines[$i]['dimension_split_origins'][$typeId][$splitValueId] = DimensionAssignmentOrigin::normalize($splitOrigins[-(int) $valueId - 1][$splitValueId] ?? []);
+                        }
                     }
                 } elseif (isset($lineSplits[$typeId])) {
                     unset($dims[$typeId]);
                 }
             }
             unset($lines[$i]['dimensions'], $lines[$i]['dimension_splits']);
+            if (isset($lines[$i]['dimension_origins'])) $lines[$i]['dimension_origins'] = array_intersect_key($lines[$i]['dimension_origins'], $dims);
+            if (isset($lines[$i]['dimension_split_origins'])) $lines[$i]['dimension_split_origins'] = array_intersect_key($lines[$i]['dimension_split_origins'], $lineSplits);
             if ($dims !== []) {
                 $lines[$i]['dimensions'] = $dims;
             }
@@ -244,6 +253,9 @@ final class DimensionStamper
     {
         $pdo = $this->db->pdo();
         $guard = new DimensionPeriodGuard($this->db);
+        (new SystemDimensionWritePolicy($this->db))->lockContext($supplierId);
+        (new IssuanceUseGuard($this->db))->lockClaims($supplierId);
+        (new \MyInvoice\Service\Property\Payments\Workflow\PaymentMutationContext($this->db))->acquire($supplierId);
         $lockedEntries = $guard->lockSources($supplierId, [[$sourceType, $sourceId]]);
         $entryDates = [];
         foreach ($lockedEntries as $entryId => $entry) {
@@ -254,7 +266,7 @@ final class DimensionStamper
         if ($entryDates === []) {
             return ['lines' => 0, 'needs_repost' => false, 'account_change' => false];
         }
-        [$header, $items, $splits] = $this->documentContext($supplierId, $sourceType, $sourceId, null, true);
+        [$header, $items, $splits, , $headerOrigins, $splitOrigins] = $this->documentContext($supplierId, $sourceType, $sourceId, null, true);
         $types = $this->accountTypes($supplierId);
         $assignments = new DimensionAssignmentRepository($this->db);
         $router = new DimensionAccountRouter($this->db);
@@ -269,6 +281,8 @@ final class DimensionStamper
             $stmt->execute([$supplierId, $entryId]);
             $current = $assignments->entryLineDimensions($supplierId, $entryId, true);
             $originalDims = $current;
+            $originalOrigins = $assignments->entryLineOrigins($supplierId, $entryId, true);
+            $originalSplitOrigins = $assignments->entryLineSplitOrigins($supplierId, $entryId, true);
             $originalSplits = $assignments->entryLineSplits($supplierId, $entryId, true);
             // Rozpad, který řádek už nese, se pro porovnání převede na zástupnou hodnotu
             // téhož rozpadu dokladu — řádek rozdělený při zaúčtování si ho ponechá.
@@ -285,7 +299,7 @@ final class DimensionStamper
             $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
             // Řádek rozdělený při zaúčtování mohla účtotvorná dimenze rozeslat na různé
             // analytiky téže syntetiky — sourozence proto počítá syntetika, ne analytika.
-            $siblingAccount = $router->siblingAccounts($supplierId, $entryDate, $singleAnalytics);
+            $siblingAccount = $router->siblingAccounts($supplierId, $entryDate, $singleAnalytics, true);
             $siblingKey = static fn (array $l): string
                 => ($siblingAccount[(int) $l['account_id']] ?? (int) $l['account_id']) . '|' . $l['side'];
             $siblings = [];
@@ -293,8 +307,9 @@ final class DimensionStamper
                 $key = $siblingKey($l);
                 $siblings[$key] = ($siblings[$key] ?? 0) + 1;
             }
-            $lines = array_map(static function (array $l) use ($current, $siblings, $siblingKey): array {
+            $lines = array_map(static function (array $l) use ($current, $originalOrigins, $siblings, $siblingKey): array {
                 $l['current_dimensions'] = $current[(int) $l['id']] ?? [];
+                $l['current_dimension_origins'] = $originalOrigins[(int) $l['id']] ?? [];
                 $l['split_siblings'] = $siblings[$siblingKey($l)];
                 return $l;
             }, $rows);
@@ -307,13 +322,13 @@ final class DimensionStamper
             if ($sourceType === 'cash') {
                 $lines = $this->allocateCashDocuments($supplierId, $sourceId, $lines);
             }
-            $result = self::assign($lines, $header, $items, $types, false);
+            $result = self::assign($lines, $header, $items, $types, false, $headerOrigins,$this->serviceCostAccounts($supplierId, $sourceType, $entryDate, $lines));
             $needsRepost = $needsRepost || $result['needs_split'];
             $restamped = $this->rules()->applyDefaults(
                 $supplierId,
                 $sourceType,
                 $sourceId,
-                self::expandSplits($result['lines'], $splits),
+                self::expandSplits($result['lines'], $splits, $splitOrigins),
                 $entryDate,
             );
             // Výsledné dimenze řádku (u zachovaných ručních typů po sloučení s řádkem).
@@ -332,9 +347,11 @@ final class DimensionStamper
                 unset($restamped[$i]['dimensions'], $restamped[$i]['dimension_splits']);
                 if ($dims !== []) {
                     $restamped[$i]['dimensions'] = $dims;
+                    $restamped[$i]['dimension_origins'] = array_intersect_key(($line['dimension_origins'] ?? []) + ($originalOrigins[$lineId] ?? []), $dims);
                 }
                 if ($lineSplits !== []) {
                     $restamped[$i]['dimension_splits'] = $lineSplits;
+                    $restamped[$i]['dimension_split_origins'] = array_intersect_key(($line['dimension_split_origins'] ?? []) + ($originalSplitOrigins[$lineId] ?? []), $lineSplits);
                 }
             }
             // Účtotvorná dimenze: nová hodnota, která by změnila analytický účet nebo
@@ -347,7 +364,7 @@ final class DimensionStamper
             foreach ($originalSplits as $lineId => $byType) {
                 $old[$lineId]['dimension_splits'] = $byType;
             }
-            $projected = $router->projectForEntry($supplierId, $entryDate, array_values($restamped), $singleAnalytics, $old);
+            $projected = $router->projectForEntry($supplierId, $entryDate, array_values($restamped), $singleAnalytics, $old, true);
             $restamped = $projected['lines'];
             if ($projected['conflicts'] !== []) {
                 $needsRepost = true;
@@ -356,6 +373,37 @@ final class DimensionStamper
                     $restamped,
                     static fn (array $l): bool => !in_array((int) $l['id'], $projected['conflicts'], true),
                 ));
+            }
+            $prospective = array_column($restamped, null, 'id');
+            foreach ($rows as $row) {
+                $lineId = (int) $row['id'];
+                if (!isset($prospective[$lineId])) {
+                    $prospective[$lineId] = $row + [
+                        'dimensions' => $originalDims[$lineId] ?? [],
+                        'dimension_splits' => $originalSplits[$lineId] ?? [],
+                    ];
+                }
+            }
+            $hasChanges = false;
+            foreach ($prospective as $lineId => $line) {
+                $before = $originalDims[$lineId] ?? [];
+                $after = $line['dimensions'] ?? [];
+                ksort($before);
+                ksort($after);
+                if ($before !== $after || !DimensionAssignmentRepository::sameSplits($originalSplits[$lineId] ?? [], $line['dimension_splits'] ?? [])) {
+                    $hasChanges = true;
+                    break;
+                }
+            }
+            if ($hasChanges) {
+                (new SystemDimensionWritePolicy($this->db))->assertJournal(
+                    $lockedEntries[$entryId] + ['supplier_id' => $supplierId],
+                    array_values($prospective),
+                    array_map(static fn (array $row): array => $row + [
+                        'dimensions' => $originalDims[(int) $row['id']] ?? [],
+                        'dimension_splits' => $originalSplits[(int) $row['id']] ?? [],
+                    ], $rows),
+                );
             }
             foreach ($restamped as $line) {
                 $lineId = (int) $line['id'];
@@ -368,8 +416,8 @@ final class DimensionStamper
                     continue;
                 }
                 $guard->assertMutable($lockedEntries[$entryId]);
-                $dimsChanged = $assignments->replaceLineDimensions($supplierId, $lineId, $dims);
-                $splitsChanged = $assignments->replaceLineSplits($supplierId, $lineId, $lineSplits);
+                $dimsChanged = $assignments->replaceLineDimensions($supplierId, $lineId, $dims, $line['dimension_origins'] ?? []);
+                $splitsChanged = $assignments->replaceLineSplits($supplierId, $lineId, $lineSplits, $line['dimension_split_origins'] ?? []);
                 if ($dimsChanged || $splitsChanged) {
                     $changed++;
                 }
@@ -424,7 +472,7 @@ final class DimensionStamper
      * @param array<int,string> $accountTypes id účtu => account_type
      * @return array{lines:list<array<string,mixed>>, needs_split:bool}
      */
-    public static function assign(array $lines, array $header, array $items, array $accountTypes, bool $allowSplit): array
+    public static function assign(array $lines, array $header, array $items, array $accountTypes, bool $allowSplit, array $headerOrigins = [], array $serviceCostAccounts = []): array
     {
         $out = [];
         $needsSplit = false;
@@ -432,7 +480,7 @@ final class DimensionStamper
             $explicit = array_map('intval', (array) ($line['dimensions'] ?? []));
             $type = $accountTypes[(int) $line['account_id']] ?? null;
             $combos = [];
-            if ($items !== [] && in_array($type, ['revenue', 'expense'], true)) {
+            if ($items !== [] && (in_array($type, ['revenue', 'expense'], true)||isset($serviceCostAccounts[(int)$line['account_id']]))) {
                 $relevant = array_values(array_filter(
                     $items,
                     static fn (array $it): bool => $it['account_id'] === null || $it['account_id'] === (int) $line['account_id'],
@@ -443,6 +491,13 @@ final class DimensionStamper
                 foreach ($relevant as $it) {
                     $dims = self::merge($header, $it['dims']);
                     $key = self::key($dims);
+                    $origins = array_replace($headerOrigins, $it['origins'] ?? []);
+                    if (isset($combos[$key]['origins'])) {
+                        foreach ($dims as $typeId => $_) {
+                            if (DimensionAssignmentOrigin::normalize($combos[$key]['origins'][$typeId] ?? []) !== DimensionAssignmentOrigin::normalize($origins[$typeId] ?? [])) $origins[$typeId] = DimensionAssignmentOrigin::normalize();
+                        }
+                    }
+                    $combos[$key]['origins'] = $origins;
                     $combos[$key]['dims'] = $dims;
                     $combos[$key]['weight'] = round(($combos[$key]['weight'] ?? 0.0) + $it['weight'], 2);
                 }
@@ -450,7 +505,7 @@ final class DimensionStamper
 
             if (count($combos) <= 1) {
                 $dims = $combos === [] ? $header : reset($combos)['dims'];
-                $out[] = self::withDims($line, self::merge($dims, $explicit));
+                $out[] = self::withDims($line, self::merge($dims, $explicit), $combos === [] ? $headerOrigins : reset($combos)['origins']);
                 continue;
             }
 
@@ -463,12 +518,12 @@ final class DimensionStamper
             $current = isset($line['current_dimensions']) ? self::merge([], (array) $line['current_dimensions']) : null;
             $wasSplit = ($line['split_siblings'] ?? PHP_INT_MAX) >= count($combos);
             if (!$allowSplit && $current !== null && $wasSplit && isset($combos[self::key(self::merge($current, $explicit))])) {
-                $out[] = self::withDims($line, self::merge($current, $explicit));
+                $out[] = self::withDims($line, self::merge($current, $explicit), $line['current_dimension_origins'] ?? []);
                 continue;
             }
             if (!$allowSplit || !$splittable) {
                 $needsSplit = true;
-                $out[] = self::withDims($line, self::merge($header, $explicit));
+                $out[] = self::withDims($line, self::merge($header, $explicit), $headerOrigins);
                 continue;
             }
             $cents = self::distributeCents(JournalLineAmount::cents($line['amount']), $weights);
@@ -478,7 +533,7 @@ final class DimensionStamper
                 }
                 $part = $line;
                 $part['amount'] = $cents[$i] / 100;
-                $out[] = self::withDims($part, self::merge($combo['dims'], $explicit));
+                $out[] = self::withDims($part, self::merge($combo['dims'], $explicit), $combo['origins']);
             }
         }
         return ['lines' => $out, 'needs_split' => $needsSplit];
@@ -495,7 +550,7 @@ final class DimensionStamper
      */
     private function allocateBankDocuments(int $supplierId, int $txId, array $lines): array
     {
-        $bank = $this->defaults()->bankDocuments($supplierId, $txId);
+        $bank = $this->defaults()->bankDocuments($supplierId, $txId, true);
         $documents = $bank['documents'];
         if (count($documents) < 2) {
             return $lines;
@@ -505,7 +560,7 @@ final class DimensionStamper
         foreach ($assignments->documentSplits($supplierId, 'bank_transaction', $txId)[0] ?? [] as $typeId => $_) {
             $ownTypes[$typeId] = 0;
         }
-        return self::allocateDocuments($lines, $documents, $bank['incoming'] ? 'credit' : 'debit', $ownTypes);
+        return self::allocateDocuments($lines, $documents, $bank['incoming'] ? 'credit' : 'debit', $ownTypes, 'bank:' . $txId);
     }
 
     /**
@@ -517,7 +572,7 @@ final class DimensionStamper
      */
     private function allocateCashDocuments(int $supplierId, int $cashId, array $lines): array
     {
-        $cash = $this->defaults()->cashDocuments($supplierId, $cashId);
+        $cash = $this->defaults()->cashDocuments($supplierId, $cashId, true);
         if (count($cash['documents']) < 2) {
             return $lines;
         }
@@ -526,7 +581,7 @@ final class DimensionStamper
         foreach ($assignments->documentSplits($supplierId, 'cash_document', $cashId)[0] ?? [] as $typeId => $_) {
             $ownTypes[$typeId] = 0;
         }
-        return self::allocateDocuments($lines, $cash['documents'], $cash['incoming'] ? 'credit' : 'debit', $ownTypes);
+        return self::allocateDocuments($lines, $cash['documents'], $cash['incoming'] ? 'credit' : 'debit', $ownTypes, 'cash:' . $cashId);
     }
 
     /**
@@ -549,6 +604,15 @@ final class DimensionStamper
                 continue;
             }
             [$dims, $splits] = self::commonDocumentDimensions($bySide[$side]);
+            $module = ['origin' => 'module', 'ref' => 'offset:' . $agreementId];
+            foreach (array_diff_key($dims, $line['dimensions'] ?? []) as $typeId => $_) {
+                $lines[$i]['dimension_origins'][$typeId] = $module;
+            }
+            foreach (array_diff_key($splits, ($line['dimension_splits'] ?? []) + ($line['dimensions'] ?? [])) as $typeId => $shares) {
+                foreach ($shares as $valueId => $_) {
+                    $lines[$i]['dimension_split_origins'][$typeId][$valueId] = $module;
+                }
+            }
             $dims = self::merge($dims, array_map('intval', (array) ($line['dimensions'] ?? [])));
             $splits = array_diff_key($splits, $dims);
             if ($dims !== []) {
@@ -627,7 +691,7 @@ final class DimensionStamper
      * @param array<int,int> $ownTypes typy zadané přímo na pohybu (klíče)
      * @return list<array<string,mixed>>
      */
-    public static function allocateDocuments(array $lines, array $documents, string $counterSide, array $ownTypes): array
+    public static function allocateDocuments(array $lines, array $documents, string $counterSide, array $ownTypes, ?string $moduleRef = null): array
     {
         $remaining = [];
         foreach ($documents as $i => $doc) {
@@ -688,11 +752,26 @@ final class DimensionStamper
                 );
                 if ($dims !== []) {
                     $lines[$li]['dimensions'] = $dims;
+                    if ($moduleRef !== null) {
+                        $inherited = array_diff_key($documents[$tagged[$li]]['origins'] ?? [], $ownTypes, $line['dimensions'] ?? []);
+                        $explicitOrigins = $line['dimension_origins'] ?? [];
+                        foreach ($line['dimensions'] ?? [] as $typeId => $_) {
+                            $explicitOrigins[$typeId] = DimensionAssignmentOrigin::normalize($explicitOrigins[$typeId] ?? []);
+                        }
+                        $lines[$li]['dimension_origins'] = array_intersect_key($explicitOrigins + $inherited, $dims);
+                    }
                 }
                 continue;
             }
             if ($splits !== []) {
                 $lines[$li]['dimension_splits'] = (array) ($line['dimension_splits'] ?? []) + $splits;
+                if ($moduleRef !== null) {
+                    foreach (array_diff_key($splits, $line['dimension_splits'] ?? []) as $typeId => $shares) {
+                        foreach ($shares as $valueId => $_) {
+                            $lines[$li]['dimension_split_origins'][$typeId][$valueId] = ['origin' => 'module', 'ref' => $moduleRef];
+                        }
+                    }
+                }
             }
         }
         return $lines;
@@ -756,11 +835,15 @@ final class DimensionStamper
         $dims = $docType !== null && $docId !== null
             ? $assignments->documentDimensions($supplierId, $docType, $docId, $forUpdate)
             : ['header' => [], 'items' => []];
+        $docOrigins = $docType !== null && $docId !== null ? $assignments->documentOrigins($supplierId, $docType, $docId, $forUpdate) : ['header' => [], 'items' => []];
+        $docSplitOrigins = $docType !== null && $docId !== null ? $assignments->documentSplitOrigins($supplierId, $docType, $docId, $forUpdate) : [];
         $splits = [];
+        $splitOrigins = [];
         $docSplits = $docType !== null && $docId !== null ? $assignments->documentSplits($supplierId, $docType, $docId, $forUpdate) : [];
         foreach ($docSplits as $itemNo => $byType) {
             foreach ($byType as $typeId => $shares) {
                 $splits[] = $shares;
+                $splitOrigins[] = $docSplitOrigins[$itemNo][$typeId] ?? [];
                 if ($itemNo === 0) {
                     $dims['header'][$typeId] = -count($splits);
                 } else {
@@ -771,6 +854,7 @@ final class DimensionStamper
         ksort($dims['header']);
         $items = [];
         $byItem = [];
+        $byItemOrigins = [];
         if ($itemTable !== null) {
             // Pořadí položky = pořadí v editoru (order_index), číslováno od 1 — stejně
             // jako ho ukládá DimensionService::saveDocument().
@@ -787,8 +871,10 @@ final class DimensionStamper
             $productDims = $defaults->forProducts(
                 $supplierId,
                 array_map(static fn (array $r): int => (int) ($r['stock_item_id'] ?? 0), $rows),
+                true,
             );
             foreach ($rows as $i => $row) {
+                $byItemOrigins[(int) $row['id']] = ($docOrigins['items'][$i + 1] ?? []) + ($productDims[(int) ($row['stock_item_id'] ?? 0)]['origins'] ?? []);
                 $byItem[(int) $row['id']] = DimensionDefaults::fill(
                     $dims['items'][$i + 1] ?? [],
                     $productDims[(int) ($row['stock_item_id'] ?? 0)]['header'] ?? [],
@@ -808,6 +894,7 @@ final class DimensionStamper
                             $dims['items'][$i + 1] ?? [],
                             $productDims[(int) ($row['stock_item_id'] ?? 0)]['header'] ?? [],
                         ),
+                        'origins' => $byItemOrigins[(int) $row['id']],
                         'weight' => round((float) $row['total_without_vat'], 2),
                         'account_id' => $itemAccounts[(int) $row['id']] ?? null,
                     ];
@@ -822,11 +909,13 @@ final class DimensionStamper
         foreach ($inherited['splits'] as $typeId => $shares) {
             if (!isset($dims['header'][$typeId])) {
                 $splits[] = $shares;
+                $splitOrigins[] = $inherited['split_origins'][$typeId] ?? [];
                 $dims['header'][$typeId] = -count($splits);
             }
         }
         $header = DimensionDefaults::fill($dims['header'], $inherited['header']);
-        return [$header, $items, $splits, $byItem];
+        $headerOrigins = ($docOrigins['header'] ?? []) + ($inherited['origins'] ?? []);
+        return [$header, $items, $splits, $byItem, $headerOrigins, $splitOrigins, $byItemOrigins];
     }
 
     /**
@@ -863,14 +952,27 @@ final class DimensionStamper
         return array_values($items);
     }
 
-    /** @return array<int,string> */
+    private function serviceCostAccounts(int $supplierId, string $sourceType, ?string $date, ?array $lines = null): array
+    {
+        if ($sourceType !== 'purchase_invoice' || $date === null) return [];
+        if (!isset($this->serviceCostCandidates[$supplierId])) $this->accountTypes($supplierId);
+        $candidates = $this->serviceCostCandidates[$supplierId];
+        if ($lines !== null) $candidates = array_intersect_key($candidates, array_fill_keys(array_column($lines, 'account_id'), true));
+        if ($candidates === []) return [];
+        return \MyInvoice\Service\Accounting\AccountRoleResolver::fromConnection($this->db)->forDate($supplierId, $date)->framework === 'cz_504' ? $candidates : [];
+    }
+
     private function accountTypes(int $supplierId): array
     {
-        $stmt = $this->db->pdo()->prepare('SELECT id, account_type FROM chart_of_accounts WHERE supplier_id = ?');
+        $stmt = $this->db->pdo()->prepare('SELECT id, account_type, account_code FROM chart_of_accounts WHERE supplier_id = ?');
         $stmt->execute([$supplierId]);
         $out = [];
+        $this->serviceCostCandidates[$supplierId] = [];
         foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
             $out[(int) $r['id']] = (string) $r['account_type'];
+            if ($r['account_type'] === 'asset' && preg_match(\MyInvoice\Service\Property\Opening\OpeningRolePolicy::ROLES['service_cost'][2], $r['account_code']) === 1) {
+                $this->serviceCostCandidates[$supplierId][(int) $r['id']] = true;
+            }
         }
         return $out;
     }
@@ -933,9 +1035,13 @@ final class DimensionStamper
      * @param array<int,int> $dims
      * @return array<string,mixed>
      */
-    private static function withDims(array $line, array $dims): array
+    private static function withDims(array $line, array $dims, array $origins = []): array
     {
-        unset($line['current_dimensions'], $line['split_siblings']);
+        if ($origins !== [] || isset($line['dimension_origins'])) {
+            foreach ((array) ($line['dimensions'] ?? []) as $typeId => $_) $origins[$typeId] = DimensionAssignmentOrigin::normalize($line['dimension_origins'][$typeId] ?? []);
+            $line['dimension_origins'] = array_intersect_key($origins, $dims);
+        }
+        unset($line['current_dimensions'], $line['current_dimension_origins'], $line['split_siblings']);
         if ($dims === []) {
             unset($line['dimensions']);
         } else {

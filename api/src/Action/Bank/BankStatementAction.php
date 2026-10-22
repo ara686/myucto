@@ -1999,10 +1999,16 @@ final class BankStatementAction
      */
     public function createPurchaseInvoice(Request $request, Response $response, array $args): Response
     {
-        $user = (array) $request->getAttribute(AuthMiddleware::ATTR_USER, []);
         if (!RequestAuthorization::allows($request, 'purchase_invoices.create', AccessLevel::WRITE)) {
             return Json::error($response, 'forbidden', 'Pouze admin nebo účetní.', 403);
         }
+        return $this->withCurrentBankSource($request, $response, (int) ($args['id'] ?? 0), false,
+            fn (): Response => $this->createPurchaseInvoiceWithCurrentSource($request, $response, $args));
+    }
+
+    private function createPurchaseInvoiceWithCurrentSource(Request $request, Response $response, array $args): Response
+    {
+        $user = (array) $request->getAttribute(AuthMiddleware::ATTR_USER, []);
         $txId = (int) ($args['id'] ?? 0);
         if (!$this->txBelongsToCurrentSupplier($request, $txId)) {
             return Json::error($response, 'not_found', 'Transakce nenalezena.', 404);
@@ -2016,7 +2022,7 @@ final class BankStatementAction
                     bt.counterparty_account, bt.description, bs.account_number
                FROM bank_transactions bt
                JOIN bank_statements bs ON bs.id = bt.statement_id
-              WHERE bt.id = ?'
+              WHERE bt.id = ? FOR UPDATE'
         );
         $stmt->execute([$txId]);
         $tx = $stmt->fetch(\PDO::FETCH_ASSOC);
@@ -2095,7 +2101,7 @@ final class BankStatementAction
 
         // Spáruj platbu na nově vzniklou přijatou fakturu (manuální, user-initiated klikem).
         // Draft fakturu neoznačujeme jako paid — to udělá uživatel po finalizaci; jen vazba.
-        $pdo->beginTransaction();
+        $own = self::beginAtomic($pdo, 'bank_purchase_match');
         try {
             $pdo->prepare(
                 "INSERT INTO payment_matches
@@ -2105,9 +2111,9 @@ final class BankStatementAction
             $pdo->prepare(
                 "UPDATE bank_transactions SET match_status = 'manual', matched_at = NOW(), matched_by = ? WHERE id = ?"
             )->execute([$userId ?: null, $txId]);
-            $pdo->commit();
+            self::commitAtomic($pdo, $own, 'bank_purchase_match');
         } catch (\Throwable $e) {
-            if ($pdo->inTransaction()) $pdo->rollBack();
+            self::rollbackAtomic($pdo, $own, 'bank_purchase_match', $e);
             throw $e;
         }
         $this->clientBankAccounts->captureForPurchaseInvoiceTransaction($piId, $txId);
@@ -2225,6 +2231,7 @@ final class BankStatementAction
             return $result;
         } catch (\Throwable $e) {
             self::rollbackAtomic($pdo, $own, $savepoint, $e);
+            if ($e instanceof \MyInvoice\Service\Accounting\PostingException) return Json::error($response, $e->errorCode, $e->getMessage(), $e->httpStatus);
             throw $e;
         }
     }
@@ -4606,6 +4613,7 @@ final class BankStatementAction
             return Json::ok($response, ['unmatched' => true]);
         } catch (\Throwable $e) {
             self::rollbackAtomic($pdo, $own, 'bank_tx_unignore', $e);
+            if ($e instanceof \MyInvoice\Service\Accounting\PostingException) return Json::error($response, $e->errorCode, $e->getMessage(), $e->httpStatus);
             if ($e instanceof \DomainException) return Json::error($response, 'payment_unavailable', $e->getMessage(), self::domainHttpStatus($e));
             throw $e;
         }

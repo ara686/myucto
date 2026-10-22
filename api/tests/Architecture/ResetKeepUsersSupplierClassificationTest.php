@@ -72,6 +72,7 @@ final class ResetKeepUsersSupplierClassificationTest extends TestCase
             ['supplier_vat_status_history', 'historie plátcovství DPH (VatStatusService)'],
             ['supplier_tax_representation_history', 'zastoupení u správce daně v čase'],
             ['supplier_accounting_modes', 'režim účetnictví v čase'],
+            ['supplier_accounting_frameworks', 'účetní rámec v čase'],
             ['accounting_periods', 'účetní období'],
             ['payroll_module_state', 'stav mzdového modulu a začátek zpracování'],
             ['payroll_employer_settings', 'nastavení zaměstnavatele'],

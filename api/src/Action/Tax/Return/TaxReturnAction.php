@@ -88,6 +88,7 @@ final class TaxReturnAction
         if ($bad !== null) {
             return $bad($response);
         }
+        if ($this->service->isNonprofit(SupplierGuard::currentId($request), $year, $type) && ($deny = \MyInvoice\Http\SessionOnlyAccountingAct::deny($request, $response, 'Potvrzení přiznání 504')) !== null) return $deny;
         $body = (array) ($request->getParsedBody() ?? []);
         $inputs = (array) ($body['inputs'] ?? []);
         $rowVersion = (int) ($body['row_version'] ?? 0);
@@ -105,10 +106,11 @@ final class TaxReturnAction
         if ($bad !== null) {
             return $bad($response);
         }
+        if ($this->service->isNonprofit(SupplierGuard::currentId($request), $year, $type) && ($deny = \MyInvoice\Http\SessionOnlyAccountingAct::deny($request, $response, 'Potvrzení přiznání 504')) !== null) return $deny;
         $body = (array) ($request->getParsedBody() ?? []);
         $rowVersion = (int) ($body['row_version'] ?? 0);
         return $this->run($response, fn () => $this->service->finalize(
-            SupplierGuard::currentId($request), $year, $type, $rowVersion, $this->userId($request), $this->variant($request), $this->seq($request)
+            SupplierGuard::currentId($request), $year, $type, $rowVersion, $this->userId($request), $this->variant($request), $this->seq($request), is_string($body['nonprofit_filing_proof_hash'] ?? null) ? $body['nonprofit_filing_proof_hash'] : null
         ));
     }
 
@@ -121,6 +123,7 @@ final class TaxReturnAction
         if ($bad !== null) {
             return $bad($response);
         }
+        if ($this->service->isNonprofit(SupplierGuard::currentId($request), $year, $type) && ($deny = \MyInvoice\Http\SessionOnlyAccountingAct::deny($request, $response, 'Potvrzení přiznání 504')) !== null) return $deny;
         $body = (array) ($request->getParsedBody() ?? []);
         $rowVersion = (int) ($body['row_version'] ?? 0);
         return $this->run($response, fn () => $this->service->reopen(
@@ -143,7 +146,7 @@ final class TaxReturnAction
         $seq = $this->seq($request);
         try {
             $built = $this->service->generateXml($supplierId, $year, $type, $userId, $variant, $seq);
-        } catch (TaxReturnException $e) {
+        } catch (TaxReturnException|\MyInvoice\Service\Tax\Nonprofit\NonprofitTaxAssessmentException|\MyInvoice\Service\Accounting\PostingException $e) {
             return Json::error($response, $e->errorCode, $e->getMessage(), $e->httpStatus);
         } catch (\Throwable $e) {
             return Json::error($response, 'build_failed', $e->getMessage(), 500);
@@ -176,7 +179,7 @@ final class TaxReturnAction
             $built = $this->service->previewXml(
                 SupplierGuard::currentId($request), $year, $type, $this->variant($request), $this->seq($request)
             );
-        } catch (TaxReturnException $e) {
+        } catch (TaxReturnException|\MyInvoice\Service\Tax\Nonprofit\NonprofitTaxAssessmentException|\MyInvoice\Service\Accounting\PostingException $e) {
             return Json::error($response, $e->errorCode, $e->getMessage(), $e->httpStatus);
         } catch (\Throwable $e) {
             return Json::error($response, 'build_failed', $e->getMessage(), 500);
@@ -185,7 +188,7 @@ final class TaxReturnAction
         return $response
             ->withHeader('Content-Type', 'application/xml; charset=utf-8')
             ->withHeader('Content-Disposition', 'attachment; filename="' . $built['filename'] . '"')
-            ->withHeader('X-DPFO-Preview', '1')
+            ->withHeader($type === 'po' ? 'X-DPPO-Preview' : 'X-DPFO-Preview', '1')
             ->withHeader('X-Business-Errors', (string) count($built['business_errors']))
             ->withHeader('Cache-Control', 'no-store');
     }
@@ -207,7 +210,7 @@ final class TaxReturnAction
             $built = $this->reports->pdf(
                 SupplierGuard::currentId($request), $year, $type, $this->variant($request), $this->seq($request)
             );
-        } catch (TaxReturnException $e) {
+        } catch (TaxReturnException|\MyInvoice\Service\Tax\Nonprofit\NonprofitTaxAssessmentException|\MyInvoice\Service\Accounting\PostingException $e) {
             return Json::error($response, $e->errorCode, $e->getMessage(), $e->httpStatus);
         } catch (\Throwable $e) {
             return Json::error($response, 'build_failed', $e->getMessage(), 500);
@@ -244,7 +247,7 @@ final class TaxReturnAction
         }
         try {
             $built = $this->service->insurancePdf(SupplierGuard::currentId($request), $year, $type);
-        } catch (TaxReturnException $e) {
+        } catch (TaxReturnException|\MyInvoice\Service\Tax\Nonprofit\NonprofitTaxAssessmentException|\MyInvoice\Service\Accounting\PostingException $e) {
             return Json::error($response, $e->errorCode, $e->getMessage(), $e->httpStatus);
         } catch (\Throwable $e) {
             return Json::error($response, 'build_failed', $e->getMessage(), 500);
@@ -268,7 +271,7 @@ final class TaxReturnAction
         }
         try {
             $built = $this->service->healthInsurancePdf(SupplierGuard::currentId($request), $year, $type);
-        } catch (TaxReturnException $e) {
+        } catch (TaxReturnException|\MyInvoice\Service\Tax\Nonprofit\NonprofitTaxAssessmentException|\MyInvoice\Service\Accounting\PostingException $e) {
             return Json::error($response, $e->errorCode, $e->getMessage(), $e->httpStatus);
         } catch (\Throwable $e) {
             return Json::error($response, 'build_failed', $e->getMessage(), 500);
@@ -502,7 +505,7 @@ final class TaxReturnAction
         $userId = $this->userId($request);
         try {
             $built = $this->service->generateCsszXml($supplierId, $year, $type, $userId);
-        } catch (TaxReturnException $e) {
+        } catch (TaxReturnException|\MyInvoice\Service\Tax\Nonprofit\NonprofitTaxAssessmentException|\MyInvoice\Service\Accounting\PostingException $e) {
             return Json::error($response, $e->errorCode, $e->getMessage(), $e->httpStatus);
         } catch (\Throwable $e) {
             return Json::error($response, 'build_failed', $e->getMessage(), 500);
@@ -679,7 +682,7 @@ final class TaxReturnAction
     {
         try {
             return Json::ok($response, $fn());
-        } catch (TaxReturnException $e) {
+        } catch (TaxReturnException|\MyInvoice\Service\Tax\Nonprofit\NonprofitTaxAssessmentException|\MyInvoice\Service\Accounting\PostingException $e) {
             return Json::error($response, $e->errorCode, $e->getMessage(), $e->httpStatus);
         } catch (\Throwable $e) {
             return Json::error($response, 'server_error', $e->getMessage(), 500);

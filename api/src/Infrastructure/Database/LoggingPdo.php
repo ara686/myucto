@@ -20,6 +20,8 @@ use Psr\Log\LoggerInterface;
 final class LoggingPdo extends PDO
 {
     private string $databaseName;
+    private readonly TransactionSavepointTracker $transactions;
+    private bool $statementsTracked = true;
     public function __construct(
         string $dsn,
         string $username,
@@ -30,6 +32,7 @@ final class LoggingPdo extends PDO
         ?SlowQueryLog $slowLog = null,
     ) {
         parent::__construct($dsn, $username, $password, $options);
+        $this->transactions = new TransactionSavepointTracker();
         preg_match('/(?:^|;)dbname=([^;]*)/', substr($dsn, strpos($dsn, ':') + 1), $match);
         $this->databaseName = $match[1] ?? '';
         $this->slowLog = $slowLog?->enabled() ? $slowLog : null;
@@ -37,7 +40,14 @@ final class LoggingPdo extends PDO
         $schemaChanged = static function (string $sql) use ($weak): void {
             $weak->get()?->noteSchemaStatement($sql);
         };
-        $this->setAttribute(PDO::ATTR_STATEMENT_CLASS, [LoggingPdoStatement::class, [$logger, $schemaChanged, $this->slowLog, $this->databaseName]]);
+        $transactionState = static fn (): bool => $weak->get()?->inTransaction() ?? false;
+        $statementSucceeded = static function (string $sql, bool $before) use ($weak): void {
+            $weak->get()?->noteTransactionStatement($sql, $before);
+        };
+        $statementFailed = static function (string $sql, bool $before, ?array $errorInfo = null) use ($weak): void {
+            $weak->get()?->noteTransactionFailure($sql, $before, $errorInfo);
+        };
+        parent::setAttribute(PDO::ATTR_STATEMENT_CLASS, [LoggingPdoStatement::class, [$logger, $schemaChanged, $this->slowLog, $this->databaseName, $transactionState, $statementSucceeded, $statementFailed]]);
     }
 
     private readonly ?SlowQueryLog $slowLog;
@@ -48,6 +58,29 @@ final class LoggingPdo extends PDO
     public function databaseName(): string
     {
         return $this->databaseName;
+    }
+
+    public function transactionMarker(string $name): object
+    {
+        if (!$this->statementsTracked) throw new \LogicException('Transaction statements are not tracked.');
+        return $this->transactions->marker($name, parent::inTransaction());
+    }
+
+    public function statementsTracked(): bool
+    {
+        return $this->statementsTracked;
+    }
+
+    public function hasTransactionMarker(object $marker): bool
+    {
+        return $this->statementsTracked && $this->transactions->contains($marker, parent::inTransaction());
+    }
+
+    public function beginTransaction(): bool
+    {
+        $ok = parent::beginTransaction();
+        if ($ok) $this->transactions->boundary(parent::inTransaction());
+        return $ok;
     }
 
     /**
@@ -67,6 +100,7 @@ final class LoggingPdo extends PDO
     public function commit(): bool
     {
         $result = parent::commit();
+        if ($result) $this->transactions->boundary(parent::inTransaction());
         $callbacks = $this->afterCommit;
         $this->afterCommit = [];
         $this->runAfterCommit($callbacks);
@@ -77,8 +111,25 @@ final class LoggingPdo extends PDO
     public function rollBack(): bool
     {
         $this->afterCommit = [];
+        $ok = parent::rollBack();
+        if ($ok) $this->transactions->boundary(parent::inTransaction());
+        return $ok;
+    }
 
-        return parent::rollBack();
+    public function setAttribute(int $attribute, mixed $value): bool
+    {
+        $before = parent::inTransaction();
+        $ok = false;
+        try {
+            return $ok = parent::setAttribute($attribute, $value);
+        } finally {
+            if ($ok && $attribute === PDO::ATTR_STATEMENT_CLASS) {
+                $this->statementsTracked = false;
+                $this->transactions->boundary(parent::inTransaction());
+            } elseif ($attribute === PDO::ATTR_AUTOCOMMIT && (!$before || !parent::inTransaction())) {
+                $this->transactions->boundary(parent::inTransaction());
+            }
+        }
     }
 
     /** @param array<array-key,\Closure():void> $callbacks */
@@ -91,6 +142,16 @@ final class LoggingPdo extends PDO
                 $this->logger->error('Krok po commitu selhal: ' . $e->getMessage(), ['exception' => $e::class]);
             }
         }
+    }
+
+    private function noteTransactionFailure(string $sql, bool $before, ?array $errorInfo = null): void
+    {
+        $this->transactions->failedStatement($sql, $before, parent::inTransaction(), $errorInfo);
+    }
+
+    private function noteTransactionStatement(string $sql, bool $before): void
+    {
+        $this->transactions->statement($sql, $before, parent::inTransaction());
     }
 
     private function noteSchemaStatement(string $sql): void
@@ -109,9 +170,17 @@ final class LoggingPdo extends PDO
 
     public function prepare(string $query, array $options = []): PDOStatement|false
     {
+        $before = parent::inTransaction();
+        if (array_key_exists(PDO::ATTR_STATEMENT_CLASS, $options)) {
+            $this->statementsTracked = false;
+            $this->transactions->boundary($before);
+        }
         try {
-            return parent::prepare($query, $options);
+            $result = parent::prepare($query, $options);
+            if ($result === false) $this->noteTransactionFailure($query, $before, parent::errorInfo());
+            return $result;
         } catch (PDOException $e) {
+            $this->noteTransactionFailure($query, $before, $e->errorInfo);
             DbErrorLogger::log($this->logger, $e, $query, []);
             throw $e;
         }
@@ -119,13 +188,17 @@ final class LoggingPdo extends PDO
 
     public function exec(string $statement): int|false
     {
+        $before = parent::inTransaction();
         $started = $this->slowLog !== null ? hrtime(true) : 0;
         try {
             $result = parent::exec($statement);
         } catch (PDOException $e) {
+            $this->noteTransactionFailure($statement, $before, $e->errorInfo);
             DbErrorLogger::log($this->logger, $e, $statement, []);
             throw $e;
         }
+        if ($result !== false) $this->noteTransactionStatement($statement, $before);
+        else $this->noteTransactionFailure($statement, $before, parent::errorInfo());
         $this->slowLog?->record($statement, [], $started, $this->databaseName);
         // Až PO úspěšném zápisu — neúspěšný příkaz nemá co invalidovat.
         WriteWatcher::noteStatement($statement);
@@ -136,13 +209,17 @@ final class LoggingPdo extends PDO
 
     public function query(string $query, ?int $fetchMode = null, mixed ...$fetchModeArgs): PDOStatement|false
     {
+        $before = parent::inTransaction();
         $started = $this->slowLog !== null ? hrtime(true) : 0;
         try {
             $result = parent::query($query, $fetchMode, ...$fetchModeArgs);
         } catch (PDOException $e) {
+            $this->noteTransactionFailure($query, $before, $e->errorInfo);
             DbErrorLogger::log($this->logger, $e, $query, []);
             throw $e;
         }
+        if ($result !== false) $this->noteTransactionStatement($query, $before);
+        else $this->noteTransactionFailure($query, $before, parent::errorInfo());
         $this->slowLog?->record($query, [], $started, $this->databaseName);
         WriteWatcher::noteStatement($query);
         $this->noteSchemaStatement($query);

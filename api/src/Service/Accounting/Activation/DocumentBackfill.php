@@ -169,8 +169,8 @@ final class DocumentBackfill
 
             try {
                 $lines = $sourceType === 'invoice'
-                    ? $this->posting->buildFromInvoice($supplierId, $id)
-                    : $this->posting->buildFromPurchaseInvoice($supplierId, $id);
+                    ? $this->posting->buildFromInvoice($supplierId, $id, ['entry_date' => $entryDate])
+                    : $this->posting->buildFromPurchaseInvoice($supplierId, $id, ['entry_date' => $entryDate]);
                 PostingService::assertBalanced($lines);
                 $existsStmt->execute([$supplierId, $sourceType, $id, $supplierId, $sourceType, $id]);
                 $wasThere = (bool) $existsStmt->fetchColumn();

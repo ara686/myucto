@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 import { canUsePurchaseAiExtraction } from '@/security/purchaseAiExtraction'
+import { hasFrameworkScope } from '@/security/frameworkScope'
 import { useSupplierStore } from '@/stores/supplier'
 import { useAutomationStore } from '@/stores/automation'
 import { updateApi, type PublicVersion } from '@/api/update'
@@ -228,6 +229,7 @@ const hostingAttention = computed(() => hostingNavAttention(resolveHostingAction
 /** Outline icon paths — Heroicons style, stroke 2, viewBox 24, currentColor */
 const ICONS = {
   dashboard:  'M3 12l9-9 9 9M5 10v10h14V10',
+  property:   'M3 12l9-9 9 9M5 10v10h14V10M10 20v-5h4v5',
   invoices:   'M9 12h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.586a1 1 0 0 1 .707.293l5.414 5.414a1 1 0 0 1 .293.707V19a2 2 0 0 1-2 2z',
   proforma:   'M2.25 8.25h19.5M2.25 9v6.75A2.25 2.25 0 0 0 4.5 18h15a2.25 2.25 0 0 0 2.25-2.25V9A2.25 2.25 0 0 0 19.5 6.75h-15A2.25 2.25 0 0 0 2.25 9zM14 12a2 2 0 1 1-4 0 2 2 0 0 1 4 0z',
   recurring:  'M4 4v5h5M4 9a8 8 0 0 1 14.13-4.06M20 20v-5h-5M20 15a8 8 0 0 1-14.13 4.06',
@@ -412,6 +414,10 @@ const navSections = computed<NavSection[]>(() => {
   // Sklad (Epic SKLAD) — nezávislé na accounting_mode (funguje i pro tax_evidence).
   // Firma → Dimenze (migrace 1860) — opt-in; vypnuté nesmí v menu nic přidat.
   const dimensionsEnabled = auth.hasCommercialFeatures && supplierStore.currentSupplier?.dimensions_enabled === true
+  // Agendy NNO/504 a SVJ jen firmám, kterých se týkají; stejnou podmínku vynucuje router.
+  const nonprofitScope = hasFrameworkScope(supplierStore.currentSupplier, 'nonprofit504')
+  const conversionScope = hasFrameworkScope(supplierStore.currentSupplier, 'conversion504')
+  const svjScope = hasFrameworkScope(supplierStore.currentSupplier, 'svj')
   const sections: NavSection[] = [
     {
       // Grafy — přehledové/analytické položky nahoře v menu: akce k řešení, náhled
@@ -523,6 +529,16 @@ const navSections = computed<NavSection[]>(() => {
         ...(auth.isSuperadmin ? [{ to: '/portal/purchase-invoice-submissions', label: t('nav.submit_documents'), icon: ICONS.documents, permission: 'documents.submit' as PermissionKey }] : []),
         { to: '/documents/scan-attach', label: t('scan_attach.nav'), icon: ICONS.documents, permission: 'documents.upload' },
         { to: '/logbook', label: t('nav.logbook'), icon: ICONS.logbook, newTo: '/logbook?tab=trips&new=trip' },
+        ...(svjScope ? [
+          { to: '/property/registry', label: t('nav.property_registry'), icon: ICONS.property, permission: 'property' as PermissionKey, dividerBefore: true },
+          { to: '/property/charges', label: t('nav.property_charges'), icon: ICONS.property, permission: 'property' as PermissionKey },
+          { to: '/property/charges/issues', label: t('nav.property_issuance'), icon: ICONS.property, permission: 'property' as PermissionKey },
+          { to: '/property/service-settlements', label: t('nav.property_settlements'), icon: ICONS.payment_orders, permission: 'property' as PermissionKey },
+          { to: '/property/service-lifecycles', label: t('nav.property_service_lifecycle'), icon: ICONS.payment_orders, permission: 'property' as PermissionKey },
+          { to: '/property/funds', label: t('nav.property_funds'), icon: ICONS.payment_orders, permission: 'property' as PermissionKey },
+          { to: '/property/openings', label: t('nav.property_openings'), icon: ICONS.payment_orders, permission: 'property' as PermissionKey },
+          { to: '/property/payments', label: t('nav.property_payments'), icon: ICONS.payment_orders, permission: 'property' as PermissionKey },
+        ] : []),
       ],
     },
     ...(isStockEnabled ? [{
@@ -614,7 +630,14 @@ const navSections = computed<NavSection[]>(() => {
         { to: '/accounting/income-statement', label: t('nav.accounting_income_statement'), icon: ICONS.tax_income },
         { to: '/accounting/income-statement-by-function', label: t('nav.accounting_income_statement_by_function'), icon: ICONS.tax_income },
         ...(dimensionsEnabled ? [{ to: '/accounting/dimension-profit', label: t('nav.accounting_dimension_profit'), icon: ICONS.tax_income, permission: 'accounting' as PermissionKey }] : []),
+        ...(nonprofitScope ? [{ to: '/accounting/nonprofit-dppo', label: t('nonprofitDppo.title'), icon: ICONS.tax_income, permission: 'accounting' as PermissionKey }] : []),
         { to: '/accounting/statement-mapping', label: t('nav.accounting_statement_mapping'), icon: ICONS.codebooks, permission: 'accounting' },
+        ...(nonprofitScope ? [
+          { to: '/accounting/securities/debt', label: t('securitiesDebt.title'), icon: ICONS.accounting, permission: 'accounting' as PermissionKey },
+        ] : []),
+        ...(conversionScope ? [
+          { to: '/accounting/framework-conversion', label: t('nav.framework_conversion'), icon: ICONS.accounting, permission: 'accounting' as PermissionKey },
+        ] : []),
         { to: '/accounting/saldo',            label: t('nav.accounting_saldo'),            icon: ICONS.coin },
         { to: '/other-items', label: t('nav.other_items'), icon: ICONS.crm, permission: 'other_items' as PermissionKey, newTo: '/other-items/new' },
         { to: '/accounting/document-completeness', label: t('nav.accounting_document_completeness'), icon: ICONS.approvals, permission: 'accounting' },
@@ -638,6 +661,7 @@ const navSections = computed<NavSection[]>(() => {
       items: [
         { to: '/templates', label: t('nav.section_templates'), icon: ICONS.documents, permission: 'accounting.templates' },
         { to: '/accounting/setup-assistant', label: t('nav.accounting_setup_assistant'), icon: ICONS.ai, permission: 'accounting' },
+        ...(dimensionsEnabled && nonprofitScope ? [{ to: '/accounting/joint-allocations', label: t('jointAllocations.title'), icon: ICONS.reports, permission: 'accounting' as PermissionKey }] : []),
         { to: '/admin/bank-rule-templates', label: t('nav.bank_rule_templates'), icon: ICONS.bank, permission: 'bank.rules' as PermissionKey },
         { to: '/accounting/accounts',       label: t('nav.accounting_accounts'), icon: ICONS.codebooks },
         { to: '/accounting/offsets',          label: t('nav.accounting_offsets'),          icon: ICONS.coin },
@@ -657,6 +681,11 @@ const navSections = computed<NavSection[]>(() => {
         // Uzávěrka — účetní období vytažená ze záložky Nástrojů do vlastní top-level
         // položky menu (jen podvojné účetnictví).
         { to: '/accounting/periods', label: t('nav.section_closing'), icon: ICONS.approvals },
+        ...(nonprofitScope ? [
+          { to: '/accounting/nonprofit-capital', label: t('nonprofitCapital.title'), icon: ICONS.approvals },
+          { to: '/accounting/nonprofit-funding', label: t('nonprofitFunding.title'), icon: ICONS.approvals },
+          { to: '/accounting/nonprofit-membership', label: t('nonprofitMembership.title'), icon: ICONS.approvals },
+        ] : []),
         // EPO podání a archív se přesunulo dolů do sekce Daně — archív podání patří
         // k výkazům, které se jím podávají, ne mezi setup nástroje.
       ],
@@ -910,6 +939,7 @@ function navPermission(item: NavItem): PermissionKey | null {
   if (path.startsWith('/stock')) return 'stock'
   if (path.startsWith('/eshop')) return 'eshop'
   if (path.startsWith('/logbook')) return 'logbook'
+  if (path.startsWith('/property')) return 'property'
   if (path === '/templates') return 'accounting.templates'
   if (path === '/utilities') return 'utilities'
   if (path === '/admin/electronic-signatures') return 'settings.signing'

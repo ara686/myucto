@@ -13,6 +13,7 @@ import { useToast } from '@/composables/useToast'
 import { apiErrorMessage } from '@/api/errors'
 import { ICONS, btnFilled, btnOutline } from '@/components/ui/buttonStyles'
 import EmptyState from '@/components/ui/EmptyState.vue'
+import Statement504Table from '@/components/accounting/Statement504Table.vue'
 
 const { t } = useI18n()
 const auth = useAuthStore()
@@ -23,6 +24,7 @@ const period = ref(`${today.getFullYear()}-${String(today.getMonth() + 1).padSta
 const comment = ref('')
 
 const report = ref<MonthlyReportData | null>(null)
+const format504 = (value: number | null | undefined) => formatMoney(value, 'CZK')
 const loading = ref(false)
 const error = ref('')
 
@@ -241,7 +243,14 @@ function historyPeriodLabel(item: MonthlyReportSendHistoryItem): string {
         </div>
       </div>
 
-      <div class="bg-surface border border-neutral-200 rounded-lg shadow-sm p-4 mb-4">
+      <div v-if="report.accounting_framework === 'cz_504'" class="space-y-6 mb-4">
+        <h2 class="text-sm font-semibold">{{ t('monthly_report.section_income_statement') }} - {{ monthLabel }}</h2>
+        <Statement504Table :report="{ ...report.income_statement_ytd, rows: report.income_statement_month }" :format="format504" />
+        <h2 class="text-sm font-semibold">{{ t('monthly_report.section_income_ytd') }}</h2>
+        <Statement504Table :report="report.income_statement_ytd" :format="format504" />
+        <Statement504Table :report="report.balance_sheet" :format="format504" />
+      </div>
+      <div v-else class="bg-surface border border-neutral-200 rounded-lg shadow-sm p-4 mb-4">
         <h2 class="text-sm font-semibold mb-2">{{ t('monthly_report.section_income_statement') }} - {{ monthLabel }}</h2>
         <div class="overflow-x-auto">
           <table class="w-full text-sm">

@@ -544,6 +544,7 @@ final class Bootstrap
                 // Nezaúčtované odpisy roku do projekce uzávěrky — bez bindu by je náhled DPPO
                 // v produkci tiše vynechal.
                 $c->get(\MyInvoice\Service\Accounting\Assets\DepreciationPostingService::class),
+                $c->get(\MyInvoice\Service\Tax\Nonprofit\NonprofitDppoDataProvider::class),
             ),
             // JMHZ transport — poslední dva argumenty jsou volitelné kvůli
             // testovacím dvojníkům (falešný VREP, mockovaný ledger), ale
@@ -810,6 +811,7 @@ final class Bootstrap
                 $c->get(\MyInvoice\Service\Payroll\Payment\PayrollPaymentSettlementRecognizer::class),
                 $c->get(LoggerInterface::class),
                 $c->get(\MyInvoice\Service\TaxEvidence\TaxEvidenceBankRules::class),
+                $c->get(\MyInvoice\Service\Property\Payments\BankProposalService::class),
             ),
 
             // EntityCache je v obou službách volitelný class-param (kvůli testovacím

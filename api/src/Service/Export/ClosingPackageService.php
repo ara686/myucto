@@ -107,6 +107,7 @@ final class ClosingPackageService
         private readonly ImportJobRepository $jobs,
         private readonly ActivityLogger $logger,
         private readonly AccountingPeriodRepository $periods,
+        private readonly \MyInvoice\Service\Accounting\Reports\StatementSupplementPolicy $frameworks,
         private readonly FinancialStatementService $statements,
         private readonly BalanceSheetPdfRenderer $balanceSheetPdf,
         private readonly IncomeStatementPdfRenderer $incomeStatementPdf,
@@ -169,6 +170,16 @@ final class ClosingPackageService
         return $valid !== [] ? $valid : self::ALL_PARTS;
     }
 
+    public function partsForPeriod(int $supplierId, int $periodId, array $requested): array
+    {
+        $framework = $this->frameworks->framework($supplierId, $periodId);
+        $parts = self::normalizeParts($requested);
+        if ($framework === 'cz_504' && array_intersect($requested, self::ALL_PARTS) === []) {
+            $parts = array_values(array_diff($parts, ['cash_flow', 'equity_changes']));
+        }
+        return $parts;
+    }
+
     /**
      * EP-6: klasifikace stavu balíčku (čistá funkce, bez DB — testovatelná). Balíček je
      * `failed`, když nevzniklo NIC nebo když některá POVINNÁ (REQUIRED_PARTS) vyžádaná
@@ -208,6 +219,7 @@ final class ClosingPackageService
             return array_fill_keys(self::ALL_PARTS, 0);
         }
         $months = $this->monthsInPeriod((string) $period['starts_on'], (string) $period['ends_on']);
+        $is504 = $this->frameworks->framework($supplierId, $periodId) === 'cz_504';
         return [
             'balance_sheet'     => 1,
             'income_statement'  => 1,
@@ -223,9 +235,15 @@ final class ClosingPackageService
             'saldo_over_1y'     => 1,
             'accruals'          => 1,
             'statement_notes'   => 1,
-            'cash_flow'         => 1,
-            'equity_changes'    => 1,
+            'cash_flow'         => $is504 ? 0 : 1,
+            'equity_changes'    => $is504 ? 0 : 1,
         ];
+    }
+
+    public function previewMetadata(int $supplierId, int $periodId): array
+    {
+        return $this->frameworks->framework($supplierId, $periodId) === 'cz_504'
+            ? ['accounting_framework' => 'cz_504'] : [];
     }
 
     /**
@@ -238,7 +256,8 @@ final class ClosingPackageService
     private static function renderNotes(array $notes): string
     {
         $out = ["PŘÍLOHA K ÚČETNÍ ZÁVĚRCE ZA ROK " . (int) $notes['fiscal_year'], ''];
-        $out[] = '§ 18 odst. 1 písm. c) zákona č. 563/1991 Sb., § 39/39a/39b vyhlášky č. 500/2002 Sb.';
+        $out[] = $notes['legal_basis'] ?? '§ 18 odst. 1 písm. c) zákona č. 563/1991 Sb., § 39/39a/39b vyhlášky č. 500/2002 Sb.';
+        if (isset($notes['period'])) $out[] = 'Účetní období: ' . $notes['period']['starts_on'] . ' - ' . $notes['period']['ends_on'];
         $out[] = 'Kategorie účetní jednotky: ' . (string) $notes['category'];
         $out[] = str_repeat('=', 78);
         $out[] = '';
@@ -275,7 +294,7 @@ final class ClosingPackageService
         $userId = (int) ($job['created_by'] ?? 0) ?: null;
         $params = is_array($job['params'] ?? null) ? $job['params'] : [];
         $periodId = (int) ($params['period_id'] ?? 0);
-        $parts = self::normalizeParts(array_map('strval', (array) ($params['parts'] ?? [])));
+        $requestedParts = array_map('strval', (array) ($params['parts'] ?? []));
         $includeXlsx = (bool) ($params['include_xlsx'] ?? false);
 
         $period = $this->periods->findById($supplierId, $periodId);
@@ -289,6 +308,8 @@ final class ClosingPackageService
         $endsOn = (string) $period['ends_on'];
 
         try {
+            $is504 = $this->frameworks->framework($supplierId, $periodId) === 'cz_504';
+            $parts = $this->partsForPeriod($supplierId, $periodId, $requestedParts);
             $companyName = $this->supplierCompanyName($supplierId);
 
             $relDir = 'sup-' . $supplierId;
@@ -347,7 +368,7 @@ final class ClosingPackageService
             if (in_array('balance_sheet', $parts, true)) {
                 $this->ensureNotCancelled($jobId, $zip, $absPath);
                 try {
-                    $data = $this->statements->balanceSheet($supplierId, $periodId, null, 'auto');
+                    $data = $this->statements->balanceSheet($supplierId, $periodId, $is504 ? $endsOn : null, 'auto');
                     $put(sprintf('Rozvaha/rozvaha-%d.pdf', $fiscalYear), $this->balanceSheetPdf->render($data));
                     $added++; $summary['balance_sheet'] = 1;
                     if ($includeXlsx) {
@@ -362,7 +383,7 @@ final class ClosingPackageService
             if (in_array('income_statement', $parts, true)) {
                 $this->ensureNotCancelled($jobId, $zip, $absPath);
                 try {
-                    $data = $this->statements->incomeStatement($supplierId, $periodId, null, 'auto');
+                    $data = $this->statements->incomeStatement($supplierId, $periodId, $is504 ? $endsOn : null, 'auto');
                     $put(sprintf('Vysledovka/vysledovka-%d.pdf', $fiscalYear), $this->incomeStatementPdf->render($data));
                     $added++; $summary['income_statement'] = 1;
                     if ($includeXlsx) {
@@ -712,7 +733,7 @@ final class ClosingPackageService
             $withWarnings = $warnings !== [];
             $packageStatus = $classified['status'];
 
-            $put('README.txt', $this->buildReadme($companyName, $fiscalYear, $startsOn, $endsOn, $summary, $warnings));
+            $put('README.txt', ($is504 ? "Účetní rámec: vyhláška č. 504/2002 Sb.\r\n" : '') . $this->buildReadme($companyName, $fiscalYear, $startsOn, $endsOn, $summary, $warnings));
             // Manifest zaeviduje i README (přidané přes $put výše); sám sebe nezahrnuje.
             $zip->addFromString('manifest.json', $this->buildManifest($supplierId, $periodId, $period, $companyName, $summary, $warnings, $files, $packageStatus));
             $zip->close();
@@ -978,6 +999,10 @@ final class ClosingPackageService
             'files' => array_values($files),
         ];
 
+        if ($this->frameworks->framework($supplierId, $periodId) === 'cz_504') {
+            $manifest['accounting_framework'] = 'cz_504';
+            $manifest['statement_as_of'] = $period['ends_on'];
+        }
         return (string) json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     }
 

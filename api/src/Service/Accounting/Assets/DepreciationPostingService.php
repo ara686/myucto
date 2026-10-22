@@ -140,6 +140,7 @@ final class DepreciationPostingService
             $pdo->beginTransaction();
         }
         try {
+            (new \MyInvoice\Service\Accounting\Dimension\DimensionPeriodGuard($this->db))->lockPeriods($supplierId);
             $lockedAsset = $this->assets->findForUpdate($supplierId, $assetId);
             if ($lockedAsset === null) {
                 throw new PostingException('not_found', 'Majetek během účtování odpisů zanikl.', 404);
@@ -361,6 +362,19 @@ final class DepreciationPostingService
      */
     public function postAccountingEntry(int $supplierId, array $asset, array $row, string $entryDate, array $meta = [], bool $allowClosingPeriod = false): int
     {
+        $guard = new \MyInvoice\Service\Accounting\Dimension\DimensionPeriodGuard($this->db);
+        return $guard->transaction(function () use ($guard, $supplierId, $asset, $row, $entryDate, $meta, $allowClosingPeriod): int {
+            $guard->lockPeriods($supplierId);
+            try {
+                return $this->postAccountingEntryLocked($supplierId, $asset, $row, $entryDate, $meta, $allowClosingPeriod);
+            } catch (\MyInvoice\Service\Nonprofit\Capital\CapitalException $e) {
+                throw new PostingException($e->errorCode, $e->getMessage(), $e->httpStatus);
+            }
+        });
+    }
+
+    private function postAccountingEntryLocked(int $supplierId, array $asset, array $row, string $entryDate, array $meta, bool $allowClosingPeriod): int
+    {
         $amount = round((float) $row['amount'], 2);
         $entryId = $this->entries->upsert([
             'supplier_id' => $supplierId,
@@ -400,6 +414,9 @@ final class DepreciationPostingService
             'allow_closing_period' => $allowClosingPeriod,
         ]);
 
+        (new \MyInvoice\Service\Nonprofit\Capital\CapitalService($this->db, $this->posting))->onDepreciation(
+            $supplierId, (int) $asset['id'], $entryId, $allowClosingPeriod, $meta['posted_by'] ?? $meta['user_id'] ?? null,
+        );
         return $entryId;
     }
 

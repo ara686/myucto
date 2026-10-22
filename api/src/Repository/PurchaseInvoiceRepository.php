@@ -1711,6 +1711,19 @@ final class PurchaseInvoiceRepository
      */
     public function updateDraft(int $id, array $data, int $supplierId, bool $requireUnbooked = false): bool
     {
+        $guard = new \MyInvoice\Service\Accounting\Dimension\DimensionPeriodGuard($this->db);
+        return $guard->transaction(function () use ($guard, $id, $data, $supplierId, $requireUnbooked): bool {
+            if (array_key_exists('document_kind', $data) || array_key_exists('parent_purchase_invoice_id', $data)) {
+                $guard->lockPeriods($supplierId);
+                $blocker = $this->postedCreditClassificationBlocker($id, $supplierId, $data);
+                if ($blocker !== null) throw new \InvalidArgumentException($blocker);
+            }
+            return $this->updateDraftLocked($id, $data, $supplierId, $requireUnbooked);
+        });
+    }
+
+    private function updateDraftLocked(int $id, array $data, int $supplierId, bool $requireUnbooked): bool
+    {
         $hasVarsymbol = array_key_exists('varsymbol', $data);
         $manualVarsymbol = null;
         if ($hasVarsymbol) {
@@ -3454,6 +3467,31 @@ final class PurchaseInvoiceRepository
     }
 
     public function updateDocumentKind(int $id, int $supplierId, string $kind): ?string
+    {
+        $guard = new \MyInvoice\Service\Accounting\Dimension\DimensionPeriodGuard($this->db);
+        return $guard->transaction(function () use ($guard, $id, $supplierId, $kind): ?string {
+            $guard->lockPeriods($supplierId);
+            $blocker = $this->postedCreditClassificationBlocker($id, $supplierId, ['document_kind' => $kind]);
+            return $blocker ?? $this->updateDocumentKindLocked($id, $supplierId, $kind);
+        });
+    }
+
+    private function postedCreditClassificationBlocker(int $id, int $supplierId, array $data): ?string
+    {
+        $q = $this->db->pdo()->prepare('SELECT document_kind, parent_purchase_invoice_id FROM purchase_invoices WHERE supplier_id = ? AND id = ? FOR UPDATE');
+        $q->execute([$supplierId, $id]);
+        $row = $q->fetch(PDO::FETCH_ASSOC);
+        if ($row === false) return null;
+        $kind = array_key_exists('document_kind', $data) ? (string) ($data['document_kind'] ?? 'invoice') : $row['document_kind'];
+        if (!in_array($kind, ['invoice', 'receipt', 'credit_note', 'advance', 'tax_document'], true)) $kind = 'invoice';
+        $parent = array_key_exists('parent_purchase_invoice_id', $data) ? (($data['parent_purchase_invoice_id'] ?? null) ? (int) $data['parent_purchase_invoice_id'] : null) : ($row['parent_purchase_invoice_id'] === null ? null : (int) $row['parent_purchase_invoice_id']);
+        if ($kind !== 'credit_note' && $row['document_kind'] !== 'credit_note') return null;
+        if ($kind === $row['document_kind'] && $parent === ($row['parent_purchase_invoice_id'] === null ? null : (int) $row['parent_purchase_invoice_id'])) return null;
+        if (!$this->hasActivePostedEntry($id, $supplierId)) return null;
+        return 'Druh ani vazbu dobropisu nelze měnit, dokud má doklad zaúčtovaný zápis. Nejprve proveďte řízené storno.';
+    }
+
+    private function updateDocumentKindLocked(int $id, int $supplierId, string $kind): ?string
     {
         $allowed = ['invoice', 'receipt', 'credit_note', 'advance'];
         if (!in_array($kind, $allowed, true)) {

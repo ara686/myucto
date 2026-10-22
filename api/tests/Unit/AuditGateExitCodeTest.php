@@ -83,6 +83,11 @@ SH);
         int $expectedExit,
     ): void {
         $shell = $extension === 'ps1' ? 'pwsh' : (getenv('MYINVOICE_TEST_BASH_BIN') ?: 'bash');
+        if ($extension === 'sh' && PHP_OS_FAMILY === 'Windows' && !getenv('MYINVOICE_TEST_BASH_BIN')) {
+            $git = (new \Symfony\Component\Process\ExecutableFinder())->find('git');
+            $gitBash = $git === null ? null : dirname($git, 2) . '/bin/bash.exe';
+            if ($gitBash !== null && is_file($gitBash)) $shell = $gitBash;
+        }
         $probe = new Process($extension === 'ps1' ? [$shell, '-NoProfile', '-Command', 'exit 0'] : [$shell, '--version']);
         $probe->run();
         if (!$probe->isSuccessful()) {

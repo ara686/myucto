@@ -143,6 +143,22 @@ final class StereoNxBankSeriesOrchestrationTest extends TestCase
         self::assertSame($before, $this->snapshot());
     }
 
+    /** Záloha bez deníku, dokladů a pohybů (jen adresář a nastavení) se převede jako dřív. */
+    public function testSourceWithoutDatedAccountingRecordsStillImports(): void
+    {
+        $tables = self::tables('C');
+        foreach (['Cdenik', 'SfaktV', 'SfaktP', 'CBanka', 'CBankap', 'CPokl'] as $table) $tables[$table] = [];
+        $tables['LFirmaUc'] = [$tables['LFirmaUc'][0]];
+        $backup = $this->backup($tables);
+        $before = $this->snapshot();
+        $dry = $this->importer->run($backup, $this->supplier, $this->actor, true, true);
+        self::assertTrue($dry['ok'], json_encode($dry['errors']));
+        self::assertSame($before, $this->snapshot());
+        $actual = $this->importer->run($backup, $this->supplier, $this->actor, false, true);
+        self::assertTrue($actual['ok'], json_encode($actual['errors']));
+        self::assertSame(0, $this->scalar('SELECT COUNT(*) FROM journal_entries WHERE supplier_id=?'));
+    }
+
     private static function tables(string $unresolved): array
     {
         $tables = array_replace(SyntheticStereoNxTables::tables(), SyntheticStereoNxAccountingTables::tables());
