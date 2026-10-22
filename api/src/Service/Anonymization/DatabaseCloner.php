@@ -83,6 +83,13 @@ final class DatabaseCloner
                 'ddl' => $this->showCreate('TABLE', $source, $name),
                 'columns' => implode(', ', $byTable[$name]),
             ];
+            // MariaDB 11.8 hlásí v SHOW FULL TABLES verzovanou tabulku jako BASE TABLE.
+            // Verzování proto prozradí až definice. Bez toho by kopie po pseudonymizaci
+            // nesla původní hodnoty v historii řádků.
+            if (!in_array($name, $plan['system_versioned'], true)
+                && preg_match('/\bWITH SYSTEM VERSIONING\b/i', $plan['tables'][$name]['ddl']) === 1) {
+                $plan['system_versioned'][] = $name;
+            }
         }
 
         foreach (TriggerMetadata::read($this->pdo, $source) as $trigger) {

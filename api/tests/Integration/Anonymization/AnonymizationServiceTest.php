@@ -92,6 +92,10 @@ final class AnonymizationServiceTest extends TestCase
         );
 
         self::assertGreaterThan(0, array_sum($report['changed_rows']));
+        $history = json_encode($this->server->query('SELECT description FROM ' . DatabaseCloner::quote($this->target) . '.journal_entries FOR SYSTEM_TIME ALL')->fetchAll(PDO::FETCH_COLUMN), JSON_UNESCAPED_UNICODE);
+        self::assertStringContainsString('Úhrada od ', $history);
+        self::assertStringNotContainsString(self::EMAIL, $history, 'Historie verzované tabulky nesmí v kopii nést původní hodnoty.');
+        self::assertContains('journal_entries', $plan['system_versioned'], 'Verzovanou tabulku pozná plán podle definice.');
         $dump = $this->tableTexts($this->target, ['clients', 'client_bank_accounts', 'payroll_employees', 'activity_log', 'supplier', 'users']);
         foreach ([self::COMPANY, 'Zkušební Montáže', self::PERSON, 'Zkušebnová', self::EMAIL, self::ACCOUNT, $this->ico, $this->birthNumber, str_replace('/', '', $this->birthNumber)] as $needle) {
             self::assertStringNotContainsString($needle, $dump, "V kopii zůstal originální údaj {$needle}.");
@@ -189,6 +193,10 @@ final class AnonymizationServiceTest extends TestCase
         $sealed = $this->sensitive($this->source)->seal($this->birthNumber, PayrollSensitiveField::PERSONAL_IDENTIFIER, $this->supplierId, $this->identifierId);
         $pdo->prepare('UPDATE payroll_person_identifiers SET value_ciphertext = ?, value_hash = ?, value_masked = ? WHERE id = ?')
             ->execute([$sealed->ciphertext, $sealed->lookupHash, $sealed->masked, $this->identifierId]);
+
+        $period = (int) $pdo->query('SELECT COALESCE(MIN(id), 0) FROM accounting_periods')->fetchColumn();
+        $pdo->prepare("INSERT INTO journal_entries (supplier_id, period_id, entry_date, source_type, description) VALUES (?, ?, '2026-01-15', 'manual', ?)")
+            ->execute([$this->supplierId, $period, 'Úhrada od ' . self::EMAIL]);
 
         $payload = json_encode(['company_name' => self::COMPANY, 'ic' => $this->ico, 'contact' => self::PERSON . ' <' . self::EMAIL . '>'], JSON_UNESCAPED_UNICODE);
         $pdo->prepare("INSERT INTO activity_log (supplier_id, action, entity_type, entity_id, payload) VALUES (?, 'client.update', 'client', ?, ?)")
