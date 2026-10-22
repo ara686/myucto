@@ -54,6 +54,7 @@ final class NonprofitResourceCatalogTest extends TestCase
     }
     public function testUnsupportedTimesInvalidFiltersAndEveryMutationRemainForbidden():void
     {
+        $this->db->pdo()->prepare("UPDATE supplier SET legal_form='706' WHERE id=?")->execute([$this->supplier]);
         $token=$this->token();foreach(['nonprofit-funding','nonprofit-capital']as$resource){$path='/api/v1/accounting/catalog/'.$resource;foreach(['date','as_of','known_at']as$field){[$status,$body]=$this->http('GET',$path,$token,[$field=>'2026-01-01']);self::assertSame(409,$status);self::assertSame('nonprofit_catalog_time_unsupported',$body['error']['code']);}foreach([['limit'=>0],['limit'=>101],['after_id'=>-1],['payload'=>[]]]as$query){[$status]=$this->http('GET',$path,$token,$query);self::assertSame(422,$status);}foreach(['POST','PUT','PATCH','DELETE']as$method){[$status]=$this->http($method,$path,$token);self::assertSame(403,$status);}}
     }
     private function assertRedacted(array $body):void

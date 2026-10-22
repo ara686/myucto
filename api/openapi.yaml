@@ -341,7 +341,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/PropertyServiceSettlementPage'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/FrameworkScopeForbidden'
         '404':
           description: Dokument v aktuální firmě neexistuje.
           content:
@@ -387,7 +387,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/PropertyServiceSettlement'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/FrameworkScopeForbidden'
         '404':
           description: Dokument v aktuální firmě neexistuje.
           content:
@@ -433,7 +433,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/PropertyServiceSettlementCurrent'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/FrameworkScopeForbidden'
         '404':
           description: Dokument v aktuální firmě neexistuje.
           content:
@@ -483,7 +483,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/PropertyOpeningCatalog'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/FrameworkScopeForbidden'
         '409':
           description: Neověřitelný původ nebo účetní návaznost.
           content:
@@ -541,7 +541,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/PropertySaldoPage'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/FrameworkScopeForbidden'
         '409':
           description: Neověřitelná návaznost zdrojů nebo neplatný vstup.
           content:
@@ -596,7 +596,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/PropertyReceivableCard'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/FrameworkScopeForbidden'
         '404':
           description: Jednotka neexistuje ve vybrané firmě.
           content:
@@ -656,7 +656,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/PropertyPaymentOperationPage'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/FrameworkScopeForbidden'
         '404':
           description: Jednotka neexistuje ve vybrané firmě.
           content:
@@ -710,7 +710,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/PropertyPaymentHistoryPage'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/FrameworkScopeForbidden'
         '404':
           description: Jednotka neexistuje ve vybrané firmě.
           content:
@@ -762,7 +762,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/PropertyReceivableReconciliation'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/FrameworkScopeForbidden'
         '404':
           description: Jednotka neexistuje ve vybrané firmě.
           content:
@@ -823,7 +823,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/PropertyPartyReconciliation'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/FrameworkScopeForbidden'
         '409':
           description: Neplatné datum, neúplná nebo poškozená historie; výsledek se nenahrazuje nulou.
           content:
@@ -854,7 +854,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/PropertyChargeComponents'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/FrameworkScopeForbidden'
   /api/v1/property/catalog/charges/versions:
     get:
       tags:
@@ -891,7 +891,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/PropertyChargeVersions'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/FrameworkScopeForbidden'
         '409':
           description: Poškozená nebo neověřitelná historická verze.
           content:
@@ -922,7 +922,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/PropertyChargeVersion'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/FrameworkScopeForbidden'
         '409':
           description: Poškozená nebo neověřitelná historická verze.
           content:
@@ -953,7 +953,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/PropertyChargeIssues'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/FrameworkScopeForbidden'
         '409':
           description: Poškozený nebo neověřitelný uložený předpis.
           content:
@@ -984,7 +984,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/PropertyChargeIssue'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/FrameworkScopeForbidden'
         '409':
           description: Poškozený nebo neověřitelný uložený předpis.
           content:
@@ -1029,7 +1029,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/PropertyCatalogProfile'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/FrameworkScopeForbidden'
   /api/v1/property/catalog/unit-legal-roles:
     get:
       tags:
@@ -1073,7 +1073,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/PropertyLegalRolePage'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/FrameworkScopeForbidden'
         '404':
           description: Jednotka nebyla v kontextu firmy a okamžiku znalosti nalezena.
         '409':
@@ -1117,7 +1117,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/PropertyLegalRolePage'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/FrameworkScopeForbidden'
         '404':
           description: Jednotka nebyla v kontextu firmy a okamžiku znalosti nalezena.
         '409':
@@ -1165,7 +1165,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/PropertyCatalogList'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/FrameworkScopeForbidden'
   /api/v1/property/catalog/summary:
     get:
       tags:
@@ -1198,7 +1198,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/PropertyCatalogSummary'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/FrameworkScopeForbidden'
   /api/v1/accounting/catalog/nonprofit-membership/roles:
     get:
       tags:
@@ -1240,7 +1240,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/NonprofitMembershipRolePage'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/FrameworkScopeForbidden'
         '404':
           description: Záznam v kontextu firmy a filtru neexistuje.
         '409':
@@ -1283,7 +1283,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/NonprofitMembershipRolePage'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/FrameworkScopeForbidden'
         '404':
           description: Záznam v kontextu firmy a filtru neexistuje.
         '409':
@@ -1326,7 +1326,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/NonprofitMembershipReceivablePage'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/FrameworkScopeForbidden'
         '404':
           description: Záznam v kontextu firmy a filtru neexistuje.
         '409':
@@ -1358,7 +1358,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/NonprofitMembershipReceivablePage'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/FrameworkScopeForbidden'
         '404':
           description: Záznam v kontextu firmy a filtru neexistuje.
         '409':
@@ -1383,6 +1383,8 @@ paths:
           type: integer
           minimum: 1
       responses:
+        '403':
+          $ref: '#/components/responses/FrameworkScopeForbidden'
         '200':
           description: OK
           content:
@@ -1406,6 +1408,8 @@ paths:
           type: integer
           minimum: 1
       responses:
+        '403':
+          $ref: '#/components/responses/FrameworkScopeForbidden'
         '200':
           description: OK
           content:
@@ -1430,6 +1434,8 @@ paths:
           type: integer
           minimum: 1
       responses:
+        '403':
+          $ref: '#/components/responses/FrameworkScopeForbidden'
         '200':
           description: OK
           content:
@@ -1467,6 +1473,8 @@ paths:
           type: string
           maxLength: 8192
       responses:
+        '403':
+          $ref: '#/components/responses/FrameworkScopeForbidden'
         '200':
           description: OK
           content:
@@ -1493,6 +1501,8 @@ paths:
           type: integer
           minimum: 1
       responses:
+        '403':
+          $ref: '#/components/responses/FrameworkScopeForbidden'
         '200':
           description: OK
           content:
@@ -1544,6 +1554,8 @@ paths:
           type: string
           maxLength: 8192
       responses:
+        '403':
+          $ref: '#/components/responses/FrameworkScopeForbidden'
         '200':
           description: OK
           content:
@@ -1570,6 +1582,8 @@ paths:
           type: integer
           minimum: 1
       responses:
+        '403':
+          $ref: '#/components/responses/FrameworkScopeForbidden'
         '200':
           description: Soubor NDJSON
           content:
@@ -1594,6 +1608,8 @@ paths:
           type: integer
           minimum: 1
       responses:
+        '403':
+          $ref: '#/components/responses/FrameworkScopeForbidden'
         '200':
           description: Soubor
           content:
@@ -1617,6 +1633,8 @@ paths:
           type: integer
           minimum: 1
       responses:
+        '403':
+          $ref: '#/components/responses/FrameworkScopeForbidden'
         '200':
           description: Soubor
           content:
@@ -1639,6 +1657,8 @@ paths:
           type: integer
           minimum: 1
       responses:
+        '403':
+          $ref: '#/components/responses/FrameworkScopeForbidden'
         '200':
           description: Soubor
           content:
@@ -1661,6 +1681,8 @@ paths:
           type: integer
           minimum: 1
       responses:
+        '403':
+          $ref: '#/components/responses/FrameworkScopeForbidden'
         '200':
           description: Soubor
           content:
@@ -1679,6 +1701,8 @@ paths:
       parameters:
       - $ref: '#/components/parameters/SupplierIdHeader'
       responses:
+        '403':
+          $ref: '#/components/responses/FrameworkScopeForbidden'
         '200':
           description: OK
           content:
@@ -1765,6 +1789,8 @@ paths:
           type: integer
           minimum: 1
       responses:
+        '403':
+          $ref: '#/components/responses/FrameworkScopeForbidden'
         '200':
           description: OK
           content:
@@ -1800,6 +1826,8 @@ paths:
           type: integer
           minimum: 1
       responses:
+        '403':
+          $ref: '#/components/responses/FrameworkScopeForbidden'
         '200':
           description: OK
           content:
@@ -1825,6 +1853,8 @@ paths:
           type: integer
           minimum: 1
       responses:
+        '403':
+          $ref: '#/components/responses/FrameworkScopeForbidden'
         '200':
           description: OK
           content:
@@ -32578,7 +32608,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/NonprofitFundingCatalog'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/FrameworkScopeForbidden'
         '404':
           description: Požadovaný zdroj neexistuje v dostupné firmě.
           content:
@@ -32639,7 +32669,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/NonprofitFundingCatalogDetail'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/FrameworkScopeForbidden'
         '404':
           description: Požadovaný zdroj neexistuje v dostupné firmě.
           content:
@@ -32751,7 +32781,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/NonprofitFundingEvidence'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/FrameworkScopeForbidden'
         '404':
           description: Zdroj nebo posouzení neexistuje v dostupné firmě.
           content:
@@ -32832,7 +32862,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/NonprofitCapitalCatalog'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/FrameworkScopeForbidden'
         '404':
           description: Požadovaný zdroj neexistuje v dostupné firmě.
           content:
@@ -32905,7 +32935,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/NonprofitCapitalCatalogDetail'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/FrameworkScopeForbidden'
         '404':
           description: Požadovaný zdroj neexistuje v dostupné firmě.
           content:
@@ -32993,7 +33023,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/NonprofitCapitalEventCatalog'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/FrameworkScopeForbidden'
         '404':
           description: Požadovaný zdroj neexistuje v dostupné firmě.
           content:
@@ -33083,6 +33113,15 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
     Forbidden:
       description: Nedostatečné oprávnění (role)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    FrameworkScopeForbidden:
+      description: >-
+        Nedostatečné oprávnění (role), nebo `framework_scope_denied`: agenda je jen pro firmu,
+        které se týká. Agenda SVJ jen pro společenství vlastníků jednotek (právní forma 145
+        nebo zapnutý profil SVJ), agendy NNO jen pro firmy účtující podle vyhlášky 504/2002 Sb.
+        nebo s právní formou nevýdělečné organizace, převod rámce navíc i pro SVJ.
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }

@@ -55,7 +55,7 @@ final class PropertyAccountingCatalogHttpTest extends TestCase
     {
         $id=$this->case();$denied=$this->tokenFor($this->f['supplier'],0);
         foreach(['service-lifecycles'=>[],'service-lifecycles/'.$id=>[],'service-lifecycles/reconciliation'=>['date'=>'2026-12-31'],'funds/operations'=>[],'funds/balances'=>['date'=>'2026-12-31']] as $path=>$query){[$status]=$this->get($path,$query,$denied);self::assertSame(403,$status,$path);}
-        $other=$this->createIsolatedSupplier($this->db->pdo(),$this->f['supplier']);$foreign=$this->tokenFor($other,1);[$status]=$this->get('service-lifecycles/'.$id,[],$foreign);self::assertSame(409,$status);[$status]=$this->get('service-lifecycles',['unit_id'=>$this->f['units']['U02']],$foreign);self::assertSame(404,$status);[$status]=$this->get('funds/balances',['date'=>'2026-12-31','house_id'=>$this->f['house']['id']],$foreign);self::assertSame(404,$status);
+        $other=$this->createIsolatedSupplier($this->db->pdo(),$this->f['supplier']);$this->db->pdo()->prepare("UPDATE supplier SET legal_form='145' WHERE id=?")->execute([$other]);$foreign=$this->tokenFor($other,1);[$status]=$this->get('service-lifecycles/'.$id,[],$foreign);self::assertSame(409,$status);[$status]=$this->get('service-lifecycles',['unit_id'=>$this->f['units']['U02']],$foreign);self::assertSame(404,$status);[$status]=$this->get('funds/balances',['date'=>'2026-12-31','house_id'=>$this->f['house']['id']],$foreign);self::assertSame(404,$status);
     }
     public function testClosedCursorFiltersLimitsAndUnsupportedKnowledgeAreExplicit():void
     {

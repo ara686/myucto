@@ -10,6 +10,7 @@ final class OpeningCatalogBearerTest extends TestCase
     use CuratedReadBearerFixture;
     public function testActualTokenReadsExistingOpeningCatalogThroughPublicVersionedRoute():void
     {
+        $this->db->pdo()->prepare("UPDATE supplier SET legal_form='145' WHERE id IN (?,?)")->execute([$this->supplier,$this->otherSupplier]);
         $token=$this->token();[$status,$body]=$this->http('GET','/api/v1/property/catalog/openings',$token);self::assertSame(200,$status,json_encode($body));self::assertSame([],$body['items']);
         [$otherStatus,$other]=$this->http('GET','/api/v1/property/catalog/openings',$token,['supplier_id'=>$this->otherSupplier],['X-Supplier-Id'=>(string)$this->otherSupplier]);self::assertSame(200,$otherStatus,json_encode($other));self::assertSame($body,$other);
     }

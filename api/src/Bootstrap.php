@@ -207,6 +207,9 @@ final class Bootstrap
                 \DI\autowire()->constructorParameter(
                     'purchaseApprovals',
                     \DI\get(\MyInvoice\Repository\PurchaseInvoiceApprovalRepository::class),
+                )->constructorParameter(
+                    'frameworkScope',
+                    \DI\get(\MyInvoice\Security\FrameworkScopePolicy::class),
                 ),
             // Historie podání předchozím programem je nepovinná kvůli testům mostu;
             // bez výslovného předání by kontrola duplicitního řádného hlášení neběžela.
