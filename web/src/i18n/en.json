@@ -25280,7 +25280,7 @@
       "saved": "Accounting framework saved.",
       "title": "Accounting framework",
       "testing_warning_title": "Accounting framework 504 is in testing",
-      "testing_warning": "Enable framework 504 for testing only. It is not yet suitable for production accounting. Some operations, including corporate income tax returns (DPPO), remain unsupported."
+      "testing_warning": "Enable framework 504 for testing only. It is not yet suitable for production accounting."
     }
   },
   "oss_rates": {

@@ -25280,7 +25280,7 @@
       "saved": "Účetní rámec byl uložen.",
       "title": "Účetní rámec",
       "testing_warning_title": "Účetní rámec 504 je v testování",
-      "testing_warning": "Rámec 504 povolujte pouze pro testování. Zatím není vhodný pro produkční účetnictví. Některé operace, například přiznání DPPO, zůstávají nepodporované."
+      "testing_warning": "Rámec 504 povolujte pouze pro testování. Zatím není vhodný pro produkční účetnictví."
     }
   },
   "oss_rates": {
