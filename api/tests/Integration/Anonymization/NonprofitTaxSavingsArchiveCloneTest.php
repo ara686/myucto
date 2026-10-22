@@ -20,6 +20,7 @@ use MyInvoice\Service\Tax\Nonprofit\NonprofitTaxSavingsService;
 use MyInvoice\Tests\Integration\Tax\NonprofitDppoStoredArchiveGuardTest;
 use MyInvoice\Tests\Support\OwnedTestDatabaseCleanup;
 use MyInvoice\Tests\Support\OwnedTestDatabaseSessions;
+use MyInvoice\Tests\Support\CloneSandbox;
 use PDO;
 use PHPUnit\Framework\TestCase;
 
@@ -41,7 +42,7 @@ final class NonprofitTaxSavingsArchiveCloneTest extends TestCase
             self::assertSame(['use', 'reverse_use', 'void', 'restore', 'use'], array_column($before['events'], 'operation'));
             self::assertCount(1, $before['bindings']);
 
-            (new AnonymizationService($config))->run(new AnonymizationOptions($source, $target, seed: 'synthetic-dppo-savings-clone'), static function (): void {});
+            $target = CloneSandbox::anonymized($server, $config, $source, 'synthetic-dppo-savings-clone');
 
             self::assertSame($before, $this->graph($server, $source, $supplier), 'Zdrojová evidence se při kopii změnila.');
             $after = $this->graph($server, $target, $supplier);
@@ -191,18 +192,12 @@ final class NonprofitTaxSavingsArchiveCloneTest extends TestCase
             [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION],
         );
         try {
-            $cloner = new DatabaseCloner($server);
-            $plan = $cloner->plan($previous);
-            $cloner->copyTables($plan, $source, static function (): void {});
-            $cloner->finalize($plan, $source);
+            $source = CloneSandbox::acquire($server, $previous, true);
             $this->select($source);
             $test(Config::load(Bootstrap::rootDir()), $source, $target, $server);
         } finally {
             $this->select($previous);
-            OwnedTestDatabaseSessions::close($server, [$source, $target]);
-            foreach ([$source, $target] as $name) {
-                OwnedTestDatabaseCleanup::drop($server, $name, [$source, $target]);
-            }
+            CloneSandbox::releaseAll($server);
         }
     }
 

@@ -19,6 +19,7 @@ use MyInvoice\Service\Tax\Return\TaxReturnService;
 use MyInvoice\Tests\Integration\Tax\NonprofitDppoNativeWorkflowTest;
 use MyInvoice\Tests\Support\OwnedTestDatabaseCleanup;
 use MyInvoice\Tests\Support\OwnedTestDatabaseSessions;
+use MyInvoice\Tests\Support\CloneSandbox;
 use PDO;
 use PHPUnit\Framework\TestCase;
 
@@ -38,7 +39,7 @@ final class NonprofitDppoFinancialArchiveCloneTest extends TestCase
             $sourceDigest = $this->digest($server, $source);
             $tokens = $this->identityTokens($server, $source, $supplier);
 
-            (new AnonymizationService($config))->run(new AnonymizationOptions($source, $target, seed: 'synthetic-dppo-archive-clone'), static function (): void {});
+            $target = CloneSandbox::anonymized($server, $config, $source, 'synthetic-dppo-archive-clone');
 
             self::assertSame($sourceDigest, $this->digest($server, $source), 'Zdrojová databáze se při kopii změnila.');
             $snapshots = $this->snapshots($server, $target);
@@ -255,18 +256,12 @@ final class NonprofitDppoFinancialArchiveCloneTest extends TestCase
             [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION],
         );
         try {
-            $cloner = new DatabaseCloner($server);
-            $plan = $cloner->plan($previous);
-            $cloner->copyTables($plan, $source, static function (): void {});
-            $cloner->finalize($plan, $source);
+            $source = CloneSandbox::acquire($server, $previous, true);
             $this->select($source);
             $test(Config::load(Bootstrap::rootDir()), $source, $target, $server);
         } finally {
             $this->select($previous);
-            OwnedTestDatabaseSessions::close($server, [$source, $target]);
-            foreach ([$source, $target] as $name) {
-                OwnedTestDatabaseCleanup::drop($server, $name, [$source, $target]);
-            }
+            CloneSandbox::releaseAll($server);
         }
     }
 

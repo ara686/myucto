@@ -10,6 +10,7 @@ use MyInvoice\Service\Tax\Nonprofit\{NonprofitLegalProfileService,NonprofitTaxRu
 use MyInvoice\Tests\Support\OwnedTestDatabaseCleanup;
 use PDO;
 use PHPUnit\Framework\TestCase;
+use MyInvoice\Tests\Support\CloneSandbox;
 
 final class NonprofitDppoCloneIntegrationTest extends TestCase
 {
@@ -21,7 +22,7 @@ final class NonprofitDppoCloneIntegrationTest extends TestCase
             $actor=(new \ReflectionProperty($fixture,'actor'))->getValue($fixture);(new NonprofitLegalProfileService($db))->confirm($supplier,$period,['expected_revision'=>0,'idempotency_key'=>'clone-legal','reason'=>'Synthetic reason dppo-private@example.test','profile'=>['kind'=>'narrow_vpp','entity_type'=>'association','main_activity_nonbusiness'=>true,'legal_basis'=>'zdp_17a','evidence'=>'Synthetic statutes dppo-private@example.test']],$actor);(new \ReflectionMethod($fixture,'post'))->invoke($fixture,'602','800000.00');$before=(new \ReflectionMethod($fixture,'confirm'))->invoke($fixture);
             $legal=(new NonprofitLegalProfileService($db))->snapshotProof($supplier,$period);$db->pdo()->commit();
             try{
-                $report=(new AnonymizationService($config))->run(new AnonymizationOptions($source,$target,seed:'synthetic-dppo-profile-j6'),static function():void{});self::assertGreaterThan(0,$report['tables']);
+                $target=CloneSandbox::anonymized($server,$config,$source,'synthetic-dppo-profile-j6');
                 $settings=$config->all();$settings['db']['name']=$target;$cloned=Connection::withoutSharedTestConnection(fn()=>new Connection(new Config($settings,$config->dataDir())));
                 try{$proof=(new NonprofitLegalProfileService($cloned))->snapshotProof($supplier,$period);self::assertNotSame($legal['record_hash'],$proof['record_hash']);self::assertSame($legal['id'],$proof['id']);self::assertStringNotContainsString('dppo-private@example.test',NonprofitTaxRules::canonicalJson($proof));
                     $container=Bootstrap::buildContainer();$container->set(Connection::class,$cloned);$row=(new \MyInvoice\Service\Accounting\Dimension\DimensionPeriodGuard($cloned))->transaction(function()use($cloned,$container,$supplier,$period):array{(new \MyInvoice\Service\Accounting\Dimension\DimensionPeriodGuard($cloned))->lockPeriods($supplier);$row=$container->get(\MyInvoice\Repository\NonprofitTaxAssessmentRepository::class)->latest($supplier,$period,true);$container->get(\MyInvoice\Service\Tax\Nonprofit\J6FundingCapacity::class)->assertCurrentReceipt($supplier,$row);return$row;});
@@ -55,8 +56,8 @@ final class NonprofitDppoCloneIntegrationTest extends TestCase
             }
             $db->pdo()->commit();
             $query=match($graph){'command'=>'SELECT * FROM nonprofit_tax_saving_commands ORDER BY id','orphan_binding'=>'SELECT * FROM nonprofit_tax_saving_cost_bindings ORDER BY event_id',default=>'SELECT s.id,s.snapshot_json,s.source_manifest,s.xml_content,t.xml_content AS copy_xml FROM income_tax_return_snapshots s JOIN tax_submissions t ON t.supplier_id=s.supplier_id AND t.xml_sha256=s.xml_sha256 ORDER BY s.id,t.id'};$before=$db->pdo()->query($query)->fetchAll(PDO::FETCH_ASSOC);self::assertNotEmpty($before);
-            try{try{(new AnonymizationService($config))->run(new AnonymizationOptions($source,$target,seed:'synthetic-dppo-archive-rejection'),static function():void{});self::fail('Unsupported financial archive was anonymized');}catch(\RuntimeException $e){self::assertStringContainsString($expected,$e->getMessage());}
-                self::assertSame($before,$db->pdo()->query($query)->fetchAll(PDO::FETCH_ASSOC));$q=$server->prepare('SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME=?');$q->execute([$target]);self::assertSame(0,(int)$q->fetchColumn());
+            try{$target=CloneSandbox::acquire($server,$source);try{(new AnonymizationService($config))->anonymizeCopy(new AnonymizationOptions($source,$target,seed:'synthetic-dppo-archive-rejection'),static function():void{});self::fail('Unsupported financial archive was anonymized');}catch(\RuntimeException $e){self::assertStringContainsString($expected,$e->getMessage());}
+                self::assertSame($before,$db->pdo()->query($query)->fetchAll(PDO::FETCH_ASSOC));$server->exec('USE '.DatabaseCloner::quote($target));self::assertSame($before,$server->query($query)->fetchAll(PDO::FETCH_ASSOC),'Kopie se před odmítnutím nesmí přepsat.');
             }finally{(new \ReflectionMethod($fixture,'tearDown'))->invoke($fixture);}
         },$graph!=='orphan_binding');
     }
@@ -64,8 +65,8 @@ final class NonprofitDppoCloneIntegrationTest extends TestCase
     {
         $base=Config::load(Bootstrap::rootDir());$previous=(string)getenv('MYINVOICE_DB_NAME');self::assertStringEndsWith('_test',$previous);self::assertContains($base->get('db.host'),['localhost','127.0.0.1','::1']);
         $prefix='myucto_dppo_lifecycle_'.bin2hex(random_bytes(5));$source=$prefix.'_source_test';$target=$prefix.'_target_test';$server=new PDO('mysql:host='.$base->get('db.host').';port='.$base->get('db.port',3306).';charset=utf8mb4',$base->get('db.user'),$base->get('db.pass',''),[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
-        try{$cloner=new DatabaseCloner($server);$plan=$cloner->plan($previous);$cloner->copyTables($plan,$source,static function():void{});if($installTriggers)$cloner->finalize($plan,$source);$this->select($source);$config=Config::load(Bootstrap::rootDir());$test($config,$source,$target,$server);
-        }finally{$this->select($previous);\MyInvoice\Tests\Support\OwnedTestDatabaseSessions::close($server,[$source,$target]);foreach([$source,$target]as$name)OwnedTestDatabaseCleanup::drop($server,$name,[$source,$target]);}
+        try{$source=CloneSandbox::acquire($server,$previous,$installTriggers);$this->select($source);$config=Config::load(Bootstrap::rootDir());$test($config,$source,$target,$server);
+        }finally{$this->select($previous);CloneSandbox::releaseAll($server);}
     }
     private function select(string $database):void
     {putenv('MYINVOICE_DB_NAME='.$database);$_ENV['MYINVOICE_DB_NAME']=$database;$_SERVER['MYINVOICE_DB_NAME']=$database;}
