@@ -9,6 +9,8 @@ use PDO;
 final class AccountDefinitionRepository
 {
     private const FIELDS=['name','normal_side','tax_deductibility','is_active'];
+    /** Jen sloupce, které relace čtou: celý řádek nese LONGTEXT a mezivýsledek okna by skončil v dočasné tabulce na disku. */
+    private const HISTORY_COLUMNS='d.id,d.supplier_id,d.account_id,d.effective_from,d.name,d.normal_side,d.tax_deductibility,d.is_active';
     public function __construct(private readonly Connection $db) {}
     public static function date(string $date): string
     {
@@ -23,7 +25,7 @@ final class AccountDefinitionRepository
         $lock=$currentRead?' FOR UPDATE':'';
         return "(SELECT ".self::definitionColumns()."
             FROM chart_of_accounts a LEFT JOIN
-            (SELECT d.*,ROW_NUMBER() OVER(PARTITION BY supplier_id,account_id ORDER BY effective_from DESC,id DESC) AS rn
+            (SELECT ".self::HISTORY_COLUMNS.",ROW_NUMBER() OVER(PARTITION BY supplier_id,account_id ORDER BY effective_from DESC,id DESC) AS rn
              FROM accounting_account_definition_history d WHERE effective_from<='$date'$scope$lock) h
              ON h.supplier_id=a.supplier_id AND h.account_id=a.id AND h.rn=1
             WHERE (h.id IS NOT NULL OR NOT EXISTS(SELECT 1 FROM accounting_account_definition_history f WHERE f.supplier_id=a.supplier_id AND f.account_id=a.id))".($supplier===null?'':' AND a.supplier_id='.$supplier).$lock.')';
@@ -42,7 +44,7 @@ final class AccountDefinitionRepository
         $lock=$currentRead?' FOR UPDATE':'';
         return "JOIN (SELECT ".self::definitionColumns().",h.effective_from AS definition_from,h.next_from AS definition_until
             FROM chart_of_accounts a LEFT JOIN
-            (SELECT d.*,LEAD(effective_from) OVER(PARTITION BY supplier_id,account_id ORDER BY effective_from,id) AS next_from
+            (SELECT ".self::HISTORY_COLUMNS.",LEAD(effective_from) OVER(PARTITION BY supplier_id,account_id ORDER BY effective_from,id) AS next_from
              FROM accounting_account_definition_history d WHERE supplier_id=$supplier$lock) h
              ON h.supplier_id=a.supplier_id AND h.account_id=a.id WHERE a.supplier_id=$supplier$lock) a
             ON a.id=l.account_id AND a.supplier_id=l.supplier_id

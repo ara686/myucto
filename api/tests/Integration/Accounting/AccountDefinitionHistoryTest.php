@@ -63,6 +63,25 @@ final class AccountDefinitionHistoryTest extends TestCase
         foreach(['2025-12-31'=>'credit','2026-01-01'=>null,'2027-01-01'=>'debit'] as $date=>$side){$php=[];foreach($this->definitions->listForDate($this->supplier,$date) as $row)$php[$row['account_code']]=$row['normal_side'];$sql=$this->db->pdo()->query('SELECT account_code,normal_side FROM '.AccountDefinitionRepository::relation($date,$this->supplier).' a')->fetchAll(\PDO::FETCH_KEY_PAIR);ksort($php);ksort($sql);self::assertSame($php,$sql);self::assertSame($side,$php['336']);self::assertSame('debit',$php['336.007']);}
         $other=$this->createIsolatedSupplier($this->db->pdo(),$this->supplier);$chart=$this->container->get(ChartOfAccountsRepository::class);$id=$chart->insert($other,['account_code'=>'336','name'=>'Synthetic other tenant','account_type'=>'liability','normal_side'=>'credit','is_synthetic'=>true]);self::assertSame('credit',$chart->findById($other,$id,'2026-12-31')['normal_side']);self::assertNull($this->definitions->findForDate($other,$this->ids['336'],'2026-12-31'));
     }
+    /**
+     * Relace definic čte z historie jen sloupce, které vnější dotaz potřebuje. Celý řádek
+     * nese `definition_json` (LONGTEXT) a s ním by se mezivýsledek window funkce nevešel
+     * do paměťové tabulky: každé čtení osnovy (předvaha, účtování, výkazy) by zakládalo
+     * dočasnou tabulku na disku.
+     */
+    public function testDefinitionRelationsDoNotMaterializeOnDisk(): void
+    {
+        $this->targetDefinitions();
+        $p=$this->db->pdo();
+        $disk=static fn():int=>(int)$p->query("SHOW SESSION STATUS LIKE 'Created_tmp_disk_tables'")->fetch(\PDO::FETCH_NUM)[1];
+        foreach(['relation'=>'SELECT COUNT(*),MIN(name),MAX(normal_side) FROM '.AccountDefinitionRepository::relation('2026-06-30',$this->supplier).' a',
+            'current relation'=>'SELECT COUNT(*),MIN(name),MAX(normal_side) FROM '.AccountDefinitionRepository::relation('2026-06-30',$this->supplier,true).' a',
+            'journal join'=>'SELECT COUNT(*),MIN(a.name),MAX(a.normal_side) FROM journal_entry_lines l JOIN journal_entries e ON e.id=l.entry_id AND e.supplier_id=l.supplier_id '.AccountDefinitionRepository::journalJoin($this->supplier).' WHERE l.supplier_id='.$this->supplier] as $label=>$sql){
+            $before=$disk();$rows=$p->query($sql)->fetch(\PDO::FETCH_NUM);
+            self::assertGreaterThan(0,(int)$rows[0],$label);
+            self::assertSame(0,$disk()-$before,$label.': definice účtů se nesmí materializovat do dočasné tabulky na disku.');
+        }
+    }
     public function testCreatedHistoricalAccountDoesNotExistBeforeItsExplicitBirthDate(): void
     {
         $this->targetDefinitions();$chart=$this->container->get(ChartOfAccountsRepository::class);$id=$chart->insert($this->supplier,['account_code'=>'336.008','name'=>'Synthetic new dated account','account_type'=>'liability','normal_side'=>'credit','parent_id'=>$this->ids['336']],'2027-03-01',$this->actor);
