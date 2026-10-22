@@ -34184,6 +34184,56 @@
     }
   },
   "stereo_nx": {
+    "partner_countries": {
+      "title": "Kontrola zemí protistran",
+      "hint": "U protistran bez spolehlivě určené země můžete načíst návrh z ARES nebo VIES. Návrh se použije pouze po vašem výslovném potvrzení pro tuto zdrojovou protistranu. Neurčené země můžete ponechat k ruční kontrole po importu.",
+      "changed": "Potvrzení země se změnilo. Před převodem spusťte novou zkoušku nanečisto.",
+      "empty": "Žádné protistrany ke kontrole země.",
+      "unnamed": "Protistrana bez názvu",
+      "ico": "IČO",
+      "dic": "DIČ",
+      "source_country": "Země ve zdroji",
+      "unknown_country": "Neurčena",
+      "confirmed": "Pro import potvrzeno: {country}",
+      "previous_confirmation": "Předchozí zkouška používala zemi {country}. Bez aktuálního potvrzení se tato volba nepoužije.",
+      "documents": "Dotčené doklady: {count}",
+      "more_documents": "Zobrazit další doklady",
+      "lookup": "Dohledat v ARES",
+      "lookup_again": "Zkusit ARES znovu",
+      "undo": "Zrušit potvrzení",
+      "ineligible": "ARES vyžaduje české osmimístné IČO bez zahraničního DIČ. VIES vyžaduje DIČ s podporovaným prefixem země. Identifikátor neupravujeme na náhodné české IČO; ověřte původní podklady.",
+      "loading": "Načítám návrh z ARES…",
+      "proposal_title": "Návrh z aktuálního ARES",
+      "company_name": "Název",
+      "address": "Adresa",
+      "proposed_country": "Navržená země",
+      "confirm": "Potvrdit zemi pro import",
+      "scope": "Protistrana je použita na {count} dokladech. Potvrzení země {country} platí pouze pro import této zdrojové protistrany. Ostatní údaje protistrany tím nepotvrzujete. Návrh nic neukládá do adresáře klientů.",
+      "history_hint": "Známé země historických dokladů se nepřepíšou. Aktuální registr nenahrazuje kontrolu historického dokladu ani ověření ostatních údajů protistrany.",
+      "errors": {
+        "not_found": "ARES protistranu nenalezl. Země nebyla potvrzena; můžete hledání zopakovat nebo ověřit původní podklady.",
+        "mismatched_ico": "ARES vrátil jiné IČO. Návrh nelze bezpečně použít a země nebyla potvrzena.",
+        "invalid_country": "Výsledek ARES neobsahuje platný dvoupísmenný kód země. Země nebyla potvrzena.",
+        "unavailable": "ARES není dostupný nebo se dotaz nepodařil. Země nebyla potvrzena. Zkuste to znovu později.",
+        "vies_unavailable": "VIES nebo národní registr není dostupný. Nejde o potvrzení neplatného DIČ; země nebyla potvrzena. Zkuste dotaz později znovu.",
+        "vies_invalid": "VIES nepotvrdil platnou registraci pro zadané DIČ. Země nebyla potvrzena; ověřte číslo a původní doklady.",
+        "vies_mismatched_vat": "VIES vrátil jiné nebo chybějící DIČ. Návrh nelze bezpečně použít a země nebyla potvrzena.",
+        "vies_country_mismatch": "Země vrácená VIES neodpovídá prefixu zadaného DIČ nebo chybí. Země nebyla potvrzena."
+      },
+      "vies_lookup": "Dohledat ve VIES",
+      "vies_again": "Zkusit VIES znovu",
+      "vies_loading": "Načítám výsledek VIES…",
+      "vies_proposal_title": "Návrh podle registrace DIČ ve VIES",
+      "vies_hint": "VIES ověřuje současnou registraci DIČ k DPH. Prefix navrhuje zemi registrace, ale sám neprokazuje sídlo protistrany ani historický stav. Před potvrzením ověřte zemi podle původního dokladu. Plátcovství ani daňové zařazení se tím nemění.",
+      "xi_unsupported": "Prefix XI označuje zvláštní režim Severního Irska pro DPH u zboží. Nemá zde samostatnou ISO zemi; nelze jej automaticky převést na GB ani bezpečně potvrdit zemi protistrany. Ověřte původní doklady.",
+      "directory_only": "Samostatná karta adresáře bez souvisejících převáděných dokladů. Nejde o chybějící doklad; zemi můžete ověřit pro převod této karty.",
+      "directory_scope": "Potvrzení země {country} platí pouze pro import této samostatné karty adresáře. Ostatní údaje karty tím nepotvrzujete. Samotný návrh nic neukládá do adresáře klientů.",
+      "step": "Země protistran",
+      "reload": "Načíst protistrany znovu",
+      "loading_partners": "Načítám protistrany ze zálohy…",
+      "expand": "Rozbalit",
+      "collapse": "Sbalit"
+    },
     "messages": {
       "detail_occurrences": "Počet výskytů: {count}",
       "title": "Zprávy podle důvodu",
@@ -34207,7 +34257,8 @@
       "causes": {
         "document_rounding_account_review": "Účet zaokrouhlení vyžaduje kontrolu",
         "document_item_account_ambiguous": "Nejednoznačný účet položky dokladu",
-        "document_items_reconstructed": "Položky dokladu sestavené z účetního deníku"
+        "document_items_reconstructed": "Položky dokladu sestavené z účetního deníku",
+        "partner_country_unresolved_directory": "Neurčená země karty v adresáři"
       }
     },
     "mapping": {

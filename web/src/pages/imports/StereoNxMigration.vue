@@ -4,7 +4,7 @@ import { RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '@/composables/useToast'
 import { formatDate } from '@/composables/useFormat'
-import { stereoNxApi, type StereoAccountMapping, type StereoAccountMappingProposal, type StereoCompany, type StereoPreview, type StereoProtocolRun, type StereoReport, type StereoUpload } from '@/api/stereoNx'
+import { stereoNxApi, type StereoAccountMapping, type StereoAccountMappingProposal, type StereoCompany, type StereoCountryCandidate, type StereoPartnerCountries, type StereoPreview, type StereoProtocolRun, type StereoReport, type StereoUpload } from '@/api/stereoNx'
 import type { MoneyS3Step } from '@/api/moneyS3'
 import { btnOutline, ICONS } from '@/components/ui/buttonStyles'
 import ActionBar, { type ActionItem } from '@/components/ui/ActionBar.vue'
@@ -12,6 +12,7 @@ import MoneyS3Protocol from '@/components/migration/MoneyS3Protocol.vue'
 import StereoNxSummary from '@/components/migration/StereoNxSummary.vue'
 import StereoNxMessages from '@/components/migration/StereoNxMessages.vue'
 import StereoNxAccountMapping from '@/components/migration/StereoNxAccountMapping.vue'
+import StereoNxPartnerCountries from '@/components/migration/StereoNxPartnerCountries.vue'
 import ImportJobProgress from '@/components/exchange/ImportJobProgress.vue'
 import CompanyProfileBox from '@/components/settings/CompanyProfileBox.vue'
 import type { FileImportJob } from '@/api/imports'
@@ -41,11 +42,16 @@ const blankCountryIsCz = ref(false)
 const matchBankAccountSeries = ref(false)
 const accountingMode = ref<string | null>(null)
 const needsMapping = computed(() => accountingMode.value === 'double_entry')
-const dryStep = computed(() => needsMapping.value ? 4 : 3)
-const importStep = computed(() => needsMapping.value ? 5 : 4)
+const countryStep = computed(() => needsMapping.value ? 4 : 3)
+const dryStep = computed(() => countryStep.value + 1)
+const importStep = computed(() => dryStep.value + 1)
 const mappingProposal = ref<StereoAccountMappingProposal | null>(null)
 const accountMapping = ref<StereoAccountMapping | null>(null)
 const mappingValid = ref(false)
+const partnerCountries = ref<StereoPartnerCountries>({})
+const countryReviewPartners = ref<StereoCountryCandidate[]>([])
+const countriesLoaded = ref(false)
+const partnerCountriesChanged = ref(false)
 const profileFilled = ref<string[]>([])
 const selectedProfileFields = ref<string[]>([])
 // Zkouška i převod běží na serveru jako job; stav jobu pro ukazatel průběhu.
@@ -91,7 +97,7 @@ async function downloadProtocol(): Promise<void> {
  * Job spuštěný z průvodce: zkouška i převod běží na serveru dál, i když uživatel stránku
  * opustí. Po návratu ho průvodce podle tohoto záznamu naváže, i s volbami, se kterými běžel.
  */
-interface StoredRun { supplierId: number; token: string; jobId: number; mode: 'dry_run' | 'import'; company: number; blankCountryIsCz: boolean; matchBankAccountSeries?: boolean; accountMapping?: StereoAccountMapping | null; accountingMode?: string | null; deleteAfterImport: boolean; reportCompany?: { name: string; ico: string } | null }
+interface StoredRun { supplierId: number; token: string; jobId: number; mode: 'dry_run' | 'import'; company: number; blankCountryIsCz: boolean; matchBankAccountSeries?: boolean; accountMapping?: StereoAccountMapping | null; partnerCountries?: StereoPartnerCountries; accountingMode?: string | null; deleteAfterImport: boolean; reportCompany?: { name: string; ico: string } | null }
 const RUN_KEY = 'myucto.stereo-nx.job'
 function readRun(): StoredRun | null {
   try {
@@ -110,6 +116,13 @@ const selectedCompany = computed(() => companies.value.find(item => item.index =
 const bankAccountSeries = computed(() => selectedCompany.value?.bank_account_series)
 const bankSeriesAllowed = computed(() => !bankAccountSeries.value?.ambiguous && (!bankAccountSeries.value?.requires_confirmation || matchBankAccountSeries.value))
 watch(selected, () => { matchBankAccountSeries.value = false }, { flush: 'sync' })
+watch([selected, token], () => {
+  partnerCountries.value = {}
+  countryReviewPartners.value = []
+  countriesLoaded.value = false
+  partnerCountriesChanged.value = false
+}, { flush: 'sync' })
+watch([blankCountryIsCz, matchBankAccountSeries], () => { countriesLoaded.value = false }, { flush: 'sync' })
 watch([selected, token, matchBankAccountSeries], () => {
   mappingProposal.value = null
   accountMapping.value = null
@@ -120,6 +133,14 @@ function updateAccountMapping(value: StereoAccountMapping): void {
   accountMapping.value = value
   invalidateDryRun()
   writeRun(null)
+}
+function updatePartnerCountries(value: StereoPartnerCountries): void {
+  if (busy.value || importReport.value?.database_writes === true || JSON.stringify(partnerCountries.value) === JSON.stringify(value)) return
+  partnerCountries.value = { ...value }
+  partnerCountriesChanged.value = true
+  invalidateDryRun()
+  writeRun(null)
+  currentStep.value = countryStep.value
 }
 const modeMismatch = computed(() => !!selectedCompany.value?.identity.accounting_mode && !!target.value?.accounting_mode && selectedCompany.value.identity.accounting_mode !== target.value.accounting_mode)
 function modeLabel(mode: string | null | undefined): string {
@@ -144,6 +165,7 @@ const steps = computed(() => [
   { number: 1, label: t('stereo_nx.step1') },
   { number: 2, label: t('stereo_nx.step2') },
   ...(needsMapping.value ? [{ number: 3, label: t('stereo_nx.mapping.step') }] : []),
+  { number: countryStep.value, label: t('stereo_nx.partner_countries.step') },
   { number: dryStep.value, label: t('stereo_nx.step3') },
   { number: importStep.value, label: t('stereo_nx.step4') },
 ])
@@ -153,7 +175,8 @@ function canGoTo(step: number): boolean {
   if (step === 1) return true
   if (step === 2) return !!token.value && companies.value.length > 0
   if (needsMapping.value && step === 3) return companyReady.value === true
-  if (step === dryStep.value) return canRun.value === true
+  if (step === countryStep.value) return canRun.value === true
+  if (step === dryStep.value) return canRun.value === true && countriesLoaded.value
   return dryReport.value?.ok === true || importReport.value !== null
 }
 
@@ -161,11 +184,42 @@ function goTo(step: number): void {
   if (!canGoTo(step)) return
   currentStep.value = step
   if (needsMapping.value && step === 3 && !mappingProposal.value) void loadAccountMapping()
+  if (step === countryStep.value && !countriesLoaded.value) void loadPartnerCountries()
 }
 
 function continueFromCompany(): void {
   currentStep.value = 3
   if (needsMapping.value && !mappingProposal.value) void loadAccountMapping()
+  if (!needsMapping.value && !countriesLoaded.value) void loadPartnerCountries()
+}
+
+function openCountries(): void {
+  currentStep.value = countryStep.value
+  if (!countriesLoaded.value) void loadPartnerCountries()
+}
+
+async function loadPartnerCountries(): Promise<void> {
+  if (!token.value || selected.value === null || !canRun.value || busy.value) return
+  const supplierId = supplier.currentSupplierId
+  const uploadToken = token.value
+  const company = selected.value
+  const blank = blankCountryIsCz.value
+  const match = matchBankAccountSeries.value
+  busy.value = true
+  error.value = ''
+  try {
+    const partners = await stereoNxApi.partnerCountries(uploadToken, company, blank, match, partnerCountries.value)
+    if (supplier.currentSupplierId !== supplierId || token.value !== uploadToken || selected.value !== company || blankCountryIsCz.value !== blank || matchBankAccountSeries.value !== match) return
+    countryReviewPartners.value = partners
+    countriesLoaded.value = true
+  } catch (caught) {
+    if (supplier.currentSupplierId !== supplierId || token.value !== uploadToken || selected.value !== company) return
+    countriesLoaded.value = false
+    error.value = message(caught)
+    toast.error(error.value)
+  } finally {
+    busy.value = false
+  }
 }
 
 async function loadAccountMapping(): Promise<void> {
@@ -201,8 +255,12 @@ const actions = computed<ActionItem[]>(() => {
     { key: 'read', label: t('stereo_nx.read_again'), icon: 'cycle', tier: 'secondary', variant: 'neutral', disabled: busy.value, run: () => { void preview() } },
   ]
   if (needsMapping.value && currentStep.value === 3) return [
-    { key: 'continue', label: t('stereo_nx.continue'), icon: 'check', tier: 'primary', variant: 'primary', disabled: busy.value || !canRun.value, run: () => { currentStep.value = dryStep.value } },
+    { key: 'continue', label: t('stereo_nx.continue'), icon: 'check', tier: 'primary', variant: 'primary', disabled: busy.value || !canRun.value, run: openCountries },
     { key: 'mapping-reload', label: t('stereo_nx.mapping.reload'), icon: 'cycle', tier: 'secondary', variant: 'neutral', disabled: busy.value, run: () => { void loadAccountMapping() } },
+  ]
+  if (currentStep.value === countryStep.value) return [
+    { key: 'continue', label: t('stereo_nx.continue'), icon: 'check', tier: 'primary', variant: 'primary', disabled: busy.value || !countriesLoaded.value, run: () => { currentStep.value = dryStep.value } },
+    { key: 'countries-reload', label: t('stereo_nx.partner_countries.reload'), icon: 'cycle', tier: 'secondary', variant: 'neutral', disabled: busy.value, run: () => { void loadPartnerCountries() } },
   ]
   if (currentStep.value === dryStep.value) return dryReport.value?.ok === true ? [
     { key: 'continue', label: t('stereo_nx.continue'), icon: 'check', tier: 'primary', variant: 'primary', disabled: busy.value, run: () => { currentStep.value = importStep.value } },
@@ -279,6 +337,7 @@ async function resumeRun(): Promise<void> {
   matchBankAccountSeries.value = stored.matchBankAccountSeries === true
   accountingMode.value = stored.accountingMode ?? target.value?.accounting_mode ?? null
   accountMapping.value = stored.accountMapping ?? null
+  partnerCountries.value = stored.partnerCountries ?? {}
   mappingValid.value = accountMapping.value !== null
   deleteAfterImport.value = hasUpload && stored.deleteAfterImport
   reportCompany.value = stored.reportCompany ?? null
@@ -448,8 +507,8 @@ async function run(mode: 'dry_run' | 'import', resumeJobId: number | null = null
   error.value = ''
   cleanupWarning.value = ''
   try {
-    const jobId = resumeJobId ?? await stereoNxApi.start(uploadToken, company, mode, blankCountryIsCz.value, matchBankAccountSeries.value, needsMapping.value ? accountMapping.value ?? undefined : undefined)
-    if (supplierId) writeRun({ supplierId, token: uploadToken, jobId, mode, company, blankCountryIsCz: blankCountryIsCz.value, matchBankAccountSeries: matchBankAccountSeries.value, accountMapping: accountMapping.value, accountingMode: accountingMode.value, deleteAfterImport: deleteAfterImport.value, reportCompany: selectedCompany.value ? { name: selectedCompany.value.identity.name, ico: selectedCompany.value.identity.ico } : reportCompany.value })
+    const jobId = resumeJobId ?? await stereoNxApi.start(uploadToken, company, mode, blankCountryIsCz.value, matchBankAccountSeries.value, needsMapping.value ? accountMapping.value ?? undefined : undefined, partnerCountries.value)
+    if (supplierId) writeRun({ supplierId, token: uploadToken, jobId, mode, company, blankCountryIsCz: blankCountryIsCz.value, matchBankAccountSeries: matchBankAccountSeries.value, accountMapping: accountMapping.value, partnerCountries: partnerCountries.value, accountingMode: accountingMode.value, deleteAfterImport: deleteAfterImport.value, reportCompany: selectedCompany.value ? { name: selectedCompany.value.identity.name, ico: selectedCompany.value.identity.ico } : reportCompany.value })
     const report = await stereoNxApi.follow(uploadToken, jobId, current => {
       if (supplier.currentSupplierId === supplierId && token.value === uploadToken) job.value = current
     })
@@ -457,6 +516,11 @@ async function run(mode: 'dry_run' | 'import', resumeJobId: number | null = null
     reportCompany.value = selectedCompany.value ? { name: selectedCompany.value.identity.name, ico: selectedCompany.value.identity.ico } : reportCompany.value
     if (mode === 'dry_run') {
       dryReport.value = report
+      if (report.partner_country_candidates !== undefined || report.ok) {
+        countryReviewPartners.value = report.partner_country_candidates ?? []
+      }
+      countriesLoaded.value = true
+      partnerCountriesChanged.value = false
       dryReportReference.value = supplierId ? { supplierId, token: uploadToken, jobId } : null
       importReport.value = null
       confirmed.value = false
@@ -659,7 +723,7 @@ const importProtocol = computed(() => importReport.value ? asProtocol(importRepo
       <p class="mt-1 text-sm text-neutral-500">{{ t('stereo_nx.intro') }}</p>
     </div>
 
-    <ol class="grid grid-cols-2 gap-2" :class="needsMapping ? 'sm:grid-cols-5' : 'sm:grid-cols-4'">
+    <ol class="grid grid-cols-2 gap-2" :class="needsMapping ? 'sm:grid-cols-3 xl:grid-cols-6' : 'sm:grid-cols-5'">
       <li v-for="step in steps" :key="step.number">
         <button type="button" :data-testid="`stereo-step-${step.number}`" :disabled="!canGoTo(step.number)"
           class="flex w-full items-center rounded-lg border px-3 py-3 text-left text-sm transition-colors"
@@ -756,6 +820,11 @@ const importProtocol = computed(() => importReport.value ? asProtocol(importRepo
     <section v-else-if="needsMapping && currentStep === 3" class="rounded-lg border border-neutral-200 bg-surface p-5 shadow-sm">
       <p v-if="busy" class="text-sm text-primary-700" role="status">{{ t('stereo_nx.mapping.loading') }}</p>
       <StereoNxAccountMapping v-if="mappingProposal && accountMapping" :proposal="mappingProposal" :model-value="accountMapping" :disabled="busy" @update:model-value="updateAccountMapping" @valid="mappingValid = $event" />
+    </section>
+
+    <section v-else-if="currentStep === countryStep" data-testid="stereo-country-step" class="rounded-lg border border-neutral-200 bg-surface p-5 shadow-sm">
+      <p v-if="busy" class="mb-4 text-sm text-primary-700" role="status">{{ t('stereo_nx.partner_countries.loading_partners') }}</p>
+      <StereoNxPartnerCountries v-if="countriesLoaded" :partners="countryReviewPartners" :model-value="partnerCountries" :disabled="busy || importReport?.database_writes === true" :changed="partnerCountriesChanged" @update:model-value="updatePartnerCountries" />
     </section>
 
     <section v-else-if="currentStep === dryStep" data-testid="stereo-dry-report" class="rounded-lg border border-neutral-200 bg-surface p-5 shadow-sm">

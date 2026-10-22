@@ -3,25 +3,29 @@ import { flushPromises, mount } from '@vue/test-utils'
 import StereoNxMigration from '../StereoNxMigration.vue'
 import MoneyS3Protocol from '@/components/migration/MoneyS3Protocol.vue'
 import StereoNxMessages from '@/components/migration/StereoNxMessages.vue'
-import type { StereoAccountMapping, StereoAccountMappingProposal } from '@/api/stereoNx'
+import StereoNxPartnerCountries from '@/components/migration/StereoNxPartnerCountries.vue'
+import type { StereoAccountMapping, StereoAccountMappingProposal, StereoCountryCandidate, StereoPartnerCountries } from '@/api/stereoNx'
 
 const m = vi.hoisted(() => ({
-  downloadProtocol: vi.fn(), uploads: vi.fn(), upload: vi.fn(), preview: vi.fn(), run: vi.fn(), remove: vi.fn(), fillCompanyProfile: vi.fn(), accountMapping: vi.fn(),
+  downloadProtocol: vi.fn(), uploads: vi.fn(), upload: vi.fn(), preview: vi.fn(), run: vi.fn(), remove: vi.fn(), fillCompanyProfile: vi.fn(), accountMapping: vi.fn(), partnerCountries: vi.fn(), lookupAres: vi.fn(), lookupVies: vi.fn(),
   locale: { value: 'cs' }, toastError: vi.fn(), supplierStore: undefined as any,
   // Stránka job spustí (`start`) a sleduje (`follow`); testy dál pracují s jedním `run`.
-  jobs: new Map<number, [string, number, string, boolean, boolean, StereoAccountMapping | undefined]>(),
+  jobs: new Map<number, [string, number, string, boolean, boolean, StereoAccountMapping | undefined, StereoPartnerCountries | undefined]>(),
 }))
 
+vi.mock('@/api/clients', () => ({ clientsApi: { lookupAres: m.lookupAres, lookupVies: m.lookupVies } }))
 vi.mock('@/api/stereoNx', () => ({ stereoNxApi: {
-  downloadProtocol: m.downloadProtocol, uploads: m.uploads, upload: m.upload, preview: m.preview, run: m.run, remove: m.remove, fillCompanyProfile: m.fillCompanyProfile, accountMapping: m.accountMapping,
-  start: async (token: string, company: number, mode: string, blank: boolean, match: boolean = false, mapping?: StereoAccountMapping) => {
+  downloadProtocol: m.downloadProtocol, uploads: m.uploads, upload: m.upload, preview: m.preview, run: m.run, remove: m.remove, fillCompanyProfile: m.fillCompanyProfile, accountMapping: m.accountMapping, partnerCountries: m.partnerCountries,
+  start: async (token: string, company: number, mode: string, blank: boolean, match: boolean = false, mapping?: StereoAccountMapping, countries?: StereoPartnerCountries) => {
     const id = m.jobs.size + 1
-    m.jobs.set(id, [token, company, mode, blank, match, mapping])
+    m.jobs.set(id, [token, company, mode, blank, match, mapping, countries])
     return id
   },
   follow: async (_token: string, id: number, onJob?: (job: object) => void) => {
-    const [token, company, mode, blank] = m.jobs.get(id)!
-    return m.run(token, company, mode, blank, onJob ?? (() => {}))
+    const [token, company, mode, blank, , , countries] = m.jobs.get(id)!
+    return countries && Object.keys(countries).length
+      ? m.run(token, company, mode, blank, onJob ?? (() => {}), countries)
+      : m.run(token, company, mode, blank, onJob ?? (() => {}))
   },
 } }))
 vi.mock('@/stores/supplier', async () => {
@@ -47,6 +51,11 @@ const dryReport = { ok: true, counts: { issued: 1, purchases: 1, requires_draft:
   review_reasons: { vat_participation_unassigned: 1 }, errors: [], warnings: [],
   written: { issued: 1, purchases: 1 } }
 const importReport = { ...dryReport, database_writes: true, written: { issued: 1, purchases: 1 } }
+const countryCandidate: StereoCountryCandidate = {
+  source_key: 'synthetic-vendor', name: 'Syntetický dodavatel', ico: '12345678', dic: '',
+  source_country: '', country_code: 'CZ', confirmed_country: null,
+  documents: [{ source_key: 'synthetic-purchase', document_no: 'SYN-PF-1', kind: 'purchase' }],
+}
 const mappingProposal: StereoAccountMappingProposal = {
   accounts: { '343': '343', '501001': '501.001' }, bank_accounts: { SYN: '221.001' },
   vat: { input: '343.100', output: '343.200', settlement: '343.900', unresolved: null },
@@ -83,6 +92,20 @@ async function reachDryRun(wrapper: Awaited<ReturnType<typeof mountPage>>) {
     await primaryButton(wrapper, 'continue').trigger('click')
     await flushPromises()
   }
+  expect(wrapper.find('[data-testid="stereo-country-step"]').exists()).toBe(true)
+  await primaryButton(wrapper, 'continue').trigger('click')
+  await flushPromises()
+  await primaryButton(wrapper, 'dry_run').trigger('click')
+  await flushPromises()
+}
+
+async function reviewCountries(wrapper: Awaited<ReturnType<typeof mountPage>>) {
+  await wrapper.get('[data-testid="stereo-step-3"]').trigger('click')
+  await flushPromises()
+}
+
+async function rerunFromCountries(wrapper: Awaited<ReturnType<typeof mountPage>>) {
+  await primaryButton(wrapper, 'continue').trigger('click')
   await primaryButton(wrapper, 'dry_run').trigger('click')
   await flushPromises()
 }
@@ -101,11 +124,141 @@ beforeEach(() => {
   m.remove.mockResolvedValue(undefined)
   m.fillCompanyProfile.mockResolvedValue({ filled_fields: [] })
   m.accountMapping.mockResolvedValue(mappingProposal)
+  m.partnerCountries.mockResolvedValue([])
+  m.lookupAres.mockResolvedValue({ found: true, source: 'fresh', data: {
+    company_name: 'Syntetický dodavatel z registru', ic: countryCandidate.ico, dic: '',
+    street: 'Syntetická 1', city: 'Testov', zip: '10000', country_iso2: 'CZ', is_vat_payer: true,
+  } })
+  m.lookupVies.mockResolvedValue({ valid: true, source: 'rest', country: 'DE', vat_number: 'DE123456789', name: 'Synthetic EU supplier', address: 'Synthetic address' })
 })
 
 afterEach(() => vi.clearAllMocks())
 
 describe('Stereo NX migration wizard', () => {
+  it('requires a successful read-only country preview before the dry-run and allows retrying it', async () => {
+    m.partnerCountries.mockRejectedValueOnce(new Error('Synthetic preview failure')).mockResolvedValueOnce([])
+    const wrapper = await mountPage()
+    await openExisting(wrapper)
+    await primaryButton(wrapper, 'continue').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="stereo-country-step"]').exists()).toBe(true)
+    expect(primaryButton(wrapper, 'continue').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="stereo-step-4"]').attributes('disabled')).toBeDefined()
+    expect(m.run).not.toHaveBeenCalled()
+    const retry = wrapper.get('[data-testid="stereo-actions"]').findAll('button').find(button => button.text().includes('stereo_nx.partner_countries.reload'))!
+    await retry.trigger('click')
+    await flushPromises()
+    expect(primaryButton(wrapper, 'continue').attributes('disabled')).toBeUndefined()
+    expect(m.partnerCountries).toHaveBeenCalledTimes(2)
+    expect(m.run).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('ignores a late country preview from a different company context', async () => {
+    let resolve!: (value: StereoCountryCandidate[]) => void
+    m.partnerCountries.mockReturnValueOnce(new Promise<StereoCountryCandidate[]>(done => { resolve = done }))
+    const wrapper = await mountPage()
+    await openExisting(wrapper)
+    await primaryButton(wrapper, 'continue').trigger('click')
+    m.supplierStore.currentSupplierId = 2
+    await flushPromises()
+    resolve([countryCandidate])
+    await flushPromises()
+    expect(wrapper.findComponent(StereoNxPartnerCountries).exists()).toBe(false)
+    expect(m.run).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('resolves an EMU partner through foreign VAT ID and sends its confirmed country to a fresh dry-run', async () => {
+    m.run.mockResolvedValue({ ...dryReport, partner_country_candidates: [{ ...countryCandidate, source_country: 'EMU', dic: 'DE123456789' }] })
+    const wrapper = await mountPage()
+    await reachDryRun(wrapper)
+    await reviewCountries(wrapper)
+    await wrapper.get('[data-testid="stereo-country-vies-0"]').trigger('click')
+    await flushPromises()
+    expect(m.lookupVies).toHaveBeenCalledWith('DE123456789')
+    expect(m.lookupAres).not.toHaveBeenCalled()
+    expect(wrapper.getComponent(StereoNxPartnerCountries).props('modelValue')).toEqual({})
+    await wrapper.get('[data-testid="stereo-country-confirm-0"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="stereo-protocol-pdf"]').exists()).toBe(false)
+    expect(wrapper.getComponent(StereoNxPartnerCountries).props('modelValue')).toEqual({ 'synthetic-vendor': 'DE' })
+    await rerunFromCountries(wrapper)
+    expect(m.jobs.get(2)?.[6]).toEqual({ 'synthetic-vendor': 'DE' })
+    wrapper.unmount()
+  })
+
+  it('requires a fresh dry-run after confirming an ARES proposal and persists the exact choice through resume and import', async () => {
+    m.run.mockImplementation(async (_token: string, _company: number, mode: string, _blank: boolean, _onJob: unknown, countries: StereoPartnerCountries = {}) => ({
+      ...dryReport, database_writes: mode === 'import',
+      partner_country_candidates: [{ ...countryCandidate, confirmed_country: countries[countryCandidate.source_key] ?? null }],
+    }))
+    const wrapper = await mountPage()
+    await reachDryRun(wrapper)
+    await reviewCountries(wrapper)
+    expect(m.lookupAres).not.toHaveBeenCalled()
+    await wrapper.get('[data-testid="stereo-country-lookup-0"]').trigger('click')
+    await flushPromises()
+    expect(m.lookupAres).toHaveBeenCalledWith(countryCandidate.ico)
+    expect(m.run).toHaveBeenCalledTimes(1)
+    expect(wrapper.getComponent(StereoNxPartnerCountries).props('modelValue')).toEqual({})
+    await wrapper.get('[data-testid="stereo-country-confirm-0"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="stereo-country-changed"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="stereo-protocol-pdf"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="stereo-import-confirm"]').exists()).toBe(false)
+    await rerunFromCountries(wrapper)
+    expect(m.jobs.get(2)?.[6]).toEqual({ 'synthetic-vendor': 'CZ' })
+    await reviewCountries(wrapper)
+    expect(wrapper.getComponent(StereoNxPartnerCountries).props('changed')).toBe(false)
+    wrapper.unmount()
+    const resumed = await mountPage()
+    await reviewCountries(resumed)
+    expect(resumed.getComponent(StereoNxPartnerCountries).props('modelValue')).toEqual({ 'synthetic-vendor': 'CZ' })
+    await primaryButton(resumed, 'continue').trigger('click')
+    await primaryButton(resumed, 'continue').trigger('click')
+    await resumed.get('[data-testid="stereo-import-confirm"]').setValue(true)
+    await primaryButton(resumed, 'import').trigger('click')
+    await flushPromises()
+    expect(m.jobs.get(3)?.[6]).toEqual({ 'synthetic-vendor': 'CZ' })
+    expect(resumed.findComponent(StereoNxPartnerCountries).exists()).toBe(false)
+    resumed.unmount()
+  })
+
+  it('keeps unresolved partners available after undo and discards their choices when the company changes', async () => {
+    m.run.mockResolvedValue({ ...dryReport, partner_country_candidates: [countryCandidate] })
+    const wrapper = await mountPage()
+    await reachDryRun(wrapper)
+    await reviewCountries(wrapper)
+    await wrapper.get('[data-testid="stereo-country-lookup-0"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="stereo-country-confirm-0"]').trigger('click')
+    await wrapper.get('[data-testid="stereo-country-undo-0"]').trigger('click')
+    expect(wrapper.getComponent(StereoNxPartnerCountries).props('modelValue')).toEqual({})
+    expect(wrapper.find('[data-testid="stereo-country-changed"]').exists()).toBe(true)
+    m.supplierStore.currentSupplierId = 2
+    await flushPromises()
+    expect(wrapper.findComponent(StereoNxPartnerCountries).exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('allows undoing a country choice after a dry-run fails before returning its country candidates', async () => {
+    m.run.mockResolvedValueOnce({ ...dryReport, partner_country_candidates: [countryCandidate] })
+      .mockResolvedValueOnce({ ...dryReport, ok: false })
+    const wrapper = await mountPage()
+    await reachDryRun(wrapper)
+    await reviewCountries(wrapper)
+    await wrapper.get('[data-testid="stereo-country-lookup-0"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="stereo-country-confirm-0"]').trigger('click')
+    await rerunFromCountries(wrapper)
+    await reviewCountries(wrapper)
+    await wrapper.get('[data-testid="stereo-country-undo-0"]').trigger('click')
+    expect(wrapper.getComponent(StereoNxPartnerCountries).props('modelValue')).toEqual({})
+    expect(wrapper.find('[data-testid="stereo-protocol-pdf"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('downloads the report belonging to each dry-run, confirmation and import-result view', async () => {
     const wrapper = await mountPage()
     expect(wrapper.find('[data-testid="stereo-protocol-pdf"]').exists()).toBe(false)
@@ -239,6 +392,8 @@ describe('Stereo NX migration wizard', () => {
     expect(wrapper.find('[data-testid="stereo-protocol-pdf"]').exists()).toBe(false)
     await primaryButton(wrapper, 'continue').trigger('click')
     expect(wrapper.find('[data-testid="stereo-protocol-pdf"]').exists()).toBe(false)
+    await flushPromises()
+    await primaryButton(wrapper, 'continue').trigger('click')
     await primaryButton(wrapper, 'dry_run').trigger('click')
     await flushPromises()
     await wrapper.get('[data-testid="stereo-protocol-pdf"]').trigger('click')
@@ -299,6 +454,8 @@ describe('Stereo NX migration wizard', () => {
     const checkbox = wrapper.get('[data-testid="stereo-bank-series-confirm"]')
     expect((checkbox.element as HTMLInputElement).checked).toBe(false)
     await checkbox.setValue(true)
+    await primaryButton(wrapper, 'continue').trigger('click')
+    await flushPromises()
     await primaryButton(wrapper, 'continue').trigger('click')
     await primaryButton(wrapper, 'dry_run').trigger('click')
     await flushPromises()
@@ -412,8 +569,10 @@ describe('Stereo NX migration wizard', () => {
     await reachDryRun(wrapper)
     await wrapper.get('[data-testid="stereo-step-3"]').trigger('click')
     await wrapper.get('[data-testid="stereo-account-501001"]').setValue('501002')
-    expect(wrapper.get('[data-testid="stereo-step-5"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="stereo-step-6"]').attributes('disabled')).toBeDefined()
     expect(sessionStorage.getItem('myucto.stereo-nx.job')).toBeNull()
+    await primaryButton(wrapper, 'continue').trigger('click')
+    await flushPromises()
     await primaryButton(wrapper, 'continue').trigger('click')
     await primaryButton(wrapper, 'dry_run').trigger('click')
     await flushPromises()
@@ -439,6 +598,8 @@ describe('Stereo NX migration wizard', () => {
     expect(wrapper.get('[data-testid="stereo-step-4"]').attributes('disabled')).toBeDefined()
     await wrapper.get('[data-testid="stereo-vat-unresolved"]').setValue('343.999')
     expect(primaryButton(wrapper, 'continue').attributes('disabled')).toBeUndefined()
+    await primaryButton(wrapper, 'continue').trigger('click')
+    await flushPromises()
     await primaryButton(wrapper, 'continue').trigger('click')
     await primaryButton(wrapper, 'dry_run').trigger('click')
     await flushPromises()
@@ -655,6 +816,11 @@ describe('Stereo NX migration wizard', () => {
     await openExisting(wrapper)
     expect(m.preview).toHaveBeenCalledWith(upload.token)
     expect(wrapper.find('[data-testid="stereo-company-select"]').exists()).toBe(true)
+    await primaryButton(wrapper, 'continue').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="stereo-country-step"]').exists()).toBe(true)
+    expect(m.run).not.toHaveBeenCalled()
+    expect(m.partnerCountries).toHaveBeenCalledWith(upload.token, 0, false, false, {})
     await primaryButton(wrapper, 'continue').trigger('click')
     expect(wrapper.find('[data-testid="stereo-dry-report"]').exists()).toBe(true)
     await primaryButton(wrapper, 'dry_run').trigger('click')

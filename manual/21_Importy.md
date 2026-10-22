@@ -207,13 +207,19 @@ IČO, být plátcem DPH a cílová firma musí používat **daňovou evidenci** 
    Zkontrolujte analytiky vlastních bankovních účtů a rozdělení DPH na vstup,
    výstup a zúčtování. Nerozpoznané kontace ukazují datum, doklad, popis, částku
    a účty MD/D. Počáteční stav sám o sobě neurčuje roli DPH: vyžaduje váš výběr.
-6. Krok **Zkouška nanečisto:** klikněte na **Zkouška nanečisto**. Projde stejnými
+6. Krok **Země protistran:** u nerozpoznané země můžete na kliknutí vyhledat návrh v ARESu
+   podle českého IČO nebo ve VIES podle zahraničního DIČ. Porovnejte nalezený
+   název a adresu s původními doklady a potvrďte navrženou zemi. Potvrzená karta
+   se sbalí do řádku s názvem a zemí; detail můžete rozbalit a potvrzení zrušit.
+   U karty bez převáděných dokladů je uvedeno, že jde pouze o záznam v adresáři.
+   Načtení tohoto kroku data nepřevádí.
+7. Krok **Zkouška nanečisto:** klikněte na **Zkouška nanečisto**. Projde stejnými
    databázovými operacemi jako skutečný převod, ale změny vrátí zpět.
    Zkontrolujte rozsah dat, počty dokladů, konceptů a důvody ruční kontroly.
-7. Krok **Převod:** zaškrtněte potvrzení **Zkontroloval(a) jsem výsledek
+8. Krok **Převod:** zaškrtněte potvrzení **Zkontroloval(a) jsem výsledek
    a chci data převést do vybrané firmy.** a klikněte na **Spustit převod**.
    Volitelně zaškrtněte **Smazat nahranou zálohu po úspěšném importu**.
-8. Po dokončení projděte protokol převodu a odkazy na doklady a peněžní pohyby
+9. Po dokončení projděte protokol převodu a odkazy na doklady a peněžní pohyby
    k ruční kontrole.
 
 Protokol sdružuje zprávy podle závažnosti a důvodu a uvádí počet výskytů. U
@@ -226,7 +232,7 @@ ukazuje u kroků stav **V pořádku**. Položky označené **Ke kontrole** projd
 ručně.
 
 > [!WARNING]
-> Změna vybrané firmy, výkladu prázdné země nebo mapování účtů vyžaduje novou zkoušku nanečisto.
+> Změna vybrané firmy, výkladu prázdné země, potvrzení země protistrany nebo mapování účtů vyžaduje novou zkoušku nanečisto.
 > Zálohu si uchovejte. Při nepřevedených nebo kontrolovaných údajích se
 > automatické smazání zálohy nenabídne.
 
@@ -853,6 +859,21 @@ zůstává, protože texty a obsah původních položek nelze z deníku obnovit.
 Starší doložené importní vazby se nepřejmenovávají. Existuje-li vedle dříve
 převzatého účtu bez tečky také jeho nativní varianta s tečkou, mapování se
 zastaví a vyžádá sjednocení vazeb. Tyto účty se neslučují automaticky.
+
+Neznámé označení země, například `EMU`, samo neurčuje konkrétní stát.
+V přehledu zemí protistran uvidíte původní hodnotu, IČO, DIČ a související doklady.
+Vyhledání v registru pouze nabídne zemi; teprve jejím potvrzením ji zahrnete do
+nové zkoušky nanečisto a následného převodu. Volba platí pro konkrétní zdrojovou
+kartu protistrany, nikoli pro všechny karty se stejným IČO. Lze ji odebrat.
+Již známá země na historickém dokladu se touto volbou nepřepisuje.
+
+VIES ověřuje aktuální registraci DIČ, která sama nedokládá sídlo dodavatele ani
+stav k datu starší faktury. Potvrďte proto, že navržená země odpovídá původnímu
+dokladu. Neplatné DIČ nebo nedostupný registr ponechá zemi k ruční kontrole.
+Vyhledání nemění označení plátce DPH, daňové zařazení ani existující kartu klienta.
+Pokud údaje nejsou dostatečné, opravte je ve zdroji nebo zkontrolujte převzatý
+koncept ručně. Změnou volby při opakovaném převodu se již importovaný doklad
+automaticky neopravuje; změněný podklad vyžaduje kontrolu.
 
 Souhrn zkoušky i importu zobrazuje počty v tabulkách. U podporovaných agend
 porovnáte sloupce **Ve zdroji**, **K převodu**, **Nepřevedeno** a **Ke kontrole**;
