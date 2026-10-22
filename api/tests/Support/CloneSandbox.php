@@ -108,8 +108,27 @@ final class CloneSandbox
         }
         $mode = self::$leased[$schema];
         unset(self::$leased[$schema]);
-        OwnedTestDatabaseSessions::close($server, [$schema]);
+        self::closeTransactions($server, $schema);
         self::$idle[$mode][] = $schema;
+    }
+
+    /**
+     * Ukončí spojení, která ve vracené databázi drží otevřenou transakci, aby na jejich
+     * metadata lock obnova nečekala. Nečinná spojení zůstanou: sdílená testovací
+     * spojení ({@see \MyInvoice\Infrastructure\Database\Connection}) se pro stejný
+     * název databáze použijí znovu a ukončené by další test našel jako odpojené.
+     */
+    private static function closeTransactions(PDO $server, string $schema): void
+    {
+        $sessions = $server->prepare('SELECT p.ID FROM information_schema.PROCESSLIST p JOIN information_schema.INNODB_TRX t ON t.trx_mysql_thread_id = p.ID WHERE p.DB = ? AND p.ID <> CONNECTION_ID()');
+        $sessions->execute([$schema]);
+        foreach ($sessions->fetchAll(PDO::FETCH_COLUMN) as $id) {
+            try {
+                $server->exec('KILL ' . (int) $id);
+            } catch (\PDOException) {
+                // Spojení mezitím skončilo samo.
+            }
+        }
     }
 
     /**
@@ -221,6 +240,8 @@ final class CloneSandbox
         $server->exec('USE ' . DatabaseCloner::quote($schema));
         $server->exec('SET SESSION FOREIGN_KEY_CHECKS = 0');
         $server->exec("SET SESSION system_versioning_alter_history = 'KEEP'");
+        // Zapomenutý zámek jiného spojení má obnovu shodit, ne zastavit napořád.
+        $server->exec('SET SESSION lock_wait_timeout = 60');
         try {
             // Pohledy, triggery a rutiny, které nesedí, se založí znovu celé; jinak jen
             // triggery obnovovaných tabulek, aby INSERT původních řádků neodmítly.
@@ -263,6 +284,7 @@ final class CloneSandbox
         } finally {
             $server->exec('SET SESSION FOREIGN_KEY_CHECKS = 1');
             $server->exec('SET SESSION system_versioning_alter_history = DEFAULT');
+            $server->exec('SET SESSION lock_wait_timeout = DEFAULT');
         }
         ++self::$writes;
         $after = self::state($server, $schema, true);
