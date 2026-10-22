@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace MyInvoice\Service\Anonymization;
 
+use MyInvoice\Infrastructure\Database\TriggerMetadata;
 use MyInvoice\Service\Accounting\Allocation\JointAllocationJournalProof;
 use MyInvoice\Service\Accounting\Allocation\JointAllocationKeyVersion;
 use MyInvoice\Service\Accounting\Allocation\JointAllocationRequest;
@@ -27,7 +28,7 @@ final class JointAllocationCloneScrubber
         if ($tables !== count(self::TABLES) || $this->pdo->inTransaction()) {
             throw new \LogicException('Allocation clone postprocess requires the complete schema and its own transaction.');
         }
-        if ((int) $this->pdo->query('SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE()')->fetchColumn() !== 0) {
+        if (TriggerMetadata::any($this->pdo)) {
             throw new \LogicException('Allocation clone postprocess must run before installing clone triggers.');
         }
         $this->pdo->beginTransaction();

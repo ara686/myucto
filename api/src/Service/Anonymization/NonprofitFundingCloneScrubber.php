@@ -3,6 +3,7 @@ declare(strict_types=1);
 namespace MyInvoice\Service\Anonymization;
 use MyInvoice\Bootstrap;
 use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Infrastructure\Database\TriggerMetadata;
 use MyInvoice\Repository\Nonprofit\FundingRepository;
 use MyInvoice\Repository\NonprofitTaxSourceRepository;
 use MyInvoice\Service\Nonprofit\Funding\FundingService;
@@ -16,7 +17,7 @@ final class NonprofitFundingCloneScrubber
     public static function capture(Connection $db):array
     {
         $pdo=$db->pdo();
-        if($pdo->inTransaction()||(int)$pdo->query('SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE()')->fetchColumn()!==0)throw new \LogicException('Nonprofit clone capture must precede transformations and triggers.');
+        if($pdo->inTransaction()||TriggerMetadata::any($pdo))throw new \LogicException('Nonprofit clone capture must precede transformations and triggers.');
         $c=Bootstrap::buildContainer();$c->set(Connection::class,$db);$sources=$c->get(NonprofitTaxSourceRepository::class);$funding=$c->get(FundingService::class);
         $rows=$pdo->query('SELECT * FROM nonprofit_tax_assessments ORDER BY supplier_id,period_id,revision_no')->fetchAll(PDO::FETCH_ASSOC);$flags=[];$snapshots=[];$reports=[];
         foreach($rows as $row){
@@ -34,7 +35,7 @@ final class NonprofitFundingCloneScrubber
     public static function run(Connection $db,TextScrubber $scrubber,array $captured,array $externalHashes=[]):void
     {
         $pdo=$db->pdo();
-        if($pdo->inTransaction()||(int)$pdo->query('SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE()')->fetchColumn()!==0)throw new \LogicException('Nonprofit clone rewrite must precede trigger installation.');
+        if($pdo->inTransaction()||TriggerMetadata::any($pdo))throw new \LogicException('Nonprofit clone rewrite must precede trigger installation.');
         $owner=new self($db,$scrubber);$owner->hashes=$externalHashes;$foreignKeys=(int)$pdo->query('SELECT @@SESSION.foreign_key_checks')->fetchColumn();$pdo->exec('SET SESSION FOREIGN_KEY_CHECKS=0');$pdo->beginTransaction();
         try{$owner->rewrite($captured);$pdo->commit();}catch(\Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}finally{$pdo->exec('SET SESSION FOREIGN_KEY_CHECKS='.$foreignKeys);}
     }

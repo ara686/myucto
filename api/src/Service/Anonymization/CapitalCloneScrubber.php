@@ -2,6 +2,7 @@
 declare(strict_types=1);
 namespace MyInvoice\Service\Anonymization;
 use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Infrastructure\Database\TriggerMetadata;
 use MyInvoice\Service\Nonprofit\Capital\CapitalLedger;
 use MyInvoice\Service\Nonprofit\Capital\CapitalPolicy;
 use MyInvoice\Service\Nonprofit\Capital\CapitalRepository;
@@ -60,6 +61,6 @@ final class CapitalCloneScrubber
     }
     private static function assertPhase(Connection $db):void
     {
-        if($db->pdo()->inTransaction()||(int)$db->pdo()->query('SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE()')->fetchColumn()!==0)throw new \LogicException('Capital clone phase requires no live transaction or installed triggers.');
+        if($db->pdo()->inTransaction()||TriggerMetadata::any($db->pdo()))throw new \LogicException('Capital clone phase requires no live transaction or installed triggers.');
     }
 }

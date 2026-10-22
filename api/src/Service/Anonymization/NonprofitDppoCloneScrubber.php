@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace MyInvoice\Service\Anonymization;
 
 use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Infrastructure\Database\TriggerMetadata;
 use MyInvoice\Service\Accounting\Dimension\DimensionPeriodGuard;
 use MyInvoice\Service\Tax\Nonprofit\{NonprofitLegalProfileService,NonprofitTaxRules};
 use PDO;
@@ -74,6 +75,6 @@ final class NonprofitDppoCloneScrubber
 
     private static function assertClonePhase(Connection $db):void
     {
-        if($db->pdo()->inTransaction()||(int)$db->pdo()->query('SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE()')->fetchColumn()!==0)throw new \LogicException('DPPO clone must run before trigger installation outside an active transaction.');
+        if($db->pdo()->inTransaction()||TriggerMetadata::any($db->pdo()))throw new \LogicException('DPPO clone must run before trigger installation outside an active transaction.');
     }
 }

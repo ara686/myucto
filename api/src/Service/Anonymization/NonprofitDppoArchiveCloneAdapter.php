@@ -6,6 +6,7 @@ namespace MyInvoice\Service\Anonymization;
 
 use MyInvoice\Bootstrap;
 use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Infrastructure\Database\TriggerMetadata;
 use MyInvoice\Service\Accounting\Dimension\DimensionPeriodGuard;
 use MyInvoice\Service\Tax\Nonprofit\NonprofitDppoArchiveBuilder;
 use MyInvoice\Service\Tax\Nonprofit\NonprofitDppoAssessmentSource;
@@ -69,7 +70,7 @@ final class NonprofitDppoArchiveCloneAdapter
     {
         $pdo = $this->db->pdo();
         if ($pdo->inTransaction()
-            || (int) $pdo->query('SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE()')->fetchColumn() !== 0) {
+            || TriggerMetadata::any($pdo)) {
             throw new \LogicException('Přepis archivu DPPO 504 musí proběhnout před triggery a mimo transakci.');
         }
         $container = Bootstrap::buildContainer();

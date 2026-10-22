@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MyInvoice\Service\Anonymization;
 
 use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Infrastructure\Database\TriggerMetadata;
 use MyInvoice\Repository\DimensionAssignmentRepository;
 use MyInvoice\Service\Accounting\JournalLineComparison;
 use MyInvoice\Service\ActivityLogHashChain;
@@ -68,7 +69,7 @@ final class PayrollCostCenterCloneScrubber
     public static function run(Connection $db, TextScrubber $scrubber, array $captured): void
     {
         $pdo=$db->pdo();
-        if($pdo->inTransaction() || (int)$pdo->query('SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE()')->fetchColumn()!==0)throw new \LogicException('Payroll clone requires its own transaction before trigger installation.');
+        if($pdo->inTransaction() || TriggerMetadata::any($pdo))throw new \LogicException('Payroll clone requires its own transaction before trigger installation.');
         $pdo->beginTransaction();
         try {
             foreach(self::PAIRS as $table=>$pairs) {

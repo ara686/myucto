@@ -3,6 +3,7 @@ declare(strict_types=1);
 namespace MyInvoice\Service\Anonymization;
 
 use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Infrastructure\Database\TriggerMetadata;
 use MyInvoice\Repository\Property\Funds\FundingRepository;
 use MyInvoice\Service\Property\PropertyInput;
 use MyInvoice\Service\Property\Payments\{PaymentJournalProof,PaymentLocks};
@@ -64,7 +65,7 @@ final class FundingCloneScrubber
     }
 
     private static function context(Connection $db):void
-    {if(!$db->pdo()->inTransaction()||(int)$db->pdo()->query('SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE()')->fetchColumn()!==0)throw new \LogicException('Funding clone requires its owner transaction before trigger installation.');}
+    {if(!$db->pdo()->inTransaction()||TriggerMetadata::any($db->pdo()))throw new \LogicException('Funding clone requires its owner transaction before trigger installation.');}
     private static function rows(Connection $db):array
     {
         $rows=[];foreach(self::TABLES as $table){$order=match($table){'property_funding_heads'=>'supplier_id,house_id','property_funding_claims'=>'supplier_id,operation_id,source_kind,source_id,claim_role',default=>'supplier_id,id'};$rows[$table]=$db->pdo()->query('SELECT * FROM '.$table.' ORDER BY '.$order.' FOR UPDATE')->fetchAll(PDO::FETCH_ASSOC);}return $rows;

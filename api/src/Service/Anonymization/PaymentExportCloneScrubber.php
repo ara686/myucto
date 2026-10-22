@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace MyInvoice\Service\Anonymization;
 use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Infrastructure\Database\TriggerMetadata;
 use MyInvoice\Service\Property\PropertyInput;
 use MyInvoice\Service\Property\Payments\PaymentException;
 use MyInvoice\Service\Property\Payments\Workflow\PaymentExportPlan;
@@ -20,7 +21,7 @@ final class PaymentExportCloneScrubber
         $pdo=$db->pdo();if(!$pdo->inTransaction())throw new \LogicException('Export clone requires the payment clone transaction.');
         $count=(int)$pdo->query("SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('unit_payment_exports','unit_payment_export_items')")->fetchColumn();
         if($count!==2)throw new \LogicException('Export clone requires complete schema.');
-        if((int)$pdo->query('SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE()')->fetchColumn()!==0)throw new \LogicException('Export clone must precede trigger installation.');
+        if(TriggerMetadata::any($pdo))throw new \LogicException('Export clone must precede trigger installation.');
         $exports=$pdo->query('SELECT * FROM unit_payment_exports ORDER BY supplier_id,id FOR UPDATE')->fetchAll(PDO::FETCH_ASSOC);$items=$pdo->query('SELECT * FROM unit_payment_export_items ORDER BY supplier_id,export_id,reservation_id FOR UPDATE')->fetchAll(PDO::FETCH_ASSOC);
         if($exports===[]&&$items===[])return null;
         $links=[];foreach($items as $item)$links[$item['supplier_id']][$item['export_id']][]=$item;

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace MyInvoice\Service\Anonymization;
 
+use MyInvoice\Infrastructure\Database\TriggerMetadata;
 use MyInvoice\Service\Property\PropertyInput;
 use MyInvoice\Service\Property\PropertyInstant;
 use PDO;
@@ -22,7 +23,7 @@ final class ChargesCloneScrubber
         $count = (int) $stmt->fetchColumn();
         if ($count === 0) return [];
         if ($count !== count(self::TABLES) || $this->pdo->inTransaction()) throw new \LogicException('Charge clone requires the complete schema and its own transaction.');
-        if ((int) $this->pdo->query('SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE()')->fetchColumn() !== 0) throw new \LogicException('Charge clone must run before installing triggers.');
+        if (TriggerMetadata::any($this->pdo)) throw new \LogicException('Charge clone must run before installing triggers.');
         $this->pdo->beginTransaction();
         try {
             $components = []; $versions = [];

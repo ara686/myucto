@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace MyInvoice\Service\Anonymization;
 use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Infrastructure\Database\TriggerMetadata;
 use MyInvoice\Service\Property\PropertyInput;
 use MyInvoice\Service\Property\Payments\{PaymentException,PaymentJournalProof,PaymentLocks,PaymentSourceProof};
 use MyInvoice\Repository\Property\Payments\DebtRepository;
@@ -18,7 +19,7 @@ final class PaymentsCloneScrubber
         $pdo=$this->db->pdo();$q=$pdo->prepare('SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('.implode(',',array_fill(0,count(self::TABLES),'?')).')');$q->execute(self::TABLES);$count=(int)$q->fetchColumn();
         if($count===0)return [];
         if($count!==count(self::TABLES)||$pdo->inTransaction())throw new \LogicException('Payment clone requires complete schema and its own transaction.');
-        if((int)$pdo->query('SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE()')->fetchColumn()!==0)throw new \LogicException('Payment clone must precede trigger installation.');
+        if(TriggerMetadata::any($pdo))throw new \LogicException('Payment clone must precede trigger installation.');
         $this->hashes=[];$pdo->beginTransaction();
         try{
             $rows=[];foreach(self::TABLES as $table){$order=match($table){'unit_credit_parties'=>',credit_id,client_id','unit_payment_debt_lines'=>',debt_id,charge_line_id','unit_payment_correction_anchors'=>',correction_id,adjustment_line_id,original_line_id','unit_payment_reliefs'=>',correction_id,allocation_id',default=>',id'};$rows[$table]=$pdo->query('SELECT * FROM '.$table.' ORDER BY supplier_id'.$order.' FOR UPDATE')->fetchAll(PDO::FETCH_ASSOC);}

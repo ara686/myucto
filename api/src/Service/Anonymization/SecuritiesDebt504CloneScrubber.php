@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MyInvoice\Service\Anonymization;
 
 use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Infrastructure\Database\TriggerMetadata;
 use MyInvoice\Repository\SecuritiesDebt504Repository as R;
 use MyInvoice\Service\Accounting\Closing\SecuritiesDebt504PaymentProof;
 use MyInvoice\Service\Property\Payments\PaymentJournalProof;
@@ -76,7 +77,7 @@ final class SecuritiesDebt504CloneScrubber
 
     private static function context(Connection $db): void
     {
-        if($db->pdo()->inTransaction()||(int)$db->pdo()->query('SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE()')->fetchColumn()!==0)throw new \LogicException('Debt clone requires its own transaction before trigger installation.');
+        if($db->pdo()->inTransaction()||TriggerMetadata::any($db->pdo()))throw new \LogicException('Debt clone requires its own transaction before trigger installation.');
     }
     private static function rows(Connection $db): array
     {

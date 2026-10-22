@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace MyInvoice\Service\Anonymization;
 use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Infrastructure\Database\TriggerMetadata;
 use MyInvoice\Repository\{AccountDefinitionRepository,FrameworkConversionRepository as R,ClosingRepository};
 use MyInvoice\Service\Accounting\Closing\ProfitDistribution504Builder;
 use MyInvoice\Service\Accounting\Conversion\{FrameworkConversionFxAdapter,FrameworkConversionException as E};
@@ -110,5 +111,5 @@ final class FrameworkConversionCloneScrubber
     private static function rows(Connection $db):array
     {$out=[];foreach(self::TABLES as $table)$out[$table]=$db->pdo()->query('SELECT * FROM '.$table.' ORDER BY supplier_id,'.($table===self::TABLES[1]?'conversion_id,cell_key':'id').' FOR UPDATE')->fetchAll(PDO::FETCH_ASSOC);return $out;}
     private static function context(Connection $db):void
-    {if($db->pdo()->inTransaction()||(int)$db->pdo()->query('SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE()')->fetchColumn()!==0)throw new \LogicException('Conversion clone requires own transaction before trigger installation.');}
+    {if($db->pdo()->inTransaction()||TriggerMetadata::any($db->pdo()))throw new \LogicException('Conversion clone requires own transaction before trigger installation.');}
 }

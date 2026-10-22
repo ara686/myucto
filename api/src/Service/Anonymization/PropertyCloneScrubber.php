@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace MyInvoice\Service\Anonymization;
 
+use MyInvoice\Infrastructure\Database\TriggerMetadata;
 use MyInvoice\Service\Property\PropertyInput;
 use MyInvoice\Service\Property\PropertyInstant;
 use MyInvoice\Service\Property\PropertyRevisionRequest;
@@ -25,7 +26,7 @@ final class PropertyCloneScrubber
         $count = (int) $stmt->fetchColumn();
         if ($count === 0) return [];
         if ($count !== count(self::TABLES) || $this->pdo->inTransaction()) throw new \LogicException('Property clone postprocess requires the complete schema and its own transaction.');
-        if ((int) $this->pdo->query('SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE()')->fetchColumn() !== 0) {
+        if (TriggerMetadata::any($this->pdo)) {
             throw new \LogicException('Property clone postprocess must run before installing triggers.');
         }
         $this->pdo->beginTransaction();

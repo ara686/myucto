@@ -1,13 +1,14 @@
 <?php
 declare(strict_types=1);
 namespace MyInvoice\Service\Anonymization;
+use MyInvoice\Infrastructure\Database\TriggerMetadata;
 use PDO;
 final class LegacyCostCenterCloneScrubber
 {
     private const TARGETS=[['cost_centers','code',null],['journal_entry_lines','cost_center',null],['journal_entry_template_lines','cost_center',null],['payroll_posting_allocations','cost_center',null],['payroll_dimensions','code',"dimension_type='cost_center'"]];
     public static function run(PDO $pdo,TextScrubber $scrubber):void
     {
-        if($pdo->inTransaction()||(int)$pdo->query('SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE()')->fetchColumn()!==0)throw new \LogicException('Legacy cost center clone requires its own transaction before trigger installation.');
+        if($pdo->inTransaction()||TriggerMetadata::any($pdo))throw new \LogicException('Legacy cost center clone requires its own transaction before trigger installation.');
         $pdo->beginTransaction();try{
             foreach(self::TARGETS as [$table,$column,$filter]){
                 $q=$pdo->prepare('SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=?');$q->execute([$table]);$columns=$q->fetchAll(PDO::FETCH_COLUMN);if(!in_array($column,$columns,true))continue;

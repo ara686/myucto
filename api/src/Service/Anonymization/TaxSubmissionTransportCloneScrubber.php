@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MyInvoice\Service\Anonymization;
 
 use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Infrastructure\Database\TriggerMetadata;
 use PDO;
 
 /**
@@ -32,7 +33,7 @@ final class TaxSubmissionTransportCloneScrubber
     {
         $pdo = $this->db->pdo();
         if ($pdo->inTransaction()
-            || (int) $pdo->query('SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE()')->fetchColumn() !== 0) {
+            || TriggerMetadata::any($pdo)) {
             throw new \LogicException('Mapa transportu podání musí vzniknout před triggery a mimo transakci.');
         }
         $root = hash('sha256', 'anonymized-clone-transport-v1');

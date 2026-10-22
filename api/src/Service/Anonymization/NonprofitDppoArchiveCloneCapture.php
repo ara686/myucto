@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MyInvoice\Service\Anonymization;
 
 use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Infrastructure\Database\TriggerMetadata;
 use MyInvoice\Repository\NonprofitTaxAssessmentRepository;
 use MyInvoice\Service\Tax\Nonprofit\NonprofitDppoStoredProof;
 use MyInvoice\Service\Tax\Nonprofit\NonprofitTaxRules;
@@ -26,7 +27,7 @@ final class NonprofitDppoArchiveCloneCapture
     {
         $pdo = $db->pdo();
         if ($pdo->inTransaction()
-            || (int) $pdo->query('SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE()')->fetchColumn() !== 0) {
+            || TriggerMetadata::any($pdo)) {
             throw new \LogicException('Zachycení archivu DPPO 504 musí proběhnout před triggery a mimo transakci.');
         }
         $page = $pdo->prepare(

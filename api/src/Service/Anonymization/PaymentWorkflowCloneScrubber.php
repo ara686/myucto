@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MyInvoice\Service\Anonymization;
 
 use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Infrastructure\Database\TriggerMetadata;
 use MyInvoice\Service\Property\Payments\PaymentException;
 use MyInvoice\Service\Property\Payments\PaymentJournalProof;
 use MyInvoice\Service\Property\Payments\Workflow\ClearingRevisionHistory;
@@ -32,7 +33,7 @@ final class PaymentWorkflowCloneScrubber
         $q->execute(self::TABLES); $count = (int) $q->fetchColumn();
         if ($count === 0) return null;
         if ($count !== count(self::TABLES)) throw new \LogicException('Workflow clone requires its complete schema.');
-        if ((int) $pdo->query('SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE()')->fetchColumn() !== 0) throw new \LogicException('Workflow clone must precede trigger installation.');
+        if (TriggerMetadata::any($pdo)) throw new \LogicException('Workflow clone must precede trigger installation.');
         $exports = PaymentExportCloneScrubber::capture($db, $scrubber, $text);
         $rows = [];
         foreach (self::TABLES as $table) $rows[$table] = $pdo->query('SELECT * FROM ' . $table . ' ORDER BY supplier_id,' . ($table === 'unit_payment_source_heads' ? 'source_id' : 'id') . ' FOR UPDATE')->fetchAll(PDO::FETCH_ASSOC);

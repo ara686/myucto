@@ -2,6 +2,7 @@
 declare(strict_types=1);
 namespace MyInvoice\Service\Anonymization;
 use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Infrastructure\Database\TriggerMetadata;
 use MyInvoice\Repository\Property\Receivables\{PartyEventRepository,DebtCertificateRepository,FinancialHistoryRepository};
 use MyInvoice\Service\Property\PropertyInput;
 use MyInvoice\Service\Property\Receivables\ReceivableException;
@@ -17,7 +18,7 @@ final class ReceivablesCloneScrubber
         $pdo=$this->db->pdo();$q=$pdo->prepare('SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN (?,?,?,?)');$q->execute(self::TABLES);$count=(int)$q->fetchColumn();
         if($count===0)return [];
         if($count!==4||$pdo->inTransaction())throw new \LogicException('Receivables clone requires complete schema and its own transaction.');
-        if((int)$pdo->query('SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE()')->fetchColumn()!==0)throw new \LogicException('Receivables clone must precede trigger installation.');
+        if(TriggerMetadata::any($pdo))throw new \LogicException('Receivables clone must precede trigger installation.');
         $this->hashes=$paymentMap;
         foreach($registryMap as $supplier=>$proofs)foreach($proofs as $id=>$proof){$this->verifyCurrent('property_revisions','state_hash',(int)$supplier,(int)$id,$proof['after_state_hash']);$this->hashes[$proof['before_state_hash']]=$proof['after_state_hash'];}
         foreach($issuanceMap as $supplier=>$proofs)foreach($proofs as $id=>$proof){$this->verifyCurrent('unit_charges','snapshot_hash',(int)$supplier,(int)$id,$proof['after_snapshot_hash']);$this->hashes[$proof['before_snapshot_hash']]=$proof['after_snapshot_hash'];}

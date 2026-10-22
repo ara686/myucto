@@ -3,6 +3,7 @@ declare(strict_types=1);
 namespace MyInvoice\Service\Anonymization;
 
 use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Infrastructure\Database\TriggerMetadata;
 use MyInvoice\Repository\Property\Services\Settlement\ServiceLifecycleRepository;
 use MyInvoice\Service\Property\PropertyInput;
 use MyInvoice\Service\Property\Payments\{PaymentJournalProof,PaymentLocks};
@@ -71,7 +72,7 @@ final class ServiceLifecycleCloneScrubber
 
     private static function context(Connection $db): void
     {
-        if (!$db->pdo()->inTransaction() || (int) $db->pdo()->query('SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE()')->fetchColumn() !== 0) throw new \LogicException('Lifecycle clone requires its owner transaction before trigger installation.');
+        if (!$db->pdo()->inTransaction() || TriggerMetadata::any($db->pdo())) throw new \LogicException('Lifecycle clone requires its owner transaction before trigger installation.');
     }
 
     private function capture(): void

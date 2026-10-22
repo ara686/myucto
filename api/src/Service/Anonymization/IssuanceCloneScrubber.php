@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MyInvoice\Service\Anonymization;
 
 use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Infrastructure\Database\TriggerMetadata;
 use MyInvoice\Repository\Property\Charges\Issuance\IssuanceReadRepository;
 use MyInvoice\Service\Property\Charges\Issuance\IssuanceJournalProof;
 use MyInvoice\Service\Property\Charges\Issuance\IssuanceCaseIdentity;
@@ -31,7 +32,7 @@ final class IssuanceCloneScrubber
         $stmt->execute(self::TABLES); $count=(int)$stmt->fetchColumn();
         if($count===0) return [];
         if($count!==count(self::TABLES)||$pdo->inTransaction()) throw new \LogicException('Issuance clone requires the complete schema and its own transaction.');
-        if((int)$pdo->query('SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE()')->fetchColumn()!==0)
+        if(TriggerMetadata::any($pdo))
             throw new \LogicException('Issuance clone must run before installing triggers.');
         $pdo->beginTransaction();
         try {

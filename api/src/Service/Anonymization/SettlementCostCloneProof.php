@@ -3,6 +3,7 @@ declare(strict_types=1);
 namespace MyInvoice\Service\Anonymization;
 use MyInvoice\Bootstrap;
 use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Infrastructure\Database\TriggerMetadata;
 use MyInvoice\Repository\Property\Services\Settlement\SettlementDocumentRepository;
 use MyInvoice\Service\Property\Services\Settlement\{SettlementCostProof,SettlementEvidence,SettlementOriginAdapter};
 use MyInvoice\Service\Property\PropertyInput;
@@ -20,7 +21,7 @@ final class SettlementCostCloneProof
     }
     private static function context(Connection $db):void
     {
-        if(!$db->pdo()->inTransaction()||(int)$db->pdo()->query('SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE()')->fetchColumn()!==0)throw new \LogicException('Composite service clone requires the transaction before trigger installation.');
+        if(!$db->pdo()->inTransaction()||TriggerMetadata::any($db->pdo()))throw new \LogicException('Composite service clone requires the transaction before trigger installation.');
     }
     private static function each(Connection $db,callable $callback):void
     {

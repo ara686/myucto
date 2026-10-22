@@ -2,6 +2,7 @@
 declare(strict_types=1);
 namespace MyInvoice\Service\Anonymization;
 use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Infrastructure\Database\TriggerMetadata;
 use MyInvoice\Service\Property\PropertyInput;
 use MyInvoice\Service\Property\Opening\OpeningReadProof;
 use PDO;
@@ -11,7 +12,7 @@ final class OpeningCloneScrubber
     public function __construct(private readonly Connection $db,private readonly TextScrubber $scrubber){}
     public function run(array $registryMap,callable $text,callable $references,callable $map):void
     {
-        $pdo=$this->db->pdo();if(!$pdo->inTransaction()||(int)$pdo->query('SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE()')->fetchColumn()!==0)throw new \LogicException('Opening clone requires the clone transaction before trigger installation.');
+        $pdo=$this->db->pdo();if(!$pdo->inTransaction()||TriggerMetadata::any($pdo))throw new \LogicException('Opening clone requires the clone transaction before trigger installation.');
         $this->verifiedRevisions=[];
         $batches=$pdo->query('SELECT * FROM property_opening_batches ORDER BY supplier_id,id FOR UPDATE')->fetchAll(PDO::FETCH_ASSOC);
         $items=$pdo->query('SELECT * FROM property_opening_items ORDER BY supplier_id,id FOR UPDATE')->fetchAll(PDO::FETCH_ASSOC);

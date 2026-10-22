@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MyInvoice\Service\Anonymization;
 
 use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Infrastructure\Database\TriggerMetadata;
 use MyInvoice\Repository\AccountDefinitionRepository;
 use MyInvoice\Repository\Nonprofit\Membership\MembershipChargeRepository;
 use MyInvoice\Repository\Nonprofit\Membership\MembershipRepository;
@@ -844,7 +845,7 @@ final class MembershipCloneScrubber
 
     private static function assertClonePhase(Connection $db): void
     {
-        if ($db->pdo()->inTransaction() || (int) $db->pdo()->query('SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE()')->fetchColumn() !== 0) {
+        if ($db->pdo()->inTransaction() || TriggerMetadata::any($db->pdo())) {
             throw new \LogicException('Membership clone must run before trigger installation outside an active transaction.');
         }
     }
