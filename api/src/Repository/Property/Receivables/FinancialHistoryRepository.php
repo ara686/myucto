@@ -29,7 +29,7 @@ final class FinancialHistoryRepository
                 $charges[$charge['id']]['snapshot']=array_intersect_key($charge['snapshot'],array_flip(['liability_groups','claim_origin_at','due_date','reason']));
             }
             unset($charge);
-            $result=$this->project($charges,fn(string $table)=>$this->rows($table,$supplier,$currentRead),$projection,$currentRead,$supplier);
+            $result=\MyInvoice\Service\Property\Services\Settlement\SettlementHistory::inReadScope(fn()=>$this->project($charges,fn(string $table)=>$this->rows($table,$supplier,$currentRead),$projection,$currentRead,$supplier));
             if($owned)$pdo->commit();return $result;
         }catch(\Throwable $e){if($owned&&$pdo->inTransaction())$pdo->rollBack();throw $e;}
     }

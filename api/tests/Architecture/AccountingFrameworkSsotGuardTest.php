@@ -22,7 +22,7 @@ final class AccountingFrameworkSsotGuardTest extends TestCase
             'forDateForSuppliers',
             'listForTenant',
             'listForTenantForUpdate',
-            'forDateForUpdate',
+            'readForDateForUpdate',
             'nextChangeForUpdate',
         ],
         'Service/Accounting/AccountingFrameworkService.php' => [

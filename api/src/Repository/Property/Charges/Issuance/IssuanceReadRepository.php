@@ -130,6 +130,13 @@ final class IssuanceReadRepository
     public function findMany(int $supplier,array $ids,bool $current = false): array
     {
         foreach($ids as $id) PropertyInput::id($id,'charge_id');
+        // Aktuální čtení se v jedné transakci opakuje jen po zápisu ({@see \MyInvoice\Infrastructure\Database\CurrentReadMemo}).
+        if($current) return \MyInvoice\Infrastructure\Database\CurrentReadMemo::remember($this->db,'charges|'.$supplier.'|'.implode(',',$ids),fn(): array => $this->readCharges($supplier,$ids,true));
+        return $this->readCharges($supplier,$ids,false);
+    }
+
+    private function readCharges(int $supplier,array $ids,bool $current): array
+    {
         $ids=array_values(array_unique($ids)); sort($ids,SORT_NUMERIC); $out=[];
         foreach(array_chunk($ids,500) as $chunk) {
             $marks=implode(',',array_fill(0,count($chunk),'?'));

@@ -11,22 +11,40 @@ final class SettlementHistory
     public function __construct(private readonly Connection $db){}
     public function lifecycle(int $supplier,int $case):array
     {return(new \MyInvoice\Repository\Property\Services\Settlement\ServiceLifecycleRepository($this->db))->current($supplier,$case);}
+    /** Hloubka probíhajícího čtení celé historie ({@see inReadScope()}). */
+    private static int $readScope=0;
+    /** @var array{pdo:\PDO,writes:int,applications:array<string,array>}|null snímky vyúčtování v jednom čtení historie */
+    private static ?array $scopeMemo=null;
     /**
-     * Ověřené vyúčtování čtené aktuálním čtením. Důkaz prochází žádost, deník, účinky,
-     * kredity, nároky i podklady nákladu; v jedné transakci se opakuje jen po zápisu nebo
-     * hranici transakce ({@see \MyInvoice\Infrastructure\Database\LoggingPdo::writeCount()}).
+     * Jedno čtení finanční historie čte totéž vyúčtování u každého dluhu a kreditu, který
+     * z něj vzešel. Uvnitř jednoho takového čtení se snímek vyúčtování ověřuje jednou.
      *
-     * @var \WeakMap<\PDO,array{writes:int,applications:array<string,array>}>|null
+     * @template T
+     * @param callable():T $work
+     * @return T
      */
-    private static ?\WeakMap $currentMemo=null;
+    public static function inReadScope(callable $work): mixed
+    {
+        self::$readScope++;
+        try { return $work(); }
+        finally { if(--self::$readScope===0)self::$scopeMemo=null; }
+    }
+    /**
+     * Ověřené vyúčtování. Důkaz prochází žádost, deník, účinky, kredity, nároky i podklady
+     * nákladu. Aktuální čtení se v jedné transakci opakuje jen po zápisu nebo hranici
+     * transakce ({@see \MyInvoice\Infrastructure\Database\CurrentReadMemo}), snímek jen
+     * v rámci jednoho čtení historie ({@see inReadScope()}).
+     */
     public function application(int $supplier,int $id,bool $current):array
     {
+        if($current)return \MyInvoice\Infrastructure\Database\CurrentReadMemo::remember($this->db,'settlement-application|'.$supplier.'|'.$id,fn():array=>$this->readApplication($supplier,$id,true));
         $pdo=$this->db->pdo();
-        if(!$current||!$pdo instanceof \MyInvoice\Infrastructure\Database\LoggingPdo||!$pdo->statementsTracked()||!$pdo->inTransaction())return $this->readApplication($supplier,$id,$current);
-        $key=$supplier.'|'.$id;self::$currentMemo??=new \WeakMap();$memo=self::$currentMemo[$pdo]??null;
-        if($memo!==null&&$memo['writes']===$pdo->writeCount()&&isset($memo['applications'][$key]))return $memo['applications'][$key];
-        $application=$this->readApplication($supplier,$id,true);
-        $writes=$pdo->writeCount();$memo=self::$currentMemo[$pdo]??null;if($memo===null||$memo['writes']!==$writes)$memo=['writes'=>$writes,'applications'=>[]];$memo['applications'][$key]=$application;self::$currentMemo[$pdo]=$memo;
+        if(self::$readScope===0||!$pdo instanceof \MyInvoice\Infrastructure\Database\LoggingPdo||!$pdo->statementsTracked()||!$pdo->inTransaction())return $this->readApplication($supplier,$id,false);
+        $key=$supplier.'|'.$id;
+        if(self::$scopeMemo===null||self::$scopeMemo['pdo']!==$pdo||self::$scopeMemo['writes']!==$pdo->writeCount())self::$scopeMemo=['pdo'=>$pdo,'writes'=>$pdo->writeCount(),'applications'=>[]];
+        if(isset(self::$scopeMemo['applications'][$key]))return self::$scopeMemo['applications'][$key];
+        $application=$this->readApplication($supplier,$id,false);
+        if(self::$scopeMemo!==null&&self::$scopeMemo['pdo']===$pdo&&self::$scopeMemo['writes']===$pdo->writeCount())self::$scopeMemo['applications'][$key]=$application;
         return $application;
     }
     private function readApplication(int $supplier,int $id,bool $current):array

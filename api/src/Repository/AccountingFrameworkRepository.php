@@ -79,6 +79,12 @@ final class AccountingFrameworkRepository
     public function forDateForUpdate(int $supplierId, string $date): ?string
     {
         $this->assertTransaction();
+        // Zamčený řádek drží transakce; čte se znovu jen po zápisu ({@see \MyInvoice\Infrastructure\Database\CurrentReadMemo}).
+        return \MyInvoice\Infrastructure\Database\CurrentReadMemo::remember($this->db, 'framework|' . $supplierId . '|' . $date, fn (): ?string => $this->readForDateForUpdate($supplierId, $date));
+    }
+
+    private function readForDateForUpdate(int $supplierId, string $date): ?string
+    {
         $stmt = $this->db->pdo()->prepare(
             'SELECT accounting_framework
                FROM supplier_accounting_frameworks

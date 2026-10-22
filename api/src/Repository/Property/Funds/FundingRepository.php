@@ -163,7 +163,17 @@ final class FundingRepository
         foreach($snapshot['claims'] as $claim)$this->q('INSERT INTO property_funding_claims(supplier_id,operation_id,source_kind,source_id,claim_role,amount_cents) VALUES(?,?,?,?,?,?)',[$supplier,$id,$claim['source_kind'],$claim['source_id'],$claim['claim_role'],$claim['amount_cents']]);
         $receipt=['ledger'=>$ledger,'effects'=>$effects,'claims'=>$snapshot['claims']];$update=$this->q('UPDATE property_funding_operations SET journal_entry_id=?,receipt_json=?,receipt_hash=? WHERE supplier_id=? AND id=? AND receipt_json IS NULL',[$entry,self::json($receipt),PropertyInput::hash($receipt),$supplier,$id]);if($update->rowCount()!==1)E::reject('pending');$head=$this->q('UPDATE property_funding_heads SET revision=? WHERE supplier_id=? AND house_id=? AND revision=?',[(int)$row['revision'],$supplier,(int)$row['house_id'],(int)$row['revision']-1]);if($head->rowCount()!==1)E::reject('revision_conflict');
     }
+    /**
+     * Ověřená operace fondu čtená aktuálním čtením. Důkaz prochází žádost, deník, účinky,
+     * nároky i zdroje; přehled fondu a každá další operace ho opakují pro celou historii
+     * domu. V jedné transakci se počítá znovu jen po zápisu nebo hranici transakce
+     * ({@see \MyInvoice\Infrastructure\Database\CurrentReadMemo}).
+     */
     public function operation(int $supplier,int $id):array
+    {
+        return \MyInvoice\Infrastructure\Database\CurrentReadMemo::remember($this->db,'funding-operation|'.$supplier.'|'.$id,fn():array=>$this->readOperation($supplier,$id));
+    }
+    private function readOperation(int $supplier,int $id):array
     {
         if(!$this->db->pdo()->inTransaction())throw new \LogicException('Funding history requires a stable transaction.');$row=$this->q('SELECT * FROM property_funding_operations WHERE supplier_id=? AND id=? FOR UPDATE',[$supplier,$id])->fetch(PDO::FETCH_ASSOC);if(!$row||$row['receipt_json']===null)E::reject('history_missing');
         $request=json_decode($row['request_json'],true,flags:JSON_THROW_ON_ERROR);$snapshot=json_decode($row['snapshot_json'],true,flags:JSON_THROW_ON_ERROR);$receipt=json_decode($row['receipt_json'],true,flags:JSON_THROW_ON_ERROR);

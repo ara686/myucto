@@ -48,8 +48,9 @@ final class PaymentMutationParityTest extends TestCase
             self::assertLessThanOrEqual($queries[2] + 2, $queries[1000], json_encode($queries));
             // Strop 18: ochrana řádků členských příspěvků (MembershipUseGuard::assertLinesMutable) přidala
             // jeden dotaz na každých 500 vkládaných řádků; 1000 řádků = dva bloky. Růst s velikostí
-            // zápisu hlídá podmínka výše, tento strop jen zachytí další přidaný guard.
-            self::assertLessThanOrEqual(18, $queries[1000], json_encode($queries));
+            // zápisu hlídá podmínka výše, tento strop jen zachytí další přidaný guard. Strop 20: strážci
+            // alokací a vyúčtování čtou odkazy zvlášť jednou za zápis místo výrazu nad každým řádkem.
+            self::assertLessThanOrEqual(20, $queries[1000], json_encode($queries));
         } finally { if ($pdo->inTransaction()) $pdo->rollBack(); }
     }
 }

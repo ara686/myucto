@@ -14,7 +14,17 @@ final class IssuanceLocks
 {
     public function __construct(private readonly Connection $db) {}
 
+    /**
+     * Zámky kontextu SVJ firmy. Důkazy a vlastníci agendy je berou při každém dílčím čtení;
+     * dokud transakce nic nezapsala ani neskončila, zamčené řádky jsou pořád její
+     * a opakované zamčení by nic nezměnilo ({@see \MyInvoice\Infrastructure\Database\CurrentReadMemo}).
+     */
     public function acquire(int $supplier): void
+    {
+        \MyInvoice\Infrastructure\Database\CurrentReadMemo::remember($this->db,'issuance-locks|'.$supplier,function()use($supplier):bool{$this->lock($supplier);return true;});
+    }
+
+    private function lock(int $supplier): void
     {
         (new \MyInvoice\Service\Property\PropertyCatalog($this->db))->lockContext($supplier);
         foreach([

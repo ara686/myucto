@@ -6,6 +6,7 @@ namespace MyInvoice\Tests\Integration\Property;
 
 use MyInvoice\Bootstrap;
 use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Infrastructure\Database\CurrentReadMemo;
 use MyInvoice\Infrastructure\Database\LoggingPdo;
 use MyInvoice\Repository\AccountDefinitionRepository;
 use MyInvoice\Repository\AccountingPeriodRepository;
@@ -83,6 +84,48 @@ final class PropertyCurrentReadMemoTest extends TestCase
         $chart->insert($this->supplier, ['account_code' => '221.900', 'name' => 'Synthetic bank analytic', 'account_type' => $parent['account_type'],
             'normal_side' => $parent['normal_side'], 'parent_id' => (int) $parent['id']]);
         self::assertContains('221.900', array_column($definitions->currentForDate($this->supplier, '2026-03-01'), 'account_code'));
+    }
+
+    /** Uložený výsledek platí jen do zápisu nebo hranice transakce; chyba čtení se nepamatuje a mimo transakci se čte vždy. */
+    public function testCurrentReadMemoLastsUntilAnyWriteOrBoundary(): void
+    {
+        $reads = 0;
+        $read = function () use (&$reads): int { return ++$reads; };
+        self::assertSame(1, CurrentReadMemo::remember($this->db, 'memo-test', $read));
+        self::assertSame(1, CurrentReadMemo::remember($this->db, 'memo-test', $read));
+        self::assertSame(2, CurrentReadMemo::remember($this->db, 'memo-test-other', $read), 'Jiný klíč je jiné čtení.');
+
+        $pdo = $this->db->pdo();
+        $pdo->prepare('UPDATE supplier SET id = id WHERE id = ?')->execute([$this->supplier]);
+        self::assertSame(3, CurrentReadMemo::remember($this->db, 'memo-test', $read), 'Zápis do kterékoli tabulky paměť zahodí.');
+        $pdo->exec('SAVEPOINT current_memo');
+        self::assertSame(3, CurrentReadMemo::remember($this->db, 'memo-test', $read));
+        $pdo->exec('ROLLBACK TO SAVEPOINT current_memo');
+        self::assertSame(4, CurrentReadMemo::remember($this->db, 'memo-test', $read), 'Návrat k savepointu paměť zahodí.');
+
+        $failures = 0;
+        for ($i = 0; $i < 2; $i++) {
+            try {
+                CurrentReadMemo::remember($this->db, 'memo-test-failure', function () use (&$failures): never { $failures++; throw new \DomainException('synthetic'); });
+            } catch (\DomainException) {
+            }
+        }
+        self::assertSame(2, $failures, 'Chyba čtení se nepamatuje.');
+
+        $pdo->rollBack();
+        self::assertSame(5, CurrentReadMemo::remember($this->db, 'memo-test', $read), 'Mimo transakci se čte vždy znovu.');
+        self::assertSame(6, CurrentReadMemo::remember($this->db, 'memo-test', $read));
+        $pdo->beginTransaction();
+    }
+
+    /** Zámky kontextu SVJ se v transakci berou znovu až po zápisu. */
+    public function testPropertyLocksAreTakenAgainOnlyAfterWrite(): void
+    {
+        $locks = new \MyInvoice\Service\Property\Charges\Issuance\IssuanceLocks($this->db);
+        $locks->acquire($this->supplier);
+        self::assertSame(0, $this->queriesDuring(fn () => $locks->acquire($this->supplier)));
+        $this->db->pdo()->prepare('UPDATE supplier SET id = id WHERE id = ?')->execute([$this->supplier]);
+        self::assertGreaterThan(0, $this->queriesDuring(fn () => $locks->acquire($this->supplier)));
     }
 
     private function queriesDuring(callable $work): int

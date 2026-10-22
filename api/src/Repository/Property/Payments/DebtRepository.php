@@ -103,7 +103,7 @@ final class DebtRepository
         foreach($debtIds as $id)PropertyInput::id($id,'debt_id');
         if(count(array_unique($debtIds))!==count($debtIds))PropertyInput::invalid('debts');
         (new PaymentLocks($this->db))->acquire($supplier);
-        return $this->readMany($supplier,$debtIds,true);
+        return \MyInvoice\Infrastructure\Database\CurrentReadMemo::remember($this->db,'debts|'.$supplier.'|'.implode(',',$debtIds),fn():array=>$this->readMany($supplier,$debtIds,true));
     }
     private function readMany(int $supplier,array $debtIds,bool $selected):array
     {

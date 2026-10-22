@@ -9,9 +9,14 @@ use MyInvoice\Service\Accounting\PostingService;
 final class SettlementCostProof
 {
     public function __construct(private readonly Connection $db){}
+    /** Složený náklad z aktuálních čtení; v jedné transakci se skládá znovu jen po zápisu ({@see \MyInvoice\Infrastructure\Database\CurrentReadMemo}). */
     public function current(int $supplier,int $unit,int $service,string $date,array $period,array $selectors,SettlementOriginAdapter $adapter,bool $opening=false):array
     {
         if(!$this->db->pdo()->inTransaction())throw new \LogicException('Composite service cost requires the owner transaction.');
+        return \MyInvoice\Infrastructure\Database\CurrentReadMemo::remember($this->db,'composite-cost|'.md5(serialize([$supplier,$unit,$service,$date,$period,$selectors,$opening])),fn():array=>$this->compose($supplier,$unit,$service,$date,$period,$selectors,$adapter,$opening));
+    }
+    private function compose(int $supplier,int $unit,int $service,string $date,array $period,array $selectors,SettlementOriginAdapter $adapter,bool $opening):array
+    {
         $selectors=PropertyInput::list($selectors,'cost_sources',100);if(count($selectors)<2)SettlementEvidence::reject('composite_cost_sources');$parts=[];$inputs=[];$known=0;$final=0;$case=null;$knownPeriod=null;$documents=new SettlementDocumentRepository($this->db,$adapter);
         foreach($selectors as $selector){if(!is_array($selector))PropertyInput::invalid('cost_sources');SettlementEvidence::fields($selector,['kind','id']);$id=PropertyInput::id($selector['id'],'cost_source_id');
             if($selector['kind']==='document'){$stored=$documents->find($supplier,$id,true);$facts=$stored['document'];if(isset($facts['cost']['sources'])||$facts['unit_id']!==$unit||$facts['service_id']!==$service||($opening?($facts['period_to']<$period['from']||$facts['period_from']>$period['to']):($facts['period_from']!==$period['from']||$facts['period_to']!==$period['to'])))SettlementEvidence::reject('composite_cost_scope');if((new SettlementHistory($this->db))->hasActiveApplicationForDocument($supplier,$id))SettlementEvidence::reject('cost_already_disposed');$nextPeriod=['from'=>$facts['period_from'],'to'=>$facts['period_to']];if($knownPeriod!==null&&$knownPeriod!==$nextPeriod)SettlementEvidence::reject('composite_cost_scope');$knownPeriod=$nextPeriod;$source=$stored;$cost=$facts['cost'];$known++;}
