@@ -345,6 +345,12 @@ final class PohodaPayrollPeople
                     'to' => $dates['to'],
                     'childbirth' => $childbirth,
                     'hours' => PohodaXml::num($row, 'HodPrac'),
+                    // Hodiny prvního a posledního dne (`Hodnota1`, `Hodnota2`): neomluvená
+                    // absence nebo neplacené volno na část směny. Platí jen pro neoříznutý den.
+                    'first_day_hours' => $dates['from'] === self::realDate(PohodaXml::date($row, 'DatZac'))
+                        ? PohodaXml::num($row, 'Hodnota1') : null,
+                    'last_day_hours' => $dates['to'] === self::realDate(PohodaXml::date($row, 'DatKon')) && $dates['from'] !== $dates['to']
+                        ? PohodaXml::num($row, 'Hodnota2') : null,
                     'payslip_month' => $payslip['month'],
                     // Osamělý zaměstnanec má podpůrčí dobu ošetřovného 16 dnů místo 9
                     // (§ 40 odst. 1 písm. b) zák. č. 187/2006 Sb.); ELDP z ní odvozuje vyloučené dny.
@@ -824,6 +830,7 @@ final class PohodaPayrollPeople
             $monthEnd = (new \DateTimeImmutable(sprintf('%04d-%02d-01', $year, $month)))->modify('last day of this month')->format('Y-m-d');
             if ((string) $row['to'] > $monthEnd && isset($resumed[$row['type'] . '|' . $row['to'] . '|' . ($month + 1)])) {
                 $row['to'] = $monthEnd;
+                $row['last_day_hours'] = null;
             }
             $out[] = $row;
         }
