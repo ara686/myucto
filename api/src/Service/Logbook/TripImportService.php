@@ -40,7 +40,7 @@ final class TripImportService
     ];
 
     /** Strop datových řádků a sloupců sešitu (XLSX/XLS/ODS); větší soubor je třeba rozdělit. */
-    public const MAX_ROWS = 5000;
+    public const MAX_ROWS = 10000;
     public const MAX_COLUMNS = 40;
     private const MAX_UNCOMPRESSED_BYTES = 10_000_000;
 
