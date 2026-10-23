@@ -108,7 +108,7 @@ jobs:
         run: |
           sudo apt-get update
           if ($LASTEXITCODE -ne 0) { throw 'Package index update failed.' }
-          sudo apt-get install --no-install-recommends -y ghostscript poppler-utils
+          sudo apt-get install --no-install-recommends -y ghostscript poppler-utils librsvg2-bin
           if ($LASTEXITCODE -ne 0) { throw 'PDF backend installation failed.' }
           foreach ($file in Get-ChildItem -Path '/etc/ImageMagick-*/policy.xml') {
               [xml]$policy = Get-Content -LiteralPath $file.FullName -Raw
@@ -131,6 +131,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Ghostscript is unavailable.' }
           pdftoppm -v
           if ($LASTEXITCODE -ne 0) { throw 'Poppler is unavailable.' }
+          rsvg-convert --version
+          if ($LASTEXITCODE -ne 0) { throw 'rsvg-convert is unavailable.' }
           php --ri imagick
           if ($LASTEXITCODE -ne 0) { throw 'Imagick is unavailable.' }
 
