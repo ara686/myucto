@@ -48963,14 +48963,17 @@ components:
         valid_to: { type: string, format: date-time }
         ik_mpsv_present: { type: boolean }
         epo_verified: { type: boolean, description: Alespoň jeden test=1 s tímto přesným otiskem úspěšně prošel EPO. }
-        epo_verified_at: { type: [string, "null"], format: date-time }
+        epo_verified_at:
+          type: [string, "null"]
+          format: date-time
+          description: U klienta se ověření certifikátu vztahuje pouze k aktuální firmě.
         valid_now: { type: boolean }
         enabled_for_supplier: { type: boolean }
-        linked_profiles_count: { type: integer, minimum: 0, description: Počet aktivních podpisových profilů používajících certifikát napříč firmami vlastníka. }
+        linked_profiles_count: { type: integer, minimum: 0, description: Počet aktivních podpisových profilů používajících certifikát napříč firmami vlastníka; u klienta pouze v aktuální firmě. }
         linked_supplier_profiles_count: { type: integer, minimum: 0, description: Počet aktivních podpisových profilů používajících certifikát v aktuální firmě. }
-        linked_data_box_count: { type: integer, minimum: 0, description: Počet přístupů k datové schránce, které se certifikátem přihlašují. Blokuje smazání. }
-        linked_isds_gateway_count: { type: integer, minimum: 0, description: Počet registrací odesílací brány ISDS s tímto certifikátem. Blokuje smazání. }
-        linked_payroll_selections_count: { type: integer, minimum: 0, description: Počet voleb certifikátu pro mzdová podání (firma a prostředí). Smazání certifikátu je zruší. }
+        linked_data_box_count: { type: integer, minimum: 0, description: Počet přístupů k datové schránce, které se certifikátem přihlašují. Blokuje smazání. Klientovi se nevrací. }
+        linked_isds_gateway_count: { type: integer, minimum: 0, description: Počet registrací odesílací brány ISDS s tímto certifikátem. Blokuje smazání. Klientovi se nevrací. }
+        linked_payroll_selections_count: { type: integer, minimum: 0, description: Počet voleb certifikátu pro mzdová podání (firma a prostředí). Smazání certifikátu je zruší. Klientovi se nevrací. }
         created_at: { type: string, format: date-time }
     EpoDirectTestResult:
       type: object
