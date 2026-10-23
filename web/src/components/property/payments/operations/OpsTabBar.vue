@@ -4,10 +4,10 @@ const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 </script>
 
 <template>
-  <div role="tablist" class="flex flex-wrap gap-2">
+  <div role="tablist" class="flex gap-1 overflow-x-auto border-b border-neutral-200">
     <button v-for="tab in tabs" :key="tab.key" type="button" role="tab" :data-tab="tab.key" :aria-selected="modelValue === tab.key" :disabled="disabled"
-      class="h-9 whitespace-nowrap rounded-md border px-3 text-sm font-medium disabled:opacity-50"
-      :class="modelValue === tab.key ? 'border-primary-600 bg-primary-600 text-white' : 'border-neutral-300 text-neutral-700 hover:bg-neutral-50'"
+      class="-mb-px cursor-pointer whitespace-nowrap border-b-2 px-4 py-2 text-sm transition-colors disabled:cursor-default disabled:opacity-50"
+      :class="modelValue === tab.key ? 'border-primary-600 font-medium text-primary-700' : 'border-transparent text-neutral-600 hover:text-neutral-900'"
       @click="emit('update:modelValue', tab.key)">{{ tab.label }}</button>
   </div>
 </template>

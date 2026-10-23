@@ -35643,7 +35643,7 @@
       "general": "Doložený obecný režim",
       "other_documented": "Jiný doložený režim"
     },
-    "registryAsOf": "Historický stav registru k okamžiku",
+    "registryAsOf": "Stav registru k",
     "registryFacts": "Doložené vlastnické skutečnosti registru",
     "remove": "Odebrat",
     "replacement": "Náhradní předpis podle vybrané verze",
@@ -35956,7 +35956,7 @@
       "unitFilter": "Jednotka"
     },
     "amount": "Částka v Kč",
-    "asOf": "Registr platný k okamžiku",
+    "asOf": "Stav registru k",
     "card": {
       "claims": "Pohledávky",
       "coverage": "Přehled pokrývá jen zaznamenané předpisy a platby.",
@@ -36747,10 +36747,6 @@
     "importRequired": "Vyberte soubor, dům a vyplňte důvod i listinu.",
     "importTitle": "Import registru CSV / XLSX",
     "inactive": "Neaktivní",
-    "instantHelp": "Zadejte datum a čas doloženého okamžiku v místním čase. Letní a zimní čas se doplní automaticky.",
-    "localTime": "místní čas",
-    "localTimeSummer": "místní letní čas",
-    "localTimeWinter": "místní zimní čas",
     "intro": "Domy, bytové jednotky, jejich vlastníci a služby. Z registru vychází předpisy záloh a vyúčtování.",
     "kinds": {
       "house": "Domy",
@@ -37460,7 +37456,7 @@
     "addRate": "Přidat sazbu",
     "after": "Nový stav",
     "amount": "Částka v Kč",
-    "asOf": "Okamžik pohledu",
+    "asOf": "Stav k",
     "bases": {
       "declaration_override": "Jinak, podle prohlášení vlastníka",
       "historical_documented": "Podle dobového podkladu (před 1. 7. 2020)",

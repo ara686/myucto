@@ -35694,10 +35694,6 @@
     "importRequired": "Select a file and building, and enter a reason and deed.",
     "importTitle": "CSV / XLSX register import",
     "inactive": "Inactive",
-    "instantHelp": "Enter the date and time of the evidenced moment in local time. Daylight saving time is applied automatically.",
-    "localTime": "local time",
-    "localTimeSummer": "local summer time",
-    "localTimeWinter": "local winter time",
     "intro": "Buildings, units, their owners and services. Advance schedules and settlements are based on the registry.",
     "kinds": {
       "house": "Buildings",
@@ -36206,7 +36202,7 @@
       "unitFilter": "Unit"
     },
     "amount": "Amount in CZK",
-    "asOf": "Registry effective at",
+    "asOf": "Registry state as of",
     "card": {
       "claims": "Receivables",
       "coverage": "The overview covers only recorded charges and payments.",
@@ -38346,7 +38342,7 @@
     "addRate": "Add rate",
     "after": "New calculation",
     "amount": "Amount in CZK",
-    "asOf": "Registry state as of",
+    "asOf": "State as of",
     "bases": {
       "declaration_override": "Otherwise, by the owner's declaration",
       "historical_documented": "By a contemporary basis (before 1 July 2020)",

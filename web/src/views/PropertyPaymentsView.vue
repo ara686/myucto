@@ -266,7 +266,7 @@ function unitLabel(u: PaymentWorkflowContext['units'][number]) { return u.revisi
 <template>
   <div class="space-y-5">
     <div><h1 class="text-2xl font-semibold">{{ t('propertyPayments.title') }}</h1><p class="text-sm text-neutral-500 mt-0.5">{{ t('propertyPayments.czkOnly') }}</p></div>
-    <div class="flex flex-wrap items-end gap-3"><fieldset :disabled="anyBusy" class="min-w-0"><PropertyInstantInput :model-value="asOf" @update:model-value="changeAsOf" :label="t('propertyPayments.asOf')" required /></fieldset><PropertyButton icon="cycle" :disabled="anyBusy || loading" @click="load">{{ t('propertyPayments.refresh') }}</PropertyButton></div>
+    <details class="text-sm" data-other-moment><summary class="cursor-pointer text-neutral-600">{{ t('propertyCharges.otherMoment') }}</summary><div class="flex flex-wrap items-end gap-3 pt-2"><fieldset :disabled="anyBusy" class="min-w-0"><PropertyInstantInput :model-value="asOf" @update:model-value="changeAsOf" :label="t('propertyPayments.asOf')" required /></fieldset><PropertyButton icon="cycle" :disabled="anyBusy || loading" @click="load">{{ t('propertyPayments.refresh') }}</PropertyButton></div></details>
     <p v-if="error" role="alert" class="text-danger-600">{{ error }}</p>
     <p v-if="done" role="status" class="text-success-600">{{ t('propertyPayments.done') }}</p>
     <p v-if="loading">{{ t('propertyPayments.loading') }}</p>
