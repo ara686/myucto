@@ -462,6 +462,26 @@ final class DocumentsAction
             return Json::error($response, 'no_ids', 'Nebyly vybrány žádné položky.', 400);
         }
 
+        // Jedna trasa, víc operací: každá vyžaduje TOTÉŽ právo jako její
+        // jednotlivá podoba (přesun, smazání, úprava štítků v detailu).
+        $permission = match ($action) {
+            'move' => 'documents.move',
+            'delete' => 'documents.delete',
+            'tag' => 'documents',
+            default => null,
+        };
+        if ($permission !== null
+            && !RequestAuthorization::allows($request, $permission, AccessLevel::WRITE)
+        ) {
+            return Json::error(
+                $response,
+                'forbidden_permission',
+                'Pro tuto hromadnou akci nemáte oprávnění.',
+                403,
+                ['permission' => $permission, 'required_level' => 'write'],
+            );
+        }
+
         $userId = $this->userId($request);
         $viewer = $this->viewer($request);
         $affected = 0;
