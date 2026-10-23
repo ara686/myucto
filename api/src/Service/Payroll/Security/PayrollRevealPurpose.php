@@ -101,6 +101,26 @@ enum PayrollRevealPurpose: string
     case RESEAL_NEW_VERSION = 'storage:reseal_new_version';
 
     /**
+     * Přiznání k dani z příjmů fyzických osob (DPFDP7, § 35ba a § 35c ZDP) —
+     * rodné číslo vyživovaného dítěte (VetaA `vyzdite_r_cislo`) a manžela nebo
+     * manželky (VetaD `manz_r_cislo`) je náležitostí podání. Odhalený údaj jde
+     * jen do sestavovaného XML, do JSON odpovědí ani do uloženého výpočtu ne.
+     */
+    case SUBMISSION_INCOME_TAX_RETURN = 'submission:income_tax_return';
+
+    /**
+     * Odhalení rodných čísel z daňového profilu na výslovnou žádost uživatele
+     * (session, právo zápisu do daní, textový důvod a auditní stopa).
+     */
+    case TAX_FAMILY_REVEAL = 'security:tax_family_reveal';
+
+    /**
+     * Ověření převodu dřív otevřeně uložené hodnoty do šifrované podoby: zapečetěná
+     * hodnota se hned zkusmo dešifruje a otevřená se smaže, jen když se shoduje.
+     */
+    case MIGRATION_VERIFY = 'storage:migration_verify';
+
+    /**
      * Je odhalení zákonnou náležitostí dokumentu nebo podání?
      *
      * Rozlišení je tu proto, aby budoucí auditní zápis uměl oddělit systémový
@@ -116,7 +136,8 @@ enum PayrollRevealPurpose: string
             self::SUBMISSION_CSSZ_REGISTRATION,
             self::SUBMISSION_CSSZ_SICKNESS,
             self::SUBMISSION_CSSZ_MONTHLY_REPORT,
-            self::SUBMISSION_HEALTH_BULK_NOTIFICATION => true,
+            self::SUBMISSION_HEALTH_BULK_NOTIFICATION,
+            self::SUBMISSION_INCOME_TAX_RETURN => true,
             default => false,
         };
     }

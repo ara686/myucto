@@ -67,6 +67,8 @@ final class TaxReturnService
         private readonly \MyInvoice\Service\Pdf\EquityChangesPdfRenderer $equityChangesPdf,
         // Zastoupení daňovým poradcem (§29/2 DŘ) do dan_por/pln_moc — viz representationMeta().
         private readonly TaxRepresentationService $representation,
+        // Rodná čísla rodiny z daňového profilu (H28): do XML odhalená, ven maskovaná.
+        private readonly \MyInvoice\Service\Tax\TaxFamilyIdentifierService $familyIdentifiers,
     ) {}
 
     private const TYPES = ['fo', 'po'];
@@ -153,8 +155,10 @@ final class TaxReturnService
             'last_known_tax_suggested' => $variant === 'dodatecne'
                 ? $this->returns->findLastKnownTax($supplierId, $year, $type)
                 : null,
-            'computed' => $computation['result'],
-            'podklady' => $computation['podklady'],
+            // Rodná čísla rodiny jen maskovaná (H28) — i u starších finálních přiznání,
+            // jejichž uložený výpočet je ještě nese otevřeně.
+            'computed' => $this->familyIdentifiers->maskResult($computation['result']),
+            'podklady' => $this->familyIdentifiers->maskPodklady($computation['podklady']),
             'warnings' => $computation['warnings'],
             'tax_losses' => $this->losses->card($supplierId, $year, $type),
             'prefinalize_check' => $prefinalize,
@@ -260,8 +264,8 @@ final class TaxReturnService
             $paid = (float) ($stored['computed']['advances_paid'] ?? 0);
             return [
                 'status' => 'final',
-                'result' => (array) $stored['computed'],
-                'podklady' => (array) ($stored['podklady'] ?? []),
+                'result' => $this->familyIdentifiers->maskResult((array) $stored['computed']),
+                'podklady' => $this->familyIdentifiers->maskPodklady((array) ($stored['podklady'] ?? [])),
                 'advances_source' => $paid > 0 ? 'return' : 'none',
             ];
         }
@@ -271,8 +275,8 @@ final class TaxReturnService
 
         return [
             'status' => $read['status'],
-            'result' => $computation['result'],
-            'podklady' => $computation['podklady'],
+            'result' => $this->familyIdentifiers->maskResult($computation['result']),
+            'podklady' => $this->familyIdentifiers->maskPodklady($computation['podklady']),
             'advances_source' => $read['advances_source'],
         ];
     }
@@ -459,7 +463,14 @@ final class TaxReturnService
             $meta = ['verze_sw' => $this->loadAppVersion() ?? '0']
                 + $this->amendmentXmlMeta($type, $variant, $computation['result'])
                 + $this->representationMeta($supplierId, null);
-            $built = $this->dpfoXml->build($supplier, $year, $computation['result'], $meta);
+            // Rodná čísla rodiny jsou náležitostí podání: odhalí se jen pro sestavení XML,
+            // uložený výpočet (snapshot níže) je nese dál jen maskovaná (H28).
+            $built = $this->dpfoXml->build(
+                $supplier,
+                $year,
+                $this->familyIdentifiers->withFilingIdentifiers($supplierId, $year, $computation['result']),
+                $meta,
+            );
             $snapshotXml = $built['xml'];
             $snapshot['warnings'] = array_values(array_unique(array_merge($snapshot['warnings'], $built['warnings'])));
             $xsd = $this->xmlValidator->validate($snapshotXml, 'dpfdp7');
@@ -1032,7 +1043,12 @@ final class TaxReturnService
             + $this->amendmentXmlMeta($type, $variant, $computation['result'])
             + $this->representationMeta($supplierId, null);
         $supplier = $this->loadSupplier($supplierId);
-        $built = $this->dpfoXml->build($supplier, $year, $computation['result'], $meta);
+        $built = $this->dpfoXml->build(
+            $supplier,
+            $year,
+            $this->familyIdentifiers->withFilingIdentifiers($supplierId, $year, $computation['result']),
+            $meta,
+        );
         $businessErrors = $this->dpfoBusinessValidator->validate($computation['result'], $computation['podklady']);
         $unsupported = UnsupportedCaseDetector::detectForSupplier(
             $supplier, 'fo', $computation['podklady'], $computation['result'], $inputs

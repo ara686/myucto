@@ -11055,6 +11055,11 @@ paths:
         Uzavřený rok → `mode: retrospective` (srovnání režimů na skutečném příjmu +
         YoY). Běžící rok → `mode: forecast` (YTD příjem + projekce a sledování limitů
         DPH/paušál). Vrací `profile`, `constants`, `available_years`, `is_vat_payer`.
+
+        Rodná čísla dětí a manžela/manželky jsou v `profile` jen maskovaná. Přes API token
+        nese `profile.children` a `profile.spouse_claim` jen údaje pro výpočet slevy
+        a zvýhodnění (měsíce, pořadí, ZTP/P, doložení), bez jmen, rodných čísel, dat
+        narození a příjmu manžela/manželky.
       parameters:
         - $ref: '#/components/parameters/SupplierIdHeader'
         - { in: query, name: year, schema: { type: integer }, description: 'Default = aktuální rok' }
@@ -11073,6 +11078,10 @@ paths:
 
         Částečná aktualizace (viz úvod). Všechna skalární pole jsou nepovinná a vynechané pole
         zachová uloženou hodnotu. Výchozí hodnoty se použijí jen při prvním založení profilu.
+
+        Rodná čísla v `children[]` a `spouse_claim` se ukládají šifrovaně. Prázdné
+        `birth_number` (nebo vrácená maska) u položky s `id` ponechá uložené číslo,
+        nové číslo ho nahradí a `birth_number_clear: true` ho odebere.
       parameters: [{ $ref: '#/components/parameters/SupplierIdHeader' }]
       requestBody:
         required: true
@@ -11090,7 +11099,35 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
         '200': { description: 'OK ({ profile: {...} })' }
         '400': { description: Žádný supplier scope }
-        '422': { description: Neplatný rok }
+        '422': { description: Neplatný rok nebo stejné rodné číslo u dvou dětí }
+
+  /api/v1/tax/profile/family-reveal:
+    post:
+      tags: [Tax]
+      summary: Odhalí rodná čísla dětí a manžela/manželky z daňového profilu roku
+      description: |
+        Profil vrací rodná čísla jen maskovaná (`birth_number_masked`, `has_birth_number`).
+        Plnou hodnotu vydá jen tenhle endpoint: výhradně přihlášené relaci (API token
+        dostane `session_required`) s právem zápisu do daní, s povinným důvodem 10 až 500
+        znaků. Odhalení se zapisuje do auditní stopy (bez hodnot) a sdílí přísný limit
+        počtu odhalení se mzdami.
+      parameters: [{ $ref: '#/components/parameters/SupplierIdHeader' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [year, reason]
+              properties:
+                year: { type: integer }
+                reason: { type: string, minLength: 10, maxLength: 500 }
+      responses:
+        '200': { description: 'OK ({ reveal: { year, children: [{ id, birth_number }], spouse: { id, birth_number } | null } })' }
+        '401': { description: Odhalení vyžaduje přihlášenou relaci }
+        '403': { description: Chybí právo zápisu do daní }
+        '409': { description: Uložená hodnota neprošla kontrolou integrity }
+        '422': { description: Neplatný rok nebo důvod }
 
   # ── Klienti / vyhledávání — doplňující endpointy ─────────────────────────
   /api/v1/clients/{id}/vat-status:

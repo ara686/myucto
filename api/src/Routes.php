@@ -3873,6 +3873,7 @@ final class Routes
         // Tax optimizer — daňový optimalizátor (srovnání režimů + predikce limitů)
         $app->get ('/api/tax/analysis',  [\MyInvoice\Action\Tax\TaxAction::class, 'analysis']);
         $app->put ('/api/tax/profile',   [\MyInvoice\Action\Tax\TaxAction::class, 'updateProfile']);
+        $app->post('/api/tax/profile/family-reveal', [\MyInvoice\Action\Tax\TaxAction::class, 'revealFamily']);
 
         // Písemnosti k příjmům daňových nerezidentů — oznámení o příjmech
         // plynoucích do zahraničí (DPSHL1, § 38da) a hlášení o srážce zajištění

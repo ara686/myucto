@@ -1080,6 +1080,7 @@
         "2134_property_party_claim_keys.sql",
         "2135_payroll_child_claim_other_caregiver_birth_number.sql",
         "2136_sessions_supplier_domain_binding.sql",
+        "2160_tax_profile_family_birth_number_sealed.sql",
         "2180_work_report_link_session_expiry.sql"
     ],
     "tables": {
@@ -25729,6 +25730,9 @@
             "columns": {
                 "birth_date": "date NULL DEFAULT NULL",
                 "birth_number": "varchar(10) NULL DEFAULT NULL",
+                "birth_number_ciphertext": "varchar(512) NULL DEFAULT NULL",
+                "birth_number_hash": "binary(32) NULL DEFAULT NULL",
+                "birth_number_masked": "varchar(191) NULL DEFAULT NULL",
                 "evidence_ref": "varchar(190) NULL DEFAULT NULL",
                 "first_name": "varchar(36) NOT NULL",
                 "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
@@ -25741,13 +25745,15 @@
             },
             "indexes": {
                 "PRIMARY": "UNIQUE BTREE (id)",
+                "idx_tax_child_birth_number_hash": "BTREE (supplier_id, birth_number_hash)",
                 "idx_tax_child_profile": "BTREE (supplier_id, year, order_index, id)"
             },
             "foreign_keys": {
                 "fk_tax_child_supplier": "(supplier_id) -> supplier (id) ON UPDATE RESTRICT ON DELETE CASCADE"
             },
             "checks": {
-                "chk_tax_child_identity": "`birth_number` is not null or `birth_date` is not null"
+                "chk_tax_child_birth_number_sealed": "`birth_number_ciphertext` is null and `birth_number_hash` is null and `birth_number_masked` is null or `birth_number_hash` is not null and `birth_number_masked` is not null and `birth_number` is null",
+                "chk_tax_child_identity": "`birth_number` is not null or `birth_number_hash` is not null or `birth_date` is not null"
             }
         },
         "tax_profile_spouse_claims": {
@@ -25757,6 +25763,9 @@
             "columns": {
                 "birth_date": "date NULL DEFAULT NULL",
                 "birth_number": "varchar(10) NULL DEFAULT NULL",
+                "birth_number_ciphertext": "varchar(512) NULL DEFAULT NULL",
+                "birth_number_hash": "binary(32) NULL DEFAULT NULL",
+                "birth_number_masked": "varchar(191) NULL DEFAULT NULL",
                 "child_under_three_proved": "tinyint(1) NOT NULL DEFAULT 0",
                 "eligible_months": "tinyint(3) unsigned NOT NULL DEFAULT 0",
                 "evidence_ref": "varchar(190) NULL DEFAULT NULL",
@@ -25778,7 +25787,8 @@
                 "fk_tax_spouse_supplier": "(supplier_id) -> supplier (id) ON UPDATE RESTRICT ON DELETE CASCADE"
             },
             "checks": {
-                "chk_tax_spouse_identity": "`birth_number` is not null or `birth_date` is not null",
+                "chk_tax_spouse_birth_number_sealed": "`birth_number_ciphertext` is null and `birth_number_hash` is null and `birth_number_masked` is null or `birth_number_hash` is not null and `birth_number_masked` is not null and `birth_number` is null",
+                "chk_tax_spouse_identity": "`birth_number` is not null or `birth_number_hash` is not null or `birth_date` is not null",
                 "chk_tax_spouse_months": "`eligible_months` between 0 and 12"
             }
         },

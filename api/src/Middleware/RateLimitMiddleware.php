@@ -415,11 +415,14 @@ final class RateLimitMiddleware implements MiddlewareInterface
         // `payroll.person.read_sensitive` je vázané na účet. Odkrytí OIČ / ID PPV
         // na kartě vztahu sdílí TENTÝŽ bucket: je to stejná třída operace pod
         // stejným právem, takže vlastní limit by dal obcházení druhou cestou.
+        // Odhalení rodných čísel rodiny z daňového profilu (H28) je táž třída
+        // operace nad týmž druhem údaje, proto sdílí tentýž bucket.
         if ($userId > 0
             && $method === 'POST'
             && preg_match(
-                '#^/api/payroll/(people/[0-9]+/sensitive-reveal'
-                . '|jmhz/identities/[0-9]+/reveal)$#',
+                '#^/api/(payroll/(people/[0-9]+/sensitive-reveal'
+                . '|jmhz/identities/[0-9]+/reveal)'
+                . '|tax/profile/family-reveal)$#',
                 $path,
             ) === 1
         ) {
