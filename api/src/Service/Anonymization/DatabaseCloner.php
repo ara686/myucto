@@ -102,11 +102,14 @@ final class DatabaseCloner
             ];
         }
 
-        $routines = $this->pdo->prepare('SELECT ROUTINE_NAME, ROUTINE_TYPE, SQL_MODE FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = ? ORDER BY ROUTINE_TYPE, ROUTINE_NAME');
+        $routines = $this->pdo->prepare('SELECT ROUTINE_NAME, ROUTINE_TYPE FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = ? ORDER BY ROUTINE_TYPE, ROUTINE_NAME');
         $routines->execute([$source]);
         foreach ($routines->fetchAll(PDO::FETCH_ASSOC) as $routine) {
-            $plan['routines'][] = $this->showCreate((string) $routine['ROUTINE_TYPE'], $source, (string) $routine['ROUTINE_NAME']);
-            $plan['routine_sql_modes'][] = (string) $routine['SQL_MODE'];
+            // sql_mode z SHOW CREATE: information_schema.ROUTINES v MariaDB 11.8 vypisuje
+            // ALLOW_INVALID_DATES jako INVALID_DATES a tuhle hodnotu server pak nepřijme.
+            $row = $this->showCreateRow((string) $routine['ROUTINE_TYPE'], $source, (string) $routine['ROUTINE_NAME']);
+            $plan['routines'][] = self::createStatement($row, (string) $routine['ROUTINE_TYPE'], (string) $routine['ROUTINE_NAME']);
+            $plan['routine_sql_modes'][] = (string) ($row['sql_mode'] ?? '');
         }
 
         return $plan;
@@ -197,11 +200,23 @@ final class DatabaseCloner
 
     private function showCreate(string $kind, string $schema, string $name): string
     {
+        return self::createStatement($this->showCreateRow($kind, $schema, $name), $kind, $name);
+    }
+
+    /** @return array<string,mixed> */
+    private function showCreateRow(string $kind, string $schema, string $name): array
+    {
         $statement = $this->pdo->query('SHOW CREATE ' . $kind . ' ' . self::quote($schema) . '.' . self::quote($name));
         $row = $statement === false ? false : $statement->fetch(PDO::FETCH_ASSOC);
         if (!is_array($row)) {
             throw new \RuntimeException("Nelze načíst definici {$kind} {$name}.");
         }
+        return $row;
+    }
+
+    /** @param array<string,mixed> $row */
+    private static function createStatement(array $row, string $kind, string $name): string
+    {
         foreach ($row as $key => $value) {
             if (str_starts_with(strtolower((string) $key), 'create ') || $key === 'SQL Original Statement') {
                 if ($value === null || $value === '') {
