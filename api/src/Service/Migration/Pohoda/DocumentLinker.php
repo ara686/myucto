@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MyInvoice\Service\Migration\Pohoda;
 
 use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Infrastructure\Database\TransactionFailure;
 use MyInvoice\Repository\PohodaImportRepository;
 use MyInvoice\Service\Accounting\Activation\OpeningBalanceDocuments;
 use MyInvoice\Service\Accounting\FiscalCalendar;
@@ -347,6 +348,9 @@ final class DocumentLinker
             $stmt->execute([$txId, (int) $l['id'], $ctx->supplierId]);
             $pdo->exec('RELEASE SAVEPOINT pohoda_tax_advance_payment');
         } catch (\PDOException $e) {
+            if (TransactionFailure::rollbackIfAborted($pdo, $e)) {
+                throw $e;
+            }
             if ((string) $e->getCode() !== '23000' && (string) $e->getCode() !== '45000') {
                 throw $e;
             }
