@@ -946,6 +946,8 @@ final class RoutePermissionMap
         ['*', '#^/api/(portfolio|crm)(/|$)#', 'dashboard.portfolio', AccessLevel::WRITE],
         ['GET', '#^/api/(codebooks|expense-categories|revenue-categories|vat-classifications)(/|$)#', 'settings.company', AccessLevel::READ],
         ['*', '#^/api/(codebooks|expense-categories|revenue-categories|vat-classifications)(/|$)#', 'settings.company.write', AccessLevel::WRITE],
+        // `GET /api/suppliers/{id}` s `profile` vrací jen bezpečný výřez firmy; plný detail
+        // akce podmiňuje `settings.company` READ k aktuální firmě (SettingsAction::getSupplierById).
         ['GET', '#^/api/(suppliers|search|slug|locate)(/|$)#', 'profile', AccessLevel::READ],
         ['GET', '#^/api/branding-profiles$#', 'profile', AccessLevel::READ],
         ['*', '#^/api/user/(filters|preferences)(/|$)#', 'profile', AccessLevel::WRITE],

@@ -2321,12 +2321,14 @@ paths:
       description: |
         Vrátí klienta + odvozené metriky pro detail stránku:
 
-        - `projects` — seznam zakázek klienta,
+        - `projects` — seznam zakázek klienta (jen s oprávněním `projects`, jinak prázdný),
+        - `projects_count` — počet všech zakázek klienta bez ohledu na oprávnění,
         - `invoices_count` — celkový počet faktur,
         - `revenue_by_month` — obrat po měsících za posledních 24 měsíců (VAT-aware),
         - `revenue_by_year` — obrat po letech (VAT-aware),
         - `revenue_by_project` — obrat agregovaný per zakázka pro graf „Obrat podle zakázek"
-          (faktury bez `project_id` se agregují pod `project_id: null`),
+          (faktury bez `project_id` se agregují pod `project_id: null`; bez oprávnění
+          `projects` prázdný seznam),
         - `unpaid_summary` — nezaplaceno / po splatnosti per měna.
 
         Obraty zahrnují vystavené faktury + dobropisy (`issued`, `sent`,
@@ -6969,6 +6971,12 @@ paths:
       description: |
         Membership (Epic F0): firma mimo `user_suppliers` přiřazení uživatele
         vrací `404` (konvence pro cizí entity).
+
+        Plný detail (`SupplierFull`) jen pro aktuální firmu požadavku
+        (`X-Supplier-Id` nebo firma tokenu) s oprávněním `settings.company` READ,
+        případně pro globálního správce. Ostatním volajícím s oprávněním `profile`
+        vrací jen výřez `id, company_name, display_name, ic, dic, is_vat_payer,
+        email, accounting_mode, country_iso`.
       responses:
         '200':
           description: OK
@@ -28719,6 +28727,8 @@ paths:
         Jednohodnotová akce: klíč `project_id` je povinný. Chybí-li v těle, vrací 400
         `validation_failed` (`fields.project_id`); `null` zakázku odebere.
         Skutečná změna zakázky na zápisu uzavřeného období vrací 409 `period_not_open`.
+        Bez oprávnění `projects` (READ) vrací 403 `forbidden_permission`; klientská role
+        na zamčeném (zaúčtovaném) dokladu 403 `document_locked`.
         Uložení stejné hodnoty je povoleno; datumový zámek otevřeného období změně analytiky nebrání.
       requestBody:
         required: true
@@ -28996,6 +29006,8 @@ paths:
         Jednohodnotová akce: klíč `project_id` je povinný (může být `null`, což zakázku odebere).
         Chybí-li v těle, vrací 400 `validation_failed`.
         Skutečná změna zakázky na zápisu uzavřeného období vrací 409 `period_not_open`.
+        Bez oprávnění `projects` (READ) vrací 403 `forbidden_permission`; klientská role
+        na zamčeném (zaúčtovaném) dokladu 403 `document_locked`.
         Uložení stejné hodnoty je povoleno; datumový zámek otevřeného období změně analytiky nebrání.
       requestBody:
         required: true
@@ -44682,7 +44694,11 @@ components:
               items: { $ref: '#/components/schemas/ClientBankAccount' }
             projects:
               type: array
+              description: Zakázky klienta; bez oprávnění `projects` prázdný seznam.
               items: { $ref: '#/components/schemas/Project' }
+            projects_count:
+              type: integer
+              description: Počet všech zakázek klienta včetně archivovaných, bez ohledu na oprávnění.
             invoices_count:
               type: integer
               description: Celkový počet faktur klienta.
@@ -44707,7 +44723,7 @@ components:
                   count: { type: integer }
             revenue_by_project:
               type: array
-              description: 'Obrat agregovaný per zakázka — pro graf "Obrat podle zakázek". Faktury bez project_id agregovány pod project_id=null.'
+              description: 'Obrat agregovaný per zakázka — pro graf "Obrat podle zakázek". Faktury bez project_id agregovány pod project_id=null. Bez oprávnění `projects` prázdný seznam.'
               items:
                 type: object
                 properties:
@@ -46627,10 +46643,24 @@ components:
     SupplierFull:
       type: object
       description: |
-        Kompletní data dodavatele (per-supplier konfigurace). Vrací `SELECT s.*`
-        + odvozená pole. Bankovní účty NEJSOU součástí — jsou per-měna
-        na `GET /api/settings/currencies`. (Pozn.: response obsahuje i další
-        sloupce mimo tento výčet — branding, integrace, payment-thanks ap.)
+        Data dodavatele (per-supplier konfigurace) + odvozená pole. Bankovní účty
+        NEJSOU součástí — jsou per-měna na `GET /api/settings/currencies`.
+
+        Odpověď skládá allowlist (`SupplierResponseFields`): kromě zde popsaných
+        polí obsahuje další provozní nastavení, která používá formulář Nastavení
+        firmy (branding, payment-thanks, číselné řady, Pohoda, EPO údaje). Tajemství,
+        adresy a modely AI endpointů, identifikátory importních integrací, počítadla
+        a interní značky v ní nejsou nikdy. Citlivé skupiny jsou podmíněné oprávněním
+        volajícího a token se scope `read` je nedostane:
+        `health_insurance_number`, `cssz_vsdp`, `cssz_ossz_code` jen se zápisem
+        `settings.company.write`; `ai_provider`, `ai_data_region`,
+        `ai_eu_residency_required`, `client_ai_extraction_*` jen s `settings.ai_provider`;
+        `logo_path`, `signature_path` jen se zápisem `settings.branding`.
+
+        `GET /api/suppliers/{id}` vrací tento detail jen pro aktuální firmu požadavku
+        s `settings.company` READ (nebo globálnímu správci); jinak jen výřez
+        `id, company_name, display_name, ic, dic, is_vat_payer, email,
+        accounting_mode, country_iso`.
       properties:
         accounting_profile_recommendation:
           type: object
