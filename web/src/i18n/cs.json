@@ -5606,6 +5606,8 @@
           "other_caregiver_given_name": "Jméno jiné vyživující osoby",
           "other_caregiver_family_name": "Příjmení jiné vyživující osoby",
           "other_caregiver_birth_date": "Datum narození jiné vyživující osoby",
+          "other_caregiver_birth_number": "Rodné číslo jiné vyživující osoby",
+          "other_caregiver_birth_number_hint": "Nepovinné. Měsíční hlášení ho uvede vedle data narození. Ukládá se šifrovaně, prázdné pole ponechá uloženou hodnotu.",
           "supersede_hint": "Zasahuje-li nárok do období schválené mzdové revize, uloží se změna jako nová účinná verze a původní záznam zůstane v historii."
         },
         "event_month": {

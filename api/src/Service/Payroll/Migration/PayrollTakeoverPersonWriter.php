@@ -551,7 +551,7 @@ final class PayrollTakeoverPersonWriter
      * hlášení, které předchozí program podal a ČSSZ přijala. Bez data narození (z hlášení
      * ani z rodného čísla) se nezapíše nic: nárok zůstane k doplnění účetní.
      *
-     * @param array{given_name:string,family_name:string,birth_date:?string} $caregiver
+     * @param array{given_name:string,family_name:string,birth_date:?string,birth_number?:?string} $caregiver
      * @return array<string,int>
      */
     public function otherCaregiverPresent(int $supplierId, int $employeeId, array $caregiver, ?int $userId): array
@@ -565,6 +565,7 @@ final class PayrollTakeoverPersonWriter
             'other_caregiver_given_name' => $caregiver['given_name'],
             'other_caregiver_family_name' => $caregiver['family_name'],
             'other_caregiver_birth_date' => $caregiver['birth_date'],
+            'other_caregiver_birth_number' => $caregiver['birth_number'] ?? null,
         ]);
     }
 

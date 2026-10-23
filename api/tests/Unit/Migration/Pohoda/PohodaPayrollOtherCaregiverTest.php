@@ -43,7 +43,7 @@ final class PohodaPayrollOtherCaregiverTest extends TestCase
         $caregiver = ['given_name' => 'Jana', 'family_name' => 'Zkušební', 'birth_date' => null, 'birth_number' => '8551011238'];
 
         self::assertSame(
-            ['given_name' => 'Jana', 'family_name' => 'Zkušební', 'birth_date' => '1985-01-01'],
+            ['given_name' => 'Jana', 'family_name' => 'Zkušební', 'birth_date' => '1985-01-01', 'birth_number' => '855101/1238'],
             PohodaPayrollJmhzWriter::otherCaregiverPerson(['2026-05' => [self::form(true, caregivers: [$caregiver])]]),
             'Datum narození z rodného čísla, když ho hlášení neuvádí.',
         );

@@ -5606,6 +5606,8 @@
           "other_caregiver_given_name": "Other supporting person - given name",
           "other_caregiver_family_name": "Other supporting person - family name",
           "other_caregiver_birth_date": "Other supporting person - date of birth",
+          "other_caregiver_birth_number": "Other supporting person - birth number",
+          "other_caregiver_birth_number_hint": "Optional. The monthly report states it next to the date of birth. Stored encrypted; leaving it empty keeps the stored value.",
           "supersede_hint": "If the claim reaches into a period covered by an approved payroll revision, the change is stored as a new effective version and the original record stays in history."
         },
         "event_month": {

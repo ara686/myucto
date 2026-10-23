@@ -94,6 +94,13 @@ enum PayrollRevealPurpose: string
     case ANONYMIZATION = 'security:anonymization';
 
     /**
+     * Nová verze záznamu (nárok nahrazený kvůli zmrazené mzdové revizi) přebírá
+     * šifrovaný údaj předchozí verze. Šifra je vázaná na řádek, proto se údaj
+     * odhalí a hned zapečetí pro nový řádek; ven z procesu neteče.
+     */
+    case RESEAL_NEW_VERSION = 'storage:reseal_new_version';
+
+    /**
      * Je odhalení zákonnou náležitostí dokumentu nebo podání?
      *
      * Rozlišení je tu proto, aby budoucí auditní zápis uměl oddělit systémový
