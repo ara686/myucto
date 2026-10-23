@@ -30,6 +30,7 @@ use MyInvoice\Middleware\TenantDomainMiddleware;
 use MyInvoice\Middleware\WebAuthnBodyLimitMiddleware;
 use MyInvoice\Service\IpMatcher;
 use MyInvoice\Service\Auth\PasskeyService;
+use MyInvoice\Service\Auth\PepperPolicy;
 use MyInvoice\Service\Auth\DatabaseSecurityClock;
 use MyInvoice\Service\Auth\SecurityClock;
 use MyInvoice\Service\Auth\WebAuthnConfigProvider;
@@ -72,11 +73,15 @@ final class Bootstrap
         $rootDir = self::rootDir();
         $config  = Config::load($rootDir);
 
-        // Bezpečnostní guard: v produkci pepper musí být nastavený (jinak hesla nemají druhotnou ochranu)
+        // Bezpečnostní guard: v produkci pepper musí být nastavený a skutečně tajný
+        // (jinak hesla nemají druhotnou ochranu a HKDF fallback šifruje veřejným klíčem).
         $env    = (string) $config->get('app.env', 'production');
         $pepper = (string) $config->get('app.pepper', '');
-        if ($env === 'production' && $pepper === '') {
-            throw new \RuntimeException('cfg.app.pepper není nastaven (vygeneruj: openssl rand -base64 32). V produkci je povinný.');
+        if ($env === 'production') {
+            $pepperProblem = PepperPolicy::productionProblem($pepper);
+            if ($pepperProblem !== null) {
+                throw new \RuntimeException($pepperProblem);
+            }
         }
 
         date_default_timezone_set((string) $config->get('app.timezone', 'Europe/Prague'));

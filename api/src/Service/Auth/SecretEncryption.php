@@ -218,6 +218,9 @@ final class SecretEncryption
         if ($pepper === '') {
             return 'Ani secret_encryption_key, ani app.pepper nejsou nastaveny.';
         }
+        if (PepperPolicy::isPlaceholder($pepper)) {
+            return 'secret_encryption_key chybí a app.pepper má zástupnou hodnotu ze vzorové konfigurace; tajemství nelze šifrovat.';
+        }
 
         return 'secret_encryption_key chybí, používá se HKDF fallback z app.pepper (méně bezpečné).';
     }
@@ -236,6 +239,11 @@ final class SecretEncryption
         $pepper = (string) $this->config->get('app.pepper', '');
         if ($pepper === '') {
             throw new \RuntimeException('Ani secret_encryption_key, ani app.pepper nejsou nastaveny.');
+        }
+        // Zástupná hodnota ze vzorové konfigurace je veřejná; klíč z ní odvozený
+        // by šifrování jen předstíral. Raději srozumitelná chyba než falešná ochrana.
+        if (PepperPolicy::isPlaceholder($pepper)) {
+            throw new \RuntimeException('cfg.app.secret_encryption_key chybí a app.pepper má zástupnou hodnotu ze vzorové konfigurace (vygeneruj: openssl rand -base64 32).');
         }
         return hash_hkdf('sha256', $pepper, 32, 'totp-secret');
     }
