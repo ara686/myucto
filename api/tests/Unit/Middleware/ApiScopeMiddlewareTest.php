@@ -574,6 +574,33 @@ final class ApiScopeMiddlewareTest extends TestCase
     }
 
     /**
+     * Bankovní spojení firmy (měnové účty) token nezmění ani se scope read_write:
+     * přepsaný IBAN by se tiskl na každou další fakturu a do QR platby.
+     */
+    public function testBearerReadWriteCannotChangeCompanyBankAccounts(): void
+    {
+        foreach ([
+            ['POST', '/api/settings/currencies'],
+            ['PUT', '/api/settings/currencies/5'],
+            ['DELETE', '/api/settings/currencies/5'],
+        ] as [$method, $path]) {
+            $r = $this->middleware()->process($this->bearer($method, $path, 'read_write'), $this->okHandler());
+            self::assertSame(403, $r->getStatusCode(), "bearer $method $path");
+            self::assertSame('token_write_forbidden', $this->errorCode($r));
+        }
+        self::assertSame(204, $this->middleware()->process(
+            $this->bearer('GET', '/api/settings/currencies', 'read_write'),
+            $this->okHandler(),
+        )->getStatusCode());
+        // Session (webové rozhraní) zůstává beze změny.
+        self::assertSame(204, $this->middleware()->process(
+            (new ServerRequestFactory())->createServerRequest('PUT', '/api/settings/currencies/5')
+                ->withAttribute(AuthMiddleware::ATTR_METHOD, 'session'),
+            $this->okHandler(),
+        )->getStatusCode());
+    }
+
+    /**
      * Daňová přiznání byla přes token nedostupná omylem: `#^/api/tax(/|$)#`
      * vyžaduje po „tax" lomítko, takže `/api/tax-return/...` nikdy nechytil.
      * Čtení přiznání je přitom to, kvůli čemu se integrace staví.
