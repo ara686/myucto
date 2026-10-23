@@ -30874,7 +30874,15 @@
     "return_to_client": "Return to client experience",
     "returning": "Returning…",
     "invalid_callback": "The sign-in callback is invalid or expired. Start again on the company domain.",
-    "exchange_failed": "Sign-in on the company domain could not be completed."
+    "exchange_failed": "Sign-in on the company domain could not be completed.",
+    "confirm_title": "Sign in to the client experience",
+    "confirm_intro": "You are signed in on the main address. This sign-in will be passed to the client experience at the address below.",
+    "confirm_hostname": "Address",
+    "confirm_company": "Company",
+    "confirm_warning": "Continue only if you started signing in to the client experience at this address yourself. If you arrived here from someone else's link, choose Cancel.",
+    "confirm_continue": "Continue",
+    "confirm_cancel": "Cancel",
+    "confirm_loading": "Loading sign-in details…"
   },
   "domains": {
     "title": "Client domains",

@@ -268,10 +268,15 @@ final class DomainLoginFlowTest extends TestCase
      * adrese a získá plnou relaci oběti (u superadmina celou instanci).
      */
     #[TestWith(['member'])]
-    #[TestWith(['superadmin'])]
+    #[TestWith(['superadmin-member'])]
     public function testExchangedSessionIsBoundToDomainAndRejectedOnCanonical(string $victim): void
     {
-        $userId = $victim === 'superadmin' ? $this->createSuperadminWithoutMembership() : $this->userId;
+        $userId = $this->userId;
+        if ($victim === 'superadmin-member') {
+            $userId = $this->createSuperadminWithoutMembership();
+            $this->db->pdo()->prepare('INSERT INTO user_suppliers (user_id, supplier_id) VALUES (?, ?)')
+                ->execute([$userId, $this->supplierId]);
+        }
         $verifier = self::opaqueToken();
         $flow = $this->start($verifier);
         $authorized = $this->login->authorize(
@@ -284,6 +289,7 @@ final class DomainLoginFlowTest extends TestCase
                 'assurance_level' => 'strong',
                 'mfa_verified_at' => gmdate('Y-m-d H:i:s.u'),
             ],
+            true,
         );
         parse_str((string) parse_url($authorized['redirect_url'], PHP_URL_QUERY), $callback);
         $result = $this->login->exchange(
@@ -317,6 +323,141 @@ final class DomainLoginFlowTest extends TestCase
 
         // Session zůstává platná, odmítnutí na cizím hostname ji neruší.
         self::assertNotNull($this->sessions->load($token));
+    }
+
+    /**
+     * Uživatel přihlášený na canonical adrese dřív, než vznikl požadavek, dostane
+     * podstrčený odkaz. Autorizace bez potvrzení nesmí vydat kód ani požadavek
+     * spotřebovat; projde až výslovné potvrzení a pak celý tok až po session
+     * vázanou na doménu.
+     */
+    public function testExistingCanonicalSessionNeedsExplicitConfirmationEndToEnd(): void
+    {
+        $canonical = $this->canonicalSession();
+        $this->backdateSession($canonical['token']);
+        $verifier = self::opaqueToken();
+        $flow = $this->start($verifier);
+
+        $silent = $this->authorizeViaAction($canonical['token'], $flow);
+        self::assertSame(409, $silent['status']);
+        self::assertSame('domain_login_confirmation_required', $silent['body']['error']['code'] ?? null);
+        self::assertSame($this->hostname, $silent['body']['error']['target_hostname'] ?? null);
+        self::assertNotSame('', (string) ($silent['body']['error']['supplier_name'] ?? ''));
+        self::assertArrayNotHasKey('redirect_url', $silent['body']);
+        self::assertSame(0, $this->authorizedRequests($flow), 'Bez potvrzení se kód nesmí vydat.');
+
+        $preview = $this->authorizeViaAction($canonical['token'], $flow, ['preview' => true]);
+        self::assertSame(200, $preview['status']);
+        self::assertSame($this->hostname, $preview['body']['confirmation']['target_hostname'] ?? null);
+        self::assertSame(0, $this->authorizedRequests($flow), 'Náhled požadavek nespotřebuje.');
+
+        // Jen JSON true je potvrzení; řetězec z formuláře nebo URL ne.
+        $stringFlag = $this->authorizeViaAction($canonical['token'], $flow, ['confirmed' => 'true']);
+        self::assertSame(409, $stringFlag['status']);
+
+        $confirmed = $this->authorizeViaAction($canonical['token'], $flow, ['confirmed' => true]);
+        self::assertSame(200, $confirmed['status']);
+        $redirect = (string) ($confirmed['body']['redirect_url'] ?? '');
+        self::assertSame('https://' . $this->hostname, self::origin($redirect));
+        parse_str((string) parse_url($redirect, PHP_URL_QUERY), $callback);
+
+        $again = $this->authorizeViaAction($canonical['token'], $flow, ['confirmed' => true]);
+        self::assertSame(400, $again['status'], 'Potvrzený požadavek je jednorázový.');
+
+        $result = $this->login->exchange(
+            $this->customRequest(),
+            $flow['request_token'],
+            (string) $callback['code'],
+            $flow['state'],
+            $verifier,
+            '192.0.2.15',
+        );
+        self::assertSame($this->userId, $result['user_id']);
+        $portal = $this->authenticate($this->customRequest(null, 'GET', '/api/auth/me'), $result['session']['token']);
+        self::assertSame($this->userId, $portal['user_id']);
+        // Canonical session zůstává přihlášená, potvrzení ji neruší.
+        self::assertNotNull($this->sessions->load($canonical['token']));
+    }
+
+    /**
+     * Běžný klient bez session na canonical adrese se přihlásí až v rámci
+     * předání. Jeho session je novější než požadavek, takže autorizace proběhne
+     * bez dalšího kliknutí přesně jako dřív.
+     */
+    public function testLoginWithinFlowAuthorizesWithoutExtraConfirmationEndToEnd(): void
+    {
+        $verifier = self::opaqueToken();
+        $flow = $this->start($verifier);
+        $fresh = $this->canonicalSession();
+
+        $authorized = $this->authorizeViaAction($fresh['token'], $flow);
+        self::assertSame(200, $authorized['status']);
+        parse_str((string) parse_url((string) $authorized['body']['redirect_url'], PHP_URL_QUERY), $callback);
+
+        $result = $this->login->exchange(
+            $this->customRequest(),
+            $flow['request_token'],
+            (string) $callback['code'],
+            $flow['state'],
+            $verifier,
+            '192.0.2.15',
+        );
+        self::assertSame('/portal/document-requests', $result['return_path']);
+        self::assertSame($this->domainId, $this->sessions->load($result['session']['token'])['supplier_domain_id'] ?? null);
+    }
+
+    /**
+     * Rotace zamčené session zachová původní created_at. Odemčení starší
+     * session proto neprojde jako čerstvé přihlášení v rámci předání.
+     */
+    public function testUnlockedOlderSessionStillNeedsConfirmation(): void
+    {
+        $canonical = $this->canonicalSession();
+        $this->backdateSession($canonical['token']);
+        $flow = $this->start(self::opaqueToken());
+        $this->db->pdo()->prepare(
+            "UPDATE sessions SET locked_at = UTC_TIMESTAMP(6), lock_reason = 'idle' WHERE id = ?"
+        )->execute([$canonical['token']]);
+        $rotated = $this->sessions->rotateLocked($canonical['token'], 'passkey', $this->credentialId);
+        $session = $this->sessions->load($rotated['token']);
+        self::assertIsArray($session);
+
+        try {
+            $this->login->authorize(
+                $this->canonicalRequest(),
+                $flow['request_token'],
+                $flow['state'],
+                ['id' => $this->userId],
+                $session,
+            );
+            self::fail('Starší session nesmí autorizovat předání bez potvrzení.');
+        } catch (DomainLoginException $e) {
+            self::assertSame('domain_login_confirmation_required', $e->errorCode);
+        }
+    }
+
+    /**
+     * Superadmin bez přiřazení k firmě se přes předání na její vlastní doménu
+     * nepřihlásí ani po potvrzení. Do firmy vstupuje přes canonical adresu.
+     */
+    public function testSuperadminWithoutMembershipCannotUseDomainLogin(): void
+    {
+        $superadminId = $this->createSuperadminWithoutMembership();
+        $canonical = $this->sessions->create(
+            $superadminId,
+            '192.0.2.15',
+            'Superadmin canonical',
+            new SessionAuthContext('totp', 'strong', new \DateTimeImmutable(), null),
+        );
+        $flow = $this->start(self::opaqueToken());
+
+        foreach ([['preview' => true], ['confirmed' => true], []] as $extra) {
+            $response = $this->authorizeViaAction($canonical['token'], $flow, $extra);
+            self::assertSame(403, $response['status']);
+            self::assertSame('forbidden_supplier', $response['body']['error']['code'] ?? null);
+            self::assertArrayNotHasKey('target_hostname', $response['body']['error'] ?? []);
+        }
+        self::assertSame(0, $this->authorizedRequests($flow));
     }
 
     public function testCanonicalSessionIsNotAcceptedOnCustomDomain(): void
@@ -503,9 +644,16 @@ final class DomainLoginFlowTest extends TestCase
         );
     }
 
-    /** @param array{request_token:string,state:string} $flow @return array{redirect_url:string} */
+    /**
+     * Autorizace session vzniklou až po založení požadavku, tedy přihlášením
+     * v rámci předání. Potvrzení proto není potřeba.
+     *
+     * @param array{request_token:string,state:string} $flow @return array{redirect_url:string}
+     */
     private function authorize(array $flow): array
     {
+        $session = $this->sessions->load($this->canonicalSession()['token']);
+        self::assertIsArray($session);
         return $this->login->authorize(
             $this->canonicalRequest(),
             $flow['request_token'],
@@ -515,13 +663,75 @@ final class DomainLoginFlowTest extends TestCase
                 'is_superadmin' => false,
                 'role_summary' => ['system_key' => 'client'],
             ],
-            [
-                'auth_method' => 'passkey',
-                'assurance_level' => 'strong',
-                'mfa_verified_at' => gmdate('Y-m-d H:i:s.u'),
-                'auth_credential_id' => $this->credentialId,
-            ],
+            $session,
         );
+    }
+
+    /** @return array{token:string,csrf_token:string,expires_at:int,issued_at:\DateTimeImmutable} */
+    private function canonicalSession(): array
+    {
+        return $this->sessions->create(
+            $this->userId,
+            '192.0.2.15',
+            'Canonical login',
+            new SessionAuthContext('passkey', 'strong', new \DateTimeImmutable(), $this->credentialId),
+        );
+    }
+
+    /** Posune vznik session před založení požadavku (přihlášení z dřívějška). */
+    private function backdateSession(string $token): void
+    {
+        $this->db->pdo()->prepare(
+            'UPDATE sessions SET created_at = DATE_SUB(created_at, INTERVAL 1 HOUR) WHERE id = ?'
+        )->execute([$token]);
+    }
+
+    /** @param array{request_token:string} $flow */
+    private function authorizedRequests(array $flow): int
+    {
+        $stmt = $this->db->pdo()->prepare(
+            'SELECT COUNT(*) FROM supplier_domain_login_requests
+              WHERE request_token_hash = ? AND authorization_code_hash IS NOT NULL'
+        );
+        $stmt->execute([hash('sha256', $flow['request_token'])]);
+        return (int) $stmt->fetchColumn();
+    }
+
+    /**
+     * Pošle POST /api/auth/domain-login/authorize přes skutečný AuthMiddleware
+     * s cookie session do DomainLoginAction.
+     *
+     * @param array{request_token:string,state:string} $flow
+     * @param array<string,mixed> $extra
+     * @return array{status:int,body:array<string,mixed>}
+     */
+    private function authorizeViaAction(string $token, array $flow, array $extra = []): array
+    {
+        $action = new DomainLoginAction(
+            $this->login,
+            $this->cookies,
+            $this->ipMatcher,
+            $this->createStub(ActivityLogger::class),
+        );
+        $handler = new class($action) implements \Psr\Http\Server\RequestHandlerInterface {
+            public function __construct(private readonly DomainLoginAction $action) {}
+
+            public function handle(\Psr\Http\Message\ServerRequestInterface $request): \Psr\Http\Message\ResponseInterface
+            {
+                return $this->action->authorize($request, new Response());
+            }
+        };
+        $request = $this->canonicalRequest()
+            ->withHeader('User-Agent', 'DomainLoginFlowTest/1.0')
+            ->withParsedBody([
+                'request_token' => $flow['request_token'],
+                'state' => $flow['state'],
+                ...$extra,
+            ])
+            ->withCookieParams([$this->cookieName => $token]);
+        $response = $this->auth->process($request, $handler);
+        $body = json_decode((string) $response->getBody(), true);
+        return ['status' => $response->getStatusCode(), 'body' => is_array($body) ? $body : []];
     }
 
     /**

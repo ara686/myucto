@@ -30874,7 +30874,15 @@
     "return_to_client": "Vrátit se do klientského rozhraní",
     "returning": "Vracím se…",
     "invalid_callback": "Návrat z přihlášení je neplatný nebo vypršel. Začněte znovu na firemní doméně.",
-    "exchange_failed": "Přihlášení na firemní doméně se nepodařilo dokončit."
+    "exchange_failed": "Přihlášení na firemní doméně se nepodařilo dokončit.",
+    "confirm_title": "Přihlásit se do klientského rozhraní",
+    "confirm_intro": "Jste přihlášeni na hlavní adrese. Toto přihlášení se předá klientskému rozhraní na adrese níže.",
+    "confirm_hostname": "Adresa",
+    "confirm_company": "Firma",
+    "confirm_warning": "Pokračujte jen, pokud jste přihlášení do klientského rozhraní na této adrese sami zahájili. Pokud jste sem přišli z cizího odkazu, zvolte Zrušit.",
+    "confirm_continue": "Pokračovat",
+    "confirm_cancel": "Zrušit",
+    "confirm_loading": "Načítám údaje o přihlášení…"
   },
   "domains": {
     "title": "Klientské domény",

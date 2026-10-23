@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 
 const m = vi.hoisted(() => ({
   replace: vi.fn(), authorize: vi.fn(), record: vi.fn(), verify: vi.fn(), cleanup: false,
+  needsConfirm: false, preview: vi.fn(), confirm: vi.fn(), clear: vi.fn(),
   auth: {
     fetchSetupStatus: vi.fn(), refresh: vi.fn(), login: vi.fn(), needsSetup: false,
     setupStatus: { captcha: { provider: 'none' }, passwordless_login_enabled: true },
@@ -28,6 +29,10 @@ vi.mock('@/security/domainLogin', () => ({
   pendingCanonicalDomainLoginHandoff: () => null,
   authorizePendingDomainLogin: m.authorize, recordCanonicalDomainLoginSession: m.record,
   reconcileCanonicalDomainLoginSession: vi.fn(),
+  needsCanonicalDomainLoginConfirmation: () => m.needsConfirm,
+  previewPendingDomainLogin: m.preview, confirmPendingDomainLogin: m.confirm,
+  clearCanonicalDomainLogin: m.clear,
+  isDomainLoginConfirmationRequired: (e: any) => e?.response?.data?.error?.code === 'domain_login_confirmation_required',
 }))
 vi.mock('vue-router', () => ({ useRoute: () => ({ query: {} }), useRouter: () => ({ replace: m.replace }) }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
@@ -37,18 +42,56 @@ beforeEach(() => {
   vi.clearAllMocks()
   localStorage.clear()
   m.cleanup = false
+  m.needsConfirm = false
   m.auth.isAuthenticated = false
   m.auth.refresh.mockResolvedValue(false)
   m.authorize.mockResolvedValue(true)
   m.verify.mockResolvedValue({ csrf_token: 'issued-csrf' })
+  m.preview.mockResolvedValue({ target_hostname: 'portal.example.test', supplier_name: 'Firma s.r.o.' })
+  m.confirm.mockImplementation(() => { m.needsConfirm = false })
 })
 
-it('existující přihlášení pouze předá a nepřevezme jeho vlastnictví', async () => {
+it('existující přihlášení předá až po výslovném potvrzení a nepřevezme jeho vlastnictví', async () => {
   m.auth.isAuthenticated = true
+  m.needsConfirm = true
   const wrapper = mount(Login)
   await flushPromises()
+  expect(m.authorize).not.toHaveBeenCalled()
+  expect(wrapper.find('form').exists()).toBe(false)
+  expect(wrapper.get('[data-testid="domain-login-hostname"]').text()).toBe('portal.example.test')
+  expect(wrapper.get('[data-testid="domain-login-company"]').text()).toBe('Firma s.r.o.')
+
+  await wrapper.get('[data-testid="domain-login-continue"]').trigger('click')
+  await flushPromises()
+  expect(m.confirm).toHaveBeenCalledOnce()
   expect(m.authorize).toHaveBeenCalledOnce()
   expect(m.record).not.toHaveBeenCalled()
+  wrapper.unmount()
+})
+
+it('zrušení potvrzení požadavek zahodí a nic nepředá', async () => {
+  m.auth.isAuthenticated = true
+  m.needsConfirm = true
+  const wrapper = mount(Login)
+  await flushPromises()
+  await wrapper.get('[data-testid="domain-login-cancel"]').trigger('click')
+  await flushPromises()
+  expect(m.clear).toHaveBeenCalledOnce()
+  expect(m.authorize).not.toHaveBeenCalled()
+  expect(m.replace).toHaveBeenCalledWith('/')
+  wrapper.unmount()
+})
+
+it('na požádání serveru zobrazí potvrzení i u přihlášení z tohoto toku', async () => {
+  m.auth.isAuthenticated = true
+  m.authorize.mockRejectedValueOnce({ response: { status: 409, data: { error: { code: 'domain_login_confirmation_required' } } } })
+  const wrapper = mount(Login)
+  await flushPromises()
+  expect(m.preview).toHaveBeenCalledOnce()
+  expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+  await wrapper.get('[data-testid="domain-login-continue"]').trigger('click')
+  await flushPromises()
+  expect(m.authorize).toHaveBeenCalledTimes(2)
   wrapper.unmount()
 })
 
