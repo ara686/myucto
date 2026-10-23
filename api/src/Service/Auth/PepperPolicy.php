@@ -13,9 +13,6 @@ namespace MyInvoice\Service\Auth;
  */
 final class PepperPolicy
 {
-    /** Instalátory generují `openssl rand -base64 32` (44 znaků); 16 je spodní mez pro ruční hodnoty. */
-    public const MIN_LENGTH = 16;
-
     /** Známé zástupné hodnoty ze vzorů a návodů (porovnává se bez ohledu na velikost písmen). */
     private const PLACEHOLDERS = [
         'change-me',
@@ -28,7 +25,14 @@ final class PepperPolicy
         return in_array(strtolower(trim($pepper)), self::PLACEHOLDERS, true);
     }
 
-    /** Důvod, proč pepper v produkci nestačí, nebo null, když je v pořádku. */
+    /**
+     * Důvod, proč pepper v produkci nestačí, nebo null, když je v pořádku.
+     *
+     * Délku záměrně nevynucuje: pepper je součástí hashů hesel, takže instalaci
+     * s krátkou ručně zadanou hodnotou by aktualizace nenastartovala a změna
+     * hodnoty by zneplatnila všechna hesla. Odmítá jen hodnotu, která ochranu
+     * nedává vůbec.
+     */
     public static function productionProblem(string $pepper): ?string
     {
         if (trim($pepper) === '') {
@@ -36,10 +40,6 @@ final class PepperPolicy
         }
         if (self::isPlaceholder($pepper)) {
             return 'cfg.app.pepper má zástupnou hodnotu ze vzorové konfigurace (vygeneruj: openssl rand -base64 32).';
-        }
-        if (strlen(trim($pepper)) < self::MIN_LENGTH) {
-            return 'cfg.app.pepper je příliš krátký, minimum je ' . self::MIN_LENGTH
-                . ' znaků (vygeneruj: openssl rand -base64 32).';
         }
         return null;
     }

@@ -12,13 +12,14 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Produkční guard i HKDF fallback musí odmítnout pepper ze vzorové konfigurace,
- * který diagnostika už dřív hlásila jako nález.
+ * Produkční guard musí odmítnout pepper ze vzorové konfigurace, který diagnostika
+ * už dřív hlásila jako nález. Délku nevynucuje, aby aktualizace neshodila instalaci
+ * s krátkou ručně zadanou hodnotou.
  */
 final class PepperPolicyTest extends TestCase
 {
     #[DataProvider('rejectedPeppers')]
-    public function testProductionRejectsEmptyPlaceholderAndShortPepper(string $pepper): void
+    public function testProductionRejectsEmptyAndPlaceholderPepper(string $pepper): void
     {
         self::assertNotNull(PepperPolicy::productionProblem($pepper));
     }
@@ -32,17 +33,16 @@ final class PepperPolicyTest extends TestCase
             'vzorový' => ['CHANGE-ME'],
             'vzorový malými' => ['change-me'],
             'bez pomlčky' => ['CHANGEME'],
-            'krátký' => ['short-pepper-15'],
         ];
     }
 
-    public function testGeneratedPepperIsAccepted(): void
+    public function testGeneratedAndShortManualPepperIsAccepted(): void
     {
         self::assertNull(PepperPolicy::productionProblem(base64_encode(random_bytes(32))));
-        self::assertNull(PepperPolicy::productionProblem(str_repeat('x', PepperPolicy::MIN_LENGTH)));
+        self::assertNull(PepperPolicy::productionProblem('short-pepper'));
     }
 
-    public function testHkdfFallbackRefusesPlaceholderPepper(): void
+    public function testPlaceholderPepperIsReportedButKeepsDevSecretsReadable(): void
     {
         $encryption = new SecretEncryption(new Config(['app' => [
             'secret_encryption_key' => '',
@@ -50,8 +50,7 @@ final class PepperPolicyTest extends TestCase
         ]]));
 
         self::assertNotNull($encryption->validateKey());
-        $this->expectException(\RuntimeException::class);
-        $encryption->encrypt('synthetic-secret');
+        self::assertSame('synthetic-secret', $encryption->decrypt($encryption->encrypt('synthetic-secret')));
     }
 
     public function testHkdfFallbackStillWorksWithRealPepper(): void
