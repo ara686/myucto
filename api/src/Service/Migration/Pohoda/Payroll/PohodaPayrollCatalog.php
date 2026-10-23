@@ -175,6 +175,15 @@ final class PohodaPayrollCatalog
         if (in_array($number, ['J07', 'J10', 'J11'], true) || self::leavePayout($normalized, $catalog)) {
             return ['meaning' => 'component', 'kind' => 'compensation', 'code' => VacationCompensationReturn::SETTLEMENT_CODE, 'header' => 'Proplacená / vrácená náhrada za dovolenou (Kč)'];
         }
+        // Odměna z dohody: D02 a D04 hodinovou sazbou (`Hodnota2`), D01 a D03 částkou.
+        // „Vč. pojistného" (D03, D04) je dohoda zakládající účast na pojištění; účast
+        // rozhoduje vztah a jeho měsíc, ne složka, takže druh odměny je u obou dvojic stejný.
+        if (in_array($number, ['D02', 'D04'], true)) {
+            return $component('hourly_wage');
+        }
+        if (in_array($number, ['D01', 'D03'], true)) {
+            return $component('task_wage');
+        }
         // Odstupné má v MyÚčtu vlastní složku (bez pojistného, JMHZ jako odstupné). Měsíc,
         // který počítá MyÚčto, ho bez ní nevyplatí; převzatý měsíc ho má v úhrnech PAMICA.
         if ($number === 'D06' || str_contains($normalized, 'odstupn')) {

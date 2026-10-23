@@ -58,7 +58,7 @@ final class PohodaPayrollConverter
     private array $byId = [];
     /** Sloupce `MZ`, které čte skládání sešitu ({@see self::month()}, {@see self::holidayHours()}). */
     private const MZ_COLUMNS = ['ID', 'Rok', 'RelMes', 'RefZAM', 'RefPomer', 'RefPoj', 'KcPrum', 'KcPrumU', 'TUvazek',
-        'DnyFond2', 'HodFond', 'HodOdpra', 'DnyStSv', 'KcHrubaM', 'KcCistaM'];
+        'DnyFond2', 'HodFond', 'HodOdpra', 'DnyStSv', 'KcHrubaM', 'KcCistaM', 'BezZdr'];
 
     /** Sloupce položek mezd, které čte skládání sešitu. */
     private const ITEM_COLUMNS = [
@@ -454,7 +454,11 @@ final class PohodaPayrollConverter
             }
             $insurerCode = PohodaXml::text($insurer, 'Kod');
             if ($insurerCode !== '' && !HealthInsurers::isValid($insurerCode)) {
-                $omitted[] = "osobní číslo {$personalNumber}: kód zdravotní pojišťovny {$insurerCode} není v číselníku, vynechán - doplňte ho v evidenci zaměstnance.";
+                // Dohoda bez účasti na zdravotním pojištění (PAMICA ji vede u „pojišťovny"
+                // Samoplátce, kód 300) pojišťovnu nepotřebuje, doplňovat ji není co.
+                if (!($isDpp && self::bool(PohodaXml::text($mz, 'BezZdr')))) {
+                    $omitted[] = "osobní číslo {$personalNumber}: kód zdravotní pojišťovny {$insurerCode} není v číselníku, vynechán - doplňte ho v evidenci zaměstnance.";
+                }
                 $insurerCode = '';
             }
             $row = [
