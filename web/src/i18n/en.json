@@ -35893,7 +35893,7 @@
     "profile": "Turn on the association registry",
     "profileHelp": "One-off setting for the whole company.",
     "profileDone": "The registry is on.",
-    "profileAction": "Turn on",
+    "profileAction": "Set up",
     "house": "Create the building",
     "houseHelp": "Name and address are prefilled from the company details.",
     "houseAction": "Add building",
