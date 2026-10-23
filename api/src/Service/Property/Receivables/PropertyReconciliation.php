@@ -21,7 +21,8 @@ final class PropertyReconciliation
                 if(($row['account_code']==='315'||str_starts_with($row['account_code'],'315.'))&&!($svj&&preg_match(\MyInvoice\Service\Property\Opening\OpeningRolePolicy::ROLES['service_cost'][2],$row['account_code'])===1))$ledger['receivable']=bcadd($ledger['receivable'],$cents,0);
                 if($row['account_code']==='379.910')$ledger['credit']=bcsub($ledger['credit'],$cents,0);
             }
-            $history=(new FinancialHistoryRepository($this->db))->read($supplier);$events=[];foreach($history['debts']+$history['unregistered_claims'] as $debt)if($unitId===null||$unitId===$debt['unit_id'])array_push($events,...$debt['events']);foreach($history['credits'] as $credit)if($unitId===null||$unitId===$credit['unit_id'])array_push($events,...$credit['events']);
+            // Jednotka čte jen uzavřenou historii svých nároků a kreditů, dům celou historii firmy.
+            $history=$unitId===null?(new FinancialHistoryRepository($this->db))->read($supplier):(new \MyInvoice\Repository\Property\Receivables\PropertySaldoReadRepository($this->db))->unitHistory($supplier,[$unitId])['history'];$events=[];foreach($history['debts']+$history['unregistered_claims'] as $debt)if($unitId===null||$unitId===$debt['unit_id'])array_push($events,...$debt['events']);foreach($history['credits'] as $credit)if($unitId===null||$unitId===$credit['unit_id'])array_push($events,...$credit['events']);
             $totals=ReceivableTimeline::accountingDate($events,$date,$known);$difference=['receivable'=>bcsub($ledger['receivable'],$totals['gross_receivable_cents'],0),'credit'=>bcsub($ledger['credit'],$totals['gross_credit_cents'],0)];
             $unresolved=UnresolvedNegativeChargeScope::accountingDate($history,$date,$known,$unitId);
             $opening=(new \MyInvoice\Service\Property\Opening\OpeningReconciliation($this->db))->at($supplier,$periods[0],$date,$unitId);

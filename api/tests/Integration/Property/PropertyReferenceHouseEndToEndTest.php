@@ -183,6 +183,29 @@ final class PropertyReferenceHouseEndToEndTest extends TestCase
             self::assertSame(['receivable' => $receivable, 'credit' => $credit], $unit['subledger_cents'], $code);
         }
         $this->assertPartySubledger($date, $house['subledger_cents']);
+        $this->assertUnitHistoryVerifiesSettlementsOnce();
+    }
+
+    /**
+     * Uzávěr historie jednotek vede k témuž vyúčtování přes jeho dluhy i kredity. Jedno
+     * čtení ho ověří jednou ({@see \MyInvoice\Service\Property\Services\Settlement\SettlementHistory::inReadScope()}),
+     * dřív se celý důkaz vyúčtování opakoval u každého dluhu a kreditu.
+     */
+    private function assertUnitHistoryVerifiesSettlementsOnce(): void
+    {
+        $units = array_values($this->f['units']);
+        $applications = (int) $this->pdo->query('SELECT COUNT(*) FROM property_service_settlement_applications WHERE supplier_id=' . $this->supplier)->fetchColumn();
+        self::assertGreaterThan(10, $applications);
+        $before = $this->questions();
+        $history = (new \MyInvoice\Repository\Property\Receivables\PropertySaldoReadRepository($this->db))->unitHistory($this->supplier, $units);
+        self::assertNotSame([], $history['history']['credits']);
+        // Naměřeno 1 759 dotazů, bez společného rozsahu čtení 2 023.
+        self::assertLessThan(1900, $this->questions() - $before - 1);
+    }
+
+    private function questions(): int
+    {
+        return (int) $this->pdo->query("SHOW SESSION STATUS LIKE 'Questions'")->fetch(PDO::FETCH_NUM)[1];
     }
 
     /**
@@ -275,6 +298,19 @@ final class PropertyReferenceHouseEndToEndTest extends TestCase
             } catch (\DomainException $e) {
                 // Kredit U11 vznikl z vyúčtování služeb, jeho původ ověřuje důkaz vyúčtování.
                 self::assertSame('settlement_credit_origin', $e->getMessage());
+            }
+        }
+        // Totéž platí pro rekonciliaci jednotky: čte historii jen svých nároků a kreditů.
+        $reconciliation = new \MyInvoice\Service\Property\Receivables\PropertyReconciliation($this->db);
+        self::assertTrue($reconciliation->at($this->supplier, $date, $this->f['units']['U02'])['matches']);
+        foreach ([null, $this->f['units']['U11']] as $unit) {
+            try {
+                $reconciliation->at($this->supplier, $date, $unit);
+                self::fail('Poškozená historie U11 se v rekonciliaci nesmí ztratit.');
+            } catch (\DomainException | \MyInvoice\Service\Property\PropertyException $e) {
+                // Celá historie firmy narazí na stranu kreditu, uzávěr jednotky na důkaz vyúčtování.
+                self::assertContains($e instanceof \MyInvoice\Service\Property\PropertyException ? $e->errorCode : $e->getMessage(),
+                    ['property_receivable_history_corrupt', 'settlement_credit_origin']);
             }
         }
         $this->pdo->exec('ROLLBACK TO SAVEPOINT party_page_corruption');

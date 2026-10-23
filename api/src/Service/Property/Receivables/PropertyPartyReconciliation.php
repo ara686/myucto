@@ -10,6 +10,7 @@ use MyInvoice\Repository\Property\Receivables\PartyEventRepository;
 use MyInvoice\Repository\Property\Receivables\PropertySaldoReadRepository;
 use MyInvoice\Service\Property\PropertyInput;
 use MyInvoice\Service\Property\PropertyInstant;
+use MyInvoice\Service\Property\Services\Settlement\SettlementHistory;
 
 /**
  * Osobní pohled na hrubé pohledávky a kredity SVJ k účetnímu datu.
@@ -47,7 +48,11 @@ final class PropertyPartyReconciliation
             $pdo->exec('START TRANSACTION READ ONLY');
         }
         try {
-            $result = PropertyInstant::withNormalizationContext(fn (): array => $this->page($supplier, $date, $known, $limit, $after));
+            // Stránka i součty domu čtou historii po dávkách jednotek v jedné transakci;
+            // společný rozsah čtení ověří vyúčtování sdílené dávkami jednou.
+            $result = PropertyInstant::withNormalizationContext(fn (): array => SettlementHistory::inReadScope(
+                fn (): array => $this->page($supplier, $date, $known, $limit, $after),
+            ));
             if ($owned) $pdo->commit();
             return $result;
         } catch (\Throwable $e) {
