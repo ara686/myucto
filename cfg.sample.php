@@ -42,7 +42,11 @@ return [
         'pepper' => 'CHANGE-ME',                     // doplňková sůl k password_hash, 32B base64: openssl rand -base64 32
         'secret_encryption_key' => '',               // 32B base64 pro AES-256-GCM (TOTP secrets); openssl rand -base64 32. Pokud prázdné, fallback HKDF z pepperu.
         'secret_encryption_previous_keys' => [],      // při rotaci sem dočasně vlož staré 32B base64 klíče; nové zápisy používají pouze aktuální klíč
-        'payroll_hash_key' => '',                    // volitelný oddělený 32B base64 klíč pro HMAC citlivých mzdových identifikátorů; fallback je doménově oddělený HKDF z pepperu
+        // Oddělený 32B base64 klíč pro HMAC citlivých mzdových identifikátorů (openssl rand -base64 32).
+        // NOVÁ instalace: vyplň (setup wizard i api/bin/setup.php ho doplní samy do cfg.local.php, když chybí).
+        // EXISTUJÍCÍ instalace s mzdovými daty: NEMĚŇ a nedoplňuj, uložené otisky by přestaly platit;
+        // prázdná hodnota = doménově oddělený HKDF z pepperu (pepper pak chraň stejně jako tento klíč).
+        'payroll_hash_key' => '',
         'timezone' => 'Europe/Prague',               // PHP date_default_timezone_set
         'locale_default' => 'cs',                    // jazyk UI při prvním načtení (před přihlášením)
 
@@ -201,7 +205,7 @@ return [
         // warning `session_lock_without_unlock_method`; jejich jediná cesta ven je logout.
         'lock_after_minutes' => 0,
         'cookie_name'   => '__Host-myinvoice_session', // __Host- prefix → vyžaduje Secure + Path=/ + bez Domain (přísnější CSRF). Pro HTTP dev změnit na 'myinvoice_session' a cookie_secure=false.
-        'cookie_secure' => true,                     // true vyžaduje HTTPS — false jen pro lokální HTTP dev (a __Host- nebude fungovat)
+        'cookie_secure' => true,                     // true vyžaduje HTTPS, false jen pro lokální HTTP instalaci (a __Host- nebude fungovat); při https app.url a false hlásí diagnostika varování
         'cookie_samesite' => 'Lax',                  // 'Lax' | 'Strict' | 'None' (None vyžaduje secure=true)
     ],
     'auth' => [

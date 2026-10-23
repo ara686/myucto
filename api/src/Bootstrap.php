@@ -895,6 +895,10 @@ final class Bootstrap
                 ->constructorParameter(
                     'probe',
                     \DI\get(\MyInvoice\Service\System\InstanceHealthProbe::class),
+                )
+                ->constructorParameter(
+                    'securityConfig',
+                    \DI\get(\MyInvoice\Service\System\InstanceSecurityConfigurationCheck::class),
                 ),
 
             // Licenční klient (E4) má volitelný `?GuzzleHttp\Client $http = null` (test
@@ -1256,7 +1260,7 @@ final class Bootstrap
 
         // Slim 4 LIFO: poslední `add()` = NEJVĚTŠÍ vrstva = běží JAKO PRVNÍ.
         // Cílový order běhu (outside → inside):
-        //   ApiVersionRewrite → MaintenanceMode → IpAllowlist → FirstRunLock → TenantDomain → Auth → ApiRequestLog → SessionLock → RequireMfa → License → StorageQuotaReadOnly → DemoReadOnly → SupplierScope → Permission → ApiScope → RateLimit → CSRF → WebAuthnBodyLimit → Routing → BodyParsing → SubmissionEnvironment → Action
+        //   InternalErrorRedaction → ApiVersionRewrite → MaintenanceMode → IpAllowlist → FirstRunLock → TenantDomain → Auth → ApiRequestLog → SessionLock → RequireMfa → License → StorageQuotaReadOnly → DemoReadOnly → SupplierScope → Permission → ApiScope → RateLimit → CSRF → WebAuthnBodyLimit → Routing → BodyParsing → SubmissionEnvironment → Action
         // → add() v opačném pořadí (innermost první):
         //
         // ⚠️ Middleware se předávají jako CLASS-STRING, ne jako instance. Slim je pak
@@ -1296,6 +1300,9 @@ final class Bootstrap
         // na už přepsané cestě (jinak by /api/v1/health v údržbě spadlo na 503).
         $app->add(MaintenanceModeMiddleware::class);                 // 503 + Retry-After na vše kromě /api/health
         $app->add(new ApiVersionRewriteMiddleware());                // /api/v1/* → /api/* před vším ostatním
+        // Nejvnější uživatelská vrstva: v produkci skryje text výjimky v 500
+        // odpovědích všech vrstev pod ní a detail zaloguje pod request id.
+        $app->add(\MyInvoice\Middleware\InternalErrorRedactionMiddleware::class);
 
         // Stack trace v odpovědích API na cizí infrastruktuře nemá co dělat,
         // takže `app.debug` ve spravované instalaci neplatí, i kdyby se do
