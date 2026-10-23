@@ -6,7 +6,9 @@ namespace MyInvoice\Tests\Integration\Tenant;
 
 use MyInvoice\Action\Auth\DomainLoginAction;
 use MyInvoice\Bootstrap;
+use MyInvoice\Infrastructure\Config\Config;
 use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Middleware\AuthMiddleware;
 use MyInvoice\Middleware\TenantDomainMiddleware;
 use MyInvoice\Repository\SupplierDomainRepository;
 use MyInvoice\Service\ActivityLogger;
@@ -31,6 +33,10 @@ final class DomainLoginFlowTest extends TestCase
     private SessionManager $sessions;
     private SessionCookieFactory $cookies;
     private IpMatcher $ipMatcher;
+    private AuthMiddleware $auth;
+    private string $cookieName = '';
+    /** @var list<int> */
+    private array $extraUserIds = [];
     private int $supplierId = 0;
     private int $userId = 0;
     private int $credentialId = 0;
@@ -49,6 +55,9 @@ final class DomainLoginFlowTest extends TestCase
             $this->sessions = $container->get(SessionManager::class);
             $this->cookies = $container->get(SessionCookieFactory::class);
             $this->ipMatcher = $container->get(IpMatcher::class);
+            $this->auth = $container->get(AuthMiddleware::class);
+            $this->cookieName = (string) $container->get(Config::class)
+                ->get('session.cookie_name', '__Host-myinvoice_session');
             // Connection je lazy; ověř ji uvnitř stejného skip guardu, jinak
             // nedostupná test DB skončí jako šest setup errorů místo explicitního skipu.
             $pdo = $this->db->pdo();
@@ -121,8 +130,10 @@ final class DomainLoginFlowTest extends TestCase
         if ($this->domainId > 0) {
             $pdo->prepare('DELETE FROM supplier_domains WHERE id = ?')->execute([$this->domainId]);
         }
-        if ($this->userId > 0) {
-            $pdo->prepare('DELETE FROM users WHERE id = ?')->execute([$this->userId]);
+        foreach ([$this->userId, ...$this->extraUserIds] as $userId) {
+            if ($userId > 0) {
+                $pdo->prepare('DELETE FROM users WHERE id = ?')->execute([$userId]);
+            }
         }
         $this->db->close();
     }
@@ -249,6 +260,84 @@ final class DomainLoginFlowTest extends TestCase
         $this->sessions->destroy($portalToken);
         self::assertNull($this->sessions->load($portalToken));
         self::assertNotNull($this->sessions->load($independent['token']));
+    }
+
+    /**
+     * Vlastník DNS vlastní domény drží PKCE verifier i token z výměny. Session
+     * proto musí platit jen na jeho doméně, jinak ji přehraje na canonical
+     * adrese a získá plnou relaci oběti (u superadmina celou instanci).
+     */
+    #[TestWith(['member'])]
+    #[TestWith(['superadmin'])]
+    public function testExchangedSessionIsBoundToDomainAndRejectedOnCanonical(string $victim): void
+    {
+        $userId = $victim === 'superadmin' ? $this->createSuperadminWithoutMembership() : $this->userId;
+        $verifier = self::opaqueToken();
+        $flow = $this->start($verifier);
+        $authorized = $this->login->authorize(
+            $this->canonicalRequest(),
+            $flow['request_token'],
+            $flow['state'],
+            ['id' => $userId],
+            [
+                'auth_method' => 'totp',
+                'assurance_level' => 'strong',
+                'mfa_verified_at' => gmdate('Y-m-d H:i:s.u'),
+            ],
+        );
+        parse_str((string) parse_url($authorized['redirect_url'], PHP_URL_QUERY), $callback);
+        $result = $this->login->exchange(
+            $this->customRequest(),
+            $flow['request_token'],
+            $callback['code'],
+            $flow['state'],
+            $verifier,
+            '192.0.2.15',
+        );
+        $token = $result['session']['token'];
+
+        $stored = $this->db->pdo()->prepare('SELECT supplier_domain_id FROM sessions WHERE id = ?');
+        $stored->execute([$token]);
+        self::assertSame($this->domainId, (int) $stored->fetchColumn());
+        self::assertSame($this->domainId, $this->sessions->load($token)['supplier_domain_id'] ?? null);
+
+        $replay = $this->authenticate($this->canonicalRequest('GET', '/api/auth/me'), $token);
+        self::assertNull($replay['user_id'], 'Token z vlastní domény nesmí platit na canonical adrese.');
+        self::assertSame(401, $replay['status']);
+
+        $portal = $this->authenticate($this->customRequest(null, 'GET', '/api/auth/me'), $token);
+        self::assertSame($userId, $portal['user_id']);
+        self::assertSame(204, $portal['status']);
+
+        $otherDomain = $this->authenticate(
+            $this->customRequest('other-' . $this->hostname, 'GET', '/api/auth/me', $this->domainId + 100000),
+            $token,
+        );
+        self::assertNull($otherDomain['user_id']);
+
+        // Session zůstává platná, odmítnutí na cizím hostname ji neruší.
+        self::assertNotNull($this->sessions->load($token));
+    }
+
+    public function testCanonicalSessionIsNotAcceptedOnCustomDomain(): void
+    {
+        $canonical = $this->sessions->create(
+            $this->userId,
+            '192.0.2.15',
+            'Canonical login',
+            new SessionAuthContext('passkey', 'strong', new \DateTimeImmutable(), $this->credentialId),
+        );
+        $loaded = $this->sessions->load($canonical['token']);
+        self::assertIsArray($loaded);
+        self::assertArrayHasKey('supplier_domain_id', $loaded);
+        self::assertNull($loaded['supplier_domain_id']);
+
+        $onCanonical = $this->authenticate($this->canonicalRequest('GET', '/api/auth/me'), $canonical['token']);
+        self::assertSame($this->userId, $onCanonical['user_id']);
+
+        $onCustom = $this->authenticate($this->customRequest(null, 'GET', '/api/auth/me'), $canonical['token']);
+        self::assertNull($onCustom['user_id']);
+        self::assertSame(401, $onCustom['status']);
     }
 
     public function testCanonicalAuthorizationStillRequiresCurrentMembership(): void
@@ -461,30 +550,84 @@ final class DomainLoginFlowTest extends TestCase
         }
     }
 
-    private function customRequest(?string $hostname = null): \Psr\Http\Message\ServerRequestInterface
-    {
+    private function customRequest(
+        ?string $hostname = null,
+        string $method = 'POST',
+        string $path = '/api/auth/domain-login/exchange',
+        ?int $domainId = null,
+    ): \Psr\Http\Message\ServerRequestInterface {
         $hostname ??= $this->hostname;
         return (new ServerRequestFactory())->createServerRequest(
-            'POST',
-            'https://' . $hostname . '/api/auth/domain-login/exchange',
+            $method,
+            'https://' . $hostname . $path,
             ['REMOTE_ADDR' => '192.0.2.15'],
         )->withHeader('User-Agent', 'DomainLoginFlowTest/1.0')
             ->withAttribute(TenantDomainMiddleware::ATTR_CONTEXT, new TenantDomainContext(
                 TenantDomainContext::CUSTOM,
                 $hostname,
                 'https://' . $hostname,
-                $this->domainId,
+                $domainId ?? $this->domainId,
                 $this->supplierId,
                 'portal',
                 'active',
             ));
     }
 
-    private function canonicalRequest(): \Psr\Http\Message\ServerRequestInterface
+    /**
+     * Projde request přes skutečný AuthMiddleware z kontejneru s cookie session.
+     *
+     * @return array{status:int,user_id:?int}
+     */
+    private function authenticate(\Psr\Http\Message\ServerRequestInterface $request, string $token): array
     {
+        $handler = new class implements \Psr\Http\Server\RequestHandlerInterface {
+            public ?int $seen = null;
+
+            public function handle(\Psr\Http\Message\ServerRequestInterface $request): \Psr\Http\Message\ResponseInterface
+            {
+                $user = $request->getAttribute(AuthMiddleware::ATTR_USER);
+                $this->seen = is_array($user) ? (int) $user['id'] : null;
+                return new Response(204);
+            }
+        };
+        $response = $this->auth->process(
+            $request->withCookieParams([$this->cookieName => $token]),
+            $handler,
+        );
+        return ['status' => $response->getStatusCode(), 'user_id' => $handler->seen];
+    }
+
+    private function createSuperadminWithoutMembership(): int
+    {
+        $pdo = $this->db->pdo();
+        $roleId = (int) ($pdo->query(
+            "SELECT id FROM roles WHERE system_key = 'superadmin' LIMIT 1"
+        )->fetchColumn() ?: 0);
+        if ($roleId < 1) {
+            $this->markTestSkipped('Chybí systémová role superadmin.');
+        }
+        $pdo->prepare(
+            "INSERT INTO users
+                (email, password_hash, name, role, role_id, locale, is_active)
+             VALUES (?, ?, ?, 'admin', ?, 'cs', 1)"
+        )->execute([
+            'domain-login-sa-' . bin2hex(random_bytes(6)) . '@example.invalid',
+            str_repeat('x', 60),
+            'Domain Login Superadmin Fixture',
+            $roleId,
+        ]);
+        $userId = (int) $pdo->lastInsertId();
+        $this->extraUserIds[] = $userId;
+        return $userId;
+    }
+
+    private function canonicalRequest(
+        string $method = 'POST',
+        string $path = '/api/auth/domain-login/authorize',
+    ): \Psr\Http\Message\ServerRequestInterface {
         return (new ServerRequestFactory())->createServerRequest(
-            'POST',
-            'https://app.example.test/api/auth/domain-login/authorize',
+            $method,
+            'https://app.example.test' . $path,
         )->withAttribute(TenantDomainMiddleware::ATTR_CONTEXT, new TenantDomainContext(
             TenantDomainContext::CANONICAL,
             'app.example.test',

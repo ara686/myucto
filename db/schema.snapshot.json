@@ -1078,7 +1078,8 @@
         "2132_depreciation_entries_voided.sql",
         "2133_anonymized_clone_submission_provenance.sql",
         "2134_property_party_claim_keys.sql",
-        "2135_payroll_child_claim_other_caregiver_birth_number.sql"
+        "2135_payroll_child_claim_other_caregiver_birth_number.sql",
+        "2136_sessions_supplier_domain_binding.sql"
     ],
     "tables": {
         "abra_flexi_connections": {
@@ -22544,6 +22545,7 @@
                 "replaced_at": "datetime(6) NULL DEFAULT NULL",
                 "revoked_at": "datetime(6) NULL DEFAULT NULL",
                 "session_family_id": "varbinary(32) NOT NULL",
+                "supplier_domain_id": "bigint(20) unsigned NULL DEFAULT NULL",
                 "user_agent": "varchar(255) NOT NULL",
                 "user_id": "bigint(20) unsigned NOT NULL"
             },

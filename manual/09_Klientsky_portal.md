@@ -326,7 +326,7 @@ Neznámý, neověřený, deaktivovaný nebo účelově nekompatibilní hostname 
 
 ### 9.11.12 Přihlášení a passkeys na vlastní doméně
 
-Přihlášení se dokončuje na canonical adrese z `app.url`, kde jsou zaregistrované passkeys a WebAuthn RP ID. Po heslu, TOTP nebo passkey se prohlížeč vrátí na přesnou původně otevřenou stránku vlastní domény jednorázovým krátkodobým kódem svázaným s PKCE. Session token se v URL nepřenáší, cílová doména dostane novou host-only cookie, kterou jiná doména nemůže číst.
+Přihlášení se dokončuje na canonical adrese z `app.url`, kde jsou zaregistrované passkeys a WebAuthn RP ID. Po heslu, TOTP nebo passkey se prohlížeč vrátí na přesnou původně otevřenou stránku vlastní domény jednorázovým krátkodobým kódem svázaným s PKCE. Session token se v URL nepřenáší, cílová doména dostane novou host-only cookie, kterou jiná doména nemůže číst. Takto vzniklou relaci server přijme jen na této vlastní doméně, na hlavní adrese ani na jiné doméně neplatí. Na vlastní doméně naopak neplatí relace z hlavní adresy.
 
 Přihlášení zahájené na vlastní doméně přihlásí uživatele do portálu. Pokud kvůli ověření vznikne dočasná relace na hlavní adrese, při předání do portálu se ukončí. Samostatné přihlášení na hlavní adrese, které existovalo už před otevřením portálu, zůstává zachované.
 

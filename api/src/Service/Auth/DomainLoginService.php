@@ -14,7 +14,7 @@ use MyInvoice\Service\Tenant\TenantDomainResolver;
 use PDO;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
-/** Jednorázový PKCE přechod z canonical loginu na host-only session vlastní domény. */
+/** Jednorázový PKCE přechod z canonical loginu na session svázanou s vlastní doménou. */
 final class DomainLoginService
 {
     private const REQUEST_TTL_MINUTES = 10;
@@ -288,6 +288,9 @@ final class DomainLoginService
                     : null,
                 $row['auth_credential_id'] !== null ? (int) $row['auth_credential_id'] : null,
             );
+            // Výměnu volá hostname vlastní domény, tedy strana, která drží PKCE
+            // verifier i výsledný token. Session proto platí jen na této doméně
+            // a na canonical adrese ani jiné doméně ji AuthMiddleware nepřijme.
             $session = $this->sessions->createInTransaction(
                 $pdo,
                 $cutoff,
@@ -295,6 +298,7 @@ final class DomainLoginService
                 $ip,
                 $request->getHeaderLine('User-Agent'),
                 $authContext,
+                (int) $row['supplier_domain_id'],
             );
             $used = $pdo->prepare(
                 'UPDATE supplier_domain_login_requests SET used_at = ? WHERE id = ? AND used_at IS NULL'
