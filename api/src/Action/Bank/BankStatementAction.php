@@ -1323,8 +1323,11 @@ final class BankStatementAction
         if ($allMonths !== []) {
             $ms = array_keys($allMonths);
             sort($ms);
-            $axis = $enumMonths($ms[0], $ms[count($ms) - 1]);
-            if (count($axis) > $capMonths) { $axis = array_slice($axis, -$capMonths); }
+            $last = $ms[count($ms) - 1];
+            // Osa začíná nejdřív $capMonths měsíců před koncem. Vyjmenování od nejstaršího
+            // měsíce by pojistka $enumMonths při dlouhém rozpětí useknula na konci.
+            $earliest = (new \DateTimeImmutable($last . '-01'))->modify('-' . ($capMonths - 1) . ' months')->format('Y-m');
+            $axis = $enumMonths(max($ms[0], $earliest), $last);
             foreach ($axis as $m) {
                 $monthEnd = date('Y-m-t', (int) strtotime($m . '-01'));
                 $sum = 0.0;
