@@ -1078,7 +1078,8 @@
         "2132_depreciation_entries_voided.sql",
         "2133_anonymized_clone_submission_provenance.sql",
         "2134_property_party_claim_keys.sql",
-        "2135_payroll_child_claim_other_caregiver_birth_number.sql"
+        "2135_payroll_child_claim_other_caregiver_birth_number.sql",
+        "2136_bank_email_mark_seen_after_import.sql"
     ],
     "tables": {
         "abra_flexi_connections": {
@@ -2911,6 +2912,7 @@
                 "last_scan_at": "timestamp NULL DEFAULT NULL",
                 "last_scan_message": "varchar(500) NULL DEFAULT NULL",
                 "last_scan_status": "enum('ok','error') NULL DEFAULT NULL",
+                "mark_seen_after_import": "tinyint(1) NOT NULL DEFAULT 0",
                 "max_attempts": "int(10) unsigned NOT NULL DEFAULT 3",
                 "max_messages_per_run": "int(10) unsigned NOT NULL DEFAULT 50",
                 "name": "varchar(190) NOT NULL DEFAULT 'IMAP účet'",
