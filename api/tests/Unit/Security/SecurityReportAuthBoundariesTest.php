@@ -142,11 +142,14 @@ final class SecurityReportAuthBoundariesTest extends TestCase
     public static function publicIdentities(): array
     {
         return [
-            'foreign staff' => ['session', true, 'staff', ['invoices' => 1], true],
-            'client' => ['session', false, 'client', ['invoices' => 1], true],
-            'staff without invoices' => ['session', false, 'staff', [], true],
-            'bearer' => ['bearer', false, 'staff', ['invoices' => 1], true],
-            'authorized staff' => ['session', false, 'staff', ['invoices' => 1], false],
+            'foreign staff' => ['session', true, 'staff', ['invoices' => 1, 'clients.public_links' => 1], true],
+            'client' => ['session', false, 'client', ['invoices' => 1, 'clients.public_links' => 1], true],
+            'staff without invoices' => ['session', false, 'staff', ['clients.public_links' => 1], true],
+            'staff without public links' => ['session', false, 'staff', ['invoices' => 2], true],
+            'staff without permissions' => ['session', false, 'staff', [], true],
+            'bearer' => ['bearer', false, 'staff', ['invoices' => 1, 'clients.public_links' => 1], true],
+            'authorized staff' => ['session', false, 'staff', ['invoices' => 1, 'clients.public_links' => 1], false],
+            'accountant with write' => ['session', false, 'staff', ['invoices' => 2, 'clients.public_links' => 2], false],
         ];
     }
 
@@ -178,7 +181,7 @@ final class SecurityReportAuthBoundariesTest extends TestCase
         $pdo->exec('CREATE TABLE clients (id INTEGER, main_email TEXT)');
         $pdo->exec("INSERT INTO clients VALUES (1, 'synthetic@example.test')");
         $pdo->exec('CREATE TABLE client_email_contacts (client_id INTEGER, email TEXT, is_active INTEGER)');
-        $pdo->exec('CREATE TABLE work_report_link_sessions (link_id INTEGER, email TEXT, session_hash TEXT, last_seen_at TEXT, ip TEXT)');
+        $pdo->exec('CREATE TABLE work_report_link_sessions (link_id INTEGER, email TEXT, session_hash TEXT, last_seen_at TEXT, expires_at TEXT, ip TEXT)');
         $pdo->prepare('INSERT INTO work_report_link_codes VALUES (1, 1, ?, ?, 0, ?, ?, NULL)')
             ->execute(['synthetic@example.test', hash('sha256', '123456'), '2026-09-09 11:59:00', '2026-09-09 12:10:00']);
         $pdo->createFunction('UNIX_TIMESTAMP', static function () use ($pdo, $interleaved): int {

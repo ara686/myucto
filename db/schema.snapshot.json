@@ -1079,7 +1079,8 @@
         "2133_anonymized_clone_submission_provenance.sql",
         "2134_property_party_claim_keys.sql",
         "2135_payroll_child_claim_other_caregiver_birth_number.sql",
-        "2136_sessions_supplier_domain_binding.sql"
+        "2136_sessions_supplier_domain_binding.sql",
+        "2180_work_report_link_session_expiry.sql"
     ],
     "tables": {
         "abra_flexi_connections": {
@@ -27935,6 +27936,7 @@
             "columns": {
                 "created_at": "timestamp NOT NULL DEFAULT current_timestamp()",
                 "email": "varchar(190) NOT NULL",
+                "expires_at": "datetime NOT NULL",
                 "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
                 "ip": "varbinary(16) NULL DEFAULT NULL",
                 "last_seen_at": "datetime NULL DEFAULT NULL",

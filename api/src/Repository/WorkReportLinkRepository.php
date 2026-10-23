@@ -166,15 +166,15 @@ final class WorkReportLinkRepository
 
     // -- sessions ----------------------------------------------------------
 
-    public function createSession(int $linkId, string $email, string $sessionHash, ?string $ipBin): void
+    public function createSession(int $linkId, string $email, string $sessionHash, string $expiresAt, ?string $ipBin): void
     {
         $this->db->pdo()->prepare(
-            'INSERT INTO work_report_link_sessions (link_id, email, session_hash, last_seen_at, ip)
-             VALUES (?,?,?,NOW(),?)'
-        )->execute([$linkId, $email, $sessionHash, $ipBin]);
+            'INSERT INTO work_report_link_sessions (link_id, email, session_hash, last_seen_at, expires_at, ip)
+             VALUES (?,?,?,NOW(),?,?)'
+        )->execute([$linkId, $email, $sessionHash, $expiresAt, $ipBin]);
     }
 
-    /** Platná (nerevokovaná) relace pro link+hash; ověřuje i revoke odkazu. */
+    /** Platná (nerevokovaná, neexpirovaná) relace pro link+hash; ověřuje i revoke odkazu. */
     public function findActiveSession(int $linkId, string $sessionHash): ?array
     {
         $stmt = $this->db->pdo()->prepare(
@@ -183,11 +183,19 @@ final class WorkReportLinkRepository
                JOIN work_report_links l ON l.id = s.link_id
               WHERE s.link_id = ? AND s.session_hash = ?
                 AND s.revoked_at IS NULL AND l.revoked_at IS NULL
+                AND s.expires_at > NOW()
               LIMIT 1'
         );
         $stmt->execute([$linkId, $sessionHash]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         return $row !== false ? $row : null;
+    }
+
+    /** Zneplatní jednu relaci (např. když její ověřený e-mail už není povolený). */
+    public function revokeSession(int $sessionId): void
+    {
+        $this->db->pdo()->prepare('UPDATE work_report_link_sessions SET revoked_at = NOW() WHERE id = ? AND revoked_at IS NULL')
+            ->execute([$sessionId]);
     }
 
     public function touchSession(int $sessionId): void
