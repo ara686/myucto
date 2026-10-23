@@ -2,23 +2,39 @@
 
 Registr najdete v nabídce **Registr SVJ**. Eviduje domy, jednotky, služby a jejich časově účinné právní podklady. Nejde o seznam kontaktů: jedna vlastnická účast může zahrnovat více osob a jedna osoba může mít různé doložené role.
 
-## Profil a oprávnění
+## Jak začít
 
-Nejprve potvrďte profil SVJ, okamžik jeho účinnosti a právní podklad. Registr vyžaduje účetní rámec podle vyhlášky 504 k příslušnému datu. Právní forma z ARES slouží jako nápověda, zapnutí profilu nenahrazuje.
+Stránka **Registr SVJ** vás provede založením krok za krokem. Hotové kroky jsou označené zaškrtnutím, další krok má zvýrazněné tlačítko.
 
-Čtení, správa podkladů, jejich potvrzování a export mají samostatná oprávnění. Uživatel může připravit čekající podklad, který následně potvrdí oprávněná osoba. Deaktivace profilu ponechá historii dostupnou. Firma ani kontakt s právní historií registru se nedají tvrdě smazat; kontakt můžete archivovat.
+1. **Zapnout evidenci SVJ.** Evidence se zapíná jednou pro celou firmu. Formulář je předvyplněný: evidence od 1. ledna aktuálního roku a podklad „Stanovy společenství vlastníků". Datum i podklad můžete změnit a potvrdíte je tlačítkem **Zapnout evidenci**.
+2. **Založit dům.** Název a adresa se předvyplní z údajů firmy, protože SVJ obvykle spravuje právě jeden dům. Údaje zkontrolujte a uložte.
+3. **Přidat bytové jednotky.** U jednotky stačí číslo a podíl na společných částech podle prohlášení vlastníka. Vlastníka vyberete z adresáře firmy, nový kontakt založíte odkazem vedle tlačítka **Přidat vlastníka**. Jednotku lze uložit i bez vlastníka a doplnit ho později. Tlačítko **Uložit a přidat další** otevře rovnou formulář další jednotky s následujícím číslem a stejným jmenovatelem podílu. Větší počet jednotek nahrajete z CSV nebo XLSX.
+4. **Služby k rozúčtování** jsou volitelné. Přidejte je, pokud budete rozúčtovávat vodu, teplo, výtah a podobně.
+5. **Nastavit předpisy záloh** pokračuje v nabídce **Složky a předpisy**.
 
-## Okamžik účinnosti a historie
+Povinná pole jsou označená hvězdičkou. Pokud něco chybí, formulář vypíše, co doplnit, a nic neodešle. Technické označení záznamu se doplní samo z názvu nebo čísla jednotky.
 
-Datum, čas a časový posun určují skutečný okamžik účinnosti. Například `1. 7. 2026`, `00:00:00` a `+02:00` znamenají začátek místního letního dne. Samotné datum není úplný okamžik. Neplatný text data opravte před odesláním formuláře.
+Když součet podílů domu dosáhne 1, souhrn domu nabídne tlačítko **Potvrdit, že jsou zadané všechny jednotky**. Potvrzení platí od začátku evidence domu. Bez něj nelze předpis rozpočítat podle podílů.
 
-Horní výběr určuje, ke kterému okamžiku chcete registr zobrazit. Volitelný okamžik znalosti dovoluje zjistit, jaké podklady byly tehdy zaznamenané. Změna účinnosti není přepsáním původního záznamu: každá potvrzená revize zůstává součástí historie.
+## Oprávnění a profil SVJ
+
+Registr vyžaduje účetní rámec podle vyhlášky 504 k příslušnému datu. Právní forma z ARES slouží jako nápověda, zapnutí evidence nenahrazuje.
+
+Čtení, správa podkladů, jejich potvrzování a export mají samostatná oprávnění. Uživatel s právem potvrzovat ukládá změny rovnou jako potvrzené. Uživatel bez tohoto práva připraví čekající podklad, který potvrdí oprávněná osoba v historii změn záznamu. Deaktivace profilu ponechá historii dostupnou. Firma ani kontakt s právní historií registru se nedají tvrdě smazat; kontakt můžete archivovat.
+
+## Účinnost a historie změn
+
+Každý záznam má okamžik, od kterého platí. U nového domu, jednotky a služby se předvyplní začátek evidence, u úpravy aktuální okamžik. Změnit ho můžete v části **Podrobnosti** spolu se stavem ověření, technickým označením a důvodem. Okamžik se zadává místním datem a časem, letní a zimní čas se doplní sám.
+
+Úprava nepřepisuje původní záznam: vytvoří novou verzi a starší stav zůstane v **Historii změn** detailu. Doklad (listina) uvádí, čím je údaj doložený, například prohlášením vlastníka nebo výpisem z katastru. U úpravy vyplňte také důvod změny.
+
+V části **Nastavení evidence, export a pohled do historie** zobrazíte registr k jinému okamžiku. Volitelný okamžik znalosti ukáže, jaké podklady byly tehdy zaznamenané. Tamtéž změníte účinný profil SVJ a stáhnete export.
 
 ## Domy, služby a jednotky
 
-U domu uveďte označení, adresu, podklad prohlášení a okruh podílů. Úplnost registru potvrďte až po zanesení všech jednotek příslušného okruhu. Souhrn porovnává přesný součet podílů s jedním celkem a ukazuje, kde je třeba doplnit podklady.
+U domu je povinný název, úplná adresa a prohlášení vlastníka, kterým jsou vymezené jednotky. Spravuje-li společenství více domů se společnými podíly, uveďte jim v části **Více domů v jednom společenství** stejný společný celek podílů. Souhrn pak porovnává přesný součet podílů všech jejich jednotek s jedním celkem.
 
-Služby mají vlastní číselník. U jednotky vyberte dům, druh jednotky, služby a doložené vlastnosti. Podíly a další číselné vlastnosti zadávejte čitatelem a jmenovatelem. Zlomek `1/3` se neukládá jako zaokrouhlené desetinné číslo.
+Služby mají vlastní záložku. U jednotky zadejte číslo, druh a podíl. Variabilní symbol, plátce, zástupce, služby a další parametry, například podlahová plocha, jsou v rozbalovacích částech formuláře. Podíly a další číselné vlastnosti zadávejte čitatelem a jmenovatelem. Zlomek `1/3` se neukládá jako zaokrouhlené desetinné číslo.
 
 SJM tvoří jednu vlastnickou účast se dvěma členy. Zadáním obou manželů nevzniknou dva dluhy ani dvě poloviny. Spoluvlastnické účasti, zástupce, adresát a plátce mají vlastní doložený titul. Samotné uvedení plátce neurčuje příjemce případného přeplatku. Registr sám nepotvrzuje solidaritu, přechod dluhu ani nárok na kredit.
 
@@ -32,9 +48,9 @@ JSON export je samostatně oprávněná a auditovaná operace. Obsahuje právní
 
 ## Složky a verze předpisů
 
-V nabídce **Složky a předpisy** nejprve vyberte dům a okamžik účinnosti. Složky rozlišují zálohy na správu, dlouhodobé zálohy, služby a doložené definitivní příspěvky. U nové složky vyplňte kód, název, druh a účinnost; záloha na služby má navíc vazbu na konkrétní službu registru.
+Stránka **Složky a předpisy** ukazuje, co je potřeba: dům a jednotky v registru, složky předpisu a samotný předpis záloh. Má-li firma jediný dům, vybere se sám. Složky rozlišují zálohy na správu, dlouhodobé zálohy (fond oprav), zálohy na služby a doložené definitivní příspěvky. Ve formuláři **Nová složka předpisu** nabízí rychlá volba **Fond oprav**, **Správa domu** a **Záloha na služby**. Záloha na služby má navíc vazbu na konkrétní službu registru. Účet a technické označení jsou volitelné.
 
-Nová verze sazeb obsahuje celé rozhodnutí pro vybrané jednotky. Zadejte účinnost, datum rozhodnutí, jeho označení a důvod. Výslovně zvolte, zda jsou částky měsíční, čtvrtletní, roční nebo jednorázové. Změny uprostřed měsíce se automaticky nekrátí.
+**Nový předpis záloh** obsahuje celé rozhodnutí pro vybrané jednotky. Předvyplní se začátek aktuálního měsíce, měsíční placení a dnešní datum rozhodnutí; doplňte označení rozhodnutí. Tlačítko **Přidat všechny složky** vloží každou složku se všemi jednotkami: fond oprav a správu rozpočtem podle podílů, zálohy na služby sazbou na jednotku. Zbývá zadat částky. Změny uprostřed měsíce se automaticky nekrátí. Další předpis vychází z předchozího, takže měníte jen to, co se změnilo.
 
 U každé složky vyberte konkrétní jednotky, metodu výpočtu a právní podklad. Zákonný podílový klíč a rovný díl vlastní správy vyžadují potvrzenou úplnost registru domu. Rozhodné osoby pro služby jsou samostatným atributem jednotky; počet vlastníků se k výpočtu nepoužívá. SJM ani spoluvlastnictví nenásobí jednotkovou částku. Rozpočet se po ukončení jednotky bez nového rozhodnutí nepřerozděluje.
 
@@ -46,7 +62,7 @@ Historie zůstává čitelná i po vypnutí profilu. Veřejné API a MCP poskytu
 
 ## Vydání a účtování předpisů
 
-V nabídce **Vydání předpisů** vyberte dům, rozhodný okamžik registru a potvrzenou verzi sazeb. Zadejte období, vznik pohledávky, okamžik vyhotovení, účetní datum, splatnost a právní titul. Při změně firmy nebo rozhodného okamžiku načtěte podklady znovu. Předpisy jsou vedené v Kč.
+V nabídce **Vydání předpisů** vyberte dům, rozhodný okamžik registru a potvrzenou verzi sazeb. Jediný dům a jediný předpis se vyberou samy; chybí-li některý z nich, stránka odkáže tam, kde ho založíte. Zadejte období, vznik pohledávky, okamžik vyhotovení, účetní datum, splatnost a právní titul. Při změně firmy nebo rozhodného okamžiku načtěte podklady znovu. Předpisy jsou vedené v Kč.
 
 Poté vyberte existující případ pro pokračování či opravu, nebo založte nový doložený případ. U nového případu uveďte jeho označení, konkrétní výskyt, právní titul, původní rozhodnutí, datum rozhodnutí a podklad. Stejný případ nelze vydat znovu pod jiným technickým identifikátorem, ani když byl původní předpis zrušen nebo stornován. Pokud se nový nárok překrývá s jiným případem jednotky, doložte jeho samostatnost vůči každému uvedenému případu. Opravy zachovávají původní označení a odlišení; u starších předpisů bez těchto údajů se historie zpětně nedoplňuje.
 

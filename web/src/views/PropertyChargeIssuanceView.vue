@@ -19,7 +19,8 @@ import CaseCandidateList from '@/components/property/issuance/CaseCandidateList.
 import { candidatesOf, caseErrorOf, caseRequestReady, continuationCase, emptyCaseDistinction, emptyCaseIdentity, emptyIssue, emptyIssueUnit, familyKey, issueMoney, normalizeCaseRequest } from '@/components/property/issuance/issuanceModel'
 import { propertyError } from '@/components/property/propertyError'
 import { propertyDateInput as dateInput, propertyInput as input, propertyTextarea as textarea } from '@/components/property/propertyFormStyles'
-import { propertyNow } from '@/components/property/propertyInstant'
+import { formatPropertyInstant, propertyNow } from '@/components/property/propertyInstant'
+import PropertySetupGuide, { type SetupStep } from '@/components/property/PropertySetupGuide.vue'
 const { t, locale } = useI18n()
 const route = useRoute()
 const supplier = computed(() => useSupplierStore().currentSupplierId)
@@ -46,6 +47,13 @@ const caseNotice = ref('')
 const candidates = ref<Record<number, CaseCandidate[] | undefined>>({})
 const existsOffer = ref<{ unit_id: number; source_key: string } | null>(null)
 const historicalContext = ref(false)
+const versionsLoaded = ref(false)
+const steps = computed<SetupStep[]>(() => [
+  { key: 'registry', title: t('propertySetup.registry'), help: houses.value.length ? t('propertySetup.registryDone', { count: houses.value.length }) : t('propertySetup.registryHelp'), done: houses.value.length > 0, action: t('propertySetup.registryAction'), icon: 'link', to: '/property/registry' },
+  { key: 'version', title: t('propertySetup.version'), help: versions.value.length ? t('propertySetup.versionDone', { count: versions.value.length }) : t('propertySetup.versionHelp'), done: versions.value.length > 0, action: t('propertySetup.versionAction'), icon: 'coin', to: '/property/charges' },
+  { key: 'issue', title: t('propertySetup.issue'), help: t('propertySetup.issueHere'), done: history.value.length > 0 },
+])
+const showGuide = computed(() => !busy.value && !history.value.length && (!houses.value.length || (versionsLoaded.value && !versions.value.length)))
 let token = ''
 const money = (value: string) => issueMoney(value, locale.value)
 const unitNo = (id: number) => (context.value?.units.find(u => u.id === id)?.revision?.state as UnitState | undefined)?.unit_no || String(id)
@@ -62,13 +70,13 @@ async function load() {
   const id = supplier.value; reset(); const ticket = generation; history.value = []; Object.assign(capabilities, { issue: false, post: false, reverse: false })
   if (!id) return
   busy.value = true
-  try { const [h, result] = await Promise.all([propertyRegistryApi.list(id, 'house', asOf.value), api.list(id)]); if (ticket === generation && supplier.value === id) { houses.value = h; history.value = result.items; Object.assign(capabilities, result.capabilities); await showRequested() } }
+  try { const [h, result] = await Promise.all([propertyRegistryApi.list(id, 'house', asOf.value), api.list(id)]); if (ticket === generation && supplier.value === id) { houses.value = h; history.value = result.items; Object.assign(capabilities, result.capabilities); if (h.length === 1 && !houseId.value) houseId.value = h[0]!.id; await showRequested() } }
   catch (e) { if (ticket === generation) error.value = propertyError(e, t) } finally { if (ticket === generation) busy.value = false }
 }
 async function loadVersions() {
-  const id = supplier.value; const house = houseId.value; const ticket = ++selection; context.value = null; draft.value = null; invalidate(); clearCase(); versions.value = []; versionId.value = 0
+  const id = supplier.value; const house = houseId.value; const ticket = ++selection; context.value = null; draft.value = null; invalidate(); clearCase(); versions.value = []; versionId.value = 0; versionsLoaded.value = false
   if (!id || !house) return
-  try { const result = await propertyChargesApi.versions(id, house, asOf.value); if (ticket === selection && supplier.value === id) versions.value = result.items }
+  try { const result = await propertyChargesApi.versions(id, house, asOf.value); if (ticket === selection && supplier.value === id) { versions.value = result.items; versionsLoaded.value = true; if (result.items.length === 1) versionId.value = result.items[0]!.id } }
   catch (e) { if (ticket === selection) error.value = propertyError(e, t) }
 }
 async function loadContext() {
@@ -222,10 +230,11 @@ async function useExisting() {
     <div><h1 class="text-2xl font-semibold">{{ t('propertyIssuance.title') }}</h1><p class="text-sm text-neutral-500 mt-0.5">{{ t('propertyIssuance.scopeHelp') }}</p></div>
     <p v-if="error" role="alert" class="rounded border border-danger-300 p-3 text-danger-700">{{ error }}</p>
     <div class="flex flex-wrap items-end gap-3"><PropertyInstantInput v-model="asOf" :label="t('propertyIssuance.registryAsOf')" /><PropertyButton icon="uturn" variant="primary" filled :disabled="busy" @click="load">{{ t('propertyIssuance.refresh') }}</PropertyButton></div>
+    <PropertySetupGuide v-if="showGuide" :title="t('propertySetup.issueTitle')" :steps="steps" />
     <section v-if="capabilities.issue" class="rounded-lg border border-neutral-200 p-4 space-y-4">
       <p v-if="!busy && !houses.length" class="text-sm text-neutral-500" data-testid="houses-empty">{{ t('propertyIssuance.housesEmpty') }}</p>
       <div class="flex flex-wrap gap-3"><label class="flex min-w-0 flex-col gap-1 text-sm">{{ t('propertyIssuance.house') }}<select data-house v-model="houseId" :class="input"><option :value="0">{{ t('propertyIssuance.choose') }}</option><option v-for="house in houses" :key="house.id" :value="house.id">{{ (house.revision?.state as HouseState | undefined)?.name || house.code }}</option></select></label>
-        <label class="flex min-w-0 flex-col gap-1 text-sm">{{ t('propertyIssuance.version') }}<select data-version v-model="versionId" :class="input"><option :value="0">{{ t('propertyIssuance.choose') }}</option><option v-for="version in versions" :key="version.id" :value="version.id">{{ version.request.decision_ref }} · {{ version.effective_from }} · {{ version.request.frequency }}</option></select></label></div>
+        <label class="flex min-w-0 flex-col gap-1 text-sm">{{ t('propertyIssuance.version') }}<select data-version v-model="versionId" :class="input"><option :value="0">{{ t('propertyIssuance.choose') }}</option><option v-for="version in versions" :key="version.id" :value="version.id">{{ version.request.decision_ref }} · {{ formatPropertyInstant(version.effective_from) }} · {{ t(`propertyCharges.frequencies.${version.request.frequency}`) }}</option></select></label></div>
       <CaseFamilyPicker v-if="context" :context="context" :choice="caseChoice" :disabled="busy" @choose="chooseCase" />
       <p v-if="caseNotice" role="status" class="rounded border border-warning-300 p-3 text-warning-700" data-testid="case-notice">{{ t(`propertyIssuance.case.${caseNotice}`) }}</p>
       <div v-if="existsOffer" class="flex flex-wrap items-center gap-3 rounded border border-warning-300 p-3" data-testid="case-exists"><span>{{ t('propertyIssuance.case.existsHelp') }}</span><PropertyButton icon="check" variant="primary" :disabled="busy" @click="useExisting">{{ t('propertyIssuance.case.useExisting') }}</PropertyButton></div>

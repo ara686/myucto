@@ -133,6 +133,7 @@
     "propertySaldo",
     "propertyServiceLifecycle",
     "propertySettlements",
+    "propertySetup",
     "public_holidays",
     "purchase_invoice",
     "purchase_submissions",
@@ -904,11 +905,13 @@
       "logbook_fuel"
     ],
     "property-registry": [
-      "propertyRegistry"
+      "propertyRegistry",
+      "propertySetup"
     ],
     "property-charges": [
       "propertyCharges",
-      "propertyRegistry"
+      "propertyRegistry",
+      "propertySetup"
     ],
     "property-service-settlements": [
       "propertyOpening",
@@ -940,8 +943,10 @@
       "propertySaldo"
     ],
     "property-charge-issues": [
+      "propertyCharges",
       "propertyIssuance",
-      "propertyRegistry"
+      "propertyRegistry",
+      "propertySetup"
     ],
     "group-stats": [
       "errors",
