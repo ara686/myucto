@@ -870,7 +870,8 @@ const purchaseActions = computed<ActionItem[]>(() => {
     show: canEdit.value && w && !lockedForMe.value, to: `/purchase-invoices/${inv.id}/edit` })
 
   // Platební kalendář (issue #140): další platby se stejným číslem dokladu podle tohoto vzoru.
-  items.push({ key: 'payment-calendar', label: t('purchase_invoice.payment_calendar.action'), icon: 'cycle', tier: 'secondary', variant: 'primary',
+  // Týká se jen dokladů pro opakované platby (nájem, energie), proto v „…", ne v hlavní liště.
+  items.push({ key: 'payment-calendar', label: t('purchase_invoice.payment_calendar.action'), icon: 'cycle', tier: 'overflow', variant: 'primary',
     show: ['invoice', 'receipt', 'advance'].includes(inv.document_kind) && inv.status !== 'cancelled'
       && Number(inv.total_with_vat) > 0 && auth.canWrite('purchase_invoices.create'),
     disabled: acting.value, run: () => { paymentCalendarOpen.value = true } })
