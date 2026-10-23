@@ -1617,6 +1617,42 @@ final class PostingServiceTest extends TestCase
         $this->assertBalanced($entry['lines']);
     }
 
+    /**
+     * Issue #246: neplátce DPH nemá nárok na odpočet. Přijatá faktura od plátce s výchozím
+     * `vat_deduction = full` (AI import, ruční založení) se dřív zaúčtovala s 343; daň
+     * patří do nákladu podle plátcovství firmy k datu plnění, ne podle uloženého pole.
+     */
+    public function testNonPayerPostsPurchaseVatIntoExpenseEvenWithFullDeduction(): void
+    {
+        $issue = self::YEAR . '-06-15';
+        $this->db->pdo()->prepare(
+            'INSERT INTO supplier_vat_status_history (supplier_id, effective_from, is_vat_payer, is_identified)
+             VALUES (?, ?, 0, 0)'
+        )->execute([$this->supplierId, self::YEAR . '-01-01']);
+        $vendor = $this->client('Dodavatel plátce pro neplátce', false, true);
+        $stmt = $this->db->pdo()->prepare(
+            'INSERT INTO purchase_invoices
+                (supplier_id, vendor_id, vendor_invoice_number, document_kind, issue_date, tax_date,
+                 due_date, received_at, currency_id, reverse_charge, vendor_snapshot,
+                 total_without_vat, total_vat, total_with_vat, status, vat_classification_code,
+                 vat_deduction, created_by)
+             VALUES (?, ?, ?, "invoice", ?, ?, ?, ?, ?, 0, "{}", 1547.00, 324.87, 1871.87, "received", "40", "full", ?)'
+        );
+        $stmt->execute([$this->supplierId, $vendor, 'PF-2099-NEPLATCE', $issue, $issue, $issue, $issue, $this->currencyId, $this->userId]);
+        $purchaseId = (int) $this->db->pdo()->lastInsertId();
+        $this->insertItem('purchase_invoice_items', 'purchase_invoice_id', $purchaseId, 1547.00, 324.87, 21.00);
+
+        $lines = $this->posting->buildFromPurchaseInvoice($this->supplierId, $purchaseId);
+        $byAccount = [];
+        foreach ($lines as $line) {
+            $byAccount[$line['account_code']][$line['side']] = ($byAccount[$line['account_code']][$line['side']] ?? 0.0) + $line['amount'];
+        }
+
+        self::assertArrayNotHasKey('343.100', $byAccount, 'Neplátce nemá nárok na odpočet, 343 nesmí vzniknout.');
+        self::assertEqualsWithDelta(1871.87, $byAccount['518']['debit'], 0.001, 'Daň je součástí nákladu.');
+        self::assertEqualsWithDelta(1871.87, $byAccount['321']['credit'], 0.001);
+    }
+
     public function testPurchaseInvoiceVatDeductionProportionalSplitsNonDeductibleVatIntoExpense(): void
     {
         // Regrese (audit B1): §75 poměrný odpočet dřív bral zkrácené base+vat z
