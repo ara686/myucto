@@ -195,6 +195,17 @@ final class RequestAuthorization
         return self::allows($request, 'logbook.write', AccessLevel::WRITE);
     }
 
+    /**
+     * Smí čtecí požadavek (GET stažení, náhled) mimochodem zapsat? Doplnění kurzů,
+     * posun zámku podání, založení konceptu nebo párování záloh dělá jen člověk
+     * v aplikaci s právem zápisu. API token je pro účetní a daňovou vrstvu vždy
+     * jen ke čtení, i když jeho uživatel právo zápisu má.
+     */
+    public static function allowsReadSideEffects(Request $request, string $permission): bool
+    {
+        return self::isSessionAuth($request) && self::allows($request, $permission, AccessLevel::WRITE);
+    }
+
     public static function allows(
         Request $request,
         string $permission,

@@ -60,8 +60,10 @@ final class TaxReturnAction
         if ($bad !== null) {
             return $bad($response);
         }
+        // Koncept a párování záloh vznikají jen v aplikaci; API token přiznání jen čte.
         return $this->run($response, fn () => $this->service->getReturn(
-            SupplierGuard::currentId($request), $year, $type, $this->userId($request), $this->variant($request), $this->seq($request)
+            SupplierGuard::currentId($request), $year, $type, $this->userId($request), $this->variant($request), $this->seq($request),
+            RequestAuthorization::isSessionAuth($request),
         ));
     }
 
@@ -145,7 +147,7 @@ final class TaxReturnAction
         $variant = $this->variant($request);
         $seq = $this->seq($request);
         try {
-            $built = $this->service->generateXml($supplierId, $year, $type, $userId, $variant, $seq);
+            $built = $this->service->generateXml($supplierId, $year, $type, $userId, $variant, $seq, RequestAuthorization::isSessionAuth($request));
         } catch (TaxReturnException|\MyInvoice\Service\Tax\Nonprofit\NonprofitTaxAssessmentException|\MyInvoice\Service\Accounting\PostingException $e) {
             return Json::error($response, $e->errorCode, $e->getMessage(), $e->httpStatus);
         } catch (\Throwable $e) {
@@ -294,7 +296,7 @@ final class TaxReturnAction
             return $bad($response);
         }
         return $this->run($response, fn () => $this->service->advanceScheduleList(
-            SupplierGuard::currentId($request), $year, $type
+            SupplierGuard::currentId($request), $year, $type, RequestAuthorization::isSessionAuth($request)
         ));
     }
 
