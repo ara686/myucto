@@ -642,25 +642,13 @@ final class AiProviderCredentialsAction
      * libovolný host, a `azureRegion` by rezidenci odvozovala z crafted hostname
      * (`x-swedencentral.attacker.tld`). Povolené jen skutečné Azure hosty; region se
      * pak (pro ověřený Azure host) bere z deklarovaného ai_data_region.
+     *
+     * Stejné pravidlo se kontroluje i při každém volání a klienti nenásledují
+     * přesměrování ({@see AzureOpenAiClient::endpointError()}).
      */
     private static function validateAzureEndpoint(string $endpoint): ?string
     {
-        $endpoint = trim($endpoint);
-        if ($endpoint === '') {
-            return 'endpoint je povinný.';
-        }
-        $scheme = strtolower((string) parse_url($endpoint, PHP_URL_SCHEME));
-        $host   = strtolower((string) parse_url($endpoint, PHP_URL_HOST));
-        if ($scheme !== 'https') {
-            return 'azure endpoint musí používat https.';
-        }
-        $allowed = ['.openai.azure.com', '.cognitiveservices.azure.com', '.azure-api.net'];
-        foreach ($allowed as $suffix) {
-            if ($host !== '' && str_ends_with($host, $suffix)) {
-                return null;
-            }
-        }
-        return 'azure endpoint musí směřovat na *.openai.azure.com / *.cognitiveservices.azure.com / *.azure-api.net.';
+        return AzureOpenAiClient::endpointError($endpoint);
     }
 
     private static function validateOpenaiBaseUrl(string $baseUrl): ?string

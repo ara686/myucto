@@ -50,6 +50,7 @@ final class AnthropicClient implements LlmGatewayInterface
         $this->http = $http ?? new Client([
             'timeout' => self::TIMEOUT,
             'http_errors' => false,
+            'allow_redirects' => false,
         ]);
     }
 
