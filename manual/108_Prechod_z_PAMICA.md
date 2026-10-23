@@ -188,6 +188,8 @@ který už prošel, přeskočí; změněný měsíc počítaný MyÚčtem převe
 | Co vidíte | Proč | Co udělat |
 |---|---|---|
 | **Export neobsahuje mzdy s IČO firmy v MyÚčtu** | Jiné IČO v PAMICA nebo ve firmě | Zkontrolujte IČO v nastavení firmy a v PAMICA |
+| Nástroj hlásí, že datový soubor je chráněný heslem databáze | Datový soubor PAMICA má heslo databáze | Spusťte nástroj znovu a heslo zadejte, když se zeptá, nebo parametrem `-Heslo` |
+| Nástroj hlásí, že datový soubor drží jiný program | PAMICA je otevřená na jiném počítači, nebo chybí právo ke čtení | Zavřete PAMICU u všech uživatelů, případně pracujte s kopií souboru |
 | Náhled exportu se nenačetl | Výpadek spojení, chyba serveru | **Zkusit znovu**; nahraný export zůstává na serveru |
 | Kontrola před převodem hlásí začátek vedení mezd před zpracovanými měsíci | Firma už v MyÚčtu je a začátek je dřív než poslední měsíc exportu | Zvolte **Posunout začátek...** nebo **Převést bez posunu začátku**; má-li MyÚčto už vlastní mzdový běh, posun se nenabízí a běh zrušte |
 | Osoba se nezaložila | Rodné číslo bez platného data narození, neznámý kód pojišťovny | Doplňte osobu v evidenci a převod zopakujte |
@@ -242,8 +244,15 @@ jen čte, PAMICA během exportu musí být zavřená.
 | `-Mdb` | cesta k datovému souboru PAMICA (`Mzdy*.mdb`), když ho nástroj sám nenajde |
 | `-Rok` | omezí export na zadané roky; bez něj se vyexportují všechny roky v datech |
 | `-Ico` | IČO firmy, když se ho nepodaří určit z dat |
+| `-Heslo` | heslo databáze, je-li jím datový soubor chráněný; bez parametru se na něj nástroj zeptá |
 
 Export jen čte. Do datového souboru nic nezapisuje.
+
+Když se datový soubor neotevře, nástroj vypíše důvod i s hlášením ovladače:
+chybějící ovladač Access (pak se sám zkusí spustit v 32bitovém PowerShellu),
+heslo databáze, soubor držený jiným programem, nebo soubor, který není
+databází Accessu. Datový soubor chráněný heslem databáze nástroj otevře
+s heslem z parametru `-Heslo` nebo z dotazu při spuštění.
 
 #### 108.9.1.3 Co je v exportu
 
