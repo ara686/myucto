@@ -15,6 +15,7 @@ describe('client tax submission permissions', () => {
   it('offers only archive read and submit write in the role editor', () => {
     expect(rolePermissionLevels('client', 'reports.submissions')).toEqual([0, 1])
     expect(rolePermissionLevels('client', 'reports.submit')).toEqual([0, 2])
+    expect(rolePermissionLevels('staff', 'reports.submit')).toEqual([0, 1, 2])
     expect(rolePermissionLevels('staff', 'reports.submissions.manage')).toEqual([0, 2])
   })
 

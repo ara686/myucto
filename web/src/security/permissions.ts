@@ -113,7 +113,7 @@ export const OPERATIONAL_SETTINGS_KEYS = ['settings.email_profiles', 'settings.e
 /** Úrovně nabízené editorem respektují omezení klientských agend a samostatných akcí. */
 export function rolePermissionLevels(roleType: 'staff' | 'client', key: string): readonly PermissionValue[] {
   if (key === 'reports.submissions') return [0, 1]
-  if (key === 'reports.submit' || key === 'reports.submissions.manage') return [0, 2]
+  if (key === 'reports.submissions.manage' || (roleType === 'client' && key === 'reports.submit')) return [0, 2]
   if ((OPERATIONAL_SETTINGS_KEYS as readonly string[]).includes(key)) return [0, 2]
   if (roleType === 'client' && (key === 'bank' || key === 'stock')) return [0, 1]
   if (roleType === 'client' && (CLIENT_STOCK_ACTION_KEYS as readonly string[]).includes(key)) return [0, 2]
