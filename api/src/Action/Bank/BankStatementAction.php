@@ -4488,17 +4488,14 @@ final class BankStatementAction
     /** Má pohyb živý zaúčtovaný zápis v deníku (banka, vypořádání nebo odpis karty)? */
     private function hasPostedBankEntry(int $supplierId, int $txId): bool
     {
-        $types = implode(',', array_map(
-            fn (string $type): string => $this->db->pdo()->quote($type),
-            BankTransactionReleaseService::TRANSACTION_SOURCE_TYPES,
-        ));
+        $types = BankTransactionReleaseService::TRANSACTION_SOURCE_TYPES;
         $stmt = $this->db->pdo()->prepare(
-            "SELECT 1 FROM journal_entries
-              WHERE supplier_id = ? AND source_type IN ($types) AND source_id = ?
+            'SELECT 1 FROM journal_entries
+              WHERE supplier_id = ? AND source_type IN (' . implode(',', array_fill(0, count($types), '?')) . ') AND source_id = ?
                 AND reversed_by IS NULL AND posted_at IS NOT NULL
-              LIMIT 1"
+              LIMIT 1'
         );
-        $stmt->execute([$supplierId, $txId]);
+        $stmt->execute([$supplierId, ...$types, $txId]);
         return $stmt->fetchColumn() !== false;
     }
 
@@ -4540,9 +4537,11 @@ final class BankStatementAction
         }
 
         // Zrušení párování zaúčtovaného pohybu stornuje nebo odpojí zápis v deníku
-        // stejně jako /unpost, proto vyžaduje stejná práva. Nezaúčtovaný pohyb dál
-        // stačí bank WRITE (klient bank.match).
-        if ($this->hasPostedBankEntry($supplierId, $txId)
+        // stejně jako /unpost, proto u interní role vyžaduje stejná práva. Nezaúčtovaný
+        // pohyb dál stačí bank WRITE. Klientská role v portálu páruje i ruší párování
+        // vlastních pohybů (párování samo účtuje), hlídá ji clientAccess a uzavřené období.
+        if (!RequestAuthorization::isClientType($request)
+            && $this->hasPostedBankEntry($supplierId, $txId)
             && (!RequestAuthorization::allows($request, 'bank.unpost', AccessLevel::WRITE)
                 || !RequestAuthorization::allows($request, 'accounting', AccessLevel::WRITE))) {
             return Json::error($response, 'forbidden',
