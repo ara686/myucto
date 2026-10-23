@@ -322,7 +322,6 @@ export interface Invoice {
   rounding: number
   status: InvoiceStatus
   approval_status: ApprovalStatus
-  approval_token: string | null
   approval_token_expires_at: string | null
   approval_requested_at: string | null
   approval_decided_at: string | null
