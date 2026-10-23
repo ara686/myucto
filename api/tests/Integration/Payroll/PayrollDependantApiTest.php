@@ -747,15 +747,23 @@ final class PayrollDependantApiTest extends TestCase
         self::assertSame(1, $this->claimCount());
     }
 
-    public function testJmhzIdentityIncludesBirthDateWithoutBirthNumber(): void
+    /**
+     * Rodné číslo dítěte (10438) jde do měsíčního hlášení vedle data narození,
+     * jak ho uvádějí ostatní mzdové programy; jen číslicemi, jak ho chce XSD.
+     */
+    public function testJmhzIdentityIncludesBirthDateAndBirthNumber(): void
     {
         $id = $this->createChild(['given_name' => 'Jana', 'family_name' => 'Nováková']);
-        $repository = new \MyInvoice\Repository\Payroll\PayrollDependantJmhzIdentityRepository($this->db);
+        $repository = new \MyInvoice\Repository\Payroll\PayrollDependantJmhzIdentityRepository(
+            $this->db,
+            Bootstrap::buildContainer()->get(\MyInvoice\Service\Payroll\Security\PayrollSensitiveData::class),
+        );
         self::assertSame([
             $this->employeeId => ['dependant-' . $id => [
                 'given_name' => 'Jana',
                 'family_name' => 'Nováková',
                 'birth_date' => '2001-01-01',
+                'birth_number' => '0101010008',
             ]],
         ], $repository->identitiesFor($this->supplierId, [$this->employeeId]));
         self::assertSame([], $repository->identitiesFor($this->otherSupplierId, [$this->employeeId]));

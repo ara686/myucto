@@ -2522,12 +2522,17 @@ final class JmhzScenario1DocumentResolver
             if ($creditClaimed) {
                 $orders[$reportedOrder] = true;
             }
+            // Rodné číslo (10438) vedle data narození, jak ho uvádějí ostatní
+            // mzdové programy; dítě bez rodného čísla v evidenci jde jen s datem.
+            $birthNumber = $identity['birth_number'] ?? null;
             $normalized[] = [
                 'identity' => [
                     'given_name' => trim((string) $identity['given_name']),
                     'family_name' => trim((string) $identity['family_name']),
                     'birth_date' => $identity['birth_date'],
-                ],
+                ] + (is_string($birthNumber) && preg_match('/^\d{9,10}$/D', $birthNumber) === 1
+                    ? ['birth_number' => $birthNumber]
+                    : []),
                 'ztp_p' => ($child['ztp_p'] ?? null) === true,
                 'order' => $creditClaimed ? (string) $reportedOrder : 'N',
             ];

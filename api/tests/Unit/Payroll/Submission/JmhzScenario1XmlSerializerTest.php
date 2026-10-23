@@ -1114,6 +1114,29 @@ final class JmhzScenario1XmlSerializerTest extends TestCase
         return $payload;
     }
 
+    /**
+     * Rodné číslo dítěte (10438) jde vedle data narození (10437), jak ho
+     * uvádějí ostatní mzdové programy (PAMICA, Premier, Money S3, ABRA,
+     * AVENSIO); podle něj se dítě páruje mezi poplatníky.
+     */
+    public function testChildBirthNumberIsReportedNextToBirthDate(): void
+    {
+        $payload = $this->payloadWithChildCredit();
+        $payload['people'][0]['child_credit_evidence']['children'][0]['identity']['birth_number'] = '1504110003';
+
+        $result = (new JmhzScenario1XmlValidator())->dryRun(
+            $this->resolutionFor($payload),
+            $this->envelope(),
+        );
+        $xml = preg_replace('/>\s+</', '><', $result['xml']) ?? '';
+
+        self::assertStringContainsString(
+            '<form:dite><form:jmeno>Jana</form:jmeno><form:prijmeni>Nováková</form:prijmeni>'
+                . '<form:datumNarozeni>2015-04-11</form:datumNarozeni><form:rodneCislo>1504110003</form:rodneCislo></form:dite>',
+            $xml,
+        );
+    }
+
     public function testCreditWithoutSignedDeclarationIsRefused(): void
     {
         $payload = $this->payload();

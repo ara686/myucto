@@ -55,6 +55,14 @@ enum PayrollRevealPurpose: string
      */
     case SUBMISSION_CSSZ_SICKNESS = 'submission:cssz_sickness';
 
+    /**
+     * Měsíční hlášení JMHZ — rodné číslo vyživovaného dítěte (10438) v bloku
+     * měsíčního daňového zvýhodnění. Podle něj ČSSZ a správce daně párují dítě
+     * mezi poplatníky; uvádějí ho všechny ostatní mzdové programy. Odhalený údaj
+     * jde jen do šifrovaného snímku přípravy hlášení.
+     */
+    case SUBMISSION_CSSZ_MONTHLY_REPORT = 'submission:cssz_monthly_report';
+
     /** Hromadné oznámení zaměstnavatele zdravotní pojišťovně (§ 10 zákona č. 48/1997 Sb.) — číslo pojištěnce je náležitostí věty `zmenaZamestance`. */
     case SUBMISSION_HEALTH_BULK_NOTIFICATION = 'submission:health_bulk_notification';
 
@@ -100,6 +108,7 @@ enum PayrollRevealPurpose: string
             self::DOCUMENT_PENSION_RECORD_COPY,
             self::SUBMISSION_CSSZ_REGISTRATION,
             self::SUBMISSION_CSSZ_SICKNESS,
+            self::SUBMISSION_CSSZ_MONTHLY_REPORT,
             self::SUBMISSION_HEALTH_BULK_NOTIFICATION => true,
             default => false,
         };
