@@ -7082,6 +7082,7 @@
           "deduction_assessment_incomplete": "Nebyla potvrzena úplnost posouzení pokračujících srážek.",
           "pension_category_assessment_incomplete": "Nebylo potvrzeno posouzení důchodových kategorií před rokem 1993.",
           "deduction_source_mismatch": "Zadané právní údaje neodpovídají aktuálním nárokům v evidenci srážek.",
+          "deduction_permission_required": "Zápočtový list obsahuje pokračující srážky, ke kterým nemáte oprávnění. Vystavit ho musí kolega s oprávněním ke srážkám ze mzdy.",
           "relationship_kind_not_supported": "Tento typ pracovního vztahu zatím nelze zpracovat.",
           "pension_category_period_invalid": "Období důchodové kategorie není platné."
         }

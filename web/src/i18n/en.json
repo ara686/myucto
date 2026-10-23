@@ -7082,6 +7082,7 @@
           "deduction_assessment_incomplete": "The continuing-deduction assessment has not been confirmed as complete.",
           "pension_category_assessment_incomplete": "The pre-1993 pension-category assessment has not been confirmed.",
           "deduction_source_mismatch": "The entered legal details do not match the current claims in the deduction ledger.",
+          "deduction_permission_required": "The employment certificate includes continuing deductions you are not permitted to see. A colleague with the wage deductions permission has to issue it.",
           "relationship_kind_not_supported": "This employment relationship type is not supported yet.",
           "pension_category_period_invalid": "The pension-category period is invalid."
         }
