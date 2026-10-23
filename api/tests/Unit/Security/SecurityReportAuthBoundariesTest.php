@@ -96,6 +96,27 @@ final class SecurityReportAuthBoundariesTest extends TestCase
         self::assertFalse($totp->verifyAndConsume($db, $secret, 'not-a-code'));
     }
 
+    public function testTotpRejectsStepNotNewerThanLastAcceptedStep(): void
+    {
+        $pdo = \PDO::connect('sqlite::memory:');
+        $pdo->exec('CREATE TABLE totp_used_steps (secret_fingerprint TEXT, time_step INTEGER, PRIMARY KEY (secret_fingerprint, time_step))');
+        $db = $this->createStub(Connection::class);
+        $db->method('pdo')->willReturn($pdo);
+        $secret = TotpService::generateSecret();
+        $other = TotpService::generateSecret();
+        $totp = new TotpService();
+        $generate = new \ReflectionMethod(TotpService::class, 'generateAt');
+        $step = (int) floor(time() / 30);
+
+        // Novější krok projde, starší kód z tolerančního okna po něm už ne.
+        self::assertTrue($totp->verifyAndConsume($db, $secret, $generate->invoke($totp, $secret, $step)));
+        self::assertFalse($totp->verifyAndConsume($db, $secret, $generate->invoke($totp, $secret, $step - 1)));
+        self::assertTrue($totp->verifyAndConsume($db, $secret, $generate->invoke($totp, $secret, $step + 1)));
+        self::assertFalse($totp->verifyAndConsume($db, $secret, $generate->invoke($totp, $secret, $step)));
+        // Evidence je per tajemství, jiný uživatel tím ovlivněn není.
+        self::assertTrue($totp->verifyAndConsume($db, $other, $generate->invoke($totp, $other, $step - 1)));
+    }
+
     #[DataProvider('publicIdentities')]
     public function testPublicReportRequiresAuthorizedStaffOrLinkSession(string $method, bool $denied, string $type, array $permissions, bool $expected): void
     {
@@ -182,7 +203,10 @@ final class SecurityReportAuthBoundariesTest extends TestCase
             'consumed concurrently' => ["used_at = '2026-09-09 12:00:00'", '123456', 0, false],
             'attempt cap reached concurrently' => ['attempts = 5', '123456', 5, false],
             'failed attempts accumulate' => ['attempts = 2', '000000', 3, false],
-            'valid unused code' => ['attempts = 0', '123456', 0, true],
+            // Pokus se započte před porovnáním, i ten úspěšný.
+            'valid unused code' => ['attempts = 0', '123456', 1, true],
+            'last attempt taken concurrently' => ['attempts = 5', '000000', 5, false],
+            'valid code on the last free attempt' => ['attempts = 4', '123456', 5, true],
         ];
     }
 

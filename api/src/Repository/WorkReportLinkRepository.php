@@ -139,22 +139,29 @@ final class WorkReportLinkRepository
             ->execute([$codeId]);
     }
 
-    public function consumeCode(int $codeId, int $maxAttempts): bool
+    /**
+     * Atomicky započte pokus ještě před porovnáním kódu. Porovnávat se smí jen
+     * při true, takže souběžné hádání nepřekročí strop pokusů.
+     */
+    public function reserveCodeAttempt(int $codeId, int $maxAttempts): bool
     {
         $stmt = $this->db->pdo()->prepare(
-            'UPDATE work_report_link_codes SET used_at = NOW()
+            'UPDATE work_report_link_codes SET attempts = attempts + 1
               WHERE id = ? AND used_at IS NULL AND expires_at > NOW() AND attempts < ?'
         );
         $stmt->execute([$codeId, $maxAttempts]);
         return $stmt->rowCount() === 1;
     }
 
-    public function bumpCodeAttempts(int $codeId, int $maxAttempts): void
+    /** Spálí kód s už započteným pokusem, pokud ho nespotřeboval souběžný požadavek. */
+    public function consumeCode(int $codeId): bool
     {
-        $this->db->pdo()->prepare(
-            'UPDATE work_report_link_codes SET attempts = attempts + 1
-              WHERE id = ? AND used_at IS NULL AND expires_at > NOW() AND attempts < ?'
-        )->execute([$codeId, $maxAttempts]);
+        $stmt = $this->db->pdo()->prepare(
+            'UPDATE work_report_link_codes SET used_at = NOW()
+              WHERE id = ? AND used_at IS NULL AND expires_at > NOW()'
+        );
+        $stmt->execute([$codeId]);
+        return $stmt->rowCount() === 1;
     }
 
     // -- sessions ----------------------------------------------------------

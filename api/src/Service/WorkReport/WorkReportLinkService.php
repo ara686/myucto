@@ -261,15 +261,20 @@ final class WorkReportLinkService
             return null;
         }
 
-        if (hash_equals((string) $active['code_hash'], hash('sha256', $code))) {
-            if (!$this->links->consumeCode((int) $active['id'], $this->maxAttempts())) return null;
-            $sessionToken = bin2hex(random_bytes(32)); // 64 hex znaků
-            $this->links->createSession($linkId, $email, hash('sha256', $sessionToken), @inet_pton($ip) ?: null);
-            return $sessionToken;
+        // Pokus se započte atomicky dřív, než se kód porovná; souběžné pokusy
+        // tak nemohou porovnávat nad zastaralým počtem a obejít strop.
+        if (!$this->links->reserveCodeAttempt((int) $active['id'], $this->maxAttempts())) {
+            return null;
         }
-
-        $this->links->bumpCodeAttempts((int) $active['id'], $this->maxAttempts());
-        return null;
+        if (!hash_equals((string) $active['code_hash'], hash('sha256', $code))) {
+            return null;
+        }
+        if (!$this->links->consumeCode((int) $active['id'])) {
+            return null;
+        }
+        $sessionToken = bin2hex(random_bytes(32)); // 64 hex znaků
+        $this->links->createSession($linkId, $email, hash('sha256', $sessionToken), @inet_pton($ip) ?: null);
+        return $sessionToken;
     }
 
     /** True když cookie-token odpovídá platné relaci tohoto odkazu. */
