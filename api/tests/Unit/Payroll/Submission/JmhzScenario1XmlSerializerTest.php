@@ -1156,7 +1156,12 @@ final class JmhzScenario1XmlSerializerTest extends TestCase
         self::assertStringNotContainsString('<form:danBonus>', $result['xml']);
     }
 
-    public function testTaxBonusElementStaysWithSignedDeclaration(): void
+    /**
+     * Nulový bonus se nepíše ani s podepsaným prohlášením (XSD `minOccurs=0`):
+     * PAMICA ho v hlášeních přijatých ČSSZ vynechává a přítomnost elementu
+     * ČSSZ bere za vyplnění (třída chyb 40244).
+     */
+    public function testZeroTaxBonusIsOmittedEvenWithSignedDeclaration(): void
     {
         $payload = $this->payload();
         $payload['people'][0]['employments'][0]['term']
@@ -1171,7 +1176,8 @@ final class JmhzScenario1XmlSerializerTest extends TestCase
             '<form:prohlaseniPoplatnika>true</form:prohlaseniPoplatnika>',
             $result['xml'],
         );
-        self::assertStringContainsString('<form:danBonus>', $result['xml']);
+        self::assertStringContainsString('<form:danZalohaPoSleve>', $result['xml']);
+        self::assertStringNotContainsString('<form:danBonus>', $result['xml']);
     }
 
     /**
@@ -3326,6 +3332,26 @@ final class JmhzScenario1XmlSerializerTest extends TestCase
         }
         $xml = $this->summaryMatrixXml($document);
         self::assertSame([JmhzControlOutcome::Passed], $this->controlOutcomes($xml, 283), $body);
+    }
+
+    /**
+     * Měsíc bez zdanitelného příjmu zálohu nemá: zcela nulový blok
+     * `zalohaNaDan` se vynechává i bez srážkové daně, jako v hlášeních
+     * PAMICA, která ČSSZ přijala.
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('summaryFormBodies')]
+    public function testZeroAdvanceBlockIsOmitted(string $body): void
+    {
+        $document = $this->summaryMatrixDocument($body);
+        $summary = &$document['people'][0]['summary'];
+        $summary['income_total_czk'] = 0;
+        $summary['employer_contributions_czk'] = [];
+        $summary['advance_tax_czk'] = ['base' => 0, 'computed' => 0, 'after_credits' => 0, 'bonus' => 0];
+        $summary['withholding_tax_czk'] = null;
+        unset($summary);
+        $xpath = $this->summaryMatrixXpath($document);
+
+        self::assertSame(0, $xpath->query(self::formQuery($body, 'souhrnDataZec/zalohaNaDan'))->length, $body);
     }
 
     /**
