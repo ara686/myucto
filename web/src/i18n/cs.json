@@ -20648,12 +20648,13 @@
     "ip_hint": "Podporuje IPv4 i IPv6, samostatnou adresu i CIDR rozsah - např. 203.0.113.7, 192.168.1.0/24, 2001:db8::1, 2001:db8::/32."
   },
   "license": {
-    "banner_trial": "Zkušební období končí za {days} dní - aktivujte licenci, aby zůstaly dostupné podvojné účetnictví, sklad a další komerční moduly.",
+    "banner_trial": "Zkušební období končí dnes - aktivujte licenci, aby zůstaly dostupné podvojné účetnictví, sklad a další komerční moduly. | Zkušební období končí zítra - aktivujte licenci, aby zůstaly dostupné podvojné účetnictví, sklad a další komerční moduly. | Zkušební období končí za {days} dny - aktivujte licenci, aby zůstaly dostupné podvojné účetnictví, sklad a další komerční moduly. | Zkušební období končí za {days} dní - aktivujte licenci, aby zůstaly dostupné podvojné účetnictví, sklad a další komerční moduly.",
     "banner_overage": "Překročili jste rozsah licence. Rozšiřte předplatné do {days} dní, jinak se obnova pozastaví.",
     "banner_overage_nodeadline": "Překročili jste rozsah licence. Rozšiřte prosím předplatné.",
     "banner_trial_expired": "Zkušební období skončilo - placené účetní moduly nejsou dostupné. Fakturace a bezplatný základ fungují dál.",
     "banner_degraded": "Licence vypršela - placené účetní moduly nejsou dostupné. Fakturace a bezplatný základ fungují dál.",
     "banner_cta": "Zakoupit / aktivovat",
+    "banner_buy_web": "Koupit licenci na MyUcto.cz",
     "purchase_title": "Zakoupení a aktivace",
     "purchase_subtitle": "Stav licence, aktivace klíčem a předplatné.",
     "no_admin": "Správu licence vidí jen administrátor.",

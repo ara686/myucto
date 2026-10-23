@@ -20648,12 +20648,13 @@
     "ip_hint": "Supports IPv4 and IPv6, a single address as well as a CIDR range — e.g. 203.0.113.7, 192.168.1.0/24, 2001:db8::1, 2001:db8::/32."
   },
   "license": {
-    "banner_trial": "Trial ends in {days} days — activate a license to keep double-entry accounting, stock and other commercial modules available.",
+    "banner_trial": "Trial ends today — activate a license to keep double-entry accounting, stock and other commercial modules available. | Trial ends tomorrow — activate a license to keep double-entry accounting, stock and other commercial modules available. | Trial ends in {days} days — activate a license to keep double-entry accounting, stock and other commercial modules available.",
     "banner_overage": "You have exceeded your license scope. Upgrade your subscription within {days} days, otherwise renewal will be paused.",
     "banner_overage_nodeadline": "You have exceeded your license scope. Please upgrade your subscription.",
     "banner_trial_expired": "Your trial has ended — paid accounting modules are unavailable. Invoicing and the free foundation keep working.",
     "banner_degraded": "Your license has expired — paid accounting modules are unavailable. Invoicing and the free foundation keep working.",
     "banner_cta": "Buy / activate",
+    "banner_buy_web": "Buy a license at MyUcto.cz",
     "purchase_title": "Purchase and activation",
     "purchase_subtitle": "License status, key activation and subscription.",
     "no_admin": "Only an administrator can manage the license.",
