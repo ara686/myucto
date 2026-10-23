@@ -8,6 +8,8 @@ use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Repository\PohodaImportRepository;
 use MyInvoice\Service\Accounting\Activation\OpeningBalanceDocuments;
 use MyInvoice\Service\Accounting\FiscalCalendar;
+use MyInvoice\Service\Accounting\OtherItemException;
+use MyInvoice\Service\Accounting\OtherItemService;
 use MyInvoice\Service\Migration\MoneyS3\ImportProtocol;
 use MyInvoice\Service\Migration\Shared\JournalEntryLinker;
 use PDO;
@@ -32,6 +34,7 @@ final class DocumentLinker
     public function __construct(
         private readonly Connection $db,
         private readonly PohodaImportRepository $map,
+        private readonly OtherItemService $otherItems,
     ) {
         $this->entries = new JournalEntryLinker($db, 'Pohody');
     }
@@ -158,23 +161,15 @@ final class DocumentLinker
                 $p->count(self::STEP_PAYMENTS, 'previous_period');
                 continue;
             }
+            if ($l['doc'] === 'other_item') {
+                $this->allocateOtherItem($ctx, $l, $mapKey);
+                continue;
+            }
             if ($l['agenda'] === 'bank') {
-                // Úhrada nese id bankovního dokladu POHODY - to je jednoznačné i tam, kde se
-                // čísla dokladů opakují (číselná řada banky se každý rok začíná znovu).
-                $byId = ($l['source_id'] ?? '') !== '' ? ($ctx->bankByPohodaId[$l['source_id']] ?? null) : null;
-                $candidates = $byId !== null ? [['id' => $byId, 'date' => $l['date']]] : ($ctx->bankTransactions[$l['source']] ?? []);
-                if (count($candidates) > 1) {
-                    $sameDay = array_values(array_filter($candidates, static fn (array $c): bool => $c['date'] === $l['date']));
-                    $candidates = count($sameDay) === 1 ? $sameDay : $candidates;
-                }
-                if (count($candidates) !== 1) {
-                    $p->count(self::STEP_PAYMENTS, $candidates === [] ? 'not_found' : 'ambiguous');
-                    if ($candidates === []) {
-                        $p->warn(self::STEP_PAYMENTS, 'payment_not_found', "Úhrada {$l['source']} dokladu {$l['number']} v převedené bance není.", ['document_no' => $l['number']]);
-                    }
+                $txId = $this->bankTransactionFor($ctx, $l);
+                if ($txId === null) {
                     continue;
                 }
-                $txId = $candidates[0]['id'];
                 // Úhradu mohl mezi převody spárovat uživatel v MyÚčtu (Přepárovat u výpisu).
                 // Stejná dvojice pohyb + doklad se nevkládá podruhé a k ručnímu párování se nepřidává.
                 $sameMatch->execute([$ctx->supplierId, $txId, $isIssued ? $l['id'] : null, $isIssued ? null : $l['id']]);
@@ -239,6 +234,82 @@ final class DocumentLinker
                 ['documents' => array_slice(array_keys($cashMulti), 0, 50)]);
         }
         $p->finish(self::STEP_PAYMENTS);
+    }
+
+    /**
+     * Pohyb, kterým POHODA doklad uhradila. Úhrada nese id bankovního dokladu POHODY - to je
+     * jednoznačné i tam, kde se čísla dokladů opakují (číselná řada banky se každý rok
+     * začíná znovu).
+     *
+     * @param array<string,mixed> $l
+     */
+    private function bankTransactionFor(PohodaContext $ctx, array $l): ?int
+    {
+        $p = $ctx->protocol;
+        $byId = ($l['source_id'] ?? '') !== '' ? ($ctx->bankByPohodaId[$l['source_id']] ?? null) : null;
+        $candidates = $byId !== null ? [['id' => $byId, 'date' => $l['date']]] : ($ctx->bankTransactions[$l['source']] ?? []);
+        if (count($candidates) > 1) {
+            $sameDay = array_values(array_filter($candidates, static fn (array $c): bool => $c['date'] === $l['date']));
+            $candidates = count($sameDay) === 1 ? $sameDay : $candidates;
+        }
+        if (count($candidates) !== 1) {
+            $p->count(self::STEP_PAYMENTS, $candidates === [] ? 'not_found' : 'ambiguous');
+            if ($candidates === []) {
+                $p->warn(self::STEP_PAYMENTS, 'payment_not_found', "Úhrada {$l['source']} dokladu {$l['number']} v převedené bance není.", ['document_no' => $l['number']]);
+            }
+            return null;
+        }
+        return (int) $candidates[0]['id'];
+    }
+
+    /**
+     * Úhrada ostatní pohledávky či závazku: alokace bankovního pohybu nebo pokladního
+     * dokladu přes {@see OtherItemService::allocate()}, který ověří volnou částku, směr
+     * a zaúčtování platby na saldokontní účet položky. Zápis platby převzala banka či
+     * pokladna z deníku POHODY, nic se neúčtuje.
+     *
+     * @param array<string,mixed> $l
+     */
+    private function allocateOtherItem(PohodaContext $ctx, array $l, string $mapKey): void
+    {
+        $p = $ctx->protocol;
+        $amount = round(abs((float) $l['amount']), 2);
+        if ($l['agenda'] === 'bank') {
+            $txId = $this->bankTransactionFor($ctx, $l);
+            if ($txId === null) {
+                return;
+            }
+            $input = ['bank_transaction_id' => $txId, 'amount' => $amount];
+        } elseif ($l['agenda'] === 'voucher') {
+            $cashId = $ctx->cashDocuments[$l['source']] ?? null;
+            if ($cashId === null) {
+                $p->count(self::STEP_PAYMENTS, 'not_found');
+                $p->warn(self::STEP_PAYMENTS, 'payment_not_found', "Úhrada {$l['source']} dokladu {$l['number']} v převedené pokladně není.", ['document_no' => $l['number']]);
+                return;
+            }
+            $input = ['cash_document_id' => (int) $cashId, 'amount' => $amount];
+        } else {
+            // Zápočet interním dokladem apod. - úhrada bez pohybu peněz, alokace jen z banky či pokladny.
+            $p->count(self::STEP_PAYMENTS, 'other_item_' . ($l['agenda'] !== '' ? $l['agenda'] : 'without_document'));
+            return;
+        }
+        $pdo = $this->db->pdo();
+        $pdo->exec('SAVEPOINT pohoda_other_item_payment');
+        try {
+            $this->otherItems->allocate($ctx->supplierId, (int) $l['id'], $input, $ctx->userOrNull());
+            $pdo->exec('RELEASE SAVEPOINT pohoda_other_item_payment');
+        } catch (OtherItemException $e) {
+            $pdo->exec('ROLLBACK TO SAVEPOINT pohoda_other_item_payment');
+            $pdo->exec('RELEASE SAVEPOINT pohoda_other_item_payment');
+            $p->count(self::STEP_PAYMENTS, 'other_item_not_allocated');
+            $p->warn(self::STEP_PAYMENTS, 'other_item_payment', "Úhradu {$l['source']} dokladu {$l['number']} nešlo přiřadit: {$e->getMessage()}", ['document_no' => $l['number']]);
+            return;
+        }
+        $column = isset($input['bank_transaction_id']) ? 'bank_transaction_id' : 'cash_document_id';
+        $allocation = $pdo->prepare("SELECT id FROM other_item_allocations WHERE supplier_id = ? AND other_item_id = ? AND {$column} = ?");
+        $allocation->execute([$ctx->supplierId, (int) $l['id'], $input[$column]]);
+        $this->map->put($ctx->supplierId, PohodaImportRepository::KIND_PAYMENT, $mapKey, (int) $allocation->fetchColumn(), $ctx->runId);
+        $p->count(self::STEP_PAYMENTS, 'other_item_' . ($column === 'bank_transaction_id' ? 'bank' : 'cash'));
     }
 
     /**

@@ -205,6 +205,36 @@ final class PohodaImportTest extends TestCase
         self::assertSame(2, $this->rows('pohoda_import_map', $supplierId, "kind = 'other_item'"));
     }
 
+    public function testSettledOtherItemKeepsBankPaymentsAndPayrollLiabilityStaysInModule(): void
+    {
+        $supplierId = $this->supplier();
+        $dir = SyntheticPohodaExport::write($this->tmp);
+        SyntheticPohodaExport::withOtherItems($dir, true);
+        $export = PohodaExport::open($dir);
+
+        $first = $this->importer->run($supplierId, $this->userId, $export, false);
+        self::assertFalse($first->hasErrors(), $this->explain($first));
+        self::assertSame(3, $this->rows('other_items', $supplierId));
+        self::assertSame(0, $this->rows('other_items', $supplierId, "document_no IN ('26OZM0001', '26OZB0001')"));
+        $counts = self::stepCounts($first, 'other_items');
+        self::assertSame(1, $counts['payroll_or_tax'] ?? 0);
+        self::assertSame(1, $counts['unposted'] ?? 0);
+
+        $pdo = $this->db->pdo();
+        $settled = (int) $pdo->query("SELECT id FROM other_items WHERE supplier_id = {$supplierId} AND document_no = '26OZ0002'")->fetchColumn();
+        self::assertSame(2, $this->rows('other_item_allocations', $supplierId, "other_item_id = {$settled} AND reversed_on IS NULL"));
+        self::assertSame('300.00', (string) $pdo->query("SELECT SUM(amount) FROM other_item_allocations WHERE other_item_id = {$settled}")->fetchColumn());
+        // Alokovaný pohyb je vyřízený alokací, převod ho neoznačí jako zaúčtovaný bez dokladu.
+        self::assertSame(0, $this->rows('other_item_allocations', $supplierId,
+            "EXISTS (SELECT 1 FROM bank_transactions t WHERE t.id = other_item_allocations.bank_transaction_id AND t.match_status <> 'unmatched')"));
+        self::assertSame(1, $this->rows('other_items', $supplierId, "document_no = '26OZ0002' AND partner_id IS NOT NULL"));
+
+        $again = $this->importer->run($supplierId, $this->userId, $export, false);
+        self::assertFalse($again->hasErrors(), $this->explain($again));
+        self::assertSame(3, $this->rows('other_items', $supplierId));
+        self::assertSame(2, $this->rows('other_item_allocations', $supplierId));
+    }
+
     /** @return array<string,int|float> */
     private static function stepCounts(ImportProtocol $protocol, string $key): array
     {

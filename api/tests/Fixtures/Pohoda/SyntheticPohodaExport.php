@@ -198,7 +198,12 @@ final class SyntheticPohodaExport
             . '</mdbExport>');
     }
 
-    public static function withOtherItems(string $dir): void
+    /**
+     * Ostatní pohledávka a závazek mimo DPH, neuhrazené. S `$settled` navíc závazek
+     * uhrazený bankou ve dvou splátkách, závazek bez zaúčtování (předkontace „bez") a předpis
+     * odvodu na účtu 336, který vlastní mzdový modul.
+     */
+    public static function withOtherItems(string $dir, bool $settled = false): void
     {
         $append = static function (string $file, string $needle, string $xml): void {
             $source = (string) file_get_contents($file);
@@ -211,26 +216,48 @@ final class SyntheticPohodaExport
         };
         $append($dir . '/02_uctova_osnova.xml', '</lst:listAccount>',
             '<lst:itemAccount id="315000" code="315000" name="Ostatní pohledávky"/>'
-            . '<lst:itemAccount id="325000" code="325000" name="Ostatní závazky"/>');
+            . '<lst:itemAccount id="325000" code="325000" name="Ostatní závazky"/>'
+            . ($settled ? '<lst:itemAccount id="336000" code="336000" name="Zúčtování s institucemi SZ a ZP"/>'
+                . '<lst:itemAccount id="513000" code="513000" name="Náklady na reprezentaci"/>'
+                . '<lst:itemAccount id="524000" code="524000" name="Zákonné sociální pojištění"/>' : ''));
         $append($dir . '/01_ucetni_denik.xml', '</lst:accountancy>',
             self::entry('Ostatní pohledávky', '26OP0001', 'Nájem', 1200, '315000', '602000', '2026-02-01')
-            . self::entry('Ostatní závazky', '26OZ0001', 'Nájem', 800, '518000', '325000', '2026-02-02'));
-        foreach ([
-            ['18_faktury_receivable.xml', '26OP0001', 'UN', 1200, '2026-02-01'],
-            ['26_faktury_commitment.xml', '26OZ0001', 'PN', 800, '2026-02-02'],
-        ] as [$file, $number, $vat, $amount, $date]) {
-            self::file($dir . '/' . $file,
-                '<lst:listInvoice version="2.0" state="ok"><lst:invoice version="2.0"><inv:invoiceHeader>'
+            . self::entry('Ostatní závazky', '26OZ0001', 'Nájem', 800, '518000', '325000', '2026-02-02')
+            . ($settled ? self::entry('Ostatní závazky', '26OZ0002', 'Reprezentace', 300, '513000', '325000', '2026-02-03')
+                . self::entry('Ostatní závazky', '26OZM0001', 'Sociální pojištění', 500, '524000', '336000', '2026-02-04')
+                . self::entry('Banka', 'BAN0010020', 'Úhrada 26OZ0002', 100, '325000', '221001', '2026-02-10')
+                . self::entry('Banka', 'BAN0010021', 'Úhrada 26OZ0002', 200, '325000', '221001', '2026-02-12') : ''));
+        $document = static function (string $number, string $vat, float $amount, string $date, float $remaining, string $liquidations = ''): string {
+            return '<lst:invoice version="2.0"><inv:invoiceHeader>'
                 . '<inv:number><typ:numberRequested>' . $number . '</typ:numberRequested></inv:number>'
                 . '<inv:date>' . $date . '</inv:date><inv:dateAccounting>' . $date . '</inv:dateAccounting>'
                 . '<inv:dateDue>2026-03-01</inv:dateDue><inv:text>Nájem</inv:text>'
                 . '<inv:classificationVAT><typ:ids>' . $vat . '</typ:ids></inv:classificationVAT>'
-                . '<inv:liquidation><typ:amountHome>' . $amount . '</typ:amountHome></inv:liquidation>'
+                . '<inv:partnerIdentity><typ:address><typ:company>Pronajímatel Test s.r.o.</typ:company></typ:address></inv:partnerIdentity>'
+                . '<inv:liquidation><typ:amountHome>' . $remaining . '</typ:amountHome></inv:liquidation>'
                 . '</inv:invoiceHeader><inv:invoiceSummary><inv:homeCurrency>'
                 . '<typ:priceNone>' . $amount . '</typ:priceNone><typ:priceLow>0</typ:priceLow>'
                 . '<typ:priceLowVAT>0</typ:priceLowVAT><typ:priceHigh>0</typ:priceHigh>'
                 . '<typ:priceHighVAT>0</typ:priceHighVAT></inv:homeCurrency></inv:invoiceSummary>'
-                . '</lst:invoice></lst:listInvoice>');
+                . $liquidations . '</lst:invoice>';
+        };
+        $liquidation = static fn (string $bank, string $date, float $amount): string =>
+            '<typ:liquidation><typ:id>' . abs(crc32($bank . 'liq')) . '</typ:id><typ:date>' . $date . '</typ:date><typ:sourceAgenda>bank</typ:sourceAgenda>'
+            . '<typ:sourceDocument><typ:id>' . abs(crc32($bank)) . '</typ:id><typ:number>' . $bank . '</typ:number></typ:sourceDocument>'
+            . '<typ:amount>' . $amount . '</typ:amount></typ:liquidation>';
+        self::file($dir . '/18_faktury_receivable.xml', '<lst:listInvoice version="2.0" state="ok">'
+            . $document('26OP0001', 'UN', 1200, '2026-02-01', 1200) . '</lst:listInvoice>');
+        self::file($dir . '/26_faktury_commitment.xml', '<lst:listInvoice version="2.0" state="ok">'
+            . $document('26OZ0001', 'PN', 800, '2026-02-02', 800)
+            . ($settled ? $document('26OZ0002', 'PN', 300, '2026-02-03', 0, '<inv:liquidations>'
+                    . $liquidation('BAN0010020', '2026-02-10', 100) . $liquidation('BAN0010021', '2026-02-12', 200) . '</inv:liquidations>')
+                . $document('26OZM0001', 'PN', 500, '2026-02-04', 500)
+                . $document('26OZB0001', 'PN', 900, '2026-02-05', 900) : '')
+            . '</lst:listInvoice>');
+        if ($settled) {
+            $append($dir . '/29_banka.xml', '</lst:listBank>',
+                self::bank('BAN0010020', 'expense', '2026-02-10', 100, '', 'Pronajímatel Test s.r.o.')
+                . self::bank('BAN0010021', 'expense', '2026-02-12', 200, '', 'Pronajímatel Test s.r.o.'));
         }
     }
 
