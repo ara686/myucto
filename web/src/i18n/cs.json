@@ -36967,6 +36967,7 @@
     "registry": "Dům a jednotky v registru",
     "registryHelp": "Nejprve založte dům a jeho jednotky.",
     "registryDone": "Domů v registru: {count}",
+    "registryIncomplete": "V registru ještě potvrďte, že dům má zadané všechny jednotky.",
     "registryAction": "Registr SVJ",
     "components": "Složky předpisu",
     "componentsHelp": "Např. fond oprav, správa domu, záloha na vodu.",

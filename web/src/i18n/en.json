@@ -35914,6 +35914,7 @@
     "registry": "Building and units in the registry",
     "registryHelp": "Create the building and its units first.",
     "registryDone": "Buildings in the registry: {count}",
+    "registryIncomplete": "Confirm in the registry that the building has all its units entered.",
     "registryAction": "Association registry",
     "components": "Schedule components",
     "componentsHelp": "E.g. repair fund, building administration, water advance.",
