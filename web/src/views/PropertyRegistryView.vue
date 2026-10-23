@@ -44,7 +44,7 @@ onBeforeUnmount(() => { epoch++; detailEpoch++ })
 const enabled = computed(() => !!profile.value?.profile?.enabled)
 const canManage = computed(() => !!profile.value?.capabilities.manage)
 const canConfirm = computed(() => !!profile.value?.capabilities.confirm)
-const setupDone = computed(() => enabled.value && objects.house.length > 0 && objects.unit.length > 0)
+const setupDone = computed(() => enabled.value && objects.house.length > 0 && objects.unit.length > 0 && objects.service.length > 0)
 const steps = computed<SetupStep[]>(() => [
   { key: 'profile', title: t('propertySetup.profile'), help: t(enabled.value ? 'propertySetup.profileDone' : 'propertySetup.profileHelp'), done: enabled.value, ...(!enabled.value && canConfirm.value && !showProfile.value ? { action: t('propertySetup.profileAction'), icon: 'play' as const } : {}) },
   { key: 'house', title: t('propertySetup.house'), help: objects.house.length ? houseNames.value : t('propertySetup.houseHelp'), done: objects.house.length > 0, ...(enabled.value && canManage.value ? { action: t(objects.house.length ? 'propertySetup.houseMore' : 'propertySetup.houseAction'), icon: 'plus' as const } : {}) },
