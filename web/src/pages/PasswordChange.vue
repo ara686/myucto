@@ -19,6 +19,7 @@ import Passkeys from '@/pages/Passkeys.vue'
 import KeyboardShortcuts from '@/pages/KeyboardShortcuts.vue'
 import { getCredential, webAuthnErrorKey } from '@/security/webauthn'
 import RecoveryCodesOnce from '@/components/security/RecoveryCodesOnce.vue'
+import TotpAppRecommendation from '@/components/security/TotpAppRecommendation.vue'
 import {
   advanceCanonicalDomainLoginSession,
   authorizePendingDomainLogin,
@@ -52,7 +53,7 @@ async function returnToClientDomain() {
 
 type Tab = 'password' | 'totp' | 'passkeys' | 'session-lock' | 'shortcuts'
 function tabFromQuery(value: unknown): Tab {
-  return value === 'totp' || value === 'passkeys' || value === 'session-lock' || value === 'shortcuts'
+  return value === 'totp' || value === 'passkeys' || value === 'session-lock' || (value === 'shortcuts' && !auth.isInstanceAdmin)
     ? value
     : 'password'
 }
@@ -342,7 +343,7 @@ onMounted(() => {
       <option value="totp">{{ t('auth.totp_tab') }}</option>
       <option value="passkeys">{{ t('passkeys.title') }}</option>
       <option value="session-lock">{{ t('session_lock.preference_tab') }}</option>
-      <option value="shortcuts">{{ t('keyboard_shortcuts.title') }}</option>
+      <option v-if="!auth.isInstanceAdmin" value="shortcuts">{{ t('keyboard_shortcuts.title') }}</option>
     </select>
 
     <div class="hidden md:flex flex-wrap border-b border-neutral-200 mb-4 gap-1">
@@ -378,7 +379,7 @@ onMounted(() => {
           : 'border-transparent text-neutral-600 hover:text-neutral-900'">
         {{ t('session_lock.preference_tab') }}
       </button>
-      <button type="button" @click="setTab('shortcuts')"
+      <button v-if="!auth.isInstanceAdmin" type="button" @click="setTab('shortcuts')"
         class="cursor-pointer px-3 py-2 text-sm border-b-2 transition"
         :class="tab === 'shortcuts'
           ? 'border-primary-600 text-primary-700 font-medium'
@@ -506,7 +507,7 @@ onMounted(() => {
       </div>
 
       <div v-if="totpSetup" class="space-y-4 pt-2 border-t border-neutral-200">
-        <p class="text-sm text-neutral-700">{{ t('auth.totp_setup_step1') }}</p>
+        <TotpAppRecommendation />
         <div class="flex justify-center bg-neutral-50 rounded-md p-4">
           <img :src="totpSetup.qr_data_uri" :alt="totpSetup.uri" class="border border-neutral-200 rounded" />
         </div>

@@ -339,23 +339,23 @@ function sideLabel(side: string | null): string {
         <p class="text-sm text-neutral-500 mb-3">{{ t('accounting.accounts.new_hint') }}</p>
         <div class="space-y-3">
           <div>
-            <label class="block text-sm font-medium text-neutral-700 mb-1">{{ t('accounting.accounts.parent') }}</label>
-            <select v-model="form.parent_id" class="w-full h-10 px-3 border border-neutral-300 rounded-md text-sm bg-surface">
+            <label class="block text-sm font-medium text-neutral-700 mb-1">{{ t('accounting.accounts.parent') }}<span class="ml-0.5 text-danger-600" :title="t('common.required')" aria-hidden="true">*</span></label>
+            <select v-model="form.parent_id" required class="w-full h-10 px-3 border border-neutral-300 rounded-md text-sm bg-surface">
               <option v-for="s in syntheticAccounts" :key="s.id" :value="s.id">{{ s.account_code }} - {{ s.name }}</option>
             </select>
           </div>
           <div>
-            <label class="block text-sm font-medium text-neutral-700 mb-1">{{ t('accounting.accounts.code') }}</label>
+            <label class="block text-sm font-medium text-neutral-700 mb-1">{{ t('accounting.accounts.code') }}<span class="ml-0.5 text-danger-600" :title="t('common.required')" aria-hidden="true">*</span></label>
             <div class="flex h-10 border border-neutral-300 rounded-md text-sm font-mono overflow-hidden focus-within:ring-2 focus-within:ring-primary-500/40">
               <span class="flex items-center px-3 bg-neutral-50 border-r border-neutral-300 text-neutral-600 select-none" data-test="code-prefix">{{ parentCode }}.</span>
-              <input v-model="form.account_code" type="text" class="flex-1 min-w-0 px-3 outline-none bg-surface"
+              <input v-model="form.account_code" type="text" required class="flex-1 min-w-0 px-3 outline-none bg-surface"
                 :placeholder="t('accounting.accounts.code_placeholder')" :aria-label="t('accounting.accounts.code')" />
             </div>
             <p class="text-xs text-neutral-500 mt-1">{{ t('accounting.accounts.code_dot_hint') }}</p>
           </div>
           <div>
-            <label class="block text-sm font-medium text-neutral-700 mb-1">{{ t('accounting.accounts.name') }}</label>
-            <input v-model="form.name" type="text" class="w-full h-10 px-3 border border-neutral-300 rounded-md text-sm" />
+            <label class="block text-sm font-medium text-neutral-700 mb-1">{{ t('accounting.accounts.name') }}<span class="ml-0.5 text-danger-600" :title="t('common.required')" aria-hidden="true">*</span></label>
+            <input v-model="form.name" type="text" required :aria-label="t('accounting.accounts.name')" class="w-full h-10 px-3 border border-neutral-300 rounded-md text-sm" />
           </div>
           <div v-if="error" class="text-sm text-danger-500">{{ error }}</div>
           <div class="flex justify-end gap-2 pt-2">
