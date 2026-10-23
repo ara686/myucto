@@ -11,6 +11,7 @@ final class PermissionChecker
     public function allows(EffectiveRole $role, string $key, AccessLevel $minimum = AccessLevel::READ): bool
     {
         if ($role->isSuperadmin()) return true;
+        if ($role->type === 'instance_admin' || $role->systemKey === 'instance_admin') return false;
         if (!$role->isActive || !$this->catalog->has($key)) return false;
         if (!$this->catalog->allowsRoleType($key, $role->type)) return false;
         if ($role->isClientType() && in_array($key, ['bank.import', 'bank.match', 'bank.ignore'], true)

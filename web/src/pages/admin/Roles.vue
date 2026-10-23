@@ -16,7 +16,7 @@ const saving = ref(false)
 const creating = ref(false)
 const form = reactive({ name: '', role_type: 'staff' as 'staff' | 'client', is_active: true, permissions: {} as Record<string, PermissionValue> })
 
-const fixedRoleKeys = new Set(['superadmin', 'admin', 'admin_plus'])
+const fixedRoleKeys = new Set(['superadmin', 'admin', 'admin_plus', 'instance_admin'])
 const fixedRoleOrder: Record<string, number> = { superadmin: 0, admin_plus: 1, admin: 2 }
 const orderedRoles = computed(() => [...roles.value].sort((a, b) =>
   (fixedRoleOrder[a.system_key ?? ''] ?? Number.MAX_SAFE_INTEGER)

@@ -13,6 +13,8 @@ use MyInvoice\Security\ClientStockRoutePolicy;
 use MyInvoice\Security\FrameworkScopePolicy;
 use MyInvoice\Security\PermissionResolver;
 use MyInvoice\Security\RoutePermissionMap;
+use MyInvoice\Security\InstanceAdminRoutePolicy;
+use MyInvoice\Security\RequestAuthorization;
 use MyInvoice\Service\Tenant\SupplierAccessResolver;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -57,6 +59,18 @@ final class PermissionMiddleware implements MiddlewareInterface
         // `/api/purchase-invoices/%70ayment-orders` mine konkrétní pravidlo a spadne
         // na hrubší modulový catch-all, zatímco router doručí tutéž Action.
         $path = RequestPath::normalize($request->getUri()->getPath());
+
+        $user = (array) $request->getAttribute(AuthMiddleware::ATTR_USER, []);
+        if (InstanceAdminRoutePolicy::isTechnicalUser($user)
+            || InstanceAdminRoutePolicy::isTechnicalEndpoint($method, $path)) {
+            $role = $this->roles->resolveDefault($request);
+            if (!RequestAuthorization::isSessionAuth($request) || !$role->isActive
+                || (!$role->isInstanceAdmin() && !$role->isSuperadmin())
+                || !InstanceAdminRoutePolicy::allows($method, $path)) {
+                return $this->forbidden($request);
+            }
+            return $handler->handle($this->withEffectiveRole($request, $role));
+        }
 
         $route = $this->routes->match($method === 'HEAD' ? 'GET' : $method, $path);
         if ($route === null) return $this->forbidden($request);
@@ -137,6 +151,7 @@ final class PermissionMiddleware implements MiddlewareInterface
         $user = (array) $request->getAttribute(AuthMiddleware::ATTR_USER, []);
         $user['effective_role'] = $role;
         $user['is_superadmin'] = $role->isSuperadmin();
+        $user['is_instance_admin'] = $role->isInstanceAdmin();
         return $request
             ->withAttribute(AuthMiddleware::ATTR_USER, $user)
             ->withAttribute('auth.effective_role', $role);

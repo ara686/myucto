@@ -19,6 +19,11 @@ info:
     pouze jednou při vytvoření — ulož si ho. Pokud token ztratíš, odvolej ho a vytvoř
     nový.
 
+    Role **Správce instance** (`instance_admin`) je určena pouze pro technickou
+    správu z přihlášené browserové relace. Nevydává PAT a nemá přístup
+    k firemním datům přes veřejné API ani při technickém přiřazení firmy.
+    Existující token účtu převedeného na tuto roli je zneplatněn.
+
     Token má:
     - **scope** — `read` (GET a výslovně čtecí POST katalogových dávek) nebo `read_write` (všechny povolené operace).
     - **supplier** — pokud je token bound na konkrétního supplier-a, všechny operace
@@ -2148,6 +2153,11 @@ paths:
               schema: { $ref: '#/components/schemas/ApiMe' }
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Technický správce instance nemá přístup k tomuto integračnímu endpointu.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   /api/v1/auth/domain-context:
     get:
@@ -2163,6 +2173,8 @@ paths:
         `supplier_id` je na ní autoritativní a nelze jej přepsat hlavičkou ani
         query parametrem.
         Neznámý nebo neaktivní hostname je odmítnut ještě před akcí.
+        Přihlášený technický správce instance obdrží neutrální canonical
+        kontext bez přiřazení k firmě a bez zpřístupnění vlastních domén.
       security: []
       responses:
         '200':
@@ -43936,6 +43948,10 @@ components:
 
     DomainContext:
       type: object
+      description: |
+        Kontext originu. Pro přihlášeného technického správce instance je
+        `mode: canonical`, `locked: false`, `supplier_id: null`, `purpose: null`
+        a `feature_enabled: false`; technické přiřazení firmy tento kontext nemění.
       required:
         [mode, hostname, origin, locked, supplier_id, purpose, feature_enabled,
          canonical_base_url, canonical_login_url]

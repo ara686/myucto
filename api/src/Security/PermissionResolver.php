@@ -26,6 +26,10 @@ final class PermissionResolver
         $userId = (int) ($user['id'] ?? 0);
         if ($userId <= 0) return EffectiveRole::denied();
 
+        if (InstanceAdminRoutePolicy::isTechnicalUser($user)) {
+            return $this->resolveDefault($request);
+        }
+
         $isSuperadmin = (bool) ($user['is_superadmin'] ?? false)
             || (($user['role_summary']['type'] ?? null) === 'superadmin')
             || (($user['role_summary']['system_key'] ?? null) === 'superadmin');
@@ -65,6 +69,10 @@ final class PermissionResolver
         if ($userId <= 0) return EffectiveRole::denied();
 
         $roleId = (int) ($user['role_id'] ?? ($user['role_summary']['id'] ?? 0));
+        if (InstanceAdminRoutePolicy::isTechnicalUser($user)) {
+            $role = $roleId > 0 ? $this->load($roleId) : EffectiveRole::denied();
+            return $role->isInstanceAdmin() ? $role : EffectiveRole::denied();
+        }
         $isSuperadmin = (bool) ($user['is_superadmin'] ?? false)
             || (($user['role_summary']['type'] ?? null) === 'superadmin')
             || (($user['role_summary']['system_key'] ?? null) === 'superadmin');
@@ -98,6 +106,7 @@ final class PermissionResolver
         $type = (string) $first['role_type'];
         $permissions = [];
         foreach ($rows as $row) {
+            if ($type === 'instance_admin' || ($first['system_key'] ?? null) === 'instance_admin') continue;
             $permissionKey = $row['permission_key'] !== null ? (string) $row['permission_key'] : '';
             $level = (int) ($row['access_level'] ?? 0);
             if ($permissionKey === '' || !$this->catalog->has($permissionKey)) continue;

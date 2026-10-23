@@ -74,6 +74,12 @@ final class RequestAuthorization
         if ($role instanceof EffectiveRole) return $role;
 
         $user = (array) $request->getAttribute(\MyInvoice\Middleware\AuthMiddleware::ATTR_USER, []);
+        if (InstanceAdminRoutePolicy::isTechnicalUser($user)) {
+            $summary = (array) ($user['role_summary'] ?? []);
+            return new EffectiveRole((int) ($user['role_id'] ?? $summary['id'] ?? 0),
+                (string) ($summary['name'] ?? 'Správce instance'), (string) ($summary['type'] ?? ''),
+                (bool) ($summary['is_active'] ?? false), [], (string) ($summary['system_key'] ?? ''));
+        }
         $legacy = is_string($user['role'] ?? null) ? $user['role'] : '';
         if ($legacy === 'admin') {
             return new EffectiveRole(0, 'Superadmin', 'superadmin', true, [], 'superadmin');
@@ -100,6 +106,19 @@ final class RequestAuthorization
     public static function isCompanyAdmin(Request $request): bool
     {
         return self::effectiveRole($request)->isCompanyAdmin();
+    }
+
+    public static function isInstanceAdmin(Request $request): bool
+    {
+        $role = self::effectiveRole($request);
+        return $role->isActive && $role->isInstanceAdmin();
+    }
+
+    public static function canManageInstance(Request $request): bool
+    {
+        $role = self::effectiveRole($request);
+        return self::isSessionAuth($request) && $role->isActive
+            && ($role->isSuperadmin() || $role->isInstanceAdmin());
     }
 
     public static function canCreateSupplier(Request $request): bool
