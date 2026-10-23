@@ -5,8 +5,8 @@ import { createI18n } from 'vue-i18n'
 import cs from '@/i18n/cs.json'
 import type { ChartAccount } from '@/api/accounting'
 
-const m = vi.hoisted(() => ({ list: vi.fn(), store: undefined as any }))
-vi.mock('@/api/accounting', () => ({ accountingApi: { listAccounts: m.list } }))
+const m = vi.hoisted(() => ({ list: vi.fn(), create: vi.fn(), store: undefined as any }))
+vi.mock('@/api/accounting', () => ({ accountingApi: { listAccounts: m.list, createAccount: m.create } }))
 vi.mock('@/stores/supplier', () => ({ useSupplierStore: () => m.store }))
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ canWrite: () => true, isDemo: false }) }))
 vi.mock('@/composables/useToast', () => ({ useToast: () => ({ success: vi.fn(), error: vi.fn() }) }))
@@ -39,6 +39,32 @@ beforeEach(() => {
     { id: 2, accounting_framework: 'cz_504', tax_accounting_decree: '500' },
   ], get currentSupplier() { return this.suppliers.find(s => s.id === this.currentSupplierId) ?? null } })
   m.list.mockResolvedValue([account('411', 'equity'), account('701', 'closing'), account('901', 'offbalance')])
+})
+
+describe('Chart of accounts new analytic', () => {
+  it('opens the form for the row parent and saves only the suffix behind its fixed prefix', async () => {
+    m.list.mockResolvedValue([account('013'), account('019'), { ...account('019100'), id: 19100, account_code: '019.100', is_synthetic: false, parent_id: 19 }])
+    m.create.mockResolvedValue({})
+    const wrapper = render()
+    await flushPromises()
+    const buttons = wrapper.findAll('[data-test="add-analytic"]')
+    expect(buttons).toHaveLength(2)
+    await buttons[1].trigger('click')
+    expect(wrapper.get('[data-test="code-prefix"]').text()).toBe('019.')
+    const inputs = wrapper.findAll('input[type="text"]')
+    await inputs[0].setValue('200')
+    await inputs[1].setValue('Licence')
+    await wrapper.findAll('button').find(button => button.text() === cs.common.create)!.trigger('click')
+    await flushPromises()
+    expect(m.create).toHaveBeenCalledWith({ parent_id: 19, account_code: '019.200', name: 'Licence' })
+
+    await buttons[1].trigger('click')
+    await wrapper.findAll('input[type="text"]')[0].setValue('019.300')
+    await wrapper.findAll('input[type="text"]')[1].setValue('Další')
+    await wrapper.findAll('button').find(button => button.text() === cs.common.create)!.trigger('click')
+    await flushPromises()
+    expect(m.create).toHaveBeenLastCalledWith({ parent_id: 19, account_code: '019.300', name: 'Další' })
+  })
 })
 
 describe('Chart of accounts framework display', () => {
