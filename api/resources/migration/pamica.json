@@ -4991,7 +4991,8 @@
                     "status": "ignored"
                 },
                 "RelDruhZ": {
-                    "status": "ignored"
+                    "status": "mapped",
+                    "target": "PohodaPayrollRelations"
                 },
                 "RelDruhZ2011": {
                     "status": "ignored"
@@ -6018,12 +6019,28 @@
                     "reason": "Převod složku nezná; měsíc s částkou ji hlásí v protokolu k ručnímu doplnění."
                 },
                 "Z23": {
-                    "status": "warned",
-                    "reason": "Převod složku nezná; měsíc s částkou ji hlásí v protokolu k ručnímu doplnění."
+                    "status": "mapped",
+                    "target": "component other REKREACE_VOLNY_CAS",
+                    "probe": {
+                        "name": "Zaměstnanecké benefity",
+                        "catalog": {
+                            "RelTpDan": "4",
+                            "JeSoc": "0",
+                            "JeZdr": "0"
+                        }
+                    }
                 },
                 "Z24": {
-                    "status": "warned",
-                    "reason": "Převod složku nezná; měsíc s částkou ji hlásí v protokolu k ručnímu doplnění."
+                    "status": "mapped",
+                    "target": "component other ZDRAVOTNI_BENEFIT",
+                    "probe": {
+                        "name": "Zdravotní benefity",
+                        "catalog": {
+                            "RelTpDan": "4",
+                            "JeSoc": "0",
+                            "JeZdr": "0"
+                        }
+                    }
                 },
                 "Z25": {
                     "status": "warned",

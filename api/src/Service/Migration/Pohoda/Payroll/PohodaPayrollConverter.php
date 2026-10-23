@@ -361,8 +361,8 @@ final class PohodaPayrollConverter
             $absenceDated = [];
             foreach ($this->items['MZneprit'][$mzId] ?? [] as $item) {
                 $catalog = $this->byId['sMZneprit'][PohodaXml::text($item, 'RefSlozka')] ?? [];
-                $number = PohodaXml::text($catalog, 'Cislo');
-                $name = PohodaXml::text($catalog, 'Nazev');
+                $number = PohodaPayrollCatalog::effectiveAbsenceNumber($catalog, $item);
+                $name = $number === PohodaXml::text($catalog, 'Cislo') ? PohodaXml::text($catalog, 'Nazev') : '';
                 $class = PohodaPayrollCatalog::absence($number, $name);
                 if ($class['meaning'] === 'unknown') {
                     // Druh, který převod zapíše s daty do evidence nepřítomností, se

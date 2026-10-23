@@ -323,7 +323,7 @@ final class PohodaPayrollPeople
                     continue;
                 }
                 $catalog = $byId['sMZneprit'][PohodaXml::text($row, 'RefSlozka')] ?? [];
-                $number = PohodaXml::text($catalog, 'Cislo');
+                $number = PohodaPayrollCatalog::effectiveAbsenceNumber($catalog, $row);
                 $childbirth = self::realDate(PohodaXml::date($row, 'DatPorod'));
                 $type = self::absenceType($number, $childbirth);
                 if ($type === null) {
@@ -360,6 +360,11 @@ final class PohodaPayrollPeople
             // Sběrný kód (O01) nese víc různých plnění, rozlišuje je až název položky číselníku.
             $catalog = $byId['sMZslozky'][PohodaXml::text($item, 'RefSlozka')] ?? [];
             $code = strtoupper(trim(PohodaXml::text($catalog, 'Cislo')));
+            if (isset($relationMonths[$payslip['relation']][$payslip['month']])) {
+                // Měsíc s jakýmkoli zúčtovaným plněním; jen v takovém měsíci chybějící
+                // základní mzda znamená, že měsíční mzda skončila ({@see self::monthlyWages()}).
+                $relationMonths[$payslip['relation']][$payslip['month']]['paid'] = true;
+            }
             if (in_array($code, self::HOURLY_WAGE_CODES, true)) {
                 $hourlyWage[$payslip['relation']] = true;
                 if (isset($relationMonths[$payslip['relation']][$payslip['month']])) {
@@ -1191,15 +1196,51 @@ final class PohodaPayrollPeople
      * Bez sazby se bere `KcZaklM` jen z měsíce odpracovaného celý; vztah bez takového
      * měsíce dostane nejvyšší hodnotu roku, aby mzda nechyběla úplně.
      *
+     * Když vztah na konci roku dostává zúčtované plnění mimo hrubou mzdu, ale už ne základní
+     * mzdu (jednatel přešel z mzdy `M01` na odměnu za výkon funkce `O01`), končí řada verzí nulovou částkou
+     * od prvního takového měsíce. Zapisovač podle ní ukončí předpis měsíční mzdy, jinak by se
+     * v měsících MyÚčta platila mzda i odměna. Měsíc bez jakéhokoli plnění (rodičovská, celý
+     * měsíc nemoc) o skončení mzdy nic neříká a přeskočí se.
+     *
      * @param array<int,array<string,float|bool>> $months
      * @return list<array{from:string,amount:float,prorated:bool}>
      */
     private static function monthlyWages(array $months, int $year, ?string $start, ?string $end): array
     {
         ksort($months);
+        // Měsíce s hodinovou nebo úkolovou mzdou (i dohoda v hodinové sazbě) sjednanou měsíční
+        // mzdu nemají: `KcZaklM` je v nich hodiny × sazba a z každého měsíce by vznikla nová
+        // verze podmínek s jinou „měsíční mzdou".
+        $months = array_filter($months, static fn (array $data): bool => ($data['hourly'] ?? false) !== true);
         if ($months === []) {
             return [];
         }
+        $runs = self::wageRuns($months, $year, $start, $end);
+        $endedFrom = null;
+        foreach (array_reverse($months, true) as $month => $data) {
+            $base = (float) ($data['rate'] ?? 0) > 0 || (float) ($data['wage'] ?? 0) > 0;
+            if ($base) {
+                break;
+            }
+            // Plnění bez hrubé mzdy (`KcHrubaM`): odměna jednatele. Měsíc s hrubou mzdou bez
+            // základní (celý měsíc dovolená a k tomu prémie) skončení mzdy nedokládá.
+            if (($data['paid'] ?? false) === true && (float) ($data['gross'] ?? 0) <= 0) {
+                $endedFrom = sprintf('%04d-%02d-01', $year, (int) $month);
+            }
+        }
+        if ($endedFrom !== null && ($runs === [] || $runs[array_key_last($runs)]['from'] < $endedFrom)) {
+            $runs[] = ['from' => $endedFrom, 'amount' => 0.0, 'prorated' => false];
+        }
+
+        return $runs;
+    }
+
+    /**
+     * @param array<int,array<string,float|bool>> $months
+     * @return list<array{from:string,amount:float,prorated:bool}>
+     */
+    private static function wageRuns(array $months, int $year, ?string $start, ?string $end): array
+    {
         // První verze platí od prvního převáděného měsíce vztahu, ne až od měsíce, ve kterém
         // byla poprvé odpracovaná celá. Jinak by měsíce před ní zůstaly bez sjednané mzdy.
         $first = sprintf('%04d-%02d-01', $year, (int) array_key_first($months));

@@ -127,6 +127,22 @@ final class PohodaPayrollAgreedWageTest extends TestCase
         $record = PohodaPayrollPeople::read($this->file, 2026)[0];
 
         self::assertTrue($record['hourly_wage'], 'Dohoda v hodinové sazbě (D02) měsíční mzdu nepobírá.');
+        self::assertSame([], $record['monthly_wages'], 'Hodiny × sazba nejsou sjednaná mzda, jinak by z každého měsíce vznikla verze podmínek.');
+    }
+
+    public function testSwitchFromBaseWageToFunctionRewardEndsTheMonthlyWage(): void
+    {
+        file_put_contents($this->file, self::payrollXml(rewardFromMarch: true));
+        $records = PohodaPayrollPeople::read($this->file, 2026);
+
+        self::assertSame(
+            [
+                ['from' => '2026-01-01', 'amount' => 40000.0, 'prorated' => false],
+                ['from' => '2026-03-01', 'amount' => 0.0, 'prorated' => false],
+            ],
+            $records[0]['monthly_wages'],
+            'Od března jen odměna mimo hrubou mzdu: předpis měsíční mzdy má skončit, jinak se platí obojí.',
+        );
     }
 
     public function testAttendanceHoursKeepThousandths(): void
@@ -143,7 +159,7 @@ final class PohodaPayrollAgreedWageTest extends TestCase
      * se rovnají pracovním dnům. V únoru je překážka na straně zaměstnavatele placená
      * plným průměrem.
      */
-    private static function payrollXml(bool $raiseInMarch = false, array $pension = [], bool $hourlyAgreement = false, float $workedHours = 148): string
+    private static function payrollXml(bool $raiseInMarch = false, array $pension = [], bool $hourlyAgreement = false, float $workedHours = 148, bool $rewardFromMarch = false): string
     {
         $x = '';
         $row = static function (string $table, array $cols) use (&$x): void {
@@ -156,12 +172,19 @@ final class PohodaPayrollAgreedWageTest extends TestCase
         $row('sMZneprit', ['ID' => 1, 'Cislo' => 'V01', 'Nazev' => 'Dovolená']);
         $row('sMZneprit', ['ID' => 2, 'Cislo' => 'V06c', 'Nazev' => 'Překážky na straně zaměstnavatele – ostatní']);
         $row('sMZslozky', $hourlyAgreement ? ['ID' => 1, 'Cislo' => 'D02', 'Nazev' => 'Dohoda - hodinová sazba'] : ['ID' => 1, 'Cislo' => 'M01', 'Nazev' => 'Základní mzda']);
+        $row('sMZslozky', ['ID' => 2, 'Cislo' => 'O01', 'Nazev' => 'Odměna za výkon funkce']);
         $row('sMzPoj', ['ID' => 1, 'IDS' => 'VZP', 'Kod' => '111']);
         $row('ZAM', ['ID' => 1, 'OsCislo' => '5001', 'Jmeno' => 'Petr', 'Prijmeni' => 'Sazba', 'DatNar' => '1985-06-07',
             'StatPris' => 'CZ', 'Nerezident' => 0, 'RefPoj' => 1]);
         $row('ZAMpomer', ['ID' => 1, 'RefZAM' => 1, 'Poradi' => 1, 'JeDPP' => 0, 'DatNast' => '2020-01-01', 'TUvazek' => 40]);
         foreach ([1 => 10, 2 => 20, 3 => 30] as $month => $mzId) {
             $rate = $raiseInMarch && $month === 3 ? 42000 : 40000;
+            if ($rewardFromMarch && $month === 3) {
+                // Jednatel: odměna za výkon funkce mimo hrubou mzdu, základní mzda už žádná.
+                $row('MZ', ['ID' => $mzId, 'RefZAM' => 1, 'RefPomer' => 1, 'Rok' => 2026, 'RelMes' => $month, 'KcZaklM' => 0, 'KcHrubaM' => 0, 'DnyPrac' => 0, 'DnyOdpra' => 0]);
+                $row('MZslozky', ['ID' => $mzId, 'RefAg' => $mzId, 'RefSlozka' => 2, 'KcMzda' => 500, 'Hodnota1' => 500]);
+                continue;
+            }
             $row('MZ', ['ID' => $mzId, 'RefZAM' => 1, 'RefPomer' => 1, 'Rok' => 2026, 'RelMes' => $month, 'HodFond' => 160,
                 'DnyFond2' => 20, 'TUvazek' => 40, 'HodOdpra' => $workedHours, 'RefPoj' => 1, 'KcHrubaM' => $rate, 'KcCistaM' => 30000, 'KcPripoj' => $pension[$month] ?? 0,
                 'KcZaklM' => (int) round($rate * 148 / 160), 'DnyPrac' => 20, 'DnyOdpra' => 20, 'KcPrum' => 250]);
