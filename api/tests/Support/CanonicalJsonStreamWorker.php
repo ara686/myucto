@@ -14,7 +14,7 @@ require dirname(__DIR__, 2) . '/vendor/autoload.php';
 [$script, $mode, $input, $output] = $argv + [null, null, null, null];
 if (!is_string($mode) || !is_string($input) || !is_string($output)) throw new InvalidArgumentException('Missing stream worker arguments.');
 
-$baseline = memory_get_usage(true);
+$baseline = memory_get_usage();
 memory_reset_peak_usage();
 $started = hrtime(true);
 
@@ -87,7 +87,7 @@ echo json_encode([
     'mode' => $mode,
     'sha256' => $sha256,
     'bytes' => $bytes,
-    'peak_delta_bytes' => max(0, memory_get_peak_usage(true) - $baseline),
+    'peak_delta_bytes' => max(0, memory_get_peak_usage() - $baseline),
     'elapsed_ms' => (int) ((hrtime(true) - $started) / 1_000_000),
 ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), PHP_EOL;
 

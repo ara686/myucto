@@ -36,22 +36,29 @@ final class CanonicalJsonSpoolMemoryTest extends TestCase
         self::assertSame(hash_file('sha256', $this->directory . DIRECTORY_SEPARATOR . 'legacy-1001.json'), hash_file('sha256', $this->directory . DIRECTORY_SEPARATOR . 'stream-1001.json'));
     }
 
-    public function testOneHundredThousandAndOneRowsStayBoundedWithFileAndDatabaseParity(): void
+    /**
+     * 6 001 řádků dá přes 18 000 záznamů pásky, tedy víc než RUN_ITEMS × MERGE_FAN_IN
+     * (2 048 × 8). Třídění tak projde dvěma průchody slévání, stejně jako u velkého archivu.
+     * Paměť se měří proti legacy cestě: ta drží celý graf (u 6 001 řádků přes 6 MB),
+     * proud zůstává na pár MB bez ohledu na velikost vstupu.
+     */
+    public function testMultiPassMergeKeepsFileAndDatabaseParityWithBoundedMemory(): void
     {
-        $input = $this->writeGraph(100_001);
-        $legacy = $this->worker('legacy', $input, $this->directory . DIRECTORY_SEPARATOR . 'legacy-100001.json', '1G');
-        $stream = $this->worker('stream', $input, $this->directory . DIRECTORY_SEPARATOR . 'stream-100001.json', '64M');
-        $database = $this->worker('database', $input, $this->directory . DIRECTORY_SEPARATOR . 'database-100001.json', '64M');
+        $input = $this->writeGraph(6_001);
+        $legacy = $this->worker('legacy', $input, $this->directory . DIRECTORY_SEPARATOR . 'legacy-6001.json', '512M');
+        $stream = $this->worker('stream', $input, $this->directory . DIRECTORY_SEPARATOR . 'stream-6001.json', '64M');
+        $database = $this->worker('database', $input, $this->directory . DIRECTORY_SEPARATOR . 'database-6001.json', '64M');
 
         self::assertSame($legacy['sha256'], $stream['sha256']);
         self::assertSame($legacy['sha256'], $database['sha256']);
         self::assertSame($legacy['bytes'], $stream['bytes']);
         self::assertSame($legacy['bytes'], $database['bytes']);
-        self::assertLessThanOrEqual(16 * 1024 * 1024, $stream['peak_delta_bytes'], json_encode($stream, JSON_THROW_ON_ERROR));
+        self::assertGreaterThan(4 * 1024 * 1024, $legacy['peak_delta_bytes'], json_encode($legacy, JSON_THROW_ON_ERROR));
+        self::assertLessThanOrEqual(4 * 1024 * 1024, $stream['peak_delta_bytes'], json_encode($stream, JSON_THROW_ON_ERROR));
         self::assertLessThanOrEqual(24 * 1024 * 1024, $database['peak_delta_bytes'], json_encode($database, JSON_THROW_ON_ERROR));
         $receipt = getenv('MYINVOICE_STREAM_RECEIPT');
         if (is_string($receipt) && $receipt !== '') {
-            file_put_contents($receipt, json_encode(['rows' => 100_001, 'legacy' => $legacy, 'stream' => $stream, 'database' => $database], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
+            file_put_contents($receipt, json_encode(['rows' => 6_001, 'legacy' => $legacy, 'stream' => $stream, 'database' => $database], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
         }
     }
 

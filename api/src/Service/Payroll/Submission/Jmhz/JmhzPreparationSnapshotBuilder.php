@@ -79,6 +79,9 @@ final class JmhzPreparationSnapshotBuilder
      *        `child_reference`. Nárok sám nese jen neosobní referenci, XSD
      *        (`osobaType`) ale u dítěte jméno vyžaduje — viz
      *        {@see \MyInvoice\Repository\Payroll\PayrollDependantJmhzIdentityRepository}.
+     * @param array<int,array<int,string>> $caregiverBirthNumberSources rodné číslo jiné
+     *        osoby vyživující tytéž děti (10434) podle `employee_id` a `id` nároku;
+     *        zmrazená evidence ho nenese, dohledá se z šifrovaného nároku
      */
     public function build(
         int $supplierId,
@@ -92,6 +95,7 @@ final class JmhzPreparationSnapshotBuilder
         ?array $annualEvidenceSources = null,
         ?array $employerAnnualEvidence = null,
         array $childIdentitySources = [],
+        array $caregiverBirthNumberSources = [],
     ): JmhzPreparationSnapshot {
         if ($supplierId <= 0) {
             throw new \InvalidArgumentException('Firma musi byt kladne cislo.');
@@ -651,6 +655,7 @@ final class JmhzPreparationSnapshotBuilder
                 'child_credit_evidence' => $this->childCreditEvidence(
                     $person,
                     $childIdentitySources[$employeeId] ?? [],
+                    $caregiverBirthNumberSources[$employeeId] ?? [],
                 ),
                 'employments' => $normalizedEmployments,
             ];
@@ -1712,9 +1717,10 @@ final class JmhzPreparationSnapshotBuilder
      *
      * @param array<string,mixed> $person řádek `input.people[]`
      * @param array<string,array{given_name:string,family_name:string,birth_date:string}> $identities
+     * @param array<int,string> $caregiverBirthNumbers `id` nároku → rodné číslo jiné vyživující osoby
      * @return array<string,mixed>
      */
-    private function childCreditEvidence(array $person, array $identities): array
+    private function childCreditEvidence(array $person, array $identities, array $caregiverBirthNumbers = []): array
     {
         // Chybějící evidence se NEVYKLÁDÁ jako „bez dětí": prázdný seznam
         // proti nenulovému zvýhodnění resolver zastaví jako rozpor podkladu.
@@ -1750,11 +1756,16 @@ final class JmhzPreparationSnapshotBuilder
                 : 'unknown';
             $statuses[$status] = true;
             if ($status === 'present') {
-                $caregivers[] = [
+                $caregiver = [
                     'given_name' => (string) ($claim['other_caregiver_given_name'] ?? ''),
                     'family_name' => (string) ($claim['other_caregiver_family_name'] ?? ''),
                     'birth_date' => (string) ($claim['other_caregiver_birth_date'] ?? ''),
                 ];
+                $birthNumber = is_int($claim['id'] ?? null) ? ($caregiverBirthNumbers[$claim['id']] ?? null) : null;
+                if (is_string($birthNumber)) {
+                    $caregiver['birth_number'] = $birthNumber;
+                }
+                $caregivers[] = $caregiver;
             }
             $child = [
                 'reference' => $reference,
@@ -1779,7 +1790,11 @@ final class JmhzPreparationSnapshotBuilder
         );
         $unique = [];
         foreach ($caregivers as $caregiver) {
-            $unique[implode('|', $caregiver)] = $caregiver;
+            // Tutéž osobu jmenuje každý nárok domácnosti; rodné číslo nemusí nést všechny.
+            $key = $caregiver['given_name'] . '|' . $caregiver['family_name'] . '|' . $caregiver['birth_date'];
+            if (!isset($unique[$key]) || isset($caregiver['birth_number'])) {
+                $unique[$key] = $caregiver;
+            }
         }
         ksort($unique);
 

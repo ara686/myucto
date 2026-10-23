@@ -73,6 +73,16 @@ final class InvoiceImporter
     /** Limit KH pro jednotlivý doklad (A.4/B.2), vč. DPH. */
     private const KH_LIMIT = 10000.0;
 
+    /**
+     * Ostatní pohledávka či závazek POHODY v přiznání DPH vstupuje do evidence DPH a KH jen
+     * jako faktura; agenda Ostatní pohledávky a závazky řádky DPH nevede. Poznámka dokladu
+     * vysvětlí, proč je mezi fakturami.
+     */
+    private const OTHER_ITEM_IN_VAT_NOTE = [
+        'receivable' => 'v POHODĚ ostatní pohledávka; v přiznání DPH, proto převedena jako vydaná faktura',
+        'commitment' => 'v POHODĚ ostatní závazek; v přiznání DPH, proto převeden jako přijatá faktura',
+    ];
+
     private const ISSUED_AGENDAS = [
         'issued' => 'invoice',
         'issued_debit' => 'invoice',
@@ -263,7 +273,7 @@ final class InvoiceImporter
             return;
         }
         $review = $class['reasons'] !== [];
-        $notes = [];
+        $notes = $bucket === 'receivable' ? [self::OTHER_ITEM_IN_VAT_NOTE['receivable']] : [];
         if ($snapshot['dic'] !== '' && $ctx->vat->forcesA5($doc['vat_class']) && abs($amounts['total']) > self::KH_LIMIT) {
             // Pohoda doklad vykázala v KH A.5 (odběratel bez DIČ plátce) - MyÚčto rozhoduje
             // podle DIČ ve snapshotu dokladu, proto se tam nepřebírá. Na kartě klienta zůstává.
@@ -429,7 +439,7 @@ final class InvoiceImporter
         }
         $snapshot = PartnerImporter::snapshot(PohodaXml::get($doc['h'], 'partnerIdentity'));
         $vendorId = $this->partners->resolvePartner($ctx, $snapshot);
-        $vendorNumber = mb_substr($doc['original'] !== '' ? $doc['original'] : ($doc['symvar'] !== '' ? $doc['symvar'] : $doc['number']), 0, 50);
+        $vendorNumber = mb_substr(self::vendorDocumentNumber($doc), 0, 50);
         $duplicate = $this->stmt('purchase_duplicate', 'SELECT 1 FROM purchase_invoices WHERE supplier_id = ? AND vendor_id = ? AND vendor_invoice_number = ? AND issue_date = ? LIMIT 1');
         $duplicate->execute([$ctx->supplierId, $vendorId, $vendorNumber, $doc['issue']]);
         if ($duplicate->fetchColumn() !== false) {
@@ -478,7 +488,7 @@ final class InvoiceImporter
                 status: $status,
                 vatDeduction: $class['deduction'],
                 noteAboveItems: $doc['text'] !== '' ? mb_substr($doc['text'], 0, 1000) : null,
-                noteBelowItems: self::note($doc['number'], $class['reasons'], $previous, $fx),
+                noteBelowItems: self::note($doc['number'], $class['reasons'], $previous, $fx, $bucket === 'commitment' ? [self::OTHER_ITEM_IN_VAT_NOTE['commitment']] : []),
                 createdBy: $ctx->userId,
                 advancePaidAmount: $amounts['advance'],
                 paymentVariableSymbol: preg_match('/^\d{1,10}$/', $doc['symvar']) === 1 ? $doc['symvar'] : null,
@@ -545,6 +555,10 @@ final class InvoiceImporter
             'symvar' => PohodaXml::text($h, 'symVar'),
             'symconst' => PohodaXml::text($h, 'symConst'),
             'original' => PohodaXml::text($h, 'originalDocument'),
+            // Číslo dokladu pro kontrolní hlášení (evidenční číslo dokladu dodavatele). POHODA
+            // ho vede zvlášť hlavně u interních daňových dokladů k platbám, kde číslo
+            // dokladu i variabilní symbol jsou vlastní.
+            'kh_number' => PohodaXml::text($h, 'numberKHDPH'),
             'account_no' => PohodaXml::text($h, 'paymentAccount/accountNo'),
             'bank_code' => PohodaXml::text($h, 'paymentAccount/bankCode'),
             'payment' => self::PAYMENT_TYPES[PohodaXml::text($h, 'paymentType/paymentType')] ?? 'other',
@@ -557,6 +571,23 @@ final class InvoiceImporter
             // Stát spotřeby dokladu v režimu OSS; POHODA element vynechává, není-li doklad v OSS.
             'moss' => strtoupper(PohodaXml::text($h, 'MOSS/ids')),
         ];
+    }
+
+    /**
+     * Číslo dokladu dodavatele, které jde do KH jako evidenční číslo (`c_evid_dd`):
+     * číslo pro KH, jinak původní doklad, jinak variabilní symbol, jinak číslo POHODY.
+     *
+     * @param array<string,mixed> $doc
+     */
+    public static function vendorDocumentNumber(array $doc): string
+    {
+        foreach (['kh_number', 'original', 'symvar', 'number'] as $key) {
+            $value = trim((string) ($doc[$key] ?? ''));
+            if ($value !== '') {
+                return $value;
+            }
+        }
+        return '';
     }
 
     /**

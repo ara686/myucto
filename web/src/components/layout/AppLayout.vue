@@ -1265,6 +1265,8 @@ const shortcutActions = computed<ShortcutAction[]>(() => {
   }, {
     id: 'windows.recent', label: t('workspace.recent_windows'), group: 'general',
   }, {
+    id: 'windows.reload', label: t('workspace.reload_window'), group: 'general',
+  }, {
     // Registruje se vždy, i když v aktuální agendě zakládat nejde — jinak by
     // zkratka zmizela z nastavení v profilu. Prázdné `to` handler ignoruje.
     id: 'create.contextual',
@@ -1344,6 +1346,7 @@ function onGlobalShortcut(event: KeyboardEvent): void {
       if (action.id === 'windows.previous') void manager?.previous()
       else if (action.id === 'windows.next') void manager?.next()
       else if (action.id === 'windows.recent') void manager?.toggleRecent()
+      else if (action.id === 'windows.reload' && !workspace.companySwitching) void manager?.reloadPane(workspace.activePaneId)
     }
     return
   }

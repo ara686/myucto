@@ -8,7 +8,7 @@ function label(preview: ChargePreview, id: number) { return preview.registry.uni
 </script>
 <template>
   <section class="space-y-3 rounded-lg border border-neutral-200 p-4">
-    <h2 class="text-lg font-semibold">{{ t('propertyCharges.preview') }}: {{ chargeMoney(preview.calculation.total_cents) }} {{ t('propertyCharges.currency') }}</h2>
+    <h2 class="text-lg font-semibold">{{ t('propertyCharges.previewTitle') }}: {{ chargeMoney(preview.calculation.total_cents) }} {{ t('propertyCharges.currency') }}</h2>
     <p class="text-sm">{{ t('propertyCharges.frequency') }}: {{ t(`propertyCharges.frequencies.${preview.request.frequency}`) }}</p>
     <p class="text-sm text-neutral-500">{{ t('propertyCharges.roundingRule') }}</p>
     <div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr><th>{{ t('propertyCharges.unit') }}</th><th>{{ t('propertyCharges.before') }}</th><th>{{ t('propertyCharges.after') }}</th><th>{{ t('propertyCharges.difference') }}</th></tr></thead><tbody><tr v-for="row in preview.previous_frozen_differences" :key="row.unit_id"><td>{{ label(preview, row.unit_id) }}</td><td class="text-right tabular-nums">{{ chargeMoney(row.before_cents) }}</td><td class="text-right tabular-nums">{{ chargeMoney(row.after_cents) }}</td><td class="text-right tabular-nums">{{ chargeMoney(row.delta_cents) }}</td></tr></tbody></table></div>

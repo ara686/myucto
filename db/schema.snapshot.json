@@ -1078,7 +1078,8 @@
         "2132_depreciation_entries_voided.sql",
         "2133_anonymized_clone_submission_provenance.sql",
         "2134_property_party_claim_keys.sql",
-        "2135_client_tax_submission_permissions.sql"
+        "2135_payroll_child_claim_other_caregiver_birth_number.sql",
+        "2136_client_tax_submission_permissions.sql"
     ],
     "tables": {
         "abra_flexi_connections": {
@@ -16694,6 +16695,9 @@
                 "evidence_status": "enum('verified','unverified') NOT NULL",
                 "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
                 "other_caregiver_birth_date": "date NULL DEFAULT NULL",
+                "other_caregiver_birth_number_ciphertext": "varchar(512) NULL DEFAULT NULL",
+                "other_caregiver_birth_number_hash": "binary(32) NULL DEFAULT NULL",
+                "other_caregiver_birth_number_masked": "varchar(191) NULL DEFAULT NULL",
                 "other_caregiver_family_name": "varchar(100) NULL DEFAULT NULL",
                 "other_caregiver_given_name": "varchar(100) NULL DEFAULT NULL",
                 "other_claimant_excluded": "tinyint(1) NOT NULL DEFAULT 0",
@@ -16729,7 +16733,8 @@
                 "chk_pp_tax_child_flags": "`ztp_p` in (0,1) and `shared_household_confirmed` in (0,1) and `other_claimant_excluded` in (0,1)",
                 "chk_pp_tax_child_interval": "`effective_to` is null or `effective_to` >= `effective_from`",
                 "chk_pp_tax_child_order": "`child_order` >= 1",
-                "chk_pp_tax_child_other_caregiver": "`other_household_caregiver_status` = 'present' and `other_caregiver_given_name` is not null and char_length(trim(`other_caregiver_given_name`)) > 0 and `other_caregiver_family_name` is not null and char_length(trim(`other_caregiver_family_name`)) > 0 and `other_caregiver_birth_date` is not null or `other_household_caregiver_status` <> 'present' and `other_caregiver_given_name` is null and `other_caregiver_family_name` is null and `other_caregiver_birth_date` is null"
+                "chk_pp_tax_child_other_caregiver": "`other_household_caregiver_status` = 'present' and `other_caregiver_given_name` is not null and char_length(trim(`other_caregiver_given_name`)) > 0 and `other_caregiver_family_name` is not null and char_length(trim(`other_caregiver_family_name`)) > 0 and `other_caregiver_birth_date` is not null or `other_household_caregiver_status` <> 'present' and `other_caregiver_given_name` is null and `other_caregiver_family_name` is null and `other_caregiver_birth_date` is null",
+                "chk_pp_tax_child_other_caregiver_birth_number": "`other_caregiver_birth_number_ciphertext` is null and `other_caregiver_birth_number_hash` is null and `other_caregiver_birth_number_masked` is null or `other_household_caregiver_status` = 'present' and `other_caregiver_birth_number_ciphertext` is not null and `other_caregiver_birth_number_hash` is not null and `other_caregiver_birth_number_masked` is not null"
             }
         },
         "payroll_person_tax_credit_claims": {

@@ -39,8 +39,12 @@ Kapitolu otevřete, když:
 
 ## 101.2 Než začnete
 
-- Pro TOTP potřebujete autentikátor v mobilu (Google Authenticator, Authy,
-  Microsoft Authenticator, 1Password, Bitwarden).
+- Pro TOTP potřebujete autentikátor v mobilu. Doporučujeme
+  [Proton Authenticator](https://proton.me/authenticator) nebo
+  [Ente Auth](https://ente.com/auth/), případně
+  [Google Authenticator](https://support.google.com/accounts/answer/1066447)
+  nebo [Microsoft Authenticator](https://support.microsoft.com/cs-cz/authenticator/download-microsoft-authenticator).
+  Funguje i 1Password nebo Bitwarden.
 - Pro přístupový klíč potřebujete prohlížeč a zařízení s podporou passkeys.
   Aplikace musí běžet na stabilní HTTPS adrese (`app.url`).
 - Při přidání druhého faktoru vás aplikace požádá o nové ověření: aktuální
@@ -316,8 +320,8 @@ TOTP = time-based one-time password (RFC 6238).
    hesla se tu počítají do stejné ochrany proti hádání jako při přihlášení,
    takže po opakovaných chybách se účet na 15 minut zamkne i pro login.
 2. Aplikace ukáže **QR kód** + textový **secret key**.
-3. V mobilu otevřete **autentikátor** (Google Authenticator, Authy, Microsoft
-   Authenticator, 1Password, Bitwarden) → Přidat účet → Sken QR kódu.
+3. V mobilu otevřete **autentikátor** (Proton Authenticator, Ente Auth,
+   Google Authenticator, Microsoft Authenticator, 1Password, Bitwarden) → Přidat účet → Sken QR kódu.
 4. Aplikace začne generovat 6-cifrené kódy každých 30 sekund.
 5. Zadejte aktuální kód do MyÚčta a klikněte na **Aktivovat TOTP**.
 

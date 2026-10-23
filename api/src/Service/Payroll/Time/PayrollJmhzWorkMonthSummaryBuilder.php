@@ -327,8 +327,14 @@ final class PayrollJmhzWorkMonthSummaryBuilder
      * nebo nepřetržitém režimu má fond z 37,5 h, ne ze 40 h. Mimo to rozmezí
      * (vztah bez vyplněného úvazku, stanovená doba zkrácená kolektivní smlouvou)
      * zůstává zákonných 40 h.
+     *
+     * Fond se počítá jen za pracovní dny, kdy vztah v měsíci trval (`$from`–`$to`,
+     * průnik trvání s měsícem): datový slovník u dohody „pracovní dny trvání dohody",
+     * a stejně tak u pracovního poměru, který v měsíci začal nebo skončil. Přijatá
+     * hlášení jiného systému mají u dohody skončené 19. 4. 2026 fond 104 h a u
+     * nástupu 20. 4. 2026 72 h, ne 176 h. Vztah trvající celý měsíc se nemění.
      */
-    private function standardFundSuggestion(string $periodStart, string $relationType, ?string $statedWeeklyHours = null): string
+    private function standardFundSuggestion(string $periodStart, string $relationType, ?string $statedWeeklyHours = null, ?\DateTimeImmutable $from = null, ?\DateTimeImmutable $to = null): string
     {
         if (!self::requiresShiftCalendar($relationType)) {
             return '0';
@@ -345,8 +351,14 @@ final class PayrollJmhzWorkMonthSummaryBuilder
             substr($periodStart, 0, 7),
             array_fill_keys([1, 2, 3, 4, 5], $daily),
         );
+        $fromDate = $from?->format('Y-m-d');
+        $toDate = $to?->format('Y-m-d');
         $minutes = 0;
         foreach ($month['days'] as $day) {
+            $date = (string) $day['date'];
+            if (($fromDate !== null && $date < $fromDate) || ($toDate !== null && $date > $toDate)) {
+                continue;
+            }
             $minutes += $day['weekday'] <= 5 ? $daily : 0;
         }
 
@@ -448,6 +460,7 @@ final class PayrollJmhzWorkMonthSummaryBuilder
             'absences' => $absences,
         ];
         $sourceJson = CanonicalJson::encode($source);
+        [$durationFrom, $durationTo] = self::employmentInterval($employment, $period, $periodEnd);
 
         return [
             'derivation_version' => self::DERIVATION_VERSION,
@@ -456,7 +469,7 @@ final class PayrollJmhzWorkMonthSummaryBuilder
             'source_snapshot_json' => $sourceJson,
             'source_snapshot_sha256' => hash('sha256', $sourceJson),
             'suggestions' => [
-                'standard_fund_hours' => $this->standardFundSuggestion($periodStart, $employment['relation_type'], $employment['stated_weekly_hours']),
+                'standard_fund_hours' => $this->standardFundSuggestion($periodStart, $employment['relation_type'], $employment['stated_weekly_hours'], $durationFrom, $durationTo),
                 'agreed_fund_hours' => self::minutesSuggestion($agreedMinutes),
                 'weekly_work_hours' => self::weeklyWorkMissingValue($employment['relation_type'])
                     ? self::WEEKLY_WORK_MISSING_VALUE
@@ -573,6 +586,7 @@ final class PayrollJmhzWorkMonthSummaryBuilder
             'absences' => $absences,
         ];
         $sourceJson = CanonicalJson::encode($source);
+        [$durationFrom, $durationTo] = self::employmentInterval($employment, $period, $periodEnd);
 
         return [
             'derivation_version' => self::IMPORT_SUMMARY_DERIVATION_VERSION,
@@ -581,7 +595,7 @@ final class PayrollJmhzWorkMonthSummaryBuilder
             'source_snapshot_json' => $sourceJson,
             'source_snapshot_sha256' => hash('sha256', $sourceJson),
             'suggestions' => [
-                'standard_fund_hours' => $this->standardFundSuggestion($periodStart, $employment['relation_type'], $employment['stated_weekly_hours']),
+                'standard_fund_hours' => $this->standardFundSuggestion($periodStart, $employment['relation_type'], $employment['stated_weekly_hours'], $durationFrom, $durationTo),
                 'agreed_fund_hours' => $agreedSuggestion,
                 'weekly_work_hours' => self::weeklyWorkMissingValue($employment['relation_type'])
                     ? self::WEEKLY_WORK_MISSING_VALUE

@@ -7,6 +7,7 @@ namespace MyInvoice\Service\Migration\Pohoda;
 use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Repository\PohodaImportRepository;
 use MyInvoice\Service\Migration\MoneyS3\AccountCode;
+use MyInvoice\Service\Migration\Shared\PartnerCountry;
 use MyInvoice\Service\Migration\Shared\PartnerIdentityMatcher;
 use PDO;
 
@@ -238,7 +239,8 @@ final class PartnerImporter
         $dic = self::vatId($s['dic']);
         // Zahraniční partner se zemí firmy by vypadl ze souhrnného hlášení a samovyměření
         // by se bralo jako tuzemské: země z předpony DIČ, jinak ze státu na adrese.
-        $country = $dic !== '' && !str_starts_with($dic, 'CZ') ? substr($dic, 0, 2) : $s['country'];
+        $fromVat = PartnerCountry::fromVatId($dic);
+        $country = $fromVat !== null && $fromVat !== 'CZ' ? $fromVat : $s['country'];
         $countryId = $this->countryId($country === 'EL' ? 'GR' : $country) ?? $defaults['country_id'];
         $pdo = $this->db->pdo();
         $pdo->prepare(

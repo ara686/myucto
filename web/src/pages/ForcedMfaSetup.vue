@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import AppShell from '@/components/layout/AppShell.vue'
 import RecoveryCodesOnce from '@/components/security/RecoveryCodesOnce.vue'
 import { BTN_BASE, ICONS, OUTLINE } from '@/components/ui/buttonStyles'
+import TotpAppRecommendation from '@/components/security/TotpAppRecommendation.vue'
 import { authApi, type TotpSetup } from '@/api/auth'
 import { createCredential, getCredential, isWebAuthnAvailable, webAuthnErrorKey } from '@/security/webauthn'
 import { useAuthStore } from '@/stores/auth'
@@ -382,7 +383,7 @@ onMounted(async () => {
 
         <div v-else-if="method === 'totp' && totpAllowed" class="space-y-4">
           <template v-if="totpSetup">
-            <p class="text-sm text-neutral-700">{{ t('auth.totp_setup_step1') }}</p>
+            <TotpAppRecommendation />
             <div class="flex justify-center bg-neutral-50 rounded-md p-4">
               <img :src="totpSetup.qr_data_uri" :alt="totpSetup.uri" class="border border-neutral-200 rounded" />
             </div>

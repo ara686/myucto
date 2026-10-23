@@ -20,11 +20,18 @@ use PHPUnit\Framework\TestCase;
  * Obnova musí zvládnout tabulku, jejíž trigger by původní řádky znovu nevložil,
  * verzovanou tabulku s historií i změněnou strukturu, kterou neopravuje, ale
  * databázi založí znovu.
+ *
+ * Zdrojem je malá syntetická databáze se stejnými druhy objektů jako testovací DB
+ * (cizí klíč, generovaný sloupec, verzovaná tabulka, tabulka s triggerem odmítajícím
+ * INSERT, pohled, funkce). Pomocník pracuje s každou tabulkou a objektem stejně, takže
+ * na počtu tabulek nezáleží; kopie celé testovací DB (775 tabulek) stála přes minutu.
  */
 #[Group('integration')]
 final class CloneSandboxTest extends TestCase
 {
     private PDO $server;
+
+    private string $source = '';
 
     /** @var list<string> */
     private array $leased = [];
@@ -39,6 +46,7 @@ final class CloneSandboxTest extends TestCase
         self::assertContains($config->get('db.host'), ['localhost', '127.0.0.1', '::1']);
         $this->server = new PDO('mysql:host=' . $config->get('db.host') . ';port=' . $config->get('db.port', 3306) . ';charset=utf8mb4',
             (string) $config->get('db.user'), (string) $config->get('db.pass', ''), [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+        $this->source = $this->syntheticSource();
     }
 
     protected function tearDown(): void
@@ -58,7 +66,7 @@ final class CloneSandboxTest extends TestCase
 
     public function testReusedDatabaseMatchesFreshCopyWithAndWithoutTriggers(): void
     {
-        $base = (string) Config::load(Bootstrap::rootDir())->get('db.name');
+        $base = $this->source;
         $full = $this->fresh($base, true);
         $tables = $this->fresh($base, false);
         $expectedFull = $this->state($full);
@@ -135,6 +143,40 @@ final class CloneSandboxTest extends TestCase
         $exists->execute([$back]);
         self::assertSame(0, (int) $exists->fetchColumn(), 'Databáze se změněnou strukturou se zahodí.');
         self::assertEquals($expectedTables, $this->state($rebuilt));
+    }
+
+    private function syntheticSource(): string
+    {
+        $schema = 'myucto_sandboxsrc_' . bin2hex(random_bytes(5)) . '_test';
+        $this->fresh[] = $schema;
+        $this->server->exec('CREATE DATABASE ' . DatabaseCloner::quote($schema) . ' CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci');
+        $this->server->exec('USE ' . DatabaseCloner::quote($schema));
+        foreach ([
+            'CREATE TABLE supplier (id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, company_name VARCHAR(190) NOT NULL,
+                name_upper VARCHAR(190) AS (UPPER(company_name)) VIRTUAL) ENGINE=InnoDB',
+            "INSERT INTO supplier (company_name) VALUES ('Synthetic supplier A'), ('Synthetic supplier B')",
+            'CREATE TABLE journal_entries (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, supplier_id INT UNSIGNED NOT NULL,
+                period_id INT UNSIGNED NOT NULL, entry_date DATE NOT NULL, source_type VARCHAR(32) NOT NULL, description VARCHAR(255) NULL,
+                CONSTRAINT fk_sandbox_journal_supplier FOREIGN KEY (supplier_id) REFERENCES supplier (id)) ENGINE=InnoDB WITH SYSTEM VERSIONING',
+            "INSERT INTO journal_entries (supplier_id, period_id, entry_date, source_type, description)
+                VALUES (1, 0, '2026-01-02', 'manual', 'Synthetic entry 1'), (2, 0, '2026-01-03', 'manual', 'Synthetic entry 2')",
+            "UPDATE journal_entries SET description = 'Synthetic entry 1 revised' WHERE id = 1",
+            'CREATE TABLE payroll_jmhz_codebooks (id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, code VARCHAR(32) NOT NULL UNIQUE) ENGINE=InnoDB',
+            "INSERT INTO payroll_jmhz_codebooks (code) VALUES ('SYN-A'), ('SYN-B'), ('SYN-C')",
+            "CREATE TRIGGER trg_sandbox_codebook_insert BEFORE INSERT ON payroll_jmhz_codebooks FOR EACH ROW
+                SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Synthetic codebooks are sealed'",
+            "CREATE TRIGGER trg_sandbox_codebook_update BEFORE UPDATE ON payroll_jmhz_codebooks FOR EACH ROW
+                SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Synthetic codebooks are immutable'",
+            "CREATE TRIGGER trg_sandbox_journal_update BEFORE UPDATE ON journal_entries FOR EACH ROW
+                BEGIN IF OLD.source_type = 'payroll' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Synthetic payroll entries are immutable'; END IF; END",
+            "SET SESSION sql_mode = CONCAT(@@SESSION.sql_mode, ',ALLOW_INVALID_DATES')",
+            'CREATE PROCEDURE sp_sandbox_count_entries() SELECT COUNT(*) FROM journal_entries',
+            'SET SESSION sql_mode = DEFAULT',
+        ] as $statement) {
+            $this->server->exec($statement);
+        }
+
+        return $schema;
     }
 
     private function acquire(string $source, bool $triggers): string

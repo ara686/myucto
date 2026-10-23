@@ -608,6 +608,13 @@ final class PayrollKeyRotationService
                 'updated_at' => true,
             ],
             [
+                'table' => 'payroll_person_tax_child_claims',
+                'column' => 'other_caregiver_birth_number_ciphertext',
+                'context' => $sealed(PayrollSensitiveField::PERSONAL_IDENTIFIER),
+                'guard' => null,
+                'updated_at' => true,
+            ],
+            [
                 'table' => 'payroll_person_contacts',
                 'column' => 'contact_value_ciphertext',
                 'context' => static fn (array $r): string => PayrollSensitiveData::context(

@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, reactive, watch } from 'vue'
+import { reactive, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import DateInput from '@/components/ui/DateInput.vue'
 import { propertyControl as control } from './propertyFormStyles'
-import { fromLocalInstant, localOffset, toLocalInstant } from './propertyInstant'
+import { fromLocalInstant, toLocalInstant } from './propertyInstant'
 
 const props = withDefaults(defineProps<{ modelValue: string; label: string; required?: boolean }>(), { required: false })
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
@@ -16,12 +16,6 @@ watch(() => props.modelValue, value => {
   parts.date = local.date
   parts.time = local.time
 }, { immediate: true })
-const season = computed(() => {
-  const offset = localOffset(parts.date, parts.time)
-  if (offset === '+02:00') return t('propertyRegistry.localTimeSummer')
-  if (offset === '+01:00') return t('propertyRegistry.localTimeWinter')
-  return t('propertyRegistry.localTime')
-})
 function change(part: 'date' | 'time', value: string) {
   parts[part] = value.slice(0, part === 'time' ? 5 : 10)
   emitted = parts.date && parts.time ? fromLocalInstant(parts.date, parts.time) : ''
@@ -35,8 +29,6 @@ function change(part: 'date' | 'time', value: string) {
     <div class="flex min-w-0 flex-wrap items-center gap-2">
       <DateInput :model-value="parts.date" :class="[control, 'w-40']" :required="required || !!parts.time" :aria-label="label" @update:model-value="change('date', $event ?? '')" />
       <input type="time" step="60" :value="parts.time" :required="required || !!parts.date" :class="[control, 'w-28']" :aria-label="t('propertyRegistry.time')" @input="change('time', ($event.target as HTMLInputElement).value)">
-      <span class="text-xs text-neutral-500 whitespace-nowrap" data-instant-zone>{{ season }}</span>
     </div>
-    <p class="text-xs text-neutral-500">{{ t('propertyRegistry.instantHelp') }}</p>
   </fieldset>
 </template>

@@ -10,15 +10,17 @@ import cs from '@/i18n/cs.json'
 
 const calls = vi.hoisted(() => ({ profile: vi.fn(), list: vi.fn(), summary: vi.fn(), detail: vi.fn(), create: vi.fn(), profileSave: vi.fn() }))
 vi.mock('@/api/propertyRegistry', () => ({ propertyRegistryApi: calls }))
-const store = reactive({ currentSupplierId: 1 })
+const company = { id: 1, company_name: 'SVJ Synthetická 12', street: 'Synthetická 12/3', city: 'Testov', zip: '100 00' }
+const store = reactive<{ currentSupplierId: number; currentSupplier: typeof company | null }>({ currentSupplierId: 1, currentSupplier: company })
 vi.mock('@/stores/supplier', () => ({ useSupplierStore: () => store }))
 const plugins = () => [createI18n({ legacy: false, locale: 'cs', messages: { cs } })]
 const dateStub = { props: ['modelValue'], emits: ['update:modelValue'], template: '<input data-date :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />' }
 const partyStub = { props: ['modelValue'], emits: ['update:modelValue'], template: '<input data-party :value="modelValue" @input="$emit(\'update:modelValue\', Number($event.target.value))" />' }
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(r => { resolve = r }); return { promise, resolve } }
 const profile = { profile: null, history: [], capabilities: { manage: true, confirm: true, export: false }, import_columns: [] }
+const enabledProfile = { ...profile, profile: { id: 1, revision_no: 1, enabled: true, effective_from: '2026-01-01T00:00:00+01:00', effective_to: null, reason: 'R', title_ref: 'T' }, history: [{ id: 1, revision_no: 1, enabled: true, effective_from: '2026-01-01T00:00:00+01:00', effective_to: null, reason: 'R', title_ref: 'T' }] }
 
-beforeEach(() => { vi.clearAllMocks(); store.currentSupplierId = 1; calls.profile.mockResolvedValue(profile); calls.list.mockResolvedValue([]); calls.summary.mockResolvedValue({ scopes: [] }) })
+beforeEach(() => { vi.clearAllMocks(); store.currentSupplierId = 1; store.currentSupplier = company; calls.profile.mockResolvedValue(profile); calls.list.mockResolvedValue([]); calls.summary.mockResolvedValue({ scopes: [] }) })
 
 describe('property registry UI', () => {
   it('derives the Prague offset from the entered local date and time instead of asking for it', async () => {
@@ -28,10 +30,8 @@ describe('property registry UI', () => {
     expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([''])
     await wrapper.get('input[type="time"]').setValue('10:15')
     expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['2026-05-01T10:15:00+02:00'])
-    expect(wrapper.get('[data-instant-zone]').text()).toBe(cs.propertyRegistry.localTimeSummer)
     await wrapper.get('[data-date]').setValue('2026-01-10')
     expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['2026-01-10T10:15:00+01:00'])
-    expect(wrapper.get('[data-instant-zone]').text()).toBe(cs.propertyRegistry.localTimeWinter)
     await wrapper.setProps({ modelValue: '2026-06-02T13:20:30.123456Z' })
     expect((wrapper.get('[data-date]').element as HTMLInputElement).value).toBe('2026-06-02')
     expect((wrapper.get('input[type="time"]').element as HTMLInputElement).value).toBe('15:20')
@@ -46,20 +46,52 @@ describe('property registry UI', () => {
     wrapper.unmount()
   })
 
-  it('blocks submitting a profile change while the visible date text is not a date', async () => {
-    calls.profile.mockResolvedValue({ ...profile, capabilities: { manage: true, confirm: true, export: false } })
+  it('opens the first registry activation with prefilled evidence and blocks an invalid date', async () => {
     const wrapper = mount(PropertyRegistryView, { attachTo: document.body, global: { plugins: plugins(), stubs: { PropertyImportPanel: true } } })
     await flushPromises()
-    await wrapper.findAll('button').find(b => b.text() === cs.propertyRegistry.profileChange)!.trigger('click')
-    const form = wrapper.get('form')
+    const form = wrapper.get('[data-profile-form]')
+    expect((form.get('[data-field="profile-title"]').element as HTMLInputElement).value).toBe(cs.propertyRegistry.defaults.profileTitle)
+    expect((form.get('[data-field="profile-reason"]').element as HTMLInputElement).value).toBe(cs.propertyRegistry.defaults.profileReason)
     const [date] = form.findAll('input[inputmode="numeric"]')
     await date!.setValue('31.13.garbage')
-    await form.find('label:nth-of-type(2) input').setValue('Důvod')
-    await form.find('label:nth-of-type(3) input').setValue('Listina')
     expect((form.element as HTMLFormElement).checkValidity()).toBe(false)
-    await form.findAll('button').find(b => b.text() === cs.propertyRegistry.saveProfile)!.trigger('click')
+    await form.findAll('button').find(b => b.text() === cs.propertyRegistry.startProfile)!.trigger('click')
     await flushPromises()
     expect(calls.profileSave).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('prefills a new house from the company and derives the technical code and share group', async () => {
+    calls.profile.mockResolvedValue(enabledProfile)
+    calls.create.mockResolvedValue({ id: 5, revision: 1 })
+    const wrapper = mount(PropertyRegistryView, { global: { plugins: plugins(), stubs: { PropertyImportPanel: true, PropertyInstantInput: true } } })
+    await flushPromises()
+    await wrapper.get('[data-create="house"]').trigger('click')
+    expect((wrapper.get('[data-field="name"]').element as HTMLInputElement).value).toBe('Synthetická 12/3')
+    expect((wrapper.get('[data-field="address.city"]').element as HTMLInputElement).value).toBe('Testov')
+    await wrapper.get('[data-editor] form').trigger('submit')
+    await flushPromises()
+    expect(calls.create).toHaveBeenCalledWith(1, 'house', expect.objectContaining({
+      code: 'Syntheticka-12-3', status: 'confirmed', effective_from: enabledProfile.profile.effective_from,
+      reason: cs.propertyRegistry.defaults.reason.house, title_ref: cs.propertyRegistry.defaults.title.house,
+      state: expect.objectContaining({ share_scope: 'Syntheticka-12-3', declaration_ref: cs.propertyRegistry.defaults.declaration, address: { street: 'Synthetická 12/3', city: 'Testov', postal_code: '100 00', country: 'CZ' } }),
+    }))
+    wrapper.unmount()
+  })
+
+  it('lists missing required house fields instead of sending a request the server rejects', async () => {
+    calls.profile.mockResolvedValue(enabledProfile)
+    store.currentSupplier = null
+    const wrapper = mount(PropertyRegistryView, { global: { plugins: plugins(), stubs: { PropertyImportPanel: true, PropertyInstantInput: true } } })
+    await flushPromises()
+    await wrapper.get('[data-create="house"]').trigger('click')
+    await wrapper.get('[data-field="name"]').setValue('Dům')
+    await wrapper.get('[data-editor] form').trigger('submit')
+    await flushPromises()
+    expect(calls.create).not.toHaveBeenCalled()
+    const missing = wrapper.get('[data-missing]').text()
+    for (const field of ['street', 'city', 'postal_code'] as const) expect(missing).toContain(cs.propertyRegistry.address[field])
+    expect(missing).not.toContain(cs.propertyRegistry.houseName)
     wrapper.unmount()
   })
 
@@ -104,6 +136,18 @@ describe('property registry UI', () => {
     expect(wrapper.text()).toContain('New company house')
     expect(calls.profile.mock.calls.map(args => args[0])).toEqual([1, 2])
     expect(calls.list.mock.calls.filter(args => args[0] === 2).map(args => args[1])).toEqual(['house', 'unit', 'service'])
+    wrapper.unmount()
+  })
+
+  it('keeps the setup guide with services and charges steps after the first unit', async () => {
+    calls.profile.mockResolvedValue(enabledProfile)
+    const object = (kind: string, id: number, state: Record<string, unknown>) => ({ id, kind, code: kind + id, current_revision: 1, pending_revision_ids: [], revision: { state: { active: true, ...state } } })
+    const lists: Record<string, unknown[]> = { house: [object('house', 1, { name: 'Dům' })], unit: [object('unit', 2, { unit_no: '1' })], service: [] }
+    calls.list.mockImplementation((_id: number, kind: string) => Promise.resolve(lists[kind] ?? []))
+    const wrapper = mount(PropertyRegistryView, { global: { plugins: plugins(), stubs: { PropertyInstantInput: true, PropertyImportPanel: true } } })
+    await flushPromises()
+    expect(wrapper.text()).toContain(cs.propertySetup.services)
+    expect(wrapper.text()).toContain(cs.propertySetup.charges)
     wrapper.unmount()
   })
 })

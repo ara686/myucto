@@ -40,11 +40,17 @@ final class PropertySaldoReadRepository
     /**
      * Uzavřená finanční historie vybraných jednotek: dluhy, platby a právní události jen těchto
      * jednotek po indexech, bez čtení celé firmy. Volající drží konzistentní transakci.
+     * Jako čtení celé historie ({@see FinancialHistoryRepository::read()}) běží v jednom
+     * rozsahu čtení, takže vyúčtování sdílené uzávěrem, dluhy i kredity se ověří jednou.
      */
     public function unitHistory(int $supplier,array $unitIds):array
     {
         if(!$this->db->pdo()->inTransaction())throw new \LogicException('Unit history requires a consistent transaction.');
         foreach($unitIds as $id)PropertyInput::id($id,'unit_id');
+        return \MyInvoice\Service\Property\Services\Settlement\SettlementHistory::inReadScope(fn():array=>$this->readUnitHistory($supplier,$unitIds));
+    }
+    private function readUnitHistory(int $supplier,array $unitIds):array
+    {
         $reader=new PropertySaldoReadClosure($this->db);$partyReader=new PartyEventRepository($this->db);$selected=[];
         do{
             $closure=$reader->units($supplier,$unitIds,$selected);

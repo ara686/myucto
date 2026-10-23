@@ -115,15 +115,20 @@ const form = reactive({
 })
 
 // Tečkovaný tvar (211.100) je od migrace 1322 jediný správný zápis analytiky a
-// kód účtu už později změnit nejde — nabídneme ho tedy rovnou v placeholderu.
-const codePlaceholder = computed(() => {
-  const parent = syntheticAccounts.value.find(a => a.id === form.parent_id)
-  return parent ? `${parent.account_code}.100` : t('accounting.accounts.code_placeholder')
-})
+// kód účtu už později změnit nejde — syntetika s tečkou je proto pevná předpona
+// a uživatel doplní jen část za ní.
+const parentCode = computed(() => syntheticAccounts.value.find(a => a.id === form.parent_id)?.account_code ?? '')
 
-function openCreate() {
+/** Celý kód analytiky; vložený celý kód (019.100) se nezdvojí. */
+function fullCode(): string {
+  const suffix = form.account_code.trim()
+  const prefix = `${parentCode.value}.`
+  return suffix.startsWith(prefix) ? suffix : prefix + suffix
+}
+
+function openCreate(parentId: number | null = null) {
   error.value = ''
-  Object.assign(form, { parent_id: syntheticAccounts.value[0]?.id ?? null, account_code: '', name: '' })
+  Object.assign(form, { parent_id: parentId ?? syntheticAccounts.value[0]?.id ?? null, account_code: '', name: '' })
   showForm.value = true
 }
 
@@ -136,7 +141,7 @@ async function save() {
   try {
     await accountingApi.createAccount({
       parent_id: form.parent_id,
-      account_code: form.account_code.trim(),
+      account_code: fullCode(),
       name: form.name.trim(),
     })
     showForm.value = false
@@ -219,7 +224,7 @@ function sideLabel(side: string | null): string {
           <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" :d="ICONS.upload" /></svg>
           {{ t('codebookTransfer.import') }}
         </button>
-        <button v-if="canCreateAccount" @click="openCreate" :class="btnFilled('primary')">
+        <button v-if="canCreateAccount" @click="openCreate()" :class="btnFilled('primary')">
           <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" :d="ICONS.plus" /></svg>
           {{ t('accounting.accounts.new') }}
         </button>
@@ -233,7 +238,7 @@ function sideLabel(side: string | null): string {
     <EmptyState v-else-if="accounts.length === 0" boxed icon="doc"
       :title="t('accounting.accounts.empty')"
       :cta="canCreateAccount ? t('accounting.accounts.new') : undefined"
-      @action="openCreate" />
+      @action="openCreate()" />
 
     <div v-else class="space-y-5">
       <div v-for="g in groups" :key="g.key" :data-account-class="g.key" class="bg-surface border border-neutral-200 rounded-lg shadow-sm overflow-hidden">
@@ -254,15 +259,21 @@ function sideLabel(side: string | null): string {
               </tr>
             </thead>
             <tbody class="divide-y divide-neutral-100">
-              <tr v-for="a in g.rows" :key="a.id" class="cursor-pointer hover:bg-neutral-50"
+              <tr v-for="a in g.rows" :key="a.id" class="group cursor-pointer hover:bg-neutral-50"
                 :class="{ 'opacity-50': !a.is_active }"
                 @click="openDetail(a, $event)" @auxclick.prevent="openDetail(a, $event)">
-                <td class="px-3 py-2 font-mono" :class="a.is_synthetic ? 'font-semibold' : 'text-neutral-500'">
+                <td class="px-3 py-2 font-mono whitespace-nowrap" :class="a.is_synthetic ? 'font-semibold' : 'text-neutral-500'">
                   <span v-if="!a.is_synthetic" class="text-neutral-300 mr-1">└</span>
                   <RouterLink :to="detailLink(a)" class="row-link text-primary-600 hover:text-primary-700 hover:underline"
                     :title="t('accounting.accounts.open_detail')" @click.stop>
                     {{ a.account_code }}
                   </RouterLink>
+                  <button v-if="canCreateAccount && a.is_synthetic && a.is_active" type="button" data-test="add-analytic"
+                    class="ml-1.5 inline-flex items-center justify-center w-5 h-5 align-middle rounded text-primary-600 hover:bg-primary-100 opacity-40 group-hover:opacity-100 focus:opacity-100 cursor-pointer"
+                    :title="t('accounting.accounts.new')" :aria-label="`${t('accounting.accounts.new')} ${a.account_code}`"
+                    @click.stop="openCreate(a.id)">
+                    <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" :d="ICONS.plus" /></svg>
+                  </button>
                 </td>
                 <td class="px-3 py-2">{{ a.name }}</td>
                 <td class="px-3 py-2 text-neutral-600">{{ typeLabel(a.account_type) }}</td>
@@ -296,8 +307,16 @@ function sideLabel(side: string | null): string {
         <div class="md:hidden divide-y divide-neutral-100">
           <div v-for="a in g.rows" :key="`m-${a.id}`" class="p-3 space-y-1" :class="{ 'opacity-50': !a.is_active }">
             <div class="flex items-baseline justify-between gap-2">
-              <RouterLink :to="detailLink(a)" class="font-mono text-primary-600"
-                :class="a.is_synthetic ? 'font-semibold' : ''">{{ a.account_code }}</RouterLink>
+              <span class="inline-flex items-center gap-1.5">
+                <RouterLink :to="detailLink(a)" class="font-mono text-primary-600"
+                  :class="a.is_synthetic ? 'font-semibold' : ''">{{ a.account_code }}</RouterLink>
+                <button v-if="canCreateAccount && a.is_synthetic && a.is_active" type="button"
+                  class="inline-flex items-center justify-center w-6 h-6 rounded text-primary-600 hover:bg-primary-100 cursor-pointer"
+                  :title="t('accounting.accounts.new')" :aria-label="`${t('accounting.accounts.new')} ${a.account_code}`"
+                  @click="openCreate(a.id)">
+                  <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" :d="ICONS.plus" /></svg>
+                </button>
+              </span>
               <span class="text-xs text-neutral-500">{{ typeLabel(a.account_type) }}</span>
             </div>
             <div class="text-neutral-900">{{ a.name }}</div>
@@ -320,20 +339,23 @@ function sideLabel(side: string | null): string {
         <p class="text-sm text-neutral-500 mb-3">{{ t('accounting.accounts.new_hint') }}</p>
         <div class="space-y-3">
           <div>
-            <label class="block text-sm font-medium text-neutral-700 mb-1">{{ t('accounting.accounts.parent') }}</label>
-            <select v-model="form.parent_id" class="w-full h-10 px-3 border border-neutral-300 rounded-md text-sm bg-surface">
+            <label class="block text-sm font-medium text-neutral-700 mb-1">{{ t('accounting.accounts.parent') }}<span class="ml-0.5 text-danger-600" :title="t('common.required')" aria-hidden="true">*</span></label>
+            <select v-model="form.parent_id" required class="w-full h-10 px-3 border border-neutral-300 rounded-md text-sm bg-surface">
               <option v-for="s in syntheticAccounts" :key="s.id" :value="s.id">{{ s.account_code }} - {{ s.name }}</option>
             </select>
           </div>
           <div>
-            <label class="block text-sm font-medium text-neutral-700 mb-1">{{ t('accounting.accounts.code') }}</label>
-            <input v-model="form.account_code" type="text" class="w-full h-10 px-3 border border-neutral-300 rounded-md text-sm font-mono"
-              :placeholder="codePlaceholder" />
+            <label class="block text-sm font-medium text-neutral-700 mb-1">{{ t('accounting.accounts.code') }}<span class="ml-0.5 text-danger-600" :title="t('common.required')" aria-hidden="true">*</span></label>
+            <div class="flex h-10 border border-neutral-300 rounded-md text-sm font-mono overflow-hidden focus-within:ring-2 focus-within:ring-primary-500/40">
+              <span class="flex items-center px-3 bg-neutral-50 border-r border-neutral-300 text-neutral-600 select-none" data-test="code-prefix">{{ parentCode }}.</span>
+              <input v-model="form.account_code" type="text" required class="flex-1 min-w-0 px-3 outline-none bg-surface"
+                :placeholder="t('accounting.accounts.code_placeholder')" :aria-label="t('accounting.accounts.code')" />
+            </div>
             <p class="text-xs text-neutral-500 mt-1">{{ t('accounting.accounts.code_dot_hint') }}</p>
           </div>
           <div>
-            <label class="block text-sm font-medium text-neutral-700 mb-1">{{ t('accounting.accounts.name') }}</label>
-            <input v-model="form.name" type="text" class="w-full h-10 px-3 border border-neutral-300 rounded-md text-sm" />
+            <label class="block text-sm font-medium text-neutral-700 mb-1">{{ t('accounting.accounts.name') }}<span class="ml-0.5 text-danger-600" :title="t('common.required')" aria-hidden="true">*</span></label>
+            <input v-model="form.name" type="text" required :aria-label="t('accounting.accounts.name')" class="w-full h-10 px-3 border border-neutral-300 rounded-md text-sm" />
           </div>
           <div v-if="error" class="text-sm text-danger-500">{{ error }}</div>
           <div class="flex justify-end gap-2 pt-2">

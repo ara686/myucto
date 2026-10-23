@@ -1114,6 +1114,54 @@ final class JmhzScenario1XmlSerializerTest extends TestCase
         return $payload;
     }
 
+    /**
+     * Rodné číslo dítěte (10438) jde vedle data narození (10437), jak ho
+     * uvádějí ostatní mzdové programy (PAMICA, Premier, Money S3, ABRA,
+     * AVENSIO); podle něj se dítě páruje mezi poplatníky.
+     */
+    public function testChildBirthNumberIsReportedNextToBirthDate(): void
+    {
+        $payload = $this->payloadWithChildCredit();
+        $payload['people'][0]['child_credit_evidence']['children'][0]['identity']['birth_number'] = '1504110003';
+
+        $result = (new JmhzScenario1XmlValidator())->dryRun(
+            $this->resolutionFor($payload),
+            $this->envelope(),
+        );
+        $xml = preg_replace('/>\s+</', '><', $result['xml']) ?? '';
+
+        self::assertStringContainsString(
+            '<form:dite><form:jmeno>Jana</form:jmeno><form:prijmeni>Nováková</form:prijmeni>'
+                . '<form:datumNarozeni>2015-04-11</form:datumNarozeni><form:rodneCislo>1504110003</form:rodneCislo></form:dite>',
+            $xml,
+        );
+    }
+
+    /** Jiná osoba vyživující tytéž děti nese rodné číslo (10434) vedle data narození (10433). */
+    public function testOtherCaregiverBirthNumberIsReportedNextToBirthDate(): void
+    {
+        $payload = $this->payloadWithChildCredit();
+        $payload['people'][0]['child_credit_evidence']['other_household_caregiver_status'] = 'present';
+        $payload['people'][0]['child_credit_evidence']['other_household_caregivers'] = [[
+            'given_name' => 'Petr',
+            'family_name' => 'Novák',
+            'birth_date' => '1980-01-01',
+            'birth_number' => '8001010006',
+        ]];
+
+        $result = (new JmhzScenario1XmlValidator())->dryRun(
+            $this->resolutionFor($payload),
+            $this->envelope(),
+        );
+        $xml = preg_replace('/>\s+</', '><', $result['xml']) ?? '';
+
+        self::assertStringContainsString(
+            '<form:jinaOsoba><form:jmeno>Petr</form:jmeno><form:prijmeni>Novák</form:prijmeni>'
+                . '<form:datumNarozeni>1980-01-01</form:datumNarozeni><form:rodneCislo>8001010006</form:rodneCislo></form:jinaOsoba>',
+            $xml,
+        );
+    }
+
     public function testCreditWithoutSignedDeclarationIsRefused(): void
     {
         $payload = $this->payload();
@@ -1156,7 +1204,12 @@ final class JmhzScenario1XmlSerializerTest extends TestCase
         self::assertStringNotContainsString('<form:danBonus>', $result['xml']);
     }
 
-    public function testTaxBonusElementStaysWithSignedDeclaration(): void
+    /**
+     * Nulový bonus se nepíše ani s podepsaným prohlášením (XSD `minOccurs=0`):
+     * PAMICA ho v hlášeních přijatých ČSSZ vynechává a přítomnost elementu
+     * ČSSZ bere za vyplnění (třída chyb 40244).
+     */
+    public function testZeroTaxBonusIsOmittedEvenWithSignedDeclaration(): void
     {
         $payload = $this->payload();
         $payload['people'][0]['employments'][0]['term']
@@ -1171,7 +1224,8 @@ final class JmhzScenario1XmlSerializerTest extends TestCase
             '<form:prohlaseniPoplatnika>true</form:prohlaseniPoplatnika>',
             $result['xml'],
         );
-        self::assertStringContainsString('<form:danBonus>', $result['xml']);
+        self::assertStringContainsString('<form:danZalohaPoSleve>', $result['xml']);
+        self::assertStringNotContainsString('<form:danBonus>', $result['xml']);
     }
 
     /**
@@ -3326,6 +3380,26 @@ final class JmhzScenario1XmlSerializerTest extends TestCase
         }
         $xml = $this->summaryMatrixXml($document);
         self::assertSame([JmhzControlOutcome::Passed], $this->controlOutcomes($xml, 283), $body);
+    }
+
+    /**
+     * Měsíc bez zdanitelného příjmu zálohu nemá: zcela nulový blok
+     * `zalohaNaDan` se vynechává i bez srážkové daně, jako v hlášeních
+     * PAMICA, která ČSSZ přijala.
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('summaryFormBodies')]
+    public function testZeroAdvanceBlockIsOmitted(string $body): void
+    {
+        $document = $this->summaryMatrixDocument($body);
+        $summary = &$document['people'][0]['summary'];
+        $summary['income_total_czk'] = 0;
+        $summary['employer_contributions_czk'] = [];
+        $summary['advance_tax_czk'] = ['base' => 0, 'computed' => 0, 'after_credits' => 0, 'bonus' => 0];
+        $summary['withholding_tax_czk'] = null;
+        unset($summary);
+        $xpath = $this->summaryMatrixXpath($document);
+
+        self::assertSame(0, $xpath->query(self::formQuery($body, 'souhrnDataZec/zalohaNaDan'))->length, $body);
     }
 
     /**
