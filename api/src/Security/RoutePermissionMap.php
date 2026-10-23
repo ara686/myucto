@@ -11,6 +11,7 @@ final class RoutePermissionMap
     public const SUPERADMIN = 'superadmin';
     public const ADMIN_PLUS = 'admin_plus';
     public const PERMISSION = 'permission';
+    public const INSTANCE_ADMIN = 'instance_admin';
 
     /** @var list<string> */
     private const PUBLIC_PATHS = [
@@ -1027,6 +1028,9 @@ final class RoutePermissionMap
     public function match(string $method, string $path): ?RoutePermission
     {
         $method = strtoupper($method);
+        if (InstanceAdminRoutePolicy::isTechnicalEndpoint($method, $path)) {
+            return new RoutePermission(self::INSTANCE_ADMIN);
+        }
         if ($path === '/api/mcp/settings' && $method !== 'GET') {
             return new RoutePermission(self::SUPERADMIN);
         }

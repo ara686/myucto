@@ -176,7 +176,8 @@ final class RoleRepository
     /** @param array<string, mixed> $role */
     private function isLockedSystemRole(array $role): bool
     {
-        return in_array($role['system_key'] ?? null, ['superadmin', 'admin', 'admin_plus'], true);
+        return ($role['role_type'] ?? null) === 'instance_admin'
+            || in_array($role['system_key'] ?? null, ['superadmin', 'admin', 'admin_plus', 'instance_admin'], true);
     }
 
     /** @param array<string, int|string|AccessLevel> $permissions @return array<string, int> */
