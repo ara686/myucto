@@ -236,8 +236,9 @@ final class ForgotPasswordAction
     private function silentOk(Response $response, int $started): Response
     {
         if (!$this->afterResponse->canDetach()) {
-            $remainingUs = self::MIN_SYNC_RESPONSE_MS * 1000 - intdiv(hrtime(true) - $started, 1000);
-            if ($remainingUs > 0) {
+            // usleep může na Windows skončit o pár milisekund dřív; spí se, dokud minimum
+            // skutečně neuplyne.
+            while (($remainingUs = self::MIN_SYNC_RESPONSE_MS * 1000 - intdiv(hrtime(true) - $started, 1000)) > 0) {
                 usleep($remainingUs);
             }
         }
