@@ -102,6 +102,7 @@ final class PasskeyAction
             return Json::error($response, 'unauthenticated', 'Nepřihlášený uživatel.', 401);
         }
 
+        $ip = $this->clientIp($request);
         $hasStrongFactor = (int) $user['totp_enabled'] === 1
             || $this->credentials->countActiveForUser($context['user_id']) > 0;
         $requireNoActivePasskey = false;
@@ -124,17 +125,27 @@ final class PasskeyAction
                     403,
                 );
             }
-        } elseif (!$this->passwords->verify(
-            (string) ($body['current_password'] ?? ''),
-            (string) $user['password_hash'],
-        )) {
-            return Json::error(
-                $response,
-                'current_password_invalid',
-                'Aktuální heslo není správné.',
-                403,
-            );
         } else {
+            // Heslo ověřované z přihlášené session se počítá do stejného
+            // brute-force zámku jako přihlášení, jinak by šlo z cizí session
+            // hádat bez omezení.
+            $email = (string) $user['email'];
+            $bfState = $this->bruteForce->check($email, $ip);
+            if (in_array($bfState, [BruteForceGuard::STATE_LOCKED_15M, BruteForceGuard::STATE_LOCKED_24H], true)) {
+                return Json::error($response, 'too_many_attempts', 'Příliš mnoho pokusů. Zkus to později.', 429);
+            }
+            if (!$this->passwords->verify(
+                (string) ($body['current_password'] ?? ''),
+                (string) $user['password_hash'],
+            )) {
+                $this->bruteForce->recordFailure($email, $ip);
+                return Json::error(
+                    $response,
+                    'current_password_invalid',
+                    'Aktuální heslo není správné.',
+                    403,
+                );
+            }
             $requireNoActivePasskey = true;
         }
 
@@ -159,7 +170,7 @@ final class PasskeyAction
                 : null,
             $challenge,
             $options,
-            $this->clientIp($request),
+            $ip,
             $request->getHeaderLine('User-Agent'),
         );
 
