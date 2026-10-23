@@ -1685,6 +1685,13 @@ final class PayrollRunSnapshotBuilder
         );
     }
 
+    /** @param array<string,mixed> $data */
+    public static function officeRegistrationHash(array $data): string
+    {
+        unset($data['sha256']);
+        return hash('sha256', CanonicalJson::encode($data));
+    }
+
     /** @return array<string,mixed>|null */
     private function officeRegistration(int $supplierId, int $officeId, string $onDate): ?array
     {
@@ -1709,7 +1716,7 @@ final class PayrollRunSnapshotBuilder
             'office_code' => (string) $row['code'],
             'office_name' => (string) $row['name'],
         ];
-        $data['sha256'] = hash('sha256', CanonicalJson::encode($data));
+        $data['sha256'] = self::officeRegistrationHash($data);
         return $data;
     }
 

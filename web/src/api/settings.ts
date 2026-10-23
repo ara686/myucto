@@ -184,6 +184,34 @@ export interface VatRegistrationCheck {
   application_deadline_basis: 'statutory' | 'informative' | null
 }
 
+export type AccountingDecree = '500' | '501' | '502' | '503' | '504' | '325' | '410'
+
+export type AccountingFramework = 'cz_500' | 'cz_504'
+
+export interface AccountingFrameworkHistoryEntry {
+  id: number
+  effective_from: string
+  accounting_framework: AccountingFramework
+  created_at: string
+  created_by: number | null
+}
+
+/** Doporučení účetního rámce podle právní formy; rozhoduje výhradně server. */
+export interface AccountingProfileRecommendation {
+  entity_profile: 'nonprofit' | 'svj' | 'unknown'
+  accounting_framework: 'cz_504' | null
+  public_benefit_taxpayer: boolean | null
+}
+
+export interface AccountingFrameworkState {
+  id: number
+  readonly accounting_profile_recommendation?: AccountingProfileRecommendation
+  accounting_framework?: AccountingFramework
+  accounting_framework_history?: AccountingFrameworkHistoryEntry[]
+  tax_accounting_decree_effective?: AccountingDecree
+  tax_accounting_decree_is_derived?: boolean
+}
+
 export interface Supplier {
   id: number
   company_name: string
@@ -197,9 +225,15 @@ export interface Supplier {
   country_name_en?: string
   ic: string | null
   dic: string | null
+  legal_form?: string | null
+  readonly accounting_profile_recommendation?: AccountingProfileRecommendation
   is_vat_payer: boolean
   vat_status_effective_from?: string
   vat_status_history?: VatStatusHistoryEntry[]
+  accounting_framework?: AccountingFramework
+  accounting_framework_history?: AccountingFrameworkHistoryEntry[]
+  tax_accounting_decree_effective?: AccountingDecree
+  tax_accounting_decree_is_derived?: boolean
   /** Identifikovaná osoba (§ 6g–6l ZDPH, issue #94) — neplátce v tuzemsku
    *  s přeshraničními povinnostmi. Nelze kombinovat s is_vat_payer. */
   is_identified: boolean
@@ -1042,6 +1076,11 @@ export interface PdfSignatureOutputSettingsBatchResult {
 export const settingsApi = {
   getSupplier: () => api.get<Supplier>('/settings/supplier').then(r => r.data),
   updateSupplier: (payload: Partial<Supplier>) => api.put<Supplier>('/settings/supplier', payload).then(r => r.data),
+  updateAccountingFramework: (id: number, framework: AccountingFramework, effectiveFrom: string) =>
+    api.put<Supplier>(`/suppliers/${id}`, {
+      accounting_framework: framework,
+      accounting_framework_effective_from: effectiveFrom,
+    }).then(r => r.data),
   /**
    * Nastaví počítadlo tak, aby PŘÍŠTÍ doklad daného typu dostal číslo `nextNumber` —
    * navázání na rozjetou řadu při přechodu z jiného software. Ukládá se mimo

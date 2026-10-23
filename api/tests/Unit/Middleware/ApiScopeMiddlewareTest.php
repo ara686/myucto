@@ -15,6 +15,50 @@ use Slim\Psr7\Factory\ServerRequestFactory;
 
 final class ApiScopeMiddlewareTest extends TestCase
 {
+    public function testMembershipCatalogTokenReadsRegisteredAccountingRoutesOnly(): void
+    {
+        $app = \Slim\Factory\AppFactory::create();
+        \MyInvoice\Routes::register($app);
+        foreach (['roles', 'roles/7', 'receivables', 'receivables/7'] as $resource) {
+            $path = '/api/accounting/catalog/nonprofit-membership/' . $resource;
+            $routing = $app->getRouteResolver()->computeRoutingResults($path, 'GET');
+            self::assertSame(\Slim\Routing\RoutingResults::FOUND, $routing->getRouteStatus());
+            $permission = (new \MyInvoice\Security\RoutePermissionMap())->match('GET', $path);
+            self::assertSame('accounting', $permission->key);
+            self::assertSame(\MyInvoice\Security\AccessLevel::READ, $permission->minimum);
+            foreach (['read', 'read_write'] as $scope) {
+                self::assertSame(204, $this->middleware()->process($this->bearer('GET', $path, $scope), $this->okHandler())->getStatusCode());
+                foreach (['POST', 'PUT', 'PATCH', 'DELETE'] as $method) {
+                    self::assertSame(403, $this->middleware()->process($this->bearer($method, $path, $scope), $this->okHandler())->getStatusCode());
+                }
+            }
+        }
+    }
+
+    public function testPropertyTokenReadsOnlyCuratedCatalogAndNeverChangesRegistry(): void
+    {
+        foreach (['profile', 'summary', 'houses', 'units', 'services', 'unit-legal-roles', 'unit-legal-roles/7'] as $resource) {
+            $path = '/api/property/catalog/' . $resource;
+            self::assertSame(204, $this->middleware()->process($this->bearer('GET', $path, 'read'), $this->okHandler())->getStatusCode());
+            self::assertSame(403, $this->middleware()->process($this->bearer('POST', $path, 'read_write'), $this->okHandler())->getStatusCode());
+        }
+        foreach (['profile', 'export', 'objects/7', 'import/preview', 'units', 'catalog/units/7'] as $resource) {
+            self::assertSame(403, $this->middleware()->process($this->bearer('GET', '/api/property/' . $resource, 'read_write'), $this->okHandler())->getStatusCode());
+        }
+    }
+
+    public function testPropertyChargeTokenReadsOnlyCuratedHistory(): void
+    {
+        foreach (['components', 'versions', 'versions/7'] as $resource) {
+            $path = '/api/property/catalog/charges/' . $resource;
+            self::assertSame(204, $this->middleware()->process($this->bearer('GET', $path, 'read'), $this->okHandler())->getStatusCode());
+            self::assertSame(403, $this->middleware()->process($this->bearer('POST', $path, 'read_write'), $this->okHandler())->getStatusCode());
+        }
+        foreach (['components', 'context', 'versions', 'versions/7', 'preview'] as $resource) {
+            self::assertSame(403, $this->middleware()->process($this->bearer('GET', '/api/property/charges/' . $resource, 'read_write'), $this->okHandler())->getStatusCode());
+        }
+    }
+
     public function testCatalogReadPostHasExactReadScopeException(): void
     {
         foreach ([
@@ -104,6 +148,17 @@ final class ApiScopeMiddlewareTest extends TestCase
         );
         self::assertSame(403, $r->getStatusCode());
         self::assertSame('token_endpoint_forbidden', $this->errorCode($r));
+    }
+
+    public function testPurchaseInvoiceAiImportRequiresWriteScopeOnTokenRoute(): void
+    {
+        $path = '/api/purchase-invoices/import-ai';
+        $read = $this->middleware()->process($this->bearer('POST', $path, 'read'), $this->okHandler());
+        self::assertSame(403, $read->getStatusCode());
+        self::assertSame('insufficient_scope', $this->errorCode($read));
+
+        $write = $this->middleware()->process($this->bearer('POST', $path, 'read_write'), $this->okHandler());
+        self::assertSame(204, $write->getStatusCode());
     }
 
     /**
@@ -610,6 +665,46 @@ final class ApiScopeMiddlewareTest extends TestCase
             $r = $this->middleware()->process($this->bearer($method, $path, 'read_write'), $this->okHandler());
             self::assertSame(403, $r->getStatusCode(), "bearer $method $path");
             self::assertSame('token_endpoint_forbidden', $this->errorCode($r), "bearer $method $path");
+        }
+    }
+
+    public function testClosingDecisionWorkspacesRequireSessionBeforeHandler(): void
+    {
+        $handler = new class implements RequestHandlerInterface {
+            public int $calls = 0;
+
+            public function handle(ServerRequestInterface $request): ResponseInterface
+            {
+                ++$this->calls;
+                return (new ResponseFactory())->createResponse(204);
+            }
+        };
+        foreach (['asset-reserve', 'legal-provisions'] as $workspace) {
+            $path = '/api/accounting/periods/7/closing/' . $workspace . '/workspace';
+            foreach (['GET', 'HEAD'] as $method) {
+                foreach (['read', 'read_write'] as $scope) {
+                    $response = $this->middleware()->process($this->bearer($method, $path, $scope), $handler);
+                    self::assertSame(403, $response->getStatusCode(), "$scope $method $path");
+                    self::assertSame('token_endpoint_forbidden', $this->errorCode($response));
+                    self::assertSame(0, $handler->calls);
+                }
+            }
+            $session = (new ServerRequestFactory())->createServerRequest('GET', $path)
+                ->withAttribute(AuthMiddleware::ATTR_METHOD, 'session');
+            self::assertSame(204, $this->middleware()->process($session, $this->okHandler())->getStatusCode());
+        }
+    }
+
+    public function testClosingPublicPreviewsRemainAvailableToReadTokens(): void
+    {
+        foreach (['fx-preview', 'deferred-tax-preview', 'provisions-preview'] as $preview) {
+            foreach (['read', 'read_write'] as $scope) {
+                $response = $this->middleware()->process(
+                    $this->bearer('GET', '/api/accounting/periods/7/closing/' . $preview, $scope),
+                    $this->okHandler(),
+                );
+                self::assertSame(204, $response->getStatusCode(), "$scope $preview");
+            }
         }
     }
 

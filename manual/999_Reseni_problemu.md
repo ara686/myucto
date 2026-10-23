@@ -619,6 +619,17 @@ archivu ([§ 999.6.1.4](#999614-sifrovani-mzdoveho-archivu-a-rotace-klice)).
 Nálezy jsou seřazené od problémů k varováním, takže shora dolů odpovídají pořadí, v
 jakém má smysl je řešit.
 
+V části **Nejednoznačné vlastnictví převzatých zápisů** uvidíte pro právě vybranou
+firmu zápisy, které automatické doplnění vlastnictví vynechalo: převod doložil vazbu
+jednoho způsobilého zápisu na více různých existujících vydaných či přijatých dokladů.
+Kontrola zahrnuje Stereo NX, PREMIER, Money S3, Pohodu a ABRA Flexi. Ručně přidané
+souvislosti, úhrady a otevírací zápisy se za kandidátní předpisy nepovažují.
+Přehled ukazuje celkový počet, po 20 zápisech a nejvýše 20 kandidátů na zápis;
+na další zápisy přejdete tlačítkem **Další zápisy**. Odkazy otevřou konkrétní zápis
+a kandidátní doklady. Porovnejte je s původní evidencí a ověřené přiřazení předejte
+správci nebo podpoře; samotná diagnostika částky ani vazby nemění. Zápis s již
+určeným vlastníkem se mezi nevyřešenými případy nezobrazuje.
+
 #### 999.6.1.1 Diagnostický balíček
 
 Tlačítkem na téže stránce vznikne ZIP s podklady pro **placenou technickou podporu**.

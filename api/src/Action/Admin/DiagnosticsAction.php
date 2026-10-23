@@ -6,6 +6,7 @@ namespace MyInvoice\Action\Admin;
 
 use MyInvoice\Http\Json;
 use MyInvoice\Middleware\AuthMiddleware;
+use MyInvoice\Middleware\SupplierScopeMiddleware;
 use MyInvoice\Security\RequestAuthorization;
 use MyInvoice\Service\ActivityLogger;
 use MyInvoice\Service\Payroll\Document\PayrollArchiveDiagnostics;
@@ -13,6 +14,7 @@ use MyInvoice\Service\System\DiagnosticsBundleOptions;
 use MyInvoice\Service\System\DiagnosticsBundleService;
 use MyInvoice\Service\System\DiagnosticsLogReader;
 use MyInvoice\Service\System\EnvironmentCheckService;
+use MyInvoice\Service\System\ImportedPostingDiagnostics;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Psr7\Stream;
@@ -36,6 +38,7 @@ final class DiagnosticsAction
         private readonly DiagnosticsLogReader $logs,
         private readonly ActivityLogger $activity,
         private readonly PayrollArchiveDiagnostics $payrollArchive,
+        private readonly ImportedPostingDiagnostics $importedPostings,
     ) {}
 
     /** GET /api/admin/diagnostics */
@@ -45,7 +48,13 @@ final class DiagnosticsAction
             return $err;
         }
 
-        return Json::ok($response, $this->payrollArchive->appendTo($this->environment->report()));
+        $report = $this->payrollArchive->appendTo($this->environment->report());
+        $supplierId = (int) $request->getAttribute(SupplierScopeMiddleware::ATTR_CURRENT_ID, 0);
+        $report['imported_posting_ambiguities'] = !empty($report['facts']['database']['available']) ? $this->importedPostings->report(
+            $supplierId,
+            max(0, (int) ($request->getQueryParams()['posting_after'] ?? 0)),
+        ) : ImportedPostingDiagnostics::unavailable($supplierId);
+        return Json::ok($response, $report);
     }
 
     /** GET /api/admin/diagnostics/bundle/preview */

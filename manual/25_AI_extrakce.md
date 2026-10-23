@@ -193,6 +193,7 @@ jsou v [§ 25.9.18](#25918-lokalni-model-pres-ollamu-podrobnosti).
 | Chyba `residency_conflict` | Konfigurace by poslala data mimo EU, i když je EU vynucená | Opravte endpoint poskytovatele, žádná data se neodeslala |
 | Poskytovatel má štítek **bez klíče** | Je zvolený, ale nemá uložený klíč | Vložte klíč a uložte nastavení |
 | Test připojení selže hned | Špatný formát klíče (Anthropic `sk-ant-`, OpenAI `sk-`) | Zkontrolujte, že jste vložili celý klíč |
+| Anthropic hlásí, že klíč není přiřazený k workspace a požadavek musí obsahovat `anthropic-workspace-id` | Klíč nepatří do žádného workspace | Vyplňte **ID workspace** z Claude Console, nebo použijte klíč přiřazený k workspace |
 | Extrakce větších souborů vrátí chybu | Překročen limit PDF (Anthropic 32 MB, ostatní 20 MB) | Zmenšete soubor nebo ho rozdělte |
 | Faktura obsahuje řádek **KOREKCE** s nulovými množstvími | Model nerozparsoval složitou fakturu a součet se lišil o víc než 50 % | Doplňte množství a ceny k řádkům a korekční řádek smažte (viz [§ 25.9.4](#2594-katastrofalni-mismatch-placeholder)) |
 | Doklad z paliv nebo vyúčtování nemá položky | Doklad nemá spolehlivý rozpad řádkových částek odpovídající rekapitulaci | Zkontrolujte souhrnnou rekapitulaci a potřebné řádky doplňte ručně (viz [§ 25.9.7](#2597-doklad-bez-jednotkovych-cen-zalozeni-ze-souhrnne-rekapitulace)) |
@@ -383,7 +384,9 @@ Podrobnosti k formuláři:
 - **Anthropic, OpenAI, Gemini**: jen pole **API klíč** (BYOK, jen pro zápis, po uložení se nikdy nezobrazí zpátky, jen
   placeholder „uloženo") a volitelně **Model** (výběr z povoleného whitelistu daného poskytovatele, prázdné znamená výchozí
   model poskytovatele). **Azure OpenAI** navíc **Azure endpoint**, **Deployment** (název nasazeného modelu v Azure resource)
-  a **API verze**.
+  a **API verze**. **Anthropic** má navíc nepovinné pole **ID workspace** (začíná `wrkspc_`), které vyplníte jen u klíče
+  nepřiřazeného k žádnému workspace; Anthropic takový klíč bez ID odmítne s hláškou, že požadavek musí obsahovat
+  `anthropic-workspace-id`.
 - **Test připojení** ověří klíč a endpoint reálným voláním a nahlásí, jaký model odpověděl (nebo chybu). Před uložením se
   kontroluje i základní formát klíče (Anthropic musí začínat `sk-ant-`, OpenAI `sk-`, Gemini přijímá podporované standardní
   i autorizační klíče z AI Studia), ušetří to zbytečný test s očividně špatně vloženým klíčem.

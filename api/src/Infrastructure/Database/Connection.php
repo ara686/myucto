@@ -252,10 +252,12 @@ final class Connection
      * naopak protáhne do dalšího testu — proto se tady rollbackuje a NAHLAS hlásí.
      * Ze stejného důvodu se vrací i session proměnné a named locks do výchozího stavu:
      * `SET FOREIGN_KEY_CHECKS = 0` nebo GET_LOCK dřív padly se spojením, teď ne.
+     * `$keepTransactions` nechá transakci třídy, která mezi testy vědomě drží sdílený
+     * základ v savepointech (Tests\Support\SharedFixtureSavepointTrait).
      *
      * @return list<string> DSN spojení, na kterých byla nalezena rozdělaná transakce
      */
-    public static function resetSharedTestSessions(): array
+    public static function resetSharedTestSessions(bool $keepTransactions = false): array
     {
         if (!self::$sharedTouched) {
             return [];
@@ -265,7 +267,7 @@ final class Connection
         $leaked = [];
         foreach (self::$sharedPdo as $dsn => $pdo) {
             try {
-                if ($pdo->inTransaction()) {
+                if ($pdo->inTransaction() && !$keepTransactions) {
                     $pdo->rollBack();
                     $leaked[] = $dsn;
                 }
@@ -274,6 +276,11 @@ final class Connection
                     . " sql_mode = '" . self::SQL_MODE . "'"
                 );
                 $pdo->query('SELECT RELEASE_ALL_LOCKS()');
+                // Test s vlastní třídou příkazů trvale vypnul sledování transakcí;
+                // další test by na sdíleném spojení nemohl prokazovat savepointy.
+                if ($pdo instanceof LoggingPdo && !$pdo->statementsTracked()) {
+                    unset(self::$sharedPdo[$dsn]);
+                }
             } catch (\Throwable) {
                 // Spojení je rozbité (server odešel, killnutá session) — zahoď ho ze
                 // sdílené mapy, další pdo() postaví nové. Tichý catch je tu na místě:

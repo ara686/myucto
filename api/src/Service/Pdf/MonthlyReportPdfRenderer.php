@@ -29,7 +29,7 @@ final class MonthlyReportPdfRenderer
      */
     public function render(array $data): string
     {
-        $body = $this->twig()->render('monthly-report.twig', $data);
+        $body = $this->twig()->render(($data['accounting_framework'] ?? '') === 'cz_504' ? 'monthly-report-504.twig' : 'monthly-report.twig', $data);
 
         $tmpDir = RuntimePaths::storage('cache/mpdf');
         if (!is_dir($tmpDir)) {

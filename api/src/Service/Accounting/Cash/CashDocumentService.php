@@ -284,10 +284,17 @@ final class CashDocumentService
             $pdo->beginTransaction();
         }
         try {
+            (new \MyInvoice\Service\Accounting\Dimension\DimensionPeriodGuard($this->db))->lockPeriods($supplierId);
+            (new \MyInvoice\Service\Property\Charges\Issuance\IssuanceUseGuard($this->db))->lockClaims($supplierId);
+            (new \MyInvoice\Service\Property\Payments\Workflow\PaymentMutationContext($this->db))->assertSourceMutable($supplierId, 'cash', $id);
             $doc = $this->documents->lockForPost($supplierId, $id);
             if ($doc === null) {
                 throw new CashException('validation', 'Pokladní doklad nenalezen.', 404);
             }
+            (new \MyInvoice\Service\Property\Charges\Issuance\IssuanceUseGuard($this->db))->assertPostingEntriesMutable($supplierId,
+                array_values(array_filter([(int) ($doc['journal_entry_id'] ?? 0), (int) ($doc['reversal_entry_id'] ?? 0)])));
+            (new \MyInvoice\Service\Accounting\Allocation\JointAllocationUseGuard($this->db))->assertEntriesMutable($supplierId,
+                array_values(array_filter([(int) ($doc['journal_entry_id'] ?? 0), (int) ($doc['reversal_entry_id'] ?? 0)])));
             $this->assertTaxDateUnlocked($supplierId, (string) ($doc['tax_date'] ?? $doc['issue_date']));
             $this->assertNoFollowUpDocuments($supplierId, $doc);
 
@@ -332,6 +339,9 @@ final class CashDocumentService
         } catch (\Throwable $e) {
             if ($ownTx && $pdo->inTransaction()) {
                 $pdo->rollBack();
+            }
+            if ($e instanceof \MyInvoice\Service\Property\PropertyException && $e->errorCode === 'property_not_found') {
+                throw new CashException('validation', 'Pokladní doklad nenalezen.', 404);
             }
             throw $e;
         }
@@ -397,6 +407,36 @@ final class CashDocumentService
      *
      * @return array{doc_number:string, journal_entry_id:?int, warnings:list<string>}
      */
+    public function postPropertyClearing(\MyInvoice\Service\Property\Payments\Workflow\PaymentClearingIntent $intent): array
+    {
+        $intent->assertConnection($this->db);
+        $proof = $intent->current('cash');
+        $supplier = $intent->supplier;
+        $doc = $proof['snapshot']['source']['native_draft'];
+        $register = $proof['snapshot']['source']['register'];
+        $this->assertTaxDateUnlocked($supplier, (string) ($doc['tax_date'] ?? $doc['issue_date']));
+        $this->validateDoc($supplier, $doc, [], $register);
+        if ($this->supplierAccountingMode($supplier) === 'tax_evidence') throw new CashException('validation', 'Tento předpis vyžaduje účetní deník.');
+        if ($proof['workflow']['cash_document_id'] === null) {
+            $intent = $this->documents->insertPropertyClearing($intent);
+            $proof = $intent->current('cash');
+        }
+        $id = (int) $proof['workflow']['cash_document_id'];
+        $vat = $this->db->pdo()->prepare('SELECT id FROM cash_document_vat_lines WHERE cash_document_id=? FOR UPDATE');
+        $vat->execute([$id]);
+        if ($vat->fetchColumn() !== false) throw new CashException('validation', 'Clearingový doklad nesmí obsahovat řádky DPH.');
+        $number = $doc['doc_number'] ?? null;
+        if ($number === null) {
+            $year = (int) substr($doc['issue_date'], 0, 4);
+            $scope = !empty($register['own_series']) ? (int) $register['id'] : 0;
+            if ($scope > 0 && !$this->cashRegisters->ensureOwnSeries($supplier, $scope, $year)) $scope = 0;
+            $number = $this->series->next($supplier, $doc['doc_type'] === 'in' ? 'cash_in' : 'cash_out', $year, $scope);
+        }
+        $entry = (new \MyInvoice\Repository\JournalEntryRepository($this->db, new \MyInvoice\Service\ActivityLogger($this->db)))->insertPropertyClearing($intent, $number);
+        $this->documents->markPosted($supplier, $id, $number, $entry);
+        return ['id' => $id, 'journal_entry_id' => $entry, 'doc_number' => $number];
+    }
+
     public function post(int $supplierId, int $id, ?int $userId): array
     {
         // Viz create(): výdej čísla řady je horký řádek, odvolanou vlastní transakci zopakuje.
@@ -460,6 +500,7 @@ final class CashDocumentService
             $pdo->beginTransaction();
         }
         try {
+            (new \MyInvoice\Service\Property\Payments\Workflow\PaymentMutationContext($this->db))->assertSourceMutable($supplierId, 'cash', $id);
             $doc = $this->documents->lockForPost($supplierId, $id);
             if ($doc === null) {
                 throw new CashException('validation', 'Pokladní doklad nenalezen.', 404);

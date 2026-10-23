@@ -16,10 +16,13 @@ final class AuthoritativeTransactionReconciler
         $accountKey = self::account($account, $bank);
         if ($accountKey === null || $currency === '') return [];
         $dates = array_column($transactions, 'posted_at');
+        // Výpisy převzaté z jiného programu (source 'import') nesou tytéž pohyby banky,
+        // jen s referencí podle dokladu původního programu. Bez nich by stažení z banky
+        // za převzaté období založilo každý pohyb podruhé.
         $query = $this->pdo->prepare(
             "SELECT bt.*, bs.source AS statement_source, bs.account_number AS own_account, bs.bank_code AS own_bank
              FROM bank_transactions bt JOIN bank_statements bs ON bs.id = bt.statement_id
-             WHERE bs.supplier_id = ? AND bs.source IN ('gpc', 'bank_api')
+             WHERE bs.supplier_id = ? AND bs.source IN ('gpc', 'bank_api', 'import')
                AND bs.currency = ? AND COALESCE(NULLIF(bt.currency, ''), bs.currency) = ? AND bt.posted_at BETWEEN ? AND ?"
         );
         $query->execute([$supplierId, $currency, $currency, min($dates), max($dates)]);

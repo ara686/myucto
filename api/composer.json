@@ -27,6 +27,7 @@
         "dragonofmercy/phppdf": "^1.12.4",
         "enshrined/svg-sanitize": "^1.0",
         "guzzlehttp/guzzle": "^8.2",
+        "halaxa/json-machine": "1.2.6",
         "monolog/monolog": "^3.12.1",
         "mpdf/mpdf": "^8.3.1",
         "paragonie/sodium_compat": "^2.5.2",

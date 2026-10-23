@@ -7,6 +7,7 @@ namespace MyInvoice\Service\Ai;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
 use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Service\Import\AnthropicClient;
 use MyInvoice\Service\Import\AzureOpenAiClient;
 use MyInvoice\Service\Import\GeminiClient;
 use MyInvoice\Service\Import\LlmProviderCapabilities;
@@ -309,7 +310,7 @@ final class AiProviderHttpClient
                 $payload['tool_choice'] = ['type' => 'tool', 'name' => 'posting_suggestion'];
             }
             $response = $this->http->post('https://api.anthropic.com/v1/messages', [
-                'headers' => ['x-api-key' => $creds['api_key'], 'anthropic-version' => '2023-06-01', 'content-type' => 'application/json'],
+                'headers' => AnthropicClient::requestHeaders((string) $creds['api_key'], $creds['workspace_id'] ?? null),
                 'json' => $payload,
             ] + $extra);
             $body = json_decode((string) $response->getBody(), true);

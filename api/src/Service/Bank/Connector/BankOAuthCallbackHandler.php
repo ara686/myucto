@@ -15,6 +15,8 @@ use Psr\Log\LoggerInterface;
 /**
  * Návrat z banky na společný OAuth callback (doména bank). Připojení dokončí služba
  * poskytovatele; prohlížeč se vrátí na Banku stejně jako dřív z callbacku banky.
+ * Návrat po podpisu dávky (poskytovatel {@see BankPaymentSignatureService::OAUTH_PROVIDER})
+ * vrací na platební příkaz nebo mzdovou dávku.
  */
 final class BankOAuthCallbackHandler implements OAuthCallbackHandler
 {
@@ -25,6 +27,7 @@ final class BankOAuthCallbackHandler implements OAuthCallbackHandler
         private readonly KbPlusOnboardingService $kbPlus,
         private readonly Config $config,
         private readonly LoggerInterface $logger,
+        private readonly BankPaymentSignatureService $signatures,
     ) {}
 
     public function domain(): string
@@ -45,6 +48,7 @@ final class BankOAuthCallbackHandler implements OAuthCallbackHandler
             return match ($provider) {
                 CsasOnboardingService::PROVIDER => self::csasLocation('connected', $this->csas->completeCallback($callback)),
                 KbPlusOnboardingService::PROVIDER => self::kbPlusLocation($this->baseUrl(), 'connected', $this->kbPlus->completeCallback($callback)),
+                BankPaymentSignatureService::OAUTH_PROVIDER => $this->signatures->completeCallback($callback),
                 default => throw new BankConnectorOperationException('provider_not_supported'),
             };
         } catch (BankConnectorOperationException $e) {
@@ -63,6 +67,7 @@ final class BankOAuthCallbackHandler implements OAuthCallbackHandler
         return match ($session['provider'] ?? null) {
             CsasOnboardingService::PROVIDER => self::csasLocation('error'),
             KbPlusOnboardingService::PROVIDER => self::kbPlusLocation($this->baseUrl(), 'error', (int) ($session['subject_id'] ?? 0), $errorCode),
+            BankPaymentSignatureService::OAUTH_PROVIDER => $this->signatures->failureLocation($session),
             default => '/bank?' . http_build_query(['tab' => 'accounts']),
         };
     }

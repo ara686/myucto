@@ -66,9 +66,29 @@ final class RateLimitMiddlewareTest extends TestCase
     }
 
     /**
+     * AI vytěžení platí firma z vlastního klíče. Token měl dřív vlastní bucket 600/min
+     * dřív, než se došlo k AI limitu, a víc tokenů téhož uživatele ho násobilo (#233).
+     */
+    public function testAiEndpointsKeepPerUserAiLimitForApiTokens(): void
+    {
+        foreach ([
+            '/api/purchase-invoices/import-ai',
+            '/api/v1/purchase-invoices/import-ai',
+            '/api/purchase-invoices/scan-inbox',
+            '/api/admin/imports/ai-extract-pdf',
+        ] as $path) {
+            foreach ([0, 5, 6] as $tokenId) {
+                $rule = $this->rule($this->request('POST', $path, str_repeat('a', 64)), $tokenId);
+                self::assertSame(['rl:ai:user:17', 30, 300], $rule, $path . ' token ' . $tokenId);
+            }
+        }
+        self::assertSame('rl:api:tok:5', $this->rule($this->request('POST', '/api/purchase-invoices/import-structured', str_repeat('a', 64)), 5)[0]);
+    }
+
+    /**
      * @return array{0:string,1:int,2:int}
      */
-    private function rule(ServerRequestInterface $request): array
+    private function rule(ServerRequestInterface $request, int $tokenId = 0): array
     {
         $config = new Config([]);
         $middleware = new RateLimitMiddleware(
@@ -87,7 +107,7 @@ final class RateLimitMiddlewareTest extends TestCase
             strtoupper($request->getMethod()),
             '127.0.0.1',
             17,
-            0,
+            $tokenId,
             $request,
         );
         self::assertIsArray($rule);

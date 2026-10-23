@@ -104,6 +104,30 @@ final class ProductPostingDefaultsTest extends TestCase
 
     // ── regrese ──────────────────────────────────────────────────────────────
 
+    public function testHistoricalIssuedAccountUsesActualPostingDateAndRecordedTrace(): void
+    {
+        $invoice=$this->invoice('SYNDATE',$this->client('Synthetic dated revenue'),[['net'=>100.00,'revenue_account_code'=>'604']]);
+        $this->db->pdo()->prepare("UPDATE invoices SET issue_date='2027-06-15',tax_date='2027-06-15',due_date='2027-06-30' WHERE supplier_id=? AND id=?")->execute([$this->supplierId,$invoice]);
+        $chart=$this->container->get(\MyInvoice\Repository\ChartOfAccountsRepository::class);
+        $account=$chart->findByCode($this->supplierId,'604');
+        $definitions=new \MyInvoice\Repository\AccountDefinitionRepository($this->db);
+        $definitions->change($this->supplierId,(int)$account['id'],'2026-07-01',['is_active'=>false],$definitions->stateHash($this->supplierId,(int)$account['id']),$this->userId,'Synthetic dated revenue account policy');
+        self::assertTrue((bool)$chart->findById($this->supplierId,(int)$account['id'],'2025-06-15')['is_active']);
+        self::assertFalse((bool)$chart->findById($this->supplierId,(int)$account['id'],'2027-06-15')['is_active']);
+        $lines=$this->posting->buildFromInvoice($this->supplierId,$invoice,['entry_date'=>'2025-06-15']);
+        self::assertContains('604',array_column($lines,'account_code'));
+        $entry=$this->container->get(\MyInvoice\Service\Accounting\DocumentAutoPoster::class)->post($this->supplierId,'invoice',$invoice,['entry_date'=>'2025-06-15','posted'=>true,'posted_by'=>$this->userId]);
+        self::assertGreaterThan(0,$entry);
+        $trace=$this->posting->issuedItemRevenueAccounts($this->supplierId,$invoice);
+        self::assertSame(['604'],array_values($trace['accounts']));
+        try {
+            $this->posting->buildFromInvoice($this->supplierId,$invoice,['entry_date'=>'2027-06-15']);
+            self::fail('Issued account used an inactive dated definition.');
+        } catch (\MyInvoice\Service\Accounting\PostingException $error) {
+            self::assertSame('invalid_item_account',$error->errorCode);
+        }
+    }
+
     public function testWithoutProductSettingsLinesAreIdenticalToUnlinkedDocument(): void
     {
         // Bez nastavení produktu (ani kategorie) se nesmí změnit NIC: vazba položky na kartu

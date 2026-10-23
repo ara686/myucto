@@ -324,11 +324,13 @@ final class AiCredentialsBulkApplier
         return $this->permissions->resolve($scoped);
     }
 
-    /** @param array<string,string> $creds */
+    /** @param array<string,?string> $creds */
     private function persist(string $provider, int $supplierId, array $creds): void
     {
         match ($provider) {
-            'anthropic'    => $this->anthropic->setCredentials($supplierId, $creds['api_key'], $creds['default_model'] ?? null),
+            'anthropic'    => $this->anthropic->setCredentials(
+                $supplierId, $creds['api_key'], $creds['default_model'] ?? null, (string) ($creds['workspace_id'] ?? ''),
+            ),
             'azure_openai' => $this->azure->setCredentials(
                 $supplierId, $creds['api_key'], $creds['endpoint'] ?? null, $creds['deployment'] ?? null, $creds['api_version'] ?? null,
             ),

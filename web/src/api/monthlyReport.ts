@@ -1,4 +1,5 @@
 import { api } from './client'
+import type { Statement504Report, Statement504Row } from './accounting'
 
 /** Jeden řádek výsledovky/rozvahy (kanonický tvar z FinancialStatementService). */
 export interface StatementRow {
@@ -41,7 +42,8 @@ export interface MonthlyReportVat {
   submission_deadline: string
 }
 
-export interface MonthlyReportData {
+export interface MonthlyReport500Data {
+  accounting_framework?: 'cz_500'
   entity: { name: string; ico: string | null; address: string }
   period: { year: number; month: number; as_of: string }
   generated_at: string
@@ -58,6 +60,16 @@ export interface MonthlyReportData {
   vat: MonthlyReportVat | null
   upcoming_deadlines: UpcomingDeadline[]
 }
+
+export interface MonthlyReport504Data extends Omit<MonthlyReport500Data, 'accounting_framework' | 'income_statement_ytd' | 'income_statement_month' | 'balance_sheet'> {
+  accounting_framework: 'cz_504'
+  view_kind: 'management'
+  income_statement_ytd: Statement504Report & { checks: { profit_current: number } }
+  income_statement_month: Statement504Row[]
+  balance_sheet: Statement504Report
+}
+
+export type MonthlyReportData = MonthlyReport500Data | MonthlyReport504Data
 
 export interface MonthlyReportSendPayload {
   year: number

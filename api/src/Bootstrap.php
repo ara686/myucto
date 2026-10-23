@@ -207,6 +207,9 @@ final class Bootstrap
                 \DI\autowire()->constructorParameter(
                     'purchaseApprovals',
                     \DI\get(\MyInvoice\Repository\PurchaseInvoiceApprovalRepository::class),
+                )->constructorParameter(
+                    'frameworkScope',
+                    \DI\get(\MyInvoice\Security\FrameworkScopePolicy::class),
                 ),
             // Historie podání předchozím programem je nepovinná kvůli testům mostu;
             // bez výslovného předání by kontrola duplicitního řádného hlášení neběžela.
@@ -544,6 +547,7 @@ final class Bootstrap
                 // Nezaúčtované odpisy roku do projekce uzávěrky — bez bindu by je náhled DPPO
                 // v produkci tiše vynechal.
                 $c->get(\MyInvoice\Service\Accounting\Assets\DepreciationPostingService::class),
+                $c->get(\MyInvoice\Service\Tax\Nonprofit\NonprofitDppoDataProvider::class),
             ),
             // JMHZ transport — poslední dva argumenty jsou volitelné kvůli
             // testovacím dvojníkům (falešný VREP, mockovaný ledger), ale
@@ -810,6 +814,7 @@ final class Bootstrap
                 $c->get(\MyInvoice\Service\Payroll\Payment\PayrollPaymentSettlementRecognizer::class),
                 $c->get(LoggerInterface::class),
                 $c->get(\MyInvoice\Service\TaxEvidence\TaxEvidenceBankRules::class),
+                $c->get(\MyInvoice\Service\Property\Payments\BankProposalService::class),
             ),
 
             // EntityCache je v obou službách volitelný class-param (kvůli testovacím

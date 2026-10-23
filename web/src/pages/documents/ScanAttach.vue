@@ -364,7 +364,7 @@ onUnmounted(stopPolling)
 </script>
 
 <template>
-  <div class="max-w-6xl">
+  <div>
     <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
       <div>
         <h1 class="text-2xl font-semibold">{{ t('scan_attach.title') }}</h1>

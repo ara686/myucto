@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted, reactive, computed } from 'vue'
+import { ref, onMounted, reactive, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
 import { accountingApi, type ChartAccount } from '@/api/accounting'
+import { useSupplierStore } from '@/stores/supplier'
 import { useRowLink } from '@/composables/useRowLink'
 import { useAuthStore } from '@/stores/auth'
 import { useToast } from '@/composables/useToast'
@@ -15,25 +16,30 @@ import EmptyState from '@/components/ui/EmptyState.vue'
 
 const { t } = useI18n()
 const auth = useAuthStore()
+const supplierStore = useSupplierStore()
 const toast = useToast()
 const { blockDemoMutation } = useDemoMode()
 
 // V ukázce je zakládání analytiky vidět a formulář jde projít celý, jen se neuloží —
 // demo role má na `accounting` jen čtení, takže canWrite() by tlačítko schoval.
-const canCreateAccount = computed(() => auth.canWrite('accounting') || auth.isDemo)
+const canCreateAccount = computed(() => supplierStore.currentSupplierId > 0 && (auth.canWrite('accounting') || auth.isDemo))
 
 const accounts = ref<ChartAccount[]>([])
 const loading = ref(false)
+const loadError = ref('')
+const framework = computed(() => supplierStore.currentSupplier?.id === supplierStore.currentSupplierId ? supplierStore.currentSupplier.accounting_framework ?? 'cz_500' : null)
+let loadGeneration = 0
 const error = ref('')
 const showInactive = ref(false)
 const importOpen = ref(false)
 
 // Účtové třídy 0–7 (směrná účtová osnova), + mimobilanční / závěrkové.
 const CLASS_KEYS = ['0', '1', '2', '3', '4', '5', '6', '7'] as const
+const classKeys = computed<readonly string[]>(() => framework.value === 'cz_504' ? ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'] : CLASS_KEYS)
 
 function accountClass(a: ChartAccount): string {
   const c = (a.account_code || '').charAt(0)
-  if (CLASS_KEYS.includes(c as (typeof CLASS_KEYS)[number])) return c
+  if (classKeys.value.includes(c)) return c
   if (a.account_type === 'offbalance') return 'offbalance'
   if (a.account_type === 'closing') return 'closing'
   return 'other'
@@ -51,12 +57,12 @@ const groups = computed<AccountGroup[]>(() => {
     const k = accountClass(a)
     ;(buckets[k] ||= []).push(a)
   }
-  const order = [...CLASS_KEYS, 'offbalance', 'closing', 'other']
+  const order = [...classKeys.value, 'offbalance', 'closing', 'other']
   return order
     .filter(k => buckets[k]?.length)
     .map(k => ({
       key: k,
-      label: t(`accounting.accounts.class.${k}`),
+      label: t(`accounting.accounts.${framework.value === 'cz_504' ? 'class_504' : 'class'}.${k}`),
       rows: buckets[k].sort((a, b) => a.account_code.localeCompare(b.account_code)),
     }))
 })
@@ -67,13 +73,33 @@ const syntheticAccounts = computed(() =>
 )
 
 async function load() {
+  const supplierId = supplierStore.currentSupplierId
+  const generation = ++loadGeneration
   loading.value = true
-  try {
-    accounts.value = await accountingApi.listAccounts({ includeInactive: showInactive.value })
-  } finally {
+  loadError.value = ''
+  accounts.value = []
+  if (!Number.isInteger(supplierId) || supplierId <= 0 || framework.value === null) {
     loading.value = false
+    return
+  }
+  try {
+    const rows = await accountingApi.listAccounts({ includeInactive: showInactive.value, supplierId })
+    if (generation !== loadGeneration || supplierStore.currentSupplierId !== supplierId) return
+    accounts.value = rows
+  } catch (e: any) {
+    if (generation === loadGeneration && supplierStore.currentSupplierId === supplierId) {
+      loadError.value = e?.response?.data?.error?.message || t('common.error')
+    }
+  } finally {
+    if (generation === loadGeneration && supplierStore.currentSupplierId === supplierId) loading.value = false
   }
 }
+watch(() => [supplierStore.currentSupplierId, framework.value], () => {
+  showForm.value = false
+  deleteTarget.value = null
+  importOpen.value = false
+  void load()
+})
 onMounted(load)
 
 const showForm = ref(false)
@@ -175,12 +201,12 @@ function sideLabel(side: string | null): string {
 
 <template>
   <div>
-    <div class="flex items-center justify-between mb-4">
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
       <div>
         <h1 class="text-2xl font-semibold">{{ t('accounting.accounts.title') }}</h1>
-        <p class="text-sm text-neutral-500 mt-0.5">{{ t('accounting.accounts.subtitle') }}</p>
+        <p v-if="framework" class="text-sm text-neutral-500 mt-0.5">{{ t(framework === 'cz_504' ? 'accounting.accounts.subtitle_504' : 'accounting.accounts.subtitle') }}</p>
       </div>
-      <div class="flex items-center gap-2">
+      <div class="flex flex-wrap items-center gap-2">
         <label class="flex items-center gap-1.5 text-sm text-neutral-600 mr-1">
           <input v-model="showInactive" type="checkbox" class="rounded border-neutral-300 text-primary-600" @change="load" />
           {{ t('accounting.accounts.show_inactive') }}
@@ -202,13 +228,15 @@ function sideLabel(side: string | null): string {
 
     <div v-if="loading" class="text-center text-neutral-500 py-12 text-sm">{{ t('common.loading') }}</div>
 
+    <p v-else-if="loadError" class="text-sm text-danger-700" role="alert">{{ loadError }}</p>
+
     <EmptyState v-else-if="accounts.length === 0" boxed icon="doc"
       :title="t('accounting.accounts.empty')"
       :cta="canCreateAccount ? t('accounting.accounts.new') : undefined"
       @action="openCreate" />
 
     <div v-else class="space-y-5">
-      <div v-for="g in groups" :key="g.key" class="bg-surface border border-neutral-200 rounded-lg shadow-sm overflow-hidden">
+      <div v-for="g in groups" :key="g.key" :data-account-class="g.key" class="bg-surface border border-neutral-200 rounded-lg shadow-sm overflow-hidden">
         <div class="px-3 py-2 bg-neutral-50 border-b border-neutral-100 text-xs font-bold uppercase tracking-wide text-neutral-500">
           {{ g.label }}
         </div>

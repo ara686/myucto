@@ -27,11 +27,11 @@ final class ChartImporter
         private readonly ChartOfAccountsSeeder $seeder,
     ) {}
 
-    public function run(ImportContext $ctx): void
+    public function run(ImportContext $ctx, ?string $seedDate = null): void
     {
         $p = $ctx->protocol;
         if ($this->accounts->count($ctx->supplierId) === 0) {
-            $seeded = $this->seeder->seedForSupplier($ctx->supplierId);
+            $seeded = $this->seeder->seedForSupplier($ctx->supplierId, $seedDate);
             $p->setCount(self::STEP, 'seeded', $seeded);
         }
 

@@ -29,6 +29,7 @@ import JournalSourceDrawer from '@/components/accounting/JournalSourceDrawer.vue
 import { appIsoDate } from '@/utils/date'
 import DateInput from '@/components/ui/DateInput.vue'
 import BankPaymentSubmission from '@/components/bank/BankPaymentSubmission.vue'
+import { bankConnectionsApi } from '@/api/bankConnections'
 
 const { t } = useI18n()
 const auth = useAuthStore()
@@ -64,7 +65,9 @@ async function deleteOrder(item: PaymentOrderListItem) {
       await paymentOrdersApi.delete(item.id)
     } catch (e) {
       if (apiErrorCode(e) !== 'payment_order_delete_protected') throw e
-      if (!window.confirm(t('bank_connection.archive_cancelled_confirm', { id: item.id }))) return
+      // API České spořitelny založené platby zrušit neumí; uživatel je musí zrušit v George.
+      const provider = await bankConnectionsApi.submission(item.id).then(s => s?.provider ?? '').catch(() => '')
+      if (!window.confirm(t(provider === 'csas' ? 'bank_connection.archive_cancelled_confirm_csas' : 'bank_connection.archive_cancelled_confirm', { id: item.id }))) return
       await paymentOrdersApi.archiveAfterBankCancellation(item.id)
       archived = true
     }
@@ -96,7 +99,12 @@ const markPaid = ref(false)
 
 // Historie
 const history = ref<PaymentOrderListItem[]>([])
-const bankOrderId = ref<number | null>(null)
+// Návrat z podpisu v bance (?bank_order=ID) otevře stav odeslání tohoto příkazu.
+const bankOrderId = ref<number | null>((() => {
+  const raw = route.query.bank_order
+  const id = typeof raw === 'string' && /^[1-9][0-9]{0,18}$/.test(raw) ? Number(raw) : null
+  return id !== null && Number.isSafeInteger(id) ? id : null
+})())
 const historyLoading = ref(false)
 const historyLoadingMore = ref(false)
 const historyPage = ref(1)

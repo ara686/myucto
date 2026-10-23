@@ -20,14 +20,19 @@ final class LoggingPdoStatement extends PDOStatement
         private readonly ?\Closure $schemaChanged = null,
         private readonly ?SlowQueryLog $slowLog = null,
         private readonly string $database = '',
+        private readonly ?\Closure $transactionState = null,
+        private readonly ?\Closure $statementSucceeded = null,
+        private readonly ?\Closure $statementFailed = null,
     ) {}
 
     public function execute(?array $params = null): bool
     {
+        $before = ($this->transactionState)?->__invoke() ?? false;
         $started = $this->slowLog !== null ? hrtime(true) : 0;
         try {
             $ok = parent::execute($params);
         } catch (PDOException $e) {
+            ($this->statementFailed)?->__invoke((string) $this->queryString, $before, $e->errorInfo);
             DbErrorLogger::log($this->logger, $e, (string) $this->queryString, $params ?? []);
             throw $e;
         }
@@ -37,8 +42,11 @@ final class LoggingPdoStatement extends PDOStatement
         // příkazu je uvnitř, čtení odfiltruje hned první regex, takže SELECTy
         // (drtivá většina volání) platí jen jedno porovnání.
         if ($ok) {
+            ($this->statementSucceeded)?->__invoke((string) $this->queryString, $before);
             WriteWatcher::noteStatement((string) $this->queryString);
             ($this->schemaChanged)?->__invoke((string) $this->queryString);
+        } else {
+            ($this->statementFailed)?->__invoke((string) $this->queryString, $before, $this->errorInfo());
         }
 
         return $ok;

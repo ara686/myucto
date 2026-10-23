@@ -32,15 +32,22 @@ final class DimensionDefaults
      */
     public function resolve(int $supplierId, ?int $clientId, ?int $projectId): array
     {
+        return array_intersect_key($this->resolveWithOrigins($supplierId, $clientId, $projectId), ['header' => 1, 'sources' => 1]);
+    }
+
+    public function resolveWithOrigins(int $supplierId, ?int $clientId, ?int $projectId): array
+    {
         $repo = new DimensionDefaultRepository($this->db);
         $layers = [];
         if ($projectId !== null && $projectId > 0) {
-            $layers['project'] = $repo->forEntity($supplierId, 'project', $projectId);
+            $layers['project:' . $projectId] = $repo->forEntity($supplierId, 'project', $projectId);
         }
         if ($clientId !== null && $clientId > 0) {
-            $layers['client'] = $repo->forEntity($supplierId, 'client', $clientId);
+            $layers['client:' . $clientId] = $repo->forEntity($supplierId, 'client', $clientId);
         }
-        return $this->merge($supplierId, $layers);
+        $result = $this->merge($supplierId, $layers);
+        $result['sources'] = array_map(static fn (string $source): string => explode(':', $source)[0], $result['sources']);
+        return $result;
     }
 
     /**
@@ -52,7 +59,7 @@ final class DimensionDefaults
      * @param list<int> $productIds
      * @return array<int,array{header:array<int,int>, sources:array<int,string>}> produkt => typ => hodnota, typ => 'product'|'product_category'
      */
-    public function forProducts(int $supplierId, array $productIds): array
+    public function forProducts(int $supplierId, array $productIds, bool $withOrigins = false): array
     {
         $productIds = array_values(array_unique(array_filter(array_map('intval', $productIds), static fn (int $id): bool => $id > 0)));
         if ($productIds === []) {
@@ -68,7 +75,7 @@ final class DimensionDefaults
         }
         $out = [];
         foreach ($productIds as $productId) {
-            $layers = ['product' => $own[$productId] ?? []];
+            $layers = ['product:' . $productId => $own[$productId] ?? []];
             foreach ($chains[$productId] ?? [] as $categoryId) {
                 $layers['product_category:' . $categoryId] = $categories[$categoryId] ?? [];
             }
@@ -77,6 +84,7 @@ final class DimensionDefaults
                 continue;
             }
             $merged['sources'] = array_map(static fn (string $s): string => explode(':', $s)[0], $merged['sources']);
+            if (!$withOrigins) unset($merged['origins']);
             $out[$productId] = $merged;
         }
         return $out;
@@ -114,17 +122,14 @@ final class DimensionDefaults
      */
     public function sourceDimensions(int $supplierId, string $sourceType, int $sourceId): array
     {
-        $header = static fn (array $h): array => ['header' => $h, 'splits' => []];
         return match ($sourceType) {
-            'invoice' => $header($this->forDocument($supplierId, 'invoice', $sourceId)),
-            'purchase_invoice' => $header($this->forDocument($supplierId, 'purchase_invoice', $sourceId)),
-            'cash' => $header($this->forCash($supplierId, $sourceId)),
-            'bank' => $header($this->forBank($supplierId, $sourceId)),
-            'other_item' => $header($this->forDocument($supplierId, 'other_item', $sourceId)),
-            'offset' => $header($this->forOffset($supplierId, $sourceId)),
+            'invoice', 'purchase_invoice', 'other_item' => $this->forDocumentWithOrigins($supplierId, $sourceType, $sourceId) + ['splits' => [], 'split_origins' => []],
+            'cash' => $this->forCash($supplierId, $sourceId, true),
+            'bank' => $this->forBank($supplierId, $sourceId, true),
+            'offset' => $this->forOffset($supplierId, $sourceId, true),
             'settlement' => $this->forSettlement($supplierId, $sourceId),
             'asset', 'asset_disposal', 'depreciation' => $this->forAsset($supplierId, $this->assetId($supplierId, $sourceType, $sourceId)),
-            default => $header([]),
+            default => ['header' => [], 'splits' => [], 'origins' => [], 'split_origins' => []],
         };
     }
 
@@ -187,10 +192,13 @@ final class DimensionDefaults
             $layers[] = [
                 'header' => $assignments->documentDimensions($supplierId, 'purchase_invoice', $purchaseId)['items'][$itemNo] ?? [],
                 'splits' => $assignments->documentSplits($supplierId, 'purchase_invoice', $purchaseId)[$itemNo] ?? [],
+                'origins' => $assignments->documentOrigins($supplierId, 'purchase_invoice', $purchaseId)['items'][$itemNo] ?? [],
+                'split_origins' => $assignments->documentSplitOrigins($supplierId, 'purchase_invoice', $purchaseId)[$itemNo] ?? [],
             ];
             if ($row['stock_item_id'] !== null) {
                 $productId = (int) $row['stock_item_id'];
-                $layers[] = ['header' => $this->forProducts($supplierId, [$productId])[$productId]['header'] ?? [], 'splits' => []];
+                $product = $this->forProducts($supplierId, [$productId], true)[$productId] ?? [];
+                $layers[] = ['header' => $product['header'] ?? [], 'splits' => [], 'origins' => $product['origins'] ?? []];
             }
         }
         $layers[] = $this->effectiveDimensions($supplierId, 'purchase_invoice', $purchaseId);
@@ -198,12 +206,13 @@ final class DimensionDefaults
     }
 
     /** @return array<int,int> */
-    private function forOffset(int $supplierId, int $agreementId): array
+    private function forOffset(int $supplierId, int $agreementId, bool $withOrigins = false): array
     {
         $stmt = $this->db->pdo()->prepare('SELECT partner_id FROM offset_agreements WHERE id = ? AND supplier_id = ?');
         $stmt->execute([$agreementId, $supplierId]);
         $partner = $stmt->fetchColumn();
-        return $partner === false ? [] : $this->resolve($supplierId, (int) $partner, null)['header'];
+        $result = $partner === false ? ['header' => [], 'origins' => []] : $this->resolveWithOrigins($supplierId, (int) $partner, null);
+        return $withOrigins ? $result + ['splits' => [], 'split_origins' => []] : $result['header'];
     }
 
     /** @return array{header:array<int,int>, splits:array<int,array<int,float>>} */
@@ -230,8 +239,10 @@ final class DimensionDefaults
             [
                 'header' => $assignments->documentDimensions($supplierId, $docType, $docId)['header'],
                 'splits' => $assignments->documentSplits($supplierId, $docType, $docId)[0] ?? [],
+                'origins' => $assignments->documentOrigins($supplierId, $docType, $docId)['header'],
+                'split_origins' => $assignments->documentSplitOrigins($supplierId, $docType, $docId)[0] ?? [],
             ],
-            ['header' => $this->forDocument($supplierId, $docType, $docId), 'splits' => []],
+            $this->forDocumentWithOrigins($supplierId, $docType, $docId) + ['splits' => []],
         ]);
     }
 
@@ -246,21 +257,27 @@ final class DimensionDefaults
     {
         $header = [];
         $splits = [];
+        $origins = [];
+        $splitOrigins = [];
+        $withOrigins = false;
         foreach ($layers as $layer) {
+            $withOrigins = $withOrigins || array_key_exists('origins', $layer) || array_key_exists('split_origins', $layer);
             foreach ($layer['splits'] as $typeId => $shares) {
                 if (!isset($header[$typeId]) && !isset($splits[$typeId]) && $shares !== []) {
                     $splits[(int) $typeId] = $shares;
+                    foreach ($shares as $valueId => $_) $splitOrigins[(int) $typeId][(int) $valueId] = DimensionAssignmentOrigin::normalize($layer['split_origins'][$typeId][$valueId] ?? []);
                 }
             }
             foreach ($layer['header'] as $typeId => $valueId) {
                 if (!isset($header[$typeId]) && !isset($splits[$typeId])) {
                     $header[(int) $typeId] = (int) $valueId;
+                    $origins[(int) $typeId] = DimensionAssignmentOrigin::normalize($layer['origins'][$typeId] ?? []);
                 }
             }
         }
         ksort($header);
         ksort($splits);
-        return ['header' => $header, 'splits' => $splits];
+        return ['header' => $header, 'splits' => $splits] + ($withOrigins ? ['origins' => $origins, 'split_origins' => $splitOrigins] : []);
     }
 
     /**
@@ -314,8 +331,14 @@ final class DimensionDefaults
         return $this->resolve($supplierId, $clientId, $projectId)['header'];
     }
 
+    private function forDocumentWithOrigins(int $supplierId, string $docType, int $docId): array
+    {
+        [$clientId, $projectId] = $this->documentParties($supplierId, $docType, $docId);
+        return $this->resolveWithOrigins($supplierId, $clientId, $projectId);
+    }
+
     /** @return array<int,int> */
-    private function forCash(int $supplierId, int $cashId): array
+    private function forCash(int $supplierId, int $cashId, bool $withOrigins = false): array
     {
         $stmt = $this->db->pdo()->prepare(
             'SELECT project_id, invoice_id, purchase_invoice_id FROM cash_documents WHERE id = ? AND supplier_id = ?'
@@ -323,9 +346,10 @@ final class DimensionDefaults
         $stmt->execute([$cashId, $supplierId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         if ($row === false) {
-            return [];
+            return $withOrigins ? ['header' => [], 'splits' => [], 'origins' => [], 'split_origins' => []] : [];
         }
-        $own = $row['project_id'] !== null ? $this->resolve($supplierId, null, (int) $row['project_id'])['header'] : [];
+        $ownState = $row['project_id'] !== null ? $this->resolveWithOrigins($supplierId, null, (int) $row['project_id']) : ['header' => [], 'origins' => []];
+        $own = $ownState['header'];
         $others = $row['invoice_id'] === null && $row['purchase_invoice_id'] === null
             ? array_keys($this->otherItemAllocations($supplierId, 'cash_document_id', $cashId))
             : [];
@@ -336,7 +360,14 @@ final class DimensionDefaults
             $others !== [] => self::commonHeader(array_column($this->cashDocuments($supplierId, $cashId)['documents'], 'header')),
             default => [],
         };
-        return self::fill($own, $linked);
+        $header = self::fill($own, $linked);
+        if (!$withOrigins) return $header;
+        $linkedState = match (true) {
+            $row['invoice_id'] !== null => $this->effectiveHeaderWithOrigins($supplierId, 'invoice', (int) $row['invoice_id']),
+            $row['purchase_invoice_id'] !== null => $this->effectiveHeaderWithOrigins($supplierId, 'purchase_invoice', (int) $row['purchase_invoice_id']),
+            default => ['origins' => self::commonOrigins($this->cashDocuments($supplierId, $cashId, true)['documents'], $linked, 'cash:' . $cashId)],
+        };
+        return ['header' => $header, 'splits' => [], 'origins' => ($ownState['origins'] ?? []) + ($linkedState['origins'] ?? []), 'split_origins' => []];
     }
 
     /**
@@ -345,7 +376,7 @@ final class DimensionDefaults
      *
      * @return array{incoming:bool, documents:list<array{doc_type:string, doc_id:int, amount:float, header:array<int,int>}>}
      */
-    public function cashDocuments(int $supplierId, int $cashId): array
+    public function cashDocuments(int $supplierId, int $cashId, bool $withOrigins = false): array
     {
         $stmt = $this->db->pdo()->prepare(
             'SELECT doc_type FROM cash_documents
@@ -362,7 +393,7 @@ final class DimensionDefaults
                 'doc_type' => 'other_item',
                 'doc_id' => $itemId,
                 'amount' => round(abs($amount), 2),
-                'header' => $this->effectiveHeader($supplierId, 'other_item', $itemId),
+                ...($withOrigins ? $this->effectiveHeaderWithOrigins($supplierId, 'other_item', $itemId) : ['header' => $this->effectiveHeader($supplierId, 'other_item', $itemId)]),
             ];
         }
         return ['incoming' => $docType === 'in', 'documents' => $documents];
@@ -390,9 +421,13 @@ final class DimensionDefaults
      *
      * @return array<int,int>
      */
-    private function forBank(int $supplierId, int $transactionId): array
+    private function forBank(int $supplierId, int $transactionId, bool $withOrigins = false): array
     {
-        return self::commonHeader(array_column($this->bankDocuments($supplierId, $transactionId)['documents'], 'header'));
+        $documents = $this->bankDocuments($supplierId, $transactionId, $withOrigins)['documents'];
+        $header = self::commonHeader(array_column($documents, 'header'));
+        return $withOrigins
+            ? ['header' => $header, 'splits' => [], 'origins' => self::commonOrigins($documents, $header, 'bank:' . $transactionId), 'split_origins' => []]
+            : $header;
     }
 
     /**
@@ -403,7 +438,7 @@ final class DimensionDefaults
      *
      * @return array{incoming:bool, documents:list<array{doc_type:string, doc_id:int, amount:float, header:array<int,int>}>}
      */
-    public function bankDocuments(int $supplierId, int $transactionId): array
+    public function bankDocuments(int $supplierId, int $transactionId, bool $withOrigins = false): array
     {
         $pdo = $this->db->pdo();
         $stmt = $pdo->prepare(
@@ -461,7 +496,7 @@ final class DimensionDefaults
                     'doc_type' => $docType,
                     'doc_id' => $docId,
                     'amount' => round(abs($amount), 2),
-                    'header' => $this->effectiveHeader($supplierId, $docType, $docId),
+                    ...($withOrigins ? $this->effectiveHeaderWithOrigins($supplierId, $docType, $docId) : ['header' => $this->effectiveHeader($supplierId, $docType, $docId)]),
                 ];
             }
         }
@@ -501,6 +536,32 @@ final class DimensionDefaults
         return self::fill($own, $this->forDocument($supplierId, $docType, $docId));
     }
 
+    public function effectiveHeaderWithOrigins(int $supplierId, string $docType, int $docId): array
+    {
+        $assignments = new DimensionAssignmentRepository($this->db);
+        $own = $assignments->documentDimensions($supplierId, $docType, $docId)['header'];
+        $defaults = $this->forDocumentWithOrigins($supplierId, $docType, $docId);
+        return ['header' => self::fill($own, $defaults['header']), 'origins' => $assignments->documentOrigins($supplierId, $docType, $docId)['header'] + $defaults['origins']];
+    }
+
+    private static function commonOrigins(array $documents, array $header, string $moduleRef): array
+    {
+        $origins = [];
+        foreach ($header as $typeId => $_) {
+            $selected = null;
+            foreach ($documents as $document) {
+                $origin = DimensionAssignmentOrigin::normalize($document['origins'][$typeId] ?? []);
+                if ($selected === null) $selected = $origin;
+                elseif ($selected !== $origin) {
+                    $selected = ['origin' => 'module', 'ref' => $moduleRef];
+                    break;
+                }
+            }
+            $origins[$typeId] = $selected ?? DimensionAssignmentOrigin::normalize();
+        }
+        return $origins;
+    }
+
     /** @return array{0:?int,1:?int} klient, zakázka */
     private function documentParties(int $supplierId, string $docType, int $docId): array
     {
@@ -536,7 +597,7 @@ final class DimensionDefaults
             array_push($all, ...array_values($dims));
         }
         if ($all === []) {
-            return ['header' => [], 'sources' => []];
+            return ['header' => [], 'sources' => [], 'origins' => []];
         }
         $dimRepo = new DimensionRepository($this->db);
         $types = [];
@@ -546,6 +607,7 @@ final class DimensionDefaults
         $values = $dimRepo->valuesByIds($supplierId, $all);
         $header = [];
         $sources = [];
+        $origins = [];
         foreach ($layers as $source => $dims) {
             foreach ($dims as $typeId => $valueId) {
                 $value = $values[$valueId] ?? null;
@@ -555,10 +617,11 @@ final class DimensionDefaults
                 }
                 $header[$typeId] = $valueId;
                 $sources[$typeId] = $source;
+                $origins[$typeId] = ['origin' => 'entity_default', 'ref' => $source];
             }
         }
         ksort($header);
         ksort($sources);
-        return ['header' => $header, 'sources' => $sources];
+        return ['header' => $header, 'sources' => $sources, 'origins' => $origins];
     }
 }

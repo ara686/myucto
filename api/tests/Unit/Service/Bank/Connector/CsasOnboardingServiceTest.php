@@ -102,6 +102,61 @@ final class CsasOnboardingServiceTest extends TestCase
         self::assertSame(3, $service->completeCallback($this->oauthCallback(str_repeat('a', 64), 'synthetic-code')));
     }
 
+    #[\PHPUnit\Framework\Attributes\DataProvider('grantedPayments')]
+    public function testConsentStoresGrantedScopeAndAccountSuitability(?bool $requested, string $granted, ?array $suitableScope, string $scope, bool $suitable): void
+    {
+        [$service, , $connections, $api, $vault, $secrets] = $this->setupService();
+        $secret = ['api_key' => 'synthetic-key', 'client_id' => 'synthetic-client', 'client_secret' => 'synthetic-secret',
+            'redirect_uri' => 'https://example.invalid/api/settings/bank-connections/csas/oauth/callback', 'environment' => 'production'];
+        if ($requested !== null) $secret['payments_requested'] = $requested;
+        $session = new OAuthSession(str_repeat('d', 64), 7, 11, 'bank', 'csas', 3, OAuthClientFlow::FLOW_REDIRECT, 'oauth', 'processing', false,
+            $secret, str_repeat('v', 64));
+        $this->flow->method('claim')->willReturn($session);
+        $api->method('exchange')->willReturn(['access_token' => 'synthetic-access', 'refresh_token' => 'synthetic-refresh', 'expires_in' => 300, 'scope' => $granted]);
+        $api->method('accounts')->willReturn([['id' => 'synthetic-remote', 'identification' => ['iban' => 'CZ7508000000001000000005'], 'currency' => 'CZK',
+            'suitableScope' => $suitableScope]]);
+        $connections->method('ensure')->willReturn(9);
+        $stored = null;
+        $vault->method('encode')->willReturnCallback(static function (array $data) use (&$stored): string {
+            $stored = $data;
+            return 'synthetic-encoded';
+        });
+        $secrets->method('encryptFor')->willReturn('enc:v2:saved');
+
+        $service->completeCallback($this->oauthCallback(str_repeat('a', 64), 'synthetic-code'));
+
+        self::assertSame($scope, $stored['scope']);
+        self::assertSame($suitable, $stored['payment_account_suitable']);
+        self::assertArrayNotHasKey('payments_requested', $stored);
+    }
+
+    public static function grantedPayments(): iterable
+    {
+        yield 'platby vyžádané i udělené' => [true, 'siblings.accounts siblings.payments', ['AISP' => '', 'PISP' => ''], 'siblings.accounts siblings.payments', true];
+        yield 'banka platby neudělila' => [true, 'siblings.accounts', ['AISP' => '', 'PISP' => ''], 'siblings.accounts', true];
+        yield 'účet bez PISP' => [true, 'siblings.accounts siblings.payments', ['AISP' => ''], 'siblings.accounts siblings.payments', false];
+        yield 'banka suitableScope neposlala' => [true, 'siblings.accounts siblings.payments', null, 'siblings.accounts siblings.payments', false];
+        yield 'jen čtení, i když banka vydá platby' => [false, 'siblings.accounts siblings.payments', ['AISP' => '', 'PISP' => ''], 'siblings.accounts', true];
+        yield 'přihlášení z doby před volbou' => [null, 'siblings.accounts siblings.payments', ['AISP' => '', 'PISP' => ''], 'siblings.accounts', true];
+    }
+
+    public function testStartRequestsPaymentsOnlyOnExplicitChoiceAndRejectsNonBoolean(): void
+    {
+        [$service, , , $api, , $secrets] = $this->setupService();
+        $secrets->method('validateKey')->willReturn(null);
+        $this->flow->method('authorize')->willReturn(new OAuthAuthorization(str_repeat('c', 64), Pkce::verifier()));
+        $api->expects(self::once())->method('authorizationUrl')->with(self::anything(), str_repeat('c', 64), false)
+            ->willReturn('https://bezpecnost.csas.cz/api/psd2/fl/oidc/v1/auth?state=synthetic');
+        $this->flow->expects(self::once())->method('store')->with(self::anything(), 7, 11, 'bank', 'csas', 3, OAuthClientFlow::FLOW_REDIRECT,
+            self::callback(static fn (array $secret): bool => $secret['payments_requested'] === false), 600);
+        $input = ['api_key' => 'synthetic-key', 'client_id' => 'synthetic-client', 'client_secret' => 'synthetic-secret'];
+        // Bez výslovné volby souhlas platby nežádá.
+        $service->start(7, 3, 11, $input);
+
+        $this->expectExceptionObject(new BankConnectorOperationException('credential_invalid'));
+        $service->start(7, 3, 11, $input + ['payments' => 'yes']);
+    }
+
     public function testCallbackOfExpiredOrForeignSharedFlowNeverExchangesTokens(): void
     {
         [$service, , , $api] = $this->setupService();

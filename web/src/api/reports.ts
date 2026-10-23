@@ -436,6 +436,7 @@ export const CLOSING_PACKAGE_REQUIRED_PARTS: ClosingPackagePart[] = [
 ]
 
 export interface ClosingPackagePreview {
+  accounting_framework?: 'cz_504'
   period_id: number
   fiscal_year: number
   counts: Record<ClosingPackagePart, number>

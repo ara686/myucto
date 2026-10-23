@@ -102,6 +102,10 @@ final class SetupAction
             $bankOwnership,
             $coaSeeder,
             $accountingModes,
+            new \MyInvoice\Service\Accounting\AccountingFrameworkService(
+                $db,
+                new \MyInvoice\Repository\AccountingFrameworkRepository($db),
+            ),
             $periodProvisioner,
             $autoPosting,
             $log,

@@ -2305,7 +2305,7 @@ final class AiPdfExtractor
         if ($exactTotal === 0.0) return;
 
         $diff = round($pdfTotal - $exactTotal, 2);
-        if (abs($diff) > 0.0 && abs($diff) < 1.0) {
+        if (self::totalGapIsRounding($diff)) {
             try {
                 $this->repo->setRounding($id, $supplierId, $isCredit ? -1.0 * $diff : $diff);
             } catch (\Throwable $e) {
@@ -2314,7 +2314,71 @@ final class AiPdfExtractor
                     'error' => $e->getMessage(),
                 ]);
             }
+
+            return;
         }
+        if ($diff === 0.0) {
+            return;
+        }
+        // Rozdíl větší než haléřové zaokrouhlení: doklad uvádí k úhradě jinou částku,
+        // než dávají jeho řádky, a přes `setRounding` se sem nevejde. Dřív se v téhle
+        // větvi nestalo NIC, takže částka tiše zmizela.
+        //
+        // Typická příčina je řádek MIMO daňovou rekapitulaci — spropitné, vratná záloha,
+        // poplatek. Rekapitulace je pro nás autorita (a správně: viz prompt), takže se
+        // z ní sestaví totály a nedaněný řádek za ní propadne. Zachycený případ: doklad
+        // k úhradě 5 096,57 Kč, rekapitulace 4 532,64 + 543,93 = 5 076,57 a mimo ni
+        // „Spropitné kurýrovi 20,00" → doklad se naimportoval o 20 Kč kratší a nesedl
+        // na platbu.
+        //
+        // `maybeFlagTotalsMismatch()` to nechytí: hlídá odchylku nad 2 % a tohle je
+        // 0,4 %. Dohadovat chybějící řádek by znamenalo vymýšlet si položku, takže se
+        // jen zapíše varování s čísly a uživatel doklad doplní. Připojuje se (append), protože
+        // před touto metodou už může být zapsané varování o náhradním datu přijetí.
+        try {
+            $this->repo->appendExtractionWarning($id, $supplierId, self::totalGapWarning(
+                $pdfTotal,
+                $exactTotal,
+                $diff,
+                (string) ($current['currency'] ?? $data['currency'] ?? 'CZK'),
+            ));
+        } catch (\Throwable $e) {
+            // Varování je „nice to have" — doklad už je založený.
+            $this->logger->warning('AI extractor: applyRoundingFromPdfTotal — varování nešlo zapsat', [
+                'invoice_id' => $id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Vejde se rozdíl mezi částkou na dokladu a součtem řádků do zaokrouhlení?
+     *
+     * Hranice je korunová: haléře řeší § 36 ZDPH jako zaokrouhlení, cokoli většího je
+     * věcný rozdíl, který se má prošetřit, ne schovat do `rounding`.
+     */
+    public static function totalGapIsRounding(float $diff): bool
+    {
+        return abs($diff) > 0.0 && abs($diff) < 1.0;
+    }
+
+    /** Text varování o rozdílu mezi částkou k úhradě na dokladu a součtem řádků. */
+    public static function totalGapWarning(float $pdfTotal, float $exactTotal, float $diff, string $currency): string
+    {
+        $fmt = static fn (float $v): string => number_format($v, 2, ',', ' ');
+
+        return sprintf(
+            'Doklad uvádí k úhradě %s %s, ale jeho řádky dávají %s %s (rozdíl %s %s). '
+                . 'Zkontrolujte, jestli doklad nemá řádek mimo daňovou rekapitulaci '
+                . '(spropitné, vratná záloha, poplatek, doprava). Takový řádek se do položek '
+                . 'nedostane a doklad pak nesedne na platbu.',
+            $fmt($pdfTotal),
+            $currency,
+            $fmt($exactTotal),
+            $currency,
+            $fmt(abs($diff)),
+            $currency,
+        );
     }
 
     /**

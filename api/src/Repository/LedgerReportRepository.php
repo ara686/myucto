@@ -45,9 +45,11 @@ final class LedgerReportRepository
      */
     public function trialBalanceRows(int $supplierId, string $from, string $to, string $periodStart, bool $analytics = false, array $filters = [], bool $excludeClosing = false, bool $excludeAllOpenings = false): array
     {
+        $accountDefinitions=AccountDefinitionRepository::relation($to,$supplierId);
         $anchor = $this->openingAnchor($supplierId, $from);
         [$filterSql, $filterParams] = $this->counterpartyFilter($filters, 'e');
-        [$linesSql, $linesParams] = $this->lineSource($supplierId, $filters['dimension'] ?? null);
+        // Rozvahové účty čtou od kotvy, výsledkové od začátku období; bez kotvy celou historii.
+        [$linesSql, $linesParams] = $this->lineSource($supplierId, $filters['dimension'] ?? null, $anchor !== null ? min($anchor, $periodStart) : null, $to);
         // Inventarizace/rozvaha k rozvahovému dni potřebuje zůstatky PŘED uzavřením knih —
         // close_books zápis (source_type='closing', source_id = period_id < STOCK_SLOT_BASE, UZ)
         // převádí rozvahové účty na 702/710 a jinak by je vynuloval. Otevírací
@@ -84,7 +86,7 @@ final class LedgerReportRepository
                 FROM {$linesSql}
                 JOIN journal_entries e   ON e.id = l.entry_id
                 " . ($excludeClosing ? JournalTaxOrigin::join() : "") . "
-                JOIN chart_of_accounts a ON a.id = l.account_id
+                JOIN {$accountDefinitions} a ON a.id = l.account_id
                 WHERE l.supplier_id = ? AND e.posted_at IS NOT NULL AND e.entry_date <= ?{$filterSql}{$closingSql}
                 GROUP BY acc_id
             )
@@ -92,8 +94,8 @@ final class LedgerReportRepository
                    p.id AS parent_id, p.account_code AS parent_code, p.name AS parent_name,
                    agg.ps_md, agg.ps_d, agg.to_md, agg.to_d
               FROM agg
-              JOIN chart_of_accounts c ON c.id = agg.acc_id
-              LEFT JOIN chart_of_accounts p ON p.id = c.parent_id
+              JOIN {$accountDefinitions} c ON c.id = agg.acc_id
+              LEFT JOIN {$accountDefinitions} p ON p.id = c.parent_id
              ORDER BY c.account_code"
         );
         $stmt->execute([
@@ -142,8 +144,9 @@ final class LedgerReportRepository
      */
     public function monthlyTurnovers(int $supplierId, string $from, string $to, bool $analytics, array $filters = [], bool $excludeClosing = false, bool $excludeAllOpenings = false): array
     {
+        $accountDefinitions=AccountDefinitionRepository::relation($to,$supplierId);
         [$filterSql, $filterParams] = $this->counterpartyFilter($filters, 'e');
-        [$linesSql, $linesParams] = $this->lineSource($supplierId, $filters['dimension'] ?? null);
+        [$linesSql, $linesParams] = $this->lineSource($supplierId, $filters['dimension'] ?? null, $from, $to);
         $closingSql = $excludeClosing ? " AND " . JournalTaxOrigin::includedSql() : '';
         $closingParams = $excludeClosing ? [ClosingSourceId::STOCK_SLOT_BASE] : [];
         $openingSql = $excludeAllOpenings
@@ -158,7 +161,7 @@ final class LedgerReportRepository
                FROM {$linesSql}
                JOIN journal_entries e   ON e.id = l.entry_id
                " . ($excludeClosing ? JournalTaxOrigin::join() : "") . "
-               JOIN chart_of_accounts a ON a.id = l.account_id
+               JOIN {$accountDefinitions} a ON a.id = l.account_id
               WHERE l.supplier_id = ? AND e.posted_at IS NOT NULL AND e.entry_date BETWEEN ? AND ?
                 {$openingSql}{$filterSql}{$closingSql}
               GROUP BY acc_id, ym"
@@ -188,6 +191,7 @@ final class LedgerReportRepository
      */
     public function accountLines(int $supplierId, int $accountId, string $from, string $to, int $limit, int $offset, bool $excludeClosing = false): array
     {
+        $accountDefinitions=AccountDefinitionRepository::relation($to,$supplierId);
         $limit = max(1, $limit);
         $offset = max(0, $offset);
         [$technicalSql, $technicalParams] = $this->technicalEntryFilter($from, $excludeClosing);
@@ -210,7 +214,7 @@ final class LedgerReportRepository
                   FROM journal_entry_lines l
                   JOIN journal_entries e    ON e.id = l.entry_id
                   " . ($excludeClosing ? JournalTaxOrigin::join() : "") . "
-                  JOIN chart_of_accounts ca ON ca.id = l.account_id
+                  JOIN {$accountDefinitions} ca ON ca.id = l.account_id
              LEFT JOIN bank_transactions bt ON e.source_type = 'bank' AND bt.id = e.source_id
              LEFT JOIN cash_documents cd    ON e.source_type = 'cash' AND cd.id = e.source_id
              LEFT JOIN invoice_settlements stl ON e.source_type = 'settlement'
@@ -291,6 +295,7 @@ final class LedgerReportRepository
      */
     public function accountOpening(int $supplierId, int $accountId, string $from, string $periodStart, bool $excludeClosing = false): float
     {
+        $accountDefinitions=AccountDefinitionRepository::relation($from,$supplierId);
         $anchor = $this->openingAnchor($supplierId, $from);
         $closingSql = $excludeClosing ? " AND " . JournalTaxOrigin::includedSql() : '';
         $stmt = $this->db->pdo()->prepare(
@@ -298,7 +303,7 @@ final class LedgerReportRepository
                FROM journal_entry_lines l
                JOIN journal_entries e    ON e.id = l.entry_id
                " . ($excludeClosing ? JournalTaxOrigin::join() : "") . "
-               JOIN chart_of_accounts ca ON ca.id = l.account_id
+               JOIN {$accountDefinitions} ca ON ca.id = l.account_id
               WHERE l.supplier_id = ? AND e.posted_at IS NOT NULL
                 AND (l.account_id = ? OR ca.parent_id = ?)
                 -- Otevírací zápis z prvního dne období patří do počátečního stavu,
@@ -320,13 +325,14 @@ final class LedgerReportRepository
      */
     public function accountLinesTotal(int $supplierId, int $accountId, string $from, string $to, bool $excludeClosing = false): int
     {
+        $accountDefinitions=AccountDefinitionRepository::relation($to,$supplierId);
         [$technicalSql, $technicalParams] = $this->technicalEntryFilter($from, $excludeClosing);
         $stmt = $this->db->pdo()->prepare(
             ($excludeClosing ? "WITH RECURSIVE " . JournalTaxOrigin::cte($supplierId) . " " : "") . "SELECT COUNT(*)
                FROM journal_entry_lines l
                JOIN journal_entries e    ON e.id = l.entry_id
                " . ($excludeClosing ? JournalTaxOrigin::join() : "") . "
-               JOIN chart_of_accounts ca ON ca.id = l.account_id
+               JOIN {$accountDefinitions} ca ON ca.id = l.account_id
               WHERE l.supplier_id = ? AND e.posted_at IS NOT NULL
                 AND (l.account_id = ? OR ca.parent_id = ?)
                 AND e.entry_date BETWEEN ? AND ?{$technicalSql}"
@@ -342,6 +348,7 @@ final class LedgerReportRepository
      */
     public function accountTurnovers(int $supplierId, int $accountId, string $from, string $to, bool $excludeClosing = false): array
     {
+        $accountDefinitions=AccountDefinitionRepository::relation($to,$supplierId);
         [$technicalSql, $technicalParams] = $this->technicalEntryFilter($from, $excludeClosing);
         $stmt = $this->db->pdo()->prepare(
             ($excludeClosing ? "WITH RECURSIVE " . JournalTaxOrigin::cte($supplierId) . " " : "") . "SELECT COALESCE(SUM(CASE WHEN l.side = 'debit'  THEN l.signed_amount ELSE 0 END), 0) AS md,
@@ -349,7 +356,7 @@ final class LedgerReportRepository
                FROM journal_entry_lines l
                JOIN journal_entries e    ON e.id = l.entry_id
                " . ($excludeClosing ? JournalTaxOrigin::join() : "") . "
-               JOIN chart_of_accounts ca ON ca.id = l.account_id
+               JOIN {$accountDefinitions} ca ON ca.id = l.account_id
               WHERE l.supplier_id = ? AND e.posted_at IS NOT NULL
                 AND (l.account_id = ? OR ca.parent_id = ?)
                 AND e.entry_date BETWEEN ? AND ?{$technicalSql}"
@@ -379,7 +386,7 @@ final class LedgerReportRepository
     {
         $closingSql = $excludeClosing ? " AND " . JournalTaxOrigin::includedSql() : '';
         $closingParams = $excludeClosing ? [ClosingSourceId::STOCK_SLOT_BASE] : [];
-        [$linesSql, $linesParams] = $this->lineSource($supplierId, $dimension);
+        [$linesSql, $linesParams] = $this->lineSource($supplierId, $dimension, $from, $to);
         $stmt = $this->db->pdo()->prepare(
             ($excludeClosing ? "WITH RECURSIVE " . JournalTaxOrigin::cte($supplierId) . " " : "") . "SELECT COALESCE(SUM(CASE WHEN l.side = 'debit'  THEN l.signed_amount ELSE 0 END), 0) AS md,
                     COALESCE(SUM(CASE WHEN l.side = 'credit' THEN l.signed_amount ELSE 0 END), 0) AS d
@@ -436,9 +443,11 @@ final class LedgerReportRepository
         ?DimensionFilter $dimension = null,
     ): array
     {
+        $accountDefinitions=AccountDefinitionRepository::relation($asOf,$supplierId);
         $anchor = $this->openingAnchor($supplierId, $asOf);
         $plCond = '';
-        [$linesSql, $linesParams] = $this->lineSource($supplierId, $dimension);
+        $lowerBound = $anchor !== null && $plFrom !== null ? min($anchor, $plFrom) : null;
+        [$linesSql, $linesParams] = $this->lineSource($supplierId, $dimension, $lowerBound, $asOf);
         $params = [...$linesParams, $supplierId, ClosingSourceId::STOCK_SLOT_BASE, $asOf];
         if ($plFrom !== null) {
             $plCond = " AND (a.account_type NOT IN ('revenue','expense') OR e.entry_date >= ?)";
@@ -452,9 +461,9 @@ final class LedgerReportRepository
         // všechny řádky deníku firmy za celou historii; s indexem (supplier_id, entry_date)
         // čte jen dotčené období. Bez kotvy nebo bez plFrom mez neexistuje.
         $lowerBoundSql = '';
-        if ($anchor !== null && $plFrom !== null) {
+        if ($lowerBound !== null) {
             $lowerBoundSql = ' AND e.entry_date >= ?';
-            $params[] = min($anchor, $plFrom);
+            $params[] = $lowerBound;
         }
         // Agregace per LIST účet (a.id) + jeho syntetika — roll-up i případný D2 split
         // (kladné/záporné saldo per analytika) se dopočítá v PHP.
@@ -471,8 +480,8 @@ final class LedgerReportRepository
                FROM {$linesSql}
                JOIN journal_entries e   ON e.id = l.entry_id
                " . JournalTaxOrigin::join() . "
-               JOIN chart_of_accounts a ON a.id = l.account_id
-               LEFT JOIN chart_of_accounts p ON p.id = a.parent_id
+               JOIN {$accountDefinitions} a ON a.id = l.account_id
+               LEFT JOIN {$accountDefinitions} p ON p.id = a.parent_id
               WHERE l.supplier_id = ? AND e.posted_at IS NOT NULL
                 AND a.account_type NOT IN ('offbalance','closing')
                 AND " . JournalTaxOrigin::includedSql() . "
@@ -604,6 +613,7 @@ final class LedgerReportRepository
      */
     public function netTurnoverForCodes(int $supplierId, string $from, string $to, array $codes): float
     {
+        $accountDefinitions=AccountDefinitionRepository::relation($to,$supplierId);
         if ($codes === []) {
             return 0.0;
         }
@@ -620,8 +630,8 @@ final class LedgerReportRepository
                FROM journal_entry_lines l
                JOIN journal_entries e   ON e.id = l.entry_id
                " . JournalTaxOrigin::join() . "
-               JOIN chart_of_accounts a ON a.id = l.account_id
-               LEFT JOIN chart_of_accounts p ON p.id = a.parent_id
+               JOIN {$accountDefinitions} a ON a.id = l.account_id
+               LEFT JOIN {$accountDefinitions} p ON p.id = a.parent_id
               WHERE l.supplier_id = ? AND e.posted_at IS NOT NULL
                 AND " . JournalTaxOrigin::includedSql() . "
                 AND e.entry_date BETWEEN ? AND ?
@@ -703,13 +713,14 @@ final class LedgerReportRepository
 
     /**
      * Zdroj řádků deníku pod aliasem `l`: bez filtru tabulka sama, s filtrem na dimenzi
-     * řádky dané hodnoty včetně poměrného dílu řádků s rozpadem ({@see DimensionFilter::lineSource()}).
+     * řádky dané hodnoty včetně poměrného dílu řádků s rozpadem ({@see DimensionFilter::lineSource()})
+     * omezené na interval dat zápisu, který sestava čte.
      *
      * @return array{0:string, 1:list<int|string>}
      */
-    private function lineSource(int $supplierId, ?DimensionFilter $dimension): array
+    private function lineSource(int $supplierId, ?DimensionFilter $dimension, ?string $from, string $to): array
     {
-        return $dimension !== null ? $dimension->lineSource($supplierId, 'l') : ['journal_entry_lines l', []];
+        return $dimension !== null ? $dimension->lineSource($supplierId, 'l', $from, $to) : ['journal_entry_lines l', []];
     }
 
     private static function escapeLike(string $value): string
@@ -723,7 +734,7 @@ final class LedgerReportRepository
      * zaúčtované uzávěrky → volající nechává kumulativní okno (dnešní chování).
      * Počítá se jednou per volání sestavy (žádný N+1).
      */
-    public function openingAnchor(int $supplierId, string $date): ?string
+    public function openingAnchor(int $supplierId, string $date, bool $currentRead = false): ?string
     {
         $stmt = $this->db->pdo()->prepare(
             "SELECT MAX(p.starts_on)
@@ -731,7 +742,7 @@ final class LedgerReportRepository
               WHERE p.supplier_id = ? AND p.starts_on <= ?
                 AND EXISTS (SELECT 1 FROM journal_entries e
                              WHERE e.supplier_id = p.supplier_id AND e.period_id = p.id
-                               AND e.source_type = 'opening' AND e.posted_at IS NOT NULL)"
+                               AND e.source_type = 'opening' AND e.posted_at IS NOT NULL)" . ($currentRead ? ' FOR UPDATE' : '')
         );
         $stmt->execute([$supplierId, $date]);
         $val = $stmt->fetchColumn();

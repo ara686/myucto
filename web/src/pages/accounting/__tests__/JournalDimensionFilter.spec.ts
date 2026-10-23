@@ -9,6 +9,7 @@ const m = vi.hoisted(() => ({
   exportReport: vi.fn(),
   replace: vi.fn(),
   routeQuery: {} as Record<string, string>,
+  supplier: { accounting_framework: 'cz_500', entity_profile: 'unknown' } as Record<string, string>,
 }))
 
 // Dimenze zapnuté: hodnota 5 typu Projekt (Firma → Dimenze).
@@ -42,6 +43,7 @@ vi.mock('vue-i18n', async importOriginal => ({
   useI18n: () => ({ locale: { value: 'cs' }, t: (key: string) => key }),
 }))
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ canWrite: () => true, canRead: () => true, isDemo: false }) }))
+vi.mock('@/stores/supplier', () => ({ useSupplierStore: () => ({ get currentSupplier() { return m.supplier } }) }))
 vi.mock('@/composables/useToast', () => ({ useToast: () => ({ error: vi.fn(), success: vi.fn() }) }))
 vi.mock('@/composables/useFormat', () => ({ formatDate: (v: string) => v, formatMoney: (v: number) => String(v) }))
 vi.mock('@/composables/useUserPrefs', () => ({ ensurePrefsLoaded: vi.fn().mockResolvedValue(undefined), getPagePrefs: () => ref({}) }))
@@ -154,5 +156,18 @@ describe('Journal – filtr dimenze', () => {
     await flushPromises()
     expect(m.exportReport).toHaveBeenCalledWith('/accounting/reports/journal/export',
       expect.objectContaining({ dimension_value_id: 5, dimension_descendants: 0, format: 'xlsx' }))
+  })
+
+  it('zdroj Předpis SVJ nabízí filtr jen firmě s profilem SVJ', async () => {
+    const options = async () => {
+      const wrapper = mountJournal()
+      await flushPromises()
+      return wrapper.findAll('option').map(option => option.attributes('value'))
+    }
+    m.supplier = { accounting_framework: 'cz_500', entity_profile: 'unknown' }
+    expect(await options()).toContain('invoice')
+    expect(await options()).not.toContain('unit_charge')
+    m.supplier = { accounting_framework: 'cz_504', entity_profile: 'svj' }
+    expect(await options()).toContain('unit_charge')
   })
 })

@@ -225,6 +225,18 @@ final class RateLimitMiddleware implements MiddlewareInterface
     {
         $rl = (array) $this->config->get('rate_limits', []);
 
+        // AI / inbox scan endpoints — costly Anthropic API calls (BYOK billing risk
+        // při kompromitované admin session i uniklém API tokenu). Sliding window
+        // 5 min / per user, proto PŘED bucketem tokenu: jinak by token se 600/min
+        // AI limit obešel a víc tokenů téhož uživatele by ho násobilo.
+        if ($method === 'POST' && ($userId > 0 || $tokenId > 0) && in_array(
+            (string) preg_replace('#^/api/v1/#', '/api/', $path),
+            ['/api/admin/imports/ai-extract-pdf', '/api/purchase-invoices/scan-inbox', '/api/purchase-invoices/import-ai'],
+            true,
+        )) {
+            return [$userId > 0 ? 'rl:ai:user:' . $userId : 'rl:ai:tok:' . $tokenId, (int) ($rl['ai_per_5min_per_user'] ?? 30), 300];
+        }
+
         // Bearer (API token) — vlastní bucket per token, ne per user (jeden user
         // může mít víc tokenů pro různé integrace s nezávislými limity).
         if ($tokenId > 0) {
@@ -383,15 +395,6 @@ final class RateLimitMiddleware implements MiddlewareInterface
         // ARES / VIES / CRPDPH lookups (per user) — chrání 24h cache před zaplněním
         if (in_array($path, ['/api/clients/lookup-ares', '/api/clients/lookup-vies', '/api/clients/lookup-bank'], true) && $userId > 0) {
             return ['rl:ares:user:' . $userId, (int) ($rl['ares_per_min_per_user'] ?? 30), 60];
-        }
-
-        // AI / inbox scan endpoints — costly Anthropic API calls (BYOK billing risk
-        // při kompromitované admin session). Sliding window 5 min / per user.
-        if ($userId > 0 && $method === 'POST' && in_array($path, [
-            '/api/admin/imports/ai-extract-pdf',
-            '/api/purchase-invoices/scan-inbox',
-        ], true)) {
-            return ['rl:ai:user:' . $userId, (int) ($rl['ai_per_5min_per_user'] ?? 30), 300];
         }
 
         // Odhalení citlivého osobního údaje (rodné číslo, číslo účtu, kontakty).

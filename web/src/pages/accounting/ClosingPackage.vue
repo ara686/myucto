@@ -98,7 +98,7 @@ function toggle(part: ClosingPackagePart) {
 function selectAll() { selected.value = new Set(ALL_PARTS) }
 function selectNone() { selected.value = new Set() }
 
-const selectedList = computed(() => ALL_PARTS.filter(p => selected.value.has(p)))
+const selectedList = computed(() => ALL_PARTS.filter(p => selected.value.has(p) && countFor(p) > 0))
 const hasDownloadableSelection = computed(() => selectedList.value.some(p => countFor(p) > 0))
 
 function progressPct(j: ClosingPackageJob): number {
@@ -196,6 +196,8 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer) })
       {{ error }}
     </div>
 
+    <p v-if="preview?.accounting_framework === 'cz_504'" class="rounded-md border border-primary-200 bg-primary-50 p-3 text-sm text-primary-700">{{ t('accounting.statement504.package_hint') }}</p>
+
     <div class="bg-surface border border-neutral-200 rounded-lg p-5 shadow-sm space-y-5">
       <!-- Výběr sestav -->
       <div>
@@ -221,7 +223,7 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer) })
             <input
               type="checkbox"
               class="h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500"
-              :checked="selected.has(part)"
+              :checked="selectedList.includes(part)"
               :disabled="countFor(part) === 0 || anyActive"
               @change="toggle(part)"
             />

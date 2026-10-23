@@ -11,14 +11,20 @@
     "hosting",
     "instance_alert",
     "invoice",
+    "jointAllocations",
     "keyboard_shortcuts",
     "license",
     "nav",
+    "nonprofitCapital",
+    "nonprofitDppo",
+    "nonprofitFunding",
+    "nonprofitMembership",
     "passkeys",
     "payment_cards",
     "purchase_approval",
     "scan_attach",
     "search",
+    "securitiesDebt",
     "session_lock",
     "status",
     "supplier",
@@ -72,6 +78,8 @@
     "expense_categories",
     "export",
     "foreign_income",
+    "frameworkConversion",
+    "fx504",
     "gopay",
     "group_stats",
     "imports",
@@ -91,6 +99,9 @@
     "money_s3",
     "monthly_report",
     "myucto_import",
+    "nonprofitTax",
+    "nonprofitTaxJ6",
+    "nonprofitTaxNative",
     "oss_rates",
     "other_items",
     "pamica",
@@ -113,6 +124,15 @@
     "product_posting",
     "profile_signing",
     "project",
+    "propertyCharges",
+    "propertyFunds",
+    "propertyIssuance",
+    "propertyOpening",
+    "propertyPayments",
+    "propertyRegistry",
+    "propertySaldo",
+    "propertyServiceLifecycle",
+    "propertySettlements",
     "public_holidays",
     "purchase_invoice",
     "purchase_submissions",
@@ -124,6 +144,7 @@
     "revenue_categories",
     "roles",
     "sales_orders",
+    "securities504",
     "sent_emails",
     "settings",
     "setup",
@@ -656,6 +677,9 @@
     "accounting-dimension-profit": [
       "dimensions"
     ],
+    "accounting-nonprofit-tax": [
+      "nonprofitTaxJ6"
+    ],
     "accounting-statement-mapping": [
       "settings"
     ],
@@ -681,6 +705,7 @@
       "manualQueue"
     ],
     "accounting-monthly-report": [
+      "dimensions",
       "monthly_report"
     ],
     "accounting-assets": [
@@ -696,7 +721,11 @@
       "dimensions"
     ],
     "accounting-period-closing": [
-      "checks"
+      "checks",
+      "dimensions",
+      "fx504",
+      "nonprofitTax",
+      "securities504"
     ],
     "accounting-closing-package": [
       "reports"
@@ -873,6 +902,46 @@
       "cash",
       "logbook",
       "logbook_fuel"
+    ],
+    "property-registry": [
+      "propertyRegistry"
+    ],
+    "property-charges": [
+      "propertyCharges",
+      "propertyRegistry"
+    ],
+    "property-service-settlements": [
+      "propertyOpening",
+      "propertyPayments",
+      "propertyRegistry",
+      "propertySaldo",
+      "propertySettlements"
+    ],
+    "accounting-securities-debt": [
+      "securities504"
+    ],
+    "accounting-framework-conversion": [
+      "frameworkConversion"
+    ],
+    "property-service-lifecycles": [
+      "propertyServiceLifecycle"
+    ],
+    "property-funds": [
+      "propertyFunds",
+      "propertyRegistry"
+    ],
+    "property-openings": [
+      "propertyOpening",
+      "propertyRegistry"
+    ],
+    "property-payments": [
+      "propertyPayments",
+      "propertyRegistry",
+      "propertySaldo"
+    ],
+    "property-charge-issues": [
+      "propertyIssuance",
+      "propertyRegistry"
     ],
     "group-stats": [
       "errors",

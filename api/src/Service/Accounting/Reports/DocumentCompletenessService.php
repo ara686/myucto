@@ -203,7 +203,7 @@ final class DocumentCompletenessService
         $totalCzk = 0.0;
         $truncated = false;
         foreach (['311', '321'] as $code) {
-            $acc = $this->saldo->resolveAccount($supplierId, $code);
+            $acc = $this->saldo->resolveAccount($supplierId, $code, $today);
             if ($acc === null) {
                 continue;
             }

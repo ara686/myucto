@@ -6,12 +6,12 @@ namespace MyInvoice\Security;
 
 final class PermissionCatalog
 {
-    public const VERSION = '2026-10-purchase-vat-treatment-v1';
+    public const VERSION = '2026-10-property-operational-settings-purchase-vat-v1';
 
     /** @var list<string> */
     private const GROUPS = [
         'dashboard', 'clients', 'projects', 'invoices', 'purchase_invoices', 'recurring', 'price_list',
-        'bank', 'documents', 'accounting', 'other_items', 'tax_evidence', 'reports', 'payroll', 'cash', 'assets',
+        'bank', 'documents', 'accounting', 'property', 'other_items', 'tax_evidence', 'reports', 'payroll', 'cash', 'assets',
         'stock', 'eshop', 'logbook', 'settings', 'utilities', 'profile',
     ];
 
@@ -86,6 +86,30 @@ final class PermissionCatalog
             ['accounting.periods.close_override', 'accounting', 'Uzavřít období přes nezaúčtované doklady', $staffOnly],
             ['accounting.offsets', 'accounting', 'Vzájemné zápočty', $staffOnly],
             ['accounting.templates', 'accounting', 'Účetní šablony', $staffOnly],
+            ['property', 'property', 'Registr SVJ', $staffOnly],
+            ['property.registry.manage', 'property', 'Spravovat podklady registru SVJ', $staffOnly],
+            ['property.registry.confirm', 'property', 'Potvrzovat právní podklady SVJ', $staffOnly],
+            ['property.export', 'property', 'Exportovat registr SVJ', $staffOnly],
+            ['property.charges.manage', 'property', 'Spravovat složky a sazby SVJ', $staffOnly],
+            ['property.charges.confirm', 'property', 'Potvrzovat verze předpisů SVJ', $staffOnly],
+            ['property.charges.issue', 'property', 'Vydávat předpisy SVJ', $staffOnly],
+            ['property.charges.post', 'property', 'Účtovat předpisy SVJ', $staffOnly],
+            ['property.charges.reverse', 'property', 'Stornovat předpisy SVJ', $staffOnly],
+            ['property.receivables.manage', 'property', 'Připravovat přechody dluhů SVJ', $staffOnly],
+            ['property.receivables.confirm', 'property', 'Potvrzovat právní přechody dluhů SVJ', $staffOnly],
+            ['property.receivables.certificates', 'property', 'Vydávat potvrzení o dluzích SVJ', $staffOnly],
+            ['property.settlements.manage', 'property', 'Připravovat vyúčtování služeb SVJ', $staffOnly],
+            ['property.settlements.post', 'property', 'Účtovat vyúčtování služeb SVJ', $staffOnly],
+            ['property.settlements.reverse', 'property', 'Stornovat vyúčtování služeb SVJ', $staffOnly],
+            ['property.settlements.unwind', 'property', 'Rozpouštět dohady služeb SVJ', $staffOnly],
+            ['property.funds.post', 'property', 'Účtovat čerpání záloh a příjmy vlastníků SVJ', $staffOnly],
+            ['property.funds.reverse', 'property', 'Stornovat čerpání záloh a příjmy vlastníků SVJ', $staffOnly],
+            ['property.opening.manage', 'property', 'Připravovat počáteční stavy SVJ', $staffOnly],
+            ['property.opening.post', 'property', 'Potvrzovat počáteční stavy SVJ', $staffOnly],
+            ['property.opening.revise', 'property', 'Revidovat a stornovat počáteční stavy SVJ', $staffOnly],
+            ['property.payments.manage', 'property', 'Spravovat úhrady SVJ', $staffOnly],
+            ['property.payments.post', 'property', 'Účtovat úhrady SVJ', $staffOnly],
+            ['property.payments.reverse', 'property', 'Stornovat úhrady SVJ', $staffOnly],
             ['other_items', 'other_items', 'Ostatní pohledávky a závazky', $staffOnly],
             ['tax_evidence', 'tax_evidence', 'Daňová evidence', $staffOnly],
             ['tax_evidence.classification.write', 'tax_evidence', 'Klasifikovat pohyby', $staffOnly],
@@ -207,6 +231,7 @@ final class PermissionCatalog
                 // přidělí správce v editoru rolí, výchozí účetní ji nemá.
                 'invoices.edit_issued',
                 'accounting.periods.close', 'accounting.periods.manage',
+                'property.registry.confirm', 'property.receivables.confirm', 'property.charges.confirm', 'property.charges.reverse', 'property.payments.reverse', 'property.opening.revise', 'property.settlements.reverse', 'property.funds.reverse',
                 'settings.ai_provider', 'settings.bank_accounts', 'settings.branding',
                 'settings.company.write', 'settings.domains', 'settings.email_profiles', 'settings.email_templates', 'settings.payment_qr', 'utilities.import',
                 'payroll.settings', 'payroll.person.read_sensitive', 'payroll.approve',
@@ -220,6 +245,7 @@ final class PermissionCatalog
             $read = [
                 'dashboard', 'dashboard.portfolio', 'tax_evidence', 'tax_evidence.export',
                 'reports.export', 'settings.company', 'price_list', 'utilities',
+                'property.export',
                 'utilities.export', 'utilities.archives', 'profile.tokens',
             ];
             $permissions = [];
@@ -234,7 +260,7 @@ final class PermissionCatalog
             'readonly' => [
                 'dashboard', 'dashboard.portfolio', 'clients', 'projects', 'invoices',
                 'purchase_invoices', 'purchase_invoices.approve', 'recurring', 'price_list', 'bank', 'documents', 'documents.requests', 'documents.inbox',
-                'accounting', 'other_items', 'tax_evidence', 'tax_evidence.export', 'reports', 'reports.export',
+                'accounting', 'property', 'other_items', 'tax_evidence', 'tax_evidence.export', 'reports', 'reports.export',
                 'cash', 'assets', 'stock', 'eshop', 'logbook', 'settings.company', 'utilities',
                 'utilities.export', 'utilities.archives', 'profile', 'profile.tokens',
             ],
