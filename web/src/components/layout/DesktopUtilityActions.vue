@@ -3,6 +3,7 @@ import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import WorkspaceLayoutToggle from '@/components/workspace/WorkspaceLayoutToggle.vue'
 import WorkspaceWindowButton from '@/components/workspace/WorkspaceWindowButton.vue'
+import WorkspaceReloadButton from '@/components/workspace/WorkspaceReloadButton.vue'
 import WorkspaceNavLink from '@/components/workspace/WorkspaceNavLink.vue'
 
 interface QuickAction {
@@ -25,6 +26,7 @@ watch(() => props.manualHref, () => { open.value = false })
 
 <template>
   <div class="items-center gap-1 text-sm">
+    <WorkspaceReloadButton />
     <WorkspaceWindowButton />
     <WorkspaceLayoutToggle />
 

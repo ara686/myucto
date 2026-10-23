@@ -36,6 +36,7 @@ const DEFAULT_SHORTCUTS: Record<string, string> = {
   'windows.previous': 'alt+pageup',
   'windows.next': 'alt+pagedown',
   'windows.recent': 'alt+shift+w',
+  'windows.reload': 'alt+shift+r',
   'new:/invoices/new': 'alt+1',
   'new:/purchase-invoices/new': 'alt+2',
   'new:/clients/new': 'alt+3',

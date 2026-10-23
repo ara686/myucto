@@ -46,6 +46,10 @@ export interface WorkspaceWindowManager {
   open: (to: RouteLocationRaw, paneId: PaneId, options?: { fresh?: boolean }) => Promise<void>
   openRight: (to: RouteLocationRaw, sourcePaneId: PaneId) => Promise<void>
   select: (id: string) => Promise<void>
+  /** Zavře okno a zahodí jeho rozpracovaný obsah; viditelné okno v panelu nahradí poslední zaparkované okno téže firmy. */
+  closeWindow: (id: string) => Promise<void>
+  /** Znovu načte okno panelu na stejné adrese s výchozími daty, ostatní okna nechá beze změny. */
+  reloadPane: (paneId: PaneId) => Promise<void>
   previous: () => Promise<void>
   next: () => Promise<void>
   toggleRecent: () => Promise<void>
@@ -430,6 +434,26 @@ export function createWindowManager(options: WindowManagerOptions): WorkspaceWin
     if (runtime && await authorized(runtime)) await display(runtime, workspace.activePaneId, visit)
   }
 
+  async function closeWindow(id: string): Promise<void> {
+    const runtime = runtimes.get(id)
+    if (!runtime) return
+    const paneId = runtime.state.paneId
+    remove(runtime)
+    if (!paneId || !workspace.panes.some(pane => pane.id === paneId)) return
+    const supplierId = options.currentSupplier?.().id ?? 0
+    const next = workspace.windows.find(window => !window.paneId && runtimes.has(window.id) && (window.supplierId ?? 0) === supplierId)
+    if (next) await display(runtimes.get(next.id)!, paneId, false)
+    else workspace.updatePane(paneId, { fullPath: null, title: null, loading: false, canGoBack: false, canGoForward: false })
+  }
+
+  async function reloadPane(paneId: PaneId): Promise<void> {
+    const runtime = windowFor(paneId)
+    if (!runtime) return
+    const fullPath = runtime.state.fullPath
+    remove(runtime)
+    await open(fullPath, paneId, true)
+  }
+
   async function traverse(direction: number): Promise<void> {
     let index = visitIndex + direction
     while (index >= 0 && index < visits.length) {
@@ -499,6 +523,8 @@ export function createWindowManager(options: WindowManagerOptions): WorkspaceWin
     open: (to, paneId, options) => enqueue(() => open(to, paneId, options?.fresh)),
     openRight: (to, sourcePaneId) => enqueue(() => openRight(to, sourcePaneId)),
     select: id => enqueue(() => select(id)),
+    closeWindow: id => enqueue(() => closeWindow(id)),
+    reloadPane: paneId => enqueue(() => reloadPane(paneId)),
     previous: () => enqueue(() => traverse(-1)),
     next: () => enqueue(() => traverse(1)),
     toggleRecent: () => enqueue(async () => {
