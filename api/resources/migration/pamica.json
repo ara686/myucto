@@ -1289,7 +1289,8 @@
                     "status": "ignored"
                 },
                 "KcPripoj": {
-                    "status": "ignored"
+                    "status": "mapped",
+                    "target": "PohodaPayrollPeople"
                 },
                 "KcPrispKarantena": {
                     "status": "ignored"

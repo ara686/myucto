@@ -475,20 +475,23 @@ final class PohodaPayrollConverter
                 'Nástup / ukončení' => trim(($start !== null ? 'nástup ' . self::czechDate($start) : '') . ($end !== null ? ', ukončení ' . self::czechDate($end) : ''), ', '),
                 'Příjmení' => PohodaXml::text($person, 'Prijmeni'),
                 'Jméno' => PohodaXml::text($person, 'Jmeno'),
-                'Fond pracovní doby (h)' => round($fund, 2),
-                'Odpracováno (h)' => round($worked, 2),
+                // Hodiny na tisíciny jako import docházky i měsíční hlášení (10268 a další):
+                // PAMICA vede minuty (4,266667 h) a hlásí 4,267; dvě místa dávala 4,27.
+                'Fond pracovní doby (h)' => round($fund, 3),
+                'Odpracováno (h)' => round($worked, 3),
                 'Hrubá mzda (Kč)' => round(PohodaXml::num($mz, 'KcHrubaM'), 2),
                 'Čistá mzda (Kč)' => round(PohodaXml::num($mz, 'KcCistaM'), 2),
                 '_start' => $start,
             ];
             foreach ($values as $header => $value) {
-                if (round($value, 2) != 0.0) {
-                    $row[$header] = round($value, 2);
+                $decimals = ($columns[$header]['unit'] ?? null) === 'hours' ? 3 : 2;
+                if (round($value, $decimals) != 0.0) {
+                    $row[$header] = round($value, $decimals);
                 }
             }
-            if (round($holiday, 2) > 0.0) {
+            if (round($holiday, 3) > 0.0) {
                 $column(self::HOLIDAY_HEADER, 'holiday_hours', 'hours');
-                $row[self::HOLIDAY_HEADER] = round(($row[self::HOLIDAY_HEADER] ?? 0.0) + $holiday, 2);
+                $row[self::HOLIDAY_HEADER] = round(($row[self::HOLIDAY_HEADER] ?? 0.0) + $holiday, 3);
             }
             $rows[] = $row;
             $totals['rows']++;
