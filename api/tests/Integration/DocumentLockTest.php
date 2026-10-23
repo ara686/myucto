@@ -135,6 +135,8 @@ final class DocumentLockTest extends TestCase
             $pdo->prepare('DELETE FROM clients WHERE supplier_id = ?')->execute([$sid]);
             $pdo->prepare('DELETE FROM currencies WHERE supplier_id = ?')->execute([$sid]);
             $pdo->prepare('DELETE FROM user_suppliers WHERE supplier_id = ?')->execute([$sid]);
+            // Vystavení (schválení výkazu) založí počítadlo číselné řady.
+            $pdo->prepare('DELETE FROM invoice_counters WHERE supplier_id = ?')->execute([$sid]);
             $pdo->prepare('DELETE FROM supplier WHERE id = ?')->execute([$sid]);
         }
         if ($this->userIds !== []) {
@@ -747,6 +749,94 @@ final class DocumentLockTest extends TestCase
         self::assertSame('period_closed', $this->errorCode($res));
         $res = $this->sessionRequest('PUT', "/api/invoices/$draft2026?force=1", $adminSession, $sid, $moveBody);
         self::assertSame(200, $res->getStatusCode(), 'admin force přesun projde: ' . (string) $res->getBody());
+    }
+
+    /**
+     * Schválení výkazu koncept rovnou vystaví, proto musí respektovat týž zámek období
+     * jako ruční vystavení: klient 403, účetní 409, správce jen s ?force=1 z relace.
+     * Odmítnutí nesmí zanechat zapsané schválení. V otevřeném období schválení
+     * vystaví fakturu jako dřív. Schválení zákazníkem přes veřejný odkaz se zapíše,
+     * koncept v uzavřeném období ale nevystaví.
+     */
+    public function testApprovalIssueRespectsClosedPeriod(): void
+    {
+        $sid = $this->mkSupplier('double_entry');
+        $this->mkPeriod($sid, 2024, 'closed');
+        $this->mkPeriod($sid, 2026, 'open');
+        // Bez e-mailu odběratele se vystavená faktura nikam neodesílá.
+        $this->db->pdo()->prepare('UPDATE clients SET main_email = NULL WHERE id = ?')->execute([$this->clientIds[$sid]]);
+
+        $client = $this->mkUserWithToken('client', $sid);
+        $accountant = $this->mkUserWithToken('accountant', $sid);
+        $adminSession = $this->mkSessionUser('admin', $sid);
+        $approve = ['status' => 'approved'];
+        $state = function (int $id): array {
+            $stmt = $this->db->pdo()->prepare('SELECT status, approval_status, varsymbol FROM invoices WHERE id = ?');
+            $stmt->execute([$id]);
+            return $stmt->fetch(\PDO::FETCH_ASSOC);
+        };
+
+        $mkDraft = function (string $date) use ($sid): int {
+            $id = $this->mkInvoice($sid, 'draft', $date);
+            $this->addInvoiceItem($sid, $id);
+            $this->db->pdo()->prepare(
+                'UPDATE invoices SET total_without_vat = 100, total_vat = 21, total_with_vat = 121 WHERE id = ?'
+            )->execute([$id]);
+            return $id;
+        };
+
+        $draft2024 = $mkDraft('2024-06-15');
+        $res = $this->request('PUT', "/api/invoices/$draft2024/approval-status", $client, $sid, $approve);
+        self::assertSame(403, $res->getStatusCode(), (string) $res->getBody());
+        self::assertSame('document_locked', $this->errorCode($res));
+        $res = $this->request('PUT', "/api/invoices/$draft2024/approval-status", $accountant, $sid, $approve);
+        self::assertSame(409, $res->getStatusCode(), (string) $res->getBody());
+        self::assertSame('period_closed', $this->errorCode($res));
+        self::assertSame('draft', $state($draft2024)['status']);
+        self::assertNotSame('approved', $state($draft2024)['approval_status'], 'odmítnutí nesmí zapsat schválení');
+        self::assertNull($state($draft2024)['varsymbol'], 'odmítnutí nesmí přidělit číslo');
+
+        $res = $this->sessionRequest('PUT', "/api/invoices/$draft2024/approval-status?force=1", $adminSession, $sid, $approve);
+        self::assertSame(200, $res->getStatusCode(), 'správce s force schválí: ' . (string) $res->getBody());
+        self::assertSame('issued', $state($draft2024)['status'], (string) $res->getBody());
+
+        $draft2026 = $mkDraft('2026-05-15');
+
+        $res = $this->request('PUT', "/api/invoices/$draft2026/approval-status", $accountant, $sid, $approve);
+        self::assertSame(200, $res->getStatusCode(), 'otevřené období: ' . (string) $res->getBody());
+        self::assertSame('issued', $state($draft2026)['status'], (string) $res->getBody());
+
+        // Veřejný odkaz zákazníka: schválení se zapíše, koncept v uzavřeném období zůstane.
+        $public2024 = $mkDraft('2024-07-15');
+
+        $token = bin2hex(random_bytes(24));
+        $this->db->pdo()->prepare(
+            "UPDATE invoices SET approval_status = 'requested', approval_token = ?,
+                    approval_token_expires_at = DATE_ADD(NOW(), INTERVAL 7 DAY) WHERE id = ?"
+        )->execute([$token, $public2024]);
+        $container = \MyInvoice\Bootstrap::buildContainer();
+        $captcha = $this->createStub(\MyInvoice\Service\Captcha\TurnstileVerifier::class);
+        $captcha->method('verify')->willReturn(true);
+        $tenantGuard = $this->createStub(\MyInvoice\Service\Tenant\PublicTenantGuard::class);
+        $tenantGuard->method('allows')->willReturn(true);
+        $autoIssue = $this->createMock(\MyInvoice\Service\Invoice\AutoIssueAndSendService::class);
+        $autoIssue->expects(self::never())->method('run');
+        $decide = new \MyInvoice\Action\Approval\PublicApprovalDecideAction(
+            $container->get(\MyInvoice\Repository\InvoiceRepository::class),
+            $captcha,
+            $container->get(\MyInvoice\Service\ActivityLogger::class),
+            new \MyInvoice\Service\IpMatcher(),
+            $autoIssue,
+            $tenantGuard,
+            $container->get(\MyInvoice\Service\Accounting\DocumentLockService::class),
+        );
+        $req = (new ServerRequestFactory())
+            ->createServerRequest('POST', "/api/public/approval/$token/decide", ['REMOTE_ADDR' => '127.0.0.1'])
+            ->withParsedBody(['decision' => 'approve', 'decided_by_email' => 'zakaznik@example.com']);
+        $res = $decide($req, new \Slim\Psr7\Response(), ['token' => $token]);
+        self::assertSame(200, $res->getStatusCode(), (string) $res->getBody());
+        self::assertSame('draft', $state($public2024)['status']);
+        self::assertSame('approved', $state($public2024)['approval_status']);
     }
 
     /** Scénář 6: reverse zápisu odemkne doklad (booked_at NULL + audit R9), client PUT zase 200. */
