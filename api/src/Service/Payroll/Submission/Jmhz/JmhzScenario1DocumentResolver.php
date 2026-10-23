@@ -2452,6 +2452,11 @@ final class JmhzScenario1DocumentResolver
                 $caregivers = null;
                 break;
             }
+            // Rodné číslo (10434) vedle data narození, jen když je v evidenci.
+            $birthNumber = $row['birth_number'] ?? null;
+            if (is_string($birthNumber) && preg_match('/^\d{9,10}$/D', $birthNumber) === 1) {
+                $caregiver['birth_number'] = $birthNumber;
+            }
             $caregivers[] = $caregiver;
         }
         // Kontrola 127 (blocking): u 10453 = ANO musí být jiná osoba

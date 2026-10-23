@@ -27,6 +27,7 @@ use MyInvoice\Service\ActivityLogger;
 use MyInvoice\Service\Payroll\Payment\PayrollBankEvidenceGuard;
 use MyInvoice\Service\Property\Charges\Issuance\IssuancePostingBatchContext;
 use MyInvoice\Service\Report\VatLedgerService;
+use MyInvoice\Service\Vat\VatStatusService;
 use PDO;
 
 /**
@@ -1675,6 +1676,29 @@ final class PostingService
      * @param array{rule_key?:string, cost_center?:?string} $opts
      * @return list<array{account_code:string, side:'debit'|'credit', amount:float, cost_center?:?string}>
      */
+    /**
+     * Nárok na odpočet, se kterým se přijatá faktura účtuje. Odběratel, který k datu
+     * plnění není plátce (ani identifikovaná osoba nemá u tuzemského plnění nárok),
+     * odpočet neuplatní: daň je součástí nákladu, i když doklad nese výchozí `full`
+     * (issue #246, 343 u neplátce). Přenesení daňové povinnosti se řídí dál uloženým
+     * nárokem, samovyměření se neplátce týká jen výjimečně a má vlastní pravidla.
+     *
+     * @param array<string,mixed> $pi
+     */
+    private function effectivePurchaseVatDeduction(int $supplierId, array $pi): string
+    {
+        $stored = (string) ($pi['vat_deduction'] ?? 'full');
+        if ($stored === 'none' || (bool) ($pi['reverse_charge'] ?? false)) {
+            return $stored;
+        }
+        $date = (string) ($pi['tax_date'] ?? $pi['issue_date'] ?? '');
+        if ($date === '') {
+            return $stored;
+        }
+
+        return VatStatusService::payerAt($this->db->pdo(), $supplierId, $date) ? $stored : 'none';
+    }
+
     public function buildFromPurchaseInvoice(int $supplierId, int $purchaseInvoiceId, array $opts = []): array
     {
         unset($this->itemAccountTrace['purchase_invoice|' . $purchaseInvoiceId]);
@@ -1715,10 +1739,14 @@ final class PostingService
         $isRc         = (bool) $pi['reverse_charge'];
         $isFixedAsset = (bool) ($pi['is_fixed_asset'] ?? false);
         $taxDeductible = (bool) ($pi['tax_deductible'] ?? true);
-        $vatDeduction = (string) ($pi['vat_deduction'] ?? 'full');
+        $vatDeduction = $this->effectivePurchaseVatDeduction($supplierId, $pi);
         $isCreditNote = ((string) ($pi['document_kind'] ?? 'invoice') === 'credit_note') || $totalCzk < 0.0;
 
-        $allocations = $this->purchaseVatAllocations($supplierId, $purchaseInvoiceId);
+        // Rozúčtování nároku podle druhu plnění má smysl jen u plátce; neplátci jde
+        // celá daň do nákladu bez ohledu na uložené rozúčtování.
+        $allocations = $vatDeduction === 'none' && (string) ($pi['vat_deduction'] ?? 'full') !== 'none'
+            ? []
+            : $this->purchaseVatAllocations($supplierId, $purchaseInvoiceId);
         if ($allocations !== []) {
             return $this->buildAllocatedPurchaseInvoiceLines($supplierId, $pi, $allocations, $opts);
         }
@@ -2326,7 +2354,7 @@ final class PostingService
             $purchaseInvoiceId,
             $this->fxRate($pi),
             (bool) $pi['reverse_charge'],
-            (string) ($pi['vat_deduction'] ?? 'full'),
+            $this->effectivePurchaseVatDeduction($supplierId, $pi),
             max(0.0, min(100.0, (float) ($pi['vat_deduction_percent'] ?? 100))) / 100.0,
             $expense,
             $taxDeductible,

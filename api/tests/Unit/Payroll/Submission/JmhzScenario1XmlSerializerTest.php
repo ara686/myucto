@@ -1137,6 +1137,31 @@ final class JmhzScenario1XmlSerializerTest extends TestCase
         );
     }
 
+    /** Jiná osoba vyživující tytéž děti nese rodné číslo (10434) vedle data narození (10433). */
+    public function testOtherCaregiverBirthNumberIsReportedNextToBirthDate(): void
+    {
+        $payload = $this->payloadWithChildCredit();
+        $payload['people'][0]['child_credit_evidence']['other_household_caregiver_status'] = 'present';
+        $payload['people'][0]['child_credit_evidence']['other_household_caregivers'] = [[
+            'given_name' => 'Petr',
+            'family_name' => 'Novák',
+            'birth_date' => '1980-01-01',
+            'birth_number' => '8001010006',
+        ]];
+
+        $result = (new JmhzScenario1XmlValidator())->dryRun(
+            $this->resolutionFor($payload),
+            $this->envelope(),
+        );
+        $xml = preg_replace('/>\s+</', '><', $result['xml']) ?? '';
+
+        self::assertStringContainsString(
+            '<form:jinaOsoba><form:jmeno>Petr</form:jmeno><form:prijmeni>Novák</form:prijmeni>'
+                . '<form:datumNarozeni>1980-01-01</form:datumNarozeni><form:rodneCislo>8001010006</form:rodneCislo></form:jinaOsoba>',
+            $xml,
+        );
+    }
+
     public function testCreditWithoutSignedDeclarationIsRefused(): void
     {
         $payload = $this->payload();

@@ -5606,6 +5606,8 @@
           "other_caregiver_given_name": "Other supporting person - given name",
           "other_caregiver_family_name": "Other supporting person - family name",
           "other_caregiver_birth_date": "Other supporting person - date of birth",
+          "other_caregiver_birth_number": "Other supporting person - birth number",
+          "other_caregiver_birth_number_hint": "Optional. The monthly report states it next to the date of birth. Stored encrypted; leaving it empty keeps the stored value.",
           "supersede_hint": "If the claim reaches into a period covered by an approved payroll revision, the change is stored as a new effective version and the original record stays in history."
         },
         "event_month": {
@@ -21086,7 +21088,7 @@
     "min_chars": "Password must be at least {n} characters",
     "passwords_dont_match": "Passwords do not match",
     "totp_code": "Authenticator code (2FA)",
-    "totp_hint": "Open your authenticator app (Google Authenticator, Authy, 1Password) and enter the 6-digit code.",
+    "totp_hint": "Open your authenticator app (e.g. Proton Authenticator, Ente Auth, Google Authenticator or Microsoft Authenticator) and enter the 6-digit code.",
     "totp_invalid": "Invalid TOTP code",
     "email_otp_code": "Code from e-mail",
     "email_otp_hint": "We sent a 6-digit code to {email}. Enter it to finish signing in.",
@@ -21115,7 +21117,7 @@
     "current_password_invalid": "Incorrect current password.",
     "totp_already_enabled": "Two-factor authentication (TOTP) is already active.",
     "mfa_method_not_allowed": "This authentication method cannot be used right now.",
-    "totp_setup_step1": "1. Scan the QR code in your authenticator app (Google Authenticator, Authy, 1Password, Bitwarden, Microsoft Authenticator).",
+    "totp_setup_step1": "1. Scan the QR code in your authenticator app; we recommend {apps}. 1Password or Bitwarden work too.",
     "totp_setup_step1_alt": "Or enter this secret manually:",
     "totp_setup_step2": "2. Enter the 6-digit code from the app to activate.",
     "totp_enable_btn": "Activate TOTP",
@@ -25666,6 +25668,11 @@
     "tax_f_nonprofit_reduction_university_min": "University and research reduction floor (CZK)"
   },
   "roles": {
+    "submission_permissions": {
+      "reports_submissions": "Prepared tax submissions (VAT, control and recapitulative statements)",
+      "reports_submit": "Send tax submissions",
+      "reports_submissions_manage": "Manage tax submissions"
+    },
     "operational_permissions": {
       "email_profiles": "Company sender profiles",
       "email_templates": "Company email templates",
@@ -26467,6 +26474,14 @@
       "ik_mpsv_warning": "IK MPSV could not be recognized in this certificate. Signing may work, but EPO may not automatically link the signer; verify the certificate details.",
       "upload_certificate": "Store a new P12/PFX",
       "upload_certificate_hint": "Use a personal qualified electronic-signature certificate, not an ordinary SSL or commercial certificate.",
+      "client_subtitle": "VAT returns, control statements and recapitulative statements prepared by your accountant. Download XML, confirmations and payment details, or send submissions when your role allows it.",
+      "own_certificate_title": "Upload your own certificate",
+      "own_certificate_hint": "The P12 or PFX certificate is saved in your personal vault and enabled for this company. Only your own certificates are available.",
+      "own_certificate_file": "Certificate file (P12/PFX)",
+      "own_certificate_label": "Certificate label",
+      "own_certificate_password": "Certificate password",
+      "own_certificate_upload": "Upload certificate",
+      "own_certificate_uploaded": "Your certificate has been uploaded.",
       "upload_moved_title": "Uploading a certificate",
       "upload_moved_hint": "Certificates are uploaded in one place — System → Emails & certificates → Certificates and electronic signatures. EPO, PDF signing, S/MIME and payroll submissions all read them from there. Here you only pick which of them this company may use.",
       "upload_moved_link": "Go to Certificates",
@@ -35893,7 +35908,7 @@
     "profile": "Turn on the association registry",
     "profileHelp": "One-off setting for the whole company.",
     "profileDone": "The registry is on.",
-    "profileAction": "Turn on",
+    "profileAction": "Set up",
     "house": "Create the building",
     "houseHelp": "Name and address are prefilled from the company details.",
     "houseAction": "Add building",
@@ -35914,6 +35929,7 @@
     "registry": "Building and units in the registry",
     "registryHelp": "Create the building and its units first.",
     "registryDone": "Buildings in the registry: {count}",
+    "registryIncomplete": "Confirm in the registry that the building has all its units entered.",
     "registryAction": "Association registry",
     "components": "Schedule components",
     "componentsHelp": "E.g. repair fund, building administration, water advance.",

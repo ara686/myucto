@@ -355,7 +355,9 @@ jen údaje, které v MyÚčtu chybí; vyplněný údaj nepřepíše:
 | příznak *Nedoplácet ZP do minima* u zpracovaných mezd | výjimka z minimálního vyměřovacího základu zdravotního pojištění za dotčené měsíce (důvod doplní účetní) |
 | týdenní úvazek u zpracovaných mezd | týdenní pracovní doba a úvazek vztahu po měsících |
 | sleva pracujícího důchodce u zpracovaných mezd (doplňkové údaje mzdy) | sleva pracujícího důchodce po měsících (uplatněná, nebo neuplatňuje se); podané hlášení má přednost |
+| druh zaměstnání (pracovní poměr, DPČ, DPP, člen statutárního orgánu) | druh pracovního vztahu; jednatel bez týdenního úvazku |
 | příspěvek zaměstnavatele na penzijní připojištění, doplňkové penzijní spoření a DIP u zpracovaných mezd | čerpání ročního limitu osvobození (§ 6 odst. 9 písm. m) zákona o daních z příjmů) v převzatém měsíci; další měsíce téhož roku osvobodí jen zbytek limitu |
+| zaměstnanecké a zdravotní benefity bez daně a pojistného (Z23, Z24, například Multisport) | mzdové vstupy na složkách *Rekreace a volnočasový benefit* a *Zdravotní benefit*, osvobozené v ročním limitu; složce, o které jste ještě nerozhodli, převod zapíše toto zacházení |
 | děti s daňovým zvýhodněním (1., 2. a 3. dítě) | vyživované osoby s nárokem daného pořadí, od měsíce podepsaného prohlášení |
 | prohlášení poplatníka u zpracovaných mezd | prohlášení poplatníka po měsících |
 | pracoviště s kódem obce, CZ-ISCO | podmínky vztahu (pracoviště JMHZ) |
@@ -422,7 +424,9 @@ Za měsíc, ve kterém takový souhrn je, převod tutéž nepřítomnost nezakl�
 podruhé: jeden údaj má mít jediný zdroj, jinak by se doba vedla dvakrát
 a poměrná část měsíční mzdy by se nezkrátila vůbec. Druhy, které souhrn
 nenese (peněžitá pomoc v mateřství, rodičovská, dlouhodobé ošetřovné), převod
-zapíše a schválí. Protokol vypíše počty podle druhu.
+zapíše a schválí. Protokol vypíše počty podle druhu. Placené volno a sick
+days, za které PAMICA nic nezaplatila (sazba 0, vyčerpaný nárok), převod
+převede jako neplacené volno, aby za ně MyÚčto nedopočítalo náhradu.
 
 **Zapnutí mezd a začátek vedení mezd.** Firmě, která mzdy v MyÚčtu ještě
 nemá, převod zapne modul Mzdy a začátek vedení mezd v MyÚčtu nastaví na měsíc
@@ -625,9 +629,11 @@ co doplnit.
 
 Kód územního pracoviště finančního úřadu export nenese vůbec, pro podání
 REGZEL ho zadejte ručně. Penzijní a životní pojištění, DIP a dlouhodobá péče
-mají v exportu jen názvy, ne účty. Smlouvy se nepřevádějí: příspěvek
-zaměstnavatele pro měsíce, které počítá MyÚčto, zadejte na složku
-*Příspěvek na penzijní a životní produkty*.
+mají v exportu jen názvy, ne účty. Smlouvy se nepřevádějí. Příspěvek
+zaměstnavatele převod pro měsíce, které počítá MyÚčto, založí jako opakovanou
+složku *Příspěvek na penzijní a životní produkty* s částkou z posledních
+zpracovaných mezd. Druh smlouvy PAMICA ve mzdě nevede, proto zařazení složky
+(osvobození a JMHZ 10292 až 10296) potvrďte v `Mzdy → Mzdové složky a vstupy`.
 
 ### 108.9.5 Dovolená
 
@@ -831,6 +837,7 @@ chybí, a to stejnými zápisy jako údaje z karet:
 | OIČ a ID PPV | identifikátory ČSSZ, jen s potvrzením v průvodci a jen chybějící |
 | průměrný hodinový výdělek | schválený průměr čtvrtletí, které průměr ze zpracovaných mezd nemá |
 | vyživované děti z prohlášení poplatníka | vyživované osoby, jen osobě, která žádnou nemá |
+| zda tytéž děti vyživuje jiná osoba v domácnosti a kdo to je | odpověď u nároků na zvýhodnění (jen dosud nezodpovězených), u kladné odpovědi i jméno a datum narození té osoby (z rodného čísla, když ho hlášení neuvádí) |
 
 Podmínky vztahu doplní převod po každém převedeném měsíci z hlášení za ten
 měsíc, stejně jako pracoviště z karet. Dny důchodového pojištění a vyloučené

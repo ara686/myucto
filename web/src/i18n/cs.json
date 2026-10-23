@@ -5606,6 +5606,8 @@
           "other_caregiver_given_name": "Jméno jiné vyživující osoby",
           "other_caregiver_family_name": "Příjmení jiné vyživující osoby",
           "other_caregiver_birth_date": "Datum narození jiné vyživující osoby",
+          "other_caregiver_birth_number": "Rodné číslo jiné vyživující osoby",
+          "other_caregiver_birth_number_hint": "Nepovinné. Měsíční hlášení ho uvede vedle data narození. Ukládá se šifrovaně, prázdné pole ponechá uloženou hodnotu.",
           "supersede_hint": "Zasahuje-li nárok do období schválené mzdové revize, uloží se změna jako nová účinná verze a původní záznam zůstane v historii."
         },
         "event_month": {
@@ -21086,7 +21088,7 @@
     "min_chars": "Heslo musí mít alespoň {n} znaků",
     "passwords_dont_match": "Hesla se neshodují",
     "totp_code": "Ověřovací kód (2FA)",
-    "totp_hint": "Otevřete autentikační aplikaci (Google Authenticator, Authy, 1Password) a zadejte 6místný kód.",
+    "totp_hint": "Otevřete autentikační aplikaci (např. Proton Authenticator, Ente Auth, Google Authenticator nebo Microsoft Authenticator) a zadejte 6místný kód.",
     "totp_invalid": "Neplatný TOTP kód",
     "email_otp_code": "Kód z e-mailu",
     "email_otp_hint": "Poslali jsme 6místný kód na {email}. Zadejte ho pro dokončení přihlášení.",
@@ -21115,7 +21117,7 @@
     "current_password_invalid": "Nesprávné aktuální heslo.",
     "totp_already_enabled": "Dvoufázové ověření (TOTP) je již aktivní.",
     "mfa_method_not_allowed": "Tuto metodu ověření nelze v tuto chvíli použít.",
-    "totp_setup_step1": "1. Naskenujte QR kód v autentikační aplikaci (Google Authenticator, Authy, 1Password, Bitwarden, Microsoft Authenticator).",
+    "totp_setup_step1": "1. Naskenujte QR kód v autentikační aplikaci, doporučujeme {apps}. Funguje i 1Password nebo Bitwarden.",
     "totp_setup_step1_alt": "Nebo vložte ručně tento secret:",
     "totp_setup_step2": "2. Zadejte 6místný kód, který aplikace zobrazí, pro aktivaci.",
     "totp_enable_btn": "Aktivovat TOTP",
@@ -25666,6 +25668,11 @@
     "tax_nonprofit_hint": "Snížení základu daně podle § 20 odst. 7. Sazbu zadejte jako desetinný podíl: 0,30 znamená 30 %. Způsobilost určuje doložený právní profil. Finální důkazy používají uloženou roční sadu."
   },
   "roles": {
+    "submission_permissions": {
+      "reports_submissions": "Připravená daňová podání (DPH, KH, SH)",
+      "reports_submit": "Odesílání daňových podání",
+      "reports_submissions_manage": "Správa daňových podání"
+    },
     "operational_permissions": {
       "email_profiles": "Odesílací profily firmy",
       "email_templates": "E-mailové šablony firmy",
@@ -26467,6 +26474,14 @@
       "ik_mpsv_warning": "V certifikátu se nepodařilo rozpoznat IK MPSV. Podpis může fungovat, ale EPO nemusí automaticky propojit podepisující osobu; ověřte údaje certifikátu.",
       "upload_certificate": "Uložit nový P12/PFX",
       "upload_certificate_hint": "Použijte osobní kvalifikovaný certifikát pro elektronický podpis, nikoli běžný SSL nebo komerční certifikát.",
+      "client_subtitle": "Podání DPH, kontrolní a souhrnná hlášení připravená účetní. Můžete stáhnout XML, potvrzení a platební údaje; s oprávněním k odesílání také podání odeslat.",
+      "own_certificate_title": "Nahrát vlastní certifikát",
+      "own_certificate_hint": "Certifikát P12 nebo PFX se uloží do vašeho osobního trezoru a povolí pro tuto firmu. Používáte jen své vlastní certifikáty.",
+      "own_certificate_file": "Soubor certifikátu (P12/PFX)",
+      "own_certificate_label": "Označení certifikátu",
+      "own_certificate_password": "Heslo k certifikátu",
+      "own_certificate_upload": "Nahrát certifikát",
+      "own_certificate_uploaded": "Vlastní certifikát byl nahrán.",
       "upload_moved_title": "Nahrání certifikátu",
       "upload_moved_hint": "Certifikáty se nahrávají na jednom místě - Systém → E-maily a certifikáty → Certifikáty a elektronické podpisy. Odtud si je bere EPO, podpis PDF, S/MIME i mzdová podání. Tady se jen vybírá, který z nich smí tahle firma použít.",
       "upload_moved_link": "Přejít na Certifikáty",
@@ -36946,7 +36961,7 @@
     "profile": "Zapnout evidenci SVJ",
     "profileHelp": "Jednorázové nastavení pro celou firmu.",
     "profileDone": "Evidence je zapnutá.",
-    "profileAction": "Zapnout",
+    "profileAction": "Nastavit",
     "house": "Založit dům",
     "houseHelp": "Název a adresu předvyplníme z údajů firmy.",
     "houseAction": "Přidat dům",
@@ -36967,6 +36982,7 @@
     "registry": "Dům a jednotky v registru",
     "registryHelp": "Nejprve založte dům a jeho jednotky.",
     "registryDone": "Domů v registru: {count}",
+    "registryIncomplete": "V registru ještě potvrďte, že dům má zadané všechny jednotky.",
     "registryAction": "Registr SVJ",
     "components": "Složky předpisu",
     "componentsHelp": "Např. fond oprav, správa domu, záloha na vodu.",

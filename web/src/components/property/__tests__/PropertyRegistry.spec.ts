@@ -138,4 +138,16 @@ describe('property registry UI', () => {
     expect(calls.list.mock.calls.filter(args => args[0] === 2).map(args => args[1])).toEqual(['house', 'unit', 'service'])
     wrapper.unmount()
   })
+
+  it('keeps the setup guide with services and charges steps after the first unit', async () => {
+    calls.profile.mockResolvedValue(enabledProfile)
+    const object = (kind: string, id: number, state: Record<string, unknown>) => ({ id, kind, code: kind + id, current_revision: 1, pending_revision_ids: [], revision: { state: { active: true, ...state } } })
+    const lists: Record<string, unknown[]> = { house: [object('house', 1, { name: 'Dům' })], unit: [object('unit', 2, { unit_no: '1' })], service: [] }
+    calls.list.mockImplementation((_id: number, kind: string) => Promise.resolve(lists[kind] ?? []))
+    const wrapper = mount(PropertyRegistryView, { global: { plugins: plugins(), stubs: { PropertyInstantInput: true, PropertyImportPanel: true } } })
+    await flushPromises()
+    expect(wrapper.text()).toContain(cs.propertySetup.services)
+    expect(wrapper.text()).toContain(cs.propertySetup.charges)
+    wrapper.unmount()
+  })
 })

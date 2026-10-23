@@ -78,8 +78,43 @@ final readonly class PayrollDependantJmhzIdentityRepository
         return $result;
     }
 
-    /** Rodné číslo dítěte jen číslicemi (XSD `rodneCislo`), nebo null, když ho evidence nemá. */
-    private function birthNumber(int $supplierId, int $dependantId, mixed $ciphertext): ?string
+    /**
+     * Rodné číslo jiné osoby vyživující tytéž děti (10434) podle nároku. Zmrazená
+     * evidence mzdové revize ho nenese (je šifrované u nároku), snímek přípravy si
+     * ho proto dohledá podle `id` nároku.
+     *
+     * @param list<int> $employeeIds
+     * @return array<int,array<int,string>> zaměstnanec → `id` nároku → rodné číslo číslicemi
+     */
+    public function caregiverBirthNumbersFor(int $supplierId, array $employeeIds): array
+    {
+        $ids = array_values(array_unique(array_filter($employeeIds, static fn (int $id): bool => $id > 0)));
+        if ($supplierId <= 0 || $ids === []) {
+            return [];
+        }
+        $placeholders = implode(', ', array_fill(0, count($ids), '?'));
+        $statement = $this->db->pdo()->prepare(
+            "SELECT employee_id, id, other_caregiver_birth_number_ciphertext
+               FROM payroll_person_tax_child_claims
+              WHERE supplier_id = ? AND employee_id IN ({$placeholders})
+                AND other_household_caregiver_status = 'present'
+                AND other_caregiver_birth_number_ciphertext IS NOT NULL
+              ORDER BY employee_id, id"
+        );
+        $statement->execute([$supplierId, ...$ids]);
+        $result = [];
+        foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $birthNumber = $this->birthNumber($supplierId, (int) $row['id'], $row['other_caregiver_birth_number_ciphertext']);
+            if ($birthNumber !== null) {
+                $result[(int) $row['employee_id']][(int) $row['id']] = $birthNumber;
+            }
+        }
+
+        return $result;
+    }
+
+    /** Rodné číslo jen číslicemi (XSD `rodneCislo`), nebo null, když ho evidence nemá. */
+    private function birthNumber(int $supplierId, int $entityId, mixed $ciphertext): ?string
     {
         if (!is_string($ciphertext) || $ciphertext === '') {
             return null;
@@ -89,7 +124,7 @@ final readonly class PayrollDependantJmhzIdentityRepository
             $ciphertext,
             PayrollSensitiveField::PERSONAL_IDENTIFIER,
             $supplierId,
-            $dependantId,
+            $entityId,
             PayrollRevealPurpose::SUBMISSION_CSSZ_MONTHLY_REPORT,
         ));
     }

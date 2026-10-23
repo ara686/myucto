@@ -516,7 +516,7 @@ final class PohodaPayrollJmhzWriter
      * jmenuje. Datum narození z hlášení, jinak z rodného čísla; bez něj `null`.
      *
      * @param array<string,list<JmhzReportForm>> $months období => formuláře osoby
-     * @return array{given_name:string,family_name:string,birth_date:string}|null
+     * @return array{given_name:string,family_name:string,birth_date:string,birth_number:?string}|null
      */
     public static function otherCaregiverPerson(array $months): ?array
     {
@@ -537,18 +537,25 @@ final class PohodaPayrollJmhzWriter
             return null;
         }
         $birthDate = is_string($person['birth_date'] ?? null) ? $person['birth_date'] : null;
-        if ($birthDate === null && is_string($person['birth_number'] ?? null)) {
+        $birthNumber = null;
+        if (is_string($person['birth_number'] ?? null)) {
             try {
-                $birthDate = CzechBirthNumber::birthDate(CzechBirthNumber::normalize($person['birth_number']));
+                $birthNumber = CzechBirthNumber::normalize($person['birth_number']);
+                $birthDate ??= CzechBirthNumber::birthDate($birthNumber);
             } catch (\InvalidArgumentException) {
-                $birthDate = null;
+                $birthNumber = null;
             }
+        }
+        // Rodné číslo, které nesedí na datum narození z hlášení, se nepřebírá.
+        if ($birthNumber !== null && $birthDate !== CzechBirthNumber::birthDate($birthNumber)) {
+            $birthNumber = null;
         }
 
         return $birthDate === null ? null : [
             'given_name' => (string) $person['given_name'],
             'family_name' => (string) $person['family_name'],
             'birth_date' => $birthDate,
+            'birth_number' => $birthNumber,
         ];
     }
 

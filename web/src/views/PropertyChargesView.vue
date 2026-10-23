@@ -38,8 +38,9 @@ let epoch = 0
 let detailEpoch = 0
 let token = ''
 const house = computed(() => houses.value.find(h => h.id === houseId.value) ?? null)
+const registryIncomplete = computed(() => !!registry.value && registry.value.house.registry_complete === false)
 const steps = computed<SetupStep[]>(() => [
-  { key: 'registry', title: t('propertySetup.registry'), help: houses.value.length ? t('propertySetup.registryDone', { count: houses.value.length }) : t('propertySetup.registryHelp'), done: houses.value.length > 0, action: t('propertySetup.registryAction'), icon: 'link', to: '/property/registry' },
+  { key: 'registry', title: t('propertySetup.registry'), help: registryIncomplete.value ? t('propertySetup.registryIncomplete') : houses.value.length ? t('propertySetup.registryDone', { count: houses.value.length }) : t('propertySetup.registryHelp'), done: houses.value.length > 0 && !registryIncomplete.value, action: t('propertySetup.registryAction'), icon: 'link', to: '/property/registry' },
   { key: 'components', title: t('propertySetup.components'), help: components.value.length ? components.value.map(c => c.name).join(', ') : t('propertySetup.componentsHelp'), done: components.value.length > 0, ...(capabilities.manage && registry.value ? { action: t('propertyCharges.newComponent'), icon: 'plus' as const } : {}) },
   { key: 'version', title: t('propertySetup.version'), help: versions.value.length ? t('propertySetup.versionDone', { count: versions.value.length }) : t('propertySetup.versionHelp'), done: versions.value.length > 0, ...(capabilities.manage && registry.value && components.value.length ? { action: t('propertyCharges.newVersion'), icon: 'plus' as const } : {}) },
   { key: 'issue', title: t('propertySetup.issue'), help: t('propertySetup.issueHelp'), done: false, ...(versions.value.length ? { action: t('propertySetup.issueAction'), icon: 'send' as const, to: '/property/charges/issues' } : {}) },
