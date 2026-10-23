@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace MyInvoice\Tests\Integration\TaxEvidence;
 
+use MyInvoice\Repository\VatCoefficientRepository;
 use MyInvoice\Service\Invoice\CreditNoteOffsetService;
 use MyInvoice\Service\Report\VatLedgerService;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -218,24 +219,9 @@ final class CreditNoteOffsetVatSplitTest extends CashJournalTestCase
         // a jako ona není daňovým výdajem. Zaplacený zbytek 1 210 je celá služba.
         $invoiceId = $this->document(false, [[21, 1.0, 1000.0], [0, 1.0, 1000.0]], false);
         $creditNoteId = $this->document(false, [[0, -1.0, 1000.0]], true);
-        $pdo = $this->db->pdo();
-        $pdo->prepare('UPDATE purchase_invoices SET parent_purchase_invoice_id = ?, tax_deductible = 0 WHERE id = ?')
-            ->execute([$invoiceId, $creditNoteId]);
-        $pdo->prepare(
-            "INSERT INTO chart_of_accounts (supplier_id, account_code, name, account_type, normal_side, is_synthetic, is_active)
-             VALUES (?, '518', 'Ostatní služby', 'expense', 'debit', 1, 1)"
-        )->execute([$this->supplierId]);
-        $allocation = $pdo->prepare(
-            "INSERT INTO purchase_invoice_vat_allocations
-                (supplier_id, purchase_invoice_id, description, vat_rate, base_amount, vat_amount, total_amount,
-                 tax_treatment, account_code, order_index)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, '518', ?)"
-        );
-        $allocation->execute([$this->supplierId, $invoiceId, 'Služba', 21.0, 1000.0, 210.0, 1210.0, 'deductible', 1]);
-        $allocation->execute([$this->supplierId, $invoiceId, 'Soukromá položka', 0.0, 1000.0, 0.0, 1000.0, 'not_expense', 2]);
-
-        $result = $this->offsets->applyForPurchase($this->supplierId, $creditNoteId, $this->userId);
-        self::assertNotNull($result['offset_id'], (string) $result['reason']);
+        $this->db->pdo()->prepare('UPDATE purchase_invoices SET tax_deductible = 0 WHERE id = ?')->execute([$creditNoteId]);
+        $this->allocate($invoiceId, [['Služba', 21.0, 1000.0, 210.0, 'deductible'], ['Soukromá položka', 0.0, 1000.0, 0.0, 'not_expense']]);
+        $this->offset(false, $invoiceId, $creditNoteId);
 
         $this->pay(false, $instrument, $invoiceId, 1210.0);
 
@@ -248,8 +234,72 @@ final class CreditNoteOffsetVatSplitTest extends CashJournalTestCase
     }
 
     /**
-     * Cesty, kterými lze zaplatit část faktury PŘED zápočtem dobropisu. Ruční úhrada přijaté
-     * faktury je jen stav „zaplaceno" celé faktury a zápočet pak už nepřipustí.
+     * Faktura s řádkovým rozpisem a daňový dobropis: daňová část zbytku je daňová část
+     * rozpisu minus daňová část dobropisu. Položka mimo daňové výdaje zůstane mimo celá.
+     */
+    #[DataProvider('purchasePaths')]
+    public function testLineAllocationsRemainderIsAllocationsMinusCreditNote(string $instrument): void
+    {
+        // Faktura s rozpisem: služba 21 % 1 000 + 210 (daňový výdaj) a soukromá položka 0 %
+        // 1 000 (není výdajem) = 2 210. Dobropis vrací polovinu služby: −500 − 105. Zaplacený
+        // zbytek 1 605 = zbylá služba 500 + DPH 105 a soukromá položka 1 000.
+        $invoiceId = $this->document(false, [[21, 1.0, 1000.0], [0, 1.0, 1000.0]], false);
+        $this->allocate($invoiceId, [['Služba', 21.0, 1000.0, 210.0, 'deductible'], ['Soukromá položka', 0.0, 1000.0, 0.0, 'not_expense']]);
+        $this->offset(false, $invoiceId, $this->document(false, [[21, -1.0, 500.0]], true));
+
+        $this->pay(false, $instrument, $invoiceId, 1605.0);
+
+        $res = $this->fullYear($this->supplierId, true);
+        self::assertSame(1, $this->countRows($res), 'v peněžním deníku je jen skutečná úhrada zbytku, zápočet ne');
+        self::assertEqualsWithDelta(500.0, $res['totals']['vydaj_danovy'], 0.005,
+            'daňová část zbytku = služba z rozpisu 1 000 minus dobropis 500');
+        self::assertEqualsWithDelta(1105.0, $res['totals']['vydaj_nedanovy'], 0.005,
+            'mimo daňové výdaje: DPH zbylé služby 105 a celá soukromá položka 1 000');
+        self::assertEqualsWithDelta(0.0, $res['totals']['nezarazeno'], 0.005);
+    }
+
+    /** @return iterable<string,array{0:string,1:string}> režim kráceného odpočtu a cesta úhrady */
+    public static function reducedDeductionCases(): iterable
+    {
+        foreach (['koeficient § 76' => 'reduced', 'poměrný odpočet § 75' => 'proportional'] as $modeLabel => $mode) {
+            foreach (self::purchasePaths() as $path => [$instrument]) {
+                yield "{$modeLabel}, {$path}" => [$mode, $instrument];
+            }
+        }
+    }
+
+    /**
+     * Krácený odpočet: neodečtená část DPH je daňovým výdajem. Faktura i dobropis se krátí
+     * stejně, takže daňová část zbytku nese neodečtenou část jen z DPH, které na zbytku zůstalo.
+     */
+    #[DataProvider('reducedDeductionCases')]
+    public function testReducedDeductionAppliesToInvoiceAndCreditNote(string $mode, string $instrument): void
+    {
+        // Odpočet 60 %: u kráceného zálohový koeficient roku, u poměrného procento dokladu.
+        $this->container->get(VatCoefficientRepository::class)->setProvisionalPercent($this->supplierId, self::YEAR, 60);
+        // Faktura: 10 ks zboží 21 % (1 000 + 210) a položka 0 % 1 000 = 2 210. Dobropis vrací
+        // 4 ks: −400 − 84. Zbytek 1 726 = 1 600 + DPH 126; odečte se 60 % DPH, tedy 75,60, a 40 %,
+        // 50,40, je daňovým výdajem. Daňová část 1 650,40, mimo daňové výdaje 75,60.
+        $invoiceId = $this->document(false, [[21, 10.0, 100.0], [0, 1.0, 1000.0]], false);
+        $creditNoteId = $this->document(false, [[21, -4.0, 100.0]], true);
+        $this->db->pdo()->prepare('UPDATE purchase_invoices SET vat_deduction = ?, vat_deduction_percent = 60 WHERE id IN (?, ?)')
+            ->execute([$mode, $invoiceId, $creditNoteId]);
+        $this->offset(false, $invoiceId, $creditNoteId);
+
+        $this->pay(false, $instrument, $invoiceId, 1726.0);
+
+        $res = $this->fullYear($this->supplierId, true);
+        self::assertSame(1, $this->countRows($res), 'v peněžním deníku je jen skutečná úhrada zbytku, zápočet ne');
+        self::assertEqualsWithDelta(1650.40, $res['totals']['vydaj_danovy'], 0.005,
+            'daňová část zbytku = základ 1 600 a neodečtených 40 % z DPH zbytku 126');
+        self::assertEqualsWithDelta(75.60, $res['totals']['vydaj_nedanovy'], 0.005, 'mimo daňové výdaje je jen odečtená DPH');
+        self::assertEqualsWithDelta(0.0, $res['totals']['nezarazeno'], 0.005);
+    }
+
+    /**
+     * Cesty, kterými lze fakturu platit po částech, před zápočtem dobropisu i po něm. Ruční
+     * úhrada přijaté faktury je jen stav „zaplaceno" celé faktury: částečnou úhradu nezná
+     * a zaplacenou fakturu už zápočet nepřipustí.
      *
      * @return iterable<string,array{0:string,1:string}>
      */
@@ -263,7 +313,7 @@ final class CreditNoteOffsetVatSplitTest extends CashJournalTestCase
     }
 
     /** @return iterable<string,array{0:string,1:string,2:array<string,mixed>}> */
-    public static function earlyPaymentCases(): iterable
+    public static function partialCases(): iterable
     {
         foreach (self::shapes() as $shape => $documents) {
             foreach (self::partialPaths() as $path => [$side, $instrument]) {
@@ -280,7 +330,7 @@ final class CreditNoteOffsetVatSplitTest extends CashJournalTestCase
      *
      * @param array{invoice:list<array{0:int,1:float,2:float}>,credit_note:list<array{0:int,1:float,2:float}>,by_rate:array<int,array{0:float,1:float}>,payment:array{0:float,1:float}} $shape
      */
-    #[DataProvider('earlyPaymentCases')]
+    #[DataProvider('partialCases')]
     public function testPaymentBeforeOffsetKeepsItsSplitAndOffsetDayCarriesCorrection(string $side, string $instrument, array $shape): void
     {
         $issued = $side === 'issued';
@@ -313,6 +363,37 @@ final class CreditNoteOffsetVatSplitTest extends CashJournalTestCase
             'úhrada a oprava dohromady: daňová část = faktura minus dobropis');
         self::assertEqualsWithDelta($vat, $res['totals'][$bucket . '_nedanovy'], 0.005,
             'úhrada a oprava dohromady: DPH = faktura minus dobropis');
+        self::assertEqualsWithDelta(0.0, $res['totals']['nezarazeno'], 0.005);
+    }
+
+    /**
+     * Zbytek po zápočtu zaplacený ve dvou částech: každá část se dělí poměrem zbytku (faktura
+     * minus dobropis), ne celé faktury. Obě úhrady jsou po zápočtu, opravný řádek nevzniká.
+     *
+     * @param array{invoice:list<array{0:int,1:float,2:float}>,credit_note:list<array{0:int,1:float,2:float}>,by_rate:array<int,array{0:float,1:float}>,payment:array{0:float,1:float}} $shape
+     */
+    #[DataProvider('partialCases')]
+    public function testRemainderPaidInPartsSplitsEachPartAsRemainder(string $side, string $instrument, array $shape): void
+    {
+        $issued = $side === 'issued';
+        $invoiceId = $this->document($issued, $shape['invoice'], false);
+        $this->offset($issued, $invoiceId, $this->document($issued, $shape['credit_note'], true));
+
+        [$taxable, $vat] = $shape['payment'];
+        $half = round(($taxable + $vat) / 2, 2);
+        $this->pay($issued, $instrument, $invoiceId, $half, self::YEAR . '-06-15', false);
+        $this->pay($issued, $instrument, $invoiceId, $half, self::YEAR . '-07-15');
+
+        $res = $this->fullYear($this->supplierId, true);
+        self::assertSame([self::YEAR . '-06-15', self::YEAR . '-07-15'], array_column($res['rows'], 'date'),
+            'v deníku jsou jen obě úhrady, zápočet ani oprava ne');
+        foreach ($res['rows'] as $row) {
+            self::assertEqualsWithDelta($taxable / 2, $row['base'], 0.005, 'daňová část každé úhrady = polovina daňové části zbytku');
+            self::assertEqualsWithDelta($vat / 2, $row['vat'], 0.005, 'DPH každé úhrady = polovina DPH zbytku');
+        }
+        $bucket = $issued ? 'prijem' : 'vydaj';
+        self::assertEqualsWithDelta($taxable, $res['totals'][$bucket . '_danovy'], 0.005);
+        self::assertEqualsWithDelta($vat, $res['totals'][$bucket . '_nedanovy'], 0.005);
         self::assertEqualsWithDelta(0.0, $res['totals']['nezarazeno'], 0.005);
     }
 
@@ -394,7 +475,75 @@ final class CreditNoteOffsetVatSplitTest extends CashJournalTestCase
         self::assertEqualsWithDelta(1000.0, $res['totals']['prijem_danovy'], 0.005);
     }
 
+    /** @return iterable<string,array{0:string}> cesty úhrady vydané faktury */
+    public static function issuedPaths(): iterable
+    {
+        foreach (self::paths() as $path => [$side, $instrument]) {
+            if ($side === 'issued') {
+                yield $path => [$instrument];
+            }
+        }
+    }
+
+    /**
+     * Faktura osvobozená od daně z příjmů (§ 4 ZDP) se dělí stejně jako zdanitelná, jen místo
+     * daňového příjmu jde do osvobozeného: úhrada před zápočtem, opravný řádek i úhrada zbytku.
+     * DPH z osvobozené faktury příjmem není.
+     */
+    #[DataProvider('issuedPaths')]
+    public function testExemptInvoiceSplitsIntoExemptIncome(string $instrument): void
+    {
+        // Faktura: služba 21 % 1 000 + 210 a položka 0 % 2 000 = 3 210, osvobozená. Před
+        // zápočtem se zaplatí 1 000, dobropis pak stornuje službu a zbytek 1 000 se zaplatí po
+        // zápočtu. Zaplacené 2 000 je položka bez DPH, celá osvobozeným příjmem.
+        $invoiceId = $this->document(true, [[21, 1.0, 1000.0], [0, 1.0, 2000.0]], false);
+        $creditNoteId = $this->document(true, [[21, -1.0, 1000.0]], true);
+        $this->db->pdo()->prepare('UPDATE invoices SET income_tax_exempt = 1 WHERE id IN (?, ?)')->execute([$invoiceId, $creditNoteId]);
+        $this->pay(true, $instrument, $invoiceId, 1000.0, self::YEAR . '-06-03', false);
+        $this->offset(true, $invoiceId, $creditNoteId);
+        $this->pay(true, $instrument, $invoiceId, 1000.0);
+
+        $res = $this->fullYear($this->supplierId, true);
+        $before = $this->onlyRow($res, static fn (array $row): bool => $row['date'] === self::YEAR . '-06-03');
+        $correction = $this->onlyRow($res, static fn (array $row): bool => $row['source_type'] === 'credit_note_offset');
+        $after = $this->onlyRow($res, static fn (array $row): bool => $row['date'] === self::YEAR . '-06-15');
+        foreach ([$before, $correction, $after] as $row) {
+            self::assertSame('income_exempt', $row['bucket']);
+            self::assertEqualsWithDelta(0.0, $row['base'], 0.005, 'osvobozený příjem nemá daňový základ');
+        }
+        self::assertEqualsWithDelta(65.42, $before['vat'], 0.005, 'úhrada před zápočtem: DPH podle celé faktury, 1 000 × 210 / 3 210');
+        self::assertEqualsWithDelta(-65.42, $correction['vat'], 0.005, 'oprava převede DPH, které na zbytku nezůstalo, do osvobozeného příjmu');
+        self::assertEqualsWithDelta(0.0, $after['vat'], 0.005, 'úhrada po zápočtu: zbytek je bez DPH');
+        self::assertEqualsWithDelta(2000.0, $res['totals']['prijem_osvobozeny'], 0.005);
+        self::assertEqualsWithDelta(0.0, $res['totals']['prijem_danovy'], 0.005);
+        self::assertEqualsWithDelta(0.0, $res['totals']['prijem_nedanovy'], 0.005);
+        self::assertEqualsWithDelta(0.0, $res['totals']['nezarazeno'], 0.005);
+    }
+
     // ── fixtures ─────────────────────────────────────────────────────────────
+
+    /**
+     * Řádkový daňový rozpis přijaté faktury.
+     *
+     * @param list<array{0:string,1:float,2:float,3:float,4:string}> $lines [popis, sazba %, základ, DPH, daňové zacházení]
+     */
+    private function allocate(int $invoiceId, array $lines): void
+    {
+        $pdo = $this->db->pdo();
+        $pdo->prepare(
+            "INSERT INTO chart_of_accounts (supplier_id, account_code, name, account_type, normal_side, is_synthetic, is_active)
+             VALUES (?, '518', 'Ostatní služby', 'expense', 'debit', 1, 1)"
+        )->execute([$this->supplierId]);
+        $stmt = $pdo->prepare(
+            "INSERT INTO purchase_invoice_vat_allocations
+                (supplier_id, purchase_invoice_id, description, vat_rate, base_amount, vat_amount, total_amount,
+                 tax_treatment, account_code, order_index)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, '518', ?)"
+        );
+        foreach ($lines as $index => [$description, $rate, $base, $vat, $treatment]) {
+            $stmt->execute([$this->supplierId, $invoiceId, $description, $rate, $base, $vat, round($base + $vat, 2), $treatment, $index + 1]);
+        }
+    }
 
     /** Zápočet dobropisu proti faktuře; vrací id zápočtu. */
     private function offset(bool $issued, int $invoiceId, int $creditNoteId): int
