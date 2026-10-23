@@ -249,7 +249,8 @@ final class JointAllocationFoundationTest extends TestCase
         $entry = $journal->insert(['supplier_id' => $this->supplier, 'period_id' => $this->period, 'entry_date' => '2096-06-01', 'source_type' => 'manual'], $lines);
         $queries = (int) $pdo->query("SHOW SESSION STATUS LIKE 'Com_select'")->fetch()['Value'] - $before;
         self::assertSame($pairQueries + 1, $queries, 'The membership owner guard must add only the second 500-line batch, not a query per line.');
-        self::assertLessThanOrEqual(19, $queries, 'Current conversion context, issued membership ownership and line-to-entry proof must stay bounded for all 1000 rows.');
+        // +2 pevné dotazy: strážci vložení dimenzí čtou zápisy řádků a jejich odkazy jednou za zápis.
+        self::assertLessThanOrEqual(21, $queries, 'Current conversion context, issued membership ownership and line-to-entry proof must stay bounded for all 1000 rows.');
         $stmt = $pdo->prepare("SELECT COUNT(*), SUM(IF(l.side = 'debit', l.amount, -l.amount)) FROM journal_entry_lines l
             JOIN journal_entry_line_dimensions d ON d.line_id = l.id AND d.supplier_id = l.supplier_id
             WHERE l.entry_id = ? AND d.dimension_type_id = ? AND d.dimension_value_id = ? AND d.assignment_origin = 'explicit'");

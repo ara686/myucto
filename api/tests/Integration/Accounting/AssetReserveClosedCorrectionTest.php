@@ -573,7 +573,11 @@ final class AssetReserveClosedCorrectionTest extends TestCase
                     if (str_starts_with($sql, \MyInvoice\Infrastructure\Database\SubqueryCache::OFF)) $sql = substr($sql, strlen(\MyInvoice\Infrastructure\Database\SubqueryCache::OFF));
                     if (str_starts_with($sql, 'SELECT l.id, e.id AS entry_id, e.period_id,')
                         || str_starts_with($sql, 'SELECT DISTINCT entry_id FROM journal_entry_lines WHERE supplier_id=')
-                        || str_starts_with($sql, 'SELECT DISTINCT e.id,(' . \MyInvoice\Service\Property\Services\Settlement\SettlementUseGuard::entryReferenceSql() . ') AS settlement_used FROM journal_entry_lines l JOIN journal_entries e ON e.supplier_id=l.supplier_id AND e.id=l.entry_id WHERE l.supplier_id=')) { $blocked = true; break; }
+                        || str_starts_with($sql, 'SELECT DISTINCT e.id,(' . \MyInvoice\Service\Property\Services\Settlement\SettlementUseGuard::entryReferenceSql() . ') AS settlement_used FROM journal_entry_lines l JOIN journal_entries e ON e.supplier_id=l.supplier_id AND e.id=l.entry_id WHERE l.supplier_id=')
+                        // Strážci vyhodnocují odkazy jednou za zápis: nejdřív zápisy řádků, potom odkazy zápisů.
+                        || str_starts_with($sql, 'SELECT DISTINCT e.id FROM journal_entry_lines l JOIN journal_entries e ON e.supplier_id=l.supplier_id AND e.id=l.entry_id WHERE l.supplier_id=')
+                        || str_starts_with($sql, 'SELECT e.id,(' . \MyInvoice\Service\Property\Services\Settlement\SettlementUseGuard::entryReferenceSql() . ') AS settlement_used FROM journal_entries e WHERE e.supplier_id=')
+                        || str_starts_with($sql, 'SELECT e.id, (')) { $blocked = true; break; }
                 }
                 usleep(20000);
             }

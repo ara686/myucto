@@ -142,7 +142,8 @@ final class DimensionAssignmentProvenanceTest extends TestCase
         $single = $count() - $before;
         $before = $count();
         $policy->assertJournal($this->header(true), array_fill(0, 1000, $line));
-        self::assertSame($single, $count() - $before, 'Repeated pairs must be deduplicated in one current value query.');
+        // Opakované volání smí díky paměti aktuálních čtení v transakci číst i méně, nikdy víc.
+        self::assertLessThanOrEqual($single, $count() - $before, 'Repeated pairs must be deduplicated in one current value query.');
         self::assertLessThanOrEqual(12, $single, 'Conversion adds three constant reads to the nine-read system-value budget.');
     }
 

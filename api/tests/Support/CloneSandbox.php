@@ -101,6 +101,15 @@ final class CloneSandbox
         return isset(self::$leased[$schema]);
     }
 
+    /**
+     * Vyřadí zapůjčenou databázi, aniž by se vrátila k dalšímu použití. Pro test, který
+     * její obsah zničí (např. reset instance); úklid ji pak zahodí jako vlastní databázi.
+     */
+    public static function forget(string $schema): void
+    {
+        unset(self::$leased[$schema]);
+    }
+
     public static function release(PDO $server, string $schema): void
     {
         if (!isset(self::$leased[$schema])) {

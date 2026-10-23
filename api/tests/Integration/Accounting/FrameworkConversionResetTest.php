@@ -13,12 +13,17 @@ final class FrameworkConversionResetTest extends TestCase
     private FrameworkConversionCloneTest $fixture;
     protected function setUp():void
     {$this->fixture=new FrameworkConversionCloneTest('testActualFullClonePreserves931DecisionAndCannotCancelConsumedOpening');(new \ReflectionMethod($this->fixture,'setUp'))->invoke($this->fixture);}
-    protected function tearDown():void{(new \ReflectionMethod($this->fixture,'tearDown'))->invoke($this->fixture);}
+    protected function tearDown():void
+    {
+        // Reset zničí obsah zapůjčené databáze sandboxu: nesmí se vrátit k dalšímu použití, úklid fixtury ji zahodí.
+        foreach((new \ReflectionProperty($this->fixture,'owned'))->getValue($this->fixture) as $schema)\MyInvoice\Tests\Support\CloneSandbox::forget($schema);
+        (new \ReflectionMethod($this->fixture,'tearDown'))->invoke($this->fixture);
+    }
     public static function modes():array{return ['keep_configuration'=>[true],'full_reset'=>[false]];}
     #[DataProvider('modes')]
     public function testActualNativeResetClearsConversionGraphAndClassifiesItsBusinessTables(bool $keep):void
     {
-        (new \ReflectionMethod($this->fixture,'prepare'))->invoke($this->fixture,true);$db=(new \ReflectionProperty($this->fixture,'source'))->getValue($this->fixture);$owned=(new \ReflectionProperty($this->fixture,'owned'))->getValue($this->fixture);$schema=$owned[0];self::assertMatchesRegularExpression('/^myucto_nno_conversion_clone_[a-f0-9]{10}_source_test$/D',$schema);self::assertSame($schema,$db->pdo()->query('SELECT DATABASE()')->fetchColumn());
+        (new \ReflectionMethod($this->fixture,'prepare'))->invoke($this->fixture,true);$db=(new \ReflectionProperty($this->fixture,'source'))->getValue($this->fixture);$owned=(new \ReflectionProperty($this->fixture,'owned'))->getValue($this->fixture);$schema=$owned[0];self::assertMatchesRegularExpression('/^myucto_clonesandbox_[a-f0-9]{10}_test$/D',$schema);self::assertSame($schema,$db->pdo()->query('SELECT DATABASE()')->fetchColumn());
         foreach(FrameworkConversionResetCleanup::TABLES as $table){self::assertContains($table,GlobalSeedTables::RESET_KEEP_USERS_SUPPLIER_WIPES);self::assertGreaterThan(0,(int)$db->pdo()->query('SELECT COUNT(*) FROM '.$table)->fetchColumn(),$table);}
         $before=(int)$db->pdo()->query('SELECT COUNT(*) FROM accounting_account_definition_history')->fetchColumn();self::assertGreaterThan(0,$before);
         $dir=sys_get_temp_dir().DIRECTORY_SEPARATOR.$schema.'_reset_'.bin2hex(random_bytes(4));mkdir($dir);
