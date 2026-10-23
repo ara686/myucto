@@ -10904,7 +10904,10 @@
         "payroll_annual_document_revisions": "roční doklady a jejich revize",
         "payroll_jmhz_eldp_evidence_snapshots": "odeslané ELDP (evidenční listy)",
         "payroll_jmhz_ordinary_evidence_snapshots": "odeslaná hlášení ČSSZ",
-        "payroll_registration_identity_snapshots": "odeslané registrační údaje ČSSZ"
+        "payroll_registration_identity_snapshots": "odeslané registrační údaje ČSSZ",
+        "payroll_run_persons": "výsledky výpočtu mezd ve zmrazených bězích",
+        "payroll_run_revisions": "zmrazené revize mzdových běhů (vstupy a výsledky)",
+        "payroll_period_exports": "archivy mezd (ZIP) za období s výplatou osoby"
       }
     },
     "features": {

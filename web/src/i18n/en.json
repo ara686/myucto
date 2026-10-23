@@ -10904,7 +10904,10 @@
         "payroll_annual_document_revisions": "annual documents and their revisions",
         "payroll_jmhz_eldp_evidence_snapshots": "submitted ELDP records",
         "payroll_jmhz_ordinary_evidence_snapshots": "submitted social security reports",
-        "payroll_registration_identity_snapshots": "submitted social security registration data"
+        "payroll_registration_identity_snapshots": "submitted social security registration data",
+        "payroll_run_persons": "payroll results in frozen payroll runs",
+        "payroll_run_revisions": "frozen payroll run revisions (inputs and results)",
+        "payroll_period_exports": "payroll archives (ZIP) for periods with the person's pay"
       }
     },
     "features": {
