@@ -19,6 +19,7 @@ import Passkeys from '@/pages/Passkeys.vue'
 import KeyboardShortcuts from '@/pages/KeyboardShortcuts.vue'
 import { getCredential, webAuthnErrorKey } from '@/security/webauthn'
 import RecoveryCodesOnce from '@/components/security/RecoveryCodesOnce.vue'
+import TotpAppRecommendation from '@/components/security/TotpAppRecommendation.vue'
 import {
   advanceCanonicalDomainLoginSession,
   authorizePendingDomainLogin,
@@ -506,7 +507,7 @@ onMounted(() => {
       </div>
 
       <div v-if="totpSetup" class="space-y-4 pt-2 border-t border-neutral-200">
-        <p class="text-sm text-neutral-700">{{ t('auth.totp_setup_step1') }}</p>
+        <TotpAppRecommendation />
         <div class="flex justify-center bg-neutral-50 rounded-md p-4">
           <img :src="totpSetup.qr_data_uri" :alt="totpSetup.uri" class="border border-neutral-200 rounded" />
         </div>

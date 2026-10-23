@@ -8,7 +8,7 @@ use MyInvoice\Infrastructure\Database\Connection;
 
 /**
  * RFC 6238 TOTP (Time-based One-Time Password) implementace.
- * Kompatibilní s Google Authenticator, Authy, 1Password, Bitwarden, Microsoft Authenticator.
+ * Kompatibilní s Proton Authenticator, Ente Auth, Google Authenticator, 1Password, Bitwarden, Microsoft Authenticator.
  *
  * Algoritmus: HMAC-SHA1, 6 číslic, 30s perioda (defaults — to co aplikace používají).
  *
