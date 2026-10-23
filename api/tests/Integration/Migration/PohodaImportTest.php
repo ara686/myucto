@@ -214,13 +214,31 @@ final class PohodaImportTest extends TestCase
 
         $first = $this->importer->run($supplierId, $this->userId, $export, false);
         self::assertFalse($first->hasErrors(), $this->explain($first));
-        self::assertSame(3, $this->rows('other_items', $supplierId));
-        self::assertSame(0, $this->rows('other_items', $supplierId, "document_no IN ('26OZM0001', '26OZB0001')"));
+        self::assertSame(4, $this->rows('other_items', $supplierId));
+        self::assertSame(0, $this->rows('other_items', $supplierId, "document_no IN ('26OZM0001', '26OZD0001', '26OZD0002')"));
         $counts = self::stepCounts($first, 'other_items');
-        self::assertSame(1, $counts['payroll_or_tax'] ?? 0);
-        self::assertSame(1, $counts['unposted'] ?? 0);
+        // Odvod na 336 a doplatek daně na 341 vlastní mzdový a daňový modul.
+        self::assertSame(2, $counts['payroll_or_tax'] ?? 0);
+        self::assertSame(1, $counts['created_unposted'] ?? 0);
+        self::assertSame(1, $counts['tax_advances'] ?? 0);
 
         $pdo = $this->db->pdo();
+        // Evidenční závazek bez zaúčtování: potvrzený bez vlastního zápisu, deník se nemění,
+        // úhrada z banky je přiřazená.
+        $unposted = $pdo->query("SELECT id, status, journal_entry_id, account_code FROM other_items WHERE supplier_id = {$supplierId} AND document_no = '26OZB0001'")->fetch(\PDO::FETCH_ASSOC);
+        self::assertSame(['confirmed', null, '364.000'], [$unposted['status'], $unposted['journal_entry_id'], $unposted['account_code']]);
+        self::assertSame('400.00', (string) $pdo->query("SELECT SUM(amount) FROM other_item_allocations WHERE other_item_id = {$unposted['id']}")->fetchColumn());
+        self::assertSame(0, $this->rows('journal_entries', $supplierId, "source_type = 'other_item' AND source_id = {$unposted['id']}"));
+
+        // Záloha na daň: předpis daňového modulu uhrazený spárovaným pohybem.
+        $advance = $pdo->query("SELECT taxpayer_type, period_year, seq_no, amount, due_date, status, paid_source, matched_transaction_id
+            FROM tax_advance_schedules WHERE supplier_id = {$supplierId}")->fetchAll(\PDO::FETCH_ASSOC);
+        self::assertCount(1, $advance);
+        self::assertSame(['2026', '1', '1000.00', '2026-03-16', 'paid', 'bank'],
+            [(string) $advance[0]['period_year'], (string) $advance[0]['seq_no'], (string) $advance[0]['amount'],
+             $advance[0]['due_date'], $advance[0]['status'], $advance[0]['paid_source']]);
+        self::assertNotNull($advance[0]['matched_transaction_id']);
+
         $settled = (int) $pdo->query("SELECT id FROM other_items WHERE supplier_id = {$supplierId} AND document_no = '26OZ0002'")->fetchColumn();
         self::assertSame(2, $this->rows('other_item_allocations', $supplierId, "other_item_id = {$settled} AND reversed_on IS NULL"));
         self::assertSame('300.00', (string) $pdo->query("SELECT SUM(amount) FROM other_item_allocations WHERE other_item_id = {$settled}")->fetchColumn());
@@ -231,8 +249,9 @@ final class PohodaImportTest extends TestCase
 
         $again = $this->importer->run($supplierId, $this->userId, $export, false);
         self::assertFalse($again->hasErrors(), $this->explain($again));
-        self::assertSame(3, $this->rows('other_items', $supplierId));
-        self::assertSame(2, $this->rows('other_item_allocations', $supplierId));
+        self::assertSame(4, $this->rows('other_items', $supplierId));
+        self::assertSame(3, $this->rows('other_item_allocations', $supplierId));
+        self::assertSame(1, $this->rows('tax_advance_schedules', $supplierId));
     }
 
     /** @return array<string,int|float> */

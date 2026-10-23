@@ -165,6 +165,10 @@ final class DocumentLinker
                 $this->allocateOtherItem($ctx, $l, $mapKey);
                 continue;
             }
+            if ($l['doc'] === 'tax_advance') {
+                $this->matchTaxAdvance($ctx, $l, $mapKey);
+                continue;
+            }
             if ($l['agenda'] === 'bank') {
                 $txId = $this->bankTransactionFor($ctx, $l);
                 if ($txId === null) {
@@ -310,6 +314,50 @@ final class DocumentLinker
         $allocation->execute([$ctx->supplierId, (int) $l['id'], $input[$column]]);
         $this->map->put($ctx->supplierId, PohodaImportRepository::KIND_PAYMENT, $mapKey, (int) $allocation->fetchColumn(), $ctx->runId);
         $p->count(self::STEP_PAYMENTS, 'other_item_' . ($column === 'bank_transaction_id' ? 'bank' : 'cash'));
+    }
+
+    /**
+     * Úhrada zálohy na daň z příjmů převzaté jako předpis daňového modulu: vazba předpisu na
+     * bankovní pohyb (jako po spárování v MyÚčtu). Uhrazenou částku a stav nese předpis už
+     * z POHODY; zápis platby převzala banka z deníku, nic se neúčtuje.
+     *
+     * @param array<string,mixed> $l
+     */
+    private function matchTaxAdvance(PohodaContext $ctx, array $l, string $mapKey): void
+    {
+        $p = $ctx->protocol;
+        if ($l['agenda'] !== 'bank') {
+            $p->count(self::STEP_PAYMENTS, 'tax_advance_' . ($l['agenda'] !== '' ? $l['agenda'] : 'without_document'));
+            return;
+        }
+        $txId = $this->bankTransactionFor($ctx, $l);
+        if ($txId === null) {
+            return;
+        }
+        $pdo = $this->db->pdo();
+        $pdo->exec('SAVEPOINT pohoda_tax_advance_payment');
+        try {
+            $stmt = $pdo->prepare(
+                "UPDATE tax_advance_schedules s
+                   JOIN bank_transactions t ON t.id = ?
+                    SET s.matched_transaction_id = t.id, s.paid_source = 'bank', s.match_confidence = 'exact',
+                        s.paid_on = DATE(t.posted_at)
+                  WHERE s.id = ? AND s.supplier_id = ? AND s.status = 'paid' AND s.matched_transaction_id IS NULL"
+            );
+            $stmt->execute([$txId, (int) $l['id'], $ctx->supplierId]);
+            $pdo->exec('RELEASE SAVEPOINT pohoda_tax_advance_payment');
+        } catch (\PDOException $e) {
+            if ((string) $e->getCode() !== '23000' && (string) $e->getCode() !== '45000') {
+                throw $e;
+            }
+            $pdo->exec('ROLLBACK TO SAVEPOINT pohoda_tax_advance_payment');
+            $pdo->exec('RELEASE SAVEPOINT pohoda_tax_advance_payment');
+            $p->count(self::STEP_PAYMENTS, 'tax_advance_not_matched');
+            $p->warn(self::STEP_PAYMENTS, 'tax_advance_payment', "Úhradu {$l['source']} zálohy {$l['number']} nešlo navázat, pohyb už je spárovaný jinde.", ['document_no' => $l['number']]);
+            return;
+        }
+        $this->map->put($ctx->supplierId, PohodaImportRepository::KIND_PAYMENT, $mapKey, (int) $l['id'], $ctx->runId);
+        $p->count(self::STEP_PAYMENTS, $stmt->rowCount() === 1 ? 'tax_advance_bank' : 'tax_advance_kept');
     }
 
     /**

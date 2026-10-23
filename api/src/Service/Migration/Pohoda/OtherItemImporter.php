@@ -6,24 +6,22 @@ namespace MyInvoice\Service\Migration\Pohoda;
 
 use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Repository\PohodaImportRepository;
-use MyInvoice\Service\Migration\MoneyS3\ImportProtocol;
 use PDO;
 
 /**
  * Ostatní pohledávky a závazky POHODY mimo přiznání DPH jako doklady agendy Ostatní
  * pohledávky a závazky. Doklady v přiznání převádí {@see InvoiceImporter} na faktury.
  *
- * Doklad převezme vlastní zápis převedeného deníku (bez nového účtování), jeho kontaci
- * a úhrady z `liquidations`, které po převodu banky a pokladny přiřadí
- * {@see DocumentLinker::matchPayments()}. Převádí se i uhrazené doklady, aby agenda
- * nesla celou historii roku.
+ * Doklad s vlastním zápisem převedeného deníku ho převezme (bez nového účtování) i s jeho
+ * kontací. Doklad, který POHODA vede bez zaúčtování (předkontace „bez", předpis nese jiný
+ * doklad, třeba interní), se převede jako potvrzený bez vlastního zápisu - v agendě je
+ * vidět a páruje úhrady, ale znovu se neúčtuje. Úhrady z `liquidations` přiřadí po převodu
+ * banky a pokladny {@see DocumentLinker::matchPayments()}. Převádí se i uhrazené doklady,
+ * aby agenda nesla celou historii roku.
  *
- * Nepřevádí se:
- *   - doklad bez vlastního zápisu v deníku (v POHODĚ evidovaný bez zaúčtování, předpis
- *     nese jiný doklad) - ostatní položka by v MyÚčtu neměla co vlastnit,
- *   - předpis mezd, odvodů a daní (účty 331, 336, 341, 342, 343) - vlastní ho mzdový
- *     a daňový modul, v agendě by byl podruhé,
- *   - doklad s jiným tvarem zápisu, než je jeden saldokontní účet proti protiúčtům.
+ * Předpisy mezd, odvodů a DPH (účty 331, 336, 342, 343) vlastní mzdový a daňový modul
+ * a nepřevádějí se. Zálohy na daň z příjmů (341) bez zaúčtování převezme daňový modul jako
+ * předpisy záloh ({@see self::taxAdvances()}).
  */
 final class OtherItemImporter
 {
@@ -31,6 +29,9 @@ final class OtherItemImporter
 
     /** Saldokontní účty, jejichž předpisy vlastní mzdy, DPH a daň z příjmů. */
     private const MODULE_ACCOUNTS = ['331', '336', '341', '342', '343'];
+
+    /** Účet záloh na daň z příjmů: evidenční závazek na něm je předpis zálohy. */
+    private const TAX_ADVANCE_ACCOUNT = '341';
 
     public function __construct(
         private readonly Connection $db,
@@ -42,8 +43,10 @@ final class OtherItemImporter
     {
         $p = $ctx->protocol;
         $mapped = $this->map->all($ctx->supplierId, PohodaImportRepository::KIND_OTHER_ITEM);
+        $mappedAdvances = $this->map->all($ctx->supplierId, PohodaImportRepository::KIND_TAX_ADVANCE);
         $journal = $this->map->all($ctx->supplierId, PohodaImportRepository::KIND_JOURNAL_ENTRY);
-        $unposted = [];
+        $rules = $this->postingRuleAccounts($ctx);
+        $advances = [];
         foreach (['receivable' => PohodaJournal::RECEIVABLE, 'commitment' => PohodaJournal::COMMITMENT] as $agenda => $source) {
             $invoiceKind = $agenda === 'receivable'
                 ? PohodaImportRepository::KIND_INVOICE
@@ -59,7 +62,12 @@ final class OtherItemImporter
                 $key = $agenda . '|' . $number . '|' . $issued;
                 if (isset($mapped[$key])) {
                     // Úhrady se párují i při opakovaném převodu - mohly mezitím přibýt.
-                    self::captureLiquidations($ctx, (int) $mapped[$key], $number, $record);
+                    self::captureLiquidations($ctx, 'other_item', (int) $mapped[$key], $number, $record);
+                    $p->count(self::STEP, 'existing');
+                    continue;
+                }
+                if (isset($mappedAdvances[$key])) {
+                    self::captureLiquidations($ctx, 'tax_advance', (int) $mappedAdvances[$key], $number, $record);
                     $p->count(self::STEP, 'existing');
                     continue;
                 }
@@ -88,9 +96,29 @@ final class OtherItemImporter
                     }
                 }
                 if ($entries === []) {
-                    $p->count(self::STEP, $issued < $ctx->periodStart() ? 'previous_period' : 'unposted');
-                    if ($candidate['remaining'] >= 0.005) {
-                        $unposted[] = $number . ' ' . number_format($candidate['remaining'], 2, ',', ' ') . ' Kč';
+                    // Bez vlastního zápisu: předpis nese jiný doklad (nebo ho nese počáteční stav).
+                    $rule = PohodaXml::text($header, 'accounting/ids');
+                    $account = $rules[$rule] ?? null;
+                    if ($account !== null && self::moduleOwned($account)) {
+                        if ($agenda === 'commitment' && self::isTaxAdvance($account, $candidate['title'])) {
+                            $advances[] = ['key' => $key, 'number' => $number, 'record' => $record, 'candidate' => $candidate];
+                        } else {
+                            $p->count(self::STEP, 'payroll_or_tax');
+                        }
+                        continue;
+                    }
+                    $id = $this->insertItem($ctx, $agenda, $header, $number, $issued, $candidate, [
+                        'account' => $account, 'counter' => null, 'lines' => [], 'date' => $issued,
+                        'posted_at' => null, 'entry_id' => null, 'status' => 'confirmed',
+                        'note' => "Převzato z POHODY, doklad {$number}. V POHODĚ veden bez zaúčtování"
+                            . ($rule !== '' ? " (předkontace {$rule})" : '')
+                            . ', předpis je v deníku jiným dokladem nebo v počátečním stavu - položka se proto neúčtuje.',
+                    ]);
+                    if ($id !== null) {
+                        $this->map->put($ctx->supplierId, PohodaImportRepository::KIND_OTHER_ITEM, $key, $id, $ctx->runId);
+                        self::captureLiquidations($ctx, 'other_item', $id, $number, $record);
+                        $p->count(self::STEP, 'created_unposted');
+                        $p->count(self::STEP, $candidate['remaining'] >= 0.005 ? 'open' : 'settled');
                     }
                     continue;
                 }
@@ -110,43 +138,16 @@ final class OtherItemImporter
                     $p->count(self::STEP, 'payroll_or_tax');
                     continue;
                 }
-                $snapshot = PartnerImporter::snapshot(PohodaXml::get($header, 'partnerIdentity'));
-                $partnerId = $snapshot['name'] !== '' || $snapshot['ico'] !== ''
-                    ? $this->partners->resolvePartner($ctx, $snapshot)
-                    : null;
-                $counter = count($posting['lines']) === 1 ? $posting['lines'][0]['account_code'] : null;
-                $pdo = $this->db->pdo();
-                try {
-                    $insert = $pdo->prepare(
-                        'INSERT INTO other_items
-                          (supplier_id, side, kind, title, partner_id, partner_name, issued_on, accounting_on, due_on,
-                           currency, amount, amount_czk, variable_symbol, account_code, counter_account_code,
-                           note, status, document_no, journal_entry_id, posted_at, created_by, updated_by)
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-                    );
-                    $insert->execute([
-                        $ctx->supplierId, $agenda === 'receivable' ? 'receivable' : 'payable', 'other',
-                        mb_substr($candidate['title'], 0, 255), $partnerId,
-                        mb_substr($snapshot['name'], 0, 190) ?: null,
-                        $issued, $posting['date'], $candidate['due'], 'CZK', $candidate['amount'],
-                        $candidate['amount'], $candidate['symbol'], $posting['account'], $counter,
-                        'Převzato z POHODY, doklad ' . $number, 'posted', mb_substr($number, 0, 50),
-                        $entryId, $posting['posted_at'], $ctx->userOrNull(), $ctx->userOrNull(),
-                    ]);
-                } catch (\PDOException $e) {
-                    if ((string) $e->getCode() !== '23000') throw $e;
-                    $p->warn(self::STEP, 'number_taken', "Doklad {$number} nelze převzít, číslo už má jiná pohledávka nebo závazek.", ['document_no' => $number]);
+                $id = $this->insertItem($ctx, $agenda, $header, $number, $issued, $candidate, [
+                    'account' => $posting['account'],
+                    'counter' => count($posting['lines']) === 1 ? $posting['lines'][0]['account_code'] : null,
+                    'lines' => $posting['lines'], 'date' => $posting['date'], 'posted_at' => $posting['posted_at'],
+                    'entry_id' => $entryId, 'status' => 'posted', 'note' => 'Převzato z POHODY, doklad ' . $number,
+                ]);
+                if ($id === null) {
                     continue;
                 }
-                $id = (int) $pdo->lastInsertId();
-                if ($counter === null) {
-                    $line = $pdo->prepare('INSERT INTO other_item_posting_lines
-                        (supplier_id, other_item_id, position, account_code, amount) VALUES (?, ?, ?, ?, ?)');
-                    foreach ($posting['lines'] as $position => $row) {
-                        $line->execute([$ctx->supplierId, $id, $position + 1, $row['account_code'], number_format($row['amount'], 2, '.', '')]);
-                    }
-                }
-                $owner = $pdo->prepare(
+                $owner = $this->db->pdo()->prepare(
                     "UPDATE journal_entries SET source_type = 'other_item', source_id = ?
                        WHERE id = ? AND supplier_id = ? AND source_type = 'manual' AND source_id IS NULL"
                 );
@@ -155,16 +156,151 @@ final class OtherItemImporter
                     throw new PohodaException('other_item_journal_claim', 'Převzatý zápis deníku už vlastní jiný doklad.');
                 }
                 $this->map->put($ctx->supplierId, PohodaImportRepository::KIND_OTHER_ITEM, $key, $id, $ctx->runId);
-                self::captureLiquidations($ctx, $id, $number, $record);
+                self::captureLiquidations($ctx, 'other_item', $id, $number, $record);
                 $p->count(self::STEP, 'created');
                 $p->count(self::STEP, $candidate['remaining'] >= 0.005 ? 'open' : 'settled');
             }
         }
-        if ($unposted !== []) {
-            $p->info(self::STEP, 'other_item_unposted', count($unposted) . ' neuhrazených ostatních pohledávek a závazků vede POHODA bez zaúčtování '
-                . '(předpis je v deníku jiným dokladem). Do agendy se nepřevádějí; k úhradě je zadejte ručně nebo je sledujte v saldokontu.',
-                ['documents' => array_slice($unposted, 0, ImportProtocol::LIST_LIMIT)]);
+        $this->taxAdvances($ctx, $advances);
+    }
+
+    /**
+     * Zálohy na daň z příjmů, které POHODA vede jako ostatní závazky bez zaúčtování, jako
+     * předpisy záloh daňového modulu (`tax_advance_schedules`). Rok předpisu je kalendářní
+     * rok splatnosti a pořadí je pořadí splatností v něm, stejně jako u předpisů z přiznání
+     * ({@see \MyInvoice\Service\Tax\Return\TaxAdvanceScheduleService}). Rok, pro který firma
+     * v MyÚčtu předpisy už má, se nepřepisuje. Úhradu převezme stav POHODY, vazbu na
+     * bankovní pohyb doplní krok úhrad.
+     *
+     * @param list<array{key:string,number:string,record:array,candidate:array}> $advances
+     */
+    private function taxAdvances(PohodaContext $ctx, array $advances): void
+    {
+        if ($advances === []) {
+            return;
         }
+        $p = $ctx->protocol;
+        $pdo = $this->db->pdo();
+        $type = $pdo->prepare('SELECT taxpayer_type FROM supplier WHERE id = ?');
+        $type->execute([$ctx->supplierId]);
+        $taxpayer = (string) $type->fetchColumn() === 'fo' ? 'fo' : 'po';
+        $byYear = [];
+        foreach ($advances as $advance) {
+            $byYear[(int) substr((string) $advance['candidate']['due'], 0, 4)][] = $advance;
+        }
+        ksort($byYear);
+        $existing = $pdo->prepare("SELECT COUNT(*) FROM tax_advance_schedules
+            WHERE supplier_id = ? AND taxpayer_type = ? AND advance_kind = 'tax' AND period_year = ?");
+        $insert = $pdo->prepare("INSERT INTO tax_advance_schedules
+            (supplier_id, taxpayer_type, advance_kind, period_year, seq_no, amount, due_date, variable_symbol,
+             status, paid_amount, paid_on, paid_source)
+            VALUES (?, ?, 'tax', ?, ?, ?, ?, ?, ?, ?, ?, 'manual')");
+        foreach ($byYear as $year => $rows) {
+            $existing->execute([$ctx->supplierId, $taxpayer, $year]);
+            if ((int) $existing->fetchColumn() > 0) {
+                $p->count(self::STEP, 'tax_advances_kept', count($rows));
+                $p->info(self::STEP, 'tax_advances_kept', "Předpisy záloh na daň z příjmů za rok {$year} už v MyÚčtu jsou, zálohy z POHODY ("
+                    . implode(', ', array_column($rows, 'number')) . ') se nepřevzaly.');
+                continue;
+            }
+            usort($rows, static fn (array $a, array $b): int => [$a['candidate']['due'], $a['number']] <=> [$b['candidate']['due'], $b['number']]);
+            foreach ($rows as $seq => $row) {
+                $c = $row['candidate'];
+                $paid = round($c['amount'] - $c['remaining'], 2);
+                $paidOn = null;
+                foreach (PohodaXml::all($row['record'], 'liquidations/liquidation') as $l) {
+                    $date = PohodaXml::date($l, 'date');
+                    if ($date !== null && ($paidOn === null || $date > $paidOn)) {
+                        $paidOn = $date;
+                    }
+                }
+                $settled = $c['remaining'] < 0.005;
+                $insert->execute([
+                    $ctx->supplierId, $taxpayer, $year, $seq + 1, number_format($c['amount'], 2, '.', ''), $c['due'],
+                    $c['symbol'] !== null && strlen($c['symbol']) <= 20 ? $c['symbol'] : null,
+                    $settled ? 'paid' : 'planned', number_format($paid, 2, '.', ''),
+                    $paid > 0 ? ($paidOn ?? $c['due']) : null,
+                ]);
+                $id = (int) $pdo->lastInsertId();
+                $this->map->put($ctx->supplierId, PohodaImportRepository::KIND_TAX_ADVANCE, $row['key'], $id, $ctx->runId);
+                self::captureLiquidations($ctx, 'tax_advance', $id, $row['number'], $row['record']);
+                $p->count(self::STEP, 'tax_advances');
+            }
+        }
+    }
+
+    /**
+     * Účet předkontace POHODY podle kódu: strana, která je vyplněná (předkontace „bez"
+     * nese jen účet, na který míří úhrada). Kód účtu MyÚčta podle převedené osnovy.
+     *
+     * @return array<string,string>
+     */
+    private function postingRuleAccounts(PohodaContext $ctx): array
+    {
+        $codes = [];
+        $stmt = $this->db->pdo()->prepare("SELECT account_code FROM chart_of_accounts WHERE supplier_id = ? AND REPLACE(account_code, '.', '') = ? ORDER BY account_code LIMIT 1");
+        foreach ($ctx->export->records('posting_rules', 'itemAccounting') as $r) {
+            $key = trim((string) ($r['@code'] ?? ''));
+            $debit = trim((string) ($r['@debit'] ?? ''));
+            $credit = trim((string) ($r['@credit'] ?? ''));
+            if ($key === '' || isset($codes[$key]) || ($debit === '') === ($credit === '')) {
+                continue;
+            }
+            $raw = $debit !== '' ? $debit : $credit;
+            $stmt->execute([$ctx->supplierId, str_replace('.', '', $raw)]);
+            $code = $stmt->fetchColumn();
+            if ($code !== false) {
+                $codes[$key] = (string) $code;
+            }
+        }
+        return $codes;
+    }
+
+    /**
+     * Založí ostatní položku. `status` posted = vlastní převzatý zápis, confirmed = bez
+     * vlastního zápisu. Číslo dokladu obsazené jinou položkou se jen ohlásí.
+     *
+     * @param array{amount:float,remaining:float,due:string,title:string,symbol:?string} $candidate
+     * @param array{account:?string,counter:?string,lines:list<array{account_code:string,amount:float}>,date:string,posted_at:?string,entry_id:?int,status:string,note:string} $posting
+     */
+    private function insertItem(PohodaContext $ctx, string $agenda, mixed $header, string $number, string $issued, array $candidate, array $posting): ?int
+    {
+        $snapshot = PartnerImporter::snapshot(PohodaXml::get($header, 'partnerIdentity'));
+        $partnerId = $snapshot['name'] !== '' || $snapshot['ico'] !== ''
+            ? $this->partners->resolvePartner($ctx, $snapshot)
+            : null;
+        $pdo = $this->db->pdo();
+        try {
+            $insert = $pdo->prepare(
+                'INSERT INTO other_items
+                  (supplier_id, side, kind, title, partner_id, partner_name, issued_on, accounting_on, due_on,
+                   currency, amount, amount_czk, variable_symbol, account_code, counter_account_code,
+                   note, status, document_no, journal_entry_id, posted_at, created_by, updated_by)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+            );
+            $insert->execute([
+                $ctx->supplierId, $agenda === 'receivable' ? 'receivable' : 'payable', 'other',
+                mb_substr($candidate['title'], 0, 255), $partnerId,
+                mb_substr($snapshot['name'], 0, 190) ?: null,
+                $issued, $posting['date'], $candidate['due'], 'CZK', $candidate['amount'],
+                $candidate['amount'], $candidate['symbol'], $posting['account'], $posting['counter'],
+                $posting['note'], $posting['status'], mb_substr($number, 0, 50),
+                $posting['entry_id'], $posting['posted_at'], $ctx->userOrNull(), $ctx->userOrNull(),
+            ]);
+        } catch (\PDOException $e) {
+            if ((string) $e->getCode() !== '23000') throw $e;
+            $ctx->protocol->warn(self::STEP, 'number_taken', "Doklad {$number} nelze převzít, číslo už má jiná pohledávka nebo závazek.", ['document_no' => $number]);
+            return null;
+        }
+        $id = (int) $pdo->lastInsertId();
+        if ($posting['counter'] === null && $posting['lines'] !== []) {
+            $line = $pdo->prepare('INSERT INTO other_item_posting_lines
+                (supplier_id, other_item_id, position, account_code, amount) VALUES (?, ?, ?, ?, ?)');
+            foreach ($posting['lines'] as $position => $row) {
+                $line->execute([$ctx->supplierId, $id, $position + 1, $row['account_code'], number_format($row['amount'], 2, '.', '')]);
+            }
+        }
+        return $id;
     }
 
     /**
@@ -280,16 +416,31 @@ final class OtherItemImporter
         return ['account' => $balance, 'lines' => $lines];
     }
 
+    /**
+     * Záloha na daň z příjmů: závazek na 341 s textem zálohy. Na stejném účtu (a se stejnou
+     * předkontací) vede POHODA i doplatek daně za uplynulý rok - ten patří k přiznání,
+     * ne mezi předpisy záloh, a rozezná se jen podle textu.
+     */
+    public static function isTaxAdvance(string $account, string $title): bool
+    {
+        if (!str_starts_with($account, self::TAX_ADVANCE_ACCOUNT)) {
+            return false;
+        }
+        $text = mb_strtolower($title);
+        return str_contains($text, 'záloh') || str_contains($text, 'zaloh');
+    }
+
     public static function moduleOwned(string $account): bool
     {
         return in_array(substr($account, 0, 3), self::MODULE_ACCOUNTS, true);
     }
 
-    private static function captureLiquidations(PohodaContext $ctx, int $id, string $number, array $record): void
+    /** @param 'other_item'|'tax_advance' $doc */
+    private static function captureLiquidations(PohodaContext $ctx, string $doc, int $id, string $number, array $record): void
     {
         foreach (PohodaXml::all($record, 'liquidations/liquidation') as $l) {
             $ctx->liquidations[] = [
-                'doc' => 'other_item',
+                'doc' => $doc,
                 'id' => $id,
                 'number' => $number,
                 'agenda' => PohodaXml::text($l, 'sourceAgenda'),

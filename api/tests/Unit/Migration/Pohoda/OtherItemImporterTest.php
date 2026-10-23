@@ -91,6 +91,15 @@ final class OtherItemImporterTest extends TestCase
         self::assertNull(OtherItemImporter::postingLines($receivable, 'receivable', 1200.0));
     }
 
+    /** Doplatek daně vede POHODA na stejném účtu i předkontaci jako zálohy; rozhoduje text. */
+    public function testOnlyAdvanceTextOnIncomeTaxAccountIsATaxAdvance(): void
+    {
+        self::assertTrue(OtherItemImporter::isTaxAdvance('341.000', 'Daň z příjmů (záloha) 3/4'));
+        self::assertTrue(OtherItemImporter::isTaxAdvance('341', 'Zaloha DPPO'));
+        self::assertFalse(OtherItemImporter::isTaxAdvance('341.000', 'Odvod daně z příjmů PO/2025 - doplatek'));
+        self::assertFalse(OtherItemImporter::isTaxAdvance('342.000', 'Záloha na daň ze mzdy'));
+    }
+
     public function testPayrollAndTaxAccountsBelongToTheirModules(): void
     {
         foreach (['331.000', '336', '341.001', '342.000', '343.100'] as $account) {

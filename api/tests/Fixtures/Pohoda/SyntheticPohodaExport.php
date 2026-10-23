@@ -199,9 +199,12 @@ final class SyntheticPohodaExport
     }
 
     /**
-     * Ostatní pohledávka a závazek mimo DPH, neuhrazené. S `$settled` navíc závazek
-     * uhrazený bankou ve dvou splátkách, závazek bez zaúčtování (předkontace „bez") a předpis
-     * odvodu na účtu 336, který vlastní mzdový modul.
+     * Ostatní pohledávka a závazek mimo DPH, neuhrazené. S `$settled` navíc:
+     *   - závazek uhrazený bankou ve dvou splátkách,
+     *   - předpis odvodu na účtu 336, který vlastní mzdový modul,
+     *   - evidenční závazky bez zaúčtování (předkontace „bez"): podíl na zisku na 364
+     *     částečně uhrazený bankou, záloha na daň z příjmů uhrazená bankou a doplatek
+     *     daně na stejném účtu 341.
      */
     public static function withOtherItems(string $dir, bool $settled = false): void
     {
@@ -218,20 +221,32 @@ final class SyntheticPohodaExport
             '<lst:itemAccount id="315000" code="315000" name="Ostatní pohledávky"/>'
             . '<lst:itemAccount id="325000" code="325000" name="Ostatní závazky"/>'
             . ($settled ? '<lst:itemAccount id="336000" code="336000" name="Zúčtování s institucemi SZ a ZP"/>'
+                . '<lst:itemAccount id="341000" code="341000" name="Daň z příjmů"/>'
+                . '<lst:itemAccount id="364000" code="364000" name="Závazky ke společníkům při rozdělování zisku"/>'
+                . '<lst:itemAccount id="428000" code="428000" name="Nerozdělený zisk minulých let"/>'
                 . '<lst:itemAccount id="513000" code="513000" name="Náklady na reprezentaci"/>'
                 . '<lst:itemAccount id="524000" code="524000" name="Zákonné sociální pojištění"/>' : ''));
+        if ($settled) {
+            $append($dir . '/03_predkontace_pu.xml', '</lst:listAccounting>',
+                '<lst:itemAccounting id="2" code="BEZ364000" accounting="Podíl na zisku společníka" debit="364000" agenda="commitment"/>'
+                . '<lst:itemAccounting id="3" code="BEZ341000" accounting="DPPO" debit="341000" agenda="commitment"/>');
+        }
         $append($dir . '/01_ucetni_denik.xml', '</lst:accountancy>',
             self::entry('Ostatní pohledávky', '26OP0001', 'Nájem', 1200, '315000', '602000', '2026-02-01')
             . self::entry('Ostatní závazky', '26OZ0001', 'Nájem', 800, '518000', '325000', '2026-02-02')
             . ($settled ? self::entry('Ostatní závazky', '26OZ0002', 'Reprezentace', 300, '513000', '325000', '2026-02-03')
                 . self::entry('Ostatní závazky', '26OZM0001', 'Sociální pojištění', 500, '524000', '336000', '2026-02-04')
+                . self::entry('Interní doklady', '26IN0001', 'Podíl na zisku', 900, '428000', '364000', '2026-02-05')
                 . self::entry('Banka', 'BAN0010020', 'Úhrada 26OZ0002', 100, '325000', '221001', '2026-02-10')
-                . self::entry('Banka', 'BAN0010021', 'Úhrada 26OZ0002', 200, '325000', '221001', '2026-02-12') : ''));
-        $document = static function (string $number, string $vat, float $amount, string $date, float $remaining, string $liquidations = ''): string {
+                . self::entry('Banka', 'BAN0010021', 'Úhrada 26OZ0002', 200, '325000', '221001', '2026-02-12')
+                . self::entry('Banka', 'BAN0010022', 'Úhrada podílu', 400, '364000', '221001', '2026-02-20')
+                . self::entry('Banka', 'BAN0010023', 'Záloha daně', 1000, '341000', '221001', '2026-03-10') : ''));
+        $document = static function (string $number, string $vat, float $amount, string $date, float $remaining, string $liquidations = '', string $text = 'Nájem', string $rule = '', string $due = '2026-03-01'): string {
             return '<lst:invoice version="2.0"><inv:invoiceHeader>'
                 . '<inv:number><typ:numberRequested>' . $number . '</typ:numberRequested></inv:number>'
                 . '<inv:date>' . $date . '</inv:date><inv:dateAccounting>' . $date . '</inv:dateAccounting>'
-                . '<inv:dateDue>2026-03-01</inv:dateDue><inv:text>Nájem</inv:text>'
+                . '<inv:dateDue>' . $due . '</inv:dateDue><inv:text>' . $text . '</inv:text>'
+                . ($rule !== '' ? '<inv:accounting><typ:ids>' . $rule . '</typ:ids></inv:accounting>' : '')
                 . '<inv:classificationVAT><typ:ids>' . $vat . '</typ:ids></inv:classificationVAT>'
                 . '<inv:partnerIdentity><typ:address><typ:company>Pronajímatel Test s.r.o.</typ:company></typ:address></inv:partnerIdentity>'
                 . '<inv:liquidation><typ:amountHome>' . $remaining . '</typ:amountHome></inv:liquidation>'
@@ -252,12 +267,18 @@ final class SyntheticPohodaExport
             . ($settled ? $document('26OZ0002', 'PN', 300, '2026-02-03', 0, '<inv:liquidations>'
                     . $liquidation('BAN0010020', '2026-02-10', 100) . $liquidation('BAN0010021', '2026-02-12', 200) . '</inv:liquidations>')
                 . $document('26OZM0001', 'PN', 500, '2026-02-04', 500)
-                . $document('26OZB0001', 'PN', 900, '2026-02-05', 900) : '')
+                . $document('26OZB0001', 'PN', 900, '2026-02-05', 500, '<inv:liquidations>'
+                    . $liquidation('BAN0010022', '2026-02-20', 400) . '</inv:liquidations>', 'Podíl na zisku', 'BEZ364000')
+                . $document('26OZD0001', 'PN', 1000, '2026-02-06', 0, '<inv:liquidations>'
+                    . $liquidation('BAN0010023', '2026-03-10', 1000) . '</inv:liquidations>', 'Daň z příjmů (záloha) 1/4', 'BEZ341000', '2026-03-16')
+                . $document('26OZD0002', 'PN', 2000, '2026-02-06', 2000, '', 'Odvod daně z příjmů - doplatek', 'BEZ341000', '2026-04-01') : '')
             . '</lst:listInvoice>');
         if ($settled) {
             $append($dir . '/29_banka.xml', '</lst:listBank>',
                 self::bank('BAN0010020', 'expense', '2026-02-10', 100, '', 'Pronajímatel Test s.r.o.')
-                . self::bank('BAN0010021', 'expense', '2026-02-12', 200, '', 'Pronajímatel Test s.r.o.'));
+                . self::bank('BAN0010021', 'expense', '2026-02-12', 200, '', 'Pronajímatel Test s.r.o.')
+                . self::bank('BAN0010022', 'expense', '2026-02-20', 400, '', 'Pronajímatel Test s.r.o.')
+                . self::bank('BAN0010023', 'expense', '2026-03-10', 1000, '', 'Finanční úřad'));
         }
     }
 
