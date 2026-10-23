@@ -171,6 +171,59 @@ final class InstanceAdminAccessTest extends TestCase
         self::assertSame(0, (int) $pdo->query('SELECT COUNT(*) FROM user_technical_access WHERE user_id = ' . $target)->fetchColumn());
     }
 
+    public function testFullSeatLimitAllowsTechnicalCreationAndActivationButRollsBackBusinessConversion(): void
+    {
+        $pdo = $this->db->pdo();
+        $this->user($this->roleId('accountant'));
+        $seats = new SeatPolicy($this->db);
+        $before = $seats->countActiveSeats();
+        self::assertGreaterThan(0, $before);
+        $license = $this->createStub(LicenseService::class);
+        $license->method('current')->willReturn($this->licenseState($before));
+        $capacity = new LicenseCapacityGate($this->db, $license, $seats, new PayrollUsagePolicy($this->db));
+        $mailer = $this->createMock(Mailer::class);
+        $mailer->expects(self::never())->method('sendTemplate');
+        $action = new UserAdminAction($this->db, new ActivityLogger($this->db), new IpMatcher($this->config),
+            new PasswordHasher($this->config), new SessionManager($this->db, $this->config, new DatabaseSecurityClock()),
+            $capacity, new PasswordSetupLinkIssuer(), $mailer, $this->config);
+
+        $created = $action->create($this->adminRequest('POST', '/')->withParsedBody([
+            'email' => 'technical-capacity-' . bin2hex(random_bytes(6)) . '@example.invalid',
+            'name' => 'Synthetic technical capacity', 'role_id' => $this->technicalRole,
+            'password' => 'Synthetic-FR224-Password-42!', 'locale' => 'cs',
+        ]), (new ResponseFactory())->createResponse());
+        self::assertSame(201, $created->getStatusCode(), (string) $created->getBody());
+        $target = (int) json_decode((string) $created->getBody(), true, flags: JSON_THROW_ON_ERROR)['id'];
+        self::assertGreaterThan(0, $target);
+        self::assertSame($before, $seats->countActiveSeats());
+        $pdo->prepare('UPDATE users SET is_active = 0 WHERE id = ?')->execute([$target]);
+        $activated = $action->update($this->adminRequest('PUT', '/')->withParsedBody(['is_active' => true]),
+            (new ResponseFactory())->createResponse(), ['id' => $target]);
+        self::assertSame(200, $activated->getStatusCode(), (string) $activated->getBody());
+        self::assertSame($before, $seats->countActiveSeats());
+
+        $this->access->replaceForUser($target, false, [$this->supplierA]);
+        $session = bin2hex(random_bytes(32));
+        $pdo->prepare("INSERT INTO sessions (id,user_id,csrf_token,expires_at,ip,user_agent,last_user_activity_at,session_family_id)
+            VALUES (?, ?, ?, NOW() + INTERVAL 1 DAY, INET6_ATON('127.0.0.1'), 'synthetic', UTC_TIMESTAMP(6), ?)")
+            ->execute([$session, $target, bin2hex(random_bytes(32)), random_bytes(32)]);
+        $blocked = $action->update($this->adminRequest('PUT', '/')->withParsedBody(['role_id' => $this->roleId('accountant')]),
+            (new ResponseFactory())->createResponse(), ['id' => $target]);
+        self::assertSame(403, $blocked->getStatusCode(), (string) $blocked->getBody());
+        $error = json_decode((string) $blocked->getBody(), true, flags: JSON_THROW_ON_ERROR);
+        self::assertSame('license_user_limit', $error['error']['code']);
+        self::assertSame($before, $seats->countActiveSeats());
+        $stmt = $pdo->prepare('SELECT role_id, is_active FROM users WHERE id = ?');
+        $stmt->execute([$target]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+        self::assertSame($this->technicalRole, (int) $user['role_id']);
+        self::assertSame(1, (int) $user['is_active']);
+        self::assertSame(['all_suppliers' => false, 'supplier_ids' => [$this->supplierA]], $this->access->scopeForUser($target));
+        $stmt = $pdo->prepare('SELECT revoked_at FROM sessions WHERE id = ? AND user_id = ?');
+        $stmt->execute([$session, $target]);
+        self::assertNull($stmt->fetchColumn(), 'Zamítnutá konverze nesmí zrušit dosavadní přihlášení.');
+    }
+
     private function roleId(string $key): int
     {
         $stmt = $this->db->pdo()->prepare('SELECT id FROM roles WHERE system_key = ?');
@@ -214,10 +267,10 @@ final class InstanceAdminAccessTest extends TestCase
             ->withAttribute('auth.effective_role', new EffectiveRole(1, 'Superadmin', 'superadmin', true, [], 'superadmin'));
     }
 
-    private function licenseState(): LicenseState
+    private function licenseState(int $usersLicensed = 100): LicenseState
     {
         return new LicenseState(state: LicenseState::ACTIVE, instanceId: 'synthetic', tier: 'team', maxCompanies: null,
-            usersLicensed: 100, usersActive: 0, companiesActive: 0, validUntil: time() + 86400, trialEndsAt: null,
+            usersLicensed: $usersLicensed, usersActive: 0, companiesActive: 0, validUntil: time() + 86400, trialEndsAt: null,
             overageDeadline: null, licenseKey: null, lastCheckAt: null, lastCheckOk: true);
     }
 }

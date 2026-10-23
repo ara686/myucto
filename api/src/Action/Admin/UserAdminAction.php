@@ -29,15 +29,17 @@ final class UserAdminAction
         'mfa_recovery_codes', 'mfa_step_up_proofs', 'oauth_sessions', 'password_resets',
         'saved_filters', 'sessions', 'trusted_devices', 'user_preferences',
         'user_suppliers', 'webauthn_ceremonies', 'webauthn_credentials',
+        'user_technical_access', 'user_technical_suppliers', 'instance_smtp_test_attempts',
     ];
 
     /**
-     * Auditní stopa smazání nebrání a autora si drží dál: `activity_log.user_id` nemá
+     * Auditní stopa smazání nebrání a autora si drží dál. `activity_log.user_id` nemá
      * cizí klíč (migrace 1945), protože vstupuje do hashe řetězu a nesmí se přepsat.
+     * Stejně se zachová autor technické události a neměnného schválení SMTP cíle.
      * Výjimka platí jen pro sloupec BEZ cizího klíče — instalace, kde klíč ještě je,
      * by záznamy vynulovala, a proto u ní smazání blokuje dál.
      */
-    private const AUDIT_USER_TABLES = ['activity_log'];
+    private const AUDIT_USER_TABLES = ['activity_log', 'instance_admin_events', 'instance_smtp_targets'];
 
     public function __construct(
         private readonly Connection $db,
