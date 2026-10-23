@@ -55,6 +55,30 @@ final class RequestAuthorization
     }
 
     /**
+     * Firma, na kterou je požadavek pevně vázaný: API token vydaný pro jednu firmu,
+     * nebo vlastní doména firmy. NULL = požadavek vázaný není.
+     *
+     * Přehledy napříč firmami (automatizace, přehled firem) se musí na tuhle firmu
+     * zúžit samy, protože seznam firem skládají z členství uživatele a ne
+     * z {@see \MyInvoice\Service\Tenant\SupplierAccessResolver}. Doména má přednost
+     * stejně jako v resolveru; nesoulad tokenu a domény resolver odmítne dřív.
+     */
+    public static function boundSupplierId(Request $request): ?int
+    {
+        $domain = $request->getAttribute(\MyInvoice\Middleware\TenantDomainMiddleware::ATTR_CONTEXT);
+        if ($domain instanceof \MyInvoice\Service\Tenant\TenantDomainContext && $domain->locksSupplier()) {
+            return (int) $domain->supplierId;
+        }
+        $token = $request->getAttribute(\MyInvoice\Middleware\AuthMiddleware::ATTR_API_TOKEN);
+        // Poškozená vazba (0) zůstává vazbou: zúží výběr na nic, nerozšíří ho.
+        if (is_array($token) && ($token['supplier_id'] ?? null) !== null) {
+            return (int) $token['supplier_id'];
+        }
+
+        return null;
+    }
+
+    /**
      * Název způsobu ověření pro VÝPIS, ne pro rozhodování.
      *
      * Používá ho `/api/auth/api-me`, které o sobě říká, čím je požadavek
