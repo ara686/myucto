@@ -44,69 +44,122 @@ namespace MyInvoice\Support\Sql;
 final class CreditNoteOffsetRemainderExpr
 {
     /**
-     * Brutto části dokladu k úhradě penězi.
+     * Připojení zápočtů dokladu známých k datu úhrady jako odvozené tabulky: zápočty firmy
+     * seskupené po dokladu a dni s kumulativním brutto a DPH a dnem dalšího zápočtu. Podmínka
+     * spojení vybere den posledního zápočtu nejpozději v den úhrady, takže se k řádku dokladu
+     * připojí nejvýš jeden řádek a zbytek se nepočítá korelovaným poddotazem pro každou úhradu.
      *
-     * @param string      $docType      `invoice` (vydaný doklad) nebo `purchase_invoice` (přijatý)
-     * @param string      $alias        alias tabulky dokladu v okolním dotazu
-     * @param string      $asOfSql      SQL datum, ke kterému se zápočty berou (datum úhrady)
-     * @param string|null $throughIdSql SQL id posledního zápočtu dne $asOfSql, který se ještě
-     *                                  bere (opravný řádek); null = všechny zápočty toho dne
+     * @param string $docType    `invoice` (vydaný doklad) nebo `purchase_invoice` (přijatý)
+     * @param int    $supplierId firma (inline, int)
+     * @param string $docAlias   alias tabulky dokladu v okolním dotazu
+     * @param string $asOfSql    SQL datum, ke kterému se zápočty berou (datum úhrady)
+     * @param string $alias      alias připojené tabulky pro {@see grossSql()} a {@see vatSql()}
      */
-    public static function grossSql(string $docType, string $alias, string $asOfSql, ?string $throughIdSql = null): string
+    public static function joinSql(string $docType, int $supplierId, string $docAlias, string $asOfSql, string $alias): string
+    {
+        [$type, $table] = self::document($docType);
+        return "LEFT JOIN (
+                    SELECT d.invoice_id, d.offset_on,
+                           LEAD(d.offset_on) OVER (PARTITION BY d.invoice_id ORDER BY d.offset_on) AS until_on,
+                           SUM(d.gross) OVER (PARTITION BY d.invoice_id ORDER BY d.offset_on) AS gross,
+                           SUM(d.vat) OVER (PARTITION BY d.invoice_id ORDER BY d.offset_on) AS vat
+                      FROM (SELECT cnr_o.invoice_id, cnr_o.offset_on, SUM(cnr_o.amount) AS gross,
+                                   SUM(" . self::offsetVatSql() . ") AS vat
+                              FROM credit_note_offsets cnr_o
+                              LEFT JOIN {$table} cnr_d ON cnr_d.id = cnr_o.credit_note_id AND cnr_d.supplier_id = cnr_o.supplier_id
+                             WHERE cnr_o.supplier_id = {$supplierId} AND cnr_o.doc_type = '{$type}'
+                             GROUP BY cnr_o.invoice_id, cnr_o.offset_on) d
+                ) {$alias} ON {$alias}.invoice_id = {$docAlias}.id AND {$alias}.offset_on <= {$asOfSql}
+                          AND ({$alias}.until_on IS NULL OR {$alias}.until_on > {$asOfSql})";
+    }
+
+    /**
+     * Brutto části dokladu k úhradě penězi nad připojením z {@see joinSql()}.
+     *
+     * @param string $docAlias alias tabulky dokladu
+     * @param string $alias    alias připojených zápočtů
+     */
+    public static function grossSql(string $docAlias, string $alias): string
+    {
+        $remaining = "({$docAlias}.total_with_vat - COALESCE({$alias}.gross, 0))";
+        return "(CASE WHEN {$remaining} > 0.005 THEN {$remaining} ELSE {$docAlias}.total_with_vat END)";
+    }
+
+    /**
+     * DPH části dokladu k úhradě penězi nad připojením z {@see joinSql()}.
+     *
+     * @param string $docAlias alias tabulky dokladu
+     * @param string $alias    alias připojených zápočtů
+     */
+    public static function vatSql(string $docAlias, string $alias): string
+    {
+        return "(CASE WHEN {$docAlias}.total_with_vat - COALESCE({$alias}.gross, 0) > 0.005
+                      THEN {$docAlias}.total_vat - COALESCE({$alias}.vat, 0) ELSE {$docAlias}.total_vat END)";
+    }
+
+    /**
+     * Brutto k úhradě penězi se zápočty do daného zápočtu (opravný řádek srovnává zbytek
+     * před zápočtem a po něm). Korelovaný poddotaz, běží jednou na zápočet, ne na úhradu.
+     *
+     * @param string $docType      `invoice` nebo `purchase_invoice`
+     * @param string $alias        alias tabulky dokladu v okolním dotazu
+     * @param string $asOfSql      SQL datum zápočtu
+     * @param string $throughIdSql SQL id posledního zápočtu dne $asOfSql, který se ještě bere
+     */
+    public static function grossAsOfOffsetSql(string $docType, string $alias, string $asOfSql, string $throughIdSql): string
     {
         $remaining = self::remainingGrossSql($docType, $alias, $asOfSql, $throughIdSql);
         return "(CASE WHEN {$remaining} > 0.005 THEN {$remaining} ELSE {$alias}.total_with_vat END)";
     }
 
     /**
-     * DPH části dokladu k úhradě penězi.
-     *
-     * @param string      $docType      `invoice` (vydaný doklad) nebo `purchase_invoice` (přijatý)
-     * @param string      $alias        alias tabulky dokladu v okolním dotazu
-     * @param string      $asOfSql      SQL datum, ke kterému se zápočty berou (datum úhrady)
-     * @param string|null $throughIdSql viz {@see grossSql()}
+     * DPH k úhradě penězi se zápočty do daného zápočtu, viz {@see grossAsOfOffsetSql()}.
      */
-    public static function vatSql(string $docType, string $alias, string $asOfSql, ?string $throughIdSql = null): string
+    public static function vatAsOfOffsetSql(string $docType, string $alias, string $asOfSql, string $throughIdSql): string
     {
         return '(CASE WHEN ' . self::remainingGrossSql($docType, $alias, $asOfSql, $throughIdSql) . ' > 0.005
                       THEN ' . self::remainingVatSql($docType, $alias, $asOfSql, $throughIdSql) . " ELSE {$alias}.total_vat END)";
     }
 
     /** Brutto dokladu minus částky zápočtů dobropisů proti němu. */
-    private static function remainingGrossSql(string $docType, string $alias, string $asOfSql, ?string $throughIdSql): string
+    private static function remainingGrossSql(string $docType, string $alias, string $asOfSql, string $throughIdSql): string
     {
         [$type] = self::document($docType);
-        $asOf = self::asOf($asOfSql, $throughIdSql);
+        $asOf = self::throughOffset($asOfSql, $throughIdSql);
         return "({$alias}.total_with_vat - (SELECT COALESCE(SUM(cnr_o.amount), 0)
                      FROM credit_note_offsets cnr_o
                     WHERE cnr_o.supplier_id = {$alias}.supplier_id AND cnr_o.doc_type = '{$type}'
                       AND cnr_o.invoice_id = {$alias}.id AND {$asOf}))";
     }
 
-    /**
-     * DPH dokladu minus DPH započtených dobropisů. `SIGN(brutto) × DPH` je DPH dobropisu ve
-     * směru snížení faktury; poměrem se počítá jen zápočet, který se od brutto dobropisu liší.
-     */
-    private static function remainingVatSql(string $docType, string $alias, string $asOfSql, ?string $throughIdSql): string
+    /** DPH dokladu minus DPH započtených dobropisů ({@see offsetVatSql()}). */
+    private static function remainingVatSql(string $docType, string $alias, string $asOfSql, string $throughIdSql): string
     {
         [$type, $table] = self::document($docType);
-        $asOf = self::asOf($asOfSql, $throughIdSql);
-        return "({$alias}.total_vat - (SELECT COALESCE(SUM(
-                         CASE WHEN cnr_o.amount = ABS(cnr_d.total_with_vat)
-                              THEN SIGN(cnr_d.total_with_vat) * cnr_d.total_vat
-                              ELSE cnr_o.amount * cnr_d.total_vat / NULLIF(cnr_d.total_with_vat, 0) END), 0)
+        $asOf = self::throughOffset($asOfSql, $throughIdSql);
+        return "({$alias}.total_vat - (SELECT COALESCE(SUM(" . self::offsetVatSql() . "), 0)
                      FROM credit_note_offsets cnr_o
                      JOIN {$table} cnr_d ON cnr_d.id = cnr_o.credit_note_id AND cnr_d.supplier_id = cnr_o.supplier_id
                     WHERE cnr_o.supplier_id = {$alias}.supplier_id AND cnr_o.doc_type = '{$type}'
                       AND cnr_o.invoice_id = {$alias}.id AND {$asOf}))";
     }
 
-    /** Zápočty známé k datu; u opravného řádku jen do daného zápočtu toho dne. */
-    private static function asOf(string $asOfSql, ?string $throughIdSql): string
+    /**
+     * DPH jednoho zápočtu (`cnr_o`) ve směru snížení faktury, dobropis `cnr_d`. Kryje-li
+     * zápočet celé brutto dobropisu, je to celé DPH dobropisu se znaménkem z jeho brutto
+     * (prosté odečtení), jinak poměrná část podle částky zápočtu.
+     */
+    private static function offsetVatSql(): string
     {
-        return $throughIdSql === null
-            ? "cnr_o.offset_on <= {$asOfSql}"
-            : "(cnr_o.offset_on < {$asOfSql} OR (cnr_o.offset_on = {$asOfSql} AND cnr_o.id <= {$throughIdSql}))";
+        return 'CASE WHEN cnr_o.amount = ABS(cnr_d.total_with_vat)
+                     THEN SIGN(cnr_d.total_with_vat) * cnr_d.total_vat
+                     ELSE cnr_o.amount * cnr_d.total_vat / NULLIF(cnr_d.total_with_vat, 0) END';
+    }
+
+    /** Zápočty do daného zápočtu: dřívější dny a téhož dne jen do daného id. */
+    private static function throughOffset(string $asOfSql, string $throughIdSql): string
+    {
+        return "(cnr_o.offset_on < {$asOfSql} OR (cnr_o.offset_on = {$asOfSql} AND cnr_o.id <= {$throughIdSql}))";
     }
 
     /** @return array{0:string,1:string} `credit_note_offsets.doc_type` a tabulka dokladů */

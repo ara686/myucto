@@ -10,6 +10,14 @@ use PDO;
 
 final class TaxExpenseAllocationCalculator
 {
+    /** Zápočty dobropisů proti přijatým fakturám i s poli dobropisu, které potřebuje paymentTaxable(). */
+    private const OFFSETS_SQL =
+        "SELECT o.id AS offset_id, o.invoice_id, o.offset_on, o.amount AS offset_amount, cn.id, cn.tax_deductible,
+                cn.total_vat, cn.total_with_vat, cn.vat_deduction, cn.vat_deduction_percent
+           FROM credit_note_offsets o
+           JOIN purchase_invoices cn ON cn.id = o.credit_note_id AND cn.supplier_id = o.supplier_id
+          WHERE o.supplier_id = ? AND o.doc_type = 'purchase_invoice'";
+
     public function __construct(
         private readonly Connection $db,
         private readonly VatCoefficientRepository $coefficients,
@@ -40,12 +48,32 @@ final class TaxExpenseAllocationCalculator
     }
 
     /**
+     * Zápočty všech přijatých faktur firmy jedním dotazem, klíč faktura. Peněžní deník je
+     * načte jednou na sestavení a předává je {@see forPurchaseInvoice()}, aby se nedotazoval
+     * pro každou úhradu zvlášť.
+     *
+     * @return array<int, list<array<string,mixed>>>
+     */
+    public function purchaseOffsets(int $supplierId): array
+    {
+        $stmt = $this->db->pdo()->prepare(self::OFFSETS_SQL . ' ORDER BY o.id');
+        $stmt->execute([$supplierId]);
+        $out = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $out[(int) $row['invoice_id']][] = $row;
+        }
+        return $out;
+    }
+
+    /**
      * Daňová část úhrady přijaté faktury.
      *
-     * @param string|null $offsetsAsOf     zápočty dobropisů známé k datu úhrady (paymentTaxable());
-     *                                     null = všechny zápočty (doklad, jak je dnes)
-     * @param int|null    $throughOffsetId opravný řádek zápočtu: ze zápočtů dne $offsetsAsOf jen
-     *                                     do tohoto id
+     * @param string|null                            $offsetsAsOf     zápočty dobropisů známé k datu úhrady
+     *                                                                (paymentTaxable()); null = všechny zápočty
+     * @param int|null                               $throughOffsetId opravný řádek zápočtu: ze zápočtů dne
+     *                                                                $offsetsAsOf jen do tohoto id
+     * @param list<array<string,mixed>>|null         $offsets         zápočty faktury načtené předem
+     *                                                                ({@see purchaseOffsets()}); null = dotaz
      */
     public function forPurchaseInvoice(
         int $supplierId,
@@ -56,6 +84,7 @@ final class TaxExpenseAllocationCalculator
         float $fixedAssetLimit,
         ?string $offsetsAsOf = null,
         ?int $throughOffsetId = null,
+        ?array $offsets = null,
     ): float {
         $stmt = $this->db->pdo()->prepare(
             'SELECT id, status, document_kind, tax_deductible, is_fixed_asset, parent_purchase_invoice_id,
@@ -90,7 +119,7 @@ final class TaxExpenseAllocationCalculator
         }
 
         return round($this->paymentTaxable(
-            $supplierId, $invoice, $allocations, $paidAmountCzk, $isVatPayer, $year, $offsetsAsOf, $throughOffsetId,
+            $supplierId, $invoice, $allocations, $paidAmountCzk, $isVatPayer, $year, $offsetsAsOf, $throughOffsetId, $offsets,
         ), 2);
     }
 
@@ -123,6 +152,7 @@ final class TaxExpenseAllocationCalculator
      * ({@see \MyInvoice\Support\Sql\CreditNoteOffsetRemainderExpr}).
      *
      * @param array<string,mixed> $invoice @param list<array<string,mixed>> $allocations
+     * @param list<array<string,mixed>>|null $offsets zápočty faktury načtené předem, null = dotaz
      */
     private function paymentTaxable(
         int $supplierId,
@@ -133,26 +163,17 @@ final class TaxExpenseAllocationCalculator
         int $year,
         ?string $asOf,
         ?int $throughOffsetId,
+        ?array $offsets,
     ): float {
-        $params = [$supplierId, (int) $invoice['id']];
-        $asOfSql = '';
-        if ($asOf !== null && $throughOffsetId === null) {
-            $asOfSql = ' AND o.offset_on <= ?';
-            $params[] = $asOf;
-        } elseif ($asOf !== null) {
-            $asOfSql = ' AND (o.offset_on < ? OR (o.offset_on = ? AND o.id <= ?))';
-            array_push($params, $asOf, $asOf, $throughOffsetId);
+        if ($offsets === null) {
+            $stmt = $this->db->pdo()->prepare(self::OFFSETS_SQL . ' AND o.invoice_id = ? ORDER BY o.id');
+            $stmt->execute([$supplierId, (int) $invoice['id']]);
+            $offsets = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
         }
-        $stmt = $this->db->pdo()->prepare(
-            "SELECT o.amount AS offset_amount, cn.id, cn.tax_deductible, cn.total_vat, cn.total_with_vat,
-                    cn.vat_deduction, cn.vat_deduction_percent
-               FROM credit_note_offsets o
-               JOIN purchase_invoices cn ON cn.id = o.credit_note_id AND cn.supplier_id = o.supplier_id
-              WHERE o.supplier_id = ? AND o.doc_type = 'purchase_invoice' AND o.invoice_id = ?{$asOfSql}
-              ORDER BY o.id"
-        );
-        $stmt->execute($params);
-        $notes = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        $asOfDay = $asOf !== null ? substr($asOf, 0, 10) : null;
+        $notes = array_values(array_filter($offsets, static fn (array $o): bool => $asOfDay === null
+            || (string) $o['offset_on'] < $asOfDay
+            || ((string) $o['offset_on'] === $asOfDay && ($throughOffsetId === null || (int) $o['offset_id'] <= $throughOffsetId))));
 
         $remaining = (float) $invoice['total_with_vat'];
         $taxable = $this->taxableAmount($supplierId, $invoice, $allocations, $remaining, $isVatPayer, $year, false);
@@ -206,12 +227,17 @@ final class TaxExpenseAllocationCalculator
         return abs($entryPrice) > $fixedAssetLimit;
     }
 
+    /**
+     * @param array<int, list<array<string,mixed>>>|null $offsetsByInvoice zápočty načtené předem
+     *                                                                     ({@see purchaseOffsets()}); null = dotaz
+     */
     public function forBankPayment(
         int $supplierId,
         int $bankTransactionId,
         bool $isVatPayer,
         int $year,
         float $fixedAssetLimit,
+        ?array $offsetsByInvoice = null,
     ): float {
         $stmt = $this->db->pdo()->prepare(
             'SELECT pm.purchase_invoice_id, pm.amount, bt.currency, bt.posted_at
@@ -232,6 +258,8 @@ final class TaxExpenseAllocationCalculator
                 $year,
                 $fixedAssetLimit,
                 (string) $payment['posted_at'],
+                null,
+                $offsetsByInvoice !== null ? ($offsetsByInvoice[(int) $payment['purchase_invoice_id']] ?? []) : null,
             );
         }
         return round($total, 2);
@@ -241,8 +269,9 @@ final class TaxExpenseAllocationCalculator
      * Daňová část jednoho bankovního párování přijaté faktury. Částka párování je v měně
      * bankovního pohybu, na Kč se převádí kurzem ke dni pohybu.
      *
-     * @param string|null $offsetsAsOf     viz {@see forPurchaseInvoice()}
-     * @param int|null    $throughOffsetId viz {@see forPurchaseInvoice()}
+     * @param string|null                    $offsetsAsOf     viz {@see forPurchaseInvoice()}
+     * @param int|null                       $throughOffsetId viz {@see forPurchaseInvoice()}
+     * @param list<array<string,mixed>>|null $offsets         viz {@see forPurchaseInvoice()}
      */
     public function forBankMatch(
         int $supplierId,
@@ -255,6 +284,7 @@ final class TaxExpenseAllocationCalculator
         float $fixedAssetLimit,
         ?string $offsetsAsOf,
         ?int $throughOffsetId = null,
+        ?array $offsets = null,
     ): float {
         $rate = $this->exchangeRate($currency !== '' ? $currency : 'CZK', $postedAt);
         return $this->forPurchaseInvoice(
@@ -266,6 +296,7 @@ final class TaxExpenseAllocationCalculator
             $fixedAssetLimit,
             $offsetsAsOf,
             $throughOffsetId,
+            $offsets,
         );
     }
 

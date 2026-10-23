@@ -149,11 +149,12 @@ final class CashJournalRepository
         // a DPH, proto nesou složení části dokladu placené penězi: faktura minus dobropisy
         // započtené proti ní (CreditNoteOffsetRemainderExpr). Bez zápočtu = doklad sám.
         // Zápočty se berou k datu řádku (úhrady); pozdější zápočet dřívější úhradu nemění,
-        // rozdíl nese opravný řádek ke dni zápočtu (noha O).
-        $invVat = static fn (string $alias, string $asOf): string => CreditNoteOffsetRemainderExpr::vatSql('invoice', $alias, $asOf);
-        $invGross = static fn (string $alias, string $asOf): string => CreditNoteOffsetRemainderExpr::grossSql('invoice', $alias, $asOf);
-        $piVat = static fn (string $alias, string $asOf): string => CreditNoteOffsetRemainderExpr::vatSql('purchase_invoice', $alias, $asOf);
-        $piGross = static fn (string $alias, string $asOf): string => CreditNoteOffsetRemainderExpr::grossSql('purchase_invoice', $alias, $asOf);
+        // rozdíl nese opravný řádek ke dni zápočtu (noha O). Zápočty dokladu se připojí jednou
+        // jako odvozená tabulka ({alias}_cnr), ne korelovaným poddotazem pro každou úhradu.
+        $remJoin = static fn (string $docType, string $alias, string $asOf): string =>
+            CreditNoteOffsetRemainderExpr::joinSql($docType, $sid, $alias, $asOf, $alias . '_cnr');
+        $remVat = static fn (string $alias): string => CreditNoteOffsetRemainderExpr::vatSql($alias, $alias . '_cnr');
+        $remGross = static fn (string $alias): string => CreditNoteOffsetRemainderExpr::grossSql($alias, $alias . '_cnr');
         $legs = [];
 
         // ── Noha A — hotovost (cash_documents posted) ────────────────────────
@@ -169,12 +170,12 @@ final class CashJournalRepository
                     cd.purpose AS cash_purpose, cav.base_sum AS cash_vat_base, cav.vat_sum AS cash_vat_amount,
                     NULL AS bank_class, NULL AS bank_income_base, NULL AS bank_income_exempt,
                     cd.invoice_id AS invoice_id, ci.invoice_type AS inv_type,
-                    ci.total_without_vat AS inv_without_vat, " . $invVat('ci', 'cd.issue_date') . " AS inv_vat,
-                    " . $invGross('ci', 'cd.issue_date') . " AS inv_with_vat,
+                    ci.total_without_vat AS inv_without_vat, " . $remVat('ci') . " AS inv_vat,
+                    " . $remGross('ci') . " AS inv_with_vat,
                     ci.income_tax_exempt AS inv_exempt, ci.status AS inv_status,
                     cd.purchase_invoice_id AS purchase_invoice_id,
-                    cpi.total_without_vat AS pi_without_vat, " . $piVat('cpi', 'cd.issue_date') . " AS pi_vat,
-                    " . $piGross('cpi', 'cd.issue_date') . " AS pi_with_vat,
+                    cpi.total_without_vat AS pi_without_vat, " . $remVat('cpi') . " AS pi_vat,
+                    " . $remGross('cpi') . " AS pi_with_vat,
                     cpi.tax_deductible AS pi_deductible, cpi.document_kind AS pi_kind,
                     cpi.vat_deduction AS pi_vat_deduction, cpi.vat_deduction_percent AS pi_vat_deduction_percent,
                     cpi.is_fixed_asset AS pi_is_fixed_asset,
@@ -204,6 +205,8 @@ final class CashJournalRepository
                       ON cav.cash_document_id = cd.id
                LEFT JOIN invoices ci          ON ci.id = cd.invoice_id AND ci.supplier_id = {$sid}
                LEFT JOIN purchase_invoices cpi ON cpi.id = cd.purchase_invoice_id AND cpi.supplier_id = {$sid}
+               " . $remJoin('invoice', 'ci', 'cd.issue_date') . "
+               " . $remJoin('purchase_invoice', 'cpi', 'cd.issue_date') . "
                LEFT JOIN de_movement_classification ccls
                       ON ccls.supplier_id = {$sid} AND ccls.source_type = 'cash' AND ccls.cash_document_id = cd.id
               WHERE cd.supplier_id = {$sid} AND cd.status = 'posted'
@@ -255,12 +258,12 @@ final class CashJournalRepository
                         binc.czk_base AS bank_income_base, binc.czk_exempt AS bank_income_exempt,
                         bi.id AS invoice_id,
                         bi.invoice_type AS inv_type,
-                        bi.total_without_vat AS inv_without_vat, " . $invVat('bi', 'bt.posted_at') . " AS inv_vat,
-                        " . $invGross('bi', 'bt.posted_at') . " AS inv_with_vat,
+                        bi.total_without_vat AS inv_without_vat, " . $remVat('bi') . " AS inv_vat,
+                        " . $remGross('bi') . " AS inv_with_vat,
                         bi.income_tax_exempt AS inv_exempt, bi.status AS inv_status,
                         bexp.any_pi_id AS purchase_invoice_id,
-                        bpi.total_without_vat AS pi_without_vat, " . $piVat('bpi', 'bt.posted_at') . " AS pi_vat,
-                        " . $piGross('bpi', 'bt.posted_at') . " AS pi_with_vat,
+                        bpi.total_without_vat AS pi_without_vat, " . $remVat('bpi') . " AS pi_vat,
+                        " . $remGross('bpi') . " AS pi_with_vat,
                         bpi.tax_deductible AS pi_deductible, bpi.document_kind AS pi_kind,
                         bpi.vat_deduction AS pi_vat_deduction, bpi.vat_deduction_percent AS pi_vat_deduction_percent,
                         bpi.is_fixed_asset AS pi_is_fixed_asset,
@@ -289,7 +292,7 @@ final class CashJournalRepository
                                -- Poměr DPH je poměr části faktury placené penězi (po zápočtu dobropisu).
                                SUM(ROUND(CASE WHEN i.income_tax_exempt = 1 THEN 0
                                               WHEN {$payerAtIp} = 1 AND i.total_with_vat <> 0
-                                                   THEN ip.amount * (1 - LEAST(1, GREATEST(0, " . $invVat('i', 'ibt.posted_at') . ' / ' . $invGross('i', 'ibt.posted_at') . ")))
+                                                   THEN ip.amount * (1 - LEAST(1, GREATEST(0, " . $remVat('i') . ' / ' . $remGross('i') . ")))
                                               ELSE ip.amount END
                                          * {$ipRateBank}, 2)) AS czk_base,
                                -- Osvobozená noha se dělí na základ/DPH STEJNĚ jako zdanitelná
@@ -299,13 +302,14 @@ final class CashJournalRepository
                                -- income_nontax v CashJournalService::bankIncomeAlloc().
                                SUM(ROUND(CASE WHEN i.income_tax_exempt <> 1 THEN 0
                                               WHEN {$payerAtIp} = 1 AND i.total_with_vat <> 0
-                                                   THEN ip.amount * (1 - LEAST(1, GREATEST(0, " . $invVat('i', 'ibt.posted_at') . ' / ' . $invGross('i', 'ibt.posted_at') . ")))
+                                                   THEN ip.amount * (1 - LEAST(1, GREATEST(0, " . $remVat('i') . ' / ' . $remGross('i') . ")))
                                               ELSE ip.amount END
                                          * {$ipRateBank}, 2)) AS czk_exempt,
                                MIN(ip.invoice_id) AS any_invoice_id
                           FROM invoice_payments ip
                           JOIN invoices i ON i.id = ip.invoice_id AND i.supplier_id = {$sid}
                           JOIN bank_transactions ibt ON ibt.id = ip.bank_transaction_id
+                          " . $remJoin('invoice', 'i', 'ibt.posted_at') . "
                          WHERE ip.supplier_id = {$sid} AND ip.bank_transaction_id IS NOT NULL
                            AND i.status <> 'cancelled'
                          GROUP BY ip.bank_transaction_id
@@ -335,6 +339,8 @@ final class CashJournalRepository
                                               CASE WHEN bexp.btid IS NULL THEN bt.matched_invoice_id END)
                          AND bi.supplier_id = {$sid} AND bi.status <> 'cancelled'
                    LEFT JOIN purchase_invoices bpi ON bpi.id = bexp.any_pi_id AND bpi.supplier_id = {$sid}
+                   " . $remJoin('invoice', 'bi', 'bt.posted_at') . "
+                   " . $remJoin('purchase_invoice', 'bpi', 'bt.posted_at') . "
                    LEFT JOIN de_movement_classification bcls
                           ON bcls.supplier_id = {$sid} AND bcls.source_type = 'bank' AND bcls.bank_transaction_id = bt.id
                   WHERE bt.statement_id IN ({$inList})
@@ -368,8 +374,8 @@ final class CashJournalRepository
                     NULL AS cash_purpose, NULL AS cash_vat_base, NULL AS cash_vat_amount,
                     NULL AS bank_class, NULL AS bank_income_base, NULL AS bank_income_exempt,
                     ip.invoice_id AS invoice_id, ii.invoice_type AS inv_type,
-                    ii.total_without_vat AS inv_without_vat, " . $invVat('ii', 'ip.paid_on') . " AS inv_vat,
-                    " . $invGross('ii', 'ip.paid_on') . " AS inv_with_vat,
+                    ii.total_without_vat AS inv_without_vat, " . $remVat('ii') . " AS inv_vat,
+                    " . $remGross('ii') . " AS inv_with_vat,
                     ii.income_tax_exempt AS inv_exempt, ii.status AS inv_status,
                     NULL AS purchase_invoice_id, NULL AS pi_without_vat, NULL AS pi_vat, NULL AS pi_with_vat,
                     NULL AS pi_deductible, NULL AS pi_kind, NULL AS pi_vat_deduction,
@@ -384,6 +390,7 @@ final class CashJournalRepository
                FROM invoice_payments ip
                JOIN invoices ii      ON ii.id = ip.invoice_id AND ii.supplier_id = {$sid}
                LEFT JOIN clients icl ON icl.id = ii.client_id
+               " . $remJoin('invoice', 'ii', 'ip.paid_on') . "
               WHERE ip.supplier_id = {$sid} AND ip.source IN ('manual', 'mark_paid', 'legacy')
                 AND ip.bank_transaction_id IS NULL
                 AND ii.status <> 'cancelled'
@@ -409,8 +416,8 @@ final class CashJournalRepository
                     NULL AS bank_class, NULL AS bank_income_base, NULL AS bank_income_exempt,
                     NULL AS invoice_id, NULL AS inv_type, NULL AS inv_without_vat, NULL AS inv_vat, NULL AS inv_with_vat,
                     NULL AS inv_exempt, NULL AS inv_status,
-                    pi.id AS purchase_invoice_id, pi.total_without_vat AS pi_without_vat, " . $piVat('pi', 'pi.paid_at') . " AS pi_vat,
-                    " . $piGross('pi', 'pi.paid_at') . " AS pi_with_vat, pi.tax_deductible AS pi_deductible,
+                    pi.id AS purchase_invoice_id, pi.total_without_vat AS pi_without_vat, " . $remVat('pi') . " AS pi_vat,
+                    " . $remGross('pi') . " AS pi_with_vat, pi.tax_deductible AS pi_deductible,
                     pi.document_kind AS pi_kind, pi.vat_deduction AS pi_vat_deduction,
                     pi.vat_deduction_percent AS pi_vat_deduction_percent,
                     pi.is_fixed_asset AS pi_is_fixed_asset, NULL AS override_bucket,
@@ -420,6 +427,7 @@ final class CashJournalRepository
                FROM purchase_invoices pi
                LEFT JOIN currencies pcur ON pcur.id = pi.currency_id
                LEFT JOIN clients pv      ON pv.id = pi.vendor_id
+               " . $remJoin('purchase_invoice', 'pi', 'pi.paid_at') . "
               WHERE pi.supplier_id = {$sid} AND pi.paid_at IS NOT NULL
                 AND pi.status <> 'cancelled'
                 AND NOT EXISTS (SELECT 1 FROM payment_matches pm WHERE pm.purchase_invoice_id = pi.id)
@@ -456,8 +464,10 @@ final class CashJournalRepository
                     NULL AS cash_purpose, NULL AS cash_vat_base, NULL AS cash_vat_amount,
                     NULL AS bank_class, NULL AS bank_income_base, NULL AS bank_income_exempt,
                     gcn.id AS invoice_id, gcn.invoice_type AS inv_type,
-                    gcn.total_without_vat AS inv_without_vat, " . $invVat('gcn', 'gm.performed_on') . " AS inv_vat,
-                    " . $invGross('gcn', 'gm.performed_on') . " AS inv_with_vat,
+                    -- Vratka k dobropisu: dobropis nikdy není fakturou zápočtu (CreditNoteOffsetService
+                    -- zápočet proti dobropisu nepřipustí), dělí se tedy podle sebe.
+                    gcn.total_without_vat AS inv_without_vat, gcn.total_vat AS inv_vat,
+                    gcn.total_with_vat AS inv_with_vat,
                     gcn.income_tax_exempt AS inv_exempt, gcn.status AS inv_status,
                     NULL AS purchase_invoice_id, NULL AS pi_without_vat, NULL AS pi_vat, NULL AS pi_with_vat,
                     NULL AS pi_deductible, NULL AS pi_kind, NULL AS pi_vat_deduction,
@@ -543,6 +553,9 @@ final class CashJournalRepository
      * zaokrouhluje až po rozdělení; přijaté nese částku v měně pohybu, kterou na Kč převede
      * kalkulačka stejně jako u řádku pohybu.
      *
+     * Podklady všech opravných řádků jednoho sestavení deníku se načtou dávkou
+     * ({@see creditNoteOffsetCorrections()}), ne dotazy pro každý řádek.
+     *
      * @return array{doc_type:string, invoice_id:int, offset_id:int, offset_on:string,
      *     vat_before:?float, gross_before:?float, vat_after:?float, gross_after:?float,
      *     payments:list<array{kind:string, date:string, payer_date:string, direction:string,
@@ -550,44 +563,60 @@ final class CashJournalRepository
      */
     public function creditNoteOffsetCorrection(int $supplierId, int $offsetId): ?array
     {
-        $pdo = $this->db->pdo();
-        $stmt = $pdo->prepare(
-            'SELECT id, doc_type, invoice_id, offset_on FROM credit_note_offsets WHERE id = ? AND supplier_id = ?'
-        );
-        $stmt->execute([$offsetId, $supplierId]);
-        $offset = $stmt->fetch(PDO::FETCH_ASSOC);
-        if ($offset === false) {
-            return null;
-        }
-        $sid = $supplierId;
-        $docId = (int) $offset['invoice_id'];
-        $date = $this->assertDate((string) $offset['offset_on']);
-        $issued = (string) $offset['doc_type'] === 'invoice';
-        $out = [
-            'doc_type' => (string) $offset['doc_type'],
-            'invoice_id' => $docId,
-            'offset_id' => (int) $offset['id'],
-            'offset_on' => $date,
-            'vat_before' => null, 'gross_before' => null, 'vat_after' => null, 'gross_after' => null,
-            'payments' => [],
-        ];
+        return $this->creditNoteOffsetCorrections($supplierId, [$offsetId])[$offsetId] ?? null;
+    }
 
-        if ($issued) {
-            $split = $pdo->prepare(
-                'SELECT ' . CreditNoteOffsetRemainderExpr::vatSql('invoice', 'i', 'o.offset_on', 'o.id - 1') . ' AS vat_before,
-                        ' . CreditNoteOffsetRemainderExpr::grossSql('invoice', 'i', 'o.offset_on', 'o.id - 1') . ' AS gross_before,
-                        ' . CreditNoteOffsetRemainderExpr::vatSql('invoice', 'i', 'o.offset_on', 'o.id') . ' AS vat_after,
-                        ' . CreditNoteOffsetRemainderExpr::grossSql('invoice', 'i', 'o.offset_on', 'o.id') . ' AS gross_after
-                   FROM credit_note_offsets o
-                   JOIN invoices i ON i.id = o.invoice_id AND i.supplier_id = o.supplier_id
-                  WHERE o.id = ?'
-            );
-            $split->execute([$offsetId]);
-            foreach ((array) $split->fetch(PDO::FETCH_ASSOC) as $key => $value) {
-                $out[$key] = $value !== null ? (float) $value : null;
+    /**
+     * Podklady opravných řádků více zápočtů naráz ({@see creditNoteOffsetCorrection()}).
+     *
+     * @param list<int> $offsetIds
+     * @return array<int, array{doc_type:string, invoice_id:int, offset_id:int, offset_on:string,
+     *     vat_before:?float, gross_before:?float, vat_after:?float, gross_after:?float,
+     *     payments:list<array{kind:string, date:string, payer_date:string, direction:string,
+     *     amount:float, currency:string}>}> klíč id zápočtu
+     */
+    public function creditNoteOffsetCorrections(int $supplierId, array $offsetIds): array
+    {
+        $ids = array_values(array_unique(array_map('intval', $offsetIds)));
+        if ($ids === []) {
+            return [];
+        }
+        $pdo = $this->db->pdo();
+        $sid = $supplierId;
+        $inIds = implode(',', $ids);
+        $out = [];
+        foreach ($pdo->query(
+            "SELECT id, doc_type, invoice_id, offset_on FROM credit_note_offsets WHERE supplier_id = {$sid} AND id IN ({$inIds})"
+        )->fetchAll(PDO::FETCH_ASSOC) as $offset) {
+            $out[(int) $offset['id']] = [
+                'doc_type' => (string) $offset['doc_type'],
+                'invoice_id' => (int) $offset['invoice_id'],
+                'offset_id' => (int) $offset['id'],
+                'offset_on' => $this->assertDate((string) $offset['offset_on']),
+                'vat_before' => null, 'gross_before' => null, 'vat_after' => null, 'gross_after' => null,
+                'payments' => [],
+            ];
+        }
+        if ($out === []) {
+            return [];
+        }
+
+        foreach ($pdo->query(
+            'SELECT o.id,
+                    ' . CreditNoteOffsetRemainderExpr::vatAsOfOffsetSql('invoice', 'i', 'o.offset_on', 'o.id - 1') . ' AS vat_before,
+                    ' . CreditNoteOffsetRemainderExpr::grossAsOfOffsetSql('invoice', 'i', 'o.offset_on', 'o.id - 1') . ' AS gross_before,
+                    ' . CreditNoteOffsetRemainderExpr::vatAsOfOffsetSql('invoice', 'i', 'o.offset_on', 'o.id') . ' AS vat_after,
+                    ' . CreditNoteOffsetRemainderExpr::grossAsOfOffsetSql('invoice', 'i', 'o.offset_on', 'o.id') . " AS gross_after
+               FROM credit_note_offsets o
+               JOIN invoices i ON i.id = o.invoice_id AND i.supplier_id = o.supplier_id
+              WHERE o.supplier_id = {$sid} AND o.doc_type = 'invoice' AND o.id IN ({$inIds})"
+        )->fetchAll(PDO::FETCH_ASSOC) as $split) {
+            foreach (['vat_before', 'gross_before', 'vat_after', 'gross_after'] as $key) {
+                $out[(int) $split['id']][$key] = $split[$key] !== null ? (float) $split[$key] : null;
             }
         }
 
+        // Úhrady faktury s datem před zápočtem; `o` je zápočet, ke kterému úhrada patří.
         $noOverride = static fn (string $source, string $column, string $id): string =>
             "NOT EXISTS (SELECT 1 FROM de_movement_classification mc
                           WHERE mc.supplier_id = {$sid} AND mc.source_type = '{$source}' AND mc.{$column} = {$id}
@@ -602,90 +631,87 @@ final class CashJournalRepository
                ' . $this->provisionalMovementExclusionSql($stmtIds) . '
                AND ' . $noOverride('bank', 'bank_transaction_id', 'bt.id') . "
                AND NOT EXISTS (SELECT 1 FROM gopay_clearings gc WHERE gc.supplier_id = {$sid} AND gc.bank_transaction_id = bt.id)";
-        $cashSql = static fn (string $purpose, string $column): string =>
-            "SELECT 'cash' AS kind, cd.issue_date AS date, cd.issue_date AS payer_date, cd.doc_type AS direction,
-                    ROUND(cd.total_amount, 2) AS amount, '' AS currency
-               FROM cash_documents cd
-              WHERE cd.supplier_id = {$sid} AND cd.status = 'posted' AND cd.purpose = '{$purpose}'
-                AND cd.{$column} = {$docId} AND cd.issue_date < :d
+        $cashSql = static fn (string $docType, string $purpose, string $column): string =>
+            "SELECT o.id AS offset_id, 'cash' AS kind, cd.issue_date AS date, cd.issue_date AS payer_date,
+                    cd.doc_type AS direction, ROUND(cd.total_amount, 2) AS amount, '' AS currency
+               FROM credit_note_offsets o
+               JOIN cash_documents cd ON cd.supplier_id = {$sid} AND cd.{$column} = o.invoice_id AND cd.issue_date < o.offset_on
+              WHERE o.supplier_id = {$sid} AND o.doc_type = '{$docType}' AND o.id IN ({$inIds})
+                AND cd.status = 'posted' AND cd.purpose = '{$purpose}'
                 AND " . $noOverride('cash', 'cash_document_id', 'cd.id');
 
-        $parts = [];
-        if ($issued) {
-            $parts[] = $cashSql('invoice_payment', 'invoice_id');
+        $parts = [
+            $cashSql('invoice', 'invoice_payment', 'invoice_id'),
+            "SELECT o.id AS offset_id, 'manual' AS kind, ip.paid_on AS date, ip.paid_on AS payer_date, 'in' AS direction,
+                    ROUND(ip.amount * " . $this->ipRateSql('i') . ", 2) AS amount, '' AS currency
+               FROM credit_note_offsets o
+               JOIN invoice_payments ip ON ip.supplier_id = {$sid} AND ip.invoice_id = o.invoice_id AND ip.paid_on < o.offset_on
+               JOIN invoices i ON i.id = ip.invoice_id AND i.supplier_id = {$sid}
+              WHERE o.supplier_id = {$sid} AND o.doc_type = 'invoice' AND o.id IN ({$inIds})
+                AND ip.bank_transaction_id IS NULL AND ip.source IN ('manual', 'mark_paid', 'legacy')",
+            $cashSql('purchase_invoice', 'purchase_payment', 'purchase_invoice_id'),
+        ];
+        $cnOffsets = "COALESCE((SELECT SUM(cno.amount) FROM credit_note_offsets cno
+                                 WHERE cno.supplier_id = pi.supplier_id AND cno.doc_type = 'purchase_invoice'
+                                   AND cno.invoice_id = pi.id), 0)";
+        $parts[] =
+            "SELECT o.id AS offset_id, 'manual' AS kind, pi.paid_at AS date, pi.paid_at AS payer_date, 'out' AS direction,
+                    ROUND(" . \MyInvoice\Service\Report\VatLedgerService::purchaseDocumentSignSql('pi') . "
+                          * (COALESCE(pi.amount_to_pay, pi.total_with_vat) - {$cnOffsets}) * {$this->piRateSql()}, 2) AS amount,
+                    '' AS currency
+               FROM credit_note_offsets o
+               JOIN purchase_invoices pi ON pi.id = o.invoice_id AND pi.supplier_id = {$sid}
+               LEFT JOIN currencies pcur ON pcur.id = pi.currency_id
+              WHERE o.supplier_id = {$sid} AND o.doc_type = 'purchase_invoice' AND o.id IN ({$inIds})
+                AND pi.status <> 'cancelled' AND pi.paid_at IS NOT NULL AND pi.paid_at < o.offset_on
+                AND NOT EXISTS (SELECT 1 FROM payment_matches pm WHERE pm.purchase_invoice_id = pi.id)
+                AND NOT EXISTS (SELECT 1 FROM cash_documents cd2
+                                 WHERE cd2.purchase_invoice_id = pi.id AND cd2.status = 'posted')
+                AND NOT ({$cnOffsets} > 0 AND ABS(COALESCE(pi.amount_to_pay, pi.total_with_vat) - {$cnOffsets}) <= 0.005)";
+        if ($bankFilter !== null) {
             $parts[] =
-                "SELECT 'manual' AS kind, ip.paid_on AS date, ip.paid_on AS payer_date, 'in' AS direction,
-                        ROUND(ip.amount * " . $this->ipRateSql('i') . ", 2) AS amount, '' AS currency
-                   FROM invoice_payments ip
+                "SELECT o.id AS offset_id, 'bank' AS kind, bt.posted_at AS date, ip.paid_on AS payer_date,
+                        CASE WHEN bt.amount >= 0 THEN 'in' ELSE 'out' END AS direction,
+                        ip.amount * " . $this->ipRateSql('i') . " AS amount, '' AS currency
+                   FROM credit_note_offsets o
+                   JOIN invoice_payments ip ON ip.supplier_id = {$sid} AND ip.invoice_id = o.invoice_id
                    JOIN invoices i ON i.id = ip.invoice_id AND i.supplier_id = {$sid}
-                  WHERE ip.supplier_id = {$sid} AND ip.invoice_id = {$docId} AND ip.bank_transaction_id IS NULL
-                    AND ip.source IN ('manual', 'mark_paid', 'legacy') AND ip.paid_on < :d";
-            if ($bankFilter !== null) {
-                $parts[] =
-                    "SELECT 'bank' AS kind, bt.posted_at AS date, ip.paid_on AS payer_date,
-                            CASE WHEN bt.amount >= 0 THEN 'in' ELSE 'out' END AS direction,
-                            ip.amount * " . $this->ipRateSql('i') . " AS amount, '' AS currency
-                       FROM invoice_payments ip
-                       JOIN invoices i ON i.id = ip.invoice_id AND i.supplier_id = {$sid}
-                       JOIN bank_transactions bt ON bt.id = ip.bank_transaction_id
-                      WHERE ip.supplier_id = {$sid} AND ip.invoice_id = {$docId} AND bt.posted_at < :d
-                        AND {$bankFilter}";
-                // Starší párování pohybu přímo na fakturu, bez invoice_payments (noha B, `bi`).
-                $parts[] =
-                    "SELECT 'bank' AS kind, bt.posted_at AS date, bt.posted_at AS payer_date,
-                            CASE WHEN bt.amount >= 0 THEN 'in' ELSE 'out' END AS direction,
-                            ROUND(ABS(bt.amount) * IF(COALESCE(NULLIF(bt.currency, ''), 'CZK') = 'CZK', 1,
-                                  " . self::nearestRateSql('bt.currency', 'bt.posted_at') . "), 2) AS amount,
-                            '' AS currency
-                       FROM bank_transactions bt
-                      WHERE bt.matched_invoice_id = {$docId} AND bt.posted_at < :d AND {$bankFilter}
-                        AND NOT {$incomeOnTx}
-                        AND NOT EXISTS (SELECT 1 FROM payment_matches pm
-                                          JOIN purchase_invoices ppi ON ppi.id = pm.purchase_invoice_id AND ppi.supplier_id = {$sid}
-                                         WHERE pm.supplier_id = {$sid} AND pm.bank_transaction_id = bt.id)
-                        AND NOT EXISTS (SELECT 1 FROM invoice_payments y
-                                         WHERE y.invoice_id = {$docId} AND y.supplier_id = {$sid}
-                                           AND y.bank_transaction_id IS NULL
-                                           AND y.source IN ('manual', 'mark_paid', 'legacy'))";
-            }
-        } else {
-            $parts[] = $cashSql('purchase_payment', 'purchase_invoice_id');
-            $cnOffsets = "COALESCE((SELECT SUM(cno.amount) FROM credit_note_offsets cno
-                                     WHERE cno.supplier_id = pi.supplier_id AND cno.doc_type = 'purchase_invoice'
-                                       AND cno.invoice_id = pi.id), 0)";
+                   JOIN bank_transactions bt ON bt.id = ip.bank_transaction_id AND bt.posted_at < o.offset_on
+                  WHERE o.supplier_id = {$sid} AND o.doc_type = 'invoice' AND o.id IN ({$inIds})
+                    AND {$bankFilter}";
+            // Starší párování pohybu přímo na fakturu, bez invoice_payments (noha B, `bi`).
             $parts[] =
-                "SELECT 'manual' AS kind, pi.paid_at AS date, pi.paid_at AS payer_date, 'out' AS direction,
-                        ROUND(" . \MyInvoice\Service\Report\VatLedgerService::purchaseDocumentSignSql('pi') . "
-                              * (COALESCE(pi.amount_to_pay, pi.total_with_vat) - {$cnOffsets}) * {$this->piRateSql()}, 2) AS amount,
+                "SELECT o.id AS offset_id, 'bank' AS kind, bt.posted_at AS date, bt.posted_at AS payer_date,
+                        CASE WHEN bt.amount >= 0 THEN 'in' ELSE 'out' END AS direction,
+                        ROUND(ABS(bt.amount) * IF(COALESCE(NULLIF(bt.currency, ''), 'CZK') = 'CZK', 1,
+                              " . self::nearestRateSql('bt.currency', 'bt.posted_at') . "), 2) AS amount,
                         '' AS currency
-                   FROM purchase_invoices pi
-                   LEFT JOIN currencies pcur ON pcur.id = pi.currency_id
-                  WHERE pi.id = {$docId} AND pi.supplier_id = {$sid} AND pi.status <> 'cancelled'
-                    AND pi.paid_at IS NOT NULL AND pi.paid_at < :d
-                    AND NOT EXISTS (SELECT 1 FROM payment_matches pm WHERE pm.purchase_invoice_id = pi.id)
-                    AND NOT EXISTS (SELECT 1 FROM cash_documents cd2
-                                     WHERE cd2.purchase_invoice_id = pi.id AND cd2.status = 'posted')
-                    AND NOT ({$cnOffsets} > 0 AND ABS(COALESCE(pi.amount_to_pay, pi.total_with_vat) - {$cnOffsets}) <= 0.005)";
-            if ($bankFilter !== null) {
-                $parts[] =
-                    "SELECT 'bank' AS kind, bt.posted_at AS date, bt.posted_at AS payer_date,
-                            CASE WHEN bt.amount >= 0 THEN 'in' ELSE 'out' END AS direction,
-                            pm.amount AS amount, COALESCE(bt.currency, '') AS currency
-                       FROM payment_matches pm
-                       JOIN bank_transactions bt ON bt.id = pm.bank_transaction_id
-                      WHERE pm.supplier_id = {$sid} AND pm.purchase_invoice_id = {$docId} AND bt.posted_at < :d
-                        AND {$bankFilter}
-                        AND NOT {$incomeOnTx}";
-            }
+                   FROM credit_note_offsets o
+                   JOIN bank_transactions bt ON bt.matched_invoice_id = o.invoice_id AND bt.posted_at < o.offset_on
+                  WHERE o.supplier_id = {$sid} AND o.doc_type = 'invoice' AND o.id IN ({$inIds})
+                    AND {$bankFilter}
+                    AND NOT {$incomeOnTx}
+                    AND NOT EXISTS (SELECT 1 FROM payment_matches pm
+                                      JOIN purchase_invoices ppi ON ppi.id = pm.purchase_invoice_id AND ppi.supplier_id = {$sid}
+                                     WHERE pm.supplier_id = {$sid} AND pm.bank_transaction_id = bt.id)
+                    AND NOT EXISTS (SELECT 1 FROM invoice_payments y
+                                     WHERE y.invoice_id = o.invoice_id AND y.supplier_id = {$sid}
+                                       AND y.bank_transaction_id IS NULL
+                                       AND y.source IN ('manual', 'mark_paid', 'legacy'))";
+            $parts[] =
+                "SELECT o.id AS offset_id, 'bank' AS kind, bt.posted_at AS date, bt.posted_at AS payer_date,
+                        CASE WHEN bt.amount >= 0 THEN 'in' ELSE 'out' END AS direction,
+                        pm.amount AS amount, COALESCE(bt.currency, '') AS currency
+                   FROM credit_note_offsets o
+                   JOIN payment_matches pm ON pm.supplier_id = {$sid} AND pm.purchase_invoice_id = o.invoice_id
+                   JOIN bank_transactions bt ON bt.id = pm.bank_transaction_id AND bt.posted_at < o.offset_on
+                  WHERE o.supplier_id = {$sid} AND o.doc_type = 'purchase_invoice' AND o.id IN ({$inIds})
+                    AND {$bankFilter}
+                    AND NOT {$incomeOnTx}";
         }
 
-        $sql = implode("\nUNION ALL\n", $parts);
-        $count = substr_count($sql, ':d');
-        $sql = str_replace(':d', '?', $sql);
-        $payments = $pdo->prepare($sql);
-        $payments->execute(array_fill(0, $count, $date));
-        foreach ($payments->fetchAll(PDO::FETCH_ASSOC) as $p) {
-            $out['payments'][] = [
+        foreach ($pdo->query(implode("\nUNION ALL\n", $parts))->fetchAll(PDO::FETCH_ASSOC) as $p) {
+            $out[(int) $p['offset_id']]['payments'][] = [
                 'kind' => (string) $p['kind'],
                 'date' => (string) $p['date'],
                 'payer_date' => (string) $p['payer_date'],

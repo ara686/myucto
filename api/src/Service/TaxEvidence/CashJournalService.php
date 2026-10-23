@@ -68,6 +68,7 @@ final class CashJournalService
 
         $opening = $this->repo->openingBalance($supplierId, $from, $isVatPayer);
         $raw = $this->repo->movements($supplierId, $from, $to, $isVatPayer); // vše v rozsahu (totály se počítají nad celkem)
+        $batch = $this->batch($supplierId, $raw);
 
         $totals = [
             'prijem_danovy'     => 0.0,
@@ -103,7 +104,7 @@ final class CashJournalService
 
         foreach ($raw as $r) {
             $movementVatPayer = $this->isVatPayerAt($supplierId, (string) $r['movement_date']);
-            $c = $this->classify($r, $movementVatPayer, $taxConstants, $supplierId, $year);
+            $c = $this->classify($r, $movementVatPayer, $taxConstants, $supplierId, $year, $batch);
             if ($r['source_type'] === 'credit_note_offset' && $c['alloc'] === []) {
                 continue; // zápočet nic nepřerozdělil
             }
@@ -396,13 +397,16 @@ final class CashJournalService
         $taxConstants = $this->constants->forYear($year);
         $monthly = array_fill(1, 12, 0.0);
 
-        foreach ($this->repo->movements($supplierId, $from, $to, $isVatPayer) as $row) {
+        $raw = $this->repo->movements($supplierId, $from, $to, $isVatPayer);
+        $batch = $this->batch($supplierId, $raw);
+        foreach ($raw as $row) {
             $classified = $this->classify(
                 $row,
                 $this->isVatPayerAt($supplierId, (string) $row['movement_date']),
                 $taxConstants,
                 $supplierId,
                 $year,
+                $batch,
             );
             $income = (float) ($classified['alloc']['income_taxable'] ?? 0);
             if ($income == 0.0) {
@@ -430,13 +434,16 @@ final class CashJournalService
         $isVatPayer = $this->isVatPayerAt($supplierId, $to);
         $taxConstants = $this->constants->forYear($year);
         $out = [];
-        foreach ($this->repo->movements($supplierId, $from, $to, $isVatPayer) as $row) {
+        $raw = $this->repo->movements($supplierId, $from, $to, $isVatPayer);
+        $batch = $this->batch($supplierId, $raw);
+        foreach ($raw as $row) {
             $classified = $this->classify(
                 $row,
                 $this->isVatPayerAt($supplierId, (string) $row['movement_date']),
                 $taxConstants,
                 $supplierId,
                 $year,
+                $batch,
             );
             if ($row['source_type'] === 'credit_note_offset' && $classified['alloc'] === []) {
                 continue;
@@ -444,6 +451,28 @@ final class CashJournalService
             $out[] = ['row' => $row, 'alloc' => $classified['alloc']];
         }
         return $out;
+    }
+
+    /**
+     * Podklady sdílené řádky jednoho sestavení deníku, načtené dávkou místo dotazu pro každý
+     * řádek: zápočty přijatých faktur (kalkulačka je filtruje k datu úhrady) a podklady
+     * opravných řádků zápočtů. Platí jen pro tohle sestavení, nikde se nedrží.
+     *
+     * @param list<array<string,mixed>> $raw
+     * @return array{purchase_offsets: array<int, list<array<string,mixed>>>, corrections: array<int, array<string,mixed>>}
+     */
+    private function batch(int $supplierId, array $raw): array
+    {
+        $corrections = [];
+        foreach ($raw as $r) {
+            if ($r['source_type'] === 'credit_note_offset') {
+                $corrections[] = (int) $r['source_id'];
+            }
+        }
+        return [
+            'purchase_offsets' => $this->taxExpenses->purchaseOffsets($supplierId),
+            'corrections' => $this->repo->creditNoteOffsetCorrections($supplierId, $corrections),
+        ];
     }
 
     // ── klasifikátor §5 ──────────────────────────────────────────────────────
@@ -454,6 +483,8 @@ final class CashJournalService
      *  (pro zobrazení), unclassified/blocking: R10.
      *
      * @param array<string,mixed> $r
+     * @param array{purchase_offsets?: array<int, list<array<string,mixed>>>, corrections?: array<int, array<string,mixed>>} $batch
+     *        podklady načtené dávkou ({@see batch()}); bez nich se dotazuje pro každý řádek
      * @return array{alloc:array<string,float>, bucket:string, base:float, vat:float, unclassified:bool, blocking:bool}
      */
     private function classify(
@@ -462,6 +493,7 @@ final class CashJournalService
         array $taxConstants,
         int $supplierId,
         int $year,
+        array $batch = [],
     ): array
     {
         $amount    = (float) $r['amount'];
@@ -480,7 +512,7 @@ final class CashJournalService
             return $this->goPayAlloc($amount, $direction, $r, $isVatPayer);
         }
         if ($source === 'credit_note_offset') {
-            return $this->offsetCorrectionAlloc($r, $supplierId);
+            return $this->offsetCorrectionAlloc($r, $supplierId, $batch);
         }
 
         // 0) Ruční override (1027) — nejvyšší priorita; celý pohyb do daného kbelíku.
@@ -500,7 +532,7 @@ final class CashJournalService
                 case 'invoice_payment':
                     return $this->incomeAlloc($amount, $direction, $r, $isVatPayer);
                 case 'purchase_payment':
-                    return $this->expenseAlloc($amount, $direction, $r, $isVatPayer, $taxConstants, $supplierId, $year);
+                    return $this->expenseAlloc($amount, $direction, $r, $isVatPayer, $taxConstants, $supplierId, $year, $batch);
                 case 'transfer':
                     return $this->wholeToBucket('transfer', $amount, $direction);
                 default: // 'other' — uživatelem zvolený nestandardní účel → nedaňový
@@ -525,6 +557,7 @@ final class CashJournalService
                 $isVatPayer,
                 $year,
                 (float) ($taxConstants['fixed_asset_limit'] ?? 80000),
+                $batch['purchase_offsets'] ?? null,
             );
             return $this->bankExpenseAlloc($fit['portion'], $direction, round($base * $fit['ratio'], 2)) + $fit;
         }
@@ -537,7 +570,7 @@ final class CashJournalService
 
         // 3) Vazba na přijatou fakturu → výdaj (R8 filtry).
         if ($r['purchase_invoice_id'] !== null) {
-            return $this->expenseAlloc($amount, $direction, $r, $isVatPayer, $taxConstants, $supplierId, $year);
+            return $this->expenseAlloc($amount, $direction, $r, $isVatPayer, $taxConstants, $supplierId, $year, $batch);
         }
 
         // 4) Banka bez vazby → bankovní poplatek (heuristika) nebo NEZAŘAZENO (R10).
@@ -620,11 +653,17 @@ final class CashJournalService
      * dobropis, stejně jako by se úhrady přerozdělily zpětně.
      *
      * @param array<string,mixed> $r
+     * @param array<string,mixed> $batch podklady načtené dávkou ({@see batch()})
      * @return array{alloc:array<string,float>, bucket:string, base:float, vat:float, unclassified:bool, blocking:bool}
      */
-    private function offsetCorrectionAlloc(array $r, int $supplierId): array
+    private function offsetCorrectionAlloc(array $r, int $supplierId, array $batch): array
     {
-        $basis = $this->repo->creditNoteOffsetCorrection($supplierId, (int) $r['source_id']);
+        $basis = isset($batch['corrections'])
+            ? ($batch['corrections'][(int) $r['source_id']] ?? null)
+            : $this->repo->creditNoteOffsetCorrection($supplierId, (int) $r['source_id']);
+        $offsets = isset($batch['purchase_offsets'], $basis['invoice_id'])
+            ? ($batch['purchase_offsets'][$basis['invoice_id']] ?? [])
+            : null;
         $issued = ($basis['doc_type'] ?? '') === 'invoice';
         $delta = 0.0;
         foreach ($basis['payments'] ?? [] as $p) {
@@ -643,11 +682,11 @@ final class CashJournalService
             $taxable = fn (int $throughOffsetId): float => $p['kind'] === 'bank'
                 ? $this->taxExpenses->forBankMatch(
                     $supplierId, $basis['invoice_id'], $p['amount'], $p['currency'], $p['date'],
-                    $isVatPayer, $year, $limit, $basis['offset_on'], $throughOffsetId,
+                    $isVatPayer, $year, $limit, $basis['offset_on'], $throughOffsetId, $offsets,
                 )
                 : $this->taxExpenses->forPurchaseInvoice(
                     $supplierId, $basis['invoice_id'], $p['amount'],
-                    $isVatPayer, $year, $limit, $basis['offset_on'], $throughOffsetId,
+                    $isVatPayer, $year, $limit, $basis['offset_on'], $throughOffsetId, $offsets,
                 );
             $delta += $sign * ($taxable($basis['offset_id']) - $taxable($basis['offset_id'] - 1));
         }
@@ -727,6 +766,7 @@ final class CashJournalService
      * výdaj ZVÝŠILA místo snížila — chyba 2× částka v základu DPFO § 7.
      *
      * @param array<string,mixed> $r
+     * @param array<string,mixed> $batch podklady načtené dávkou ({@see batch()})
      * @return array{alloc:array<string,float>, bucket:string, base:float, vat:float, unclassified:bool, blocking:bool}
      */
     private function expenseAlloc(
@@ -737,6 +777,7 @@ final class CashJournalService
         array $taxConstants,
         int $supplierId,
         int $year,
+        array $batch = [],
     ): array
     {
         // Výdaj je 'out'; opačný směr = vratka, tedy záporný výdaj.
@@ -749,6 +790,8 @@ final class CashJournalService
             $year,
             (float) ($taxConstants['fixed_asset_limit'] ?? 80000),
             (string) $r['movement_date'],
+            null,
+            isset($batch['purchase_offsets']) ? ($batch['purchase_offsets'][(int) $r['purchase_invoice_id']] ?? []) : null,
         );
         $vat  = round($sign * ($amount - $base), 2);
         $base = round($sign * $base, 2);
