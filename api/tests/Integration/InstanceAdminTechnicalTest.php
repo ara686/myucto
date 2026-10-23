@@ -48,7 +48,7 @@ final class InstanceAdminTechnicalTest extends TestCase
         $this->config = new Config($base);
         $this->db = new Connection($this->config);
         $pdo = $this->db->pdo();
-        self::assertTrue($this->db->hasTable('instance_smtp_settings'), 'Test vyžaduje aplikovanou migraci 2078.');
+        self::assertTrue($this->db->hasTable('instance_smtp_settings'), 'Test vyžaduje aplikovanou migraci 2135.');
         $pdo->exec("SET SESSION sql_mode = 'STRICT_ALL_TABLES,NO_ENGINE_SUBSTITUTION'");
         $pdo->beginTransaction();
         $pdo->exec('DELETE FROM instance_smtp_settings');

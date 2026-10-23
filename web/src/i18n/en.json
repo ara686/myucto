@@ -25699,6 +25699,7 @@
     "usage": "Users: {users}, company overrides: {overrides}",
     "superadmin_locked": "The system superadmin role is locked and always has full access.",
     "system_descriptions": {
+      "instance_admin": "A fixed technical role without business access. The superadmin assigns its scope; it does not consume a licensed seat.",
       "superadmin": "A predefined system role with fixed permissions. It has full access to every company and is the only role that manages users, roles, licensing, and system-wide settings.",
       "admin": "A predefined role with fixed permissions. It can do everything in assigned companies and work with multiple companies assigned by a superadmin. It cannot change system-wide items in the System menu.",
       "admin_plus": "A predefined role with fixed permissions. It has the same permissions as Admin and can also create a company under System → Companies; it automatically receives Admin permissions for that company."

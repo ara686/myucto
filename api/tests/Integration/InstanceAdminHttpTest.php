@@ -36,7 +36,7 @@ final class InstanceAdminHttpTest extends TestCase
         $this->config = Config::load(Bootstrap::rootDir());
         $this->db = new Connection($this->config);
         $pdo = $this->db->pdo();
-        self::assertTrue($this->db->hasTable('user_technical_access'), 'Nejprve aplikujte migraci 2078.');
+        self::assertTrue($this->db->hasTable('user_technical_access'), 'Nejprve aplikujte migraci 2135.');
         $roleId = (int) $pdo->query("SELECT id FROM roles WHERE system_key = 'instance_admin'
             AND role_type = 'instance_admin' AND is_active = 1")->fetchColumn();
         self::assertGreaterThan(0, $roleId);

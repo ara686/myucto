@@ -25699,6 +25699,7 @@
     "usage": "Uživatelé: {users}, role u firem: {overrides}",
     "superadmin_locked": "Systémová role superadmin je uzamčená a má vždy plný přístup.",
     "system_descriptions": {
+      "instance_admin": "Pevná technická role bez přístupu k firemním agendám. Rozsah přiděluje superadmin; účet nezabírá licenční místo.",
       "superadmin": "Předdefinovaná systémová role s pevnými právy. Má plný přístup ke všem firmám a jako jediná spravuje uživatele, role, licence a celosystémová nastavení.",
       "admin": "Předdefinovaná role s pevnými právy. Může dělat vše v přidělených firmách a pracovat s více firmami, které jí přidělí superadmin. Nemůže měnit celosystémové položky v menu Systém.",
       "admin_plus": "Předdefinovaná role s pevnými právy. Má stejná práva jako Admin a navíc může v Systém → Firmy založit novou firmu; k ní automaticky dostane práva Admin."

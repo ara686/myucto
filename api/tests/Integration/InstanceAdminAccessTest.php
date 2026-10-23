@@ -49,7 +49,7 @@ final class InstanceAdminAccessTest extends TestCase
         $pdo->exec("SET SESSION sql_mode = 'STRICT_ALL_TABLES,NO_ENGINE_SUBSTITUTION'");
         $pdo->beginTransaction();
         $this->technicalRole = $this->roleId('instance_admin');
-        self::assertGreaterThan(0, $this->technicalRole, 'Migrace 2078 musí být aplikovaná.');
+        self::assertGreaterThan(0, $this->technicalRole, 'Migrace 2135 musí být aplikovaná.');
         $this->technician = $this->user($this->technicalRole);
         $this->administrator = $this->user($this->roleId('superadmin'));
         $this->supplierA = $this->supplier('Synthetic technical A');
