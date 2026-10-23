@@ -4485,6 +4485,23 @@ final class BankStatementAction
         }
     }
 
+    /** Má pohyb živý zaúčtovaný zápis v deníku (banka, vypořádání nebo odpis karty)? */
+    private function hasPostedBankEntry(int $supplierId, int $txId): bool
+    {
+        $types = implode(',', array_map(
+            fn (string $type): string => $this->db->pdo()->quote($type),
+            BankTransactionReleaseService::TRANSACTION_SOURCE_TYPES,
+        ));
+        $stmt = $this->db->pdo()->prepare(
+            "SELECT 1 FROM journal_entries
+              WHERE supplier_id = ? AND source_type IN ($types) AND source_id = ?
+                AND reversed_by IS NULL AND posted_at IS NOT NULL
+              LIMIT 1"
+        );
+        $stmt->execute([$supplierId, $txId]);
+        return $stmt->fetchColumn() !== false;
+    }
+
     private function performUnmatch(Request $request, Response $response, array $args): Response
     {
         $txId = (int) ($args['id'] ?? 0);
@@ -4520,6 +4537,16 @@ final class BankStatementAction
             if (!$this->ownership->statementOwned($statementId, $sid)) {
                 return Json::error($response, 'not_found', 'Transakce nenalezena.', 404);
             }
+        }
+
+        // Zrušení párování zaúčtovaného pohybu stornuje nebo odpojí zápis v deníku
+        // stejně jako /unpost, proto vyžaduje stejná práva. Nezaúčtovaný pohyb dál
+        // stačí bank WRITE (klient bank.match).
+        if ($this->hasPostedBankEntry($supplierId, $txId)
+            && (!RequestAuthorization::allows($request, 'bank.unpost', AccessLevel::WRITE)
+                || !RequestAuthorization::allows($request, 'accounting', AccessLevel::WRITE))) {
+            return Json::error($response, 'forbidden',
+                'Pohyb je zaúčtovaný. Zrušení párování stornuje zápis v deníku a vyžaduje oprávnění odúčtovat banku.', 403);
         }
 
         $userId = (int) (((array) $request->getAttribute(AuthMiddleware::ATTR_USER, []))['id'] ?? 0);

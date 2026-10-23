@@ -199,6 +199,7 @@ final class ApiScopeMiddleware implements MiddlewareInterface
         // se tiskne na faktury a do QR platby. Token je smí jen číst; změnu
         // příjemce plateb dělá správce ve webovém rozhraní (openapi: mutace jen přes UI).
         '#^/api/settings/currencies(/|$)#',
+        '#^/api/bank-transactions/[0-9]+/unmatch$#',
         '#^/api/accounting(/|$)#',
         '#^/api/reports(/|$)#',
         '#^/api/tax(/|$)#',

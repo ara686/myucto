@@ -5452,12 +5452,17 @@ paths:
         Vrátí transakci do stavu unmatched a odstraní případnou poznámku k ignorování.
         Platba vzniklá párováním se z faktury odebere a stav faktury se přepočte ze
         zbývajících plateb — fakturu, kterou kryje jiná platba, nechá zaplacenou.
-        Zaúčtovaný pohyb se stornuje.
+        Zaúčtovaný pohyb se stornuje; u zaúčtovaného pohybu proto endpoint vyžaduje
+        stejná práva jako `unpost` (`bank.unpost` a zápis do účetnictví).
+        Přes API token je endpoint jen pro čtení (`token_write_forbidden`).
       responses:
         '200':
           description: OK
         '403':
-          description: Chybí oprávnění k párování nebo změně úhrady dokladu.
+          description: |
+            Chybí oprávnění k párování nebo změně úhrady dokladu, u zaúčtovaného pohybu
+            oprávnění odúčtovat banku (`forbidden`), nebo jde o volání API tokenem
+            (`token_write_forbidden`).
         '409':
           description: |
             Zrušení párování odmítnuto — zápis leží v uzavřeném nebo zamčeném období

@@ -177,6 +177,8 @@ final class ApiScopeMiddlewareTest extends TestCase
             ['POST', '/api/invoices/12/rebuild-snapshots'],
             ['POST', '/api/bank-transactions/34/post'],
             ['POST', '/api/bank-transactions/34/unpost'],
+            // Zrušení párování zaúčtovaného pohybu stornuje zápis stejně jako unpost.
+            ['POST', '/api/bank-transactions/34/unmatch'],
             ['POST', '/api/reports/s74b/record'],
             ['POST', '/api/reports/s46/correction'],
             ['PUT',  '/api/tax/profile'],
