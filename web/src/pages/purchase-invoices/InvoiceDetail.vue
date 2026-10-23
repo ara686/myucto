@@ -252,11 +252,9 @@ async function dismissAdvanceSuggestion() {
 const activity = ref<Array<{
   id: number
   user_id: number | null
-  user_email: string | null
   user_name: string | null
   action: string
   payload: Record<string, unknown> | null
-  ip: string | null
   created_at: string
 }>>([])
 const activityOpen = ref(false)
@@ -2001,7 +1999,7 @@ useWindowRefresh(['purchase-invoices', 'clients', 'bank', 'bank-transactions', '
                   <td class="px-5 py-2 whitespace-nowrap">
                     <span class="text-xs px-2 py-0.5 rounded font-medium" :class="actionBadgeClass(a.action)">{{ actionShortLabel(a.action) }}</span>
                   </td>
-                  <td class="px-3 py-2 text-xs text-neutral-500 whitespace-nowrap">{{ a.user_name || a.user_email || '—' }}</td>
+                  <td class="px-3 py-2 text-xs text-neutral-500 whitespace-nowrap">{{ a.user_name || '—' }}</td>
                   <td class="px-3 py-2 font-mono text-xs text-neutral-400 whitespace-nowrap">{{ a.created_at.replace('T', ' ').slice(0, 19) }}</td>
                   <td class="px-3 py-2 text-xs text-neutral-600 break-all whitespace-pre-wrap leading-snug">{{ payloadText(a.payload) }}</td>
                 </tr>
@@ -2015,7 +2013,7 @@ useWindowRefresh(['purchase-invoices', 'clients', 'bank', 'bank-transactions', '
                 <span class="text-xs px-2 py-0.5 rounded font-medium" :class="actionBadgeClass(a.action)">{{ actionShortLabel(a.action) }}</span>
                 <span class="font-mono text-xs text-neutral-400 whitespace-nowrap">{{ a.created_at.replace('T', ' ').slice(0, 19) }}</span>
               </div>
-              <div class="text-xs text-neutral-500">{{ a.user_name || a.user_email || '—' }}</div>
+              <div class="text-xs text-neutral-500">{{ a.user_name || '—' }}</div>
               <div v-if="a.payload" class="text-xs text-neutral-600 break-all whitespace-pre-wrap leading-snug">{{ payloadText(a.payload) }}</div>
             </li>
           </ul>

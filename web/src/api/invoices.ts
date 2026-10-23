@@ -1051,8 +1051,8 @@ export const invoicesApi = {
 
   activity: (id: number) =>
     api.get<Array<{
-      id: number; user_id: number | null; user_email: string | null; user_name: string | null;
-      action: string; payload: Record<string, unknown> | null; ip: string | null; created_at: string;
+      id: number; user_id: number | null; user_name: string | null;
+      action: string; payload: Record<string, unknown> | null; created_at: string;
     }>>(`/invoices/${id}/activity`).then(r => r.data),
 
   sendTest: (id: number) =>
