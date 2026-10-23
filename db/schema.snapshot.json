@@ -1077,7 +1077,8 @@
         "2131_accounting_securities_debt_sale.sql",
         "2132_depreciation_entries_voided.sql",
         "2133_anonymized_clone_submission_provenance.sql",
-        "2134_property_party_claim_keys.sql"
+        "2134_property_party_claim_keys.sql",
+        "2135_client_tax_submission_permissions.sql"
     ],
     "tables": {
         "abra_flexi_connections": {

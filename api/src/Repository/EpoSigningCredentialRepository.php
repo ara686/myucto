@@ -17,13 +17,6 @@ final class EpoSigningCredentialRepository
     public function listOwnedForSupplier(int $ownerUserId, int $supplierId, bool $supplierScoped = false): array
     {
         // Klientský náhled nezjišťuje použití certifikátu v jiných firmách.
-        $profilesCountSql = $supplierScoped ? '0' : '(SELECT COUNT(*)
-                       FROM signing_credentials sc
-                       JOIN signing_profiles sp ON sp.id = sc.profile_id
-                      WHERE sc.vault_credential_id = c.id
-                        AND sc.deleted_at IS NULL
-                        AND sp.deleted_at IS NULL
-                    )';
         $verifiedSupplierSql = $supplierScoped ? 'a.supplier_id = ? AND ' : '';
         $params = [$supplierId];
         if ($supplierScoped) {
@@ -33,7 +26,13 @@ final class EpoSigningCredentialRepository
         $stmt = $this->db->pdo()->prepare(
             'SELECT c.id, c.label, c.fingerprint_sha256, c.subject_dn, c.issuer_dn,
                      c.serial_hex, c.valid_from, c.valid_to, c.ik_mpsv_present,
-                    ' . $profilesCountSql . ' AS linked_profiles_count,
+                    ' . ($supplierScoped ? '0' : '(SELECT COUNT(*)
+                       FROM signing_credentials sc
+                       JOIN signing_profiles sp ON sp.id = sc.profile_id
+                      WHERE sc.vault_credential_id = c.id
+                        AND sc.deleted_at IS NULL
+                        AND sp.deleted_at IS NULL
+                    )') . ' AS linked_profiles_count,
                     (SELECT COUNT(*)
                        FROM signing_credentials sc
                        JOIN signing_profiles sp ON sp.id = sc.profile_id
