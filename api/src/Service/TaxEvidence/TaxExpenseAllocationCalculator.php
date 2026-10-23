@@ -39,6 +39,14 @@ final class TaxExpenseAllocationCalculator
         }
     }
 
+    /**
+     * Daňová část úhrady přijaté faktury.
+     *
+     * @param string|null $offsetsAsOf     zápočty dobropisů známé k datu úhrady (paymentTaxable());
+     *                                     null = všechny zápočty (doklad, jak je dnes)
+     * @param int|null    $throughOffsetId opravný řádek zápočtu: ze zápočtů dne $offsetsAsOf jen
+     *                                     do tohoto id
+     */
     public function forPurchaseInvoice(
         int $supplierId,
         int $purchaseInvoiceId,
@@ -46,6 +54,8 @@ final class TaxExpenseAllocationCalculator
         bool $isVatPayer,
         int $year,
         float $fixedAssetLimit,
+        ?string $offsetsAsOf = null,
+        ?int $throughOffsetId = null,
     ): float {
         $stmt = $this->db->pdo()->prepare(
             'SELECT id, status, document_kind, tax_deductible, is_fixed_asset, parent_purchase_invoice_id,
@@ -79,7 +89,9 @@ final class TaxExpenseAllocationCalculator
             return 0.0;
         }
 
-        return round($this->paymentTaxable($supplierId, $invoice, $allocations, $paidAmountCzk, $isVatPayer, $year), 2);
+        return round($this->paymentTaxable(
+            $supplierId, $invoice, $allocations, $paidAmountCzk, $isVatPayer, $year, $offsetsAsOf, $throughOffsetId,
+        ), 2);
     }
 
     /**
@@ -105,19 +117,41 @@ final class TaxExpenseAllocationCalculator
      * dostane přesně daňovou část zbytku, poměr rozhoduje jen u částečné úhrady. Bez
      * zápočtu, nebo když zápočet vyrovnal celou fakturu, rozhoduje faktura sama.
      *
+     * Zápočty se berou jen k datu úhrady ($asOf), pozdější zápočet dřívější úhradu nemění.
+     * Rozdíl nese opravný řádek peněžního deníku ke dni zápočtu, který srovnává úhradu se
+     * zápočty do daného zápočtu ($throughOffsetId) a bez něj
+     * ({@see \MyInvoice\Support\Sql\CreditNoteOffsetRemainderExpr}).
+     *
      * @param array<string,mixed> $invoice @param list<array<string,mixed>> $allocations
      */
-    private function paymentTaxable(int $supplierId, array $invoice, array $allocations, float $paidAmount, bool $isVatPayer, int $year): float
-    {
+    private function paymentTaxable(
+        int $supplierId,
+        array $invoice,
+        array $allocations,
+        float $paidAmount,
+        bool $isVatPayer,
+        int $year,
+        ?string $asOf,
+        ?int $throughOffsetId,
+    ): float {
+        $params = [$supplierId, (int) $invoice['id']];
+        $asOfSql = '';
+        if ($asOf !== null && $throughOffsetId === null) {
+            $asOfSql = ' AND o.offset_on <= ?';
+            $params[] = $asOf;
+        } elseif ($asOf !== null) {
+            $asOfSql = ' AND (o.offset_on < ? OR (o.offset_on = ? AND o.id <= ?))';
+            array_push($params, $asOf, $asOf, $throughOffsetId);
+        }
         $stmt = $this->db->pdo()->prepare(
             "SELECT o.amount AS offset_amount, cn.id, cn.tax_deductible, cn.total_vat, cn.total_with_vat,
                     cn.vat_deduction, cn.vat_deduction_percent
                FROM credit_note_offsets o
                JOIN purchase_invoices cn ON cn.id = o.credit_note_id AND cn.supplier_id = o.supplier_id
-              WHERE o.supplier_id = ? AND o.doc_type = 'purchase_invoice' AND o.invoice_id = ?
+              WHERE o.supplier_id = ? AND o.doc_type = 'purchase_invoice' AND o.invoice_id = ?{$asOfSql}
               ORDER BY o.id"
         );
-        $stmt->execute([$supplierId, (int) $invoice['id']]);
+        $stmt->execute($params);
         $notes = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
         $remaining = (float) $invoice['total_with_vat'];
@@ -188,17 +222,51 @@ final class TaxExpenseAllocationCalculator
         $stmt->execute([$supplierId, $bankTransactionId]);
         $total = 0.0;
         foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $payment) {
-            $rate = $this->exchangeRate((string) ($payment['currency'] ?: 'CZK'), (string) $payment['posted_at']);
-            $total += $this->forPurchaseInvoice(
+            $total += $this->forBankMatch(
                 $supplierId,
                 (int) $payment['purchase_invoice_id'],
-                round((float) $payment['amount'] * $rate, 2),
+                (float) $payment['amount'],
+                (string) $payment['currency'],
+                (string) $payment['posted_at'],
                 $isVatPayer,
                 $year,
                 $fixedAssetLimit,
+                (string) $payment['posted_at'],
             );
         }
         return round($total, 2);
+    }
+
+    /**
+     * Daňová část jednoho bankovního párování přijaté faktury. Částka párování je v měně
+     * bankovního pohybu, na Kč se převádí kurzem ke dni pohybu.
+     *
+     * @param string|null $offsetsAsOf     viz {@see forPurchaseInvoice()}
+     * @param int|null    $throughOffsetId viz {@see forPurchaseInvoice()}
+     */
+    public function forBankMatch(
+        int $supplierId,
+        int $purchaseInvoiceId,
+        float $amount,
+        string $currency,
+        string $postedAt,
+        bool $isVatPayer,
+        int $year,
+        float $fixedAssetLimit,
+        ?string $offsetsAsOf,
+        ?int $throughOffsetId = null,
+    ): float {
+        $rate = $this->exchangeRate($currency !== '' ? $currency : 'CZK', $postedAt);
+        return $this->forPurchaseInvoice(
+            $supplierId,
+            $purchaseInvoiceId,
+            round($amount * $rate, 2),
+            $isVatPayer,
+            $year,
+            $fixedAssetLimit,
+            $offsetsAsOf,
+            $throughOffsetId,
+        );
     }
 
     public function forCashDocument(int $supplierId, int $cashDocumentId, bool $isVatPayer, int $year): float
