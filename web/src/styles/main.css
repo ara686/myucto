@@ -489,7 +489,7 @@ body.workspace-window-single-padded #app {
 h1:not(.font-sans) {
   font-family: var(--font-display);
   font-weight: 500;
-  letter-spacing: -0.015em;
+  letter-spacing: -0.022em;
   line-height: 1.2;
 }
 
