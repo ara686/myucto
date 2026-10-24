@@ -13,6 +13,7 @@ use MyInvoice\Security\RequestAuthorization;
 use MyInvoice\Service\Accounting\DocumentLockService;
 use MyInvoice\Service\ActivityLogger;
 use MyInvoice\Service\Eet\EetCommandException;
+use MyInvoice\Service\Eet\EetCreditNoteRefundGate;
 use MyInvoice\Service\Eet\EetInvoicePaymentGate;
 use MyInvoice\Service\Eet\IdempotencyConflictException;
 use MyInvoice\Service\Invoice\InvoicePaymentService;
@@ -38,6 +39,7 @@ final class MarkPaidAction
         private readonly InvoicePaymentService $payments,
         private readonly DocumentLockService $locks,
         private readonly EetInvoicePaymentGate $eetGate,
+        private readonly EetCreditNoteRefundGate $eetRefunds,
     ) {}
 
     public function __invoke(Request $request, Response $response, array $args): Response
@@ -81,11 +83,24 @@ final class MarkPaidAction
             || (RefundDocument::isRefundDocument($invoice) && (int) ($invoice['parent_invoice_id'] ?? 0) <= 0)
         ) {
             try {
-                $this->payments->markRefunded(
-                    $id,
+                // EET-08: kontaktní vrácení k dobropisu s evidovanou tržbou = záporná tržba.
+                $route = $this->eetRefunds->route(
                     (int) $invoice['supplier_id'],
+                    (int) ($user['id'] ?? 0),
+                    $id,
+                    $body,
                     $paidAt,
+                    fn (string $paidOn): bool => $this->payments->markRefunded($id, (int) $invoice['supplier_id'], $paidOn),
                 );
+                $paidAt = $route['paid_on'];
+                if ($route['mode'] === 'eet') {
+                    $eet = $route['eet'] ?? ['corrections' => [], 'warning' => null];
+                    $this->stats->recomputeAfterCommit($id);
+                } elseif ($route['decision'] !== null) {
+                    $eetDecision = $route['decision'];
+                }
+            } catch (EetCommandException $e) {
+                return Json::error($response, $e->errorCode, $e->getMessage(), $e->httpStatus, $e->extra);
             } catch (\PDOException $e) {
                 throw $e;
             } catch (\RuntimeException $e) {

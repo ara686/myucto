@@ -149,7 +149,8 @@ final class EetSettingsActionsTest extends TestCase
         self::assertSame('read', $capabilities['body']['permissions']['eet.settings']);
         self::assertSame('none', $capabilities['body']['permissions']['eet.certificates']);
         self::assertSame('write', $capabilities['body']['permissions']['eet.accept_payment']);
-        self::assertContains('foreign_currency', $capabilities['body']['unsupported_scenarios']);
+        self::assertContains('foreign_currency', $capabilities['body']['supported_scenarios']);
+        self::assertNotContains('foreign_currency', $capabilities['body']['unsupported_scenarios']);
     }
 
     public function testCertificateUploadNeedsSessionAndStepUp(): void

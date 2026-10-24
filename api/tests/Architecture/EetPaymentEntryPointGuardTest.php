@@ -73,6 +73,49 @@ final class EetPaymentEntryPointGuardTest extends TestCase
             'Vzorová data demo firmy, ne skutečná platba.'],
     ];
 
+    /**
+     * Vrácení peněz k dokladu k vyplacení ({@see InvoicePaymentService::markRefunded()}) je
+     * záporná tržba, když vrací peníze evidované tržby kontaktně (EET-08). Zápočet dobropisu
+     * ({@see \MyInvoice\Service\Invoice\CreditNoteOffsetService}) peníze nevrací a vrácení
+     * nevolá vůbec.
+     *
+     * @var array<string,array{0:string,1:string,2?:class-string}>
+     */
+    private const REFUND_CALLERS = [
+        'MyInvoice\Action\Invoice\MarkPaidAction::__invoke' => [self::CONNECTED,
+            'Označení dobropisu jako vráceného: o záporné tržbě rozhoduje EetCreditNoteRefundGate podle způsobu vrácení.',
+            \MyInvoice\Service\Eet\EetCreditNoteRefundGate::class],
+        'MyInvoice\Service\Accounting\Cash\CashDocumentService::applySideEffects' => [self::CONNECTED,
+            'Výdajový doklad k dobropisu: hotovost z pokladny, záporné opravy zakládá EetCashDocumentRecorder::afterRefundPost.',
+            EetCashDocumentRecorder::class],
+        'MyInvoice\Action\Bank\BankStatementAction::recordRefundMatch' => [self::NOT_SUBJECT,
+            'Banka: vrácení převodem na účet je bezkontaktní, evidovat ho nemusí (metodika k § 8 ZoET).'],
+        'MyInvoice\Service\Accounting\GoPay\GoPayService::reconcileCreditNoteStatuses' => [self::NOT_SUBJECT,
+            'Platební brána: vrácení online platby na kartu zákazníka je bezkontaktní.'],
+        'MyInvoice\Service\Invoice\InvoicePaymentService::markCreditNoteRefunded' => [self::NOT_SUBJECT,
+            'Zastaralý alias markRefunded(); zařazení nesou jeho volající.'],
+    ];
+
+    public function testEveryRefundCallerIsClassified(): void
+    {
+        $found = self::callers(dirname(__DIR__, 2) . '/src', ['markRefunded', 'markCreditNoteRefunded']);
+        self::assertNotEmpty($found, 'Skener nenašel žádné vrácení peněz — je rozbitý.');
+        $unknown = array_values(array_diff(array_keys($found), array_keys(self::REFUND_CALLERS)));
+        self::assertSame([], $unknown, "Nové vrácení peněz bez zařazení vůči EET:\n  " . implode("\n  ", array_map(
+            static fn (string $s): string => $s . ' (' . $found[$s] . ')', $unknown)));
+        $stale = array_values(array_diff(array_keys(self::REFUND_CALLERS), array_keys($found)));
+        self::assertSame([], $stale, 'Zastaralé zařazení vrácení: ' . implode(', ', $stale));
+        foreach (self::REFUND_CALLERS as $symbol => $entry) {
+            if ($entry[0] !== self::CONNECTED) {
+                continue;
+            }
+            [$class] = explode('::', $symbol);
+            $types = array_map(static fn (\ReflectionParameter $p): string => (string) $p->getType(),
+                (new \ReflectionClass($class))->getConstructor()?->getParameters() ?? []);
+            self::assertContains($entry[2], $types, $symbol . ' je zařazený jako napojený na EET, ale nedostává ' . $entry[2] . '.');
+        }
+    }
+
     public function testEveryRecordPaymentCallerIsClassified(): void
     {
         $found = self::callers(dirname(__DIR__, 2) . '/src');
@@ -129,8 +172,11 @@ final class EetPaymentEntryPointGuardTest extends TestCase
         self::assertSame(['Demo\Probe::real'], array_keys(self::callersInCode($code, 'probe.php')));
     }
 
-    /** @return array<string,string> symbol => soubor:řádek */
-    private static function callers(string $root): array
+    /**
+     * @param list<string> $methods
+     * @return array<string,string> symbol => soubor:řádek
+     */
+    private static function callers(string $root, array $methods = ['recordPayment']): array
     {
         $out = [];
         $it = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS));
@@ -139,17 +185,20 @@ final class EetPaymentEntryPointGuardTest extends TestCase
                 continue;
             }
             $code = (string) file_get_contents($file->getPathname());
-            if (!str_contains($code, 'recordPayment')) {
+            if (array_filter($methods, static fn (string $m): bool => str_contains($code, $m)) === []) {
                 continue;
             }
-            $out += self::callersInCode($code, str_replace('\\', '/', substr($file->getPathname(), strlen($root) + 1)));
+            $out += self::callersInCode($code, str_replace('\\', '/', substr($file->getPathname(), strlen($root) + 1)), $methods);
         }
         ksort($out);
         return $out;
     }
 
-    /** @return array<string,string> */
-    private static function callersInCode(string $code, string $label): array
+    /**
+     * @param list<string> $methods
+     * @return array<string,string>
+     */
+    private static function callersInCode(string $code, string $label, array $methods = ['recordPayment']): array
     {
         $tokens = token_get_all($code);
         $namespace = '';
@@ -217,7 +266,7 @@ final class EetPaymentEntryPointGuardTest extends TestCase
                 }
             } elseif (($id === T_OBJECT_OPERATOR || $id === T_NULLSAFE_OBJECT_OPERATOR) && $class !== null) {
                 $name = self::nextSignificant($tokens, $i);
-                if (is_array($name) && $name[0] === T_STRING && $name[1] === 'recordPayment') {
+                if (is_array($name) && $name[0] === T_STRING && in_array($name[1], $methods, true)) {
                     $symbol = $class . '::' . ($method ?? '?');
                     $out[$symbol] ??= $label . ':' . $line;
                 }

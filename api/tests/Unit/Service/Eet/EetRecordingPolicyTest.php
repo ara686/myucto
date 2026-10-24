@@ -46,8 +46,11 @@ final class EetRecordingPolicyTest extends TestCase
         // Bankovní párování jen ověřuje, tržbu nezakládá.
         yield 'bankovní párování hotovosti' => [['channel' => 'cash', 'context' => 'in_person', 'origin' => 'bank_reconciliation'], 'not_subject', 'bank_reconciliation'];
 
+        // Cizí měna povinnost nemění (tržba se eviduje v CZK přepočtená kurzem úhrady).
+        yield 'cizí měna hotově' => [['channel' => 'cash', 'context' => 'in_person', 'currency' => 'EUR'], 'required', 'cash'];
+        yield 'cizí měna terminál na místě' => [['channel' => 'card_terminal', 'context' => 'in_person', 'currency' => 'EUR'], 'required', 'card_terminal_contact'];
+
         // Mimo MVP, ale jen u jinak povinné tržby.
-        yield 'cizí měna hotově' => [['channel' => 'cash', 'context' => 'in_person', 'currency' => 'EUR'], 'unsupported', 'foreign_currency'];
         yield 'cizí měna vzdáleně' => [['channel' => 'bank_transfer', 'context' => 'remote', 'currency' => 'EUR'], 'not_subject', 'remote_payment'];
         yield 'dobití kreditu' => [['channel' => 'cash', 'context' => 'in_person', 'purpose' => 'credit_topup'], 'unsupported', 'credit_topup'];
         yield 'čerpání kreditu' => [['channel' => 'cash', 'context' => 'in_person', 'purpose' => 'credit_draw'], 'unsupported', 'credit_draw'];
@@ -98,6 +101,25 @@ final class EetRecordingPolicyTest extends TestCase
             'cash', 'in_person',
         ));
         self::assertSame(EetPolicyDecision::REQUIRED, $result->decision);
+    }
+
+    /** @return iterable<string, array{0:?string, 1:string, 2:string}> */
+    public static function refunds(): iterable
+    {
+        yield 'vrácení hotově' => ['cash', 'unknown', 'required'];
+        yield 'vrácení na terminál na místě' => ['card_terminal', 'in_person', 'required'];
+        yield 'vrácení převodem na účet' => ['bank_transfer', 'remote', 'not_subject'];
+        yield 'vrácení kartou bez kontextu' => ['card_terminal', 'unknown', 'unknown'];
+        yield 'vrácení bez kanálu' => [null, 'in_person', 'unknown'];
+    }
+
+    /** Vrácení peněz: kontaktní vrácení se eviduje, převod na účet ne (metodika k § 8 ZoET). */
+    #[DataProvider('refunds')]
+    public function testRefundDecision(?string $channel, string $context, string $decision): void
+    {
+        $at = new \DateTimeImmutable('2026-11-02 10:00:00', new \DateTimeZone('Europe/Prague'));
+        self::assertSame($decision, (new EetRecordingPolicy())->refundDecision(self::ACTIVE, $at, $channel, $context)->decision);
+        self::assertSame('inactive', (new EetRecordingPolicy())->refundDecision(['enabled' => 0] + self::ACTIVE, $at, 'cash', 'in_person')->decision);
     }
 
     public function testVersionIsExposedInDecision(): void

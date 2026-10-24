@@ -39,7 +39,9 @@ use MyInvoice\Service\Bank\BankTransactionContext;
 use MyInvoice\Service\Bank\FxPaymentSettlement;
 use MyInvoice\Service\Bank\VariableSymbolNormalizer;
 use MyInvoice\Service\Currency\CnbExchangeRateClient;
+use MyInvoice\Service\Currency\ExchangeRateUnavailableException;
 use MyInvoice\Service\Currency\FixedExchangeRateService;
+use MyInvoice\Service\Currency\PaymentExchangeRate;
 use MyInvoice\Service\Invoice\InvoicePaymentService;
 use MyInvoice\Service\Invoice\RefundDocument;
 use MyInvoice\Service\Ai\AiKillSwitchService;
@@ -1773,23 +1775,21 @@ final class BankPostingService
      */
     private array $paymentRateMemo = [];
 
-    /** Kurz úhrady podle kurzového režimu firmy; v daily režimu ČNB. */
+    private ?PaymentExchangeRate $paymentRates = null;
+
+    /** Kurz úhrady podle kurzového režimu firmy; v daily režimu ČNB. Pravidlo drží {@see PaymentExchangeRate}. */
     private function paymentRateForDay(int $supplierId, string $currency, string $date): float
     {
         $key = $supplierId . '|' . $currency . '|' . $date;
         if (isset($this->paymentRateMemo[$key])) {
             return $this->paymentRateMemo[$key];
         }
-        $day = new \DateTimeImmutable($date);
-        $fixed = $this->fixedRates->resolve($supplierId, $currency, $day);
-        if ($fixed !== null && (float) $fixed['rate'] > 0) {
-            return $this->paymentRateMemo[$key] = (float) $fixed['rate'];
-        }
-        $info = $this->cnb->getRate($currency, $day);
-        if ($info === null || (float) $info['rate'] <= 0) {
+        $this->paymentRates ??= new PaymentExchangeRate($this->fixedRates, $this->cnb);
+        try {
+            return $this->paymentRateMemo[$key] = $this->paymentRates->forDay($supplierId, $currency, $date)['rate'];
+        } catch (ExchangeRateUnavailableException) {
             throw new PostingException('fx_rate_unavailable', 'Kurz ČNB pro měnu ' . $currency . ' k ' . $date . ' není k dispozici.');
         }
-        return $this->paymentRateMemo[$key] = (float) $info['rate'];
     }
 
     /**
@@ -4296,7 +4296,7 @@ final class BankPostingService
      */
     private static function centsToCzk(float $cents): float
     {
-        return round(round($cents, 4)) / 100;
+        return PaymentExchangeRate::roundCents($cents) / 100;
     }
 
     /**

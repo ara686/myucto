@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: MyÚčto – aplikační API EET 2.0
-  version: 2026-10.1
+  version: 2026-10.2
   description: 'Aplikační API evidence tržeb EET 2.0 pro webové rozhraní a budoucí mobilní
 
     aplikaci. Není součástí veřejného read-only subsetu `/api/v1` (viz `openapi.yaml`).
@@ -845,6 +845,34 @@ paths:
                             allOf:
                             - $ref: '#/components/schemas/EetRecord'
                             nullable: true
+                  refund:
+                    type: object
+                    description: Jen u dobropisu s opravovanou fakturou. Kolik z evidovaných tržeb faktury zbývá opravit; vrácení peněz (výdajový pokladní doklad, označení vráceno hotově nebo kartou na místě) se zaeviduje jako záporná tržba nejvýš do této částky.
+                    properties:
+                      invoice_id:
+                        type: integer
+                      invoice_number:
+                        type: string
+                      currency:
+                        type: string
+                      refund_amount:
+                        $ref: '#/components/schemas/EetMoney'
+                      evidenced:
+                        type: object
+                        properties:
+                          records:
+                            type: integer
+                          remaining_czk:
+                            $ref: '#/components/schemas/EetMoney'
+                          remaining:
+                            type:
+                            - string
+                            - 'null'
+                            description: Zbývá v cizí měně tržeb (null u Kč)
+                          currency:
+                            type:
+                            - string
+                            - 'null'
 components:
   securitySchemes:
     session:
@@ -911,7 +939,7 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
     EetError:
-      description: Chyba (kódy eet_validation, eet_not_configured, eet_unsupported_scenario, idempotency_conflict, idempotency_key_required,
+      description: Chyba (kódy eet_validation, eet_not_configured, eet_unsupported_scenario, eet_fx_rate_unavailable, idempotency_conflict, idempotency_key_required,
         idempotency_key_invalid, eet_state_conflict, not_found)
       content:
         application/json:
@@ -998,7 +1026,7 @@ components:
         contract_version:
           type: string
           examples:
-          - 2026-10.1
+          - 2026-10.2
         enabled:
           type: boolean
         environment:
@@ -1028,12 +1056,13 @@ components:
             - qr_in_person
             - refund
             - correction
+            - foreign_currency
+            - credit_note_refund
         unsupported_scenarios:
           type: array
           items:
             type: string
             enum:
-            - foreign_currency
             - credit
             - security_deposit
             - delegation
@@ -1600,6 +1629,7 @@ components:
           type: string
           default: CZK
           example: CZK
+          description: Měna platby (ISO 4217). U faktury musí odpovídat měně faktury. Platba v cizí měně se do EET uvádí v Kč přepočtená kurzem, jakým účetnictví ocení úhradu ke dni přijetí (režim kurzu firmy, jinak kurz ČNB); chybí-li kurz, 422 `eet_fx_rate_unavailable`. QR platba na místě je jen v Kč.
         channel:
           type: string
           enum:
@@ -1701,6 +1731,31 @@ components:
           $ref: '#/components/schemas/EetMoney'
         currency:
           type: string
+        amount_czk:
+          description: Částka, která se zaeviduje (Kč); null, když kurz chybí
+          oneOf:
+          - $ref: '#/components/schemas/EetMoney'
+          - type: 'null'
+        exchange_rate:
+          type:
+          - string
+          - 'null'
+          description: Kurz CZK za 1 jednotku měny platby (u CZK null)
+        exchange_rate_source:
+          type:
+          - string
+          - 'null'
+          example: cnb:2026-11-02
+        exchange_rate_error:
+          type:
+          - object
+          - 'null'
+          description: Kurz pro den platby chybí (`eet_fx_rate_unavailable`); přijetí by bylo odmítnuto
+          properties:
+            code:
+              type: string
+            message:
+              type: string
         invoice:
           type: object
           nullable: true
@@ -1823,8 +1878,23 @@ components:
           - api
         amount:
           $ref: '#/components/schemas/EetMoney'
+          description: Částka v měně platby (u opravy záporná)
         currency:
           type: string
+          description: Měna platby
+        amount_czk:
+          $ref: '#/components/schemas/EetMoney'
+          description: Částka evidovaná v EET, vždy v Kč (u CZK platby totéž co amount)
+        exchange_rate:
+          type:
+          - string
+          - 'null'
+          description: Kurz přepočtu cizoměnové platby (CZK za 1 jednotku); oprava nese kurz původní tržby
+        exchange_rate_source:
+          type:
+          - string
+          - 'null'
+          description: 'Zdroj kurzu: `cnb:{den kurzu}`, `fixed_monthly:{období}`, `fixed_annual:{období}`, `cash_document:{datum dokladu}`'
         payment_method:
           type: string
           nullable: true
@@ -2087,9 +2157,13 @@ components:
               $ref: '#/components/schemas/EetAttempt'
     EetCorrectionInput:
       type: object
+      description: Částka opravy buď v Kč (`amount`), nebo v původní měně cizoměnové tržby (`original_amount`), ne obojí.
       properties:
         amount:
           $ref: '#/components/schemas/EetMoney'
+        original_amount:
+          $ref: '#/components/schemas/EetMoney'
+          description: O kolik se tržba snižuje v původní měně. Přepočet kurzem původní tržby kumulativně (vratka celé zbývající cizí částky dá celou zbývající částku v Kč).
         reason:
           type: string
           enum:
@@ -2112,11 +2186,36 @@ components:
           $ref: '#/components/schemas/EetMoney'
         remaining:
           $ref: '#/components/schemas/EetMoney'
+        foreign:
+          type:
+          - object
+          - 'null'
+          description: Cizoměnová stopa tržby (null u tržby v Kč)
+          properties:
+            currency:
+              type: string
+            original_amount:
+              $ref: '#/components/schemas/EetMoney'
+            remaining:
+              type:
+              - string
+              - 'null'
+              description: Zbývá opravit v původní měně; null, když tržbu snížila oprava zadaná v Kč
+            exchange_rate:
+              type: string
+            exchange_rate_source:
+              type:
+              - string
+              - 'null'
         proposed:
           type: object
           properties:
             total_amount:
               $ref: '#/components/schemas/EetMoney'
+            original_amount:
+              type:
+              - string
+              - 'null'
             reason:
               type: string
               nullable: true
@@ -2129,6 +2228,10 @@ components:
               format: date-time
         allowed:
           type: boolean
+        error:
+          type:
+          - string
+          - 'null'
         accounting:
           type: string
     EetCorrection:
@@ -2142,6 +2245,9 @@ components:
             nullable: true
           original_remaining:
             $ref: '#/components/schemas/EetMoney'
+          original_remaining_foreign:
+            $ref: '#/components/schemas/EetMoney'
+            description: Zbývá opravit v původní měně cizoměnové tržby
     EetQueueSummary:
       type: object
       properties:

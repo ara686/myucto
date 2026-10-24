@@ -472,7 +472,7 @@ final class CashDocumentService
                 'doc_number'       => (string) $result['doc_number'],
                 'journal_entry_id' => $result['journal_entry_id'] !== null ? (int) $result['journal_entry_id'] : null,
                 'warnings'         => $result['warnings'],
-            ];
+            ] + (isset($result['eet_refund']) ? ['eet_refund' => $result['eet_refund']] : []);
         } catch (\Throwable $e) {
             if ($ownTx && $pdo->inTransaction()) {
                 $pdo->rollBack();
@@ -879,16 +879,16 @@ final class CashDocumentService
         // Side-effecty úhrad FV/PF (anotace pro peněžní deník, noha A) zůstávají shodné.
         if ($taxEvidence) {
             $invoicePaymentId = $this->applySideEffects($supplierId, $id, $doc, $docNumber, $userId);
-            $this->recordEetSale($supplierId, $doc, $docNumber, $invoicePaymentId, $eetDeviceId, $userId);
+            $eetRefund = $this->recordEetSale($supplierId, $doc, $docNumber, $invoicePaymentId, $eetDeviceId, $userId);
             $this->documents->markPostedNoJournal($supplierId, $id, $docNumber);
             $this->syncAdvanceCoveredStatus($supplierId, $doc);
 
-            return [
+            return self::withEetRefund([
                 'doc_number'       => $docNumber,
                 'journal_entry_id' => null,
                 'status'           => 'posted',
                 'warnings'         => $this->collectWarnings($supplierId, $doc, (string) $register['account_code']),
-            ];
+            ], $eetRefund);
         }
 
         $lines = $this->buildLines($supplierId, $doc, (string) $register['account_code']);
@@ -911,18 +911,37 @@ final class CashDocumentService
         ]);
 
         $invoicePaymentId = $this->applySideEffects($supplierId, $id, $doc, $docNumber, $userId);
-        $this->recordEetSale($supplierId, $doc, $docNumber, $invoicePaymentId, $eetDeviceId, $userId);
+        $eetRefund = $this->recordEetSale($supplierId, $doc, $docNumber, $invoicePaymentId, $eetDeviceId, $userId);
         $this->documents->markPosted($supplierId, $id, $docNumber, $entryId);
         $this->syncAdvanceCoveredStatus($supplierId, $doc);
         // Hotovostní úhrada zálohy po zaúčtování konečné faktury → doplnit její zúčtování.
         $this->advanceSettlement->afterCashDocument($supplierId, $doc, $userId);
 
-        return [
+        return self::withEetRefund([
             'doc_number'       => $docNumber,
             'journal_entry_id' => $entryId,
             'status'           => 'posted',
             'warnings'         => $this->collectWarnings($supplierId, $doc, (string) $register['account_code']),
-        ];
+        ], $eetRefund);
+    }
+
+    /**
+     * Výsledek zaúčtování doplněný o vrácení peněz k dobropisu zaevidované do EET.
+     *
+     * @param array<string,mixed> $result
+     * @param array<string,mixed>|null $eetRefund
+     * @return array<string,mixed>
+     */
+    private static function withEetRefund(array $result, ?array $eetRefund): array
+    {
+        if ($eetRefund === null) {
+            return $result;
+        }
+        if (($eetRefund['warning'] ?? null) !== null) {
+            $result['warnings'][] = 'cash.warning.eet_refund_partial';
+        }
+        $result['eet_refund'] = $eetRefund;
+        return $result;
     }
 
     /**
@@ -997,14 +1016,21 @@ final class CashDocumentService
 
     /**
      * Tržba EET z PPD (EET-05) v transakci zaúčtování. Úhrada faktury, kterou právě
-     * založil {@see applySideEffects()}, dostane stejnou platební událost.
+     * založil {@see applySideEffects()}, dostane stejnou platební událost. Výdajový
+     * doklad k dobropisu je vrácení peněz: záporné opravy tržeb opravované faktury
+     * (EET-08); vrací jejich souhrn.
      *
      * @param array<string,mixed> $doc
+     * @return array<string,mixed>|null
      */
-    private function recordEetSale(int $supplierId, array $doc, string $docNumber, ?int $invoicePaymentId, ?int $eetDeviceId, ?int $userId): void
+    private function recordEetSale(int $supplierId, array $doc, string $docNumber, ?int $invoicePaymentId, ?int $eetDeviceId, ?int $userId): ?array
     {
         try {
+            if (($doc['doc_type'] ?? null) === 'out') {
+                return $this->eet->afterRefundPost($supplierId, ['doc_number' => $docNumber] + $doc, $eetDeviceId, $userId);
+            }
             $this->eet->afterPost($supplierId, ['doc_number' => $docNumber] + $doc, $invoicePaymentId, $eetDeviceId, $userId);
+            return null;
         } catch (EetCommandException $e) {
             throw new CashException($e->errorCode, $e->getMessage(), $e->httpStatus, $e->extra);
         }

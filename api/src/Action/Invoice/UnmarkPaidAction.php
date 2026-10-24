@@ -45,6 +45,7 @@ final class UnmarkPaidAction
         private readonly InvoicePdfRenderer $pdf,
         private readonly InvoicePaymentService $payments,
         private readonly DocumentLockService $locks,
+        private readonly EetHistoryGuard $eetHistory,
     ) {}
 
     public function __invoke(Request $request, Response $response, array $args): Response
@@ -103,6 +104,11 @@ final class UnmarkPaidAction
                 'K platbám faktury existuje daňový doklad k přijaté platbě. Nejdřív ho smaž (koncept) nebo stornuj.',
                 409,
             );
+        }
+
+        if ((string) ($invoice['invoice_type'] ?? '') === 'credit_note'
+            && ($eetConflict = $this->eetHistory->creditNoteRefundConflict((int) $invoice['supplier_id'], $id)) !== null) {
+            return Json::error($response, EetHistoryGuard::ERROR_CODE, $eetConflict, 409);
         }
 
         $previousPaidAt = (string) ($invoice['paid_at'] ?? '');

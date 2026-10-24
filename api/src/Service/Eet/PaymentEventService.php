@@ -21,7 +21,8 @@ final class PaymentEventService
 {
     private const COLUMNS = [
         'public_id', 'supplier_id', 'idempotency_key', 'request_hash', 'kind', 'origin', 'payment_method',
-        'channel', 'contact_context', 'business_purpose', 'amount', 'currency', 'ordered_at', 'received_at',
+        'channel', 'contact_context', 'business_purpose', 'amount', 'currency',
+        'original_currency', 'original_amount', 'exchange_rate', 'exchange_rate_source', 'ordered_at', 'received_at',
         'recorded_at', 'paid_on', 'payment_order_status', 'bank_verification_status', 'accounting_settlement_status',
         'invoice_id', 'device_id', 'unit_id', 'eet_decision', 'eet_reason_code', 'policy_version',
         'corrects_event_id', 'note', 'created_by',

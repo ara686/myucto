@@ -14,14 +14,17 @@ namespace MyInvoice\Service\Eet;
  *  3. bankovní párování jen propojí důkaz s již zachycenou platbou, novou tržbu nezakládá;
  *  4. kanál a kontakt: hotovost vždy, terminál / QR / převod při osobním kontaktu,
  *     vzdálená bezhotovostní platba a poštovní dobírka ne, neznámý kontext → unknown;
- *  5. povinná tržba mimo MVP (cizí měna, kredit, kauce, pověření) → unsupported.
+ *  5. povinná tržba mimo MVP (kredit, kauce, pověření) → unsupported. Cizí měna
+ *     povinnost nemění, tržba se eviduje v CZK přepočtená kurzem úhrady.
+ *
+ * Vrácení peněz posuzuje {@see refundDecision()} stejnými pravidly kanálu a kontaktu.
  *
  * Pouhé `payment_method` ani checkbox klienta povinnost neurčují. Výsledek nese
  * kód důvodu a verzi pravidel, obojí se ukládá k platební události i k záznamu.
  */
 final class EetRecordingPolicy
 {
-    public const VERSION = '2026.10-1';
+    public const VERSION = '2026.10-2';
 
     private const CONTACT = ['in_person', 'on_premises', 'in_vehicle'];
     private const UNSUPPORTED_PURPOSES = [
@@ -52,10 +55,8 @@ final class EetRecordingPolicy
             return $subject;
         }
 
-        if (strtoupper($in->currency) !== 'CZK') {
-            return new EetPolicyDecision(EetPolicyDecision::UNSUPPORTED, 'foreign_currency',
-                'Evidence tržby v cizí měně zatím není podporovaná.');
-        }
+        // Cizí měna povinnost nemění: částka se do EET uvádí v CZK přepočtená kurzem,
+        // kterým se úhrada zaúčtuje ({@see EetCurrency}).
         if (isset(self::UNSUPPORTED_PURPOSES[$in->businessPurpose])) {
             return new EetPolicyDecision(EetPolicyDecision::UNSUPPORTED, $in->businessPurpose,
                 self::UNSUPPORTED_PURPOSES[$in->businessPurpose]);
@@ -70,6 +71,24 @@ final class EetRecordingPolicy
         }
 
         return $subject;
+    }
+
+    /**
+     * Vrácení peněz k evidované tržbě (dobropis, reklamace): eviduje se jako záporná
+     * tržba, když je vrácení kontaktní platbou (hotovost vždy, terminál, QR či převod
+     * zadaný při osobním kontaktu). Vrácení převodem na účet bez osobního kontaktu
+     * evidovat nemusí (metodika ZoET k § 8), proto `not_subject`. Zda vůbec existuje
+     * evidovaná tržba k opravě, posuzuje volající. Neúplný kontext → unknown.
+     *
+     * @param array<string,mixed> $settings
+     */
+    public function refundDecision(array $settings, \DateTimeImmutable $at, ?string $channel, string $contactContext): EetPolicyDecision
+    {
+        $inactive = $this->inactiveReason($settings, $at);
+        if ($inactive !== null) {
+            return new EetPolicyDecision(EetPolicyDecision::INACTIVE, $inactive[0], $inactive[1]);
+        }
+        return $this->subjectByChannel($channel, $contactContext);
     }
 
     /**

@@ -3281,7 +3281,20 @@ paths:
 
         Firma s aktivní evidencí tržeb posílá okolnosti platby
         (`InvoicePaymentEetContext`); evidovaná tržba vyžaduje `Idempotency-Key`
-        a odpověď nese `eet`, platba mimo evidenci `eet_decision`.
+        a odpověď nese `eet`, platba mimo evidenci `eet_decision`. Platba faktury
+        v cizí měně se do EET uvádí v Kč přepočtená kurzem úhrady ke dni přijetí
+        (`eet.amount_czk`, `eet.exchange_rate`); chybí-li kurz, vrací 422
+        `eet_fx_rate_unavailable`.
+
+        Dobropis, jehož opravovaná faktura má evidované tržby: klient posílá, jak
+        peníze vrátil (`channel`, `contact_context`, nebo `eet_context = remote_transfer`).
+        Kontaktní vrácení (hotově, kartou na terminálu na místě) vytvoří záporné
+        opravy tržeb faktury od nejnovější, nejvýš do jejich neopravené části;
+        odpověď nese `eet` (`CreditNoteRefundEetResult`, případně s varováním) a
+        datum vrácení je dnešek. Vrácení převodem na účet jde původní cestou
+        s `eet_decision`. Faktura bez evidované tržby (zaplacená převodem z domova)
+        ani firma bez aktivní evidence se nemění. `Idempotency-Key` se u vrácení
+        nevyžaduje, opakované označení druhou opravu nezaloží.
       parameters:
         - $ref: '#/components/parameters/EetIdempotencyKey'
       requestBody:
@@ -3306,7 +3319,10 @@ paths:
                   - $ref: '#/components/schemas/Invoice'
                   - type: object
                     properties:
-                      eet: { $ref: '#/components/schemas/InvoicePaymentEetResult' }
+                      eet:
+                        oneOf:
+                          - $ref: '#/components/schemas/InvoicePaymentEetResult'
+                          - $ref: '#/components/schemas/CreditNoteRefundEetResult'
                       eet_decision: { $ref: '#/components/schemas/EetDecision' }
         '400':
           description: "Neplatné datum platby (`invalid_date`) nebo chybí/je neplatná hlavička `Idempotency-Key` u evidované tržby (`idempotency_key_required`, `idempotency_key_invalid`, vyhrazená předpona `sys:` = `idempotency_key_reserved`)"
@@ -3334,6 +3350,8 @@ paths:
             (`eet_unsupported_scenario`), chybí nastavení EET (`eet_not_configured`)
             nebo by úhrada kryla dluh blokovaný potvrzeným QR příkazem čekajícím na banku
             (`eet_qr_pending`; neprovedenou QR platbu řeší oprava EET `failed_payment`).
+            Platbu v cizí měně nejde přepočítat, protože pro den platby chybí kurz
+            (`eet_fx_rate_unavailable`).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -33349,6 +33367,10 @@ components:
           type: string
           enum: [remote_transfer]
           description: Zkratka pro vzdálený bankovní převod (nepodléhá EET).
+        eet_device_id:
+          type: integer
+          format: int64
+          description: Pokladní zařízení pro zápornou tržbu při vrácení k dobropisu (alias `device_id`, default = výchozí zařízení firmy).
     InvoicePaymentEetResult:
       type: object
       additionalProperties: true
@@ -33356,7 +33378,31 @@ components:
         Platební událost evidované tržby: `payment_event_id`, oddělené stavy
         `payment_order_status` / `bank_verification_status` /
         `accounting_settlement_status`, `eet_decision`, `allocations`, `eet` (stav
-        odeslání, POK) a `idempotent_replay`.
+        odeslání, POK) a `idempotent_replay`. `amount` a `currency` jsou částka
+        a měna platby, `amount_czk` částka evidovaná v EET (vždy Kč), u cizí měny
+        s `exchange_rate` a `exchange_rate_source` (např. `cnb:2026-11-02`).
+    CreditNoteRefundEetResult:
+      type: object
+      description: |
+        Vrácení peněz k dobropisu zaevidované jako záporné opravy tržeb opravované
+        faktury. Částky `requested`, `refunded` a `not_recorded` jsou v měně
+        dobropisu, `refunded_czk` je součet vrácených částek v Kč (záporné tržby).
+      properties:
+        corrections:
+          type: array
+          items:
+            type: object
+            properties:
+              event_id: { type: integer, format: int64 }
+              record_id: { type: integer, format: int64 }
+              total_amount: { type: string, description: Záporná částka opravy v Kč }
+              original_amount: { type: [string, 'null'], description: Záporná částka v měně původní tržby }
+        requested: { type: string }
+        refunded: { type: string }
+        refunded_czk: { type: string }
+        not_recorded: { type: string, description: Část vrácení nad neopravenou evidovanou částku; do EET se nehlásí }
+        warning: { type: [string, 'null'] }
+        replayed: { type: boolean }
     EetDecision:
       type: object
       properties:

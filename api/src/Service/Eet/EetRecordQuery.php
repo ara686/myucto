@@ -162,8 +162,17 @@ final class EetRecordQuery
     public function forInvoice(int $supplierId, int $invoiceId): array
     {
         $pdo = $this->db->pdo();
-        $events = $pdo->prepare('SELECT * FROM payment_events WHERE supplier_id = ? AND invoice_id = ? ORDER BY recorded_at, id');
-        $events->execute([$supplierId, $invoiceId]);
+        // Přímá vazba (platba faktury, oprava její tržby) i alokace (vrácení peněz
+        // k dobropisu je oprava tržby faktury, alokovaná na dobropis).
+        $events = $pdo->prepare(
+            'SELECT e.* FROM payment_events e
+              WHERE e.id IN (SELECT id FROM payment_events WHERE supplier_id = ? AND invoice_id = ?
+                             UNION
+                             SELECT payment_event_id FROM payment_event_allocations WHERE supplier_id = ? AND invoice_id = ?)
+                AND e.supplier_id = ?
+              ORDER BY e.recorded_at, e.id'
+        );
+        $events->execute([$supplierId, $invoiceId, $supplierId, $invoiceId, $supplierId]);
         $rows = $events->fetchAll(PDO::FETCH_ASSOC) ?: [];
         if ($rows === []) {
             return [];
@@ -191,6 +200,34 @@ final class EetRecordQuery
             $out['eet_record'] = $record !== null ? EetRecordPresenter::record($record) : null;
             return $out;
         }, $rows);
+    }
+
+    /**
+     * Dobropis s opravovanou fakturou: číslo faktury, měna a částka k vrácení. Null u
+     * jiného dokladu.
+     *
+     * @return array{invoice_id:int, invoice_number:string, currency:string, refund_amount:string}|null
+     */
+    public function creditNoteParent(int $supplierId, int $invoiceId): ?array
+    {
+        $stmt = $this->db->pdo()->prepare(
+            "SELECT p.id, p.varsymbol, cur.code AS currency, cn.amount_to_pay
+               FROM invoices cn
+               JOIN invoices p ON p.id = cn.parent_invoice_id AND p.supplier_id = cn.supplier_id
+               JOIN currencies cur ON cur.id = cn.currency_id
+              WHERE cn.id = ? AND cn.supplier_id = ? AND cn.invoice_type = 'credit_note'"
+        );
+        $stmt->execute([$invoiceId, $supplierId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($row === false) {
+            return null;
+        }
+        return [
+            'invoice_id' => (int) $row['id'],
+            'invoice_number' => (string) $row['varsymbol'],
+            'currency' => (string) $row['currency'],
+            'refund_amount' => EetValues::fromCents(max(0, -EetValues::toCents(EetValues::amount((string) ($row['amount_to_pay'] ?? '0'))))),
+        ];
     }
 
     /**

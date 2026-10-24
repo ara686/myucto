@@ -6,6 +6,7 @@ namespace MyInvoice\Service\Eet;
 
 use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Infrastructure\Database\TransactionFailure;
+use MyInvoice\Service\Currency\PaymentExchangeRate;
 use PDO;
 use Psr\Clock\ClockInterface;
 
@@ -20,6 +21,12 @@ use Psr\Clock\ClockInterface;
  * Součet oprav nesmí překročit dosud neopravenou část původní tržby. Souběžné
  * opravy zamykají původní záznam (FOR UPDATE), opakované odeslání stejného
  * `Idempotency-Key` vrátí původní opravu.
+ *
+ * Tržba přijatá v cizí měně: oprava se zadává v Kč (`amount`), nebo v původní měně
+ * (`original_amount`). Částka v původní měně se přepočte kurzem PŮVODNÍ tržby, ne
+ * kurzem dne vratky: oprava vrací část téže evidované částky, takže vratka celé
+ * tržby musí dát přesně celou CZK částku a součet částečných vratek nesmí utéct
+ * mimo ni ({@see resolveAmount()}).
  *
  * Oprava jde do stejného prostředí a pod stejné EIČ jako původní záznam bez ohledu
  * na pozdější změnu nastavení.
@@ -51,9 +58,17 @@ final class EetCorrectionService
     {
         $original = $this->original($supplierId, $recordId, false);
         $remaining = $this->remainingCents($supplierId, $original);
-        $amount = isset($input['amount']) && $input['amount'] !== '' ? EetValues::amount($input['amount']) : EetValues::fromCents($remaining);
+        $state = $this->foreignState($supplierId, $original);
         $reason = isset($input['reason']) && $input['reason'] !== '' ? self::reason($input['reason']) : null;
-        $cents = EetValues::toCents($amount);
+        [$czkInput, $foreignInput] = self::amountInput($input, false);
+        $error = null;
+        $foreignCents = null;
+        try {
+            [$cents, $foreignCents] = $this->resolveAmount($original, $state, $remaining, $czkInput ?? ($foreignInput === null ? $remaining : null), $foreignInput);
+        } catch (EetCommandException $e) {
+            $cents = $czkInput ?? 0;
+            $error = $e->getMessage();
+        }
         $now = EetValues::local($this->clock->now());
         try {
             $device = $this->correctionDevice($supplierId, $original, (int) ($input['device_id'] ?? 0) ?: null, $this->settings->get($supplierId), $now);
@@ -64,14 +79,17 @@ final class EetCorrectionService
             'original' => EetRecordPresenter::record($original),
             'corrected_total' => EetValues::fromCents(EetValues::toCents((string) $original['total_amount']) - $remaining),
             'remaining' => EetValues::fromCents($remaining),
+            'foreign' => self::foreignSummary($state),
             'proposed' => [
                 'total_amount' => EetValues::fromCents(-$cents),
+                'original_amount' => $foreignCents !== null ? EetValues::fromCents(-$foreignCents) : null,
                 'reason' => $reason,
                 'device_id' => $device,
                 'environment' => (string) $original['environment'],
                 'sale_at' => $now->format(DATE_ATOM),
             ],
-            'allowed' => $cents > 0 && $cents <= $remaining && $device !== null,
+            'allowed' => $error === null && $cents > 0 && $cents <= $remaining && $device !== null,
+            'error' => $error,
             'accounting' => $reason === 'refund'
                 ? 'Vrácení peněz zaúčtujte dobropisem, výdajovým pokladním dokladem nebo odchozí platbou.'
                 : 'Oprava nemění pohyb peněz ani účetnictví.',
@@ -79,22 +97,21 @@ final class EetCorrectionService
     }
 
     /**
-     * @param array<string,mixed> $input {amount, reason, note?, device_id?}
+     * @param array<string,mixed> $input {amount | original_amount, reason, note?, device_id?}
      * @return array<string,mixed>
      */
     public function create(int $supplierId, int $userId, int $recordId, string $idempotencyKey, array $input): array
     {
         $key = PaymentEventService::validateKey($idempotencyKey);
-        $amount = EetValues::amount($input['amount'] ?? null);
-        $cents = EetValues::toCents($amount);
-        if ($cents <= 0) {
-            throw EetCommandException::validation('Částka opravy se zadává kladně (o kolik se tržba snižuje).', 'amount');
-        }
+        [$czkInput, $foreignInput] = self::amountInput($input, true);
         $reason = self::reason($input['reason'] ?? null);
         $note = isset($input['note']) && is_string($input['note']) && trim($input['note']) !== '' ? mb_substr(trim($input['note']), 0, 255) : null;
         $deviceId = isset($input['device_id']) && (int) $input['device_id'] > 0 ? (int) $input['device_id'] : null;
-        $hash = PaymentEventService::requestHash('records.corrections:' . $recordId,
-            ['amount' => $amount, 'reason' => $reason, 'note' => $note, 'device_id' => $deviceId]);
+        $hash = PaymentEventService::requestHash('records.corrections:' . $recordId, [
+            'amount' => $czkInput !== null ? EetValues::fromCents($czkInput) : null,
+            'original_amount' => $foreignInput !== null ? EetValues::fromCents($foreignInput) : null,
+            'reason' => $reason, 'note' => $note, 'device_id' => $deviceId,
+        ]);
         $existing = $this->events->replay($supplierId, $key, $hash);
         if ($existing !== null) {
             return $this->result($supplierId, $existing, true);
@@ -107,11 +124,11 @@ final class EetCorrectionService
             throw new \LogicException('Oprava EET řídí vlastní transakci a odesílá až po commitu.');
         }
         try {
-            $created = TransactionFailure::retrying($pdo, function () use ($pdo, $supplierId, $userId, $recordId, $key, $hash, $cents, $reason, $note, $deviceId, $now, $settings): array {
+            $created = TransactionFailure::retrying($pdo, function () use ($pdo, $supplierId, $userId, $recordId, $key, $hash, $czkInput, $foreignInput, $reason, $note, $deviceId, $now, $settings): array {
                 $pdo->beginTransaction();
                 try {
                     $original = $this->original($supplierId, $recordId, true);
-                    $created = $this->insertLocked($supplierId, $userId, $original, $key, $hash, $cents, $reason, $note, $deviceId, $now, $settings);
+                    $created = $this->insertLocked($supplierId, $userId, $original, $key, $hash, $czkInput, $foreignInput, $reason, $note, $deviceId, $now, $settings);
                     $pdo->commit();
                     return $created;
                 } catch (\Throwable $e) {
@@ -172,24 +189,236 @@ final class EetCorrectionService
             return null;
         }
         $created = $this->insertLocked(
-            $supplierId, $userId ?? 0, $original, $key, $hash, $remaining, $reason, $note, $deviceId,
+            $supplierId, $userId ?? 0, $original, $key, $hash, $remaining, null, $reason, $note, $deviceId,
             EetValues::local($this->clock->now()), $this->settings->get($supplierId),
         );
         $this->dispatch->dispatchAfterCommit($created['record_id']);
-        return $created;
+        return ['event_id' => $created['event_id'], 'record_id' => $created['record_id']];
     }
 
     /**
-     * Zápis opravy nad zamčeným původním záznamem.
+     * Skutečné vrácení peněz k dobropisu (EET-08): záporné opravy evidovaných tržeb
+     * opravované faktury, v transakci volajícího (zaúčtování výdajového pokladního
+     * dokladu, označení dobropisu jako vráceného). Odeslání až po commitu.
+     *
+     * Vrácená částka je v měně dobropisu (= měna faktury). Rozpouští se postupně od
+     * nejnovější tržby: peníze se vrací z posledních přijatých plateb a starší tržby
+     * (typicky už v uzavřeném období) zůstávají nedotčené; pořadí je deterministické,
+     * takže opakování dává stejný výsledek. Každá tržba se sníží nejvýš o svou
+     * neopravenou část. Vrácení nad evidovanou část se do EET nezaeviduje
+     * (vrácení neevidované platby se nehlásí) a výsledek nese varování. Faktura bez
+     * evidované tržby (zaplacená převodem z domova) nezaloží nic.
+     *
+     * Idempotence: klíč každé opravy je `sys:{scope}:{id tržby}`. Když pro `$keyScope`
+     * už nějaká oprava existuje, nevznikne nic nového (opakované zaúčtování dokladu,
+     * dvojklik) a vrátí se původní opravy.
+     *
+     * @param array{invoice_id?:?int, cash_document_id?:?int} $allocation vazba opravy na zdroj vrácení (dobropis, doklad)
+     * @return array{corrections: list<array{event_id:int, record_id:int, total_amount:string, original_amount:?string}>,
+     *               requested:string, refunded:string, refunded_czk:string, not_recorded:string, warning:?string, replayed:bool}
+     */
+    public function refundInvoiceSales(int $supplierId, ?int $userId, int $invoiceId, string $currency, int $amountCents,
+        string $keyScope, ?int $deviceId, ?string $note, array $allocation, ?\DateTimeImmutable $refundedAt = null): array
+    {
+        $pdo = $this->db->pdo();
+        if (!$pdo->inTransaction()) {
+            throw new \LogicException('Vratka k dobropisu vzniká v transakci volajícího.');
+        }
+        $currency = strtoupper($currency);
+        $existing = $this->refundsForScope($supplierId, $keyScope);
+        if ($existing !== []) {
+            return self::refundSummary($existing, $amountCents, null, true);
+        }
+        $stmt = $pdo->prepare(
+            "SELECT r.*
+               FROM payment_events e
+               JOIN eet_records r ON r.payment_event_id = e.id AND r.supplier_id = e.supplier_id AND r.kind = 'sale'
+              WHERE e.supplier_id = ? AND e.invoice_id = ?
+              ORDER BY r.sale_at DESC, r.id DESC
+              FOR UPDATE"
+        );
+        $stmt->execute([$supplierId, $invoiceId]);
+        $sales = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        if ($sales === [] || $amountCents <= 0) {
+            return self::refundSummary([], $amountCents, null, false);
+        }
+
+        $now = EetValues::local($this->clock->now());
+        $at = $refundedAt !== null ? min(EetValues::local($refundedAt), $now) : $now;
+        $settings = $this->settings->get($supplierId);
+        $rest = $amountCents;
+        $created = [];
+        $skipped = false;
+        foreach ($sales as $sale) {
+            if ($rest <= 0) {
+                break;
+            }
+            $remaining = $this->remainingCents($supplierId, $sale);
+            if ($remaining <= 0) {
+                continue;
+            }
+            $state = $this->foreignState($supplierId, $sale);
+            if ($currency === 'CZK') {
+                if ($state !== null) {
+                    $skipped = true;
+                    continue;
+                }
+                $take = min($rest, $remaining);
+                $czk = $take;
+                $foreign = null;
+            } else {
+                if ($state === null || $state['currency'] !== $currency || !$state['consistent']) {
+                    $skipped = true;
+                    continue;
+                }
+                $take = min($rest, $state['total'] - $state['corrected']);
+                if ($take <= 0) {
+                    continue;
+                }
+                $czk = null;
+                $foreign = $take;
+            }
+            $saleId = (int) $sale['id'];
+            $key = PaymentEventService::internalKey($keyScope, $saleId);
+            $hash = PaymentEventService::requestHash('records.corrections:' . $saleId,
+                ['reason' => 'refund', 'scope' => $keyScope, 'amount' => EetValues::fromCents($take), 'currency' => $currency]);
+            $result = $this->insertLocked($supplierId, $userId ?? 0, $sale, $key, $hash, $czk, $foreign, 'refund', $note, $deviceId, $at, $settings, $now);
+            // Vrácení peněz účtuje sám zdroj (výdajový doklad, vrácení k dobropisu).
+            $pdo->prepare("UPDATE payment_events SET accounting_settlement_status = 'settled' WHERE id = ? AND supplier_id = ?")
+                ->execute([$result['event_id'], $supplierId]);
+            $this->events->allocate($supplierId, $result['event_id'], EetValues::fromCents(-$take), [
+                'invoice_id' => $allocation['invoice_id'] ?? null,
+                'cash_document_id' => $allocation['cash_document_id'] ?? null,
+            ]);
+            $this->dispatch->dispatchAfterCommit($result['record_id']);
+            $created[] = [
+                'event_id' => $result['event_id'],
+                'record_id' => $result['record_id'],
+                'total_amount' => EetValues::fromCents(-$result['cents']),
+                'original_amount' => $foreign !== null ? EetValues::fromCents(-$foreign) : null,
+                'take' => $take,
+            ];
+            $rest -= $take;
+        }
+        $warning = null;
+        if ($rest > 0) {
+            $refunded = $amountCents - $rest;
+            $warning = $refunded > 0
+                ? 'Vrácená částka ' . EetValues::fromCents($amountCents) . ' ' . $currency . ' převyšuje dosud neopravenou evidovanou část tržeb '
+                    . 'původní faktury; do EET se jako záporná tržba zaevidovalo jen ' . EetValues::fromCents($refunded) . ' ' . $currency
+                    . '. Vrácení neevidované platby se neeviduje.'
+                : 'Tržby původní faktury už jsou v EET opravené celé' . ($skipped ? ' nebo je nelze opravit v měně dobropisu' : '')
+                    . '; vrácení se do EET nezaevidovalo.';
+        }
+        return self::refundSummary($created, $amountCents, $warning, false);
+    }
+
+    /**
+     * Kolik z evidovaných tržeb faktury zbývá opravit (podklad pro náhled vrácení k dobropisu).
+     *
+     * @return array{records:int, remaining_czk:string, remaining:?string, currency:?string}
+     */
+    public function refundableForInvoice(int $supplierId, int $invoiceId): array
+    {
+        $stmt = $this->db->pdo()->prepare(
+            "SELECT r.*
+               FROM payment_events e
+               JOIN eet_records r ON r.payment_event_id = e.id AND r.supplier_id = e.supplier_id AND r.kind = 'sale'
+              WHERE e.supplier_id = ? AND e.invoice_id = ?"
+        );
+        $stmt->execute([$supplierId, $invoiceId]);
+        $count = 0;
+        $czk = 0;
+        $foreign = 0;
+        $currency = null;
+        $foreignOk = true;
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: [] as $sale) {
+            $count++;
+            $remaining = $this->remainingCents($supplierId, $sale);
+            if ($remaining <= 0) {
+                continue;
+            }
+            $czk += $remaining;
+            $state = $this->foreignState($supplierId, $sale);
+            if ($state === null || !$state['consistent'] || ($currency !== null && $currency !== $state['currency'])) {
+                $foreignOk = false;
+                continue;
+            }
+            $currency = $state['currency'];
+            $foreign += $state['total'] - $state['corrected'];
+        }
+        return [
+            'records' => $count,
+            'remaining_czk' => EetValues::fromCents($czk),
+            'remaining' => $currency !== null && $foreignOk ? EetValues::fromCents($foreign) : null,
+            'currency' => $currency,
+        ];
+    }
+
+    /**
+     * Opravy vzniklé pro daný zdroj vrácení (klíč `sys:{scope}:…`).
+     *
+     * @return list<array{event_id:int, record_id:int, total_amount:string, original_amount:?string, take:int}>
+     */
+    private function refundsForScope(int $supplierId, string $keyScope): array
+    {
+        $prefix = PaymentEventService::INTERNAL_KEY_PREFIX . $keyScope . ':';
+        $stmt = $this->db->pdo()->prepare(
+            "SELECT e.id AS event_id, r.id AS record_id, r.total_amount, e.original_amount, a.amount AS allocated
+               FROM payment_events e
+               JOIN eet_records r ON r.payment_event_id = e.id AND r.supplier_id = e.supplier_id AND r.kind = 'correction'
+               LEFT JOIN payment_event_allocations a ON a.payment_event_id = e.id AND a.supplier_id = e.supplier_id
+              WHERE e.supplier_id = ? AND e.idempotency_key LIKE ?
+              ORDER BY e.id"
+        );
+        $stmt->execute([$supplierId, addcslashes($prefix, '%_\\') . '%']);
+        return array_map(static fn (array $r): array => [
+            'event_id' => (int) $r['event_id'],
+            'record_id' => (int) $r['record_id'],
+            'total_amount' => EetValues::amount((string) $r['total_amount']),
+            'original_amount' => $r['original_amount'] !== null ? EetValues::amount((string) $r['original_amount']) : null,
+            'take' => -EetValues::toCents(EetValues::amount((string) ($r['allocated'] ?? $r['original_amount'] ?? $r['total_amount']))),
+        ], $stmt->fetchAll(PDO::FETCH_ASSOC) ?: []);
+    }
+
+    /**
+     * @param list<array{event_id:int, record_id:int, total_amount:string, original_amount:?string, take:int}> $created
+     * @return array{corrections: list<array{event_id:int, record_id:int, total_amount:string, original_amount:?string}>,
+     *               requested:string, refunded:string, refunded_czk:string, not_recorded:string, warning:?string, replayed:bool}
+     */
+    private static function refundSummary(array $created, int $requestedCents, ?string $warning, bool $replayed): array
+    {
+        $refunded = array_sum(array_column($created, 'take'));
+        $czk = array_sum(array_map(static fn (array $c): int => -EetValues::toCents($c['total_amount']), $created));
+        return [
+            'corrections' => array_map(static fn (array $c): array => [
+                'event_id' => $c['event_id'], 'record_id' => $c['record_id'],
+                'total_amount' => $c['total_amount'], 'original_amount' => $c['original_amount'],
+            ], $created),
+            'requested' => EetValues::fromCents($requestedCents),
+            'refunded' => EetValues::fromCents($refunded),
+            'refunded_czk' => EetValues::fromCents($czk),
+            'not_recorded' => EetValues::fromCents(max(0, $requestedCents - $refunded)),
+            'warning' => $warning,
+            'replayed' => $replayed,
+        ];
+    }
+
+    /**
+     * Zápis opravy nad zamčeným původním záznamem. Částka v Kč (`$czkCents`), nebo
+     * v původní měně tržby (`$foreignCents`), viz {@see resolveAmount()}.
      *
      * @param array<string,mixed> $original
      * @param array<string,mixed> $settings
-     * @return array{event_id:int, record_id:int}
+     * @return array{event_id:int, record_id:int, cents:int}
      */
-    private function insertLocked(int $supplierId, int $userId, array $original, string $key, string $hash, int $cents, string $reason,
-        ?string $note, ?int $deviceId, \DateTimeImmutable $now, array $settings): array
+    private function insertLocked(int $supplierId, int $userId, array $original, string $key, string $hash, ?int $czkCents, ?int $foreignCents,
+        string $reason, ?string $note, ?int $deviceId, \DateTimeImmutable $at, array $settings, ?\DateTimeImmutable $now = null): array
     {
+        $now ??= $at;
         $remaining = $this->remainingCents($supplierId, $original);
+        $state = $this->foreignState($supplierId, $original);
+        [$cents, $foreignCents] = $this->resolveAmount($original, $state, $remaining, $czkCents, $foreignCents);
         if ($cents > $remaining) {
             throw EetCommandException::validation(
                 'Oprava překračuje dosud neopravenou část tržby (' . EetValues::fromCents($remaining) . ').',
@@ -200,7 +429,8 @@ final class EetCorrectionService
         $originalEvent = $original['payment_event_id'] !== null
             ? $this->events->find($supplierId, (int) $original['payment_event_id'], true)
             : null;
-        $deviceId = $this->correctionDevice($supplierId, $original, $deviceId, $settings, $now);
+        $deviceId = $this->correctionDevice($supplierId, $original, $deviceId, $settings, $at);
+        $foreign = $state !== null && $foreignCents !== null;
 
         $eventId = $this->events->insert([
             'supplier_id' => $supplierId,
@@ -214,9 +444,13 @@ final class EetCorrectionService
             'business_purpose' => $originalEvent['business_purpose'] ?? 'sale',
             'amount' => EetValues::fromCents(-$cents),
             'currency' => 'CZK',
-            'received_at' => $reason === 'refund' ? EetValues::dbTime($now) : null,
+            'original_currency' => $foreign ? $state['currency'] : null,
+            'original_amount' => $foreign ? EetValues::fromCents(-$foreignCents) : null,
+            'exchange_rate' => $foreign ? $state['rate_string'] : null,
+            'exchange_rate_source' => $foreign ? $state['source'] : null,
+            'received_at' => $reason === 'refund' ? EetValues::dbTime($at) : null,
             'recorded_at' => EetValues::dbTime($now),
-            'paid_on' => $reason === 'refund' ? $now->format('Y-m-d') : null,
+            'paid_on' => $reason === 'refund' ? $at->format('Y-m-d') : null,
             'payment_order_status' => match ($reason) {
                 'refund' => 'settled',
                 'failed_payment' => 'failed',
@@ -238,7 +472,7 @@ final class EetCorrectionService
             'environment' => (string) $original['environment'],
         ] + $settings, [
             'device_id' => $deviceId,
-            'sale_at' => $now,
+            'sale_at' => $at,
             'total_amount' => EetValues::fromCents(-$cents),
             'kind' => 'correction',
             'corrects_record_id' => (int) $original['id'],
@@ -254,7 +488,155 @@ final class EetCorrectionService
         if ($originalEvent !== null && $cents === $remaining && $reason !== 'refund') {
             $this->releaseZeroedOrder($supplierId, (int) $originalEvent['id'], $reason);
         }
-        return ['event_id' => $eventId, 'record_id' => $record['id']];
+        return ['event_id' => $eventId, 'record_id' => $record['id'], 'cents' => $cents];
+    }
+
+    /**
+     * Částka opravy v haléřích CZK a (u cizoměnové tržby) v haléřích původní měny.
+     *
+     * Částka v původní měně se přepočte kurzem původní tržby KUMULATIVNĚ: CZK opravené
+     * po této opravě = přepočet celkem opravené cizí částky, a oprava je rozdíl proti
+     * dosud opraveným Kč. Zaokrouhlení jednotlivých částečných vratek se tak nesčítá,
+     * součet oprav nikdy nepřesáhne CZK tržbu a vratka celé zbývající cizí částky dá
+     * přesně celou zbývající CZK částku (i když CZK tržba vznikla součtem přepočtených
+     * řádků DPH valutového dokladu a od prostého přepočtu se o haléř liší).
+     *
+     * Oprava zadaná v Kč na celou zbývající část cizoměnové tržby dostane i zbývající
+     * cizí částku; částečná oprava v Kč cizí částku nemá a další opravy v původní měně
+     * už nejdou (jejich přepočet by se nedal navázat).
+     *
+     * @param array<string,mixed> $original
+     * @param array<string,mixed>|null $state {@see foreignState()}
+     * @return array{0:int, 1:?int}
+     * @throws EetCommandException
+     */
+    private function resolveAmount(array $original, ?array $state, int $remaining, ?int $czkCents, ?int $foreignCents): array
+    {
+        if ($foreignCents !== null) {
+            if ($state === null) {
+                throw EetCommandException::validation('Tržba byla přijatá v Kč; částku opravy zadejte v Kč.', 'original_amount');
+            }
+            if (!$state['consistent']) {
+                throw EetCommandException::validation('Tržbu už snížila oprava zadaná v Kč; další opravu zadejte také v Kč.', 'original_amount');
+            }
+            if ($foreignCents <= 0) {
+                throw EetCommandException::validation('Částka opravy se zadává kladně (o kolik se tržba snižuje).', 'original_amount');
+            }
+            $remainingForeign = $state['total'] - $state['corrected'];
+            if ($foreignCents > $remainingForeign) {
+                throw EetCommandException::validation(
+                    'Oprava překračuje dosud neopravenou část tržby (' . EetValues::fromCents($remainingForeign) . ' ' . $state['currency'] . ').',
+                    'original_amount',
+                    ['remaining_original' => EetValues::fromCents($remainingForeign), 'currency' => $state['currency']],
+                );
+            }
+            $totalCzk = EetValues::toCents((string) $original['total_amount']);
+            $after = $state['corrected'] + $foreignCents;
+            $czkAfter = $after === $state['total'] ? $totalCzk : min($totalCzk, PaymentExchangeRate::toCzkCents($after, $state['rate']));
+            $cents = $czkAfter - ($totalCzk - $remaining);
+            if ($cents <= 0) {
+                throw EetCommandException::validation('Částka opravy je po přepočtu na Kč nulová.', 'original_amount');
+            }
+            return [$cents, $foreignCents];
+        }
+        $cents = (int) $czkCents;
+        if ($cents <= 0) {
+            throw EetCommandException::validation('Částka opravy se zadává kladně (o kolik se tržba snižuje).', 'amount');
+        }
+        if ($state !== null && $state['consistent'] && $cents === $remaining) {
+            return [$cents, $state['total'] - $state['corrected']];
+        }
+        return [$cents, null];
+    }
+
+    /**
+     * Cizoměnová stopa tržby: měna, kurz a zdroj původní platby, celková a dosud
+     * opravená cizí částka. `consistent` = všechny dosavadní opravy nesou cizí částku.
+     * Null u tržby přijaté v Kč.
+     *
+     * @param array<string,mixed> $original
+     * @return array{currency:string, total:int, corrected:int, rate:float, rate_string:string, source:?string, consistent:bool}|null
+     */
+    private function foreignState(int $supplierId, array $original): ?array
+    {
+        if (($original['payment_event_id'] ?? null) === null) {
+            return null;
+        }
+        $pdo = $this->db->pdo();
+        $stmt = $pdo->prepare('SELECT original_currency, original_amount, exchange_rate, exchange_rate_source FROM payment_events WHERE id = ? AND supplier_id = ?');
+        $stmt->execute([(int) $original['payment_event_id'], $supplierId]);
+        $event = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($event === false || $event['original_currency'] === null || $event['original_amount'] === null
+            || $event['exchange_rate'] === null || (float) $event['exchange_rate'] <= 0) {
+            return null;
+        }
+        $corrections = $pdo->prepare(
+            "SELECT e.original_currency, e.original_amount
+               FROM eet_records c
+               JOIN payment_events e ON e.id = c.payment_event_id AND e.supplier_id = c.supplier_id
+              WHERE c.supplier_id = ? AND c.corrects_record_id = ? AND c.kind = 'correction'"
+        );
+        $corrections->execute([$supplierId, (int) $original['id']]);
+        $corrected = 0;
+        $consistent = true;
+        foreach ($corrections->fetchAll(PDO::FETCH_ASSOC) ?: [] as $c) {
+            if ($c['original_amount'] === null || $c['original_currency'] !== $event['original_currency']) {
+                $consistent = false;
+                continue;
+            }
+            $corrected -= EetValues::toCents(EetValues::amount((string) $c['original_amount']));
+        }
+        return [
+            'currency' => (string) $event['original_currency'],
+            'total' => EetValues::toCents(EetValues::amount((string) $event['original_amount'])),
+            'corrected' => $corrected,
+            'rate' => (float) $event['exchange_rate'],
+            'rate_string' => EetCurrency::rate((float) $event['exchange_rate']),
+            'source' => $event['exchange_rate_source'] !== null ? (string) $event['exchange_rate_source'] : null,
+            'consistent' => $consistent,
+        ];
+    }
+
+    /**
+     * @param array<string,mixed>|null $state
+     * @return array<string,mixed>|null
+     */
+    private static function foreignSummary(?array $state): ?array
+    {
+        if ($state === null) {
+            return null;
+        }
+        return [
+            'currency' => $state['currency'],
+            'original_amount' => EetValues::fromCents($state['total']),
+            'remaining' => $state['consistent'] ? EetValues::fromCents($state['total'] - $state['corrected']) : null,
+            'exchange_rate' => $state['rate_string'],
+            'exchange_rate_source' => $state['source'],
+        ];
+    }
+
+    /**
+     * Částka opravy z těla: `amount` (Kč), nebo `original_amount` (původní měna tržby).
+     *
+     * @param array<string,mixed> $input
+     * @return array{0:?int, 1:?int}
+     * @throws EetCommandException
+     */
+    private static function amountInput(array $input, bool $required): array
+    {
+        $czk = isset($input['amount']) && $input['amount'] !== '' ? EetValues::toCents(EetValues::amount($input['amount'])) : null;
+        $foreign = isset($input['original_amount']) && $input['original_amount'] !== ''
+            ? EetValues::toCents(EetValues::amount($input['original_amount'], 'original_amount')) : null;
+        if ($czk !== null && $foreign !== null) {
+            throw EetCommandException::validation('Zadejte částku opravy buď v Kč (amount), nebo v původní měně tržby (original_amount).', 'amount');
+        }
+        if ($required && $czk === null && $foreign === null) {
+            throw EetCommandException::validation('Částka opravy se zadává kladně (o kolik se tržba snižuje).', 'amount');
+        }
+        if ($required && $czk !== null && $czk <= 0) {
+            throw EetCommandException::validation('Částka opravy se zadává kladně (o kolik se tržba snižuje).', 'amount');
+        }
+        return [$czk, $foreign];
     }
 
     /**
@@ -338,6 +720,10 @@ final class EetCorrectionService
         if ($record !== null && $record['corrects_record_id'] !== null) {
             $original = $this->original($supplierId, (int) $record['corrects_record_id'], false);
             $out['original_remaining'] = EetValues::fromCents($this->remainingCents($supplierId, $original));
+            $state = $this->foreignState($supplierId, $original);
+            if ($state !== null && $state['consistent']) {
+                $out['original_remaining_foreign'] = EetValues::fromCents($state['total'] - $state['corrected']);
+            }
         }
         $out['idempotent_replay'] = $replayed;
         return $out;

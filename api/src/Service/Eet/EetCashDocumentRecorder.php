@@ -23,13 +23,22 @@ use Psr\Clock\ClockInterface;
  * (`eet_devices.cash_register_id`), jinak výchozí zařízení firmy. Povinnou hotovost
  * bez zařízení doklad nezaúčtuje (422 `eet_device_required`), tiše se neobchází.
  * Převod mezi pokladnami, vklad, výdaj ani jiný pohyb tržbou nejsou (příjmový
- * doklad sám nic nerozhoduje). Povinná tržba, kterou MVP neumí (cizí měna), doklad
- * nezaúčtuje: politika se nesmí tiše obejít.
+ * doklad sám nic nerozhoduje). Povinná tržba, kterou MVP neumí, doklad nezaúčtuje:
+ * politika se nesmí tiše obejít. Prodej z valutové pokladny se eviduje v CZK
+ * ekvivalentu dokladu.
  *
  * Storno dokladu s tržbou je skutečné vrácení peněz z pokladny, proto vytvoří
  * zápornou opravu celé dosud neopravené části (výchozí důvod `refund`, nebo
  * `wrong_data` / `duplicate` u chybně pořízeného dokladu). Oprava je vázaná na
  * storno idempotentním klíčem dokladu a účetně ji vypořádává samotné storno.
+ *
+ * Výdajový doklad k dobropisu (EET-08) je vrácení peněz v hotovosti: zaúčtování
+ * vytvoří záporné opravy evidovaných tržeb opravované faktury
+ * ({@see afterRefundPost()}, {@see EetCorrectionService::refundInvoiceSales()}).
+ * Storno takového dokladu znamená, že se peníze vrátily do pokladny (nebo vrácení
+ * neproběhlo). Zápornou opravu nejde vzít zpět (EET opravu opravy nezná, metodika
+ * opravuje vždy novou datovou zprávou), proto storno zaeviduje novou kladnou tržbu
+ * ve výši oprav dokladu, navázanou na doklad i na opravy ({@see reverseCashRefund()}).
  */
 final class EetCashDocumentRecorder
 {
@@ -77,13 +86,21 @@ final class EetCashDocumentRecorder
         $invoiceType = $invoiceId !== null ? $this->invoiceType($supplierId, $invoiceId) : null;
         $purpose = $invoiceType === 'proforma' ? 'order_deposit' : 'sale';
         $currency = strtoupper((string) ($doc['currency_code'] ?? 'CZK'));
-        $amount = EetValues::amount($currency === 'CZK'
-            ? (float) $doc['total_amount']
-            : (float) ($doc['amount_foreign'] ?? $doc['total_amount']));
+        // Valutová pokladna: do EET jde CZK ekvivalent dokladu přesně tak, jak se zaúčtuje
+        // (total_amount = cizí částka × kurz dokladu, u DPH součet přepočtených řádků),
+        // s původní částkou a kurzem dokladu jako stopou přepočtu.
+        $fx = EetCurrency::fromDocument(
+            $currency,
+            EetValues::amount((float) $doc['total_amount']),
+            ($doc['amount_foreign'] ?? null) !== null ? EetValues::amount((float) $doc['amount_foreign']) : null,
+            ($doc['fx_rate'] ?? null) !== null ? (float) $doc['fx_rate'] : null,
+            'cash_document:' . substr((string) ($doc['issue_date'] ?? ''), 0, 10),
+        );
+        $amount = $fx['amount'];
         $origin = $invoiceId !== null ? 'invoice_payment' : 'cash_document';
 
         $decision = $this->policy->evaluate(new EetPolicyInput(
-            $settings, $saleAt, 'cash', 'in_person', $purpose, $currency, $amount, $origin, 'payment',
+            $settings, $saleAt, 'cash', 'in_person', $purpose, $currency, $fx['original_amount'] ?? $amount, $origin, 'payment',
         ));
         if ($decision->decision === EetPolicyDecision::UNSUPPORTED) {
             throw EetCommandException::unsupported($decision->messageCs, $decision->reasonCode);
@@ -112,7 +129,11 @@ final class EetCashDocumentRecorder
             'contact_context' => 'in_person',
             'business_purpose' => $purpose,
             'amount' => $amount,
-            'currency' => $currency,
+            'currency' => 'CZK',
+            'original_currency' => $fx['original_currency'],
+            'original_amount' => $fx['original_amount'],
+            'exchange_rate' => $fx['exchange_rate'],
+            'exchange_rate_source' => $fx['exchange_rate_source'],
             'received_at' => EetValues::dbTime($saleAt),
             'recorded_at' => EetValues::dbTime($now),
             'paid_on' => (string) $doc['issue_date'],
@@ -157,6 +178,9 @@ final class EetCashDocumentRecorder
         if ($deviceId !== null && $deviceId > 0) {
             $deviceId = $this->ownedDevice($supplierId, $deviceId);
         }
+        if ($this->refundEvents($supplierId, $cashDocumentId) !== []) {
+            return $this->reverseCashRefund($supplierId, $cashDocumentId, $userId, $note, $deviceId);
+        }
         $recordId = $this->saleRecordId($supplierId, $cashDocumentId);
         if ($recordId === null) {
             return null;
@@ -186,6 +210,175 @@ final class EetCashDocumentRecorder
             $this->events->allocate($supplierId, $created['event_id'], (string) $amount->fetchColumn(), ['cash_document_id' => $cashDocumentId]);
         }
         return $created['record_id'];
+    }
+
+    /**
+     * Po zaúčtování výdajového dokladu k dobropisu (v jeho transakci): vrácení peněz
+     * v hotovosti = záporné opravy evidovaných tržeb opravované faktury. Doklad, který
+     * dobropis nevrací, nebo dobropis bez opravované faktury nic nezaloží. Vrací souhrn
+     * oprav ({@see EetCorrectionService::refundInvoiceSales()}), nebo null.
+     *
+     * @param array<string,mixed> $doc řádek cash_documents (stav před označením posted)
+     * @return array<string,mixed>|null
+     * @throws EetCommandException
+     */
+    public function afterRefundPost(int $supplierId, array $doc, ?int $explicitDeviceId, ?int $userId): ?array
+    {
+        if (($doc['doc_type'] ?? null) !== 'out' || ($doc['purpose'] ?? null) !== 'invoice_payment' || ($doc['invoice_id'] ?? null) === null) {
+            return null;
+        }
+        $creditNote = $this->creditNote($supplierId, (int) $doc['invoice_id']);
+        if ($creditNote === null) {
+            return null;
+        }
+        $now = EetValues::local($this->clock->now());
+        $at = self::saleTime($doc, $now);
+        $settings = $this->settings->get($supplierId);
+        // Hotovost z pokladny je vždy kontaktní vrácení.
+        if (!$this->policy->refundDecision($settings, $at, 'cash', 'in_person')->createsRecord()) {
+            return null;
+        }
+        $cashDocumentId = (int) $doc['id'];
+        $deviceId = $explicitDeviceId !== null && $explicitDeviceId > 0
+            ? $this->ownedDevice($supplierId, $explicitDeviceId)
+            : ($this->deviceForRegister($supplierId, (int) $doc['register_id']) ?? $this->defaultDevice($supplierId, $settings));
+        return $this->corrections->refundInvoiceSales(
+            $supplierId, $userId, $creditNote['parent_invoice_id'], $creditNote['currency'],
+            EetValues::toCents(EetValues::amount((float) $doc['total_amount'])),
+            'refund-cash:' . $cashDocumentId, $deviceId,
+            isset($doc['doc_number']) ? mb_substr('Vrácení k dobropisu ' . (string) $doc['doc_number'], 0, 255) : null,
+            ['invoice_id' => (int) $doc['invoice_id'], 'cash_document_id' => $cashDocumentId],
+            $at,
+        );
+    }
+
+    /**
+     * Storno výdajového dokladu k dobropisu, ke kterému vznikly záporné opravy: peníze
+     * jsou zpět v pokladně, takže se zaeviduje nová kladná tržba ve výši oprav dokladu
+     * (oprava opravy v EET neexistuje). Tržba nese vazbu na doklad, dobropis i první
+     * opravu (`corrects_event_id`) a patří k opravované faktuře, takže další vrácení
+     * k ní ji zase může opravit. Idempotentní podle klíče dokladu.
+     *
+     * @throws EetCommandException
+     */
+    private function reverseCashRefund(int $supplierId, int $cashDocumentId, ?int $userId, ?string $note, ?int $deviceId): ?int
+    {
+        $key = PaymentEventService::internalKey('refund-cash-reversal', $cashDocumentId);
+        $existing = $this->events->findByKey($supplierId, $key);
+        if ($existing !== null) {
+            $stmt = $this->db->pdo()->prepare("SELECT id FROM eet_records WHERE supplier_id = ? AND payment_event_id = ? AND kind = 'sale'");
+            $stmt->execute([$supplierId, (int) $existing['id']]);
+            $id = $stmt->fetchColumn();
+            return $id === false ? null : (int) $id;
+        }
+        $now = EetValues::local($this->clock->now());
+        $settings = $this->settings->get($supplierId);
+        if (!$this->policy->activeAt($settings, $now)) {
+            return null;
+        }
+        $refunds = $this->refundEvents($supplierId, $cashDocumentId);
+        $cents = 0;
+        foreach ($refunds as $refund) {
+            $cents -= EetValues::toCents(EetValues::amount((string) $refund['amount']));
+        }
+        if ($cents <= 0) {
+            return null;
+        }
+        $docStmt = $this->db->pdo()->prepare('SELECT register_id, invoice_id FROM cash_documents WHERE id = ? AND supplier_id = ?');
+        $docStmt->execute([$cashDocumentId, $supplierId]);
+        $doc = $docStmt->fetch(PDO::FETCH_ASSOC) ?: ['register_id' => 0, 'invoice_id' => null];
+        $deviceId = $deviceId !== null && $deviceId > 0
+            ? $deviceId
+            : ($this->deviceForRegister($supplierId, (int) $doc['register_id']) ?? $this->defaultDevice($supplierId, $settings));
+        if ($deviceId === null) {
+            throw new EetCommandException('eet_device_required',
+                'Storno vrácení peněz k dobropisu se eviduje jako tržba, ale pokladna nemá přiřazené pokladní zařízení '
+                . 'a firma nemá výchozí aktivní zařízení. Zvolte zařízení u storna.',
+                422, ['field' => 'eet_device_id']);
+        }
+        $amount = EetValues::fromCents($cents);
+        $eventId = $this->events->insert([
+            'supplier_id' => $supplierId,
+            'idempotency_key' => $key,
+            'request_hash' => PaymentEventService::requestHash('cash-documents.refund-reversal', ['cash_document_id' => $cashDocumentId]),
+            'kind' => 'payment',
+            'origin' => 'cash_document',
+            'payment_method' => 'cash',
+            'channel' => 'cash',
+            'contact_context' => 'in_person',
+            'business_purpose' => 'sale',
+            'amount' => $amount,
+            'currency' => 'CZK',
+            'received_at' => EetValues::dbTime($now),
+            'recorded_at' => EetValues::dbTime($now),
+            'paid_on' => $now->format('Y-m-d'),
+            'payment_order_status' => 'settled',
+            'bank_verification_status' => 'not_applicable',
+            'accounting_settlement_status' => 'settled',
+            'invoice_id' => $refunds[0]['invoice_id'] !== null ? (int) $refunds[0]['invoice_id'] : null,
+            'eet_decision' => EetPolicyDecision::REQUIRED,
+            'eet_reason_code' => 'refund_reversal',
+            'policy_version' => EetRecordingPolicy::VERSION,
+            'corrects_event_id' => (int) $refunds[0]['id'],
+            'note' => $note !== null ? mb_substr($note, 0, 255) : null,
+            'created_by' => $userId !== null && $userId > 0 ? $userId : null,
+        ]);
+        $this->events->allocate($supplierId, $eventId, $amount, [
+            'invoice_id' => $doc['invoice_id'] !== null ? (int) $doc['invoice_id'] : null,
+            'cash_document_id' => $cashDocumentId,
+        ]);
+        $record = $this->records->create($supplierId, $eventId, $settings, [
+            'device_id' => $deviceId,
+            'sale_at' => $now,
+            'total_amount' => $amount,
+            'policy_decision' => EetPolicyDecision::REQUIRED,
+            'policy_reason' => 'refund_reversal',
+            'created_by' => $userId !== null && $userId > 0 ? $userId : null,
+            'now' => $now,
+        ]);
+        $this->db->pdo()->prepare('UPDATE payment_events SET device_id = ?, unit_id = ? WHERE id = ? AND supplier_id = ?')
+            ->execute([$record['device_id'], $record['unit_id'], $eventId, $supplierId]);
+        $this->dispatch->dispatchAfterCommit($record['id']);
+        return $record['id'];
+    }
+
+    /**
+     * Záporné opravy, které vznikly zaúčtováním výdajového dokladu k dobropisu.
+     *
+     * @return list<array{id:int|string, amount:string, invoice_id:int|string|null}>
+     */
+    private function refundEvents(int $supplierId, int $cashDocumentId): array
+    {
+        $stmt = $this->db->pdo()->prepare(
+            "SELECT e.id, e.amount, e.invoice_id
+               FROM payment_event_allocations a
+               JOIN payment_events e ON e.id = a.payment_event_id AND e.supplier_id = a.supplier_id
+                                    AND e.kind = 'refund' AND e.origin = 'correction'
+              WHERE a.supplier_id = ? AND a.cash_document_id = ? AND e.idempotency_key LIKE ?
+              ORDER BY e.id"
+        );
+        $stmt->execute([$supplierId, $cashDocumentId, PaymentEventService::INTERNAL_KEY_PREFIX . 'refund-cash:' . $cashDocumentId . ':%']);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    }
+
+    /**
+     * Dobropis s opravovanou fakturou, nebo null (jiný doklad k vyplacení, dobropis bez vazby).
+     *
+     * @return array{parent_invoice_id:int, currency:string}|null
+     */
+    private function creditNote(int $supplierId, int $invoiceId): ?array
+    {
+        $stmt = $this->db->pdo()->prepare(
+            'SELECT i.invoice_type, i.parent_invoice_id, cur.code AS currency
+               FROM invoices i JOIN currencies cur ON cur.id = i.currency_id
+              WHERE i.id = ? AND i.supplier_id = ?'
+        );
+        $stmt->execute([$invoiceId, $supplierId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($row === false || (string) $row['invoice_type'] !== 'credit_note' || (int) ($row['parent_invoice_id'] ?? 0) <= 0) {
+            return null;
+        }
+        return ['parent_invoice_id' => (int) $row['parent_invoice_id'], 'currency' => (string) $row['currency']];
     }
 
     /** Má doklad evidovanou tržbu (záznam kind = sale)? */

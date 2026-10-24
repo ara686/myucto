@@ -106,6 +106,28 @@ final class EetHistoryGuard
             . ' Kč). Storno faktury tržby neopravuje; pokud jste zákazníkovi vrátili peníze, vytvořte opravu EET.';
     }
 
+    /**
+     * Dobropis, jehož vrácení peněz je v EET zaevidované jako záporná tržba, nejde vrátit
+     * do stavu „nevráceno": záporná zpráva už odešla a EET ji vzít zpět neumí.
+     */
+    public function creditNoteRefundConflict(int $supplierId, int $creditNoteId): ?string
+    {
+        $stmt = $this->db->pdo()->prepare(
+            "SELECT 1
+               FROM payment_event_allocations a
+               JOIN payment_events e ON e.id = a.payment_event_id AND e.supplier_id = a.supplier_id
+                                    AND e.kind = 'refund' AND e.origin = 'correction'
+              WHERE a.supplier_id = ? AND a.invoice_id = ?
+              LIMIT 1"
+        );
+        $stmt->execute([$supplierId, $creditNoteId]);
+        if ($stmt->fetchColumn() === false) {
+            return null;
+        }
+        return 'Vrácení peněz k dobropisu je zaevidované v EET jako záporná tržba, proto ho nelze vrátit zpět. '
+            . 'Pokud vám zákazník peníze vrátil, přijměte je jako novou platbu.';
+    }
+
     public function cashDocumentConflict(int $supplierId, int $cashDocumentId): ?string
     {
         $stmt = $this->db->pdo()->prepare(

@@ -63,6 +63,7 @@ final class EetPaymentCommand
         private readonly InvoicePdfRenderer $invoicePdf,
         private readonly StatsRecomputer $stats,
         private readonly ClockInterface $clock,
+        private readonly EetCurrency $fx,
     ) {}
 
     /**
@@ -90,13 +91,24 @@ final class EetPaymentCommand
         if ($decision->decision === EetPolicyDecision::UNKNOWN) {
             $requires[] = $in['channel'] === null || $in['channel'] === 'other' ? 'channel' : 'contact_context';
         }
+        $fx = null;
+        $fxError = null;
+        try {
+            $fx = $this->fx->forPayment($supplierId, $in['currency'], $in['amount'], $receivedAt);
+        } catch (EetCommandException $e) {
+            $fxError = ['code' => $e->errorCode, 'message' => $e->getMessage()];
+        }
         return [
             'eet' => $decision->toArray(),
             'creates_record' => $decision->createsRecord(),
-            'blocks_acceptance' => $decision->blocksAcceptance(),
+            'blocks_acceptance' => $decision->blocksAcceptance() || ($fxError !== null && $decision->createsRecord()),
             'requires' => $requires,
             'amount' => $in['amount'],
             'currency' => $in['currency'],
+            'amount_czk' => $fx['amount'] ?? null,
+            'exchange_rate' => $fx['exchange_rate'] ?? null,
+            'exchange_rate_source' => $fx['exchange_rate_source'] ?? null,
+            'exchange_rate_error' => $fxError,
             'invoice' => $invoice,
         ];
     }
@@ -127,11 +139,14 @@ final class EetPaymentCommand
         $settings = $this->settings->get($supplierId);
         $decision = $this->evaluate($supplierId, $in, $receivedAt, 'payment', $settings);
         self::assertAcceptable($decision);
+        // Částka události a tržby je v CZK; platba v cizí měně nese původní částku a kurz.
+        // Kurz (případně stažení z ČNB) se řeší před otevřením transakce.
+        $fx = $this->fx->forPayment($supplierId, $in['currency'], $in['amount'], $receivedAt);
 
         $pdo = $this->db->pdo();
         $this->assertNoOpenTransaction($pdo);
         try {
-            $created = TransactionFailure::retrying($pdo, function () use ($pdo, $supplierId, $userId, $key, $hash, $in, $receivedAt, $now, $settings, $decision, $invoicePaymentSource): array {
+            $created = TransactionFailure::retrying($pdo, function () use ($pdo, $supplierId, $userId, $key, $hash, $in, $receivedAt, $now, $settings, $decision, $invoicePaymentSource, $fx): array {
                 $pdo->beginTransaction();
                 try {
                     $cashLike = $in['channel'] === 'cash';
@@ -145,8 +160,12 @@ final class EetPaymentCommand
                         'channel' => $in['channel'],
                         'contact_context' => $in['contact_context'],
                         'business_purpose' => $in['business_purpose'],
-                        'amount' => $in['amount'],
-                        'currency' => $in['currency'],
+                        'amount' => $fx['amount'],
+                        'currency' => $fx['currency'],
+                        'original_currency' => $fx['original_currency'],
+                        'original_amount' => $fx['original_amount'],
+                        'exchange_rate' => $fx['exchange_rate'],
+                        'exchange_rate_source' => $fx['exchange_rate_source'],
                         'received_at' => EetValues::dbTime($receivedAt),
                         'recorded_at' => EetValues::dbTime($now),
                         'paid_on' => $receivedAt->format('Y-m-d'),
@@ -178,6 +197,7 @@ final class EetPaymentCommand
                                 'created_by' => $userId > 0 ? $userId : null,
                             ],
                         );
+                        // Alokace je v měně faktury (stejně jako úhrada), částka události v CZK.
                         $this->events->allocate($supplierId, $eventId, $in['amount'], [
                             'invoice_id' => (int) $invoice['id'],
                             'invoice_payment_id' => (int) $payment['payment_id'],
@@ -190,7 +210,7 @@ final class EetPaymentCommand
                         $record = $this->records->create($supplierId, $eventId, $settings, [
                             'device_id' => $in['device_id'],
                             'sale_at' => $receivedAt,
-                            'total_amount' => $in['amount'],
+                            'total_amount' => $fx['amount'],
                             'policy_decision' => $decision->decision,
                             'policy_reason' => $decision->reasonCode,
                             'created_by' => $userId > 0 ? $userId : null,
@@ -245,8 +265,15 @@ final class EetPaymentCommand
 
         $now = $this->now();
         $invoice = $this->invoice($supplierId, (int) $invoiceId, false);
+        // QR na místě je česká QR platba (SPAYD v CZK). Potvrzený příkaz blokuje dluh faktury
+        // a vypořádá ho bankovní párování korunového pohybu; cizoměnový QR příkaz (SEPA)
+        // tímhle tokem nejde. Fakturu v cizí měně lze přijmout hotově nebo kartou na terminálu.
         if ((string) $invoice['currency'] !== 'CZK') {
-            throw EetCommandException::unsupported('QR platba na místě je podporovaná jen u faktur v CZK.', 'foreign_currency');
+            throw EetCommandException::unsupported(
+                'QR platba na místě je podporovaná jen u faktur v Kč. Fakturu v ' . (string) $invoice['currency']
+                . ' přijměte v hotovosti nebo kartou na terminálu.',
+                'qr_foreign_currency',
+            );
         }
         $remaining = $this->remainingCents($supplierId, $invoice, true);
         $amount = $requestedAmount ?? EetValues::fromCents(max(0, $remaining));

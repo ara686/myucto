@@ -121,7 +121,15 @@ final class EetRecordAction
             return $denied;
         }
         $supplierId = SupplierGuard::currentId($request);
-        return Json::ok($response, ['items' => $this->query->forInvoice($supplierId, (int) ($args['id'] ?? 0))]);
+        $invoiceId = (int) ($args['id'] ?? 0);
+        $out = ['items' => $this->query->forInvoice($supplierId, $invoiceId)];
+        // Dobropis: kolik z evidovaných tržeb opravované faktury zbývá opravit, aby UI
+        // u vrácení peněz ukázalo, co se zaeviduje jako záporná tržba.
+        $parent = $this->query->creditNoteParent($supplierId, $invoiceId);
+        if ($parent !== null) {
+            $out['refund'] = $parent + ['evidenced' => $this->corrections->refundableForInvoice($supplierId, $parent['invoice_id'])];
+        }
+        return Json::ok($response, $out);
     }
 
     /**
