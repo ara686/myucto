@@ -29,7 +29,15 @@ use Psr\Clock\ClockInterface;
  * mimo ni ({@see resolveAmount()}).
  *
  * Oprava jde do stejného prostředí a pod stejné EIČ jako původní záznam bez ohledu
- * na pozdější změnu nastavení.
+ * na pozdější změnu nastavení. Tržbu evidovanou externím systémem (stav `external`)
+ * opravuje MyÚčto běžnou zápornou tržbou ze svého zařízení: peníze vrací pokladna MyÚčta.
+ *
+ * Kredit ({@see creditParts()}): oprava tržby s `urceno_cerp_zuct` (vrácení peněz za
+ * nevyčerpaný kredit) snižuje i tuto část úměrně opravené částce. Oprava tržby
+ * uhrazené kreditem (`cerp_zuct`) s volbou `refund_to_stored_value` vrací peníze zpět
+ * na kartu / kredit, takže nese záporné `cerp_zuct` (metodika, kap. 1.14, příklad 3);
+ * vratka v hotovosti kreditová pole nemá. Ostatní důvody (chybná data, duplicita…)
+ * ruší původní zprávu, proto čerpání snižují úměrně.
  *
  * Účetní dopad: oprava je jen fiskální záznam a platební událost. Skutečné vrácení
  * peněz (důvod `refund`) se dál účtuje existujícími cestami (dobropis, výdajový
@@ -75,14 +83,28 @@ final class EetCorrectionService
         } catch (EetCommandException) {
             $device = null;
         }
+        $toStoredValue = self::refundToStoredValue($input);
+        $credit = ['credit_topup_amount' => null, 'credit_draw_amount' => null];
+        if ($error === null && $cents > 0) {
+            try {
+                $credit = $this->creditParts($supplierId, $original, $cents, $remaining, $reason ?? 'refund', $toStoredValue);
+            } catch (EetCommandException $e) {
+                $error = $e->getMessage();
+            }
+        }
         return [
             'original' => EetRecordPresenter::record($original),
             'corrected_total' => EetValues::fromCents(EetValues::toCents((string) $original['total_amount']) - $remaining),
             'remaining' => EetValues::fromCents($remaining),
             'foreign' => self::foreignSummary($state),
+            // Tržba uhrazená poukazem / kreditem: nabídnout vrácení zpět na kartu / kredit.
+            'stored_value_payment' => ($original['credit_draw_amount'] ?? null) !== null,
             'proposed' => [
                 'total_amount' => EetValues::fromCents(-$cents),
                 'original_amount' => $foreignCents !== null ? EetValues::fromCents(-$foreignCents) : null,
+                'credit_topup_amount' => $credit['credit_topup_amount'],
+                'credit_draw_amount' => $credit['credit_draw_amount'],
+                'refund_to_stored_value' => $toStoredValue,
                 'reason' => $reason,
                 'device_id' => $device,
                 'environment' => (string) $original['environment'],
@@ -107,10 +129,12 @@ final class EetCorrectionService
         $reason = self::reason($input['reason'] ?? null);
         $note = isset($input['note']) && is_string($input['note']) && trim($input['note']) !== '' ? mb_substr(trim($input['note']), 0, 255) : null;
         $deviceId = isset($input['device_id']) && (int) $input['device_id'] > 0 ? (int) $input['device_id'] : null;
+        $toStoredValue = self::refundToStoredValue($input);
         $hash = PaymentEventService::requestHash('records.corrections:' . $recordId, [
             'amount' => $czkInput !== null ? EetValues::fromCents($czkInput) : null,
             'original_amount' => $foreignInput !== null ? EetValues::fromCents($foreignInput) : null,
             'reason' => $reason, 'note' => $note, 'device_id' => $deviceId,
+            'refund_to_stored_value' => $toStoredValue ? true : null,
         ]);
         $existing = $this->events->replay($supplierId, $key, $hash);
         if ($existing !== null) {
@@ -124,11 +148,11 @@ final class EetCorrectionService
             throw new \LogicException('Oprava EET řídí vlastní transakci a odesílá až po commitu.');
         }
         try {
-            $created = TransactionFailure::retrying($pdo, function () use ($pdo, $supplierId, $userId, $recordId, $key, $hash, $czkInput, $foreignInput, $reason, $note, $deviceId, $now, $settings): array {
+            $created = TransactionFailure::retrying($pdo, function () use ($pdo, $supplierId, $userId, $recordId, $key, $hash, $czkInput, $foreignInput, $reason, $note, $deviceId, $now, $settings, $toStoredValue): array {
                 $pdo->beginTransaction();
                 try {
                     $original = $this->original($supplierId, $recordId, true);
-                    $created = $this->insertLocked($supplierId, $userId, $original, $key, $hash, $czkInput, $foreignInput, $reason, $note, $deviceId, $now, $settings);
+                    $created = $this->insertLocked($supplierId, $userId, $original, $key, $hash, $czkInput, $foreignInput, $reason, $note, $deviceId, $now, $settings, null, $toStoredValue);
                     $pdo->commit();
                     return $created;
                 } catch (\Throwable $e) {
@@ -413,7 +437,8 @@ final class EetCorrectionService
      * @return array{event_id:int, record_id:int, cents:int}
      */
     private function insertLocked(int $supplierId, int $userId, array $original, string $key, string $hash, ?int $czkCents, ?int $foreignCents,
-        string $reason, ?string $note, ?int $deviceId, \DateTimeImmutable $at, array $settings, ?\DateTimeImmutable $now = null): array
+        string $reason, ?string $note, ?int $deviceId, \DateTimeImmutable $at, array $settings, ?\DateTimeImmutable $now = null,
+        bool $refundToStoredValue = false): array
     {
         $now ??= $at;
         $remaining = $this->remainingCents($supplierId, $original);
@@ -426,6 +451,7 @@ final class EetCorrectionService
                 ['remaining' => EetValues::fromCents($remaining)],
             );
         }
+        $credit = $this->creditParts($supplierId, $original, $cents, $remaining, $reason, $refundToStoredValue);
         $originalEvent = $original['payment_event_id'] !== null
             ? $this->events->find($supplierId, (int) $original['payment_event_id'], true)
             : null;
@@ -474,6 +500,8 @@ final class EetCorrectionService
             'device_id' => $deviceId,
             'sale_at' => $at,
             'total_amount' => EetValues::fromCents(-$cents),
+            'credit_topup_amount' => $credit['credit_topup_amount'],
+            'credit_draw_amount' => $credit['credit_draw_amount'],
             'kind' => 'correction',
             'corrects_record_id' => (int) $original['id'],
             'correction_reason' => $reason,
@@ -754,6 +782,65 @@ final class EetCorrectionService
         $stmt->execute([$supplierId, (int) $original['id']]);
         $corrected = EetValues::toCents(EetValues::amount((string) $stmt->fetchColumn()));
         return EetValues::toCents((string) $original['total_amount']) + $corrected;
+    }
+
+    /**
+     * Kreditové části opravy (záporné, v Kč) k opravě o `$cents` haléřů.
+     *
+     * `urceno_cerp_zuct` se snižuje úměrně a KUMULATIVNĚ jako cizí měna: opraveno po
+     * této opravě = podíl celkem opravené částky, oprava = rozdíl proti dosud opravenému
+     * kreditu; oprava celého zbytku dorovná kredit přesně. `cerp_zuct` jen při vrácení
+     * na kartu / kredit nebo u důvodu, který ruší původní zprávu; vratka v hotovosti ho
+     * nemá. Součet oprav nikdy nepřesáhne kredit původní tržby.
+     *
+     * @param array<string,mixed> $original
+     * @return array{credit_topup_amount:?string, credit_draw_amount:?string}
+     * @throws EetCommandException
+     */
+    private function creditParts(int $supplierId, array $original, int $cents, int $remaining, string $reason, bool $refundToStoredValue): array
+    {
+        $total = EetValues::toCents((string) $original['total_amount']);
+        $topUp = $original['credit_topup_amount'] !== null ? EetValues::toCents((string) $original['credit_topup_amount']) : 0;
+        $draw = $original['credit_draw_amount'] !== null ? EetValues::toCents((string) $original['credit_draw_amount']) : 0;
+        if ($refundToStoredValue && ($draw <= 0 || $reason !== 'refund')) {
+            throw EetCommandException::validation(
+                'Vrátit peníze na kartu nebo kredit lze jen u vratky (důvod „vrácení peněz") tržby uhrazené poukazem nebo kreditem.',
+                'refund_to_stored_value',
+            );
+        }
+        if (($topUp <= 0 && $draw <= 0) || $total <= 0) {
+            return ['credit_topup_amount' => null, 'credit_draw_amount' => null];
+        }
+        $stmt = $this->db->pdo()->prepare(
+            "SELECT COALESCE(SUM(credit_topup_amount), 0), COALESCE(SUM(credit_draw_amount), 0) FROM eet_records
+              WHERE supplier_id = ? AND corrects_record_id = ? AND kind = 'correction'"
+        );
+        $stmt->execute([$supplierId, (int) $original['id']]);
+        [$topUpDone, $drawDone] = $stmt->fetch(PDO::FETCH_NUM) ?: ['0', '0'];
+        $topUpDone = -EetValues::toCents(EetValues::amount((string) $topUpDone));
+        $drawDone = -EetValues::toCents(EetValues::amount((string) $drawDone));
+
+        $topUpPart = 0;
+        if ($topUp > 0) {
+            $correctedAfter = $total - $remaining + $cents;
+            $topUpAfter = $correctedAfter >= $total ? $topUp : EetStoredValueCalculator::proportion($correctedAfter, $topUp, $total);
+            $topUpPart = max(0, min($topUpAfter - $topUpDone, $topUp - $topUpDone));
+        }
+        $drawPart = 0;
+        if ($draw > 0 && ($reason !== 'refund' || $refundToStoredValue)) {
+            $drawPart = max(0, min(EetStoredValueCalculator::proportion($cents, $draw, $total), $draw - $drawDone));
+        }
+        return [
+            'credit_topup_amount' => $topUpPart > 0 ? EetValues::fromCents(-$topUpPart) : null,
+            'credit_draw_amount' => $drawPart > 0 ? EetValues::fromCents(-$drawPart) : null,
+        ];
+    }
+
+    /** @param array<string,mixed> $input */
+    private static function refundToStoredValue(array $input): bool
+    {
+        $value = $input['refund_to_stored_value'] ?? false;
+        return $value === true || $value === 1 || $value === '1' || $value === 'true';
     }
 
     private static function reason(mixed $value): string

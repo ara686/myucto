@@ -52,8 +52,14 @@ final class EetRecordingPolicyTest extends TestCase
 
         // Mimo MVP, ale jen u jinak povinné tržby.
         yield 'cizí měna vzdáleně' => [['channel' => 'bank_transfer', 'context' => 'remote', 'currency' => 'EUR'], 'not_subject', 'remote_payment'];
-        yield 'dobití kreditu' => [['channel' => 'cash', 'context' => 'in_person', 'purpose' => 'credit_topup'], 'unsupported', 'credit_topup'];
-        yield 'čerpání kreditu' => [['channel' => 'cash', 'context' => 'in_person', 'purpose' => 'credit_draw'], 'unsupported', 'credit_draw'];
+        yield 'dobití kreditu hotově' => [['channel' => 'cash', 'context' => 'in_person', 'purpose' => 'credit_topup'], 'required', 'cash'];
+        foreach (['in_person', 'on_premises', 'in_vehicle'] as $ctx) {
+            yield "čerpání kreditu na místě / {$ctx}" => [['channel' => 'stored_value', 'context' => $ctx, 'purpose' => 'credit_draw'], 'required', 'stored_value_contact'];
+        }
+        yield 'čerpání kreditu na dálku' => [['channel' => 'stored_value', 'context' => 'remote', 'purpose' => 'credit_draw'], 'not_subject', 'remote_stored_value'];
+        yield 'čerpání kreditu bez kontextu' => [['channel' => 'stored_value', 'context' => 'unknown', 'purpose' => 'credit_draw'], 'unknown', 'contact_context_required'];
+        yield 'čerpání kreditu hotovostí' => [['channel' => 'cash', 'context' => 'in_person', 'purpose' => 'credit_draw'], 'unknown', 'stored_value_purpose_conflict'];
+        yield 'poukaz jako prodej' => [['channel' => 'stored_value', 'context' => 'in_person'], 'unknown', 'stored_value_purpose_conflict'];
         yield 'kauce' => [['channel' => 'cash', 'context' => 'in_person', 'purpose' => 'security_deposit'], 'unsupported', 'security_deposit'];
         yield 'pověření' => [['channel' => 'cash', 'context' => 'in_person', 'delegating' => 'CZ1234567890'], 'unsupported', 'delegation'];
         yield 'jiný účel' => [['channel' => 'cash', 'context' => 'in_person', 'purpose' => 'other'], 'unknown', 'purpose_unclassified'];

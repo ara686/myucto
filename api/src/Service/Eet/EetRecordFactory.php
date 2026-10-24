@@ -33,6 +33,7 @@ final class EetRecordFactory
     /**
      * @param array<string,mixed> $settings řádek eet_settings
      * @param array{device_id?:?int, sale_at:\DateTimeImmutable, total_amount:string, kind?:string,
+     *              credit_topup_amount?:?string, credit_draw_amount?:?string,
      *              corrects_record_id?:?int, correction_reason?:?string,
      *              policy_decision?:?string, policy_reason?:?string, created_by?:?int,
      *              now?:?\DateTimeImmutable} $input
@@ -83,6 +84,9 @@ final class EetRecordFactory
             throw EetCommandException::validation('Částka tržby musí být nenulová a v absolutní hodnotě pod 100 milionů Kč.', 'amount');
         }
 
+        $topUp = self::creditAmount($input['credit_topup_amount'] ?? null, $cents, 'credit_topup_amount');
+        $draw = self::creditAmount($input['credit_draw_amount'] ?? null, $cents, 'credit_draw_amount');
+
         $now = EetValues::local($input['now'] ?? new \DateTimeImmutable());
         $deadline = $saleAt->modify('+' . self::DEADLINE_HOURS . ' hours');
         $publicId = EetValues::uuid4();
@@ -90,9 +94,10 @@ final class EetRecordFactory
             'INSERT INTO eet_records
                (public_id, supplier_id, payment_event_id, kind, corrects_record_id, correction_reason, environment,
                 eic, unit_id, unit_number, device_id, device_code, sequence_number, sale_at, sale_at_offset,
-                total_amount, policy_decision, policy_reason, policy_version, status, deadline_at, overdue, next_attempt_at,
+                total_amount, credit_topup_amount, credit_draw_amount,
+                policy_decision, policy_reason, policy_version, status, deadline_at, overdue, next_attempt_at,
                 created_by)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, \'pending\', ?, ?, ?, ?)'
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, \'pending\', ?, ?, ?, ?)'
         )->execute([
             $publicId, $supplierId, $paymentEventId,
             (string) ($input['kind'] ?? 'sale'),
@@ -103,7 +108,7 @@ final class EetRecordFactory
             $deviceId, (string) $device['code'],
             $sequenceNumber,
             EetValues::dbSecond($saleAt), $saleAt->format('P'),
-            $total,
+            $total, $topUp, $draw,
             $input['policy_decision'] ?? null, $input['policy_reason'] ?? null, EetRecordingPolicy::VERSION,
             EetValues::dbSecond($deadline),
             // Pozdě pořízená tržba se eviduje, jen hned s příznakem po lhůtě.
@@ -119,6 +124,79 @@ final class EetRecordFactory
             'unit_id' => (int) $device['unit_id'],
             'device_id' => $deviceId,
         ];
+    }
+
+    /**
+     * Záznam tržby, kterou evidoval jiný systém (e-shop s vlastní EET). MyÚčto ho jen
+     * drží v evidenci se stavem `external`: nemá číslo z řady zařízení MyÚčta, nikdy se
+     * neodesílá a nepatří do fronty. Údaje externí evidence (EIČ, jednotka, pokladna,
+     * pořadové číslo, čas, částka, FIK) jsou volitelné a už ověřené volajícím; zařízení
+     * ani jednotka v MyÚčtu existovat nemusí. Trojice EIČ + pokladna + pořadové číslo je
+     * u firmy jedinečná (`external_key`).
+     *
+     * @param array{sale_at:\DateTimeImmutable, total_amount:string, eic?:?string, unit_number?:?int,
+     *              device_code?:?string, sequence_number?:?string, pok?:?string, external_key?:?string,
+     *              policy_reason?:?string, created_by?:?int, now?:?\DateTimeImmutable} $input
+     * @param array<string,mixed> $settings řádek eet_settings
+     * @return array{id:int, public_id:string}
+     */
+    public function createExternal(int $supplierId, int $paymentEventId, array $settings, array $input): array
+    {
+        $pdo = $this->db->pdo();
+        if (!$pdo->inTransaction()) {
+            throw new \LogicException('EET záznam vzniká jen v transakci platebního příkazu.');
+        }
+        $eic = strtoupper(trim((string) ($input['eic'] ?? $settings['eic'] ?? '')));
+        if (!EetIdentifiers::isEic($eic)) {
+            throw EetCommandException::notConfigured('V nastavení EET chybí platné EIČ a externí evidence ho neuvedla.');
+        }
+        $environment = (string) ($settings['environment'] ?? 'production');
+        $environment = in_array($environment, EetIdentifiers::ENVIRONMENTS, true) ? $environment : 'production';
+        $saleAt = EetValues::local($input['sale_at']);
+        $total = EetValues::amount($input['total_amount'], 'amount');
+        $cents = EetValues::toCents($total);
+        if ($cents === 0 || abs($cents) > EetValues::MAX_ABS_CENTS) {
+            throw EetCommandException::validation('Částka tržby musí být nenulová a v absolutní hodnotě pod 100 milionů Kč.', 'amount');
+        }
+        $publicId = EetValues::uuid4();
+        $pdo->prepare(
+            "INSERT INTO eet_records
+               (public_id, supplier_id, payment_event_id, kind, environment, eic, unit_id, unit_number, device_id, device_code,
+                sequence_number, external_key, sale_at, sale_at_offset, total_amount, policy_decision, policy_reason, policy_version,
+                status, deadline_at, overdue, next_attempt_at, pok, created_by)
+             VALUES (?, ?, ?, 'sale', ?, ?, NULL, ?, NULL, ?, ?, ?, ?, ?, ?, 'external', ?, ?, 'external', ?, 0, NULL, ?, ?)"
+        )->execute([
+            $publicId, $supplierId, $paymentEventId, $environment, $eic,
+            $input['unit_number'] ?? null, $input['device_code'] ?? null, $input['sequence_number'] ?? null, $input['external_key'] ?? null,
+            EetValues::dbSecond($saleAt), $saleAt->format('P'), $total,
+            $input['policy_reason'] ?? 'external_system', EetRecordingPolicy::VERSION,
+            EetValues::dbSecond($saleAt->modify('+' . self::DEADLINE_HOURS . ' hours')),
+            $input['pok'] ?? null,
+            $input['created_by'] ?? null,
+        ]);
+        return ['id' => (int) $pdo->lastInsertId(), 'public_id' => $publicId];
+    }
+
+    /**
+     * Částka kreditu (`urceno_cerp_zuct` / `cerp_zuct`) k tržbě: stejné znaménko jako
+     * celková tržba a nejvýš její velikost. Nula = pole se neuvádí.
+     *
+     * @throws EetCommandException
+     */
+    private static function creditAmount(mixed $value, int $totalCents, string $field): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        $amount = EetValues::amount($value, $field);
+        $cents = EetValues::toCents($amount);
+        if ($cents === 0) {
+            return null;
+        }
+        if (($cents > 0) !== ($totalCents > 0) || abs($cents) > abs($totalCents)) {
+            throw EetCommandException::validation('Částka kreditu musí mít stejné znaménko jako tržba a nesmí ji přesáhnout.', $field);
+        }
+        return $amount;
     }
 
     /**

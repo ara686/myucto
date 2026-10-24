@@ -117,6 +117,7 @@ final class MarkPaidAction
                     $body,
                     $request->getHeaderLine('Idempotency-Key'),
                     'mark_paid',
+                    EetInvoicePaymentGate::tokenDefaultsToExternal($request->getAttribute(AuthMiddleware::ATTR_API_TOKEN), $request->getAttribute(AuthMiddleware::ATTR_METHOD)),
                 );
                 if ($route['mode'] === 'eet') {
                     $eet = $route['result'];

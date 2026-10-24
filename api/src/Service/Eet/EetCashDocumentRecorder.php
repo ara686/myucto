@@ -54,6 +54,7 @@ final class EetCashDocumentRecorder
         private readonly EetCorrectionService $corrections,
         private readonly EetDispatchService $dispatch,
         private readonly ClockInterface $clock,
+        private readonly EetStoredValueCalculator $storedValue,
     ) {}
 
     /**
@@ -152,10 +153,13 @@ final class EetCashDocumentRecorder
             'invoice_payment_id' => $invoicePaymentId,
             'cash_document_id' => $cashDocumentId,
         ]);
+        // Úhrada faktury z PPD nese podíl položek hodnotového poukazu / kreditu faktury.
+        $topUp = $this->storedValue->forCashDocument($supplierId, $doc, EetValues::toCents($amount));
         $record = $this->records->create($supplierId, $eventId, $settings, [
             'device_id' => $deviceId,
             'sale_at' => $saleAt,
             'total_amount' => $amount,
+            'credit_topup_amount' => $topUp !== null ? EetValues::fromCents($topUp) : null,
             'policy_decision' => $decision->decision,
             'policy_reason' => $decision->reasonCode,
             'created_by' => $userId !== null && $userId > 0 ? $userId : null,

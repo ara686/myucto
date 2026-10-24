@@ -46,7 +46,7 @@ final class StockItemRepository
            WHERE siav.supplier_id = si.supplier_id AND siav.stock_item_id = si.id AND siav.attribute_id = ?)';
 
     private const COLUMNS =
-        'id, supplier_id, sku, name, item_type, manufacturer_id, unit, default_sale_unit, tracking_mode, ean, vat_rate_id,
+        'id, supplier_id, sku, name, item_type, eet_item_kind, manufacturer_id, unit, default_sale_unit, tracking_mode, ean, vat_rate_id,
          sale_price_without_vat, min_qty, warranty_months, delivery_days, export_eshop,
          is_stocked, weight_g, intrastat_cn8_code, intrastat_country_of_origin, intrastat_net_mass_kg,
          intrastat_supplementary_unit, intrastat_supplementary_unit_coefficient,
@@ -686,6 +686,16 @@ final class StockItemRepository
         }
         $this->db->pdo()->prepare('UPDATE stock_items SET ' . implode(', ', $sets) . ' WHERE id = ? AND supplier_id = ?')
             ->execute([...$params, $id, $supplierId]);
+    }
+
+    /**
+     * Druh položky pro EET ({@see \MyInvoice\Service\Eet\EetStoredValueCalculator::ITEM_KINDS},
+     * migrace 2185). Samostatně od úpravy karty, hodnotu ověřuje volající.
+     */
+    public function updateEetItemKind(int $supplierId, int $id, string $kind): void
+    {
+        $this->db->pdo()->prepare('UPDATE stock_items SET eet_item_kind = ? WHERE id = ? AND supplier_id = ?')
+            ->execute([$kind, $id, $supplierId]);
     }
 
     /** @param array<string,mixed> $data */

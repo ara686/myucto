@@ -16,7 +16,7 @@ final class EetRecordQuery
 {
     public const MAX_LIMIT = 100;
     public const EXPORT_BATCH = 500;
-    private const STATUSES = ['pending', 'sending', 'retry_wait', 'confirmed', 'confirmed_warning', 'action_required', 'verification_ok'];
+    private const STATUSES = ['pending', 'sending', 'retry_wait', 'confirmed', 'confirmed_warning', 'action_required', 'verification_ok', 'external'];
 
     public function __construct(private readonly Connection $db) {}
 
@@ -136,7 +136,8 @@ final class EetRecordQuery
             }
             $stmt = $this->db->pdo()->prepare(
                 'SELECT id, public_id, kind, corrects_record_id, correction_reason, environment, eic, unit_number,
-                        device_code, sequence_number, sale_at, sale_at_offset, total_amount, status, pok, confirmed_at,
+                        device_code, sequence_number, sale_at, sale_at_offset, total_amount, credit_topup_amount,
+                        credit_draw_amount, status, pok, confirmed_at,
                         overdue, deadline_at, policy_reason
                    FROM eet_records WHERE ' . implode(' AND ', $where)
                 . ' ORDER BY sale_at, id LIMIT ' . self::EXPORT_BATCH

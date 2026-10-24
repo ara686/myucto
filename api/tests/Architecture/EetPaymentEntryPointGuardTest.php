@@ -40,6 +40,8 @@ final class EetPaymentEntryPointGuardTest extends TestCase
     private const CALLERS = [
         'MyInvoice\Service\Eet\EetPaymentCommand::accept' => [self::CONNECTED,
             'Společný platební příkaz: událost, úhrada a EET záznam v jedné transakci.', InvoicePaymentService::class],
+        'MyInvoice\Service\Eet\EetPaymentCommand::acceptExternal' => [self::CONNECTED,
+            'Tržbu evidoval externí systém (e-shop): událost, úhrada a neodesílaný záznam external v jedné transakci.', InvoicePaymentService::class],
         'MyInvoice\Action\Invoice\CreatePaymentAction::__invoke' => [self::CONNECTED,
             'Ruční úhrada: u aktivní EET rozhoduje EetInvoicePaymentGate; přímý zápis jen bez evidence nebo u platby mimo EET.',
             EetInvoicePaymentGate::class],

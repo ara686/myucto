@@ -10,7 +10,8 @@ namespace MyInvoice\Service\Eet;
  */
 final class EetPolicyInput
 {
-    public const CHANNELS = ['cash', 'card_terminal', 'qr_in_person', 'bank_transfer', 'card_online', 'cash_on_delivery', 'other'];
+    /** `stored_value` = úhrada poukazem / kreditem (čerpání, `cerp_zuct`). */
+    public const CHANNELS = ['cash', 'card_terminal', 'qr_in_person', 'bank_transfer', 'card_online', 'cash_on_delivery', 'other', 'stored_value'];
     public const CONTACT_CONTEXTS = ['in_person', 'on_premises', 'in_vehicle', 'remote', 'unknown'];
     public const BUSINESS_PURPOSES = ['sale', 'order_deposit', 'credit_topup', 'credit_draw', 'security_deposit', 'other'];
     public const ORIGINS = ['invoice_payment', 'cash_document', 'quick_sale', 'payment_intent', 'correction', 'bank_reconciliation', 'api'];

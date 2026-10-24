@@ -33,9 +33,22 @@ use Psr\Clock\ClockInterface;
  * zbývajícího dluhu faktury, aby ji nešlo přijmout podruhé.
  *
  * Klientské `eet_required` se ignoruje; rozhoduje {@see EetRecordingPolicy}.
+ *
+ * Kredit: podíl platby připadající na položky hodnotového poukazu / kreditu jde do
+ * `urceno_cerp_zuct` ({@see EetStoredValueCalculator}), úhrada poukazem či kreditem
+ * (kanál `stored_value`) celou částkou do `cerp_zuct`. Úhrada faktury poukazem se
+ * účetně zapisuje jako ruční úhrada (zdroj `manual`, způsob `offset`): MyÚčto nemá
+ * zvláštní účtování přijatých záloh na poukazy, jejich zúčtování řeší účetní ručně.
+ *
+ * Externí evidence (`eet_context = external`, {@see acceptExternal()}): tržbu už
+ * zaevidoval jiný systém (e-shop). Úhrada se zapíše běžnou účetní cestou a EET záznam
+ * vznikne jen jako evidence se stavem `external`, který se nikdy neodesílá.
  */
 final class EetPaymentCommand
 {
+    /** Kontext platby, kterou evidoval jiný systém (e-shop s vlastní EET). */
+    public const EXTERNAL_CONTEXT = 'external';
+
     private const DEFAULT_METHOD_BY_CHANNEL = [
         'cash' => 'cash',
         'card_terminal' => 'card',
@@ -44,7 +57,14 @@ final class EetPaymentCommand
         'bank_transfer' => 'bank_transfer',
         'cash_on_delivery' => 'cash_on_delivery',
         'other' => 'other',
+        // Uplatnění poukazu / čerpání kreditu = zápočet přijaté platby, žádný nový pohyb peněz.
+        'stored_value' => 'offset',
     ];
+
+    /** Kanály, u kterých se platba vypořádá hned (žádné bankovní ověření). */
+    private const SETTLED_CHANNELS = ['cash', 'stored_value'];
+
+    private const EXTERNAL_FIELDS = ['pok', 'eic', 'id_jednotky', 'id_pokl', 'porad_cis', 'dat_trzby', 'celk_trzba'];
 
     private const PAYABLE_STATUSES = ['issued', 'sent', 'reminded', 'paid'];
 
@@ -64,7 +84,14 @@ final class EetPaymentCommand
         private readonly StatsRecomputer $stats,
         private readonly ClockInterface $clock,
         private readonly EetCurrency $fx,
+        private readonly EetStoredValueCalculator $storedValue,
     ) {}
+
+    /** Tělo požadavku hlásí, že tržbu evidoval jiný systém. */
+    public static function isExternal(array $input): bool
+    {
+        return ($input['eet_context'] ?? null) === self::EXTERNAL_CONTEXT;
+    }
 
     /**
      * Náhled politiky bez zápisu. Při přijetí se politika vyhodnotí znovu.
@@ -74,17 +101,21 @@ final class EetPaymentCommand
      */
     public function preview(int $supplierId, array $input): array
     {
+        if (self::isExternal($input)) {
+            return $this->previewExternal($supplierId, $input);
+        }
         $now = $this->now();
         $in = $this->normalizePayment($input, requireChannel: false);
         $receivedAt = EetValues::clientTime($input['received_at'] ?? null, $now, 'received_at');
         $decision = $this->evaluate($supplierId, $in, $receivedAt, 'payment');
         $invoice = null;
+        $invoiceRow = null;
         if ($in['invoice_id'] !== null) {
-            $row = $this->invoice($supplierId, $in['invoice_id'], false);
+            $invoiceRow = $this->invoice($supplierId, $in['invoice_id'], false);
             $invoice = [
-                'id' => (int) $row['id'],
-                'currency' => (string) $row['currency'],
-                'remaining' => EetValues::fromCents($this->remainingCents($supplierId, $row)),
+                'id' => (int) $invoiceRow['id'],
+                'currency' => (string) $invoiceRow['currency'],
+                'remaining' => EetValues::fromCents($this->remainingCents($supplierId, $invoiceRow)),
             ];
         }
         $requires = [];
@@ -98,6 +129,9 @@ final class EetPaymentCommand
         } catch (EetCommandException $e) {
             $fxError = ['code' => $e->errorCode, 'message' => $e->getMessage()];
         }
+        $credit = $fx !== null && $decision->createsRecord()
+            ? $this->creditAmounts($supplierId, $in, $fx['amount'], $invoiceRow)
+            : ['credit_topup_amount' => null, 'credit_draw_amount' => null];
         return [
             'eet' => $decision->toArray(),
             'creates_record' => $decision->createsRecord(),
@@ -109,6 +143,9 @@ final class EetPaymentCommand
             'exchange_rate' => $fx['exchange_rate'] ?? null,
             'exchange_rate_source' => $fx['exchange_rate_source'] ?? null,
             'exchange_rate_error' => $fxError,
+            // Části tržby v Kč, které jdou do urceno_cerp_zuct / cerp_zuct (null = pole se neuvádí).
+            'credit_topup_amount' => $credit['credit_topup_amount'],
+            'credit_draw_amount' => $credit['credit_draw_amount'],
             'invoice' => $invoice,
         ];
     }
@@ -124,6 +161,9 @@ final class EetPaymentCommand
     {
         if (!in_array($invoicePaymentSource, self::INVOICE_PAYMENT_SOURCES, true)) {
             throw new \LogicException('Neplatný zdroj úhrady faktury: ' . $invoicePaymentSource);
+        }
+        if (self::isExternal($input)) {
+            return $this->acceptExternal($supplierId, $userId, $idempotencyKey, $input, $invoicePaymentSource);
         }
         $key = PaymentEventService::validateKey($idempotencyKey);
         $in = $this->normalizePayment($input, requireChannel: true);
@@ -149,7 +189,7 @@ final class EetPaymentCommand
             $created = TransactionFailure::retrying($pdo, function () use ($pdo, $supplierId, $userId, $key, $hash, $in, $receivedAt, $now, $settings, $decision, $invoicePaymentSource, $fx): array {
                 $pdo->beginTransaction();
                 try {
-                    $cashLike = $in['channel'] === 'cash';
+                    $cashLike = in_array($in['channel'], self::SETTLED_CHANNELS, true);
                     $eventId = $this->events->insert([
                         'supplier_id' => $supplierId,
                         'idempotency_key' => $key,
@@ -181,9 +221,12 @@ final class EetPaymentCommand
                     ]);
 
                     $invoiceId = null;
+                    $credit = $this->creditAmounts($supplierId, $in, $fx['amount'], null);
                     if ($in['invoice_id'] !== null) {
                         $invoice = $this->invoice($supplierId, $in['invoice_id'], true);
                         $this->assertInvoiceAccepts($supplierId, $invoice, $in['amount'], $in['currency']);
+                        // Podíl kreditu z úhrad PŘED touto platbou, pod zámkem faktury.
+                        $credit = $this->creditAmounts($supplierId, $in, $fx['amount'], $invoice);
                         $payment = $this->invoicePayments->recordPayment(
                             (int) $invoice['id'],
                             (float) $in['amount'],
@@ -192,8 +235,11 @@ final class EetPaymentCommand
                                 // Zdroj jako u ruční úhrady před EET (manual / mark_paid), i u
                                 // hotovosti: `cash` patří jen úhradě z pokladního dokladu
                                 // a peněžní deník ho bere jako poznámku k PPD, ne jako příjem.
+                                // Uplatnění poukazu jde stejnou cestou; zúčtování přijaté zálohy
+                                // na poukaz řeší účetní ručně (zvláštní účtování neexistuje).
                                 'source' => $invoicePaymentSource,
-                                'note' => $in['note'] ?? 'Platba přijatá s posouzením EET',
+                                'note' => $in['note'] ?? ($in['channel'] === 'stored_value'
+                                    ? 'Uplatnění poukazu / kreditu (EET)' : 'Platba přijatá s posouzením EET'),
                                 'created_by' => $userId > 0 ? $userId : null,
                             ],
                         );
@@ -211,6 +257,8 @@ final class EetPaymentCommand
                             'device_id' => $in['device_id'],
                             'sale_at' => $receivedAt,
                             'total_amount' => $fx['amount'],
+                            'credit_topup_amount' => $credit['credit_topup_amount'],
+                            'credit_draw_amount' => $credit['credit_draw_amount'],
                             'policy_decision' => $decision->decision,
                             'policy_reason' => $decision->reasonCode,
                             'created_by' => $userId > 0 ? $userId : null,
@@ -365,12 +413,17 @@ final class EetPaymentCommand
                             ['payment_order_status' => $status],
                         );
                     }
+                    $invoice = null;
                     if ($intent['invoice_id'] !== null) {
                         // Pod zámkem faktury znovu ověřit dluh: mezitím mohl být potvrzen jiný
                         // záměr nebo přijata hotovost a dvě tržby na jedny peníze nesmí vzniknout.
                         $invoice = $this->invoice($supplierId, (int) $intent['invoice_id'], true);
                         $this->assertInvoiceAccepts($supplierId, $invoice, (string) $intent['amount'], (string) $intent['currency']);
                     }
+                    // Kredit z úhrad před potvrzením (zaplaceno + jiné potvrzené QR příkazy).
+                    $credit = $this->creditAmounts($supplierId, [
+                        'amount' => EetValues::amount((string) $intent['amount']), 'channel' => 'qr_in_person', 'business_purpose' => 'sale',
+                    ], EetValues::amount((string) $intent['amount']), $invoice);
                     $decision = $this->policy->evaluate(new EetPolicyInput(
                         $settings, $orderedAt, 'qr_in_person', (string) $intent['contact_context'], 'sale',
                         (string) $intent['currency'], (string) $intent['amount'], 'payment_intent', 'payment',
@@ -401,6 +454,7 @@ final class EetPaymentCommand
                             'device_id' => $intent['device_id'] !== null ? (int) $intent['device_id'] : null,
                             'sale_at' => $orderedAt,
                             'total_amount' => (string) $intent['amount'],
+                            'credit_topup_amount' => $credit['credit_topup_amount'],
                             'policy_decision' => $decision->decision,
                             'policy_reason' => $decision->reasonCode,
                             'created_by' => $userId > 0 ? $userId : null,
@@ -477,6 +531,340 @@ final class EetPaymentCommand
             }
         });
         return $this->result($supplierId, (array) $this->events->find($supplierId, $eventId), false);
+    }
+
+    /**
+     * Platba, jejíž tržbu evidoval jiný systém (e-shop s vlastní EET). Úhrada faktury
+     * jde běžnou účetní cestou, platební událost nese rozhodnutí `external` a EET záznam
+     * vznikne se stavem `external`: je v evidenci, detailu, exportu i v souhrnu faktury,
+     * ale nikdy se neodesílá a nepatří do fronty ani do „vyžaduje zásah". Vratku takové
+     * tržby přes MyÚčto (oprava, dobropis) eviduje MyÚčto jako běžnou zápornou tržbu.
+     *
+     * Údaje externí evidence (`external_eet`) jsou volitelné a ověří se podle XSD EET.
+     * Trojice EIČ + id_pokl + porad_cis se u firmy převezme jen jednou: stejný obsah vrátí
+     * původní výsledek, jiný obsah 409 `eet_external_duplicate`. `Idempotency-Key` je
+     * volitelný (e-shop ho posílat nemusí), pokud přijde, platí jako jinde.
+     *
+     * @param array<string,mixed> $input
+     * @return array<string,mixed>
+     * @throws EetCommandException|IdempotencyConflictException
+     */
+    public function acceptExternal(int $supplierId, int $userId, ?string $idempotencyKey, array $input, string $invoicePaymentSource = 'manual'): array
+    {
+        if (!in_array($invoicePaymentSource, self::INVOICE_PAYMENT_SOURCES, true)) {
+            throw new \LogicException('Neplatný zdroj úhrady faktury: ' . $invoicePaymentSource);
+        }
+        $key = $idempotencyKey !== null && trim($idempotencyKey) !== '' ? PaymentEventService::validateKey($idempotencyKey) : null;
+        $now = $this->now();
+        $settings = $this->settings->get($supplierId);
+        $in = $this->normalizeExternal($input, $settings, $now);
+        if (!$this->policy->activeAt($settings, $in['sale_at'])) {
+            throw EetCommandException::notConfigured('Firma k času tržby neeviduje tržby (EET); externí evidenci nelze zaznamenat.');
+        }
+        $hash = PaymentEventService::requestHash('payments.external', ['sale_at' => $in['sale_at']->format(DATE_ATOM)] + $in);
+        if ($key !== null) {
+            $existing = $this->events->replay($supplierId, $key, $hash);
+            if ($existing !== null) {
+                return $this->result($supplierId, $existing, true);
+            }
+        }
+        if ($in['external_key'] !== null && ($existing = $this->externalDuplicate($supplierId, $in['external_key'], $hash)) !== null) {
+            return $this->result($supplierId, $existing, true);
+        }
+        $fx = $this->fx->forPayment($supplierId, $in['currency'], $in['amount'], $in['sale_at']);
+
+        $pdo = $this->db->pdo();
+        $this->assertNoOpenTransaction($pdo);
+        try {
+            $created = TransactionFailure::retrying($pdo, function () use ($pdo, $supplierId, $userId, $key, $hash, $in, $now, $settings, $invoicePaymentSource, $fx): array {
+                $pdo->beginTransaction();
+                try {
+                    $eventId = $this->events->insert([
+                        'supplier_id' => $supplierId,
+                        'idempotency_key' => $key,
+                        'request_hash' => $hash,
+                        'kind' => 'payment',
+                        'origin' => $in['invoice_id'] !== null ? 'invoice_payment' : 'quick_sale',
+                        'payment_method' => $in['payment_method'],
+                        'channel' => $in['channel'],
+                        'contact_context' => $in['contact_context'],
+                        'business_purpose' => 'sale',
+                        'amount' => $fx['amount'],
+                        'currency' => $fx['currency'],
+                        'original_currency' => $fx['original_currency'],
+                        'original_amount' => $fx['original_amount'],
+                        'exchange_rate' => $fx['exchange_rate'],
+                        'exchange_rate_source' => $fx['exchange_rate_source'],
+                        'received_at' => EetValues::dbTime($in['sale_at']),
+                        'recorded_at' => EetValues::dbTime($now),
+                        'paid_on' => $in['paid_on'],
+                        'payment_order_status' => 'settled',
+                        'bank_verification_status' => 'not_applicable',
+                        'accounting_settlement_status' => $in['invoice_id'] !== null ? 'settled' : 'pending',
+                        'invoice_id' => $in['invoice_id'],
+                        'eet_decision' => EetPolicyDecision::EXTERNAL,
+                        'eet_reason_code' => 'external_system',
+                        'policy_version' => EetRecordingPolicy::VERSION,
+                        'note' => $in['note'],
+                        'created_by' => $userId > 0 ? $userId : null,
+                    ]);
+                    $invoiceId = null;
+                    if ($in['invoice_id'] !== null) {
+                        $invoice = $this->invoice($supplierId, $in['invoice_id'], true);
+                        $this->assertInvoiceAccepts($supplierId, $invoice, $in['amount'], $in['currency']);
+                        $payment = $this->invoicePayments->recordPayment((int) $invoice['id'], (float) $in['amount'], $in['paid_on'], [
+                            'source' => $invoicePaymentSource,
+                            'note' => $in['note'] ?? 'Platba evidovaná v EET externím systémem',
+                            'created_by' => $userId > 0 ? $userId : null,
+                        ]);
+                        $this->events->allocate($supplierId, $eventId, $in['amount'], [
+                            'invoice_id' => (int) $invoice['id'],
+                            'invoice_payment_id' => (int) $payment['payment_id'],
+                        ]);
+                        $invoiceId = (int) $invoice['id'];
+                    }
+                    $this->records->createExternal($supplierId, $eventId, $settings, [
+                        'sale_at' => $in['sale_at'],
+                        'total_amount' => $in['external']['celk_trzba'] ?? $fx['amount'],
+                        'eic' => $in['external']['eic'] ?? null,
+                        'unit_number' => $in['external']['id_jednotky'] ?? null,
+                        'device_code' => $in['external']['id_pokl'] ?? null,
+                        'sequence_number' => $in['external']['porad_cis'] ?? null,
+                        'pok' => $in['external']['pok'] ?? null,
+                        'external_key' => $in['external_key'],
+                        'created_by' => $userId > 0 ? $userId : null,
+                    ]);
+                    $pdo->commit();
+                    return ['event_id' => $eventId, 'invoice_id' => $invoiceId];
+                } catch (\Throwable $e) {
+                    if ($pdo->inTransaction()) {
+                        $pdo->rollBack();
+                    }
+                    throw $e;
+                }
+            });
+        } catch (\PDOException $e) {
+            if (!PaymentEventService::isDuplicateKey($e)) {
+                throw $e;
+            }
+            // Souběh: stejný klíč nebo stejná externí tržba doběhla dřív.
+            $raced = $key !== null ? $this->events->replay($supplierId, $key, $hash) : null;
+            $raced ??= $in['external_key'] !== null ? $this->externalDuplicate($supplierId, $in['external_key'], $hash) : null;
+            if ($raced === null) {
+                throw $e;
+            }
+            return $this->result($supplierId, $raced, true);
+        }
+        $this->afterCommit($created['invoice_id'], null);
+        return $this->result($supplierId, (array) $this->events->find($supplierId, $created['event_id']), false);
+    }
+
+    /**
+     * Náhled externí evidence: ověří vstup, nic nezapisuje.
+     *
+     * @param array<string,mixed> $input
+     * @return array<string,mixed>
+     */
+    private function previewExternal(int $supplierId, array $input): array
+    {
+        $settings = $this->settings->get($supplierId);
+        $in = $this->normalizeExternal($input, $settings, $this->now());
+        $active = $this->policy->activeAt($settings, $in['sale_at']);
+        $decision = $active
+            ? new EetPolicyDecision(EetPolicyDecision::EXTERNAL, 'external_system', 'Tržbu evidoval externí systém; MyÚčto ji jen zaznamená a neodesílá.')
+            : new EetPolicyDecision(EetPolicyDecision::INACTIVE, 'eet_inactive', 'Firma k času tržby neeviduje tržby (EET).');
+        return [
+            'eet' => $decision->toArray(),
+            'creates_record' => false,
+            'blocks_acceptance' => !$active,
+            'requires' => [],
+            'amount' => $in['amount'],
+            'currency' => $in['currency'],
+            'amount_czk' => null,
+            'exchange_rate' => null,
+            'exchange_rate_source' => null,
+            'exchange_rate_error' => null,
+            'credit_topup_amount' => null,
+            'credit_draw_amount' => null,
+            'invoice' => null,
+        ];
+    }
+
+    /**
+     * Už převzatá externí tržba se stejnou trojicí EIČ + id_pokl + porad_cis: stejný obsah
+     * → její platební událost (idempotence), jiný obsah → 409.
+     *
+     * @return array<string,mixed>|null
+     * @throws EetCommandException
+     */
+    private function externalDuplicate(int $supplierId, string $externalKey, string $hash): ?array
+    {
+        $stmt = $this->db->pdo()->prepare('SELECT payment_event_id FROM eet_records WHERE supplier_id = ? AND external_key = ?');
+        $stmt->execute([$supplierId, $externalKey]);
+        $eventId = $stmt->fetchColumn();
+        if ($eventId === false || $eventId === null) {
+            return null;
+        }
+        $event = $this->events->find($supplierId, (int) $eventId);
+        if ($event === null) {
+            return null;
+        }
+        if (!hash_equals((string) $event['request_hash'], $hash)) {
+            throw new EetCommandException('eet_external_duplicate',
+                'Tržba se stejným EIČ, označením pokladního zařízení a pořadovým číslem už je v MyÚčtu zaznamenaná s jinými údaji.',
+                409, ['payment_event_id' => (string) $event['public_id']]);
+        }
+        return $event;
+    }
+
+    /**
+     * Části tržby pro `urceno_cerp_zuct` a `cerp_zuct` v Kč. Úhrada faktury nese podíl
+     * položek hodnotového poukazu / kreditu z úhrad před touto platbou (zaplaceno a potvrzené
+     * QR příkazy, {@see EetStoredValueCalculator}); prodej bez faktury s účelem
+     * `credit_topup` je kredit celý. Úhrada kanálem `stored_value` je čerpání celou částkou.
+     *
+     * @param array{amount:string, channel:?string, business_purpose:string} $in
+     * @param array<string,mixed>|null $invoice řádek faktury (u úhrady pod zámkem)
+     * @return array{credit_topup_amount:?string, credit_draw_amount:?string}
+     */
+    private function creditAmounts(int $supplierId, array $in, string $amountCzk, ?array $invoice): array
+    {
+        $topUp = null;
+        if ($invoice !== null) {
+            $paidBefore = EetValues::toCents(EetValues::amount((string) $invoice['paid_total']))
+                + $this->events->openConfirmedIntentCents($supplierId, (int) $invoice['id']);
+            $cents = $this->storedValue->forInvoicePayment($supplierId, (int) $invoice['id'], $paidBefore,
+                EetValues::toCents($in['amount']), EetValues::toCents($amountCzk));
+            $topUp = $cents !== null ? EetValues::fromCents($cents) : null;
+        } elseif ($in['business_purpose'] === 'credit_topup') {
+            $topUp = $amountCzk;
+        }
+        return [
+            'credit_topup_amount' => $topUp,
+            'credit_draw_amount' => $in['channel'] === 'stored_value' ? $amountCzk : null,
+        ];
+    }
+
+    /**
+     * Vstup externí evidence. Formáty údajů podle XSD EET ({@see EetIdentifiers}).
+     *
+     * @param array<string,mixed> $input
+     * @param array<string,mixed> $settings
+     * @return array{amount:string, currency:string, channel:?string, payment_method:?string, contact_context:string,
+     *               invoice_id:?int, note:?string, paid_on:string, sale_at:\DateTimeImmutable,
+     *               external: array<string,mixed>, external_key:?string}
+     * @throws EetCommandException
+     */
+    private function normalizeExternal(array $input, array $settings, \DateTimeImmutable $now): array
+    {
+        $amount = EetValues::amount($input['amount'] ?? null);
+        if (EetValues::toCents($amount) <= 0 || EetValues::toCents($amount) > EetValues::MAX_ABS_CENTS) {
+            throw EetCommandException::validation('Částka platby musí být kladná a pod 100 milionů.', 'amount');
+        }
+        $currency = strtoupper(trim((string) ($input['currency'] ?? 'CZK')));
+        if (preg_match('/^[A-Z]{3}$/D', $currency) !== 1) {
+            throw EetCommandException::validation('Neplatná měna.', 'currency');
+        }
+        $channel = $input['channel'] ?? null;
+        $channel = $channel === null || $channel === '' ? null : self::enumValue($channel, EetPolicyInput::CHANNELS, 'channel');
+        $method = $input['payment_method'] ?? null;
+        if ($method !== null && $method !== '') {
+            if (!PaymentMethods::isValid($method)) {
+                throw EetCommandException::validation('Neplatný způsob úhrady.', 'payment_method');
+            }
+        } else {
+            $method = $channel !== null ? self::DEFAULT_METHOD_BY_CHANNEL[$channel] : null;
+        }
+
+        $raw = $input['external_eet'] ?? null;
+        if ($raw !== null && !is_array($raw)) {
+            throw EetCommandException::validation('Pole external_eet musí být objekt.', 'external_eet');
+        }
+        $external = [];
+        foreach (self::EXTERNAL_FIELDS as $field) {
+            $value = $raw[$field] ?? null;
+            if ($value === null || $value === '') {
+                continue;
+            }
+            $path = 'external_eet.' . $field;
+            $external[$field] = match ($field) {
+                'eic' => self::externalString($value, $path, static fn (string $v): bool => EetIdentifiers::isEic($v),
+                    'EIČ musí mít tvar CZ a 8 až 10 číslic.', true),
+                'id_pokl' => self::externalString($value, $path, static fn (string $v): bool => EetIdentifiers::isDeviceCode($v),
+                    'Označení pokladního zařízení smí mít 1 až 20 znaků (písmena bez diakritiky, číslice, mezera a . , : ; / # - _).'),
+                'porad_cis' => self::externalString($value, $path, static fn (string $v): bool => EetIdentifiers::isSequenceNumber($v),
+                    'Pořadové číslo tržby smí mít 1 až 25 znaků (písmena bez diakritiky, číslice, mezera a . , : ; / # - _).'),
+                'pok' => self::externalString($value, $path, static fn (string $v): bool => EetIdentifiers::isPok($v),
+                    'Potvrzovací kód (pok) musí mít tvar podle XSD EET (39 znaků).'),
+                'dat_trzby' => self::externalString($value, $path, static fn (string $v): bool => EetIdentifiers::isDateTime($v),
+                    'Čas tržby musí mít tvar RRRR-MM-DDThh:mm:ss s časovou zónou (např. +01:00).'),
+                'id_jednotky' => self::externalUnit($value, $path),
+                'celk_trzba' => EetValues::amount($value, $path),
+            };
+        }
+        $firmEic = strtoupper(trim((string) ($settings['eic'] ?? '')));
+        if (isset($external['eic']) && $firmEic !== '' && $external['eic'] !== $firmEic) {
+            throw EetCommandException::validation('EIČ externí evidence se liší od EIČ firmy v nastavení EET.', 'external_eet.eic');
+        }
+        if (isset($external['id_pokl']) !== isset($external['porad_cis'])) {
+            throw EetCommandException::validation('Označení pokladního zařízení (id_pokl) a pořadové číslo (porad_cis) uveďte obě, nebo žádné.',
+                isset($external['id_pokl']) ? 'external_eet.porad_cis' : 'external_eet.id_pokl');
+        }
+        if (isset($external['celk_trzba']) && EetValues::toCents($external['celk_trzba']) <= 0) {
+            throw EetCommandException::validation('Celková částka externí tržby musí být kladná.', 'external_eet.celk_trzba');
+        }
+        if (isset($external['dat_trzby'])) {
+            $saleAt = EetValues::local(new \DateTimeImmutable($external['dat_trzby']));
+            if ($saleAt > $now->modify('+5 minutes')) {
+                throw EetCommandException::validation('Čas tržby nesmí být v budoucnosti.', 'external_eet.dat_trzby');
+            }
+        } else {
+            $saleAt = EetValues::clientTime($input['received_at'] ?? null, $now, 'received_at');
+        }
+        $paidOn = $input['paid_on'] ?? null;
+        if ($paidOn === null || $paidOn === '') {
+            $paidOn = $saleAt->format('Y-m-d');
+        } elseif (!is_string($paidOn) || preg_match('/^(\d{4})-(\d{2})-(\d{2})$/D', $paidOn, $m) !== 1 || !checkdate((int) $m[2], (int) $m[3], (int) $m[1])) {
+            throw EetCommandException::validation('Datum úhrady musí být ve formátu RRRR-MM-DD.', 'paid_on');
+        }
+        $eic = $external['eic'] ?? $firmEic;
+        return [
+            'amount' => $amount,
+            'currency' => $currency,
+            'channel' => $channel,
+            'payment_method' => $method !== null ? (string) $method : null,
+            'contact_context' => self::enumValue($input['contact_context'] ?? 'unknown', EetPolicyInput::CONTACT_CONTEXTS, 'contact_context'),
+            'invoice_id' => self::positiveInt($input['invoice_id'] ?? null, 'invoice_id', false),
+            'note' => self::note($input['note'] ?? null),
+            'paid_on' => (string) $paidOn,
+            'sale_at' => $saleAt,
+            'external' => $external,
+            'external_key' => isset($external['id_pokl']) && $eic !== '' ? $eic . '|' . $external['id_pokl'] . '|' . $external['porad_cis'] : null,
+        ];
+    }
+
+    /** @param \Closure(string): bool $valid */
+    private static function externalString(mixed $value, string $field, \Closure $valid, string $message, bool $eic = false): string
+    {
+        if (!is_string($value) && !is_int($value)) {
+            throw EetCommandException::validation($message, $field);
+        }
+        $value = $eic ? EetIdentifiers::normalizeEic((string) $value) : trim((string) $value);
+        if (!$valid($value)) {
+            throw EetCommandException::validation($message, $field);
+        }
+        return $value;
+    }
+
+    private static function externalUnit(mixed $value, string $field): int
+    {
+        if (is_string($value) && preg_match('/^[1-9][0-9]{0,8}$/D', trim($value)) === 1) {
+            $value = (int) trim($value);
+        }
+        if (!is_int($value) || $value < 1 || $value > EetIdentifiers::UNIT_NUMBER_MAX) {
+            throw EetCommandException::validation('Označení evidenční jednotky musí být celé číslo 1 až 999 999 999.', $field);
+        }
+        return $value;
     }
 
     /** @return array<string,mixed> */
@@ -641,14 +1029,31 @@ final class EetPaymentCommand
             $method = $channel !== null ? self::DEFAULT_METHOD_BY_CHANNEL[$channel] : null;
         }
         $delegating = $input['delegating_eic'] ?? null;
+        $invoiceId = self::positiveInt($input['invoice_id'] ?? null, 'invoice_id', false);
+        $purpose = self::enumValue($input['business_purpose'] ?? 'sale', EetPolicyInput::BUSINESS_PURPOSES, 'business_purpose');
+        // Úhrada poukazem / kreditem je vždy čerpání kreditu a čerpání jde jen tímto kanálem.
+        if ($channel === 'stored_value') {
+            if (!in_array($purpose, ['sale', 'credit_draw'], true)) {
+                throw EetCommandException::validation('Úhrada poukazem nebo kreditem je čerpání kreditu; jiný účel platby s ní zadat nejde.', 'business_purpose');
+            }
+            $purpose = 'credit_draw';
+        } elseif ($purpose === 'credit_draw') {
+            throw EetCommandException::validation('Čerpání kreditu zadejte způsobem platby „Poukaz / kredit" (channel = stored_value).', 'channel');
+        }
+        if ($purpose === 'credit_topup' && $invoiceId !== null) {
+            throw EetCommandException::validation(
+                'U faktury se dobití kreditu určuje podle položek (druh zboží pro EET). Účel credit_topup zadejte jen u prodeje bez faktury.',
+                'business_purpose',
+            );
+        }
         return [
             'amount' => $amount,
             'currency' => $currency,
             'channel' => $channel,
             'payment_method' => $method,
             'contact_context' => self::enumValue($input['contact_context'] ?? 'unknown', EetPolicyInput::CONTACT_CONTEXTS, 'contact_context'),
-            'business_purpose' => self::enumValue($input['business_purpose'] ?? 'sale', EetPolicyInput::BUSINESS_PURPOSES, 'business_purpose'),
-            'invoice_id' => self::positiveInt($input['invoice_id'] ?? null, 'invoice_id', false),
+            'business_purpose' => $purpose,
+            'invoice_id' => $invoiceId,
             'device_id' => self::positiveInt($input['device_id'] ?? null, 'device_id', false),
             'note' => self::note($input['note'] ?? null),
             'delegating_eic' => is_string($delegating) && trim($delegating) !== '' ? trim($delegating) : null,

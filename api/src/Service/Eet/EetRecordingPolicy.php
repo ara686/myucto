@@ -12,10 +12,17 @@ namespace MyInvoice\Service\Eet;
  *  1. vratka se zadává jen jako oprava EET (EetCorrectionService), politika ji odmítne;
  *  2. firma bez aktivní evidence k času platby (vypnuto, vynětí, EET OFF, mimo účinnost) → inactive;
  *  3. bankovní párování jen propojí důkaz s již zachycenou platbou, novou tržbu nezakládá;
- *  4. kanál a kontakt: hotovost vždy, terminál / QR / převod při osobním kontaktu,
- *     vzdálená bezhotovostní platba a poštovní dobírka ne, neznámý kontext → unknown;
- *  5. povinná tržba mimo MVP (kredit, kauce, pověření) → unsupported. Cizí měna
+ *  4. kanál a kontakt: hotovost vždy, terminál / QR / převod / úhrada poukazem či
+ *     kreditem při osobním kontaktu, vzdálená bezhotovostní platba a poštovní dobírka
+ *     ne, neznámý kontext → unknown;
+ *  5. povinná tržba mimo podporu (kauce, pověření) → unsupported. Cizí měna
  *     povinnost nemění, tržba se eviduje v CZK přepočtená kurzem úhrady.
+ *
+ * Kredit (metodika ZoET k § 17 odst. 2): dobití kreditu nebo prodej hodnotového
+ * poukazu je tržba (`credit_topup`, podíl ve `urceno_cerp_zuct`), uplatnění poukazu
+ * či čerpání kreditu kontaktním způsobem je také tržba (`credit_draw`, `cerp_zuct`).
+ * Čerpání jde jen kanálem `stored_value` a kanál `stored_value` jen jako čerpání.
+ * Dárkový poukaz na konkrétní plnění je běžný prodej a jeho uplatnění se neeviduje.
  *
  * Vrácení peněz posuzuje {@see refundDecision()} stejnými pravidly kanálu a kontaktu.
  *
@@ -24,14 +31,13 @@ namespace MyInvoice\Service\Eet;
  */
 final class EetRecordingPolicy
 {
-    public const VERSION = '2026.10-2';
+    public const VERSION = '2026.10-3';
 
     private const CONTACT = ['in_person', 'on_premises', 'in_vehicle'];
     private const UNSUPPORTED_PURPOSES = [
-        'credit_topup' => 'Dobití kreditu (určeno k čerpání) zatím MyÚčto neeviduje.',
-        'credit_draw' => 'Čerpání kreditu zatím MyÚčto neeviduje.',
         'security_deposit' => 'Vratnou kauci zatím MyÚčto neeviduje.',
     ];
+    private const SUPPORTED_PURPOSES = ['sale', 'order_deposit', 'credit_topup', 'credit_draw'];
 
     public function evaluate(EetPolicyInput $in): EetPolicyDecision
     {
@@ -50,6 +56,11 @@ final class EetRecordingPolicy
                 'Bankovní párování jen ověřuje již zachycenou platbu a novou tržbu nezakládá.');
         }
 
+        if (($in->channel === 'stored_value') !== ($in->businessPurpose === 'credit_draw')) {
+            return new EetPolicyDecision(EetPolicyDecision::UNKNOWN, 'stored_value_purpose_conflict',
+                'Uplatnění poukazu nebo čerpání kreditu zadejte způsobem platby „Poukaz / kredit" a účelem čerpání kreditu.');
+        }
+
         $subject = $this->subjectByChannel($in->channel, $in->contactContext);
         if ($subject->decision !== EetPolicyDecision::REQUIRED) {
             return $subject;
@@ -65,9 +76,9 @@ final class EetRecordingPolicy
             return new EetPolicyDecision(EetPolicyDecision::UNSUPPORTED, 'delegation',
                 'Evidence tržby na základě pověření jiného poplatníka zatím není podporovaná.');
         }
-        if (!in_array($in->businessPurpose, ['sale', 'order_deposit'], true)) {
+        if (!in_array($in->businessPurpose, self::SUPPORTED_PURPOSES, true)) {
             return new EetPolicyDecision(EetPolicyDecision::UNKNOWN, 'purpose_unclassified',
-                'Upřesněte účel platby (prodej nebo záloha na zakázku).');
+                'Upřesněte účel platby (prodej, záloha na zakázku, dobití kreditu nebo čerpání kreditu).');
         }
 
         return $subject;
@@ -155,6 +166,13 @@ final class EetRecordingPolicy
                 : ($contact
                     ? new EetPolicyDecision(EetPolicyDecision::REQUIRED, 'cashless_contact',
                         'Bezhotovostní platba zadaná při osobním kontaktu se eviduje.')
+                    : self::contextRequired()),
+            'stored_value' => $contact
+                ? new EetPolicyDecision(EetPolicyDecision::REQUIRED, 'stored_value_contact',
+                    'Uplatnění poukazu nebo čerpání kreditu při osobním kontaktu se eviduje (čerpání kreditu).')
+                : ($remote
+                    ? new EetPolicyDecision(EetPolicyDecision::NOT_SUBJECT, 'remote_stored_value',
+                        'Čerpání kreditu na dálku (bez osobního kontaktu) se neeviduje.')
                     : self::contextRequired()),
             'cash_on_delivery' => new EetPolicyDecision(EetPolicyDecision::NOT_SUBJECT, 'postal_cash_on_delivery',
                 'Poštovní dobírka převáděná na účet se neeviduje. Výběr hotovosti vlastním řidičem zadejte jako hotovost.'),

@@ -146,7 +146,8 @@ final class EetRecordAction
         try {
             fwrite($fp, "\xEF\xBB\xBF");
             fputcsv($fp, ['ID', 'Druh', 'Opravuje ID', 'Důvod opravy', 'Prostředí', 'EIČ', 'Provozovna', 'Pokladní zařízení',
-                'Pořadové číslo', 'Čas tržby', 'Celková tržba', 'Stav', 'POK', 'Potvrzeno', 'Po lhůtě', 'Lhůta'], ';', '"', '');
+                'Pořadové číslo', 'Čas tržby', 'Celková tržba', 'Určeno k čerpání', 'Čerpání', 'Stav', 'POK', 'Potvrzeno',
+                'Po lhůtě', 'Lhůta'], ';', '"', '');
             foreach ($this->query->exportRows($supplierId, $q) as $row) {
                 fputcsv($fp, [
                     (int) $row['id'],
@@ -155,11 +156,14 @@ final class EetRecordAction
                     (string) ($row['correction_reason'] ?? ''),
                     (string) $row['environment'],
                     CsvWriter::safe($row['eic']),
-                    (int) $row['unit_number'],
-                    CsvWriter::safe($row['device_code']),
-                    CsvWriter::safe($row['sequence_number']),
+                    $row['unit_number'] !== null ? (int) $row['unit_number'] : '',
+                    CsvWriter::safe($row['device_code'] ?? ''),
+                    CsvWriter::safe($row['sequence_number'] ?? ''),
                     (new \DateTimeImmutable((string) $row['sale_at'] . (string) $row['sale_at_offset']))->format(DATE_ATOM),
                     str_replace('.', ',', (string) $row['total_amount']),
+                    str_replace('.', ',', (string) ($row['credit_topup_amount'] ?? '')),
+                    str_replace('.', ',', (string) ($row['credit_draw_amount'] ?? '')),
+                    // `external` = tržbu evidoval jiný systém (e-shop), MyÚčto ji neodesílalo.
                     (string) $row['status'],
                     CsvWriter::safe($row['pok'] ?? ''),
                     (string) ($row['confirmed_at'] ?? ''),
