@@ -1511,6 +1511,8 @@ final class InvoiceRepository
 
     public function delete(int $id): void
     {
+        // Pojistka pro všechny cesty mazání: doklad s historií EET jde jen stornovat.
+        (new \MyInvoice\Service\Eet\EetHistoryGuard($this->db))->prepareInvoiceDeletion($id);
         // ON DELETE CASCADE smaže invoice_items i work_reports
         $this->db->pdo()->prepare('DELETE FROM invoices WHERE id = ?')->execute([$id]);
     }

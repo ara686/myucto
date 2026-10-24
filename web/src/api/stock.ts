@@ -11,6 +11,8 @@ import { downloadApiFilePost } from '@/utils/downloadFile'
  */
 
 export type StockItemType = 'material' | 'goods' | 'product'
+/** Druh položky pro EET: běžné zboží, dárkový poukaz na konkrétní plnění, hodnotový poukaz / kredit. */
+export type StockItemEetKind = 'standard' | 'specific_voucher' | 'stored_value'
 export type StockItemLifecycleStatus = 'draft' | 'ready' | 'retired'
 export type StockTrackingMode = 'none' | 'lot' | 'serial'
 export type StockDocType = 'receipt' | 'issue' | 'transfer'
@@ -45,6 +47,7 @@ export interface StockItem extends StockItemEffectivePrice {
   sku: string
   name: string
   item_type: StockItemType
+  eet_item_kind?: StockItemEetKind
   manufacturer_id: number | null
   unit: string
   tracking_mode?: StockTrackingMode
@@ -84,6 +87,7 @@ export interface StockItemPayload {
   sku?: string
   name: string
   item_type: StockItemType
+  eet_item_kind?: StockItemEetKind
   unit: string
   tracking_mode?: StockTrackingMode
   ean?: string | null

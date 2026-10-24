@@ -17,7 +17,7 @@ import {
   type PurchaseDocumentKind,
   type ImportBatch,
 } from '@/api/purchaseInvoices'
-import { formatMoney, formatDate, formatMonth, formatNumber, taxDateClass } from '@/composables/useFormat'
+import { formatMoney, formatMoneyWhole, formatDate, formatMonth, formatNumber, taxDateClass } from '@/composables/useFormat'
 import { useRowLink } from '@/composables/useRowLink'
 import { useToast } from '@/composables/useToast'
 import { ACCOUNTING_PERIOD_MISSING_CODES, accountingPeriodRoute, apiErrorMessage } from '@/api/errors'
@@ -1341,7 +1341,7 @@ useWindowRefresh(['purchase-invoices', 'clients', 'bank', 'bank-transactions', '
           <div class="flex flex-wrap items-center justify-end gap-x-3 gap-y-0.5 min-w-0 text-xs">
             <span v-for="tc in g.totals_per_currency" :key="tc.currency" class="font-mono">
               <span class="text-neutral-500">{{ tc.currency }}:</span>
-              <span class="font-semibold text-neutral-900 ml-1">{{ formatMoney(tc.with_vat, tc.currency) }}</span>
+              <span class="font-semibold text-neutral-900 ml-1">{{ formatMoneyWhole(tc.with_vat, tc.currency) }}</span>
             </span>
           </div>
         </header>

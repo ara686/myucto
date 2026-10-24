@@ -76,6 +76,33 @@ final class RoutePermissionMap
         // Log volání API vlastními tokeny — čtení sdílí oprávnění se správou tokenů.
         ['GET', '#^/api/auth/api-log$#', 'profile.tokens', AccessLevel::READ],
 
+        // EET 2.0 — evidence tržeb. Bez obecného fallbacku: každá routa modulu má
+        // vlastní pravidlo, nová routa bez něj spadne v RoutePermissionCoverageTest.
+        ['GET', '#^/api/invoices/[0-9]+/eet$#', 'eet', AccessLevel::READ],
+        ['GET', '#^/api/eet/capabilities$#', 'eet', AccessLevel::READ],
+        ['GET', '#^/api/eet/settings$#', 'eet.settings', AccessLevel::READ],
+        ['PUT', '#^/api/eet/settings$#', 'eet.settings', AccessLevel::WRITE],
+        ['GET', '#^/api/eet/(units|devices)(/[0-9]+)?$#', 'eet.settings', AccessLevel::READ],
+        ['*', '#^/api/eet/(units|devices)(/[0-9]+)?$#', 'eet.settings', AccessLevel::WRITE],
+        ['GET', '#^/api/eet/certificates$#', 'eet.certificates', AccessLevel::READ],
+        ['POST', '#^/api/eet/certificates(/[0-9]+/deactivate)?$#', 'eet.certificates', AccessLevel::WRITE],
+        ['POST', '#^/api/eet/diagnostics$#', 'eet.settings', AccessLevel::WRITE],
+        ['POST', '#^/api/eet/payments/preview$#', 'eet.accept_payment', AccessLevel::READ],
+        ['POST', '#^/api/eet/payments$#', 'eet.accept_payment', AccessLevel::WRITE],
+        ['GET', '#^/api/eet/payments/[^/]+$#', 'eet', AccessLevel::READ],
+        ['POST', '#^/api/eet/payment-intents(/[^/]+/(confirm|cancel))?$#', 'eet.accept_payment', AccessLevel::WRITE],
+        ['POST', '#^/api/eet/records/[^/]+/retry$#', 'eet.correct', AccessLevel::WRITE],
+        ['POST', '#^/api/eet/records/[^/]+/corrections/preview$#', 'eet.correct', AccessLevel::READ],
+        ['POST', '#^/api/eet/records/[^/]+/corrections$#', 'eet.correct', AccessLevel::WRITE],
+        ['GET', '#^/api/eet/records(/[^/]+)?$#', 'eet', AccessLevel::READ],
+        ['GET', '#^/api/eet/queue$#', 'eet', AccessLevel::READ],
+        ['GET', '#^/api/eet/summary$#', 'eet', AccessLevel::READ],
+        ['GET', '#^/api/eet/export$#', 'eet.export', AccessLevel::READ],
+
+        // Rychlá účtenka: route hlídá založení faktury; vystavení, úhradu a evidenci tržby
+        // ověřuje akce (RequestAuthorization::canIssueQuickReceipt, eet.accept_payment).
+        ['POST', '#^/api/mobile/receipts$#', 'invoices.create', AccessLevel::WRITE],
+
         ['GET', '#^/api/invoices/[0-9]+/stock-documents(/|$)#', 'stock', AccessLevel::READ],
         ['*', '#^/api/invoices/[0-9]+/stock-documents(/|$)#', 'stock', AccessLevel::WRITE],
         ['*', '#^/api/invoices/[0-9]+/book$#', 'accounting.journal.post', AccessLevel::WRITE],
@@ -951,7 +978,7 @@ final class RoutePermissionMap
         // akce podmiňuje `settings.company` READ k aktuální firmě (SettingsAction::getSupplierById).
         ['GET', '#^/api/(suppliers|search|slug|locate)(/|$)#', 'profile', AccessLevel::READ],
         ['GET', '#^/api/branding-profiles$#', 'profile', AccessLevel::READ],
-        ['*', '#^/api/user/(filters|preferences)(/|$)#', 'profile', AccessLevel::WRITE],
+        ['*', '#^/api/user/(filters|preferences|favorites)(/|$)#', 'profile', AccessLevel::WRITE],
         ['GET', '#^/api/portal/purchase-invoice-submissions(/|$)#', 'documents.submit', AccessLevel::READ],
         ['POST', '#^/api/portal/purchase-invoice-submissions(/|$)#', 'documents.submit', AccessLevel::WRITE],
         ['DELETE', '#^/api/portal/purchase-invoice-submissions/[0-9]+$#', 'documents.submit', AccessLevel::WRITE],

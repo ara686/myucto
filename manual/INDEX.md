@@ -161,16 +161,17 @@ nasazuje). Zbytek je psaný pro běžného uživatele — bez programátorského
 114. [Dimenze](114_Dimenze.md)
 116. [Registr domů a jednotek SVJ](116_Registr_domu_a_jednotek.md)
 118. [Zálohy na správu a příjmy vlastníků](118_Zalohy_a_prijmy_vlastniku.md)
+121. [EET 2.0 - evidence tržeb](121_EET.md)
 
 ### Systém
 
 100. [Daňové konstanty](100_Danove_konstanty.md)
 101. [Bezpečnost](101_Bezpecnost.md)
 102. [Aktualizace](102_Aktualizace.md)
-103. [Přechod z Money S3](103_Prechod_z_Money_S3.md)
-104. [REST API](104_API.md)
-105. [Licence a aktivace](105_Licence_a_aktivace.md)
-106. [MCP server (napojení AI asistenta)](106_MCP_server.md)
+103. [REST API](103_API.md)
+104. [Licence a aktivace](104_Licence_a_aktivace.md)
+105. [MCP server (napojení AI asistenta)](105_MCP_server.md)
+106. [Přechod z Money S3](106_Prechod_z_Money_S3.md)
 107. [Přechod z POHODY](107_Prechod_z_POHODY.md)
 108. [Přechod z PAMICA](108_Prechod_z_PAMICA.md)
 109. [Přechod z PREMIER](109_Prechod_z_PREMIER.md)

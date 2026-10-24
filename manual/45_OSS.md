@@ -51,7 +51,7 @@ používají stejné období; archiv zobrazuje jednotlivá uložená podání. O
 - **Registrace k OSS** u finanční správy. Aplikace ji neřeší, jen si pamatuje,
   odkdy dokdy platí (viz [§ 45.3](#453-krok-za-krokem-zapnuti-oss-a-prvni-nastaveni)).
 - **Licence.** OSS je placený modul. Po skončení zkušební doby bez platné licence
-  položka **OSS přiznání** v menu nebude (viz [Licence a aktivace](105_Licence_a_aktivace.md)).
+  položka **OSS přiznání** v menu nebude (viz [Licence a aktivace](104_Licence_a_aktivace.md)).
 - **Zahraniční sazby DPH** založené v číselníku `Systém → Sazby a číselníky`, záložka **Sazby DPH**,
   například `PL-23`, `SK-23`, `HU-27`. Dbejte, aby měly správný **Stát** (viz
   [§ 45.4](#454-krok-za-krokem-zahranicni-sazby-dph-a-ciselnik-sazeb-statu)).

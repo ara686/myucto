@@ -360,6 +360,7 @@ describe('sdílená klientská plocha vlastní domény', () => {
       'login',
       'payroll-document-access',
       'purchase-approval-public',
+      'receipt-public',
       'reset',
       'setup',
       'work-report-tracking',

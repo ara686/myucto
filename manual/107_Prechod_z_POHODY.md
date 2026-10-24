@@ -38,7 +38,7 @@ z POHODY Mzdy nebo PAMICA převádí samostatný průvodce, viz
 Převod nebyl ověřen pro neziskové organizace a další účetní jednotky podle
 vyhlášky 504/2002 Sb. Průvodce je výrazně upozorní a převod účetnictví do
 období vedeného podle vyhlášky 504 odmítne (podrobnosti v kapitole
-[Přechod z Money S3](103_Prechod_z_Money_S3.md), oddíl 103.2). Neziskovka
+[Přechod z Money S3](106_Prechod_z_Money_S3.md), oddíl 106.2). Neziskovka
 před převodem kontaktuje podporu.
 
 1. **Firma v MyÚčtu.** Musí existovat a mít vyplněné stejné IČO jako v POHODĚ.
@@ -144,7 +144,7 @@ převodníku MDB, nebo `<IČO>_<rok>.zip`). Souhrn nástroje neuvádí chybu.
 
 **Jak poznáte, že je hotovo:** Každý rok skončí stavem **V pořádku** nebo **S
 upozorněními**. Selže-li zkouška jen na **Rozdílech k přijetí**, postupujte podle
-[§ 103.10.5.1](103_Prechod_z_Money_S3.md#1031051-chyby-upozorneni-a-rozdily-k-prijeti).
+[§ 106.10.5.1](106_Prechod_z_Money_S3.md#1061051-chyby-upozorneni-a-rozdily-k-prijeti).
 
 > [!WARNING]
 > Zkouška převádí každý rok samostatně a hned ho vrací zpět. Pozdější rok proto
@@ -744,7 +744,7 @@ ručně nebo hromadně v Účetnictví → Doúčtovat doklady.
 Co je v protokolu chyba, upozornění a rozdíl k přijetí (například doklad se
 sazbou DPH, kterou číselník nezná, nebo zápis bez data) a jak rozdíly přijmout
 a převést i s nimi, popisuje
-[§ 103.10.5.1](103_Prechod_z_Money_S3.md#1031051-chyby-upozorneni-a-rozdily-k-prijeti).
+[§ 106.10.5.1](106_Prechod_z_Money_S3.md#1061051-chyby-upozorneni-a-rozdily-k-prijeti).
 
 Úhradu faktury páruje převod podle likvidace, kterou POHODA u faktury drží:
 číslo bankovního nebo pokladního dokladu a datum úhrady. Mezi pohyby se

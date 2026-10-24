@@ -92,6 +92,9 @@ const routes: RouteRecordRaw[] = [
   // Web faktura — veřejný náhled vystavené faktury (singular /invoice/…, interní UI je /invoices/…)
   { path: '/invoice/:token([a-f0-9]{32,128})', name: 'invoice-public',
     component: () => import('@/pages/InvoicePublic.vue'), meta: { public: true } },
+  // Veřejná účtenka zákazníka (QR z mobilní aplikace) — token s omezenou platností, bez přihlášení
+  { path: '/r/:token([a-f0-9]{64})', name: 'receipt-public',
+    component: () => import('@/pages/public/PublicReceipt.vue'), meta: { public: true } },
   {
     path: '/:pathMatch(.*)*',
     name: 'not-found',
@@ -215,6 +218,8 @@ const routePermissions: Record<string, [PermissionKey | readonly PermissionKey[]
   'admin-settings': ['settings.company.write', 'write'], 'admin-branding': ['settings.branding', 'write'], 'admin-integrations': ['settings.company.write', 'write'], 'admin-codebooks': ['settings.company'], 'admin-bank-rule-templates': ['bank.rules'], 'admin-approvals': ['invoices.approval'], 'admin-support': ['profile'],
   'accounting-activation': ['accounting.periods.manage', 'write'],
   'payment-cards': ['settings.bank_accounts'], 'payment-card-new': ['settings.bank_accounts', 'write'], 'payment-card-detail': ['settings.bank_accounts'],
+  'eet-settings': ['eet.settings', 'read'],
+  'eet-records': ['eet', 'read'], 'eet-record-detail': ['eet', 'read'],
   // Kreditní karty čte RoutePermissionMap jako bankovní data (`bank`).
   'credit-cards': ['bank'], 'credit-card-detail': ['bank'],
   'reports-dph': ['reports'], 'reports-kh': ['reports'], 'reports-dph-book': ['reports'], 'reports-s74b': ['reports'], 'reports-related-parties': ['reports'], 'reports-vat-coefficient': ['reports'], 'reports-s46': ['reports'], 'reports-vat-corrections': ['reports'], 'reports-shv': ['reports'], 'reports-oss': ['reports'],

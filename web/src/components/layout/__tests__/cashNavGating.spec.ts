@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 /**
- * Pokladna je bezplatná (§ 105 manuálu) a v menu nesmí záviset na přepínači
+ * Pokladna je bezplatná (§ 104 manuálu) a v menu nesmí záviset na přepínači
  * „Vést účetnictví" ani na licenci (#230). Podmínka položky musí odpovídat
  * route guardu `requiresCashMode`, jinak stránka jde otevřít jen přes URL.
  *

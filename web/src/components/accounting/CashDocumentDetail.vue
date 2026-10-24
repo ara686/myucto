@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/auth'
 import LinkedDocumentsPanel from '@/components/documents/LinkedDocumentsPanel.vue'
 import DocumentDimensionsPanel from '@/components/dimensions/DocumentDimensionsPanel.vue'
 import AttachmentCheckBadge from '@/components/documents/AttachmentCheckBadge.vue'
+import EetCashDocumentBox from '@/components/eet/EetCashDocumentBox.vue'
 import type { CashDocument } from '@/api/cash'
 
 /**
@@ -60,6 +61,7 @@ const auth = useAuthStore()
         {{ t('common.view_in_journal') }}
       </RouterLink>
     </div>
+    <EetCashDocumentBox v-if="doc.doc_type === 'in' && doc.status !== 'draft'" :cash-document-id="doc.id" :status="doc.status" />
     <!-- Sken účtenky / pokladního dokladu. @click.stop: na mobilu leží detail
          v kartě, jejíž klik rozbalení zavírá. -->
     <div v-if="auth.canRead('documents')" class="mt-3" data-testid="cash-attachments" @click.stop>
