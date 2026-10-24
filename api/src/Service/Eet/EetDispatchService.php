@@ -57,6 +57,28 @@ final class EetDispatchService
     ) {}
 
     /**
+     * Okamžitý pokus až po commitu transakce, ve které záznam vznikl (pokladní doklad
+     * zaúčtovaný v cizí transakci). Rollback pokus zahodí; bez transakce se odešle hned.
+     * Chyba odpověď operace nemění: záznam zůstává ve frontě a odešle ho worker.
+     */
+    public function dispatchAfterCommit(int $recordId): void
+    {
+        $send = function () use ($recordId): void {
+            try {
+                $this->dispatchNow($recordId);
+            } catch (\Throwable $e) {
+                error_log('Okamžité odeslání EET záznamu #' . $recordId . ' selhalo: ' . $e->getMessage());
+            }
+        };
+        $pdo = $this->db->pdo();
+        if ($pdo instanceof \MyInvoice\Infrastructure\Database\LoggingPdo) {
+            $pdo->afterCommit('eet.dispatch.' . $recordId, $send);
+        } elseif (!$pdo->inTransaction()) {
+            $send();
+        }
+    }
+
+    /**
      * Okamžitý pokus po commitu příkazu. Zkrácený lease; nesoutěží s běžícím pokusem.
      *
      * @return array<string,mixed> stav záznamu po pokusu

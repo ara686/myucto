@@ -528,6 +528,17 @@ final class CashSettlementService
     private function remove(int $supplierId, int $cashDocumentId, ?array $existing = null): void
     {
         $doc = $existing ?? $this->documents->get($supplierId, $cashDocumentId);
+        // EET-07: vyrovnání s evidovanou tržbou se samo neruší. Storno PPD vytváří opravu
+        // EET (vrácení peněz), a to nesmí proběhnout jako vedlejší účinek úpravy nebo
+        // storna faktury. Uživatel doklad stornuje vědomě v Pokladně.
+        if ((new \MyInvoice\Service\Eet\EetHistoryGuard($this->db))->cashDocumentConflict($supplierId, $cashDocumentId) !== null) {
+            throw new CashException(
+                \MyInvoice\Service\Eet\EetHistoryGuard::ERROR_CODE,
+                'Pokladní doklad ' . (string) ($doc['doc_number'] ?? '') . ' má evidovanou tržbu EET a automaticky se nezruší. '
+                    . 'Pokud jste peníze vrátili, stornujte ho v Pokladně (storno vytvoří opravu EET).',
+                409,
+            );
+        }
         $numbered = trim((string) ($doc['doc_number'] ?? '')) !== '';
         $posted = (string) ($doc['status'] ?? '') === 'posted';
 

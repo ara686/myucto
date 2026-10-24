@@ -105,68 +105,9 @@ final class EetCorrectionService
                 $pdo->beginTransaction();
                 try {
                     $original = $this->original($supplierId, $recordId, true);
-                    $remaining = $this->remainingCents($supplierId, $original);
-                    if ($cents > $remaining) {
-                        throw EetCommandException::validation(
-                            'Oprava překračuje dosud neopravenou část tržby (' . EetValues::fromCents($remaining) . ').',
-                            'amount',
-                            ['remaining' => EetValues::fromCents($remaining)],
-                        );
-                    }
-                    $originalEvent = $original['payment_event_id'] !== null
-                        ? $this->events->find($supplierId, (int) $original['payment_event_id'])
-                        : null;
-
-                    $eventId = $this->events->insert([
-                        'supplier_id' => $supplierId,
-                        'idempotency_key' => $key,
-                        'request_hash' => $hash,
-                        'kind' => 'refund',
-                        'origin' => 'correction',
-                        'payment_method' => $originalEvent['payment_method'] ?? null,
-                        'channel' => $originalEvent['channel'] ?? null,
-                        'contact_context' => $originalEvent['contact_context'] ?? 'unknown',
-                        'business_purpose' => $originalEvent['business_purpose'] ?? 'sale',
-                        'amount' => EetValues::fromCents(-$cents),
-                        'currency' => 'CZK',
-                        'received_at' => $reason === 'refund' ? EetValues::dbTime($now) : null,
-                        'recorded_at' => EetValues::dbTime($now),
-                        'paid_on' => $reason === 'refund' ? $now->format('Y-m-d') : null,
-                        'payment_order_status' => match ($reason) {
-                            'refund' => 'settled',
-                            'failed_payment' => 'failed',
-                            default => 'cancelled',
-                        },
-                        'bank_verification_status' => 'not_applicable',
-                        'accounting_settlement_status' => $reason === 'refund' ? 'pending' : 'not_applicable',
-                        'invoice_id' => $originalEvent['invoice_id'] ?? null,
-                        'eet_decision' => EetPolicyDecision::REQUIRED,
-                        'eet_reason_code' => 'correction_' . $reason,
-                        'policy_version' => EetRecordingPolicy::VERSION,
-                        'corrects_event_id' => $originalEvent !== null ? (int) $originalEvent['id'] : null,
-                        'note' => $note,
-                        'created_by' => $userId > 0 ? $userId : null,
-                    ]);
-
-                    $record = $this->records->create($supplierId, $eventId, [
-                        'eic' => (string) $original['eic'],
-                        'environment' => (string) $original['environment'],
-                    ] + $settings, [
-                        'device_id' => $deviceId ?? (int) $original['device_id'],
-                        'sale_at' => $now,
-                        'total_amount' => EetValues::fromCents(-$cents),
-                        'kind' => 'correction',
-                        'corrects_record_id' => (int) $original['id'],
-                        'correction_reason' => $reason,
-                        'policy_decision' => EetPolicyDecision::REQUIRED,
-                        'policy_reason' => 'correction_' . $reason,
-                        'created_by' => $userId > 0 ? $userId : null,
-                        'now' => $now,
-                    ]);
-                    $pdo->prepare('UPDATE payment_events SET device_id = ?, unit_id = ? WHERE id = ? AND supplier_id = ?')
-                        ->execute([$record['device_id'], $record['unit_id'], $eventId, $supplierId]);
+                    $created = $this->insertLocked($supplierId, $userId, $original, $key, $hash, $cents, $reason, $note, $deviceId, $now, $settings);
                     $pdo->commit();
-                    return ['event_id' => $eventId, 'record_id' => $record['id']];
+                    return $created;
                 } catch (\Throwable $e) {
                     if ($pdo->inTransaction()) {
                         $pdo->rollBack();
@@ -191,6 +132,114 @@ final class EetCorrectionService
             error_log('Okamžité odeslání opravy EET #' . $created['record_id'] . ' selhalo: ' . $e->getMessage());
         }
         return $this->result($supplierId, (array) $this->events->find($supplierId, $created['event_id']), false);
+    }
+
+    /**
+     * Oprava v transakci volajícího (storno pokladního dokladu): celá dosud neopravená
+     * část tržby, odeslání až po commitu. Idempotentní podle klíče; když už je tržba
+     * opravená celá, nevznikne nic a vrací null.
+     *
+     * @return array{event_id:int, record_id:int}|null
+     */
+    public function createWithinTransaction(int $supplierId, ?int $userId, int $recordId, string $idempotencyKey, string $reason, ?string $note = null): ?array
+    {
+        $pdo = $this->db->pdo();
+        if (!$pdo->inTransaction()) {
+            throw new \LogicException('Oprava EET v transakci volajícího vyžaduje otevřenou transakci.');
+        }
+        $key = PaymentEventService::validateKey($idempotencyKey);
+        $reason = self::reason($reason);
+        $hash = PaymentEventService::requestHash('records.corrections:' . $recordId, ['reason' => $reason, 'scope' => 'remaining']);
+        $existing = $this->events->replay($supplierId, $key, $hash);
+        if ($existing !== null) {
+            $stmt = $pdo->prepare("SELECT id FROM eet_records WHERE supplier_id = ? AND payment_event_id = ? AND kind = 'correction'");
+            $stmt->execute([$supplierId, (int) $existing['id']]);
+            return ['event_id' => (int) $existing['id'], 'record_id' => (int) $stmt->fetchColumn()];
+        }
+        $original = $this->original($supplierId, $recordId, true);
+        $remaining = $this->remainingCents($supplierId, $original);
+        if ($remaining <= 0) {
+            return null;
+        }
+        $created = $this->insertLocked(
+            $supplierId, $userId ?? 0, $original, $key, $hash, $remaining, $reason, $note, null,
+            EetValues::local($this->clock->now()), $this->settings->get($supplierId),
+        );
+        $this->dispatch->dispatchAfterCommit($created['record_id']);
+        return $created;
+    }
+
+    /**
+     * Zápis opravy nad zamčeným původním záznamem.
+     *
+     * @param array<string,mixed> $original
+     * @param array<string,mixed> $settings
+     * @return array{event_id:int, record_id:int}
+     */
+    private function insertLocked(int $supplierId, int $userId, array $original, string $key, string $hash, int $cents, string $reason,
+        ?string $note, ?int $deviceId, \DateTimeImmutable $now, array $settings): array
+    {
+        $remaining = $this->remainingCents($supplierId, $original);
+        if ($cents > $remaining) {
+            throw EetCommandException::validation(
+                'Oprava překračuje dosud neopravenou část tržby (' . EetValues::fromCents($remaining) . ').',
+                'amount',
+                ['remaining' => EetValues::fromCents($remaining)],
+            );
+        }
+        $originalEvent = $original['payment_event_id'] !== null
+            ? $this->events->find($supplierId, (int) $original['payment_event_id'])
+            : null;
+
+        $eventId = $this->events->insert([
+            'supplier_id' => $supplierId,
+            'idempotency_key' => $key,
+            'request_hash' => $hash,
+            'kind' => 'refund',
+            'origin' => 'correction',
+            'payment_method' => $originalEvent['payment_method'] ?? null,
+            'channel' => $originalEvent['channel'] ?? null,
+            'contact_context' => $originalEvent['contact_context'] ?? 'unknown',
+            'business_purpose' => $originalEvent['business_purpose'] ?? 'sale',
+            'amount' => EetValues::fromCents(-$cents),
+            'currency' => 'CZK',
+            'received_at' => $reason === 'refund' ? EetValues::dbTime($now) : null,
+            'recorded_at' => EetValues::dbTime($now),
+            'paid_on' => $reason === 'refund' ? $now->format('Y-m-d') : null,
+            'payment_order_status' => match ($reason) {
+                'refund' => 'settled',
+                'failed_payment' => 'failed',
+                default => 'cancelled',
+            },
+            'bank_verification_status' => 'not_applicable',
+            'accounting_settlement_status' => $reason === 'refund' ? 'pending' : 'not_applicable',
+            'invoice_id' => $originalEvent['invoice_id'] ?? null,
+            'eet_decision' => EetPolicyDecision::REQUIRED,
+            'eet_reason_code' => 'correction_' . $reason,
+            'policy_version' => EetRecordingPolicy::VERSION,
+            'corrects_event_id' => $originalEvent !== null ? (int) $originalEvent['id'] : null,
+            'note' => $note,
+            'created_by' => $userId > 0 ? $userId : null,
+        ]);
+
+        $record = $this->records->create($supplierId, $eventId, [
+            'eic' => (string) $original['eic'],
+            'environment' => (string) $original['environment'],
+        ] + $settings, [
+            'device_id' => $deviceId ?? (int) $original['device_id'],
+            'sale_at' => $now,
+            'total_amount' => EetValues::fromCents(-$cents),
+            'kind' => 'correction',
+            'corrects_record_id' => (int) $original['id'],
+            'correction_reason' => $reason,
+            'policy_decision' => EetPolicyDecision::REQUIRED,
+            'policy_reason' => 'correction_' . $reason,
+            'created_by' => $userId > 0 ? $userId : null,
+            'now' => $now,
+        ]);
+        $this->db->pdo()->prepare('UPDATE payment_events SET device_id = ?, unit_id = ? WHERE id = ? AND supplier_id = ?')
+            ->execute([$record['device_id'], $record['unit_id'], $eventId, $supplierId]);
+        return ['event_id' => $eventId, 'record_id' => $record['id']];
     }
 
     /**

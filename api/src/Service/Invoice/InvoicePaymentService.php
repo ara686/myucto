@@ -8,6 +8,7 @@ use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Infrastructure\Database\TransactionFailure;
 use MyInvoice\Repository\ClientBankAccountRepository;
 use MyInvoice\Service\Accounting\GoPay\GoPayPendingService;
+use MyInvoice\Service\Eet\PaymentEventReconciliation;
 use MyInvoice\Service\Pdf\InvoicePdfRenderer;
 use MyInvoice\Service\Stats\StatsRecomputer;
 use PDO;
@@ -77,6 +78,7 @@ final class InvoicePaymentService
         private readonly FinalFromProformaCreator $finalCreator,
         private readonly PaymentTaxDocumentCreator $taxDocCreator,
         private readonly GoPayPendingService $goPayPending,
+        private readonly PaymentEventReconciliation $eetReconciliation,
     ) {}
 
     /**
@@ -309,6 +311,15 @@ final class InvoicePaymentService
                     $invoiceId,
                     (int) $opts['bank_transaction_id'],
                 );
+                // Banka nikdy nezakládá tržbu EET. Potvrzený QR příkaz téže faktury tahle
+                // úhrada jen vypořádá, takže zůstane jedna úhrada i jeden záznam EET.
+                $this->eetReconciliation->attachBankPayment(
+                    (int) $invoice['supplier_id'],
+                    $invoiceId,
+                    $paymentId,
+                    (int) $opts['bank_transaction_id'],
+                    $amount,
+                );
             }
 
             $transition = $this->recomputeLocked($pdo, $invoiceId);
@@ -497,6 +508,7 @@ final class InvoicePaymentService
         }
         try {
             $this->goPayPending->releaseForPayment($paymentId);
+            $this->eetReconciliation->releaseInvoicePayment((int) $payment['supplier_id'], $paymentId);
             self::releaseCreditNotes($pdo, 'p.id = ?', [$paymentId]);
             $pdo->prepare('DELETE FROM invoice_payments WHERE id = ?')->execute([$paymentId]);
             $transition = $this->recomputeLocked($pdo, (int) $payment['invoice_id']);
@@ -532,6 +544,11 @@ final class InvoicePaymentService
         }
         try {
             $this->goPayPending->releaseForInvoice($invoiceId);
+            $payments = $pdo->prepare('SELECT id, supplier_id FROM invoice_payments WHERE invoice_id = ?');
+            $payments->execute([$invoiceId]);
+            foreach ($payments->fetchAll(PDO::FETCH_ASSOC) ?: [] as $p) {
+                $this->eetReconciliation->releaseInvoicePayment((int) $p['supplier_id'], (int) $p['id']);
+            }
             self::releaseCreditNotes($pdo, 'p.invoice_id = ?', [$invoiceId]);
             $del = $pdo->prepare('DELETE FROM invoice_payments WHERE invoice_id = ?');
             $del->execute([$invoiceId]);
@@ -765,21 +782,28 @@ final class InvoicePaymentService
      * Alokace s bankovním pohybem je jen důkaz o připsání, ne zachycení tržby,
      * takže zrušení bankovního spárování neblokuje.
      *
+     * Tržba, kterou opravy EET už celou vynulovaly (storno pokladního dokladu, oprava
+     * duplicity), úhradu nedrží: evidence sedí s penězi i bez ní.
+     *
      * @param list<int> $params
      */
     private function assertNoEetRecord(string $allocationWhere, array $params): void
-    {        $stmt = $this->db->pdo()->prepare(
+    {
+        $stmt = $this->db->pdo()->prepare(
             "SELECT r.sequence_number
                FROM payment_event_allocations a
                JOIN eet_records r ON r.payment_event_id = a.payment_event_id AND r.supplier_id = a.supplier_id
                                  AND r.kind = 'sale'
               WHERE {$allocationWhere} AND a.bank_transaction_id IS NULL
+                AND r.total_amount + COALESCE((SELECT SUM(c.total_amount) FROM eet_records c
+                                                WHERE c.supplier_id = r.supplier_id AND c.corrects_record_id = r.id
+                                                  AND c.kind = 'correction'), 0) > 0
               LIMIT 1"
         );
         $stmt->execute($params);
         $sequence = $stmt->fetchColumn();
         if ($sequence !== false) {
-            throw new \RuntimeException(
+            throw new \MyInvoice\Service\Eet\EetHistoryExistsException(
                 'Úhrada má evidenci EET (tržba ' . $sequence . '). Nelze ji smazat, použijte opravu EET.'
             );
         }
