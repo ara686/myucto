@@ -30,15 +30,18 @@ final class EetInvoicePaymentGate
         private readonly EetSettingsService $settings,
         private readonly EetRecordingPolicy $policy,
         private readonly EetPaymentCommand $command,
+        private readonly PaymentEventService $events,
         private readonly ClockInterface $clock,
     ) {}
 
     /**
      * @param array<string,mixed> $body tělo požadavku akce
+     * @param string $invoicePaymentSource zdroj úhrady, jaký by akce zapsala bez EET (manual / mark_paid)
      * @return array{mode:'legacy'|'eet', decision:?array<string,mixed>, result:?array<string,mixed>}
      * @throws EetCommandException|IdempotencyConflictException
      */
-    public function route(int $supplierId, int $userId, int $invoiceId, string $amount, array $body, string $idempotencyKey): array
+    public function route(int $supplierId, int $userId, int $invoiceId, string $amount, array $body, string $idempotencyKey,
+        string $invoicePaymentSource = 'manual'): array
     {
         $now = EetValues::local($this->clock->now());
         $settings = $this->settings->get($supplierId);
@@ -93,6 +96,13 @@ final class EetInvoicePaymentGate
             throw EetCommandException::unsupported($decision->messageCs, $decision->reasonCode);
         }
         if (!$decision->createsRecord()) {
+            // Úhrada mimo evidenci (převod z domova) nesmí krýt dluh, který drží potvrzený
+            // QR příkaz čekající na banku: ten už tržbu má a vypořádá ho bankovní párování.
+            $this->events->assertNoQrOverlap($supplierId, $invoiceId,
+                EetValues::toCents(EetValues::amount((string) $invoice['amount_to_pay'])),
+                EetValues::toCents(EetValues::amount((string) $invoice['paid_total'])),
+                EetValues::toCents(EetValues::amount($amount)),
+                (int) round(\MyInvoice\Service\Invoice\InvoicePaymentService::TOLERANCE * 100));
             return ['mode' => 'legacy', 'decision' => $decision->toArray(), 'result' => null];
         }
 
@@ -104,7 +114,7 @@ final class EetInvoicePaymentGate
                 'received_at',
             );
         }
-        $result = $this->command->accept($supplierId, $userId, $key, $input);
+        $result = $this->command->accept($supplierId, $userId, $key, $input, $invoicePaymentSource);
         return ['mode' => 'eet', 'decision' => $decision->toArray(), 'result' => $result];
     }
 
@@ -120,11 +130,11 @@ final class EetInvoicePaymentGate
         ]);
     }
 
-    /** @return array{currency:string, invoice_type:string} */
+    /** @return array{currency:string, invoice_type:string, amount_to_pay:string, paid_total:string} */
     private function invoice(int $supplierId, int $invoiceId): array
     {
         $stmt = $this->db->pdo()->prepare(
-            'SELECT i.invoice_type, cur.code AS currency
+            'SELECT i.invoice_type, i.amount_to_pay, i.paid_total, cur.code AS currency
                FROM invoices i JOIN currencies cur ON cur.id = i.currency_id
               WHERE i.id = ? AND i.supplier_id = ?'
         );
@@ -133,6 +143,7 @@ final class EetInvoicePaymentGate
         if ($row === false) {
             throw EetCommandException::notFound('Faktura nenalezena.');
         }
-        return ['currency' => (string) $row['currency'], 'invoice_type' => (string) $row['invoice_type']];
+        return ['currency' => (string) $row['currency'], 'invoice_type' => (string) $row['invoice_type'],
+            'amount_to_pay' => (string) ($row['amount_to_pay'] ?? '0'), 'paid_total' => (string) ($row['paid_total'] ?? '0')];
     }
 }

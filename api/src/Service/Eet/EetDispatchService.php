@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MyInvoice\Service\Eet;
 
 use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Infrastructure\Database\NamedLockName;
 use MyInvoice\Service\Eet\Transport\EetEnvironment;
 use MyInvoice\Service\Eet\Transport\EetMessageHeader;
 use MyInvoice\Service\Eet\Transport\EetSaleData;
@@ -43,6 +44,9 @@ final class EetDispatchService
 
     /** Jak často se znovu zkusí záznam bez platného certifikátu. */
     public const CERTIFICATE_RECHECK_SECONDS = 300;
+
+    /** Jmenný prostor zámku workeru ({@see NamedLockName}). */
+    public const WORKER_LOCK_SCOPE = 'eet-dispatch';
 
     private const NON_FINAL = ['pending', 'sending', 'retry_wait', 'action_required'];
 
@@ -129,13 +133,37 @@ final class EetDispatchService
     /**
      * Worker: odešle splatné záznamy napříč firmami. Vrací počet zpracovaných.
      */
-    public function processDue(int $limit, ?\DateTimeImmutable $now = null): int
+    public function processDue(int $limit): int
     {
-        $now = EetValues::local($now ?? $this->clock->now());
         $pdo = $this->db->pdo();
         if ($this->isAnonymizedClone()) {
             return 0;
         }
+        // Souběžný běh workeru (cron se překryl s pomalým FS) by jen soutěžil o lease;
+        // druhý běh skončí hned, první dokončí dávku.
+        $lockName = NamedLockName::for($this->db, self::WORKER_LOCK_SCOPE);
+        $lock = $pdo->prepare('SELECT GET_LOCK(?, 0)');
+        $lock->execute([$lockName]);
+        if ((int) $lock->fetchColumn() !== 1) {
+            return 0;
+        }
+        try {
+            return $this->processDueLocked($limit);
+        } finally {
+            $pdo->prepare('SELECT RELEASE_LOCK(?)')->execute([$lockName]);
+        }
+    }
+
+    /**
+     * Dávka pod zámkem workeru. Čas se bere z hodin pro KAŽDÝ záznam (claim, lease,
+     * hlavička zprávy, backoff): odeslání předchozích záznamů trvá a lease spočítaný
+     * od začátku dávky by u pozdějších záznamů mohl být už vypršelý, takže by je
+     * převzal okamžitý pokus a odeslal podruhé; `dat_odesl` by byl zastaralý.
+     */
+    private function processDueLocked(int $limit): int
+    {
+        $now = $this->now();
+        $pdo = $this->db->pdo();
 
         // Lhůta 48 h: příznak se nastaví všem neodeslaným, odesílání pokračuje.
         $pdo->prepare(
@@ -169,14 +197,19 @@ final class EetDispatchService
             if (!$this->dispatchAllowed($settings)) {
                 continue;
             }
-            $claimed = $this->claim($supplierId, (int) $row['id'], $now, $this->leaseSeconds($settings, false), false);
+            $claimed = $this->claim($supplierId, (int) $row['id'], $this->now(), $this->leaseSeconds($settings, false), false);
             if ($claimed === null) {
                 continue;
             }
-            $this->attempt($claimed, $settings, $now);
+            $this->attempt($claimed, $settings, $this->now());
             $processed++;
         }
         return $processed;
+    }
+
+    private function now(): \DateTimeImmutable
+    {
+        return EetValues::local($this->clock->now());
     }
 
     /**
@@ -271,12 +304,15 @@ final class EetDispatchService
             error_log('EET transport výjimka u záznamu #' . $recordId . ': ' . $e->getMessage());
             $pdo->prepare("UPDATE eet_attempts SET outcome = 'transport_error', error_message = ? WHERE id = ? AND supplier_id = ?")
                 ->execute(['Neočekávaná chyba při odesílání.', $attemptId, $supplierId]);
-            $this->finish($recordId, $supplierId, $token, $now, $this->retryPatch($attemptNo, $now, null, 'Neočekávaná chyba při odesílání.'));
+            $after = $this->now();
+            $this->finish($recordId, $supplierId, $token, $after, $this->retryPatch($attemptNo, $after, null, 'Neočekávaná chyba při odesílání.'));
             return;
         }
 
+        // Backoff a potvrzení počítat od konce volání, ne od claimu.
+        $after = $this->now();
         $this->storeAttempt($attemptId, $supplierId, $result);
-        $this->finish($recordId, $supplierId, $token, $now, $this->patchFor($result, $attemptNo, $now));
+        $this->finish($recordId, $supplierId, $token, $after, $this->patchFor($result, $attemptNo, $after));
     }
 
     private function storeAttempt(int $attemptId, int $supplierId, EetSendResult $result): void

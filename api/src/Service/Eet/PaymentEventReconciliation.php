@@ -23,33 +23,51 @@ use PDO;
  */
 final class PaymentEventReconciliation
 {
-    public function __construct(private readonly Connection $db) {}
+    public function __construct(
+        private readonly Connection $db,
+        private readonly PaymentEventService $events,
+    ) {}
 
     /**
      * Bankovní úhrada faktury právě vznikla: přiváže ji k nejstaršímu potvrzenému QR
-     * příkazu téže faktury se stejnou částkou, který čeká na banku. Volá se v transakci
-     * zápisu úhrady (faktura je zamčená). Vrací id události, nebo null.
+     * příkazu téže faktury, který čeká na banku a jehož dosud neopravenou částku
+     * úhrada pokryje ({@see PaymentEventService::openConfirmedIntents()}). Přebytek
+     * úhrady zůstává běžnou úhradou faktury. Menší úhrada QR příkaz nevypořádá
+     * (zůstává čekat) a zapíše se varování. Volá se v transakci zápisu úhrady
+     * (faktura je zamčená). Vrací id události, nebo null.
+     *
+     * Firma bez nastavení EET QR příkazy mít nemůže: dotaz se zámkem nad
+     * payment_events se u ní vůbec nespouští (gap lock by zbytečně zdržoval párování).
      */
     public function attachBankPayment(int $supplierId, int $invoiceId, int $invoicePaymentId, int $bankTransactionId, float $amount): ?int
     {
-        $stmt = $this->db->pdo()->prepare(
-            "SELECT id FROM payment_events
-              WHERE supplier_id = ? AND invoice_id = ? AND origin = 'payment_intent'
-                AND payment_order_status = 'operator_confirmed'
-                AND bank_verification_status = 'pending' AND accounting_settlement_status = 'pending'
-                AND amount = ?
-              ORDER BY id
-              LIMIT 1
-              FOR UPDATE"
-        );
-        $stmt->execute([$supplierId, $invoiceId, number_format($amount, 2, '.', '')]);
-        $eventId = $stmt->fetchColumn();
-        if ($eventId === false) {
+        $hasEet = $this->db->pdo()->prepare('SELECT 1 FROM eet_settings WHERE supplier_id = ?');
+        $hasEet->execute([$supplierId]);
+        if ($hasEet->fetchColumn() === false) {
             return null;
         }
-        return $this->attachBankTransaction($supplierId, (int) $eventId, $bankTransactionId, number_format($amount, 2, '.', ''), $invoicePaymentId)
-            ? (int) $eventId
-            : null;
+        $cents = (int) round($amount * 100);
+        $smaller = null;
+        foreach ($this->events->openConfirmedIntents($supplierId, $invoiceId, true) as $intent) {
+            if ($intent['blocked_cents'] <= 0) {
+                continue;
+            }
+            if ($intent['blocked_cents'] > $cents) {
+                $smaller ??= $intent;
+                continue;
+            }
+            if ($this->attachBankTransaction($supplierId, $intent['id'], $bankTransactionId,
+                EetValues::fromCents($intent['blocked_cents']), $invoicePaymentId)) {
+                return $intent['id'];
+            }
+        }
+        if ($smaller !== null) {
+            error_log(sprintf(
+                'EET: bankovní úhrada %s Kč faktury #%d je nižší než potvrzený QR příkaz (událost #%d, %s Kč); QR příkaz dál čeká na banku.',
+                EetValues::fromCents($cents), $invoiceId, $smaller['id'], EetValues::fromCents($smaller['blocked_cents']),
+            ));
+        }
+        return null;
     }
 
     /**

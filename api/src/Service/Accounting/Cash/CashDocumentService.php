@@ -563,7 +563,7 @@ final class CashDocumentService
             // zrušení úhrady faktury: tržbu s neopravenou částkou úhrada drží.
             try {
                 $this->eet->afterReverse($supplierId, $id, isset($meta['eet_correction_reason']) ? (string) $meta['eet_correction_reason'] : null,
-                    $userId, 'Storno ' . $doc['doc_number'] . ': ' . $reason);
+                    $userId, 'Storno ' . $doc['doc_number'] . ': ' . $reason, self::eetDeviceId($meta));
             } catch (EetCommandException $e) {
                 throw new CashException($e->errorCode, $e->getMessage(), $e->httpStatus, $e->extra);
             }

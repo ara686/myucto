@@ -20,7 +20,30 @@ final class EetHistoryGuard
 {
     public const ERROR_CODE = 'eet_history_exists';
 
+    /** QR záměr, který nikdy nebyl potvrzen (rozpracovaný nebo zrušený) a nemá tržbu. Alias `e`. */
+    private const UNUSED_INTENT_SQL = "e.origin = 'payment_intent' AND e.payment_order_status IN ('initiated', 'cancelled')
+                AND NOT EXISTS (SELECT 1 FROM eet_records r WHERE r.supplier_id = e.supplier_id AND r.payment_event_id = e.id)
+                AND NOT EXISTS (SELECT 1 FROM payment_event_allocations a WHERE a.supplier_id = e.supplier_id AND a.payment_event_id = e.id)";
+
     public function __construct(private readonly Connection $db) {}
+
+    /**
+     * Mazaná faktura: nepoužité QR záměry ({@see UNUSED_INTENT_SQL}) se smažou s ní, aby
+     * nezůstaly viset na neexistujícím dokladu. Volat po {@see assertInvoiceDeletable()}.
+     *
+     * @param list<int> $invoiceIds
+     */
+    public function releaseUnusedIntents(int $supplierId, array $invoiceIds): void
+    {
+        $invoiceIds = array_values(array_unique(array_filter(array_map('intval', $invoiceIds), static fn (int $id): bool => $id > 0)));
+        if ($invoiceIds === []) {
+            return;
+        }
+        $in = implode(',', array_fill(0, count($invoiceIds), '?'));
+        $this->db->pdo()->prepare(
+            "DELETE e FROM payment_events e WHERE e.supplier_id = ? AND e.invoice_id IN ($in) AND " . self::UNUSED_INTENT_SQL
+        )->execute([$supplierId, ...$invoiceIds]);
+    }
 
     /**
      * Hláška pro první fakturu ze seznamu, která má historii EET, jinak null.
@@ -34,8 +57,12 @@ final class EetHistoryGuard
             return null;
         }
         $in = implode(',', array_fill(0, count($invoiceIds), '?'));
+        // Nepotvrzený nebo zrušený QR záměr bez tržby není historie: nebyla platba ani
+        // evidence. Smazání faktury ho uklidí ({@see releaseUnusedIntents()}).
         $stmt = $this->db->pdo()->prepare(
-            "SELECT 1 FROM payment_events WHERE supplier_id = ? AND invoice_id IN ($in)
+            "SELECT 1 FROM payment_events e
+              WHERE e.supplier_id = ? AND e.invoice_id IN ($in)
+                AND NOT (" . self::UNUSED_INTENT_SQL . ")
              UNION ALL
              SELECT 1 FROM payment_event_allocations WHERE supplier_id = ? AND invoice_id IN ($in)
              LIMIT 1"
@@ -105,11 +132,34 @@ final class EetHistoryGuard
      */
     public function assertInvoiceDeletable(int $invoiceId): void
     {
+        $this->invoiceDeletionScope($invoiceId);
+    }
+
+    /**
+     * Pojistka a úklid před smazáním faktury: doklad s historií EET nepustí, nepoužité
+     * QR záměry faktury (i jejích potomků) smaže.
+     *
+     * @throws EetHistoryExistsException
+     */
+    public function prepareInvoiceDeletion(int $invoiceId): void
+    {
+        $scope = $this->invoiceDeletionScope($invoiceId);
+        if ($scope !== null) {
+            $this->releaseUnusedIntents($scope[0], $scope[1]);
+        }
+    }
+
+    /**
+     * @return array{0:int, 1:list<int>}|null
+     * @throws EetHistoryExistsException
+     */
+    private function invoiceDeletionScope(int $invoiceId): ?array
+    {
         $stmt = $this->db->pdo()->prepare('SELECT supplier_id FROM invoices WHERE id = ?');
         $stmt->execute([$invoiceId]);
         $supplierId = $stmt->fetchColumn();
         if ($supplierId === false) {
-            return;
+            return null;
         }
         $children = $this->db->pdo()->prepare('SELECT id FROM invoices WHERE parent_invoice_id = ? AND supplier_id = ?');
         $children->execute([$invoiceId, (int) $supplierId]);
@@ -119,5 +169,6 @@ final class EetHistoryGuard
         if ($message !== null) {
             throw new EetHistoryExistsException($message);
         }
+        return [(int) $supplierId, $ids];
     }
 }

@@ -27,14 +27,40 @@ final class PaymentEventService
         'corrects_event_id', 'note', 'created_by',
     ];
 
+    /** Předpona klíčů, které skládá server (pokladní doklad, storno). Klient ji použít nesmí. */
+    public const INTERNAL_KEY_PREFIX = 'sys:';
+
     public function __construct(private readonly Connection $db) {}
 
     /**
      * Ověří tvar klíče z hlavičky. Prázdný klíč = 400 u operací, které ho vyžadují.
+     * Vyhrazená předpona `sys:` patří interním klíčům serveru ({@see internalKey()}).
      *
      * @throws EetCommandException
      */
     public static function validateKey(?string $key): string
+    {
+        $key = self::validateShape($key);
+        if (self::isInternalKey($key)) {
+            throw new EetCommandException('idempotency_key_reserved',
+                'Idempotency-Key nesmí začínat vyhrazenou předponou „' . self::INTERNAL_KEY_PREFIX . '".', 400);
+        }
+        return $key;
+    }
+
+    /** Interní klíč serveru, např. `sys:cash-document:123`. */
+    public static function internalKey(string $scope, int $id): string
+    {
+        return self::validateShape(self::INTERNAL_KEY_PREFIX . $scope . ':' . $id);
+    }
+
+    public static function isInternalKey(string $key): bool
+    {
+        return str_starts_with(strtolower($key), self::INTERNAL_KEY_PREFIX);
+    }
+
+    /** @throws EetCommandException */
+    private static function validateShape(?string $key): string
     {
         $key = trim((string) $key);
         if ($key === '') {
@@ -45,6 +71,69 @@ final class PaymentEventService
                 'Idempotency-Key musí mít 8 až 80 znaků (písmena, číslice, . _ : -).', 400);
         }
         return $key;
+    }
+
+    /**
+     * Potvrzené QR příkazy faktury, které ještě nevypořádalo bankovní párování,
+     * s částkou, kterou dosud blokují: zamýšlená alokace snížená o opravy EET jejich
+     * tržby. Plně opravená tržba neblokuje nic. Jediné místo pravidla „co z dluhu
+     * faktury drží QR příkaz čekající na banku" (příjem platby, PPD, ruční úhrada
+     * i bankovní párování).
+     *
+     * @return list<array{id:int, blocked_cents:int}>
+     */
+    public function openConfirmedIntents(int $supplierId, int $invoiceId, bool $forUpdate = false): array
+    {
+        $stmt = $this->db->pdo()->prepare(
+            "SELECT e.id,
+                    a.amount + COALESCE((SELECT SUM(c.total_amount)
+                                           FROM eet_records r
+                                           JOIN eet_records c ON c.supplier_id = r.supplier_id AND c.corrects_record_id = r.id
+                                                             AND c.kind = 'correction'
+                                          WHERE r.supplier_id = e.supplier_id AND r.payment_event_id = e.id AND r.kind = 'sale'), 0) AS blocked
+               FROM payment_events e
+               JOIN payment_event_allocations a ON a.payment_event_id = e.id AND a.supplier_id = e.supplier_id
+                                               AND a.invoice_payment_id IS NULL AND a.bank_transaction_id IS NULL
+                                               AND a.cash_document_id IS NULL
+              WHERE e.supplier_id = ? AND e.invoice_id = ? AND e.origin = 'payment_intent'
+                AND e.payment_order_status = 'operator_confirmed'
+                AND e.bank_verification_status = 'pending' AND e.accounting_settlement_status = 'pending'
+              ORDER BY e.id" . ($forUpdate ? ' FOR UPDATE' : '')
+        );
+        $stmt->execute([$supplierId, $invoiceId]);
+        $out = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
+            $out[] = ['id' => (int) $row['id'], 'blocked_cents' => max(0, EetValues::toCents(EetValues::amount((string) $row['blocked'])))];
+        }
+        return $out;
+    }
+
+    /** Součet částek, které z dluhu faktury blokují potvrzené QR příkazy ({@see openConfirmedIntents()}). */
+    public function openConfirmedIntentCents(int $supplierId, int $invoiceId): int
+    {
+        return array_sum(array_column($this->openConfirmedIntents($supplierId, $invoiceId), 'blocked_cents'));
+    }
+
+    /**
+     * Úhrada faktury nad dluh, který zbývá po potvrzených QR příkazech, by na jedny peníze
+     * založila druhou úhradu (a tržbu). `$paidBeforeCents` = úhrady bez té posuzované
+     * (`$newCents`). Volat pod zámkem faktury.
+     *
+     * @throws EetCommandException 422 `eet_qr_pending`
+     */
+    public function assertNoQrOverlap(int $supplierId, int $invoiceId, int $dueCents, int $paidBeforeCents, int $newCents, int $toleranceCents = 1): void
+    {
+        $blocked = $this->openConfirmedIntentCents($supplierId, $invoiceId);
+        if ($blocked <= 0 || $paidBeforeCents + $newCents + $blocked <= $dueCents + $toleranceCents) {
+            return;
+        }
+        throw new EetCommandException('eet_qr_pending',
+            'Faktura má potvrzený QR příkaz (' . EetValues::fromCents($blocked) . ' Kč), který čeká na připsání bankou. '
+            . 'Úhradu přijměte nejvýše do zbývající částky. Pokud zákazník QR platbu neprovedl, vytvořte opravu EET s důvodem „neprovedená platba".',
+            422,
+            ['pending_qr' => EetValues::fromCents($blocked), 'remaining' => EetValues::fromCents(max(0, $dueCents - $paidBeforeCents - $blocked)),
+                'correction' => 'failed_payment'],
+        );
     }
 
     /**

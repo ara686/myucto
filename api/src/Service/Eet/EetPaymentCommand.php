@@ -17,8 +17,8 @@ use Psr\Clock\ClockInterface;
  * Přijetí platby s rozhodnutím o evidenci tržby (společný příkaz pro web i mobil).
  *
  * `accept` v jedné transakci založí platební událost, případnou účetní úhradu faktury
- * ({@see InvoicePaymentService::recordPayment()}, zdroj `cash` pro hotovost, jinak
- * `manual`), alokaci a EET záznam s číslem z řady zařízení. První pokus o odeslání
+ * ({@see InvoicePaymentService::recordPayment()}, zdroj `manual` nebo `mark_paid` jako
+ * ruční úhrada před EET, i u hotovosti), alokaci a EET záznam s číslem z řady zařízení. První pokus o odeslání
  * běží až po commitu; timeout FS tak platbu nezruší, jen nechá EET čekat ve frontě.
  *
  * QR na místě má dva kroky. `createIntent` jen připraví záměr a QR data: není to
@@ -46,6 +46,9 @@ final class EetPaymentCommand
     ];
 
     private const PAYABLE_STATUSES = ['issued', 'sent', 'reminded', 'paid'];
+
+    /** Zdroj účetní úhrady faktury: ruční úhrada (manual), nebo „Označit zaplaceno" (mark_paid). */
+    public const INVOICE_PAYMENT_SOURCES = ['manual', 'mark_paid'];
 
     public function __construct(
         private readonly Connection $db,
@@ -103,8 +106,11 @@ final class EetPaymentCommand
      * @return array<string,mixed>
      * @throws EetCommandException|IdempotencyConflictException
      */
-    public function accept(int $supplierId, int $userId, string $idempotencyKey, array $input): array
+    public function accept(int $supplierId, int $userId, string $idempotencyKey, array $input, string $invoicePaymentSource = 'manual'): array
     {
+        if (!in_array($invoicePaymentSource, self::INVOICE_PAYMENT_SOURCES, true)) {
+            throw new \LogicException('Neplatný zdroj úhrady faktury: ' . $invoicePaymentSource);
+        }
         $key = PaymentEventService::validateKey($idempotencyKey);
         $in = $this->normalizePayment($input, requireChannel: true);
         $hashInput = $in + ['received_at' => $input['received_at'] ?? null];
@@ -123,7 +129,7 @@ final class EetPaymentCommand
         $pdo = $this->db->pdo();
         $this->assertNoOpenTransaction($pdo);
         try {
-            $created = TransactionFailure::retrying($pdo, function () use ($pdo, $supplierId, $userId, $key, $hash, $in, $receivedAt, $now, $settings, $decision): array {
+            $created = TransactionFailure::retrying($pdo, function () use ($pdo, $supplierId, $userId, $key, $hash, $in, $receivedAt, $now, $settings, $decision, $invoicePaymentSource): array {
                 $pdo->beginTransaction();
                 try {
                     $cashLike = $in['channel'] === 'cash';
@@ -162,7 +168,10 @@ final class EetPaymentCommand
                             (float) $in['amount'],
                             $receivedAt->format('Y-m-d'),
                             [
-                                'source' => $cashLike ? 'cash' : 'manual',
+                                // Zdroj jako u ruční úhrady před EET (manual / mark_paid), i u
+                                // hotovosti: `cash` patří jen úhradě z pokladního dokladu
+                                // a peněžní deník ho bere jako poznámku k PPD, ne jako příjem.
+                                'source' => $invoicePaymentSource,
                                 'note' => $in['note'] ?? 'Platba přijatá s posouzením EET',
                                 'created_by' => $userId > 0 ? $userId : null,
                             ],
@@ -687,16 +696,7 @@ final class EetPaymentCommand
     /** @param array<string,mixed> $invoice */
     private function settledRemainingCents(int $supplierId, array $invoice): int
     {
-        $stmt = $this->db->pdo()->prepare(
-            "SELECT COALESCE(SUM(a.amount), 0)
-               FROM payment_event_allocations a
-               JOIN payment_events e ON e.id = a.payment_event_id AND e.supplier_id = a.supplier_id
-              WHERE a.supplier_id = ? AND a.invoice_id = ?
-                AND a.invoice_payment_id IS NULL AND a.bank_transaction_id IS NULL
-                AND e.payment_order_status = 'operator_confirmed' AND e.accounting_settlement_status = 'pending'"
-        );
-        $stmt->execute([$supplierId, (int) $invoice['id']]);
-        $pending = EetValues::toCents(EetValues::amount((string) $stmt->fetchColumn()));
+        $pending = $this->events->openConfirmedIntentCents($supplierId, (int) $invoice['id']);
         return EetValues::toCents(EetValues::amount((string) ($invoice['amount_to_pay'] ?? '0')))
             - EetValues::toCents(EetValues::amount((string) $invoice['paid_total']))
             - $pending;

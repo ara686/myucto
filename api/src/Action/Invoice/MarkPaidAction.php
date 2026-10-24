@@ -101,6 +101,7 @@ final class MarkPaidAction
                     number_format($remaining, 2, '.', ''),
                     $body,
                     $request->getHeaderLine('Idempotency-Key'),
+                    'mark_paid',
                 );
                 if ($route['mode'] === 'eet') {
                     $eet = $route['result'];

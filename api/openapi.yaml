@@ -3309,7 +3309,7 @@ paths:
                       eet: { $ref: '#/components/schemas/InvoicePaymentEetResult' }
                       eet_decision: { $ref: '#/components/schemas/EetDecision' }
         '400':
-          description: "Neplatné datum platby (`invalid_date`) nebo chybí/je neplatná hlavička `Idempotency-Key` u evidované tržby (`idempotency_key_required`, `idempotency_key_invalid`)"
+          description: "Neplatné datum platby (`invalid_date`) nebo chybí/je neplatná hlavička `Idempotency-Key` u evidované tržby (`idempotency_key_required`, `idempotency_key_invalid`, vyhrazená předpona `sys:` = `idempotency_key_reserved`)"
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -3331,7 +3331,9 @@ paths:
           description: |
             Firma eviduje tržby a chybí okolnosti platby (`eet_context_required`),
             jsou neplatné (`eet_validation`), scénář evidence není podporovaný
-            (`eet_unsupported_scenario`) nebo chybí nastavení EET (`eet_not_configured`).
+            (`eet_unsupported_scenario`), chybí nastavení EET (`eet_not_configured`)
+            nebo by úhrada kryla dluh blokovaný potvrzeným QR příkazem čekajícím na banku
+            (`eet_qr_pending`; neprovedenou QR platbu řeší oprava EET `failed_payment`).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -3430,7 +3432,7 @@ paths:
         '400':
           description: |
             Chybí částka (`invalid_amount`) nebo u evidované tržby hlavička
-            `Idempotency-Key` (`idempotency_key_required`, `idempotency_key_invalid`).
+            `Idempotency-Key` (`idempotency_key_required`, `idempotency_key_invalid`, vyhrazená předpona `sys:` = `idempotency_key_reserved`).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -3445,7 +3447,9 @@ paths:
           description: |
             Firma eviduje tržby a chybí okolnosti platby (`eet_context_required`),
             jsou neplatné (`eet_validation`), scénář evidence není podporovaný
-            (`eet_unsupported_scenario`) nebo chybí nastavení EET (`eet_not_configured`).
+            (`eet_unsupported_scenario`), chybí nastavení EET (`eet_not_configured`)
+            nebo by úhrada kryla dluh blokovaný potvrzeným QR příkazem čekajícím na banku
+            (`eet_qr_pending`; neprovedenou QR platbu řeší oprava EET `failed_payment`).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -17553,10 +17557,14 @@ paths:
         a `partner_dic` převezme z téhož kontaktu. Zadaný partner má přednost.
 
         Evidence tržeb (EET): příjmový doklad účelu `sale` nebo `invoice_payment` u firmy
-        s aktivní evidencí zaúčtování zaeviduje jako hotovostní tržbu, když je pokladna
-        namapovaná na zařízení EET nebo doklad nese `eet_device_id`. Úhrada faktury z dokladu
-        sdílí s tržbou jednu platební událost (druhá tržba nevznikne). Povinnou tržbu mimo
-        podporovaný rozsah (cizí měna) doklad nezaúčtuje (422 `cash.error.eet_unsupported_scenario`).
+        s aktivní evidencí zaúčtování zaeviduje jako hotovostní tržbu. Zařízení: `eet_device_id`,
+        jinak zařízení namapované na pokladnu, jinak výchozí zařízení firmy; bez zařízení doklad
+        nezaúčtuje (422 `cash.error.eet_device_required`). Čas tržby se odvodí z dokladu (dnešní
+        doklad = teď, jinak čas pořízení ve dni vystavení, jinak poledne dne vystavení). Úhrada
+        faktury z dokladu sdílí s tržbou jednu platební událost (druhá tržba nevznikne) a nesmí
+        krýt dluh blokovaný potvrzeným QR příkazem čekajícím na banku (422
+        `cash.error.eet_qr_pending`). Povinnou tržbu mimo podporovaný rozsah (cizí měna) doklad
+        nezaúčtuje (422 `cash.error.eet_unsupported_scenario`).
       parameters:
         - $ref: '#/components/parameters/SupplierIdHeader'
       requestBody:
@@ -17693,13 +17701,14 @@ paths:
         Storno dokladu s evidovanou tržbou EET je vrácení peněz z pokladny: vytvoří zápornou
         opravu EET celé dosud neopravené části (důvod `eet_correction_reason`, default `refund`;
         `wrong_data` / `duplicate` u chybně pořízeného dokladu). Oprava je idempotentně vázaná
-        na doklad a odešle se po commitu.
+        na doklad a odešle se po commitu. Zařízení opravy volí `eet_device_id`; jinak původní
+        zařízení, je-li aktivní, jinak výchozí nebo jiné aktivní zařízení téže provozovny.
       parameters:
         - $ref: '#/components/parameters/SupplierIdHeader'
         - { in: path, name: id, required: true, schema: { type: integer } }
       requestBody:
         required: true
-        content: { application/json: { schema: { type: object, required: [reason], properties: { reason: { type: string, minLength: 3 }, entry_date: { type: string, format: date, description: "Datum protizápisu; vynechte, ať se použije datum původního zápisu" }, eet_correction_reason: { type: string, enum: [refund, wrong_data, duplicate], description: "Důvod opravy EET u dokladu s evidovanou tržbou (default refund)" } } } } }
+        content: { application/json: { schema: { type: object, required: [reason], properties: { reason: { type: string, minLength: 3 }, entry_date: { type: string, format: date, description: "Datum protizápisu; vynechte, ať se použije datum původního zápisu" }, eet_correction_reason: { type: string, enum: [refund, wrong_data, duplicate], description: "Důvod opravy EET u dokladu s evidovanou tržbou (default refund)" }, eet_device_id: { type: integer, description: "Zařízení EET pro opravu, když původní není aktivní" } } } } }
       responses:
         '200': { description: OK, content: { application/json: { schema: { type: object, properties: { reversal_entry_id: { type: [integer, "null"] }, warnings: { type: array, items: { type: string } } } } } } }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -33219,7 +33228,8 @@ components:
         Povinné, když firma eviduje tržby (EET) a platba podle okolností tržbou je.
         8 až 80 znaků (písmena, číslice, `.` `_` `:` `-`). Stejný klíč se stejným tělem
         vrátí původní výsledek (`eet.idempotent_replay = true`), s jiným tělem 409
-        `idempotency_conflict`.
+        `idempotency_conflict`. Předpona `sys:` je vyhrazená interním klíčům serveru
+        (400 `idempotency_key_reserved`).
       schema: { type: string, minLength: 8, maxLength: 80 }
     CashJournalClassificationFilter:
       in: query

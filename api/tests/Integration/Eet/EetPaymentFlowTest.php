@@ -151,7 +151,7 @@ final class EetPaymentFlowTest extends TestCase
         self::assertSame(1, $this->rows('eet_records'));
         self::assertSame(1, $this->rows('payment_event_allocations'));
         $payment = $this->row('SELECT source, amount FROM invoice_payments WHERE invoice_id = ?', [$invoiceId]);
-        self::assertSame(['cash', '1210.00'], [$payment['source'], $payment['amount']]);
+        self::assertSame(['manual', '1210.00'], [$payment['source'], $payment['amount']]);
         self::assertSame('paid', $this->scalar('SELECT status FROM invoices WHERE id = ?', [$invoiceId]));
 
         $record = $this->row('SELECT * FROM eet_records WHERE supplier_id = ?', [$this->supplierId]);

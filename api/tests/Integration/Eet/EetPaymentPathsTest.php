@@ -135,7 +135,7 @@ final class EetPaymentPathsTest extends TestCase
         $json = $this->json($response);
         self::assertTrue($json['became_paid']);
         self::assertSame('confirmed', $json['eet']['eet']['status']);
-        self::assertSame('cash', $json['payment']['source']);
+        self::assertSame('manual', $json['payment']['source'], 'Bez PPD jako ruční úhrada, jinak by příjem vypadl z peněžního deníku.');
 
         $replay = $this->json($this->createPayment($invoiceId, $body, 'pay-key-0001'));
         self::assertTrue($replay['eet']['idempotent_replay']);
@@ -268,11 +268,10 @@ final class EetPaymentPathsTest extends TestCase
         self::assertSame(1, $this->rows('eet_records'));
     }
 
-    public function testCashSaleOnUnmappedRegisterAndNonSalePurposesCreateNothing(): void
+    /** Nenamapovaná pokladna eviduje na výchozí zařízení; jiný účel než tržba nic nezakládá. */
+    public function testCashSaleOnUnmappedRegisterUsesDefaultDeviceAndNonSalePurposesCreateNothing(): void
     {
         $service = $this->container->get(CashDocumentService::class);
-        $unmapped = $this->container->get(CashRegisterService::class)->create($this->supplierId, ['name' => 'Bez EET', 'account_code' => '211', 'is_default' => true]);
-        $service->create($this->supplierId, $this->sale($unmapped, 500.00), $this->userId);
         $mapped = $this->mappedRegister('211.100');
         $service->create($this->supplierId, [
             'register_id' => $mapped, 'doc_type' => 'in', 'purpose' => 'other', 'issue_date' => '2026-11-02',
@@ -280,8 +279,11 @@ final class EetPaymentPathsTest extends TestCase
         ], $this->userId);
         self::assertSame(0, $this->rows('eet_records'));
 
-        $service->create($this->supplierId, $this->sale($mapped, 300.00), $this->userId);
+        $this->db->pdo()->prepare('UPDATE eet_devices SET cash_register_id = NULL WHERE id = ?')->execute([$this->deviceId]);
+        $unmapped = $this->container->get(CashRegisterService::class)->create($this->supplierId, ['name' => 'Bez mapování', 'account_code' => '211', 'is_default' => true]);
+        $service->create($this->supplierId, $this->sale($unmapped, 500.00), $this->userId);
         self::assertSame(1, $this->rows('eet_records'));
+        self::assertSame($this->deviceId, (int) $this->scalar('SELECT device_id FROM eet_records WHERE supplier_id = ?', [$this->supplierId]));
         self::assertSame('cash_document', $this->scalar('SELECT origin FROM payment_events WHERE supplier_id = ?', [$this->supplierId]));
     }
 

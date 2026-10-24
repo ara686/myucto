@@ -54,6 +54,12 @@ final class EetCorrectionService
         $amount = isset($input['amount']) && $input['amount'] !== '' ? EetValues::amount($input['amount']) : EetValues::fromCents($remaining);
         $reason = isset($input['reason']) && $input['reason'] !== '' ? self::reason($input['reason']) : null;
         $cents = EetValues::toCents($amount);
+        $now = EetValues::local($this->clock->now());
+        try {
+            $device = $this->correctionDevice($supplierId, $original, (int) ($input['device_id'] ?? 0) ?: null, $this->settings->get($supplierId), $now);
+        } catch (EetCommandException) {
+            $device = null;
+        }
         return [
             'original' => EetRecordPresenter::record($original),
             'corrected_total' => EetValues::fromCents(EetValues::toCents((string) $original['total_amount']) - $remaining),
@@ -61,11 +67,11 @@ final class EetCorrectionService
             'proposed' => [
                 'total_amount' => EetValues::fromCents(-$cents),
                 'reason' => $reason,
-                'device_id' => (int) ($input['device_id'] ?? 0) ?: (int) $original['device_id'],
+                'device_id' => $device,
                 'environment' => (string) $original['environment'],
-                'sale_at' => EetValues::local($this->clock->now())->format(DATE_ATOM),
+                'sale_at' => $now->format(DATE_ATOM),
             ],
-            'allowed' => $cents > 0 && $cents <= $remaining,
+            'allowed' => $cents > 0 && $cents <= $remaining && $device !== null,
             'accounting' => $reason === 'refund'
                 ? 'Vrácení peněz zaúčtujte dobropisem, výdajovým pokladním dokladem nebo odchozí platbou.'
                 : 'Oprava nemění pohyb peněz ani účetnictví.',
@@ -141,13 +147,17 @@ final class EetCorrectionService
      *
      * @return array{event_id:int, record_id:int}|null
      */
-    public function createWithinTransaction(int $supplierId, ?int $userId, int $recordId, string $idempotencyKey, string $reason, ?string $note = null): ?array
+    public function createWithinTransaction(int $supplierId, ?int $userId, int $recordId, string $idempotencyKey, string $reason,
+        ?string $note = null, ?int $deviceId = null): ?array
     {
         $pdo = $this->db->pdo();
         if (!$pdo->inTransaction()) {
             throw new \LogicException('Oprava EET v transakci volajícího vyžaduje otevřenou transakci.');
         }
-        $key = PaymentEventService::validateKey($idempotencyKey);
+        if (!PaymentEventService::isInternalKey($idempotencyKey)) {
+            throw new \LogicException('Oprava v transakci volajícího nese interní klíč (PaymentEventService::internalKey).');
+        }
+        $key = $idempotencyKey;
         $reason = self::reason($reason);
         $hash = PaymentEventService::requestHash('records.corrections:' . $recordId, ['reason' => $reason, 'scope' => 'remaining']);
         $existing = $this->events->replay($supplierId, $key, $hash);
@@ -162,7 +172,7 @@ final class EetCorrectionService
             return null;
         }
         $created = $this->insertLocked(
-            $supplierId, $userId ?? 0, $original, $key, $hash, $remaining, $reason, $note, null,
+            $supplierId, $userId ?? 0, $original, $key, $hash, $remaining, $reason, $note, $deviceId,
             EetValues::local($this->clock->now()), $this->settings->get($supplierId),
         );
         $this->dispatch->dispatchAfterCommit($created['record_id']);
@@ -188,8 +198,9 @@ final class EetCorrectionService
             );
         }
         $originalEvent = $original['payment_event_id'] !== null
-            ? $this->events->find($supplierId, (int) $original['payment_event_id'])
+            ? $this->events->find($supplierId, (int) $original['payment_event_id'], true)
             : null;
+        $deviceId = $this->correctionDevice($supplierId, $original, $deviceId, $settings, $now);
 
         $eventId = $this->events->insert([
             'supplier_id' => $supplierId,
@@ -226,7 +237,7 @@ final class EetCorrectionService
             'eic' => (string) $original['eic'],
             'environment' => (string) $original['environment'],
         ] + $settings, [
-            'device_id' => $deviceId ?? (int) $original['device_id'],
+            'device_id' => $deviceId,
             'sale_at' => $now,
             'total_amount' => EetValues::fromCents(-$cents),
             'kind' => 'correction',
@@ -239,7 +250,78 @@ final class EetCorrectionService
         ]);
         $this->db->pdo()->prepare('UPDATE payment_events SET device_id = ?, unit_id = ? WHERE id = ? AND supplier_id = ?')
             ->execute([$record['device_id'], $record['unit_id'], $eventId, $supplierId]);
+
+        if ($originalEvent !== null && $cents === $remaining && $reason !== 'refund') {
+            $this->releaseZeroedOrder($supplierId, (int) $originalEvent['id'], $reason);
+        }
         return ['event_id' => $eventId, 'record_id' => $record['id']];
+    }
+
+    /**
+     * Tržba je opravou vynulovaná a peníze se nevracely (neprovedený QR příkaz, duplicita,
+     * chybná data): potvrzený příkaz, který čekal na banku, už nečeká. Přestane blokovat
+     * dluh faktury a bankovní párování k němu úhradu nepřiváže
+     * ({@see PaymentEventService::openConfirmedIntents()}). Vrácení peněz (`refund`)
+     * stav příkazu nemění: peníze přišly a odešly samostatnou cestou. Ověřený příkaz
+     * ověřeným zůstává. Částečná oprava stav nemění, blokovanou částku sníží sama.
+     */
+    private function releaseZeroedOrder(int $supplierId, int $eventId, string $reason): void
+    {
+        $this->db->pdo()->prepare(
+            "UPDATE payment_events
+                SET payment_order_status = ?,
+                    accounting_settlement_status = IF(accounting_settlement_status = 'pending', 'not_applicable', accounting_settlement_status),
+                    bank_verification_status = IF(bank_verification_status = 'verified', 'verified', 'not_applicable')
+              WHERE id = ? AND supplier_id = ? AND payment_order_status = 'operator_confirmed'"
+        )->execute([$reason === 'failed_payment' ? 'failed' : 'cancelled', $eventId, $supplierId]);
+    }
+
+    /**
+     * Zařízení opravy. Výslovně zvolené zařízení ověří továrna záznamů. Jinak původní
+     * zařízení, pokud je aktivní a jeho provozovna k času opravy platí; pak výchozí
+     * zařízení firmy; pak jiné aktivní zařízení téže provozovny. Deaktivované zařízení
+     * ani ukončená provozovna tak nezablokují opravu natrvalo.
+     *
+     * @param array<string,mixed> $original
+     * @param array<string,mixed> $settings
+     * @throws EetCommandException
+     */
+    private function correctionDevice(int $supplierId, array $original, ?int $requested, array $settings, \DateTimeImmutable $now): int
+    {
+        if ($requested !== null && $requested > 0) {
+            return $requested;
+        }
+        $day = EetValues::local($now)->format('Y-m-d');
+        $stmt = $this->db->pdo()->prepare(
+            'SELECT d.id, d.unit_id
+               FROM eet_devices d
+               JOIN eet_units u ON u.id = d.unit_id AND u.supplier_id = d.supplier_id
+              WHERE d.supplier_id = ? AND d.active = 1 AND u.valid_from <= ? AND (u.valid_to IS NULL OR u.valid_to >= ?)
+              ORDER BY d.id'
+        );
+        $stmt->execute([$supplierId, $day, $day]);
+        $usable = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
+            $usable[(int) $row['id']] = (int) $row['unit_id'];
+        }
+        $originalDevice = (int) $original['device_id'];
+        $default = (int) ($settings['default_device_id'] ?? 0);
+        if (isset($usable[$originalDevice])) {
+            return $originalDevice;
+        }
+        if ($default > 0 && isset($usable[$default])) {
+            return $default;
+        }
+        $sameUnit = array_search((int) $original['unit_id'], $usable, true);
+        if ($sameUnit !== false) {
+            return (int) $sameUnit;
+        }
+        throw EetCommandException::validation(
+            'Opravu EET nelze vytvořit: původní pokladní zařízení není aktivní nebo jeho provozovna skončila a firma nemá jiné '
+            . 'aktivní zařízení s platnou provozovnou. Aktivujte zařízení v Nastavení EET, případně ho zvolte výslovně.',
+            'device_id',
+            ['reason_code' => 'no_active_device'],
+        );
     }
 
     /**

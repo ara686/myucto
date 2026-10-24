@@ -483,7 +483,6 @@ final class InvoicePaymentService
         if ($payment === null) {
             throw new \RuntimeException('Platba nenalezena.');
         }
-        $this->assertNoEetRecord('a.invoice_payment_id = ?', [$paymentId]);
         if (!$skipBankGuard && $payment['bank_transaction_id'] !== null) {
             throw new \RuntimeException(
                 'Platba je navázaná na bankovní transakci. Zruš spárování v detailu výpisu.'
@@ -507,6 +506,10 @@ final class InvoicePaymentService
             $pdo->beginTransaction();
         }
         try {
+            // Pojistka EET až pod zámkem faktury: souběžný platební příkaz zakládá tržbu
+            // se zámkem téže faktury, takže kontrola před transakcí by ji nemusela vidět.
+            $pdo->prepare('SELECT id FROM invoices WHERE id = ? FOR UPDATE')->execute([(int) $payment['invoice_id']]);
+            $this->assertNoEetRecord('a.invoice_payment_id = ?', [$paymentId]);
             $this->goPayPending->releaseForPayment($paymentId);
             $this->eetReconciliation->releaseInvoicePayment((int) $payment['supplier_id'], $paymentId);
             self::releaseCreditNotes($pdo, 'p.id = ?', [$paymentId]);
@@ -536,13 +539,14 @@ final class InvoicePaymentService
      */
     public function deleteAllForInvoice(int $invoiceId): int
     {
-        $this->assertNoEetRecord('a.invoice_payment_id IN (SELECT p.id FROM invoice_payments p WHERE p.invoice_id = ?)', [$invoiceId]);
         $pdo = $this->db->pdo();
         $ownsTransaction = !$pdo->inTransaction();
         if ($ownsTransaction) {
             $pdo->beginTransaction();
         }
         try {
+            $pdo->prepare('SELECT id FROM invoices WHERE id = ? FOR UPDATE')->execute([$invoiceId]);
+            $this->assertNoEetRecord('a.invoice_payment_id IN (SELECT p.id FROM invoice_payments p WHERE p.invoice_id = ?)', [$invoiceId]);
             $this->goPayPending->releaseForInvoice($invoiceId);
             $payments = $pdo->prepare('SELECT id, supplier_id FROM invoice_payments WHERE invoice_id = ?');
             $payments->execute([$invoiceId]);

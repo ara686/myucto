@@ -84,14 +84,15 @@ final class EetRecordFactory
         }
 
         $now = EetValues::local($input['now'] ?? new \DateTimeImmutable());
+        $deadline = $saleAt->modify('+' . self::DEADLINE_HOURS . ' hours');
         $publicId = EetValues::uuid4();
         $pdo->prepare(
             'INSERT INTO eet_records
                (public_id, supplier_id, payment_event_id, kind, corrects_record_id, correction_reason, environment,
                 eic, unit_id, unit_number, device_id, device_code, sequence_number, sale_at, sale_at_offset,
-                total_amount, policy_decision, policy_reason, policy_version, status, deadline_at, next_attempt_at,
+                total_amount, policy_decision, policy_reason, policy_version, status, deadline_at, overdue, next_attempt_at,
                 created_by)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, \'pending\', ?, ?, ?)'
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, \'pending\', ?, ?, ?, ?)'
         )->execute([
             $publicId, $supplierId, $paymentEventId,
             (string) ($input['kind'] ?? 'sale'),
@@ -104,7 +105,9 @@ final class EetRecordFactory
             EetValues::dbSecond($saleAt), $saleAt->format('P'),
             $total,
             $input['policy_decision'] ?? null, $input['policy_reason'] ?? null, EetRecordingPolicy::VERSION,
-            EetValues::dbSecond($saleAt->modify('+' . self::DEADLINE_HOURS . ' hours')),
+            EetValues::dbSecond($deadline),
+            // Pozdě pořízená tržba se eviduje, jen hned s příznakem po lhůtě.
+            $deadline < $now ? 1 : 0,
             EetValues::dbTime($now->modify('+' . self::INTERACTIVE_GRACE_SECONDS . ' seconds')),
             $input['created_by'] ?? null,
         ]);

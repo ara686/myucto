@@ -18,8 +18,10 @@ use Psr\Clock\ClockInterface;
  * nese stejnou identitu platby a druhá tržba z cesty úhrady nevznikne. Odeslání
  * běží až po commitu ({@see EetDispatchService::dispatchAfterCommit()}).
  *
- * Doklad se eviduje jen u firmy s aktivní evidencí, když je pokladna namapovaná na
- * zařízení EET (`eet_devices.cash_register_id`) nebo doklad nese zařízení výslovně.
+ * Doklad se eviduje u firmy, která k okamžiku tržby ({@see saleTime()}) eviduje.
+ * Zařízení: výslovně zvolené u dokladu, jinak namapované na pokladnu
+ * (`eet_devices.cash_register_id`), jinak výchozí zařízení firmy. Povinnou hotovost
+ * bez zařízení doklad nezaúčtuje (422 `eet_device_required`), tiše se neobchází.
  * Převod mezi pokladnami, vklad, výdaj ani jiný pohyb tržbou nejsou (příjmový
  * doklad sám nic nerozhoduje). Povinná tržba, kterou MVP neumí (cizí měna), doklad
  * nezaúčtuje: politika se nesmí tiše obejít.
@@ -56,25 +58,24 @@ final class EetCashDocumentRecorder
         if (($doc['doc_type'] ?? null) !== 'in' || !in_array((string) ($doc['purpose'] ?? ''), self::SUBJECT_PURPOSES, true)) {
             return null;
         }
-        $now = EetValues::local($this->clock->now());
-        $settings = $this->settings->get($supplierId);
-        if (!$this->policy->activeAt($settings, $now)) {
-            return null;
-        }
-        $deviceId = $explicitDeviceId !== null && $explicitDeviceId > 0
-            ? $this->ownedDevice($supplierId, $explicitDeviceId)
-            : $this->deviceForRegister($supplierId, (int) $doc['register_id']);
-        if ($deviceId === null) {
-            return null;
-        }
-
         $cashDocumentId = (int) $doc['id'];
-        $key = 'cash-document:' . $cashDocumentId;
-        if ($this->events->findByKey($supplierId, $key) !== null) {
+        $invoiceId = ($doc['invoice_id'] ?? null) !== null ? (int) $doc['invoice_id'] : null;
+        if ($invoiceId !== null) {
+            $this->assertNoQrOverlap($supplierId, $invoiceId, $doc);
+        }
+        $now = EetValues::local($this->clock->now());
+        $saleAt = self::saleTime($doc, $now);
+        $settings = $this->settings->get($supplierId);
+        if (!$this->policy->activeAt($settings, $saleAt)) {
             return null;
         }
-        $invoiceId = ($doc['invoice_id'] ?? null) !== null ? (int) $doc['invoice_id'] : null;
-        $purpose = $invoiceId !== null && $this->invoiceType($supplierId, $invoiceId) === 'proforma' ? 'order_deposit' : 'sale';
+        // Tržbu dokladu pozná alokace na doklad, ne klíč: klíč by šel obsadit zvenčí.
+        if ($this->saleRecordId($supplierId, $cashDocumentId) !== null) {
+            return null;
+        }
+        $key = PaymentEventService::internalKey('cash-document', $cashDocumentId);
+        $invoiceType = $invoiceId !== null ? $this->invoiceType($supplierId, $invoiceId) : null;
+        $purpose = $invoiceType === 'proforma' ? 'order_deposit' : 'sale';
         $currency = strtoupper((string) ($doc['currency_code'] ?? 'CZK'));
         $amount = EetValues::amount($currency === 'CZK'
             ? (float) $doc['total_amount']
@@ -82,13 +83,22 @@ final class EetCashDocumentRecorder
         $origin = $invoiceId !== null ? 'invoice_payment' : 'cash_document';
 
         $decision = $this->policy->evaluate(new EetPolicyInput(
-            $settings, $now, 'cash', 'in_person', $purpose, $currency, $amount, $origin, 'payment',
+            $settings, $saleAt, 'cash', 'in_person', $purpose, $currency, $amount, $origin, 'payment',
         ));
         if ($decision->decision === EetPolicyDecision::UNSUPPORTED) {
             throw EetCommandException::unsupported($decision->messageCs, $decision->reasonCode);
         }
         if (!$decision->createsRecord()) {
             return null;
+        }
+        $deviceId = $explicitDeviceId !== null && $explicitDeviceId > 0
+            ? $this->ownedDevice($supplierId, $explicitDeviceId)
+            : ($this->deviceForRegister($supplierId, (int) $doc['register_id']) ?? $this->defaultDevice($supplierId, $settings));
+        if ($deviceId === null) {
+            throw new EetCommandException('eet_device_required',
+                'Firma eviduje tržby (EET) a hotovostní příjem se musí evidovat, ale pokladna nemá přiřazené pokladní zařízení '
+                . 'a firma nemá výchozí aktivní zařízení. V Nastavení EET přiřaďte pokladně zařízení, nebo zvolte zařízení u dokladu.',
+                422, ['field' => 'eet_device_id']);
         }
 
         $eventId = $this->events->insert([
@@ -103,7 +113,7 @@ final class EetCashDocumentRecorder
             'business_purpose' => $purpose,
             'amount' => $amount,
             'currency' => $currency,
-            'received_at' => EetValues::dbTime($now),
+            'received_at' => EetValues::dbTime($saleAt),
             'recorded_at' => EetValues::dbTime($now),
             'paid_on' => (string) $doc['issue_date'],
             'payment_order_status' => 'settled',
@@ -123,7 +133,7 @@ final class EetCashDocumentRecorder
         ]);
         $record = $this->records->create($supplierId, $eventId, $settings, [
             'device_id' => $deviceId,
-            'sale_at' => $now,
+            'sale_at' => $saleAt,
             'total_amount' => $amount,
             'policy_decision' => $decision->decision,
             'policy_reason' => $decision->reasonCode,
@@ -142,8 +152,11 @@ final class EetCashDocumentRecorder
      *
      * @throws EetCommandException
      */
-    public function afterReverse(int $supplierId, int $cashDocumentId, ?string $reason, ?int $userId, ?string $note = null): ?int
+    public function afterReverse(int $supplierId, int $cashDocumentId, ?string $reason, ?int $userId, ?string $note = null, ?int $deviceId = null): ?int
     {
+        if ($deviceId !== null && $deviceId > 0) {
+            $deviceId = $this->ownedDevice($supplierId, $deviceId);
+        }
         $recordId = $this->saleRecordId($supplierId, $cashDocumentId);
         if ($recordId === null) {
             return null;
@@ -154,8 +167,8 @@ final class EetCashDocumentRecorder
                 ['allowed' => self::REVERSAL_REASONS]);
         }
         $created = $this->corrections->createWithinTransaction(
-            $supplierId, $userId, $recordId, 'cash-reversal:' . $cashDocumentId, $reason,
-            $note !== null ? mb_substr($note, 0, 255) : null,
+            $supplierId, $userId, $recordId, PaymentEventService::internalKey('cash-reversal', $cashDocumentId), $reason,
+            $note !== null ? mb_substr($note, 0, 255) : null, $deviceId !== null && $deviceId > 0 ? $deviceId : null,
         );
         if ($created === null) {
             return null;
@@ -195,6 +208,69 @@ final class EetCashDocumentRecorder
         $stmt->execute([$supplierId, $cashDocumentId]);
         $id = $stmt->fetchColumn();
         return $id === false ? null : (int) $id;
+    }
+
+    /**
+     * Okamžik tržby z dokladu, ne čas zaúčtování: doklad vystavený dnes → teď; jinak čas
+     * pořízení dokladu, pokud padá do dne vystavení; jinak poledne dne vystavení.
+     * Nikdy ne v budoucnosti. Pozdní evidence se neodmítá, záznam dostane lhůtu od
+     * času tržby a příznak po lhůtě ({@see EetRecordFactory}).
+     *
+     * @param array<string,mixed> $doc
+     */
+    public static function saleTime(array $doc, \DateTimeImmutable $now): \DateTimeImmutable
+    {
+        $now = EetValues::local($now);
+        $issueDate = substr((string) ($doc['issue_date'] ?? ''), 0, 10);
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/D', $issueDate) !== 1 || $issueDate === $now->format('Y-m-d')) {
+            return $now;
+        }
+        $created = $doc['created_at'] ?? null;
+        if (is_string($created) && $created !== '') {
+            try {
+                $createdAt = new \DateTimeImmutable($created, EetValues::zone());
+                if ($createdAt->format('Y-m-d') === $issueDate) {
+                    return min($createdAt, $now);
+                }
+            } catch (\Exception) {
+            }
+        }
+        return min(new \DateTimeImmutable($issueDate . ' 12:00:00', EetValues::zone()), $now);
+    }
+
+    /**
+     * Úhrada faktury z PPD nesmí krýt dluh, který drží potvrzený QR příkaz čekající na banku
+     * (jinak dvě tržby na jedny peníze). Úhrada je v té chvíli zapsaná a faktura zamčená.
+     *
+     * @param array<string,mixed> $doc
+     * @throws EetCommandException
+     */
+    private function assertNoQrOverlap(int $supplierId, int $invoiceId, array $doc): void
+    {
+        $stmt = $this->db->pdo()->prepare('SELECT amount_to_pay, paid_total FROM invoices WHERE id = ? AND supplier_id = ?');
+        $stmt->execute([$invoiceId, $supplierId]);
+        $invoice = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($invoice === false) {
+            return;
+        }
+        $docCents = EetValues::toCents(EetValues::amount((float) ($doc['total_amount'] ?? 0)));
+        $paidAfter = EetValues::toCents(EetValues::amount((string) ($invoice['paid_total'] ?? '0')));
+        $this->events->assertNoQrOverlap($supplierId, $invoiceId,
+            EetValues::toCents(EetValues::amount((string) ($invoice['amount_to_pay'] ?? '0'))),
+            $paidAfter - $docCents, $docCents,
+            (int) round(\MyInvoice\Service\Invoice\InvoicePaymentService::TOLERANCE * 100));
+    }
+
+    /** @param array<string,mixed> $settings */
+    private function defaultDevice(int $supplierId, array $settings): ?int
+    {
+        $deviceId = (int) ($settings['default_device_id'] ?? 0);
+        if ($deviceId <= 0) {
+            return null;
+        }
+        $stmt = $this->db->pdo()->prepare('SELECT id FROM eet_devices WHERE id = ? AND supplier_id = ? AND active = 1');
+        $stmt->execute([$deviceId, $supplierId]);
+        return $stmt->fetchColumn() === false ? null : $deviceId;
     }
 
     private function deviceForRegister(int $supplierId, int $registerId): ?int

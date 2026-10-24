@@ -258,6 +258,7 @@ final class CashDocumentAction
                 'reason'     => (string) ($body['reason'] ?? ''),
                 'entry_date' => $body['entry_date'] ?? null,
                 'eet_correction_reason' => isset($body['eet_correction_reason']) ? (string) $body['eet_correction_reason'] : null,
+                'eet_device_id' => $body['eet_device_id'] ?? null,
             ], $this->userId($request));
             $this->log($request, 'cash.document_reversed', $id, ['reversal_entry_id' => $result['reversal_entry_id']]);
             return Json::ok($response, $result);
