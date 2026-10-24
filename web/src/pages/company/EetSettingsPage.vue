@@ -21,6 +21,7 @@ import {
   type EetUnit,
   type EetUnitKind,
 } from '@/api/eet'
+import { cashApi, type CashRegister } from '@/api/cash'
 import { authApi } from '@/api/auth'
 import { apiErrorMessage } from '@/api/errors'
 import { getCredential, isWebAuthnAvailable } from '@/security/webauthn'
@@ -46,6 +47,7 @@ const obstacles = ref<EetActivationObstacle[]>([])
 const units = ref<EetUnit[]>([])
 const devices = ref<EetDevice[]>([])
 const certificates = ref<EetCertificate[]>([])
+const registers = ref<CashRegister[]>([])
 
 interface ProfileDraft {
   environment: EetEnvironment
@@ -94,6 +96,8 @@ async function load(silent = false) {
     devices.value = d
     if (!dirty.value) fillDraft(s.settings)
     certificates.value = canReadCerts.value ? await eetApi.certificates() : []
+    // Pokladny jsou jen volitelná vazba zařízení; bez práva na pokladnu se výběr nenabídne.
+    registers.value = await cashApi.listRegisters().catch(() => [])
   } catch (e) {
     toast.error(apiErrorMessage(e, t('eet.load_failed')))
   } finally {
@@ -251,20 +255,31 @@ function endUnit(u: EetUnit) {
 function unitEnded(u: EetUnit): boolean { return !!u.valid_to && u.valid_to < today() }
 
 // ---- Zařízení ----
-interface DeviceForm { id: number | null; unit_id: number | null; code: string; name: string; active: boolean }
+interface DeviceForm { id: number | null; unit_id: number | null; code: string; name: string; cash_register_id: number | null; active: boolean }
 const deviceForm = ref<DeviceForm | null>(null)
 const deviceBusy = ref(false)
 function openDevice(d?: EetDevice) {
   deviceForm.value = d
-    ? { id: d.id, unit_id: d.unit_id, code: d.code, name: d.name ?? '', active: d.active }
-    : { id: null, unit_id: validUnits.value[0]?.id ?? null, code: '', name: '', active: true }
+    ? { id: d.id, unit_id: d.unit_id, code: d.code, name: d.name ?? '', cash_register_id: d.cash_register_id, active: d.active }
+    : { id: null, unit_id: validUnits.value[0]?.id ?? null, code: '', name: '', cash_register_id: null, active: true }
 }
+function registerLabel(id: number | null): string {
+  if (id === null) return ''
+  const r = registers.value.find(x => x.id === id)
+  return r ? `${r.name} (${r.account_code})` : `#${id}`
+}
+// Do nabídky patří aktivní pokladny a ta, která je k zařízení už přiřazená (i kdyby byla neaktivní).
+const registerOptions = computed(() =>
+  registers.value.filter(r => r.is_active || r.id === deviceForm.value?.cash_register_id))
 async function saveDevice() {
   const f = deviceForm.value
   if (!f || f.unit_id === null) return
   deviceBusy.value = true
   try {
-    const payload = { unit_id: f.unit_id, code: f.code.trim(), name: f.name.trim() === '' ? null : f.name.trim(), active: f.active }
+    const payload = {
+      unit_id: f.unit_id, code: f.code.trim(), name: f.name.trim() === '' ? null : f.name.trim(),
+      cash_register_id: f.cash_register_id, active: f.active,
+    }
     if (f.id === null) await eetApi.createDevice(payload)
     else await eetApi.updateDevice(f.id, payload)
     deviceForm.value = null
@@ -697,6 +712,7 @@ const th = 'px-3 py-2 text-left font-medium'
                   <th :class="th">{{ t('eet.devices.col_code') }}</th>
                   <th :class="th">{{ t('eet.devices.col_name') }}</th>
                   <th :class="th">{{ t('eet.devices.col_unit') }}</th>
+                  <th :class="th">{{ t('eet.devices.col_register') }}</th>
                   <th :class="th">{{ t('eet.devices.col_status') }}</th>
                   <th v-if="canWrite" :class="[th, 'text-right']">{{ t('eet.col_actions') }}</th>
                 </tr>
@@ -706,6 +722,7 @@ const th = 'px-3 py-2 text-left font-medium'
                   <td class="px-3 py-2 font-mono whitespace-nowrap">{{ d.code }}</td>
                   <td class="px-3 py-2">{{ d.name || '-' }}</td>
                   <td class="px-3 py-2 whitespace-nowrap">{{ d.unit_number }} - {{ d.unit_name }}</td>
+                  <td class="px-3 py-2 whitespace-nowrap">{{ registerLabel(d.cash_register_id) || '-' }}</td>
                   <td class="px-3 py-2">
                     <span :class="[BADGE, d.active ? BADGE_CLASS.ok : BADGE_CLASS.off]">{{ t(d.active ? 'eet.devices.status_active' : 'eet.devices.status_inactive') }}</span>
                     <span v-if="settings.default_device_id === d.id" :class="[BADGE, BADGE_CLASS.ok, 'ml-1']">{{ t('eet.devices.default') }}</span>
@@ -740,6 +757,7 @@ const th = 'px-3 py-2 text-left font-medium'
                 </span>
               </div>
               <div class="text-xs text-neutral-600">{{ d.name || '-' }} · {{ d.unit_number }} - {{ d.unit_name }}</div>
+              <div v-if="d.cash_register_id !== null" class="text-xs text-neutral-600">{{ t('eet.devices.register') }}: {{ registerLabel(d.cash_register_id) }}</div>
               <div v-if="canWrite" class="flex flex-wrap gap-1">
                 <button v-if="d.active && settings.default_device_id !== d.id" type="button" :class="btnOutlineSm('success')" @click="setDefaultDevice(d)">
                   <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" :d="ICONS.check" /></svg>
@@ -974,6 +992,14 @@ const th = 'px-3 py-2 text-left font-medium'
         <label :class="[formLabel, 'sm:col-span-2']">
           <span>{{ t('eet.devices.name') }}</span>
           <input v-model="deviceForm.name" type="text" maxlength="120" :class="formInput" />
+        </label>
+        <label v-if="registers.length > 0 || deviceForm.cash_register_id !== null" :class="[formLabel, 'sm:col-span-2']">
+          <span>{{ t('eet.devices.register') }}</span>
+          <select v-model="deviceForm.cash_register_id" :class="formInput" data-test="eet-device-register">
+            <option :value="null">{{ t('eet.devices.register_none') }}</option>
+            <option v-for="r in registerOptions" :key="r.id" :value="r.id">{{ r.name }} ({{ r.account_code }})</option>
+          </select>
+          <span class="text-xs text-neutral-500">{{ t('eet.devices.register_hint') }}</span>
         </label>
         <label class="flex items-center gap-2 text-sm sm:col-span-2">
           <ToggleSwitch v-model="deviceForm.active" :label="t('eet.devices.active')" />

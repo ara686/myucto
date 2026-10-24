@@ -315,6 +315,26 @@ final class EetPaymentPathsTest extends TestCase
         self::assertSame(1, (int) $this->scalar("SELECT COUNT(*) FROM payment_event_allocations a JOIN payment_events e ON e.id = a.payment_event_id WHERE a.supplier_id = ? AND e.kind = 'refund' AND a.cash_document_id = ?", [$this->supplierId, (int) $created['id']]));
     }
 
+    /** Filtr cash_document_id vrací jen záznamy daného dokladu (tržbu i opravu) a nikdy cizí firmy. */
+    public function testRecordListFiltersByCashDocumentWithinSupplier(): void
+    {
+        $registerId = $this->mappedRegister();
+        $service = $this->container->get(CashDocumentService::class);
+        $first = $service->create($this->supplierId, $this->sale($registerId, 100.00), $this->userId);
+        $second = $service->create($this->supplierId, $this->sale($registerId, 200.00), $this->userId);
+        $this->clock->modify('+1 hour');
+        $service->reverse($this->supplierId, (int) $first['id'], ['reason' => 'Vrácení'], $this->userId);
+
+        $query = $this->container->get(\MyInvoice\Service\Eet\EetRecordQuery::class);
+        $own = $query->list($this->supplierId, ['cash_document_id' => (string) $first['id']], null, 50);
+        self::assertSame(['correction', 'sale'], array_column($own['items'], 'kind'));
+        $other = $query->list($this->supplierId, ['cash_document_id' => (string) $second['id']], null, 50);
+        self::assertCount(1, $other['items']);
+        self::assertCount(0, $query->list($this->supplierId + 1000000, ['cash_document_id' => (string) $first['id']], null, 50)['items']);
+        $this->expectException(\MyInvoice\Service\Eet\EetCommandException::class);
+        $query->list($this->supplierId, ['cash_document_id' => 'x'], null, 50);
+    }
+
     /** QR potvrzení → bankovní párování: jedna úhrada, jeden záznam, ověřeno a vypořádáno. */
     public function testQrConfirmThenBankPairingSettlesTheSameEvent(): void
     {

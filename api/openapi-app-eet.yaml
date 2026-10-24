@@ -643,6 +643,12 @@ paths:
         in: query
         schema:
           type: integer
+      - name: cash_document_id
+        in: query
+        description: Jen záznamy tržby a opravy navázané na daný pokladní doklad (vždy v rámci aktivní firmy).
+        schema:
+          type: integer
+          minimum: 1
       - name: kind
         in: query
         schema:
@@ -1062,7 +1068,7 @@ components:
           description: Aktivní pokladní zařízení pro výběr při přijetí platby (bez čítače řady).
           items:
             type: object
-            required: [id, code, name, unit_id, unit_number, unit_name]
+            required: [id, code, name, unit_id, unit_number, unit_name, cash_register_id]
             properties:
               id:
                 type: integer
@@ -1076,6 +1082,11 @@ components:
                 type: integer
               unit_name:
                 type: string
+              cash_register_id:
+                type:
+                - integer
+                - 'null'
+                description: Účetní pokladna namapovaná na zařízení (tržba z jejích příjmových dokladů se eviduje na toto zařízení).
         has_active_certificate:
           type: boolean
         certificate_expires_at:

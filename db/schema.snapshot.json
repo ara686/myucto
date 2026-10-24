@@ -1083,7 +1083,8 @@
         "2160_tax_profile_family_birth_number_sealed.sql",
         "2180_work_report_link_session_expiry.sql",
         "2181_eet_settings_units_devices_certificates.sql",
-        "2182_eet_payment_events_records_attempts.sql"
+        "2182_eet_payment_events_records_attempts.sql",
+        "2183_eet_role_permissions.sql"
     ],
     "tables": {
         "abra_flexi_connections": {

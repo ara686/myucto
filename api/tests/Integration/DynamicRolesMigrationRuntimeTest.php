@@ -350,6 +350,7 @@ final class DynamicRolesMigrationRuntimeTest extends TestCase
                 '2075_purchase_invoice_vat_treatment_permission.sql',
                 '2109_property_funds_role_defaults.sql',
                 '2118_property_service_unwind_permission.sql',
+                '2183_eet_role_permissions.sql',
             ]),
         ];
         $env = getenv();

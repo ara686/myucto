@@ -21,6 +21,7 @@ import { appIsoDate } from '@/utils/date'
 import DateInput from '@/components/ui/DateInput.vue'
 import DimensionFields from '@/components/dimensions/DimensionFields.vue'
 import { useDocumentDimensions } from '@/composables/useDocumentDimensions'
+import { useEetCapabilities } from '@/composables/useEetCapabilities'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -101,6 +102,19 @@ const purposeOptions = computed<CashPurpose[]>(() => {
       ? ['purchase', 'invoice_payment', 'purchase_payment', 'transfer', 'other']
       : ['purchase', 'purchase_payment', 'transfer', 'other']
 })
+
+// ── EET: tržba z příjmového dokladu se eviduje při zaúčtování ────────────────
+// Eviduje se jen na zařízení namapované na pokladnu, nebo na zařízení zvolené tady;
+// pokladna bez mapování a bez volby doklad do EET nezapíše (výchozí chování beze změny).
+const eetCaps = useEetCapabilities()
+const eetSale = computed(() =>
+  eetCaps.enabled.value && form.doc_type === 'in' && (form.purpose === 'sale' || form.purpose === 'invoice_payment'))
+const eetDevices = computed(() => eetCaps.capabilities.value?.devices ?? [])
+const eetMappedDevice = computed(() =>
+  form.register_id === '' ? null : eetDevices.value.find(d => d.cash_register_id === form.register_id) ?? null)
+const eetChosenDeviceId = ref<number | null>(null)
+const eetDeviceToSend = computed<number | null>(() =>
+  eetSale.value && eetMappedDevice.value === null ? eetChosenDeviceId.value : null)
 
 const isTaxDoc = computed(() => form.purpose === 'sale' || form.purpose === 'purchase')
 const isPayment = computed(() => form.purpose === 'invoice_payment' || form.purpose === 'purchase_payment')
@@ -597,6 +611,7 @@ async function save(post = true) {
     counter_account_code: (isOther.value || (form.purpose === 'purchase' && !isTaxEvidence.value)) && form.counter_account_code ? form.counter_account_code : null,
     rule_key: isOther.value && !form.counter_account_code && form.rule_key ? form.rule_key : null,
     post,
+    eet_device_id: eetDeviceToSend.value,
   }
 
   saving.value = true
@@ -606,7 +621,9 @@ async function save(post = true) {
       // Dimenze před zaúčtováním, ať je zápis dostane rovnou.
       await docDims.save(editId.value)
       if (post) {
-        const res = await cashApi.postDocument(editId.value)
+        const res = eetDeviceToSend.value !== null
+          ? await cashApi.postDocument(editId.value, eetDeviceToSend.value)
+          : await cashApi.postDocument(editId.value)
         toast.success(t('cash.new_document') + ' ' + res.doc_number)
         for (const w of res.warnings) toast.warning(cashWarningMessage(w, t))
       } else {
@@ -862,6 +879,26 @@ async function save(post = true) {
           </p>
           <p class="text-xs text-neutral-400">{{ t('cash.form.simplified_limit_hint') }}</p>
         </template>
+
+        <!-- EET: zařízení pro tržbu z tohoto dokladu -->
+        <div v-if="eetSale && isDraft" class="rounded-md border px-3 py-2 text-sm"
+          :class="eetMappedDevice ? 'border-primary-200 bg-primary-50 text-primary-800' : 'border-neutral-200 bg-neutral-50 text-neutral-700'"
+          data-test="cash-eet-info">
+          <p v-if="eetMappedDevice">
+            {{ t('cash.eet.mapped', { device: `${eetMappedDevice.code}${eetMappedDevice.name ? ' - ' + eetMappedDevice.name : ''}` }) }}
+          </p>
+          <template v-else-if="eetDevices.length > 0">
+            <label :for="`${pageId}-cash-eet-device`" class="block font-medium mb-1">{{ t('cash.eet.device') }}</label>
+            <select :id="`${pageId}-cash-eet-device`" v-model="eetChosenDeviceId"
+              class="w-full h-10 px-3 border border-neutral-300 rounded-md text-sm bg-surface" data-test="cash-eet-device">
+              <option :value="null">{{ t('cash.eet.device_none') }}</option>
+              <option v-for="d in eetDevices" :key="d.id" :value="d.id">{{ d.code }}{{ d.name ? ' - ' + d.name : '' }} ({{ d.unit_number }})</option>
+            </select>
+            <p class="mt-1 text-xs" :class="eetChosenDeviceId === null ? 'text-warning-700' : 'text-neutral-500'">
+              {{ eetChosenDeviceId === null ? t('cash.eet.not_recorded') : t('cash.eet.chosen') }}
+            </p>
+          </template>
+        </div>
 
         <div v-if="error" class="text-sm text-danger-500">{{ error }}</div>
 

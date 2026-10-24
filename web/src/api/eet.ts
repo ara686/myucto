@@ -14,6 +14,8 @@ export interface EetCapabilityDevice {
   unit_id: number
   unit_number: number
   unit_name: string
+  /** Účetní pokladna namapovaná na zařízení (tržby z jejích příjmových dokladů jdou na něj). */
+  cash_register_id: number | null
 }
 
 export interface EetCapabilities {
@@ -324,6 +326,7 @@ export interface EetRecordListParams {
   unit_id?: number
   device_id?: number
   kind?: 'sale' | 'correction'
+  cash_document_id?: number
 }
 
 export interface EetRecordListResponse {

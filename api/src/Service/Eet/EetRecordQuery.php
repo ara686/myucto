@@ -21,7 +21,7 @@ final class EetRecordQuery
     public function __construct(private readonly Connection $db) {}
 
     /**
-     * @param array<string,mixed> $filters from, to (YYYY-MM-DD, včetně), status, unit_id, device_id, kind
+     * @param array<string,mixed> $filters from, to (YYYY-MM-DD, včetně), status, unit_id, device_id, kind, cash_document_id
      * @return array{items: list<array<string,mixed>>, next_cursor: ?string}
      */
     public function list(int $supplierId, array $filters, ?string $cursor, int $limit): array
@@ -217,6 +217,16 @@ final class EetRecordQuery
                 $where[] = $column . ' = ?';
                 $params[] = (int) $value;
             }
+        }
+        // Záznamy tržby pokladního dokladu (i jeho opravy): přes alokace platební události,
+        // unikátní index (cash_document_id, payment_event_id) pokrývá vyhledání dokladu.
+        $cashDocumentId = $filters['cash_document_id'] ?? null;
+        if ($cashDocumentId !== null && $cashDocumentId !== '') {
+            if (!ctype_digit((string) $cashDocumentId) || (int) $cashDocumentId <= 0) {
+                throw EetCommandException::validation('Neplatné pole cash_document_id.', 'cash_document_id');
+            }
+            $where[] = 'payment_event_id IN (SELECT a.payment_event_id FROM payment_event_allocations a WHERE a.cash_document_id = ? AND a.supplier_id = ?)';
+            array_push($params, (int) $cashDocumentId, $supplierId);
         }
         $kind = $filters['kind'] ?? null;
         if ($kind !== null && $kind !== '') {

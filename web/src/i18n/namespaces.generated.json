@@ -1064,6 +1064,9 @@
       "cash",
       "purchase_invoice"
     ],
+    "eet-settings": [
+      "cash"
+    ],
     "credit-cards": [
       "credit_cards"
     ],
