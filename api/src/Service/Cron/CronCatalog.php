@@ -297,6 +297,7 @@ final class CronCatalog
                 // certifikátu. Zákonná lhůta je 48 h, proto kritická a každou minutu.
                 // Bez EET záznamů skončí preflightem bez stavby kontejneru.
                 'script' => 'cron-eet-dispatch',
+                'requires_usage' => CronJobGate::USAGE_EET_PENDING,
                 'recommended' => 'every_1_min',
                 'linux_cron' => '* * * * *',
                 'windows_schtasks' => '/sc minute /mo 1',
