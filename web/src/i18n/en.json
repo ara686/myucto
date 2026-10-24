@@ -13580,7 +13580,19 @@
       "date_locked": "The document date falls into a period closed by the tax lock.",
       "ddkp_not_payable": "A tax document for a received payment (§ 28) is not paid in cash — pay the advance invoice it originates from.",
       "has_dependencies": "The document is linked to other records and cannot be deleted — remove the link first.",
-      "validation": "Please check the entered data."
+      "validation": "Please check the entered data.",
+      "eet_validation": "The data for the EET sale record are not valid.",
+      "eet_not_configured": "EET is not fully configured, the document cannot be posted with a sale record.",
+      "eet_unsupported_scenario": "This sale cannot be recorded in EET yet, the document was not posted.",
+      "eet_state_conflict": "The EET record state does not allow this action.",
+      "eet_history_exists": "The document has a recorded EET sale, so it cannot be deleted."
+    },
+    "eet": {
+      "mapped": "On posting, the document is recorded in EET on device {device}.",
+      "device": "EET device for the sale",
+      "device_none": "Do not record in EET",
+      "not_recorded": "The register is not linked to an EET device; without choosing one, the sale from this document is not recorded in EET.",
+      "chosen": "On posting, the document is recorded in EET on the chosen device."
     }
   },
   "stock": {
@@ -38890,7 +38902,11 @@
       "deactivated": "The device was deactivated.",
       "deactivate_failed": "Could not deactivate the device.",
       "saved": "The device was saved.",
-      "save_failed": "Could not save the device."
+      "save_failed": "Could not save the device.",
+      "col_register": "Cash register",
+      "register": "Accounting cash register",
+      "register_none": "Not linked to a cash register",
+      "register_hint": "Incoming cash documents (sale, invoice payment) from this register are recorded on this device when posted."
     },
     "certificates": {
       "title": "Cash certificates",
@@ -39198,6 +39214,13 @@
       "submit_failed": "Could not save the correction.",
       "saved": "The correction is saved.",
       "no_money_back": "The correction only changes the record. Refunding the customer must be done and booked separately."
+    },
+    "cash": {
+      "title": "EET",
+      "sale": "Sale",
+      "correction": "Correction (reversal)",
+      "open_record": "Open record",
+      "reversed_without_correction": "The document is reversed, but no EET correction was created. Check the record."
     }
   }
 }

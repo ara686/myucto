@@ -13580,7 +13580,19 @@
       "date_locked": "Datum dokladu spadá do období uzamčeného daňovým zámkem.",
       "ddkp_not_payable": "Daňový doklad k přijaté platbě (§ 28) se hotově nehradí - uhraďte zálohovou fakturu, ze které vznikl.",
       "has_dependencies": "Doklad je navázaný na jiné záznamy a nelze ho smazat - zrušte nejprve vazbu.",
-      "validation": "Zkontrolujte zadané údaje."
+      "validation": "Zkontrolujte zadané údaje.",
+      "eet_validation": "Údaje pro evidenci tržby EET nejsou v pořádku.",
+      "eet_not_configured": "EET není kompletně nastavené, doklad nelze zaúčtovat s evidencí tržby.",
+      "eet_unsupported_scenario": "Tuto tržbu zatím nelze do EET zaevidovat, doklad se nezaúčtoval.",
+      "eet_state_conflict": "Stav evidence EET neumožňuje tuto akci.",
+      "eet_history_exists": "Doklad má evidovanou tržbu EET, takže ho nelze smazat."
+    },
+    "eet": {
+      "mapped": "Při zaúčtování se doklad zaeviduje do EET na zařízení {device}.",
+      "device": "Zařízení EET pro tržbu",
+      "device_none": "Neevidovat do EET",
+      "not_recorded": "Pokladna není napojená na zařízení EET, bez volby zařízení se tržba z tohoto dokladu do EET nezaeviduje.",
+      "chosen": "Při zaúčtování se doklad zaeviduje do EET na zvolené zařízení."
     }
   },
   "stock": {
@@ -38890,7 +38902,11 @@
       "deactivated": "Zařízení bylo deaktivováno.",
       "deactivate_failed": "Zařízení se nepodařilo deaktivovat.",
       "saved": "Zařízení bylo uloženo.",
-      "save_failed": "Zařízení se nepodařilo uložit."
+      "save_failed": "Zařízení se nepodařilo uložit.",
+      "col_register": "Pokladna",
+      "register": "Účetní pokladna",
+      "register_none": "Bez vazby na pokladnu",
+      "register_hint": "Příjmové pokladní doklady (prodej, úhrada faktury) z této pokladny se při zaúčtování eviduje na toto zařízení."
     },
     "certificates": {
       "title": "Pokladní certifikáty",
@@ -39198,6 +39214,13 @@
       "submit_failed": "Opravu se nepodařilo uložit.",
       "saved": "Oprava je uložena.",
       "no_money_back": "Oprava mění jen evidenci. Vrácení peněz zákazníkovi je potřeba provést a zaúčtovat zvlášť."
+    },
+    "cash": {
+      "title": "EET",
+      "sale": "Tržba",
+      "correction": "Oprava (storno)",
+      "open_record": "Otevřít záznam",
+      "reversed_without_correction": "Doklad je stornovaný, ale oprava tržby v EET nevznikla. Zkontrolujte záznam."
     }
   }
 }

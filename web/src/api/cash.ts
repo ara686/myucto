@@ -85,6 +85,8 @@ export interface CreateCashDocumentPayload {
   invoice_id?: number | null; purchase_invoice_id?: number | null
   rule_key?: string | null; counter_account_code?: string | null
   post?: boolean                          // default true — create+post v 1 transakci (O2)
+  /** EET: zařízení pro tržbu, když pokladna žádné namapované nemá. */
+  eet_device_id?: number | null
 }
 
 export interface CashDocumentCreateResult {
@@ -186,8 +188,9 @@ export const cashApi = {
   updateDocument: (id: number, p: CreateCashDocumentPayload) =>
     api.put<CashDocument>(`/accounting/cash-documents/${id}`, p).then(r => r.data),
   // Zaúčtování draftu (přidělí číslo řady a založí deníkový zápis).
-  postDocument: (id: number) =>
-    api.post<CashDocumentPostResult>(`/accounting/cash-documents/${id}/post`).then(r => r.data),
+  postDocument: (id: number, eetDeviceId?: number | null) =>
+    api.post<CashDocumentPostResult>(`/accounting/cash-documents/${id}/post`,
+      eetDeviceId ? { eet_device_id: eetDeviceId } : undefined).then(r => r.data),
   // Storno vrací varování stejně jako zaúčtování (posunutý protizápis, záporná pokladna).
   reverseDocument: (id: number, reason: string, entryDate?: string) =>
     api.post<{ reversal_entry_id: number | null; warnings: string[] }>(

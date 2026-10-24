@@ -61,6 +61,7 @@ final class EetCapabilitiesAction
                 static fn (array $d): array => [
                     'id' => $d['id'], 'code' => $d['code'], 'name' => $d['name'],
                     'unit_id' => $d['unit_id'], 'unit_number' => $d['unit_number'], 'unit_name' => $d['unit_name'],
+                    'cash_register_id' => $d['cash_register_id'],
                 ],
                 array_filter($this->devices->listFor($supplierId), static fn (array $d): bool => $d['active']),
             )),
