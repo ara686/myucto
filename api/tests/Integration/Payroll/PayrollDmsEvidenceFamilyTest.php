@@ -213,6 +213,43 @@ final class PayrollDmsEvidenceFamilyTest extends TestCase
         ));
     }
 
+    /**
+     * Podmínky rodiny důkazů se musí dát materializovat jednou za dotaz.
+     * Korelovaná podmínka s OR se spouštěla pro každý řádek dokumentů, takže
+     * seznam a počty u firmy s tisíci mzdovými podáními zpomalovaly úměrně
+     * součinu obou tabulek.
+     */
+    public function testEvidenceFamilyConditionsAreNotDependentSubqueries(): void
+    {
+        [$clause, $params] = \MyInvoice\Repository\DocumentVisibility::clause(
+            DocumentViewerContext::forUser($this->userId),
+            'd',
+        );
+        // Na malých testovacích datech optimalizátor podle ceny zvolí IN->EXISTS.
+        // Bez něj musí jít každá podmínka materializovat; korelované OR nejde nikdy.
+        $pdo = $this->db->pdo();
+        $switch = (string) $pdo->query("SELECT @@SESSION.optimizer_switch")->fetchColumn();
+        $pdo->exec("SET SESSION optimizer_switch = 'in_to_exists=off,materialization=on'");
+        try {
+            $stmt = $pdo->prepare("EXPLAIN SELECT COUNT(*) FROM documents d WHERE d.supplier_id = ? {$clause}");
+            $stmt->execute([$this->supplierId, ...$params]);
+            $plan = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } finally {
+            $pdo->exec("SET SESSION optimizer_switch = " . $pdo->quote($switch));
+        }
+        $dependent = [];
+        foreach ($plan as $row) {
+            // Odkazy na mzdové doklady mají vlastní, užší podmínku bez sourozenců.
+            if (str_starts_with((string) $row['select_type'], 'DEPENDENT')
+                && !in_array($row['table'], ['payroll_document_link', 'linked_payroll_document'], true)) {
+                $dependent[] = $row['table'];
+            }
+        }
+
+        self::assertGreaterThan(20, substr_count($clause, 'NOT IN'), 'Klauzule neobsahuje podmínky rodiny důkazů.');
+        self::assertSame([], $dependent, 'Závislé poddotazy ve viditelnosti dokumentů: ' . implode(', ', $dependent));
+    }
+
     public function testBulkDeleteAndMoveRequireTheirOwnPermissions(): void
     {
         $first = $this->document('a.pdf', str_repeat('7', 64));
