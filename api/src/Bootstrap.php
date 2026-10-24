@@ -842,6 +842,7 @@ final class Bootstrap
                 // zaplacené služby ale musí být TÁŽ instance jako všude jinde —
                 // jinak by se po zápisu nového rozsahu nezahodila jeho cache.
                 entitlement: $c->get(\MyInvoice\Service\System\InstanceEntitlement::class),
+                consistency: $c->get(\MyInvoice\Service\License\LicenseConsistency::class),
             ),
             \MyInvoice\Service\Tenant\SupplierAccessResolver::class => fn (ContainerInterface $c) => new \MyInvoice\Service\Tenant\SupplierAccessResolver(
                 $c->get(Connection::class),

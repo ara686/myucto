@@ -10523,6 +10523,10 @@ paths:
                     items: { $ref: '#/components/schemas/CrmActionItem' }
                   total: { type: integer }
                   dismissed_count: { type: integer }
+                  dismissed_types:
+                    type: array
+                    description: Typy položek, které má uživatel právě odložené (i klientské, např. `pwa_install`).
+                    items: { type: string }
 
   /api/v1/crm/cash-flow-forecast:
     get:

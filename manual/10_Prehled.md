@@ -210,6 +210,7 @@ Widget úplně nahoře na Přehledu (nad KPI dlaždicemi) je průběžně sklád
 | Souhrnné hlášení za uplynulý měsíc | Termín SH | [Souhrnné hlášení](44_Souhrnne_hlaseni.md) |
 | Kontaktuj neaktivní klienty | Klienti bez aktivity delší dobu (riziko odchodu) | [Zisk](11_Zisk.md) |
 | **Odešli měsíční hlášení** | Připravené měsíční hlášení (JMHZ) čeká na odeslání na ČSSZ, viz [§ 10.10.6.3](#101063-odesli-mesicni-hlaseni) | [Podání a hlášení](85_Podani_a_hlaseni.md) |
+| Nainstalujte MyÚčto na plochu telefonu | Jen na mobilu a jen když aplikace neběží z plochy. V Chrome nebo Edge na Androidu stačí klepnout na **Nainstalovat**, na iPhonu a iPadu klepněte v prohlížeči na **Sdílet** a zvolte **Přidat na plochu** | - |
 
 Každá položka má menu se skrytím (na den, týden, natrvalo, nebo jen pro historická data). Po skrytí se dole objeví odkaz **Obnovit skrytá (N)**.
 

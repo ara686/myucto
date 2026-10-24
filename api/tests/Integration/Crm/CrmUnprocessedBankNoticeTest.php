@@ -152,6 +152,23 @@ final class CrmUnprocessedBankNoticeTest extends TestCase
      * Odložení „historická" schová jen avíza, která už propadla; avízo, které propadne
      * později, se ozve znovu. Typ položky musí jít odložit vůbec.
      */
+    public function testKlientskaPolozkaPwaInstallJdeOdlozitAVraciSeVDismissedTypes(): void
+    {
+        $userId = (int) ($this->db->pdo()->query('SELECT id FROM users ORDER BY id LIMIT 1')->fetchColumn() ?: 0);
+        if ($userId === 0) {
+            $this->markTestSkipped('Chybí uživatel.');
+        }
+        $this->crm->restoreActionItem($this->supplierId, $userId, 'pwa_install');
+        self::assertNotContains('pwa_install', $this->crm->actionItems($this->supplierId, $userId)['dismissed_types']);
+
+        $this->crm->dismissActionItem($this->supplierId, $userId, 'pwa_install', 'forever');
+        try {
+            self::assertContains('pwa_install', $this->crm->actionItems($this->supplierId, $userId)['dismissed_types']);
+        } finally {
+            $this->crm->restoreActionItem($this->supplierId, $userId, 'pwa_install');
+        }
+    }
+
     public function testOdlozeniSchovaJenStavajiciAviza(): void
     {
         $userId = (int) ($this->db->pdo()->query('SELECT id FROM users ORDER BY id LIMIT 1')->fetchColumn() ?: 0);
