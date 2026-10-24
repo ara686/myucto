@@ -177,11 +177,11 @@ input[type="file"].form-input::file-selector-button {
 
   /* ─── Typografie ───
      Self-hostované subsety, viz styles/fonts.css. Utilita `font-mono` u částek a čísel
-     dokladů vede na Geist s tabulárními číslicemi: číslice mají stejnou šířku pod sebou,
-     ale mezera mezi trojicemi zůstane úzká (v neproporcionálním řezu byla široká jako
-     číslice). Skutečný neproporcionální řez nese jen kód přes --font-code. */
+     dokladů vede na Geist Mono bez znaků mezer: číslice (s přeškrtnutou nulou) mají
+     stejnou šířku pod sebou, ale mezeru mezi trojicemi vykreslí proporcionální Geist,
+     takže není široká jako celá číslice. Úplný řez nese kód přes --font-code. */
   --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-mono: var(--font-sans);
+  --font-mono: "Geist Mono Num", "Geist", ui-monospace, "SF Mono", Consolas, monospace;
   --font-code: "Geist Mono", ui-monospace, "SF Mono", Consolas, monospace;
   --font-display: var(--font-sans);
 
@@ -477,7 +477,7 @@ body.workspace-window-single-padded #app {
 }
 
 /* ═══════════════════════ NADPISY ═══════════════════════
- * Nadpisy stránek a hero čísla jsou v Geistu, řezu 600 s mírně staženým proložením.
+ * Nadpisy stránek a hero čísla jsou v Geistu, řezu 500 s mírně staženým proložením.
  * H1 stylujeme globálně (mimo @layer, aby přebilo utility z jednotlivých stránek):
  * v aplikaci je přes 140 nadpisů a ručně jim třídu dopisovat by znamenalo sáhnout
  * do stovky souborů.
@@ -488,8 +488,8 @@ body.workspace-window-single-padded #app {
 .font-display,
 h1:not(.font-sans) {
   font-family: var(--font-display);
-  font-weight: 600;
-  letter-spacing: -0.02em;
+  font-weight: 500;
+  letter-spacing: -0.015em;
   line-height: 1.2;
 }
 
