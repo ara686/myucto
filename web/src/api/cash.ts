@@ -192,9 +192,12 @@ export const cashApi = {
     api.post<CashDocumentPostResult>(`/accounting/cash-documents/${id}/post`,
       eetDeviceId ? { eet_device_id: eetDeviceId } : undefined).then(r => r.data),
   // Storno vrací varování stejně jako zaúčtování (posunutý protizápis, záporná pokladna).
-  reverseDocument: (id: number, reason: string, entryDate?: string) =>
+  reverseDocument: (id: number, reason: string, entryDate?: string, eetCorrectionReason?: string) =>
     api.post<{ reversal_entry_id: number | null; warnings: string[] }>(
-      `/accounting/cash-documents/${id}/reverse`, { reason, entry_date: entryDate }).then(r => r.data),
+      `/accounting/cash-documents/${id}/reverse`,
+      eetCorrectionReason
+        ? { reason, entry_date: entryDate, eet_correction_reason: eetCorrectionReason }
+        : { reason, entry_date: entryDate }).then(r => r.data),
   // force=1 → smaže doklad i s účetními zápisy (bez force jen draft).
   deleteDocument: (id: number, force = false) =>
     api.delete<CashDocumentDeleteResult>(`/accounting/cash-documents/${id}`,

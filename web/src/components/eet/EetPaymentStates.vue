@@ -19,8 +19,16 @@ const WARN = 'bg-warning-50 text-warning-700 ring-warning-600/20'
 const BAD = 'bg-danger-50 text-danger-700 ring-danger-600/20'
 const OFF = 'bg-neutral-100 text-neutral-600 ring-neutral-500/20'
 
+/** Oprava / vratka: žádné přijetí peněz ani bankovní párování, jen případné samostatné zaúčtování vrácení. */
+const isRefund = computed(() => props.event.kind === 'refund')
+
 const money = computed(() => {
   const e = props.event
+  if (isRefund.value) {
+    return e.accounting_settlement_status === 'pending'
+      ? { cls: WARN, label: t('eet.pay.money.refund_book') }
+      : { cls: OFF, label: t('eet.pay.money.no_movement') }
+  }
   if (e.payment_order_status === 'failed') return { cls: BAD, label: t('eet.pay.money.failed') }
   if (e.payment_order_status === 'cancelled') return { cls: OFF, label: t('eet.pay.money.cancelled') }
   if (e.payment_order_status === 'initiated') return { cls: OFF, label: t('eet.pay.money.initiated') }
@@ -52,7 +60,7 @@ const eetNote = computed(() => {
       <dt class="text-neutral-600">{{ t('eet.pay.state_money') }}</dt>
       <dd><span :class="[BADGE, money.cls]">{{ money.label }}</span></dd>
     </div>
-    <div class="flex flex-wrap items-center justify-between gap-2">
+    <div v-if="!isRefund" class="flex flex-wrap items-center justify-between gap-2">
       <dt class="text-neutral-600">{{ t('eet.pay.state_doc') }}</dt>
       <dd><span :class="[BADGE, doc.cls]">{{ doc.label }}</span></dd>
     </div>

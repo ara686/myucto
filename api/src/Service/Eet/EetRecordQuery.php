@@ -85,6 +85,7 @@ final class EetRecordQuery
         }
 
         return EetRecordPresenter::record($row) + [
+            'source_invoices' => $this->sourceInvoices($supplierId, $event),
             'payment_event' => $event !== null ? EetRecordPresenter::event($event, null) : null,
             'corrections' => array_map([EetRecordPresenter::class, 'record'], $corrections->fetchAll(PDO::FETCH_ASSOC) ?: []),
             'attempts' => array_map(static function (array $a) use ($includeXml): array {
@@ -190,6 +191,38 @@ final class EetRecordQuery
             $out['eet_record'] = $record !== null ? EetRecordPresenter::record($record) : null;
             return $out;
         }, $rows);
+    }
+
+    /**
+     * Zdrojové faktury platební události (přímá vazba i alokace) s číslem dokladu pro zobrazení.
+     *
+     * @param array<string,mixed>|null $event
+     * @return list<array{id:int, number:string}>
+     */
+    private function sourceInvoices(int $supplierId, ?array $event): array
+    {
+        if ($event === null) {
+            return [];
+        }
+        $pdo = $this->db->pdo();
+        $ids = [];
+        if ($event['invoice_id'] !== null) {
+            $ids[(int) $event['invoice_id']] = true;
+        }
+        $alloc = $pdo->prepare('SELECT DISTINCT invoice_id FROM payment_event_allocations WHERE supplier_id = ? AND payment_event_id = ? AND invoice_id IS NOT NULL');
+        $alloc->execute([$supplierId, (int) $event['id']]);
+        foreach ($alloc->fetchAll(PDO::FETCH_COLUMN) ?: [] as $id) {
+            $ids[(int) $id] = true;
+        }
+        if ($ids === []) {
+            return [];
+        }
+        $keys = array_keys($ids);
+        $in = implode(',', array_fill(0, count($keys), '?'));
+        $st = $pdo->prepare("SELECT id, varsymbol FROM invoices WHERE supplier_id = ? AND id IN ({$in}) ORDER BY id");
+        $st->execute([$supplierId, ...$keys]);
+        return array_map(static fn (array $r): array => ['id' => (int) $r['id'], 'number' => (string) $r['varsymbol']],
+            $st->fetchAll(PDO::FETCH_ASSOC) ?: []);
     }
 
     /**

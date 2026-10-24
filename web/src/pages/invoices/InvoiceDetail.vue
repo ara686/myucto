@@ -21,6 +21,7 @@ import { apiErrorCode, apiErrorMessage } from '@/api/errors'
 import AcceptPaymentDialog from '@/components/eet/AcceptPaymentDialog.vue'
 import QrInPersonPayment from '@/components/eet/QrInPersonPayment.vue'
 import EetInvoiceSummary from '@/components/eet/EetInvoiceSummary.vue'
+import type { EetInvoiceSummaryItem } from '@/api/eet'
 import { useEetCapabilities } from '@/composables/useEetCapabilities'
 import { stockApi, type StockDocument } from '@/api/stock'
 import { formatMoney, formatHourlyRate, formatDate, formatNumber, formatPercent, statusLabel, typeLabel, statusBadgeClass, displayStatus } from '@/composables/useFormat'
@@ -120,6 +121,16 @@ const eet = useEetCapabilities()
 const eetAcceptOpen = ref(false)
 const eetQrOpen = ref(false)
 const eetRefresh = ref(0)
+/** ID plateb faktury, ke kterým existuje EET tržba (úhradu s tržbou nelze smazat). */
+const eetPaymentIds = ref<Set<number>>(new Set())
+function onEetSummaryLoaded(items: EetInvoiceSummaryItem[]) {
+  const ids = new Set<number>()
+  for (const it of items) {
+    if (!it.eet_record && !it.eet) continue
+    for (const a of it.allocations ?? []) if (a.invoice_payment_id != null) ids.add(a.invoice_payment_id)
+  }
+  eetPaymentIds.value = ids
+}
 /** Volba z editoru (?eet=accept|qr): dialog se otevře, jakmile je faktura vystavená. */
 const pendingEet = ref<'accept' | 'qr' | null>(null)
 /** Výčet chybějících zásob z neúspěšného vystavení (okno místo toastu). */
@@ -2675,7 +2686,7 @@ useWindowRefresh(['invoices', 'clients', 'bank', 'bank-transactions', 'cash', 'a
         class="bg-surface border border-neutral-200 rounded-lg shadow-sm overflow-hidden">
         <div class="px-5 py-3 border-b border-neutral-200 flex items-center justify-between gap-3">
           <h3 class="text-sm font-semibold uppercase tracking-wide text-neutral-500">{{ t('invoice.payments.title') }}</h3>
-          <button v-if="canPartialPayment" @click="openPartialPayment" :disabled="busy !== null"
+          <button v-if="canPartialPayment" @click="eetPayAvailable ? (eetAcceptOpen = true) : openPartialPayment()" :disabled="busy !== null"
             class="cursor-pointer text-xs px-2.5 py-1 border border-amber-500/50 text-amber-700 hover:bg-amber-50 rounded-md">
             + {{ t('invoice.payments.add') }}
           </button>
@@ -2723,11 +2734,12 @@ useWindowRefresh(['invoices', 'clients', 'bank', 'bank-transactions', 'cash', 'a
                   <span v-else class="text-xs text-neutral-400">—</span>
                 </td>
                 <td class="px-4 py-2.5 text-right">
-                  <button v-if="auth.canWrite('invoices') && !lockedForMe && !p.bank_transaction_id && !(p.tax_document_invoice_id && p.tax_document_status !== 'cancelled')"
+                  <button v-if="auth.canWrite('invoices') && !lockedForMe && !p.bank_transaction_id && !eetPaymentIds.has(p.id) && !(p.tax_document_invoice_id && p.tax_document_status !== 'cancelled')"
                     @click="deletePayment(p)" :disabled="busy !== null"
                     class="cursor-pointer text-xs text-danger-500 hover:text-danger-700"
                     :title="t('common.delete')">✕</button>
                   <span v-else-if="p.bank_transaction_id" class="text-xs text-neutral-300" :title="t('invoice.payments.locked_bank')">🔒</span>
+                  <span v-else-if="eetPaymentIds.has(p.id)" class="text-xs text-neutral-300" :title="t('eet.invoice.locked_eet')">🔒</span>
                 </td>
               </tr>
             </tbody>
@@ -2834,7 +2846,7 @@ useWindowRefresh(['invoices', 'clients', 'bank', 'bank-transactions', 'cash', 'a
         {{ t(pendingEet === 'qr' ? 'eet.invoice.pending_qr' : 'eet.invoice.pending_accept') }}
       </div>
 
-      <EetInvoiceSummary v-if="eet.capabilities.value && paymentsRelevant()" :invoice-id="invoice.id" :refresh-key="eetRefresh" />
+      <EetInvoiceSummary v-if="eet.capabilities.value && paymentsRelevant()" :invoice-id="invoice.id" :refresh-key="eetRefresh" @loaded="onEetSummaryLoaded" />
 
       <div v-if="invoice.cash_documents?.length"
         class="bg-surface border border-neutral-200 rounded-lg px-5 py-4 shadow-sm text-sm space-y-1.5" data-invoice-cash-documents>

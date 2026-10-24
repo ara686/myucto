@@ -2063,6 +2063,16 @@ components:
       - $ref: '#/components/schemas/EetRecord'
       - type: object
         properties:
+          source_invoices:
+            type: array
+            description: Zdrojové faktury platební události s číslem dokladu.
+            items:
+              type: object
+              properties:
+                id:
+                  type: integer
+                number:
+                  type: string
           payment_event:
             allOf:
             - $ref: '#/components/schemas/EetPaymentEvent'
