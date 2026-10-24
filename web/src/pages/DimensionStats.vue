@@ -248,7 +248,6 @@ watch(() => supplier.currentSupplierId, async () => {
             <option v-if="selectedType?.level === 'global'" value="all">{{ t('dimensions.analytics_all_companies') }}</option>
             <option v-for="item in availableCompanies" :key="item.id" :value="String(item.id)">{{ item.company_name }}</option>
           </select>
-          <p v-if="selectedType?.level !== 'global'" class="mt-1 text-xs text-neutral-500">{{ t('dimensions.analytics_company_local') }}</p>
         </div>
         <div>
           <label class="block text-xs font-medium text-neutral-500 mb-1">{{ t('dimensions.analytics_year') }}</label>
