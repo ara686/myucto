@@ -10,6 +10,9 @@ final class ChunkedJsonColumnReader
 {
     public const CHUNK_BYTES = 524_288;
 
+    /** @var array<int,list<string>> */
+    private static array $open = [];
+
     public function __construct(private readonly PDO $pdo) {}
 
     /** @return iterable<string> */
@@ -22,7 +25,9 @@ final class ChunkedJsonColumnReader
         $metadataSql = "SELECT OCTET_LENGTH({$column}) AS bytes, SHA2({$column},256) AS sha256 FROM {$table} WHERE id=? AND supplier_id=? FOR UPDATE";
         $metadata = $this->metadata($metadataSql, $id, $supplierId);
         $savepoint = 'json_chunk_' . bin2hex(random_bytes(12));
+        $connection = spl_object_id($this->pdo);
         $this->pdo->exec('SAVEPOINT ' . $savepoint);
+        self::$open[$connection][] = $savepoint;
         $activeSavepoint = true;
         try {
             for ($offset = 1; $offset <= $metadata['bytes']; $offset += self::CHUNK_BYTES) {
@@ -41,7 +46,12 @@ final class ChunkedJsonColumnReader
             $this->pdo->exec('RELEASE SAVEPOINT ' . $savepoint);
             $activeSavepoint = false;
         } finally {
-            if ($activeSavepoint && $this->pdo->inTransaction()) {
+            // Rozečtený generátor se uklízí až garbage collectorem, klidně uprostřed jiného čtení.
+            // RELEASE by v MariaDB zrušil i všechny novější savepointy, proto jen ten poslední.
+            $newest = end(self::$open[$connection]) === $savepoint;
+            self::$open[$connection] = array_values(array_diff(self::$open[$connection], [$savepoint]));
+            if (self::$open[$connection] === []) unset(self::$open[$connection]);
+            if ($activeSavepoint && $newest && $this->pdo->inTransaction()) {
                 try {
                     $this->pdo->exec('RELEASE SAVEPOINT ' . $savepoint);
                 } catch (\Throwable) {

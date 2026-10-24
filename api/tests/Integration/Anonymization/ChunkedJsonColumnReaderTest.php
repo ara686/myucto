@@ -102,6 +102,22 @@ final class ChunkedJsonColumnReaderTest extends TestCase
         $iterator->next();
     }
 
+    public function testAbandonedReaderDoesNotReleaseNewerReaderSavepoint(): void
+    {
+        $this->pdo->beginTransaction();
+        $reader = new ChunkedJsonColumnReader($this->pdo);
+        $abandoned = $reader->read(FinancialArchiveJsonColumn::ASSESSMENT_SNAPSHOT, 11, 1);
+        $abandoned->rewind();
+        $active = $reader->read(FinancialArchiveJsonColumn::ASSESSMENT_SNAPSHOT, 11, 1);
+        $active->rewind();
+        $chunks = [$active->current()];
+        unset($abandoned);
+        for ($active->next(); $active->valid(); $active->next()) $chunks[] = $active->current();
+
+        self::assertSame($this->json, implode('', $chunks));
+        self::assertTrue($this->pdo->inTransaction());
+    }
+
     public function testMutationAfterFirstChunkRejectsFinalProof(): void
     {
         $this->pdo->beginTransaction();
