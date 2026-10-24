@@ -237,9 +237,13 @@ final class EetPaymentCommand
         if ((string) $invoice['currency'] !== 'CZK') {
             throw EetCommandException::unsupported('QR platba na místě je podporovaná jen u faktur v CZK.', 'foreign_currency');
         }
-        $remaining = $this->remainingCents($supplierId, $invoice);
-        $amount = $requestedAmount ?? EetValues::fromCents($remaining);
-        $this->assertInvoiceAccepts($supplierId, $invoice, $amount, 'CZK');
+        $remaining = $this->remainingCents($supplierId, $invoice, true);
+        $amount = $requestedAmount ?? EetValues::fromCents(max(0, $remaining));
+        if (EetValues::toCents($amount) <= 0) {
+            throw EetCommandException::validation('Faktura nemá nic k úhradě (nebo ji kryjí otevřené QR záměry; nepotřebné zrušte).', 'invoice_id',
+                ['remaining' => EetValues::fromCents(max(0, $remaining))]);
+        }
+        $this->assertInvoiceAccepts($supplierId, $invoice, $amount, 'CZK', true);
         if ($this->qrPayload($invoice, $amount) === null) {
             throw EetCommandException::validation('Faktura nemá bankovní účet, ze kterého by šel sestavit QR kód.', 'invoice_id');
         }
@@ -322,6 +326,12 @@ final class EetPaymentCommand
                             $status === 'cancelled' ? 'Platební záměr byl zrušen.' : 'Platební záměr už byl potvrzen.',
                             ['payment_order_status' => $status],
                         );
+                    }
+                    if ($intent['invoice_id'] !== null) {
+                        // Pod zámkem faktury znovu ověřit dluh: mezitím mohl být potvrzen jiný
+                        // záměr nebo přijata hotovost a dvě tržby na jedny peníze nesmí vzniknout.
+                        $invoice = $this->invoice($supplierId, (int) $intent['invoice_id'], true);
+                        $this->assertInvoiceAccepts($supplierId, $invoice, (string) $intent['amount'], (string) $intent['currency']);
                     }
                     $decision = $this->policy->evaluate(new EetPolicyInput(
                         $settings, $orderedAt, 'qr_in_person', (string) $intent['contact_context'], 'sale',
@@ -630,7 +640,7 @@ final class EetPaymentCommand
     }
 
     /** @param array<string,mixed> $invoice */
-    private function assertInvoiceAccepts(int $supplierId, array $invoice, string $amount, string $currency): void
+    private function assertInvoiceAccepts(int $supplierId, array $invoice, string $amount, string $currency, bool $includeOpenIntents = false): void
     {
         if (!in_array((string) $invoice['invoice_type'], ['invoice', 'proforma'], true)) {
             throw EetCommandException::validation('Platbu lze přijmout jen k faktuře nebo zálohové faktuře.', 'invoice_id');
@@ -641,7 +651,7 @@ final class EetPaymentCommand
         if ((string) $invoice['currency'] !== $currency) {
             throw EetCommandException::validation('Měna platby se liší od měny faktury.', 'currency');
         }
-        $remaining = $this->remainingCents($supplierId, $invoice);
+        $remaining = $this->remainingCents($supplierId, $invoice, $includeOpenIntents);
         $tolerance = (int) round(InvoicePaymentService::TOLERANCE * 100);
         if (EetValues::toCents($amount) > $remaining + $tolerance) {
             throw EetCommandException::validation(
@@ -658,7 +668,24 @@ final class EetPaymentCommand
      *
      * @param array<string,mixed> $invoice
      */
-    private function remainingCents(int $supplierId, array $invoice): int
+    private function remainingCents(int $supplierId, array $invoice, bool $includeOpenIntents = false): int
+    {
+        $open = 0;
+        if ($includeOpenIntents) {
+            // Nový QR záměr nesmí s otevřenými záměry téže faktury přesáhnout dluh: obě
+            // potvrzení by jinak založila dvě tržby na jedny peníze. Opuštěný záměr se zruší.
+            $stmt = $this->db->pdo()->prepare(
+                "SELECT COALESCE(SUM(amount), 0) FROM payment_events
+                  WHERE supplier_id = ? AND invoice_id = ? AND origin = 'payment_intent' AND payment_order_status = 'initiated'"
+            );
+            $stmt->execute([$supplierId, (int) $invoice['id']]);
+            $open = EetValues::toCents(EetValues::amount((string) $stmt->fetchColumn()));
+        }
+        return $this->settledRemainingCents($supplierId, $invoice) - $open;
+    }
+
+    /** @param array<string,mixed> $invoice */
+    private function settledRemainingCents(int $supplierId, array $invoice): int
     {
         $stmt = $this->db->pdo()->prepare(
             "SELECT COALESCE(SUM(a.amount), 0)

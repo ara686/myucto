@@ -73,6 +73,17 @@ final class EetRecordingPolicy
     }
 
     /**
+     * Eviduje firma k danému okamžiku tržby? Jediná odpověď pro napojené cesty plateb
+     * (faktura, pokladna, banka): neaktivní firma má mít jejich chování beze změny.
+     *
+     * @param array<string,mixed> $settings
+     */
+    public function activeAt(array $settings, \DateTimeImmutable $at): bool
+    {
+        return $this->inactiveReason($settings, $at) === null;
+    }
+
+    /**
      * Firma eviduje k času platby? Vrací [kód, zpráva] důvodu neaktivity, nebo null.
      *
      * @param array<string,mixed> $settings

@@ -12,6 +12,9 @@ use MyInvoice\Repository\InvoiceRepository;
 use MyInvoice\Security\RequestAuthorization;
 use MyInvoice\Service\Accounting\DocumentLockService;
 use MyInvoice\Service\ActivityLogger;
+use MyInvoice\Service\Eet\EetCommandException;
+use MyInvoice\Service\Eet\EetInvoicePaymentGate;
+use MyInvoice\Service\Eet\IdempotencyConflictException;
 use MyInvoice\Service\Invoice\InvoicePaymentService;
 use MyInvoice\Service\Invoice\RefundDocument;
 use MyInvoice\Service\IpMatcher;
@@ -34,6 +37,7 @@ final class MarkPaidAction
         private readonly PaymentThanksMailer $paymentThanks,
         private readonly InvoicePaymentService $payments,
         private readonly DocumentLockService $locks,
+        private readonly EetInvoicePaymentGate $eetGate,
     ) {}
 
     public function __invoke(Request $request, Response $response, array $args): Response
@@ -69,6 +73,8 @@ final class MarkPaidAction
         // zůstává konzistentní (paid_total = amount_to_pay) a označení lze vrátit
         // smazáním platby. Status flip + PDF invalidace + stats řeší service.
         $remaining = round((float) ($invoice['amount_to_pay'] ?? 0) - (float) ($invoice['paid_total'] ?? 0), 2);
+        $eet = null;
+        $eetDecision = null;
         // Doklad k vyplacení = vrácení peněz zákazníkovi. Faktura se zálohou (přeplatek
         // zálohy) zůstává na bookkeeping flipu níž, jak ji zná vystavení.
         if ((string) ($invoice['invoice_type'] ?? '') === 'credit_note'
@@ -87,10 +93,29 @@ final class MarkPaidAction
             }
         } elseif ($remaining > 0) {
             try {
-                $this->payments->recordPayment($id, $remaining, $paidAt, [
-                    'source'     => 'mark_paid',
-                    'created_by' => (int) ($user['id'] ?? 0),
-                ]);
+                // EET-05: u firmy s aktivní evidencí rozhoduje o cestě společný příkaz.
+                $route = $this->eetGate->route(
+                    (int) $invoice['supplier_id'],
+                    (int) ($user['id'] ?? 0),
+                    $id,
+                    number_format($remaining, 2, '.', ''),
+                    $body,
+                    $request->getHeaderLine('Idempotency-Key'),
+                );
+                if ($route['mode'] === 'eet') {
+                    $eet = $route['result'];
+                    $paidAt = (string) ($eet['paid_on'] ?? $paidAt);
+                } else {
+                    $eetDecision = $route['decision'];
+                    $this->payments->recordPayment($id, $remaining, $paidAt, [
+                        'source'     => 'mark_paid',
+                        'created_by' => (int) ($user['id'] ?? 0),
+                    ]);
+                }
+            } catch (IdempotencyConflictException $e) {
+                return Json::error($response, 'idempotency_conflict', $e->getMessage(), 409);
+            } catch (EetCommandException $e) {
+                return Json::error($response, $e->errorCode, $e->getMessage(), $e->httpStatus, $e->extra);
             } catch (\PDOException $e) {
                 // Chyba databáze není neplatná platba, viz CreatePaymentAction.
                 throw $e;
@@ -143,6 +168,11 @@ final class MarkPaidAction
 
         $result = $this->repo->find($id);
         $result['payment_thanks'] = $thanks; // null = neodesíláno
+        if ($eet !== null) {
+            $result['eet'] = $eet;
+        } elseif ($eetDecision !== null) {
+            $result['eet_decision'] = $eetDecision;
+        }
         return Json::ok($response, $result);
     }
 }
