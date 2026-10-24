@@ -287,7 +287,7 @@ final class CancelInvoiceAction
             if ($ownTx && $pdo->inTransaction()) {
                 $pdo->rollBack();
             }
-            return Json::error($response, 'cancel_failed', $e->getMessage(), 500);
+            return Json::internalError($response, 'cancel_failed', $e->getMessage(), 500);
         }
 
         $ip = $this->ipMatcher->clientIpFromRequest($request->getServerParams());
@@ -503,7 +503,7 @@ final class CancelInvoiceAction
             $pdo->commit();
         } catch (\Throwable $e) {
             $pdo->rollBack();
-            return Json::error($response, 'credit_note_failed', $e->getMessage(), 500);
+            return Json::internalError($response, 'credit_note_failed', $e->getMessage(), 500);
         }
 
         // Recompute sumy nového dobropisu

@@ -83,6 +83,27 @@ final class InternalErrorRedactionMiddlewareTest extends TestCase
         self::assertSame([], $logger->records);
     }
 
+    public function testProductionKeepsAuthoredMessageOfInternalServerError(): void
+    {
+        $logger = $this->logger();
+        $middleware = new InternalErrorRedactionMiddleware(new Config(['app' => ['env' => 'production']]), $logger);
+        $handler = new class implements RequestHandlerInterface {
+            public function handle(ServerRequestInterface $request): ResponseInterface
+            {
+                return Json::error((new ResponseFactory())->createResponse(), 'storage_not_writable', 'Úložiště jobů není zapisovatelné.', 500);
+            }
+        };
+
+        $response = $middleware->process($this->request(), $handler);
+        $body = json_decode((string) $response->getBody(), true, flags: JSON_THROW_ON_ERROR);
+
+        self::assertSame(500, $response->getStatusCode());
+        self::assertSame('storage_not_writable', $body['error']['code']);
+        self::assertStringStartsWith('Úložiště jobů', $body['error']['message']);
+        self::assertFalse($response->hasHeader(Json::HEADER_PUBLIC_MESSAGE), 'Interní značka nesmí odejít ke klientovi.');
+        self::assertSame([], $logger->records);
+    }
+
     public function testProductionLeavesNonJsonBodyUntouched(): void
     {
         $middleware = new InternalErrorRedactionMiddleware(
@@ -120,7 +141,7 @@ final class InternalErrorRedactionMiddlewareTest extends TestCase
 
             public function handle(ServerRequestInterface $request): ResponseInterface
             {
-                return Json::error(
+                return Json::internalError(
                     (new ResponseFactory())->createResponse(),
                     'save_failed',
                     InternalErrorRedactionMiddlewareTest::leak(),

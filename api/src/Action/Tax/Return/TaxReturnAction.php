@@ -157,7 +157,7 @@ final class TaxReturnAction
         } catch (TaxReturnException|\MyInvoice\Service\Tax\Nonprofit\NonprofitTaxAssessmentException|\MyInvoice\Service\Accounting\PostingException $e) {
             return Json::error($response, $e->errorCode, $e->getMessage(), $e->httpStatus);
         } catch (\Throwable $e) {
-            return Json::error($response, 'build_failed', $e->getMessage(), 500);
+            return Json::internalError($response, 'build_failed', $e->getMessage(), 500);
         }
 
         $this->logger->log('tax_return.xml_downloaded', $userId, null, null, [
@@ -190,7 +190,7 @@ final class TaxReturnAction
         } catch (TaxReturnException|\MyInvoice\Service\Tax\Nonprofit\NonprofitTaxAssessmentException|\MyInvoice\Service\Accounting\PostingException $e) {
             return Json::error($response, $e->errorCode, $e->getMessage(), $e->httpStatus);
         } catch (\Throwable $e) {
-            return Json::error($response, 'build_failed', $e->getMessage(), 500);
+            return Json::internalError($response, 'build_failed', $e->getMessage(), 500);
         }
         $response->getBody()->write($this->familyScopedXml($request, $type, $built['xml']));
         return $response
@@ -221,7 +221,7 @@ final class TaxReturnAction
         } catch (TaxReturnException|\MyInvoice\Service\Tax\Nonprofit\NonprofitTaxAssessmentException|\MyInvoice\Service\Accounting\PostingException $e) {
             return Json::error($response, $e->errorCode, $e->getMessage(), $e->httpStatus);
         } catch (\Throwable $e) {
-            return Json::error($response, 'build_failed', $e->getMessage(), 500);
+            return Json::internalError($response, 'build_failed', $e->getMessage(), 500);
         }
         $response->getBody()->write($built['pdf']);
         return $response
@@ -258,7 +258,7 @@ final class TaxReturnAction
         } catch (TaxReturnException|\MyInvoice\Service\Tax\Nonprofit\NonprofitTaxAssessmentException|\MyInvoice\Service\Accounting\PostingException $e) {
             return Json::error($response, $e->errorCode, $e->getMessage(), $e->httpStatus);
         } catch (\Throwable $e) {
-            return Json::error($response, 'build_failed', $e->getMessage(), 500);
+            return Json::internalError($response, 'build_failed', $e->getMessage(), 500);
         }
         $response->getBody()->write($built['pdf']);
         return $response
@@ -282,7 +282,7 @@ final class TaxReturnAction
         } catch (TaxReturnException|\MyInvoice\Service\Tax\Nonprofit\NonprofitTaxAssessmentException|\MyInvoice\Service\Accounting\PostingException $e) {
             return Json::error($response, $e->errorCode, $e->getMessage(), $e->httpStatus);
         } catch (\Throwable $e) {
-            return Json::error($response, 'build_failed', $e->getMessage(), 500);
+            return Json::internalError($response, 'build_failed', $e->getMessage(), 500);
         }
         $response->getBody()->write($built['pdf']);
         return $response
@@ -516,7 +516,7 @@ final class TaxReturnAction
         } catch (TaxReturnException|\MyInvoice\Service\Tax\Nonprofit\NonprofitTaxAssessmentException|\MyInvoice\Service\Accounting\PostingException $e) {
             return Json::error($response, $e->errorCode, $e->getMessage(), $e->httpStatus);
         } catch (\Throwable $e) {
-            return Json::error($response, 'build_failed', $e->getMessage(), 500);
+            return Json::internalError($response, 'build_failed', $e->getMessage(), 500);
         }
 
         $this->logger->log('tax_return.cssz_xml_downloaded', $userId, null, null, [
@@ -711,7 +711,7 @@ final class TaxReturnAction
         } catch (TaxReturnException|\MyInvoice\Service\Tax\Nonprofit\NonprofitTaxAssessmentException|\MyInvoice\Service\Accounting\PostingException $e) {
             return Json::error($response, $e->errorCode, $e->getMessage(), $e->httpStatus);
         } catch (\Throwable $e) {
-            return Json::error($response, 'server_error', $e->getMessage(), 500);
+            return Json::internalError($response, 'server_error', $e->getMessage(), 500);
         }
     }
 

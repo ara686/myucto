@@ -459,7 +459,7 @@ final class SettingsAction
             return Json::error($response, 'license_company_limit',
                 'Byl dosažen počet firem podle vaší licence. Rozšiřte předplatné na myucto.cz.', 403);
         } catch (\Throwable $e) {
-            return Json::error($response, 'create_failed', 'Vytvoření supplier selhalo: ' . $e->getMessage(), 500);
+            return Json::internalError($response, 'create_failed', 'Vytvoření supplier selhalo: ' . $e->getMessage(), 500);
         }
 
         // Po commitu (mimo DB transakci — síťová volání na ARES a registr plátců):
@@ -1510,7 +1510,7 @@ final class SettingsAction
             $pdo->commit();
         } catch (\Throwable $e) {
             $pdo->rollBack();
-            return Json::error($response, 'delete_failed', 'Smazání selhalo: ' . $e->getMessage(), 500);
+            return Json::internalError($response, 'delete_failed', 'Smazání selhalo: ' . $e->getMessage(), 500);
         }
 
         // MS-P3-4: smaž PDF cache subfolder pro tohoto supplier

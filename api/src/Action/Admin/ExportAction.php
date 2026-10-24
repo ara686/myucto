@@ -118,7 +118,7 @@ final class ExportAction
         } catch (\DomainException $e) {
             return Json::error($response, 'signature_unavailable', $e->getMessage(), 422);
         } catch (\Throwable $e) {
-            return Json::error($response, 'export_failed', $e->getMessage(), 500);
+            return Json::internalError($response, 'export_failed', $e->getMessage(), 500);
         }
 
         $ip = $this->ipMatcher->clientIpFromRequest($request->getServerParams());
