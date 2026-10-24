@@ -295,7 +295,7 @@ const hasCostsData = computed(() => (summary.value?.purchase_costs_by_month ?? [
                  320px displeji pevný `text-3xl` přetekl kartu. Na běžném mobilu
                  (390px) vyjde 25px, od ~460px strop 1,875rem (zhruba 1,25× nadpisu
                  stránky; řez 500, polotučné mono vedle nadpisu příliš ztěžklo). -->
-            <div class="font-mono text-[length:clamp(1.375rem,6.5vw,1.875rem)] font-medium tracking-[-0.03em] leading-[1.1] text-neutral-900 tabular-nums">{{ formatMoney(c.this_year, c.currency) }}</div>
+            <div class="font-mono text-[length:clamp(1.375rem,6.5vw,1.875rem)] font-medium tracking-[-0.01em] leading-[1.1] text-neutral-900 tabular-nums">{{ formatMoney(c.this_year, c.currency) }}</div>
             <div v-if="c.change_pct !== null" class="mt-2.5"
               :title="t('dashboard.yoy_ytd_tooltip', { year: summary.prev_year, total: formatMoney(c.prev_year, c.currency), ytd: formatMoney(c.prev_year_ytd, c.currency) })">
               <span class="inline-flex items-center gap-1 h-6 px-2 rounded-full text-xs font-semibold tabular-nums"
