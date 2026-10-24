@@ -152,6 +152,10 @@ final class SoapEetTransport implements EetTransportInterface
             if (!$header->verification) {
                 return self::invalid($common, 'unexpected_verification_result', 'Kód 0 přišel na zprávu, která nebyla v ověřovacím módu.');
             }
+            // Úspěšné ověření se uzná jen s UUID odeslané zprávy; bez něj nic nedokládá.
+            if (!$uuidMatches) {
+                return self::invalid($common, 'uuid_mismatch', 'Výsledek ověření nenese UUID odeslané zprávy.');
+            }
 
             return self::result($common, ['outcome' => EetOutcome::VerificationOk, 'errorMessage' => $parsed->errorText]);
         }

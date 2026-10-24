@@ -206,6 +206,30 @@ final class SoapEetTransportTest extends TestCase
         self::assertSame('unexpected_verification_result', $unexpected->signatureFailure);
     }
 
+    public function testVerificationResultWithoutMessageUuidIsNotVerificationOk(): void
+    {
+        $xml = '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:eet="http://fs.gov.cz/eet/schema/v4"><soapenv:Header/><soapenv:Body>'
+            . '<eet:Odpoved><eet:Hlavicka dat_odmit="2026-10-24T12:42:06+02:00"/><eet:Chyba kod="0" test="true">Datovou zpravu evidovane trzby v overovacim modu se podarilo zpracovat</eet:Chyba></eet:Odpoved>'
+            . '</soapenv:Body></soapenv:Envelope>';
+        $result = self::send(self::transport(new EetHttpResponse(200, $xml)), self::header(EetMessageHeader::uuidV4(), true));
+
+        self::assertSame(EetOutcome::InvalidResponse, $result->outcome);
+        self::assertSame('uuid_mismatch', $result->signatureFailure);
+        self::assertSame(0, $result->errorCode);
+        self::assertFalse($result->isConfirmed());
+    }
+
+    public function testErrorResponseIsNeverConfirmed(): void
+    {
+        foreach (['pg-response-error-4.xml', 'pg-response-verification.xml'] as $fixture) {
+            foreach ([true, false] as $verification) {
+                $result = self::send(self::transport(new EetHttpResponse(200, self::fixture($fixture))), self::header(EetMessageHeader::uuidV4(), $verification));
+                self::assertFalse($result->isConfirmed(), $fixture);
+                self::assertNotSame(EetOutcome::VerificationOk, $result->outcome, $fixture);
+            }
+        }
+    }
+
     public function testCriticalErrorIsRejectedAndNotRetryable(): void
     {
         $result = self::send(self::transport(new EetHttpResponse(200, self::fixture('pg-response-error-4.xml'))), self::header(self::PG_ERROR_UUID));

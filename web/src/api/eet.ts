@@ -1,5 +1,5 @@
 import { api } from './client'
-import { appendStepUpProof, type EpoStepUpProof } from './epoSubmissions'
+import { appendStepUpProof, stepUpProofBody, type EpoStepUpProof } from './epoSubmissions'
 
 export type EetEnvironment = 'playground' | 'production'
 export type EetRegime = 'standard' | 'exempt' | 'eet_off'
@@ -203,8 +203,8 @@ export const eetApi = {
       headers: { 'Content-Type': 'multipart/form-data' },
     }).then(r => r.data)
   },
-  deactivateCertificate: (id: number) =>
-    api.post<EetCertificate>(`/eet/certificates/${id}/deactivate`).then(r => r.data),
+  deactivateCertificate: (id: number, proof: EpoStepUpProof) =>
+    api.post<EetCertificate>(`/eet/certificates/${id}/deactivate`, stepUpProofBody(proof)).then(r => r.data),
 
   diagnostics: (deviceId?: number | null) =>
     api.post<EetDiagnosticsResult>('/eet/diagnostics', deviceId ? { device_id: deviceId } : {}).then(r => r.data),

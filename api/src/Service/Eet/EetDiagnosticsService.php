@@ -7,6 +7,7 @@ namespace MyInvoice\Service\Eet;
 use MyInvoice\Service\ActivityLogger;
 use MyInvoice\Service\Eet\Transport\EetEnvironment;
 use MyInvoice\Service\Eet\Transport\EetMessageHeader;
+use MyInvoice\Service\Eet\Transport\EetOutcome;
 use MyInvoice\Service\Eet\Transport\EetSaleData;
 use MyInvoice\Service\Eet\Transport\EetTimeouts;
 use MyInvoice\Service\Eet\Transport\EetTransportInterface;
@@ -66,7 +67,7 @@ final class EetDiagnosticsService
         );
 
         $result = [
-            'ok' => $sent->errorCode === 0,
+            'ok' => $sent->outcome === EetOutcome::VerificationOk,
             'outcome' => $sent->outcome->value,
             'error_code' => $sent->errorCode,
             'message' => $sent->errorMessage,

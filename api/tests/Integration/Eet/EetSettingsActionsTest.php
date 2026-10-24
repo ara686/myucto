@@ -18,6 +18,7 @@ use MyInvoice\Service\ActivityLogger;
 use MyInvoice\Service\Auth\SecretEncryption;
 use MyInvoice\Service\Eet\Certificate\EetCertificateInspector;
 use MyInvoice\Service\Eet\Transport\EetEnvironment;
+use MyInvoice\Service\Eet\Transport\EetOutcome;
 use MyInvoice\Service\Eet\Transport\FakeEetTransport;
 use MyInvoice\Service\Eet\EetCertificateVault;
 use MyInvoice\Service\Eet\EetDeviceRepository;
@@ -116,7 +117,10 @@ final class EetSettingsActionsTest extends TestCase
         self::assertSame(404, $this->code($this->unitsAction->endValidity($asB('DELETE'), new Psr7Response(), ['id' => (string) $unit['id']])));
         self::assertSame(404, $this->code($this->devicesAction->update($asB('PUT', ['name' => 'Cizí']), new Psr7Response(), ['id' => (string) $device['id']])));
         self::assertSame(404, $this->code($this->devicesAction->deactivate($asB('DELETE'), new Psr7Response(), ['id' => (string) $device['id']])));
-        self::assertSame(404, $this->code($this->certificatesAction->deactivate($asB('POST'), new Psr7Response(), ['id' => (string) $certificate['id']])));
+        $foreignDeactivate = $this->code($this->certificatesAction->deactivate($asB('POST'), new Psr7Response(), ['id' => (string) $certificate['id']]));
+        self::assertGreaterThanOrEqual(400, $foreignDeactivate);
+        self::assertLessThan(500, $foreignDeactivate);
+        self::assertSame('active', $this->vault->find($this->supplierA, $certificate['id'])['status']);
 
         // Zařízení firmy B nesmí ukazovat na jednotku firmy A.
         $foreignUnit = $this->decode($this->devicesAction->create($asB('POST', ['unit_id' => $unit['id'], 'code' => 'B-1', 'name' => 'B']), new Psr7Response()));
@@ -162,6 +166,30 @@ final class EetSettingsActionsTest extends TestCase
 
         self::assertSame([], $this->vault->listMetadata($this->supplierA), 'bez ověření se nic neuloží');
         self::assertStringNotContainsString(EetTestPki::PASSWORD, json_encode($noStepUp['body']) ?: '');
+    }
+
+    public function testCertificateDeactivationNeedsSessionAndStepUp(): void
+    {
+        $certificate = $this->vault->import($this->supplierA, 'playground', EetTestPki::pkcs12(), EetTestPki::PASSWORD, null, $this->userId);
+        $args = ['id' => (string) $certificate['id']];
+
+        $bearer = $this->decode($this->certificatesAction->deactivate($this->req('POST', 'admin', $this->supplierA, [], 'bearer'), new Psr7Response(), $args));
+        self::assertSame(403, $bearer['status']);
+        self::assertSame('session_required', $bearer['body']['error']['code'] ?? null);
+
+        $noStepUp = $this->decode($this->certificatesAction->deactivate($this->req('POST', 'admin', $this->supplierA), new Psr7Response(), $args));
+        self::assertGreaterThanOrEqual(400, $noStepUp['status']);
+        self::assertLessThan(500, $noStepUp['status']);
+
+        $wrongPassword = $this->decode($this->certificatesAction->deactivate(
+            $this->req('POST', 'admin', $this->supplierA, ['password' => 'Wrong-password-1']),
+            new Psr7Response(),
+            $args,
+        ));
+        self::assertGreaterThanOrEqual(400, $wrongPassword['status']);
+        self::assertLessThan(500, $wrongPassword['status']);
+
+        self::assertSame('active', $this->vault->find($this->supplierA, $certificate['id'])['status'], 'bez ověření se certifikát nedeaktivuje');
     }
 
     public function testEnablingWithoutCertificateIsRefusedAndNothingChanges(): void
@@ -275,6 +303,12 @@ final class EetSettingsActionsTest extends TestCase
         self::assertSame('POK-1', $call['data']->deviceCode);
         self::assertSame(101, $call['data']->unitId);
         self::assertSame(EetEnvironment::Playground, $call['environment']);
+
+        // Kód 0 v odpovědi, která neprošla ověřením (např. cizí UUID), není úspěch.
+        $transport->queueOutcome(EetOutcome::InvalidResponse, 0, 'Chybová odpověď nepatří k odeslané zprávě (jiné UUID).');
+        $invalid = $service->run($this->supplierA, null, $this->userId);
+        self::assertFalse($invalid['ok']);
+        self::assertSame('invalid_response', $invalid['outcome']);
 
         try {
             $service->run($this->supplierB, null, $this->userId);

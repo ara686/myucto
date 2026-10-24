@@ -53,8 +53,14 @@ final class EetPkcs12Reader
         '1.2.840.113549.2.11' => 'sha512',
     ];
 
-    /** Horní mez iterací — ochrana proti souboru, který by server zaměstnal na minuty. */
-    private const MAX_ITERATIONS = 2_000_000;
+    /**
+     * Meze proti souboru, který by server zaměstnal na minuty: iterace jednoho
+     * odvození klíče, součet iterací za celý soubor (vážený počtem bloků výstupu)
+     * a počet obsahů i položek. Soubory CA EET mají 2048 iterací a pár položek.
+     */
+    private const MAX_ITERATIONS = 100_000;
+    private const MAX_TOTAL_ITERATIONS = 600_000;
+    private const MAX_ENTRIES = 16;
     private const MAX_BYTES = 65_536;
     private const MAX_DEPTH = 24;
 
@@ -63,9 +69,7 @@ final class EetPkcs12Reader
      */
     public static function read(string $pkcs12, #[\SensitiveParameter] string $password): array
     {
-        if ($pkcs12 === '' || strlen($pkcs12) > self::MAX_BYTES) {
-            throw new EetCredentialException('unreadable', 'Soubor s certifikátem je prázdný nebo příliš velký.');
-        }
+        self::preflight($pkcs12);
         self::clearOpensslErrors();
         $bundle = [];
         if (@openssl_pkcs12_read($pkcs12, $bundle, $password)) {
@@ -95,37 +99,34 @@ final class EetPkcs12Reader
      */
     public static function decode(string $pkcs12, #[\SensitiveParameter] string $password): array
     {
+        self::preflight($pkcs12);
         try {
-            $pfx = self::single($pkcs12);
-            $parts = self::children($pfx, 0x30, 2);
-            $authSafe = self::children($parts[1], 0x30, 2);
-            if (self::oid($authSafe[0]) !== self::OID_DATA) {
-                throw new EetCredentialException('unreadable', 'Soubor PKCS#12 není podepsaný heslem (nepodporovaný tvar).');
-            }
-            $authSafeBytes = self::octets(self::explicit($authSafe[1]));
+            [$parts, $authSafeBytes] = self::authSafe($pkcs12);
+            $budget = 0;
+            $bagCount = 0;
             if (isset($parts[2])) {
-                self::verifyMac($parts[2], $authSafeBytes, $password);
+                self::verifyMac($parts[2], $authSafeBytes, $password, $budget);
             }
             $certificates = [];
             $keys = [];
-            foreach (self::children(self::single($authSafeBytes), 0x30) as $contentInfo) {
+            foreach (self::contentInfos($authSafeBytes) as $contentInfo) {
                 $info = self::children($contentInfo, 0x30, 1);
                 $type = self::oid($info[0]);
                 if ($type === self::OID_DATA) {
                     $safeContents = self::octets(self::explicit($info[1] ?? null));
                 } elseif ($type === self::OID_ENCRYPTED_DATA) {
-                    $encryptedData = self::children(self::explicit($info[1] ?? null), 0x30, 2);
-                    $encryptedContentInfo = self::children($encryptedData[1], 0x30, 3);
+                    $encryptedContentInfo = self::encryptedContentInfo($info);
                     $safeContents = self::decrypt(
                         $encryptedContentInfo[1],
                         self::octets($encryptedContentInfo[2]),
                         $password,
+                        $budget,
                     );
                 } else {
                     continue;
                 }
-                foreach (self::children(self::single($safeContents), 0x30) as $bag) {
-                    self::collectBag($bag, $password, $certificates, $keys);
+                foreach (self::bags($safeContents, $bagCount) as $bag) {
+                    self::collectBag($bag, $password, $certificates, $keys, $budget);
                 }
             }
         } catch (EetCredentialException $exception) {
@@ -155,11 +156,95 @@ final class EetPkcs12Reader
     }
 
     /**
+     * Kontrola mezí dřív, než soubor dostane OpenSSL: iterace MAC, šifrovaných
+     * obsahů a klíčů v nešifrovaných obsazích, počet obsahů a položek. Co leží
+     * uvnitř šifrovaného obsahu, uvidí až {@see decode()} se stejným rozpočtem.
+     */
+    private static function preflight(string $pkcs12): void
+    {
+        if ($pkcs12 === '' || strlen($pkcs12) > self::MAX_BYTES) {
+            throw new EetCredentialException('unreadable', 'Soubor s certifikátem je prázdný nebo příliš velký.');
+        }
+        try {
+            [$parts, $authSafeBytes] = self::authSafe($pkcs12);
+            $budget = 0;
+            $bagCount = 0;
+            if (isset($parts[2])) {
+                self::charge($budget, self::macParameters($parts[2])['cost']);
+            }
+            foreach (self::contentInfos($authSafeBytes) as $contentInfo) {
+                $info = self::children($contentInfo, 0x30, 1);
+                $type = self::oid($info[0]);
+                if ($type === self::OID_ENCRYPTED_DATA) {
+                    self::charge($budget, self::algorithmCost(self::encryptedContentInfo($info)[1]));
+                } elseif ($type === self::OID_DATA) {
+                    foreach (self::bags(self::octets(self::explicit($info[1] ?? null)), $bagCount) as $bag) {
+                        $items = self::children($bag, 0x30, 2);
+                        if (self::oid($items[0]) === self::OID_SHROUDED_KEY_BAG) {
+                            self::charge($budget, self::algorithmCost(self::children(self::explicit($items[1]), 0x30, 2)[0]));
+                        }
+                    }
+                }
+            }
+        } catch (EetCredentialException $exception) {
+            throw $exception;
+        } catch (\Throwable) {
+            throw new EetCredentialException('unreadable', 'Soubor s certifikátem není čitelný PKCS#12.');
+        }
+    }
+
+    /** @return array{0:list<array<string,mixed>>, 1:string} prvky PFX a bajty AuthenticatedSafe */
+    private static function authSafe(string $pkcs12): array
+    {
+        $parts = self::children(self::single($pkcs12), 0x30, 2);
+        $authSafe = self::children($parts[1], 0x30, 2);
+        if (self::oid($authSafe[0]) !== self::OID_DATA) {
+            throw new EetCredentialException('unreadable', 'Soubor PKCS#12 není podepsaný heslem (nepodporovaný tvar).');
+        }
+
+        return [$parts, self::octets(self::explicit($authSafe[1]))];
+    }
+
+    /** @return list<array<string,mixed>> */
+    private static function contentInfos(string $authSafeBytes): array
+    {
+        $contentInfos = self::children(self::single($authSafeBytes), 0x30);
+        if (count($contentInfos) > self::MAX_ENTRIES) {
+            throw new EetCredentialException('unreadable', 'Soubor PKCS#12 má nepřípustný počet obsahů.');
+        }
+
+        return $contentInfos;
+    }
+
+    /** @return list<array<string,mixed>> */
+    private static function bags(string $safeContents, int &$bagCount): array
+    {
+        $bags = self::children(self::single($safeContents), 0x30);
+        $bagCount += count($bags);
+        if ($bagCount > self::MAX_ENTRIES) {
+            throw new EetCredentialException('unreadable', 'Soubor PKCS#12 má nepřípustný počet položek.');
+        }
+
+        return $bags;
+    }
+
+    /**
+     * @param list<array<string,mixed>> $info
+     * @return list<array<string,mixed>>
+     */
+    private static function encryptedContentInfo(array $info): array
+    {
+        $encryptedData = self::children(self::explicit($info[1] ?? null), 0x30, 2);
+
+        return self::children($encryptedData[1], 0x30, 3);
+    }
+
+    /**
      * @param array<string,mixed> $bag
      * @param list<string> $certificates
      * @param list<\OpenSSLAsymmetricKey> $keys
      */
-    private static function collectBag(array $bag, string $password, array &$certificates, array &$keys): void
+    private static function collectBag(array $bag, string $password, array &$certificates, array &$keys, int &$budget): void
     {
         $items = self::children($bag, 0x30, 2);
         $value = self::explicit($items[1]);
@@ -182,7 +267,7 @@ final class EetPkcs12Reader
                 return;
             case self::OID_SHROUDED_KEY_BAG:
                 $encrypted = self::children($value, 0x30, 2);
-                $keys[] = self::privateKey(self::decrypt($encrypted[0], self::octets($encrypted[1]), $password));
+                $keys[] = self::privateKey(self::decrypt($encrypted[0], self::octets($encrypted[1]), $password, $budget));
 
                 return;
         }
@@ -202,7 +287,21 @@ final class EetPkcs12Reader
     }
 
     /** @param array<string,mixed> $macData */
-    private static function verifyMac(array $macData, string $authSafeBytes, string $password): void
+    private static function verifyMac(array $macData, string $authSafeBytes, string $password, int &$budget): void
+    {
+        ['hash' => $hash, 'expected' => $expected, 'salt' => $salt, 'iterations' => $iterations, 'cost' => $cost] = self::macParameters($macData);
+        self::charge($budget, $cost);
+        $macKey = self::pkcs12Kdf($hash, self::bmpPassword($password), $salt, 3, $iterations, strlen(hash($hash, '', true)));
+        if (!hash_equals($expected, hash_hmac($hash, $authSafeBytes, $macKey, true))) {
+            throw new EetCredentialException('invalid_password', 'Heslo k certifikátu není správné.');
+        }
+    }
+
+    /**
+     * @param array<string,mixed> $macData
+     * @return array{hash:string, expected:string, salt:string, iterations:int, cost:int}
+     */
+    private static function macParameters(array $macData): array
     {
         $items = self::children($macData, 0x30, 2);
         $digestInfo = self::children($items[0], 0x30, 2);
@@ -211,18 +310,90 @@ final class EetPkcs12Reader
         if ($hash === null) {
             throw new EetCredentialException('unreadable', 'Soubor PKCS#12 používá nepodporovaný algoritmus MAC.');
         }
-        $expected = self::octets($digestInfo[1]);
-        $salt = self::octets($items[1]);
         $iterations = isset($items[2]) ? self::integer($items[2]) : 1;
-        $macKey = self::pkcs12Kdf($hash, self::bmpPassword($password), $salt, 3, $iterations, strlen(hash($hash, '', true)));
-        if (!hash_equals($expected, hash_hmac($hash, $authSafeBytes, $macKey, true))) {
-            throw new EetCredentialException('invalid_password', 'Heslo k certifikátu není správné.');
+        self::assertIterations($iterations);
+
+        return [
+            'hash' => $hash,
+            'expected' => self::octets($digestInfo[1]),
+            'salt' => self::octets($items[1]),
+            'iterations' => $iterations,
+            'cost' => $iterations,
+        ];
+    }
+
+    /**
+     * Cena odvození klíče pro šifrovací algoritmus (iterace × bloky výstupu),
+     * zjištěná jen z parametrů, bez dešifrování.
+     *
+     * @param array<string,mixed> $algorithmIdentifier
+     */
+    private static function algorithmCost(array $algorithmIdentifier): int
+    {
+        $algorithm = self::children($algorithmIdentifier, 0x30, 2);
+        $oid = self::oid($algorithm[0]);
+        if (isset(self::PKCS12_PBE[$oid])) {
+            $iterations = self::integer(self::children($algorithm[1], 0x30, 2)[1]);
+            self::assertIterations($iterations);
+
+            return $iterations * (intdiv(self::PKCS12_PBE[$oid][1] + 19, 20) + 1);
+        }
+        if ($oid === self::OID_PBES2) {
+            ['iterations' => $iterations, 'prf' => $prf, 'cipher' => $cipherSpec] = self::pbes2Parameters($algorithm[1]);
+            $hashLength = strlen(hash($prf, '', true));
+
+            return $iterations * intdiv($cipherSpec[1] + $hashLength - 1, $hashLength);
+        }
+        throw new EetCredentialException('unreadable', 'Soubor PKCS#12 používá nepodporovanou šifru.');
+    }
+
+    /**
+     * @param array<string,mixed> $parameters
+     * @return array{salt:string, iterations:int, prf:string, cipher:array{0:string,1:int}, iv:string}
+     */
+    private static function pbes2Parameters(array $parameters): array
+    {
+        $params = self::children($parameters, 0x30, 2);
+        $kdf = self::children($params[0], 0x30, 2);
+        if (self::oid($kdf[0]) !== self::OID_PBKDF2) {
+            throw new EetCredentialException('unreadable', 'Soubor PKCS#12 používá nepodporované odvození klíče.');
+        }
+        $kdfParams = self::children($kdf[1], 0x30, 2);
+        $iterations = self::integer($kdfParams[1]);
+        $prf = 'sha1';
+        foreach (array_slice($kdfParams, 2) as $node) {
+            if ($node['tag'] === 0x30) {
+                $prf = self::PBKDF2_PRF[self::oid(self::children($node, 0x30, 1)[0])] ?? '';
+            }
+        }
+        $scheme = self::children($params[1], 0x30, 2);
+        $cipherSpec = self::PBES2_CIPHERS[self::oid($scheme[0])] ?? null;
+        if ($prf === '' || $cipherSpec === null) {
+            throw new EetCredentialException('unreadable', 'Soubor PKCS#12 používá nepodporovanou šifru.');
+        }
+        self::assertIterations($iterations);
+
+        return [
+            'salt' => self::octets($kdfParams[0]),
+            'iterations' => $iterations,
+            'prf' => $prf,
+            'cipher' => $cipherSpec,
+            'iv' => self::octets($scheme[1]),
+        ];
+    }
+
+    private static function charge(int &$budget, int $cost): void
+    {
+        $budget += $cost;
+        if ($budget > self::MAX_TOTAL_ITERATIONS) {
+            throw new EetCredentialException('unreadable', 'Soubor PKCS#12 vyžaduje nepřípustně mnoho iterací.');
         }
     }
 
     /** @param array<string,mixed> $algorithmIdentifier */
-    private static function decrypt(array $algorithmIdentifier, string $ciphertext, string $password): string
+    private static function decrypt(array $algorithmIdentifier, string $ciphertext, string $password, int &$budget): string
     {
+        self::charge($budget, self::algorithmCost($algorithmIdentifier));
         $algorithm = self::children($algorithmIdentifier, 0x30, 2);
         $oid = self::oid($algorithm[0]);
         if (isset(self::PKCS12_PBE[$oid])) {
@@ -237,28 +408,9 @@ final class EetPkcs12Reader
                 ? (new Rc2Cipher($key, $rc2Bits))->decryptCbc($ciphertext, $iv)
                 : self::opensslDecrypt($ciphertext, $cipher, $key, $iv);
         } elseif ($oid === self::OID_PBES2) {
-            $params = self::children($algorithm[1], 0x30, 2);
-            $kdf = self::children($params[0], 0x30, 2);
-            if (self::oid($kdf[0]) !== self::OID_PBKDF2) {
-                throw new EetCredentialException('unreadable', 'Soubor PKCS#12 používá nepodporované odvození klíče.');
-            }
-            $kdfParams = self::children($kdf[1], 0x30, 2);
-            $salt = self::octets($kdfParams[0]);
-            $iterations = self::integer($kdfParams[1]);
-            $prf = 'sha1';
-            foreach (array_slice($kdfParams, 2) as $node) {
-                if ($node['tag'] === 0x30) {
-                    $prf = self::PBKDF2_PRF[self::oid(self::children($node, 0x30, 1)[0])] ?? '';
-                }
-            }
-            $scheme = self::children($params[1], 0x30, 2);
-            $cipherSpec = self::PBES2_CIPHERS[self::oid($scheme[0])] ?? null;
-            if ($prf === '' || $cipherSpec === null) {
-                throw new EetCredentialException('unreadable', 'Soubor PKCS#12 používá nepodporovanou šifru.');
-            }
-            self::assertIterations($iterations);
-            $key = hash_pbkdf2($prf, $password, $salt, $iterations, $cipherSpec[1], true);
-            $plain = self::opensslDecrypt($ciphertext, $cipherSpec[0], $key, self::octets($scheme[1]));
+            $pbes2 = self::pbes2Parameters($algorithm[1]);
+            $key = hash_pbkdf2($pbes2['prf'], $password, $pbes2['salt'], $pbes2['iterations'], $pbes2['cipher'][1], true);
+            $plain = self::opensslDecrypt($ciphertext, $pbes2['cipher'][0], $key, $pbes2['iv']);
         } else {
             throw new EetCredentialException('unreadable', 'Soubor PKCS#12 používá nepodporovanou šifru.');
         }
