@@ -848,6 +848,18 @@ final class RecurringInvoiceGenerator
     }
 
     /**
+     * Rozhodné datum zámku období ({@see \MyInvoice\Service\Accounting\DocumentLockService::invoiceRefDate()})
+     * pro fakturu, kterou šablona vytvoří s daným datem vystavení: DUZP podle režimu
+     * šablony, u zálohové faktury (bez DUZP) datum vystavení.
+     */
+    public static function lockReferenceDate(array $template, string $issueDate): string
+    {
+        return (string) ($template['invoice_type'] ?? 'invoice') === 'proforma'
+            ? $issueDate
+            : self::computeTaxDate($issueDate, (string) ($template['tax_date_mode'] ?? 'same_as_issue'));
+    }
+
+    /**
      * Spočítá DUZP (tax_date) podle režimu šablony.
      *
      *   same_as_issue           → tax_date = issue_date (původní chování)

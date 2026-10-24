@@ -105,7 +105,7 @@ final class MyuctoImportTest extends TestCase
             $this->pdo->prepare('DELETE ii FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id WHERE i.supplier_id = ?')->execute([$id]);
             $this->pdo->prepare('DELETE FROM invoices WHERE supplier_id = ?')->execute([$id]);
             $this->pdo->prepare('DELETE ri FROM recurring_invoice_template_items ri JOIN recurring_invoice_templates r ON r.id = ri.template_id WHERE r.supplier_id = ?')->execute([$id]);
-            foreach (['external_entity_map', 'recurring_invoice_templates', 'clients', 'supplier_vat_status_history'] as $table) $this->pdo->prepare('DELETE FROM `' . $table . '` WHERE supplier_id = ?')->execute([$id]);
+            foreach (['external_entity_map', 'recurring_invoice_templates', 'clients', 'supplier_vat_status_history', 'supplier_accounting_frameworks'] as $table) $this->pdo->prepare('DELETE FROM `' . $table . '` WHERE supplier_id = ?')->execute([$id]);
             $baseCurrency = (int) $this->pdo->query('SELECT default_currency_id FROM supplier WHERE id NOT IN (' . $this->source . ', ' . $this->target . ') ORDER BY id LIMIT 1')->fetchColumn();
             $this->pdo->prepare('UPDATE supplier SET default_currency_id = ? WHERE id = ?')->execute([$baseCurrency, $id]);
             $this->pdo->prepare('DELETE FROM currencies WHERE supplier_id = ?')->execute([$id]);
@@ -637,12 +637,59 @@ final class MyuctoImportTest extends TestCase
         self::assertSame(0, $this->targetCount('external_entity_map'));
     }
 
-    private function makeArchive(): string
+    public function testNonprofitFrameworkOfSourceMustMatchTargetBeforeAnyWrite(): void
     {
-        $path = $this->root . '/synthetic-export.zip'; $zip = new ZipArchive(); self::assertTrue($zip->open($path, ZipArchive::CREATE));
+        $this->framework($this->source, '1900-01-01', 'cz_504');
+        $package = (new MyuctoExportReader())->read($this->makeArchive(['supplier_accounting_frameworks'], 'framework-export.zip'));
+        self::assertArrayNotHasKey('supplier_accounting_frameworks', $package['tables']);
+        self::assertSame(['supplier_accounting_frameworks' => 1], $package['skipped']);
+        try {
+            $this->importer->import($package, $this->target, $this->actor, 'synthetic-framework', false);
+            self::fail('Deník podle vyhlášky 504 nesmí projít do firmy s rámcem 500.');
+        } catch (\RuntimeException $e) {
+            self::assertStringContainsString('Účetní rámec cílové firmy se liší od exportu k 1900-01-01', $e->getMessage());
+        }
+        self::assertSame(0, $this->targetCount('chart_of_accounts'));
+        self::assertSame(0, $this->targetCount('journal_entries'));
+        self::assertSame(0, $this->targetCount('external_entity_map'));
+    }
+
+    public function testMatchingNonprofitFrameworkRestoresAndReportsFrameworkOutsideScope(): void
+    {
+        $this->framework($this->source, '1900-01-01', 'cz_504');
+        $this->framework($this->target, '1900-01-01', 'cz_504');
+        $package = (new MyuctoExportReader())->read($this->makeArchive(['supplier_accounting_frameworks'], 'framework-export.zip'));
+        $report = $this->importer->import($package, $this->target, $this->actor, 'synthetic-framework', false);
+        self::assertSame(1, $report['created']['journal_entries']);
+        self::assertSame(['supplier_accounting_frameworks' => 1], $report['outside_scope']);
+    }
+
+    public function testExportWithoutFrameworkHistoryCannotFillNonprofitTarget(): void
+    {
+        $this->framework($this->target, '2090-01-01', 'cz_504');
+        $package = (new MyuctoExportReader())->read($this->archive);
+        try {
+            $this->importer->import($package, $this->target, $this->actor, 'synthetic-framework', false);
+            self::fail('Export v rámci 500 nesmí projít do období vedeného podle vyhlášky 504.');
+        } catch (\RuntimeException $e) {
+            self::assertStringContainsString('k 2090-01-01: export vede účetnictví podle vyhlášky 500, cílová firma podle vyhlášky 504', $e->getMessage());
+        }
+        self::assertSame(0, $this->targetCount('journal_entries'));
+    }
+
+    private function framework(int $supplier, string $from, string $framework): void
+    {
+        $this->pdo->prepare('INSERT INTO supplier_accounting_frameworks (supplier_id, effective_from, accounting_framework) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE accounting_framework = VALUES(accounting_framework)')
+            ->execute([$supplier, $from, $framework]);
+    }
+
+    /** @param list<string> $extraTables */
+    private function makeArchive(array $extraTables = [], string $name = 'synthetic-export.zip'): string
+    {
+        $path = $this->root . '/' . $name; $zip = new ZipArchive(); self::assertTrue($zip->open($path, ZipArchive::CREATE));
         $schema = SchemaMetadataProvider::load($this->pdo); $tables = []; $shared = []; $checksums = [];
         $scopes = (new TenantScopeResolver($this->db))->resolveAll($this->source);
-        foreach (['supplier', ...MyuctoImportProfile::TABLES, ...MyuctoImportProfile::CONFIG_TABLES, ...array_keys(MyuctoImportProfile::GLOBAL_KEYS)] as $table) {
+        foreach (['supplier', ...MyuctoImportProfile::TABLES, ...MyuctoImportProfile::CONFIG_TABLES, ...$extraTables, ...array_keys(MyuctoImportProfile::GLOBAL_KEYS)] as $table) {
             $scope = $scopes[$table] ?? null;
             $columns = $scope?->columns ?? array_keys($schema['columns'][$table]);
             $columns = array_values(array_filter($columns, fn ($c): bool => ($schema['columns'][$table][$c]['GENERATION_EXPRESSION'] ?? '') === ''));

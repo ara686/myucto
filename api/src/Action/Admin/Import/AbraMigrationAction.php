@@ -16,6 +16,7 @@ use MyInvoice\Service\Migration\Abra\AbraConnectionService;
 use MyInvoice\Service\Migration\Abra\AbraException;
 use MyInvoice\Service\Migration\Abra\AbraImportJobService;
 use MyInvoice\Service\Migration\Shared\ChunkedUploadStore;
+use MyInvoice\Service\Migration\Shared\NonprofitMigrationNotice;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
@@ -38,7 +39,8 @@ final class AbraMigrationAction extends AbstractMigrationAction
     public function status(Request $request, Response $response): Response
     {
         if (($denied = $this->deny($request, $response, AccessLevel::WRITE)) !== null) return $denied;
-        return Json::ok($response, $this->connection->status(SupplierGuard::currentId($request)));
+        $supplierId = SupplierGuard::currentId($request);
+        return Json::ok($response, NonprofitMigrationNotice::attach($this->db, $supplierId, $this->connection->status($supplierId)));
     }
     public function update(Request $request, Response $response): Response
     {
@@ -59,7 +61,8 @@ final class AbraMigrationAction extends AbstractMigrationAction
     public function discover(Request $request, Response $response): Response
     {
         if (($denied = $this->deny($request, $response, AccessLevel::WRITE)) !== null) return $denied;
-        try { return Json::ok($response, $this->connection->discover(SupplierGuard::currentId($request))); }
+        $supplierId = SupplierGuard::currentId($request);
+        try { return Json::ok($response, NonprofitMigrationNotice::attach($this->db, $supplierId, $this->connection->discover($supplierId))); }
         catch (AbraException $e) { return $this->sourceError($response, $e); }
     }
     public function start(Request $request, Response $response): Response { return $this->enqueue($request, $response, false); }

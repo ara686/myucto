@@ -699,9 +699,13 @@ async function saveSupplier() {
       opr_jmeno: (supplier.value as any).opr_jmeno ?? null,
       opr_prijmeni: (supplier.value as any).opr_prijmeni ?? null,
       opr_postaveni: (supplier.value as any).opr_postaveni ?? null,
-      cssz_vsdp: (supplier.value as any).cssz_vsdp ?? null,
-      cssz_ossz_code: (supplier.value as any).cssz_ossz_code ?? null,
-      health_insurance_number: (supplier.value as any).health_insurance_number ?? null,
+      // Osobní identifikátory chodí jen s právem měnit nastavení firmy; bez nich je
+      // neposílat, jinak by uložení přepsalo uloženou hodnotu prázdnou.
+      ...('health_insurance_number' in supplier.value ? {
+        cssz_vsdp: (supplier.value as any).cssz_vsdp ?? null,
+        cssz_ossz_code: (supplier.value as any).cssz_ossz_code ?? null,
+        health_insurance_number: (supplier.value as any).health_insurance_number ?? null,
+      } : {}),
       // Vědomé příznaky poplatníka pro přiznání k dani z příjmů (migrace 1782).
       // Prázdný typ poplatníka se posílá jako '' → backend uloží NULL (= neurčeno),
       // což je jiný stav než výslovně potvrzená „1".
@@ -2248,7 +2252,9 @@ async function confirmTaxRepDelete() {
                  kanonickým zdrojem mzdový modul — ale jen dokud běží: s vypnutými Mzdami by
                  VS zaměstnavatele neměl kde bydlet, a detekce odvodů v bance i šablony
                  pravidel pak čtou zpátky tahle pole. -->
-            <template v-if="!employerIdentifiersInPayroll">
+            <!-- Server identifikátory posílá jen tomu, kdo smí nastavení firmy měnit
+                 (SupplierResponseFields); bez nich se blok nezobrazí prázdný. -->
+            <template v-if="!employerIdentifiersInPayroll && 'health_insurance_number' in supplier">
               <div>
                 <label class="block text-xs font-medium text-neutral-700 mb-1">
                   {{ supplier.taxpayer_type === 'po' ? t('settings.cssz_vsdp_employer') : t('settings.cssz_vsdp') }}

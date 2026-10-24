@@ -537,7 +537,7 @@ final class UpdateInvoiceAction
             } catch (\InvalidArgumentException | \RuntimeException $e) {
                 if (TransactionFailure::rollbackIfAborted($pdo, $e)) throw $e;
                 if ($renumberTx && $pdo->inTransaction()) $pdo->rollBack();
-                return Json::error($response, 'varsymbol_failed', $e->getMessage(), 500);
+                return Json::internalError($response, 'varsymbol_failed', $e->getMessage(), 500);
             }
             $body['varsymbol'] = $newVs;
             $renumber['to'] = $newVs;

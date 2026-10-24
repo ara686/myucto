@@ -214,6 +214,11 @@ export interface DomainLoginStart {
   expires_in: number
 }
 
+export interface DomainLoginConfirmation {
+  target_hostname: string
+  supplier_name: string
+}
+
 export interface PasskeyCredential {
   id: number
   label: string
@@ -324,11 +329,20 @@ export const authApi = {
       handoff_path: handoffPath || undefined,
     }).then((r) => r.data),
 
-  domainLoginAuthorize: (requestToken: string, state: string, csrf?: string) =>
+  domainLoginAuthorize: (requestToken: string, state: string, csrf?: string, confirmed = false) =>
     api.post<{ redirect_url: string }>('/auth/domain-login/authorize', {
       request_token: requestToken,
       state,
+      ...(confirmed ? { confirmed: true } : {}),
     }, csrfHeaders(csrf)).then((r) => r.data),
+
+  /** Cíl čekajícího předání pro potvrzovací obrazovku. Kód nevydá. */
+  domainLoginPreview: (requestToken: string, state: string, csrf?: string) =>
+    api.post<{ confirmation: DomainLoginConfirmation }>('/auth/domain-login/authorize', {
+      request_token: requestToken,
+      state,
+      preview: true,
+    }, csrfHeaders(csrf)).then((r) => r.data.confirmation),
 
   domainLoginExchange: (requestToken: string, code: string, state: string, codeVerifier: string) =>
     api.post<{ csrf_token: string; return_path: string; supplier_id: number }>('/auth/domain-login/exchange', {

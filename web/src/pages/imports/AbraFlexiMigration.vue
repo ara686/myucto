@@ -8,6 +8,7 @@ import { useActivationStatus } from '@/composables/useActivationStatus'
 import ActionBar, { type ActionItem } from '@/components/ui/ActionBar.vue'
 import { btnFilled, ICONS } from '@/components/ui/buttonStyles'
 import ImportJobProgress from '@/components/exchange/ImportJobProgress.vue'
+import MigrationNonprofitNotice from '@/components/migration/MigrationNonprofitNotice.vue'
 
 const { t, te, locale } = useI18n()
 const supplier = useSupplierStore()
@@ -249,6 +250,7 @@ onBeforeUnmount(() => { generation++; stopPolling(); clearCredentials() })
       <h1 class="text-2xl font-semibold">{{ t('abra_flexi.title') }}</h1>
       <p class="text-sm text-neutral-500 mt-1">{{ t('abra_flexi.intro') }}</p>
     </div>
+    <MigrationNonprofitNotice :notice="connection?.nonprofit_notice" />
     <div class="rounded-lg border border-warning-500/30 bg-warning-50 px-4 py-3 text-sm text-warning-700" data-testid="abra-flexi-support-notice">
       <i18n-t keypath="abra_flexi.support_notice" tag="p">
         <template #recommend><strong><i18n-t keypath="abra_flexi.support_notice_recommend" tag="span"><template #contact><a href="https://myucto.cz/support#placena" target="_blank" rel="noopener" class="underline hover:no-underline">{{ t('abra_flexi.support_notice_contact') }}</a></template></i18n-t></strong></template>

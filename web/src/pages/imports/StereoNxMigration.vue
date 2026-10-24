@@ -12,6 +12,7 @@ import MoneyS3Protocol from '@/components/migration/MoneyS3Protocol.vue'
 import StereoNxSummary from '@/components/migration/StereoNxSummary.vue'
 import ImportJobProgress from '@/components/exchange/ImportJobProgress.vue'
 import CompanyProfileBox from '@/components/settings/CompanyProfileBox.vue'
+import MigrationNonprofitNotice from '@/components/migration/MigrationNonprofitNotice.vue'
 import type { FileImportJob } from '@/api/imports'
 import { useSupplierStore } from '@/stores/supplier'
 
@@ -26,6 +27,7 @@ const uploads = ref<StereoUpload[]>([])
 const loadingUploads = ref(false)
 const companies = ref<StereoCompany[]>([])
 const target = ref<StereoPreview['target'] | null>(null)
+const nonprofitNotice = ref<StereoPreview['nonprofit_notice'] | null>(null)
 const selected = ref<number | null>(null)
 const progress = ref<number | null>(null)
 const busy = ref(false)
@@ -324,6 +326,7 @@ async function preview(): Promise<void> {
     if (supplier.currentSupplierId !== supplierId || token.value !== uploadToken) return
     companies.value = result.companies
     target.value = result.target
+    nonprofitNotice.value = result.nonprofit_notice ?? null
     selected.value = result.companies.find(item => item.matches_target)?.index ?? null
     dryReport.value = null
     importReport.value = null
@@ -355,6 +358,7 @@ async function fillCompanyProfile(): Promise<void> {
     matchBankAccountSeries.value = false
     companies.value = refreshed.companies
     target.value = refreshed.target
+    nonprofitNotice.value = refreshed.nonprofit_notice ?? null
     invalidateDryRun()
     profileFilled.value = result.filled_fields.filter(field => profileFields.some(allowed => allowed === field))
   } catch (caught) {
@@ -558,6 +562,8 @@ const importProtocol = computed(() => importReport.value ? asProtocol(importRepo
       <h1 class="text-2xl font-semibold">{{ t('stereo_nx.title') }}</h1>
       <p class="mt-1 text-sm text-neutral-500">{{ t('stereo_nx.intro') }}</p>
     </div>
+
+    <MigrationNonprofitNotice :notice="target ? nonprofitNotice : null" />
 
     <ol class="grid grid-cols-2 gap-2 sm:grid-cols-4">
       <li v-for="step in steps" :key="step.number">

@@ -89,7 +89,7 @@ final class IssueFinalFromProformaAction
         try {
             $finalId = $this->creator->create($proformaId, $userId, $taxDate, $dueDate, $advance, $finalTotal);
         } catch (\Throwable $e) {
-            return Json::error($response, 'create_failed', $e->getMessage(), 500);
+            return Json::internalError($response, 'create_failed', $e->getMessage(), 500);
         }
 
         $ip = $this->ipMatcher->clientIpFromRequest($request->getServerParams());

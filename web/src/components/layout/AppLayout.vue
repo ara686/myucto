@@ -1501,8 +1501,8 @@ const licenseBanner = computed<{ variant: 'primary' | 'warning' | 'danger'; text
   if (lic.state === 'trial') {
     if (!lic.trial_ends_at) return null
     const daysLeft = Math.max(Math.ceil((lic.trial_ends_at - now) / 86400), 0)
-    // Odpočet zobrazíme až od 3. dne trialu (zbývá 5 a méně dní ze 7).
-    return daysLeft <= 5 ? { variant: 'primary', text: t('license.banner_trial', { days: daysLeft }) } : null
+    // Bez licence je banner vidět po celé zkušební období, ke konci jako varování.
+    return { variant: daysLeft <= 5 ? 'warning' : 'primary', text: t('license.banner_trial', { days: daysLeft }, daysLeft) }
   }
   if (lic.state === 'overage') {
     const daysLeft = lic.overage_deadline ? Math.max(Math.ceil((lic.overage_deadline - now) / 86400), 0) : null
@@ -2031,9 +2031,14 @@ onBeforeUnmount(() => {
             :class="BANNER_CLASS[licenseBanner.variant]"
           >
             <span>{{ licenseBanner.text }}</span>
-            <WorkspaceNavLink v-if="auth.isSuperadmin && !clientExperience" to="/activation/purchase" class="font-medium underline whitespace-nowrap">
-              {{ auth.license?.state === 'overage' ? t('license.banner_upgrade_cta') : t('license.banner_cta') }}
-            </WorkspaceNavLink>
+            <span class="flex flex-wrap items-center gap-x-4 gap-y-1">
+              <a v-if="['trial', 'trial_expired', 'degraded'].includes(auth.license?.state ?? '')" href="https://myucto.cz/licence" target="_blank" rel="noopener" class="font-medium underline whitespace-nowrap" data-license-buy>
+                {{ t('license.banner_buy_web') }}
+              </a>
+              <WorkspaceNavLink v-if="auth.isSuperadmin && !clientExperience" to="/activation/purchase" class="font-medium underline whitespace-nowrap">
+                {{ auth.license?.state === 'overage' ? t('license.banner_upgrade_cta') : t('license.banner_cta') }}
+              </WorkspaceNavLink>
+            </span>
           </div>
           <WorkspaceHost :accent-for="sectionAccent" />
         </main>

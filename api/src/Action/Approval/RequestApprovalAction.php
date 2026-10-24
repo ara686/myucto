@@ -95,7 +95,7 @@ final class RequestApprovalAction
         try {
             $invoice = $this->autoIssue->allocateVarsymbolAndSnapshots($id);
         } catch (\Throwable $e) {
-            return Json::error($response, 'allocation_failed', 'Nepodařilo se alokovat číslo faktury: ' . $e->getMessage(), 500);
+            return Json::internalError($response, 'allocation_failed', 'Nepodařilo se alokovat číslo faktury: ' . $e->getMessage(), 500);
         }
 
         $user = (array) $request->getAttribute(AuthMiddleware::ATTR_USER, []);
@@ -105,7 +105,7 @@ final class RequestApprovalAction
         try {
             $pdfPath = $this->renderer->render($id, $userId);
         } catch (\Throwable $e) {
-            return Json::error($response, 'pdf_failed', 'Nepodařilo se vygenerovat PDF výkazu: ' . $e->getMessage(), 500);
+            return Json::internalError($response, 'pdf_failed', 'Nepodařilo se vygenerovat PDF výkazu: ' . $e->getMessage(), 500);
         }
 
         // Vygeneruj nový token (přepíše dřívější requested/rejected). TTL z config.

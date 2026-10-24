@@ -75,6 +75,27 @@ final class ClientTaxSubmissionActionAccessTest extends TestCase
         self::assertSame(404, $response->getStatusCode());
     }
 
+    #[DataProvider('payrollArchiveOperations')]
+    public function testPayrollEvidenceRemainsHiddenFromClientAfterMerge(string $method): void
+    {
+        $action = $this->action(TaxSubmissionAction::class);
+        $repo = $this->createMock(TaxSubmissionRepository::class);
+        $repo->expects(self::once())->method('find')->with(17, 9)->willReturn([
+            'id' => 17, 'supplier_id' => 9, 'form_code' => 'dpzvd6',
+        ]);
+        (new \ReflectionProperty(TaxSubmissionAction::class, 'repo'))->setValue($action, $repo);
+        $response = $action->$method($this->request(), new Response(), ['id' => '17']);
+        self::assertSame(404, $response->getStatusCode());
+        self::assertSame('not_found', json_decode((string) $response->getBody(), true)['error']['code']);
+    }
+
+    public static function payrollArchiveOperations(): iterable
+    {
+        foreach (['detail', 'payment', 'downloadXml'] as $method) {
+            yield $method => [$method];
+        }
+    }
+
     public function testExportWriteStaffKeepsArchiveDeletionWithoutSubmissionWrite(): void
     {
         $request = $this->request()->withAttribute('auth.effective_role', new EffectiveRole(6, 'Archivář', 'staff', true, [

@@ -15,6 +15,8 @@ import {
   authorizePendingDomainLogin,
   canonicalDomainLoginSessionCsrf,
   hasPendingCanonicalDomainLogin,
+  isDomainLoginConfirmationRequired,
+  pendingCanonicalDomainLoginQuery,
 } from '@/security/domainLogin'
 import { takeTotpEnrollment } from '@/security/totpEnrollment'
 import { testRegisteredPasskey } from '@/security/passkeyTest'
@@ -43,7 +45,13 @@ const totpCode = ref('')
 
 async function continueAfterSetup(): Promise<void> {
   if (hasPendingCanonicalDomainLogin()) {
-    await authorizePendingDomainLogin()
+    try {
+      await authorizePendingDomainLogin()
+    } catch (e) {
+      if (!isDomainLoginConfirmationRequired(e)) throw e
+      // Potvrzení předání na vlastní doménu zobrazuje přihlašovací stránka.
+      await router.replace({ name: 'login', query: pendingCanonicalDomainLoginQuery() ?? {} })
+    }
     return
   }
   await router.replace('/')

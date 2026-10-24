@@ -656,6 +656,15 @@ final class RoutePermissionMap
         ['*', '#^/api/documents/[0-9]+/(move|links)(/|$)#', 'documents.move', AccessLevel::WRITE],
         ['DELETE', '#^/api/(documents|document-folders)(/|$)#', 'documents.delete', AccessLevel::WRITE],
         ['POST', '#^/api/documents/[0-9]+/restore$#', 'documents.restore', AccessLevel::WRITE],
+        // Destruktivní POST akce musí stát PŘED obecným pravidlem pro nahrání,
+        // jinak by je `documents.upload` pokrylo celé. Vysypání koše je
+        // nevratné smazání, přesun a obnova složky totéž co u dokumentu.
+        ['POST', '#^/api/documents/trash/empty$#', 'documents.delete', AccessLevel::WRITE],
+        ['POST', '#^/api/document-folders/[0-9]+/move$#', 'documents.move', AccessLevel::WRITE],
+        ['POST', '#^/api/document-folders/[0-9]+/restore$#', 'documents.restore', AccessLevel::WRITE],
+        // Hromadná akce nese víc operací jednou cestou: trasa pustí každého, kdo
+        // Dokumenty vidí, a jemné právo podle `action` ověří až DocumentsAction::bulk().
+        ['POST', '#^/api/documents/bulk$#', 'documents', AccessLevel::READ],
         ['POST', '#^/api/(documents|document-folders)(/|$)#', 'documents.upload', AccessLevel::WRITE],
         ['GET', '#^/api/(documents|document-folders)(/|$)#', 'documents', AccessLevel::READ],
         ['*', '#^/api/(documents|document-folders)(/|$)#', 'documents', AccessLevel::WRITE],
@@ -937,6 +946,8 @@ final class RoutePermissionMap
         ['*', '#^/api/(portfolio|crm)(/|$)#', 'dashboard.portfolio', AccessLevel::WRITE],
         ['GET', '#^/api/(codebooks|expense-categories|revenue-categories|vat-classifications)(/|$)#', 'settings.company', AccessLevel::READ],
         ['*', '#^/api/(codebooks|expense-categories|revenue-categories|vat-classifications)(/|$)#', 'settings.company.write', AccessLevel::WRITE],
+        // `GET /api/suppliers/{id}` s `profile` vrací jen bezpečný výřez firmy; plný detail
+        // akce podmiňuje `settings.company` READ k aktuální firmě (SettingsAction::getSupplierById).
         ['GET', '#^/api/(suppliers|search|slug|locate)(/|$)#', 'profile', AccessLevel::READ],
         ['GET', '#^/api/branding-profiles$#', 'profile', AccessLevel::READ],
         ['*', '#^/api/user/(filters|preferences)(/|$)#', 'profile', AccessLevel::WRITE],

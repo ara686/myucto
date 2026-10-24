@@ -271,11 +271,20 @@ Odkaz je veřejný, ale chráněný:
   pokaždé ukáže aktuální stav konceptů faktur s výkazem práce.
 - Při **prvním** otevření z prohlížeče zadá návštěvník svůj e-mail a MyÚčto na
   něj pošle **jednorázový ověřovací kód**. Po zadání se přístup uloží do
-  prohlížeče (cookie) a dalších **180 dní** se kód nevyžaduje.
+  prohlížeče (cookie) a dalších **180 dní** od ověření se kód nevyžaduje.
+  Po uplynutí lhůty si návštěvník vyžádá nový kód.
 - Povolené jsou jen **e-maily klienta** (hlavní e-mail a kontakty), u odkazu na
   zakázku navíc její **fakturační e-maily**. Na stránce se kvůli soukromí
   zobrazují jen **maskované** adresy (například `j****@fialka.cz`).
-- **Přihlášený uživatel** (vy nebo účetní) vidí náhled rovnou, bez kódu.
+- Když adresu odeberete z kontaktů klienta (nebo z fakturačních e-mailů
+  zakázky), uložený přístup z ní hned přestane platit. Ověřit se pak jde jen
+  adresou, která je stále povolená.
+- Stránka na žádost o kód odpovídá vždy stejně, ať zadaná adresa povolená je,
+  nebo není. Kód ale přijde jen na povolenou adresu.
+- **Přihlášený uživatel firmy** (vy nebo účetní) s oprávněním na veřejné
+  odkazy klientů a vydané faktury vidí náhled rovnou, bez kódu. Uživatelé
+  jiných firem, klientské role a role bez těchto oprávnění projdou ověřením
+  kódem jako ostatní návštěvníci.
 
 Obě e-mailové šablony („odkaz na sledování“ a „ověřovací kód“) upravíte
 v `Systém → E-maily a certifikáty`, záložka **E-mail šablony**.

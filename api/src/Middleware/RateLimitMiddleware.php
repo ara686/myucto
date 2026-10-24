@@ -27,6 +27,7 @@ use Slim\Psr7\Factory\ResponseFactory;
  *                               (konzumuje ForgotPasswordAction přes consume() —
  *                                tady na e-mail nedosáhneme, viz ruleFor())
  *   token_create_per_hour     → 3600s window, key = "rl:pat:user:{id}"
+ *   password_change_per_hour  → 3600s window, key = "rl:password-change:user:{id}"
  *   ares_per_min_per_user     → 60s window, key = "rl:ares:user:{id}"
  *   ai_per_5min_per_user      → 300s window, key = "rl:ai:user:{id}" (AI extract + inbox scan)
  *   setup_per_hour_per_ip     → 3600s window, key = "rl:setup:ip:{ip}"
@@ -313,6 +314,13 @@ final class RateLimitMiddleware implements MiddlewareInterface
             return ['rl:pat:' . $bucket, (int) ($rl['token_create_per_hour'] ?? 10), 3600];
         }
 
+        // Změna hesla ověřuje aktuální heslo. Generic limit /api/auth/* přeskakuje,
+        // takže bez tohohle pravidla šlo z cizí session hádat heslo bez brzdy.
+        if ($path === '/api/auth/change-password' && $method === 'POST') {
+            $bucket = $userId > 0 ? 'user:' . $userId : 'ip:' . $this->ipBucket($ip);
+            return ['rl:password-change:' . $bucket, (int) ($rl['password_change_per_hour'] ?? 10), 3600];
+        }
+
         // Setup
         if ($path === '/api/auth/setup' && $method === 'POST') {
             return ['rl:setup:ip:' . $this->ipBucket($ip), (int) ($rl['setup_per_hour_per_ip'] ?? 5), 3600];
@@ -407,11 +415,14 @@ final class RateLimitMiddleware implements MiddlewareInterface
         // `payroll.person.read_sensitive` je vázané na účet. Odkrytí OIČ / ID PPV
         // na kartě vztahu sdílí TENTÝŽ bucket: je to stejná třída operace pod
         // stejným právem, takže vlastní limit by dal obcházení druhou cestou.
+        // Odhalení rodných čísel rodiny z daňového profilu (H28) je táž třída
+        // operace nad týmž druhem údaje, proto sdílí tentýž bucket.
         if ($userId > 0
             && $method === 'POST'
             && preg_match(
-                '#^/api/payroll/(people/[0-9]+/sensitive-reveal'
-                . '|jmhz/identities/[0-9]+/reveal)$#',
+                '#^/api/(payroll/(people/[0-9]+/sensitive-reveal'
+                . '|jmhz/identities/[0-9]+/reveal)'
+                . '|tax/profile/family-reveal)$#',
                 $path,
             ) === 1
         ) {

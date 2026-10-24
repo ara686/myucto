@@ -1805,6 +1805,12 @@
     "framework_conversion": "Controlled conversion 500 → 504",
     "property_charges": "Charge components and rates"
   },
+  "migration_nonprofit_notice": {
+    "title": "Data transfer has not been verified for non-profit organisations",
+    "body": "This company is a non-profit organisation or another accounting unit under Decree 504/2002 Coll. (association, foundation, institute, owners' association). The data transfer assumes the business chart of accounts and statements under Decree 500/2002 Coll. and does not know main and economic activities, funds or the Decree 504 statements. Transferring accounting into a period kept under Decree 504 is refused. Please contact support before the transfer.",
+    "body_native": "This company is a non-profit organisation or another accounting unit under Decree 504/2002 Coll. (association, foundation, institute, owners' association). A MyÚčto export transfers the chart of accounts and the journal only into a company with the same accounting framework (Decree 500 or 504) and does not transfer members and fees, grants, capital or the non-profit income tax records. The transfer has not been verified for non-profit organisations, so please contact support before the transfer.",
+    "contact": "Contact support"
+  },
   "migration_overview": {
     "myucto_hint": "Transfer one company from a MyÚčto Complete data export or a MyInvoice database backup, including recurring invoices.",
     "title": "Switch from another accounting system",
@@ -7082,6 +7088,7 @@
           "deduction_assessment_incomplete": "The continuing-deduction assessment has not been confirmed as complete.",
           "pension_category_assessment_incomplete": "The pre-1993 pension-category assessment has not been confirmed.",
           "deduction_source_mismatch": "The entered legal details do not match the current claims in the deduction ledger.",
+          "deduction_permission_required": "The employment certificate includes continuing deductions you are not permitted to see. A colleague with the wage deductions permission has to issue it.",
           "relationship_kind_not_supported": "This employment relationship type is not supported yet.",
           "pension_category_period_invalid": "The pension-category period is invalid."
         }
@@ -10903,7 +10910,10 @@
         "payroll_annual_document_revisions": "annual documents and their revisions",
         "payroll_jmhz_eldp_evidence_snapshots": "submitted ELDP records",
         "payroll_jmhz_ordinary_evidence_snapshots": "submitted social security reports",
-        "payroll_registration_identity_snapshots": "submitted social security registration data"
+        "payroll_registration_identity_snapshots": "submitted social security registration data",
+        "payroll_run_persons": "payroll results in frozen payroll runs",
+        "payroll_run_revisions": "frozen payroll run revisions (inputs and results)",
+        "payroll_period_exports": "payroll archives (ZIP) for periods with the person's pay"
       }
     },
     "features": {
@@ -20648,12 +20658,13 @@
     "ip_hint": "Supports IPv4 and IPv6, a single address as well as a CIDR range — e.g. 203.0.113.7, 192.168.1.0/24, 2001:db8::1, 2001:db8::/32."
   },
   "license": {
-    "banner_trial": "Trial ends in {days} days — activate a license to keep double-entry accounting, stock and other commercial modules available.",
+    "banner_trial": "Trial ends today — activate a license to keep double-entry accounting, stock and other commercial modules available. | Trial ends tomorrow — activate a license to keep double-entry accounting, stock and other commercial modules available. | Trial ends in {days} days — activate a license to keep double-entry accounting, stock and other commercial modules available.",
     "banner_overage": "You have exceeded your license scope. Upgrade your subscription within {days} days, otherwise renewal will be paused.",
     "banner_overage_nodeadline": "You have exceeded your license scope. Please upgrade your subscription.",
     "banner_trial_expired": "Your trial has ended — paid accounting modules are unavailable. Invoicing and the free foundation keep working.",
     "banner_degraded": "Your license has expired — paid accounting modules are unavailable. Invoicing and the free foundation keep working.",
     "banner_cta": "Buy / activate",
+    "banner_buy_web": "Buy a license at MyUcto.cz",
     "purchase_title": "Purchase and activation",
     "purchase_subtitle": "License status, key activation and subscription.",
     "no_admin": "Only an administrator can manage the license.",
@@ -20943,6 +20954,12 @@
     "warning_app_url_invalid_origin": "`cfg.app.url` is not a valid HTTP(S) origin. Remove credentials, path, query and fragment; keep only the scheme, hostname and optional port.",
     "warning_app_url_webauthn_incompatible": "The regular UI can work over HTTP or a LAN IP, but passkeys require an HTTPS DNS origin. `http://localhost` is the only exception.",
     "warning_app_url_hostname_conflict": "The hostname from `cfg.app.url` is also stored as a company custom domain. Restore the former canonical address and disable and delete the custom domain, or configure another canonical hostname.",
+    "warning_cookie_insecure_title": "Login cookie without the Secure flag",
+    "warning_cookie_insecure_text": "`cfg.app.url` uses HTTPS, but `cfg.session.cookie_secure` is off, so the login cookie may also be sent unencrypted. Set `cookie_secure = true` and ideally use cookie names with the `__Host-` prefix.",
+    "warning_env_development_title": "Development mode on a public address",
+    "warning_env_development_text": "The instance runs with `cfg.app.env = development` although `cfg.app.url` does not point to localhost. Set `app.env = production` for a publicly reachable instance.",
+    "warning_payroll_hash_key_title": "Payroll hash key is derived from the pepper",
+    "warning_payroll_hash_key_text": "`cfg.app.payroll_hash_key` is not set, so hashes of birth numbers and document numbers are protected only by the pepper. Keep the pepper as safe as the encryption key. Do not add or change the key on an installation with payroll data, otherwise the stored hashes stop matching.",
     "warning_generic_title": "System warning",
     "warning_generic_text": "Check the application configuration.",
     "how_it_works": "How upgrades work",
@@ -28140,6 +28157,14 @@
     "first_name": "First name",
     "last_name": "Last name",
     "birth_number": "Birth number",
+    "birth_number_saved": "Stored birth number",
+    "birth_number_replace_hint": "a new number typed into the field replaces it",
+    "birth_number_will_remove": "will be removed on save",
+    "birth_number_keep": "Keep",
+    "birth_number_remove": "Remove birth number",
+    "birth_number_reveal": "Show birth numbers",
+    "birth_number_hide": "Hide birth numbers",
+    "birth_number_reveal_failed": "Birth numbers could not be shown.",
     "eligible_months": "Eligible months",
     "shared_household_proved": "Shared household documented",
     "other_parent_proved": "Non-claim by the other taxpayer documented",
@@ -30876,7 +30901,15 @@
     "return_to_client": "Return to client experience",
     "returning": "Returning…",
     "invalid_callback": "The sign-in callback is invalid or expired. Start again on the company domain.",
-    "exchange_failed": "Sign-in on the company domain could not be completed."
+    "exchange_failed": "Sign-in on the company domain could not be completed.",
+    "confirm_title": "Sign in to the client experience",
+    "confirm_intro": "You are signed in on the main address. This sign-in will be passed to the client experience at the address below.",
+    "confirm_hostname": "Address",
+    "confirm_company": "Company",
+    "confirm_warning": "Continue only if you started signing in to the client experience at this address yourself. If you arrived here from someone else's link, choose Cancel.",
+    "confirm_continue": "Continue",
+    "confirm_cancel": "Cancel",
+    "confirm_loading": "Loading sign-in details…"
   },
   "domains": {
     "title": "Client domains",

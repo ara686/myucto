@@ -95,6 +95,7 @@
     "markdown_editor",
     "mcp_server_page",
     "mfa_setup",
+    "migration_nonprofit_notice",
     "migration_overview",
     "money_s3",
     "monthly_report",
@@ -397,17 +398,20 @@
     "imports-myucto": [
       "company_profile",
       "imports",
+      "migration_nonprofit_notice",
       "myucto_import"
     ],
     "imports-money-s3": [
       "company_profile",
       "imports",
+      "migration_nonprofit_notice",
       "money_s3",
       "premier"
     ],
     "imports-pohoda": [
       "company_profile",
       "imports",
+      "migration_nonprofit_notice",
       "pamica",
       "pohoda",
       "premier"
@@ -415,6 +419,7 @@
     "imports-pamica": [
       "company_profile",
       "imports",
+      "migration_nonprofit_notice",
       "pamica",
       "pohoda",
       "premier"
@@ -422,17 +427,20 @@
     "imports-premier": [
       "company_profile",
       "imports",
+      "migration_nonprofit_notice",
       "premier"
     ],
     "imports-stereo-nx": [
       "company_profile",
       "imports",
+      "migration_nonprofit_notice",
       "premier",
       "stereo_nx"
     ],
     "imports-abra-flexi": [
       "abra_flexi",
-      "imports"
+      "imports",
+      "migration_nonprofit_notice"
     ],
     "purchase-invoices-payment-orders": [
       "bank_connection",

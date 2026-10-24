@@ -322,7 +322,6 @@ export interface Invoice {
   rounding: number
   status: InvoiceStatus
   approval_status: ApprovalStatus
-  approval_token: string | null
   approval_token_expires_at: string | null
   approval_requested_at: string | null
   approval_decided_at: string | null
@@ -1052,8 +1051,8 @@ export const invoicesApi = {
 
   activity: (id: number) =>
     api.get<Array<{
-      id: number; user_id: number | null; user_email: string | null; user_name: string | null;
-      action: string; payload: Record<string, unknown> | null; ip: string | null; created_at: string;
+      id: number; user_id: number | null; user_name: string | null;
+      action: string; payload: Record<string, unknown> | null; created_at: string;
     }>>(`/invoices/${id}/activity`).then(r => r.data),
 
   sendTest: (id: number) =>

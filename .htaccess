@@ -30,7 +30,9 @@ Options -Indexes -MultiViews
     # `api/vendor.prod/` (produkční autoloader) a holé `vendor(/|$)` ho nematchne
     # (dostane '.', ne '/'). Pokrývá i `private.bak/`, `db.old/` apod. Suffix se
     # kotví na tečku, takže legitimní `/dbxyz` zůstává dostupné.
-    RewriteRule ^(private|db|log|source|storage|tools|cmd|docker|web/(src|shared|node_modules)|node_modules|api/(src|vendor|templates|tests|bin))(?:\.[^/]*)?(/|$) - [F,L]
+    # [NC]: na souborovém systému bez rozlišení velikosti písmen (macOS, některé
+    # NAS a síťové svazky) by jinak `/Storage/…` nebo `/PRIVATE/…` prošlo.
+    RewriteRule ^(private|db|log|source|storage|tools|cmd|docker|web/(src|shared|node_modules)|node_modules|api/(src|vendor|templates|tests|bin))(?:\.[^/]*)?(/|$) - [F,L,NC]
     RewriteRule ^mcp/ - [F,L,NC]
 
     # 2b) Blokovat cfg.php, tooling manifesty a zdrojové dokumenty.
