@@ -22,7 +22,7 @@ function available(count: PaneCount): boolean {
       class="inline-flex h-7 w-8 cursor-pointer items-center justify-center rounded-md text-neutral-500 transition-all hover:bg-surface hover:text-neutral-800 disabled:cursor-not-allowed disabled:opacity-30"
       :class="workspace.paneCount === count ? 'bg-surface text-primary-700 shadow-sm ring-1 ring-primary-300/70' : ''"
       :aria-label="t(`workspace.layout_${count}`)"
-      :title="`${t(`workspace.layout_${count}`)} - ${t('workspace.layout_preserves_windows')}`"
+      :title="`${t(`workspace.layout_${count}`)} - ${t('workspace.layout_preserves_windows')}\n${t('workspace.layout_shift_click_hint')}`"
       :aria-pressed="workspace.paneCount === count"
       :disabled="!available(count)"
       @click="navigation.setPaneCount(count)"

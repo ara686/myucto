@@ -703,6 +703,7 @@
     "layout_3": "Three panels",
     "change_closes_panels": "Changing the layout preserves open windows",
     "layout_preserves_windows": "Your work remains available in the window switcher",
+    "layout_shift_click_hint": "Shift+click opens a link in a new pane",
     "windows": "Windows",
     "switch_windows": "Switch between open windows",
     "homepage": "Homepage",

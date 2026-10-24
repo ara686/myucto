@@ -703,6 +703,7 @@
     "layout_3": "Tři panely",
     "change_closes_panels": "Změna rozložení zachová otevřená okna",
     "layout_preserves_windows": "Rozpracovaná okna zůstanou v přepínači oken",
+    "layout_shift_click_hint": "Shift+klik otevře odkaz do nového panelu",
     "windows": "Okna",
     "switch_windows": "Přepnout mezi otevřenými okny",
     "homepage": "Homepage",
