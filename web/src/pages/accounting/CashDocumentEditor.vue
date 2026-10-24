@@ -104,17 +104,25 @@ const purposeOptions = computed<CashPurpose[]>(() => {
 })
 
 // ── EET: tržba z příjmového dokladu se eviduje při zaúčtování ────────────────
-// Eviduje se jen na zařízení namapované na pokladnu, nebo na zařízení zvolené tady;
-// pokladna bez mapování a bez volby doklad do EET nezapíše (výchozí chování beze změny).
+// Zařízení namapované na pokladnu, jinak zvolené tady (předvybrané výchozí zařízení firmy).
+// Hotovostní tržbu evidovat musí; bez zařízení ji server odmítne zaúčtovat.
 const eetCaps = useEetCapabilities()
 const eetSale = computed(() =>
   eetCaps.enabled.value && form.doc_type === 'in' && (form.purpose === 'sale' || form.purpose === 'invoice_payment'))
 const eetDevices = computed(() => eetCaps.capabilities.value?.devices ?? [])
+const eetDefaultDeviceId = computed<number | null>(() => {
+  const id = eetCaps.capabilities.value?.default_device_id ?? null
+  return id !== null && eetDevices.value.some(d => d.id === id) ? id : null
+})
 const eetMappedDevice = computed(() =>
   form.register_id === '' ? null : eetDevices.value.find(d => d.cash_register_id === form.register_id) ?? null)
 const eetChosenDeviceId = ref<number | null>(null)
+const eetSelectedDeviceId = computed<number | null>({
+  get: () => eetChosenDeviceId.value ?? eetDefaultDeviceId.value,
+  set: (id) => { eetChosenDeviceId.value = id },
+})
 const eetDeviceToSend = computed<number | null>(() =>
-  eetSale.value && eetMappedDevice.value === null ? eetChosenDeviceId.value : null)
+  eetSale.value && eetMappedDevice.value === null ? eetSelectedDeviceId.value : null)
 
 const isTaxDoc = computed(() => form.purpose === 'sale' || form.purpose === 'purchase')
 const isPayment = computed(() => form.purpose === 'invoice_payment' || form.purpose === 'purchase_payment')
@@ -882,22 +890,27 @@ async function save(post = true) {
 
         <!-- EET: zařízení pro tržbu z tohoto dokladu -->
         <div v-if="eetSale && isDraft" class="rounded-md border px-3 py-2 text-sm"
-          :class="eetMappedDevice ? 'border-primary-200 bg-primary-50 text-primary-800' : 'border-neutral-200 bg-neutral-50 text-neutral-700'"
+          :class="eetMappedDevice ? 'border-primary-200 bg-primary-50 text-primary-800'
+            : eetSelectedDeviceId === null ? 'border-warning-200 bg-warning-50 text-warning-800'
+            : 'border-neutral-200 bg-neutral-50 text-neutral-700'"
           data-test="cash-eet-info">
           <p v-if="eetMappedDevice">
             {{ t('cash.eet.mapped', { device: `${eetMappedDevice.code}${eetMappedDevice.name ? ' - ' + eetMappedDevice.name : ''}` }) }}
           </p>
           <template v-else-if="eetDevices.length > 0">
             <label :for="`${pageId}-cash-eet-device`" class="block font-medium mb-1">{{ t('cash.eet.device') }}</label>
-            <select :id="`${pageId}-cash-eet-device`" v-model="eetChosenDeviceId"
+            <select :id="`${pageId}-cash-eet-device`" v-model="eetSelectedDeviceId"
               class="w-full h-10 px-3 border border-neutral-300 rounded-md text-sm bg-surface" data-test="cash-eet-device">
-              <option :value="null">{{ t('cash.eet.device_none') }}</option>
-              <option v-for="d in eetDevices" :key="d.id" :value="d.id">{{ d.code }}{{ d.name ? ' - ' + d.name : '' }} ({{ d.unit_number }})</option>
+              <option v-if="eetSelectedDeviceId === null" :value="null" disabled>{{ t('cash.eet.device') }}</option>
+              <option v-for="d in eetDevices" :key="d.id" :value="d.id">
+                {{ d.code }}{{ d.name ? ' - ' + d.name : '' }} ({{ d.unit_number }}){{ d.id === eetDefaultDeviceId ? ' · ' + t('cash.eet.default') : '' }}
+              </option>
             </select>
-            <p class="mt-1 text-xs" :class="eetChosenDeviceId === null ? 'text-warning-700' : 'text-neutral-500'">
-              {{ eetChosenDeviceId === null ? t('cash.eet.not_recorded') : t('cash.eet.chosen') }}
+            <p class="mt-1 text-xs" :class="eetSelectedDeviceId === null ? 'text-warning-700' : 'text-neutral-500'">
+              {{ eetSelectedDeviceId === null ? t('cash.eet.device_required') : t('cash.eet.chosen') }}
             </p>
           </template>
+          <p v-else data-test="cash-eet-device-required">{{ t('cash.eet.device_required') }}</p>
         </div>
 
         <div v-if="error" class="text-sm text-danger-500">{{ error }}</div>

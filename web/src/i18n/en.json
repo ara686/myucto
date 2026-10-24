@@ -13584,15 +13584,17 @@
       "eet_validation": "The data for the EET sale record are not valid.",
       "eet_not_configured": "EET is not fully configured, the document cannot be posted with a sale record.",
       "eet_unsupported_scenario": "This sale cannot be recorded in EET yet, the document was not posted.",
+      "eet_device_required": "The register has no EET device and the company has no default device, the document was not posted. Assign a device to the register in EET settings.",
+      "eet_qr_pending": "The invoice has a confirmed QR payment order waiting for the bank. Accept at most the remaining amount; correct an unexecuted QR payment in EET.",
       "eet_state_conflict": "The EET record state does not allow this action.",
       "eet_history_exists": "The document has a recorded EET sale, so it cannot be deleted."
     },
     "eet": {
       "mapped": "On posting, the document is recorded in EET on device {device}.",
       "device": "EET device for the sale",
-      "device_none": "Do not record in EET",
-      "not_recorded": "The register is not linked to an EET device; without choosing one, the sale from this document is not recorded in EET.",
-      "chosen": "On posting, the document is recorded in EET on the chosen device."
+      "default": "default",
+      "chosen": "On posting, the document is recorded in EET on the chosen device.",
+      "device_required": "The register has no EET device and the company has no default device. Cash sales must be recorded, so the document cannot be posted. Assign a device to the register in EET settings."
     }
   },
   "stock": {

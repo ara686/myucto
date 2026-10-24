@@ -13584,15 +13584,17 @@
       "eet_validation": "Údaje pro evidenci tržby EET nejsou v pořádku.",
       "eet_not_configured": "EET není kompletně nastavené, doklad nelze zaúčtovat s evidencí tržby.",
       "eet_unsupported_scenario": "Tuto tržbu zatím nelze do EET zaevidovat, doklad se nezaúčtoval.",
+      "eet_device_required": "Pokladna nemá zařízení EET a firma nemá výchozí zařízení, doklad se nezaúčtoval. V Nastavení EET přiřaďte pokladně zařízení.",
+      "eet_qr_pending": "Faktura má potvrzený QR příkaz, který čeká na banku. Úhradu přijměte nejvýše do zbývající částky, neprovedenou QR platbu opravte v EET.",
       "eet_state_conflict": "Stav evidence EET neumožňuje tuto akci.",
       "eet_history_exists": "Doklad má evidovanou tržbu EET, takže ho nelze smazat."
     },
     "eet": {
       "mapped": "Při zaúčtování se doklad zaeviduje do EET na zařízení {device}.",
       "device": "Zařízení EET pro tržbu",
-      "device_none": "Neevidovat do EET",
-      "not_recorded": "Pokladna není napojená na zařízení EET, bez volby zařízení se tržba z tohoto dokladu do EET nezaeviduje.",
-      "chosen": "Při zaúčtování se doklad zaeviduje do EET na zvolené zařízení."
+      "default": "výchozí",
+      "chosen": "Při zaúčtování se doklad zaeviduje do EET na zvolené zařízení.",
+      "device_required": "Pokladna nemá přiřazené zařízení EET a firma nemá výchozí zařízení. Hotovostní tržbu je nutné evidovat, proto doklad nepůjde zaúčtovat. V Nastavení EET přiřaďte pokladně zařízení."
     }
   },
   "stock": {
