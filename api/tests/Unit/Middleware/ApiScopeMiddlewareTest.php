@@ -682,6 +682,8 @@ final class ApiScopeMiddlewareTest extends TestCase
             ['GET', '/api/portal/document-requests'],
             ['POST', '/api/portal/document-requests/7/upload'],
             ['GET', '/api/user/filters'],
+            ['GET', '/api/user/favorites'],
+            ['DELETE', '/api/user/favorites/7'],
             ['GET', '/api/user/preferences'],
             ['DELETE', '/api/user/preferences/theme'],
             ['POST', '/api/ai/suggestions/7/accept'],

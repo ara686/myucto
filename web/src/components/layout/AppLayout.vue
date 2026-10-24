@@ -32,6 +32,8 @@ import WorkspaceHost from '@/components/workspace/WorkspaceHost.vue'
 import WorkspaceNavLink from '@/components/workspace/WorkspaceNavLink.vue'
 import WorkspaceWindowSwitcher from '@/components/workspace/WorkspaceWindowSwitcher.vue'
 import WorkspaceWindowButton from '@/components/workspace/WorkspaceWindowButton.vue'
+import WorkspaceFavorites from '@/components/workspace/WorkspaceFavorites.vue'
+import WorkspaceFavoritesButton from '@/components/workspace/WorkspaceFavoritesButton.vue'
 import { getWindowManager } from '@/workspace/windowRegistry'
 import type { AccessLevel, PermissionKey } from '@/security/permissions'
 import { useSessionSecurityStore } from '@/stores/sessionSecurity'
@@ -2013,6 +2015,7 @@ onBeforeUnmount(() => {
              stačí ji mít v layoutu jednou. -->
         <CommandPalette ref="paletteRef" :nav-items="paletteNavItems" :quick-actions="quickActions" />
         <WorkspaceWindowSwitcher />
+        <WorkspaceFavorites />
 
         <main
           class="flex-1 px-5 sm:px-8 py-6 w-full"
@@ -2209,6 +2212,7 @@ onBeforeUnmount(() => {
               </button>
               <LanguageToggle />
               <ThemeToggle />
+              <WorkspaceFavoritesButton class="border border-neutral-200" />
               <WorkspaceWindowButton class="border border-neutral-200" />
             </div>
             <div class="flex flex-wrap items-center justify-end gap-1.5">

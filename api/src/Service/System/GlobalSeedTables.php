@@ -190,7 +190,7 @@ final class GlobalSeedTables
         // se uživatel s vynuceným MFA po resetu nepřihlásil.
         'users', 'sessions', 'trusted_devices', 'login_otps',
         'webauthn_credentials', 'mfa_recovery_codes', 'totp_used_steps',
-        'user_preferences', 'saved_filters',
+        'user_preferences', 'saved_filters', 'user_favorites',
         // Dynamické role a per-firma override zůstávají spolu s uživateli.
         'roles', 'role_permissions', 'user_suppliers',
         // Identita firmy, skupiny firem, přihlašovací domény, měny, číslování dokladů.

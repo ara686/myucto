@@ -972,7 +972,7 @@ final class RoutePermissionMap
         // akce podmiňuje `settings.company` READ k aktuální firmě (SettingsAction::getSupplierById).
         ['GET', '#^/api/(suppliers|search|slug|locate)(/|$)#', 'profile', AccessLevel::READ],
         ['GET', '#^/api/branding-profiles$#', 'profile', AccessLevel::READ],
-        ['*', '#^/api/user/(filters|preferences)(/|$)#', 'profile', AccessLevel::WRITE],
+        ['*', '#^/api/user/(filters|preferences|favorites)(/|$)#', 'profile', AccessLevel::WRITE],
         ['GET', '#^/api/portal/purchase-invoice-submissions(/|$)#', 'documents.submit', AccessLevel::READ],
         ['POST', '#^/api/portal/purchase-invoice-submissions(/|$)#', 'documents.submit', AccessLevel::WRITE],
         ['DELETE', '#^/api/portal/purchase-invoice-submissions/[0-9]+$#', 'documents.submit', AccessLevel::WRITE],
