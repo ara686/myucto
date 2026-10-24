@@ -220,6 +220,20 @@ final class RequestAuthorization
     }
 
     /**
+     * Rychlá účtenka doklad založí, vystaví a hned uhradí. Kromě založení faktury
+     * (pravidlo route) proto vyžaduje i právo vystavit a označit zaplacené; klient
+     * ji nevystaví nikdy. Právo evidovat tržbu (`eet.accept_payment`) se ověřuje
+     * zvlášť, jen když firma eviduje.
+     */
+    public static function canIssueQuickReceipt(Request $request): bool
+    {
+        return !self::isClientType($request)
+            && self::allows($request, 'invoices.create', AccessLevel::WRITE)
+            && self::allows($request, 'invoices.issue', AccessLevel::WRITE)
+            && self::allows($request, 'invoices.mark_paid', AccessLevel::WRITE);
+    }
+
+    /**
      * XML pokusů o odeslání EET (podepsaná zpráva a odpověď FS) vidí jen ten, kdo
      * smí opravovat a opakovat evidenci, a jen z přihlášené relace. Bearer token
      * (mobil, integrace) ho nedostane nikdy.

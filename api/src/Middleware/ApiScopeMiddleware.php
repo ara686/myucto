@@ -94,6 +94,18 @@ final class ApiScopeMiddleware implements MiddlewareInterface
         '#^/api/catalog/exports/[0-9]+/download$#',
         '#^/api/catalog/changes$#',
         '#^/api/price-list-items(/|$)#',
+        // EET a mobilní aplikace: čtení evidence (Domů, Tržby, detail tržby) a se scope
+        // `read_write` přijetí platby, QR záměr, opakování, oprava a rychlá účtenka.
+        // Nastavení, jednotky, zařízení, certifikáty, diagnostika a export zůstávají
+        // jen pro webovou relaci; XML pokusů token nedostane ani v detailu záznamu
+        // (RequestAuthorization::canViewEetAttemptXml).
+        '#^/api/eet/(summary|queue|capabilities)$#',
+        '#^/api/eet/records(/[0-9]+)?$#',
+        '#^/api/eet/records/[0-9]+/(retry|corrections(/preview)?)$#',
+        '#^/api/eet/payments(/preview)?$#',
+        '#^/api/eet/payments/[0-9a-f-]{36}$#',
+        '#^/api/eet/payment-intents(/[0-9a-f-]{36}/(confirm|cancel))?$#',
+        '#^/api/mobile/receipts$#',
         // Mzdy - pouze úzký personální a vstupní kontrakt. Uzávěrky, schválení
         // běhů, platby, dokumenty a podání nemají v allowlistu žádnou cestu.
         '#^/api/payroll/people$#',

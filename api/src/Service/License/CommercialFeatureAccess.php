@@ -81,6 +81,8 @@ final class CommercialFeatureAccess
         // cesta sama o obsahu požadavku nic neví.
         '#^/api/eet/payments(?:/preview)?$#',
         '#^/api/eet/payment-intents(?:/[^/]+/confirm)?$#',
+        // Rychlá účtenka přijímá novou platbu stejně jako /api/eet/payments.
+        '#^/api/mobile/receipts$#',
     ];
 
     public function __construct(private readonly LicenseService $license) {}

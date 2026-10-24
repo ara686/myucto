@@ -15,6 +15,11 @@ info:
 
     Upload certifikátu je možný jen z webové relace s opětovným ověřením uživatele.
 
+    API token (mobilní aplikace, integrace) smí číst evidenci, souhrn, frontu a schopnosti;
+    se scope `read_write` i přijmout platbu, QR záměr, opakování a opravu. Nastavení,
+    jednotky, zařízení, certifikáty, diagnostika a export jsou jen pro webovou relaci
+    (`security` u každé operace).
+
     '
 servers:
 - url: /
@@ -27,6 +32,9 @@ tags:
 paths:
   /api/eet/capabilities:
     get:
+      security:
+      - session: []
+      - bearer: []
       tags:
       - EET – nastavení
       operationId: eetCapabilities
@@ -43,6 +51,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
   /api/eet/settings:
     get:
+      security:
+      - session: []
       tags:
       - EET – nastavení
       operationId: eetSettingsShow
@@ -73,6 +83,8 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
     put:
+      security:
+      - session: []
       tags:
       - EET – nastavení
       operationId: eetSettingsUpdate
@@ -115,6 +127,8 @@ paths:
           $ref: '#/components/responses/Validation'
   /api/eet/units:
     get:
+      security:
+      - session: []
       tags:
       - EET – nastavení
       operationId: eetUnitsList
@@ -137,6 +151,8 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
     post:
+      security:
+      - session: []
       tags:
       - EET – nastavení
       operationId: eetUnitsCreate
@@ -165,6 +181,8 @@ paths:
     parameters:
     - $ref: '#/components/parameters/Id'
     put:
+      security:
+      - session: []
       tags:
       - EET – nastavení
       operationId: eetUnitsUpdate
@@ -190,6 +208,8 @@ paths:
         '422':
           $ref: '#/components/responses/Validation'
     delete:
+      security:
+      - session: []
       tags:
       - EET – nastavení
       operationId: eetUnitsEndValidity
@@ -216,6 +236,8 @@ paths:
           $ref: '#/components/responses/Validation'
   /api/eet/devices:
     get:
+      security:
+      - session: []
       tags:
       - EET – nastavení
       operationId: eetDevicesList
@@ -238,6 +260,8 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
     post:
+      security:
+      - session: []
       tags:
       - EET – nastavení
       operationId: eetDevicesCreate
@@ -266,6 +290,8 @@ paths:
     parameters:
     - $ref: '#/components/parameters/Id'
     put:
+      security:
+      - session: []
       tags:
       - EET – nastavení
       operationId: eetDevicesUpdate
@@ -291,6 +317,8 @@ paths:
         '422':
           $ref: '#/components/responses/Validation'
     delete:
+      security:
+      - session: []
       tags:
       - EET – nastavení
       operationId: eetDevicesDeactivate
@@ -307,6 +335,8 @@ paths:
           $ref: '#/components/responses/NotFound'
   /api/eet/certificates:
     get:
+      security:
+      - session: []
       tags:
       - EET – certifikáty
       operationId: eetCertificatesList
@@ -329,6 +359,8 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
     post:
+      security:
+      - session: []
       tags:
       - EET – certifikáty
       operationId: eetCertificatesUpload
@@ -386,6 +418,8 @@ paths:
     parameters:
     - $ref: '#/components/parameters/Id'
     post:
+      security:
+      - session: []
       tags:
       - EET – certifikáty
       operationId: eetCertificatesDeactivate
@@ -416,6 +450,8 @@ paths:
           $ref: '#/components/responses/NotFound'
   /api/eet/diagnostics:
     post:
+      security:
+      - session: []
       tags:
       - EET – nastavení
       operationId: eetDiagnosticsRun
@@ -455,6 +491,9 @@ paths:
           $ref: '#/components/responses/Validation'
   /api/eet/payments/preview:
     post:
+      security:
+      - session: []
+      - bearer: []
       tags:
       - EET
       summary: Náhled rozhodnutí politiky evidence bez zápisu
@@ -475,6 +514,9 @@ paths:
           $ref: '#/components/responses/EetError'
   /api/eet/payments:
     post:
+      security:
+      - session: []
+      - bearer: []
       tags:
       - EET
       summary: Přijetí platby s posouzením a případnou evidencí tržby
@@ -505,6 +547,9 @@ paths:
           $ref: '#/components/responses/EetError'
   /api/eet/payments/{publicId}:
     get:
+      security:
+      - session: []
+      - bearer: []
       tags:
       - EET
       summary: Detail platební události s oddělenými stavy
@@ -521,6 +566,9 @@ paths:
           $ref: '#/components/responses/EetError'
   /api/eet/payment-intents:
     post:
+      security:
+      - session: []
+      - bearer: []
       tags:
       - EET
       summary: QR platba na místě — příprava záměru a QR dat (není inkaso ani tržba)
@@ -559,6 +607,9 @@ paths:
           $ref: '#/components/responses/EetError'
   /api/eet/payment-intents/{publicId}/confirm:
     post:
+      security:
+      - session: []
+      - bearer: []
       tags:
       - EET
       summary: „Zákazník zadal platbu" — okamžik příkazu a evidence tržby
@@ -596,6 +647,9 @@ paths:
           $ref: '#/components/responses/EetError'
   /api/eet/payment-intents/{publicId}/cancel:
     post:
+      security:
+      - session: []
+      - bearer: []
       tags:
       - EET
       summary: Zrušení neprovedeného záměru (jen ve stavu initiated)
@@ -614,6 +668,9 @@ paths:
           $ref: '#/components/responses/EetError'
   /api/eet/records:
     get:
+      security:
+      - session: []
+      - bearer: []
       tags:
       - EET
       summary: Evidence tržeb (keyset stránkování od nejnovější)
@@ -687,6 +744,9 @@ paths:
           $ref: '#/components/responses/EetError'
   /api/eet/records/{id}:
     get:
+      security:
+      - session: []
+      - bearer: []
       tags:
       - EET
       summary: Detail záznamu s pokusy a opravami
@@ -704,6 +764,9 @@ paths:
           $ref: '#/components/responses/EetError'
   /api/eet/records/{id}/retry:
     post:
+      security:
+      - session: []
+      - bearer: []
       tags:
       - EET
       summary: Okamžité opakování odeslání (retry_wait / action_required)
@@ -722,6 +785,9 @@ paths:
           $ref: '#/components/responses/EetError'
   /api/eet/records/{id}/corrections/preview:
     post:
+      security:
+      - session: []
+      - bearer: []
       tags:
       - EET
       summary: Náhled záporné opravy
@@ -746,6 +812,9 @@ paths:
           $ref: '#/components/responses/EetError'
   /api/eet/records/{id}/corrections:
     post:
+      security:
+      - session: []
+      - bearer: []
       tags:
       - EET
       summary: Záporná oprava tržby (vlastní číslo, aktuální čas, max do neopravené části)
@@ -775,6 +844,9 @@ paths:
           $ref: '#/components/responses/EetError'
   /api/eet/queue:
     get:
+      security:
+      - session: []
+      - bearer: []
       tags:
       - EET
       summary: Souhrn fronty, nejstarší lhůta, poslední potvrzení, certifikáty
@@ -785,8 +857,40 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/EetQueueSummary'
+  /api/eet/summary:
+    get:
+      security:
+      - session: []
+      - bearer: []
+      tags:
+      - EET
+      operationId: eetSalesSummary
+      summary: Souhrn tržeb dne a měsíce pro obrazovku Domů
+      description: 'Vyžaduje `eet` (čtení). Den a měsíc zvoleného data (výchozí dnes): počet
+        tržeb, součet potvrzených, čekající, vyžadující zásah a po lhůtě 48 h. K tomu poslední
+        potvrzení, platnost certifikátu aktuálního prostředí, stav fronty a prostředí. Počítá
+        se jen aktuální prostředí. Bez XML a tajemství. Dostupné i přes API token (čtení).'
+      parameters:
+      - name: date
+        in: query
+        description: Den souhrnu (RRRR-MM-DD nebo `today`), výchozí dnes.
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Souhrn
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EetSalesSummary'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/EetError'
   /api/eet/export:
     get:
+      security:
+      - session: []
       tags:
       - EET
       summary: CSV export evidence (bez XML a tajemství)
@@ -824,6 +928,9 @@ paths:
           $ref: '#/components/responses/EetError'
   /api/invoices/{id}/eet:
     get:
+      security:
+      - session: []
+      - bearer: []
       tags:
       - EET
       summary: EET souhrn faktury po platebních událostech
@@ -2370,6 +2477,85 @@ components:
           original_remaining_foreign:
             $ref: '#/components/schemas/EetMoney'
             description: Zbývá opravit v původní měně cizoměnové tržby
+    EetSalesPeriod:
+      type: object
+      properties:
+        from:
+          type: string
+          format: date
+        to:
+          type: string
+          format: date
+        count:
+          type: integer
+          description: Počet tržeb (prodeje i opravy) s časem tržby v období
+        confirmed_count:
+          type: integer
+        confirmed_total:
+          $ref: '#/components/schemas/EetMoney'
+        waiting:
+          type: integer
+          description: Čeká na odeslání nebo opakování
+        action_required:
+          type: integer
+        overdue:
+          type: integer
+          description: Evidováno po lhůtě 48 h
+        currency:
+          type: string
+    EetSalesSummary:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        active:
+          type: boolean
+          description: Firma k dnešku eviduje tržby
+        environment:
+          type: string
+          enum:
+          - playground
+          - production
+        dispatch_blocked:
+          type: boolean
+        today:
+          $ref: '#/components/schemas/EetSalesPeriod'
+        month:
+          $ref: '#/components/schemas/EetSalesPeriod'
+        last_confirmed_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        certificate:
+          type:
+          - object
+          - 'null'
+          properties:
+            valid_until:
+              type: string
+              format: date-time
+            days_left:
+              type: integer
+            expired:
+              type: boolean
+        queue:
+          type: object
+          properties:
+            open_total:
+              type: integer
+            counts:
+              type: object
+              additionalProperties:
+                type: integer
+            overdue:
+              type: integer
+            oldest_deadline_at:
+              type:
+              - string
+              - 'null'
+              format: date-time
     EetQueueSummary:
       type: object
       properties:

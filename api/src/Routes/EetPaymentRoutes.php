@@ -31,6 +31,7 @@ final class EetPaymentRoutes
         $app->post('/api/eet/records/{id:[0-9]+}/corrections/preview', [EetRecordAction::class, 'correctionPreview']);
         $app->post('/api/eet/records/{id:[0-9]+}/corrections', [EetRecordAction::class, 'correction']);
         $app->get('/api/eet/queue', [EetRecordAction::class, 'queue']);
+        $app->get('/api/eet/summary', [EetRecordAction::class, 'summary']);
         $app->get('/api/eet/export', [EetRecordAction::class, 'export']);
         $app->get('/api/invoices/{id:[0-9]+}/eet', [EetRecordAction::class, 'invoice']);
     }

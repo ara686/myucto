@@ -38,8 +38,9 @@ final class EetPaymentEntryPointGuardTest extends TestCase
      * @var array<string,array{0:string,1:string,2?:class-string}>
      */
     private const CALLERS = [
-        'MyInvoice\Service\Eet\EetPaymentCommand::accept' => [self::CONNECTED,
-            'Společný platební příkaz: událost, úhrada a EET záznam v jedné transakci.', InvoicePaymentService::class],
+        'MyInvoice\Service\Eet\EetPaymentCommand::persistAccepted' => [self::CONNECTED,
+            'Společný platební příkaz (accept i rychlá účtenka přes acceptWithinTransaction): událost, úhrada a EET záznam v jedné transakci.',
+            InvoicePaymentService::class],
         'MyInvoice\Service\Eet\EetPaymentCommand::acceptExternal' => [self::CONNECTED,
             'Tržbu evidoval externí systém (e-shop): událost, úhrada a neodesílaný záznam external v jedné transakci.', InvoicePaymentService::class],
         'MyInvoice\Action\Invoice\CreatePaymentAction::__invoke' => [self::CONNECTED,

@@ -283,8 +283,11 @@ final class CashSettlementService
      * Sesouhlasí hotovostní vyrovnání VYDANÉ faktury s volbou na dokladu.
      *
      * @return array{status:string, cash_document_id:?int, doc_number:?string, reason:?string}
+     *
+     * @param ?int $eetDeviceId pokladní zařízení EET pro tržbu z dokladu (rychlá účtenka
+     *                          ho zná); bez něj rozhodne mapování pokladny / výchozí zařízení
      */
-    public function syncInvoice(int $supplierId, int $invoiceId, ?int $userId): array
+    public function syncInvoice(int $supplierId, int $invoiceId, ?int $userId, ?int $eetDeviceId = null): array
     {
         $invoice = $this->invoices->find($invoiceId);
         if ($invoice === null || (int) $invoice['supplier_id'] !== $supplierId) {
@@ -365,7 +368,7 @@ final class CashSettlementService
             'total_amount' => $remaining,
             'invoice_id'   => $invoiceId,
             'post'         => true,
-        ], $userId);
+        ] + ($eetDeviceId !== null ? ['eet_device_id' => $eetDeviceId] : []), $userId);
         $this->markAuto($supplierId, (int) $created['id']);
 
         return self::result(self::CREATED, (int) $created['id'], $created['doc_number'] ?? null);

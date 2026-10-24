@@ -873,6 +873,13 @@ final class Routes
         $app->post   ('/api/invoices/{id:[0-9]+}/public-link',            [PublicLinkAction::class, 'ensure']);
         $app->post   ('/api/invoices/{id:[0-9]+}/public-link/regenerate', [PublicLinkAction::class, 'regenerate']);
 
+        // Veřejná účtenka zákazníka /r/{token} — vytvoření a odvolání odkazu (authenticated)
+        $app->post   ('/api/invoices/{id:[0-9]+}/receipt-link',           [\MyInvoice\Action\Invoice\ReceiptLinkAction::class, 'create']);
+        $app->delete ('/api/invoices/{id:[0-9]+}/receipt-link',           [\MyInvoice\Action\Invoice\ReceiptLinkAction::class, 'revoke']);
+
+        // Rychlá účtenka z mobilní aplikace: doklad + úhrada + pokladna + EET v jedné transakci
+        $app->post   ('/api/mobile/receipts',                             \MyInvoice\Action\Mobile\QuickReceiptAction::class);
+
         // Public schvalovací endpointy (bez auth, jen token)
         $app->get    ('/api/public/approval/{token:[a-f0-9]{32,128}}',          PublicApprovalGetAction::class);
         $app->get    ('/api/public/approval/{token:[a-f0-9]{32,128}}/logo',     PublicApprovalLogoAction::class);
@@ -898,6 +905,10 @@ final class Routes
         $app->get    ('/api/public/invoice/{token:[a-f0-9]{32,128}}/pdf', PublicInvoicePdfAction::class);
         $app->get    ('/api/public/invoice/{token:[a-f0-9]{32,128}}/isdoc', PublicInvoiceIsdocAction::class);
         $app->get    ('/api/public/invoice/{token:[a-f0-9]{32,128}}/attachment/{attId:[0-9]+}', PublicInvoiceAttachmentAction::class);
+
+        // Veřejná účtenka zákazníka (bez auth, jen token s omezenou platností)
+        $app->get    ('/api/public/receipt/{token:[a-f0-9]{64}}',     [\MyInvoice\Action\Invoice\PublicReceiptAction::class, 'show']);
+        $app->get    ('/api/public/receipt/{token:[a-f0-9]{64}}/pdf', [\MyInvoice\Action\Invoice\PublicReceiptAction::class, 'pdf']);
 
         // Public náhled na výkaz práce (bez auth; token + e-mailová autorizace kódem)
         $app->get    ('/api/public/work-report/{token:[a-f0-9]{32,128}}',              PublicWorkReportGetAction::class);

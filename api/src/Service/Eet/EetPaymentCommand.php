@@ -50,7 +50,8 @@ final class EetPaymentCommand
     /** Kontext platby, kterou evidoval jiný systém (e-shop s vlastní EET). */
     public const EXTERNAL_CONTEXT = 'external';
 
-    private const DEFAULT_METHOD_BY_CHANNEL = [
+    /** Výchozí způsob úhrady podle kanálu platby (sdílí ho i rychlá účtenka). */
+    public const DEFAULT_METHOD_BY_CHANNEL = [
         'cash' => 'cash',
         'card_terminal' => 'card',
         'card_online' => 'card',
@@ -190,88 +191,9 @@ final class EetPaymentCommand
             $created = TransactionFailure::retrying($pdo, function () use ($pdo, $supplierId, $userId, $key, $hash, $in, $receivedAt, $now, $settings, $decision, $invoicePaymentSource, $fx): array {
                 $pdo->beginTransaction();
                 try {
-                    $cashLike = in_array($in['channel'], self::SETTLED_CHANNELS, true);
-                    $eventId = $this->events->insert([
-                        'supplier_id' => $supplierId,
-                        'idempotency_key' => $key,
-                        'request_hash' => $hash,
-                        'kind' => 'payment',
-                        'origin' => $in['invoice_id'] !== null ? 'invoice_payment' : 'quick_sale',
-                        'payment_method' => $in['payment_method'],
-                        'channel' => $in['channel'],
-                        'contact_context' => $in['contact_context'],
-                        'business_purpose' => $in['business_purpose'],
-                        'amount' => $fx['amount'],
-                        'currency' => $fx['currency'],
-                        'original_currency' => $fx['original_currency'],
-                        'original_amount' => $fx['original_amount'],
-                        'exchange_rate' => $fx['exchange_rate'],
-                        'exchange_rate_source' => $fx['exchange_rate_source'],
-                        'received_at' => EetValues::dbTime($receivedAt),
-                        'recorded_at' => EetValues::dbTime($now),
-                        'paid_on' => $receivedAt->format('Y-m-d'),
-                        'payment_order_status' => $cashLike ? 'settled' : 'operator_confirmed',
-                        'bank_verification_status' => $cashLike ? 'not_applicable' : 'pending',
-                        'accounting_settlement_status' => $in['invoice_id'] !== null ? 'settled' : 'pending',
-                        'invoice_id' => $in['invoice_id'],
-                        'eet_decision' => $decision->decision,
-                        'eet_reason_code' => $decision->reasonCode,
-                        'policy_version' => EetRecordingPolicy::VERSION,
-                        'note' => $in['note'],
-                        'created_by' => $userId > 0 ? $userId : null,
-                    ]);
-
-                    $invoiceId = null;
-                    $credit = $this->creditAmounts($supplierId, $in, $fx['amount'], null);
-                    if ($in['invoice_id'] !== null) {
-                        $invoice = $this->invoice($supplierId, $in['invoice_id'], true);
-                        $this->assertInvoiceAccepts($supplierId, $invoice, $in['amount'], $in['currency']);
-                        // Podíl kreditu z úhrad PŘED touto platbou, pod zámkem faktury.
-                        $credit = $this->creditAmounts($supplierId, $in, $fx['amount'], $invoice);
-                        $payment = $this->invoicePayments->recordPayment(
-                            (int) $invoice['id'],
-                            (float) $in['amount'],
-                            $receivedAt->format('Y-m-d'),
-                            [
-                                // Zdroj jako u ruční úhrady před EET (manual / mark_paid), i u
-                                // hotovosti: `cash` patří jen úhradě z pokladního dokladu
-                                // a peněžní deník ho bere jako poznámku k PPD, ne jako příjem.
-                                // Uplatnění poukazu jde stejnou cestou; zúčtování přijaté zálohy
-                                // na poukaz řeší účetní ručně (zvláštní účtování neexistuje).
-                                'source' => $invoicePaymentSource,
-                                'note' => $in['note'] ?? ($in['channel'] === 'stored_value'
-                                    ? 'Uplatnění poukazu / kreditu (EET)' : 'Platba přijatá s posouzením EET'),
-                                'created_by' => $userId > 0 ? $userId : null,
-                            ],
-                        );
-                        // Alokace je v měně faktury (stejně jako úhrada), částka události v CZK.
-                        $this->events->allocate($supplierId, $eventId, $in['amount'], [
-                            'invoice_id' => (int) $invoice['id'],
-                            'invoice_payment_id' => (int) $payment['payment_id'],
-                        ]);
-                        $invoiceId = (int) $invoice['id'];
-                    }
-
-                    $recordId = null;
-                    if ($decision->createsRecord()) {
-                        $record = $this->records->create($supplierId, $eventId, $settings, [
-                            'device_id' => $in['device_id'],
-                            'sale_at' => $receivedAt,
-                            'total_amount' => $fx['amount'],
-                            'credit_topup_amount' => $credit['credit_topup_amount'],
-                            'credit_draw_amount' => $credit['credit_draw_amount'],
-                            'policy_decision' => $decision->decision,
-                            'policy_reason' => $decision->reasonCode,
-                            'created_by' => $userId > 0 ? $userId : null,
-                            'now' => $now,
-                        ]);
-                        $recordId = $record['id'];
-                        $pdo->prepare('UPDATE payment_events SET device_id = ?, unit_id = ? WHERE id = ? AND supplier_id = ?')
-                            ->execute([$record['device_id'], $record['unit_id'], $eventId, $supplierId]);
-                    }
-
+                    $created = $this->persistAccepted($supplierId, $userId, $key, $hash, $in, $receivedAt, $now, $settings, $decision, $invoicePaymentSource, $fx);
                     $pdo->commit();
-                    return ['event_id' => $eventId, 'record_id' => $recordId, 'invoice_id' => $invoiceId];
+                    return $created;
                 } catch (\Throwable $e) {
                     if ($pdo->inTransaction()) {
                         $pdo->rollBack();
@@ -287,6 +209,156 @@ final class EetPaymentCommand
         $this->afterCommit($created['invoice_id'], $created['record_id']);
         $event = $this->events->find($supplierId, $created['event_id']);
         return $this->result($supplierId, (array) $event, false);
+    }
+
+    /**
+     * Přijetí platby k faktuře UVNITŘ transakce volajícího (rychlá účtenka: doklad,
+     * úhrada a tržba vznikají v jedné transakci). Pravidla jsou tatáž jako u
+     * {@see accept()}: politika EET, kurz, úhrada faktury, alokace a EET záznam.
+     * Transakci vlastní volající. Odeslání EET se naplánuje až na její commit
+     * ({@see EetDispatchService::dispatchAfterCommit()}), přepočet statistik faktury
+     * dělá volající po commitu.
+     *
+     * Klíč je interní (`sys:…`): idempotenci celé operace drží volající.
+     *
+     * @param array<string,mixed> $input stejné tělo jako u accept(), `invoice_id` povinné
+     * @return array{event_id:int, record_id:?int, decision:EetPolicyDecision}
+     * @throws EetCommandException
+     */
+    public function acceptWithinTransaction(int $supplierId, int $userId, string $internalKey, array $input): array
+    {
+        $pdo = $this->db->pdo();
+        if (!$pdo->inTransaction()) {
+            throw new \LogicException('acceptWithinTransaction() běží jen v transakci volajícího.');
+        }
+        if (!PaymentEventService::isInternalKey($internalKey)) {
+            throw new \LogicException('acceptWithinTransaction() přijímá jen interní klíč.');
+        }
+        $in = $this->normalizePayment($input, requireChannel: true);
+        if ($in['invoice_id'] === null) {
+            throw new \LogicException('acceptWithinTransaction() je jen pro úhradu faktury.');
+        }
+        $hash = PaymentEventService::requestHash('payments.accept', $in + ['received_at' => $input['received_at'] ?? null]);
+        $now = $this->now();
+        $receivedAt = EetValues::clientTime($input['received_at'] ?? null, $now, 'received_at');
+        $settings = $this->settings->get($supplierId);
+        $decision = $this->evaluate($supplierId, $in, $receivedAt, 'payment', $settings);
+        self::assertAcceptable($decision);
+        if ($in['currency'] !== 'CZK') {
+            // Kurz z ČNB se stahuje mimo transakci; tahle cesta ho nemá kde získat.
+            throw new \LogicException('acceptWithinTransaction() přijímá jen platby v Kč.');
+        }
+        $fx = $this->fx->forPayment($supplierId, $in['currency'], $in['amount'], $receivedAt);
+        $created = $this->persistAccepted($supplierId, $userId, $internalKey, $hash, $in, $receivedAt, $now, $settings, $decision, 'manual', $fx);
+        if ($created['record_id'] !== null) {
+            $this->dispatch->dispatchAfterCommit($created['record_id']);
+        }
+        return ['event_id' => $created['event_id'], 'record_id' => $created['record_id'], 'decision' => $decision];
+    }
+
+    /**
+     * Zápis přijaté platby v otevřené transakci: událost, úhrada faktury, alokace, EET záznam.
+     *
+     * @param array<string,mixed> $in
+     * @param array<string,mixed> $settings
+     * @param array<string,mixed> $fx
+     * @return array{event_id:int, record_id:?int, invoice_id:?int}
+     */
+    private function persistAccepted(
+        int $supplierId,
+        int $userId,
+        string $key,
+        string $hash,
+        array $in,
+        \DateTimeImmutable $receivedAt,
+        \DateTimeImmutable $now,
+        array $settings,
+        EetPolicyDecision $decision,
+        string $invoicePaymentSource,
+        array $fx,
+    ): array {
+        $pdo = $this->db->pdo();
+        $cashLike = in_array($in['channel'], self::SETTLED_CHANNELS, true);
+        $eventId = $this->events->insert([
+            'supplier_id' => $supplierId,
+            'idempotency_key' => $key,
+            'request_hash' => $hash,
+            'kind' => 'payment',
+            'origin' => $in['invoice_id'] !== null ? 'invoice_payment' : 'quick_sale',
+            'payment_method' => $in['payment_method'],
+            'channel' => $in['channel'],
+            'contact_context' => $in['contact_context'],
+            'business_purpose' => $in['business_purpose'],
+            'amount' => $fx['amount'],
+            'currency' => $fx['currency'],
+            'original_currency' => $fx['original_currency'],
+            'original_amount' => $fx['original_amount'],
+            'exchange_rate' => $fx['exchange_rate'],
+            'exchange_rate_source' => $fx['exchange_rate_source'],
+            'received_at' => EetValues::dbTime($receivedAt),
+            'recorded_at' => EetValues::dbTime($now),
+            'paid_on' => $receivedAt->format('Y-m-d'),
+            'payment_order_status' => $cashLike ? 'settled' : 'operator_confirmed',
+            'bank_verification_status' => $cashLike ? 'not_applicable' : 'pending',
+            'accounting_settlement_status' => $in['invoice_id'] !== null ? 'settled' : 'pending',
+            'invoice_id' => $in['invoice_id'],
+            'eet_decision' => $decision->decision,
+            'eet_reason_code' => $decision->reasonCode,
+            'policy_version' => EetRecordingPolicy::VERSION,
+            'note' => $in['note'],
+            'created_by' => $userId > 0 ? $userId : null,
+        ]);
+
+        $invoiceId = null;
+        $credit = $this->creditAmounts($supplierId, $in, $fx['amount'], null);
+        if ($in['invoice_id'] !== null) {
+            $invoice = $this->invoice($supplierId, $in['invoice_id'], true);
+            $this->assertInvoiceAccepts($supplierId, $invoice, $in['amount'], $in['currency']);
+            // Podíl kreditu z úhrad PŘED touto platbou, pod zámkem faktury.
+            $credit = $this->creditAmounts($supplierId, $in, $fx['amount'], $invoice);
+            $payment = $this->invoicePayments->recordPayment(
+                (int) $invoice['id'],
+                (float) $in['amount'],
+                $receivedAt->format('Y-m-d'),
+                [
+                    // Zdroj jako u ruční úhrady před EET (manual / mark_paid), i u
+                    // hotovosti: `cash` patří jen úhradě z pokladního dokladu
+                    // a peněžní deník ho bere jako poznámku k PPD, ne jako příjem.
+                    // Uplatnění poukazu jde stejnou cestou; zúčtování přijaté zálohy
+                    // na poukaz řeší účetní ručně (zvláštní účtování neexistuje).
+                    'source' => $invoicePaymentSource,
+                    'note' => $in['note'] ?? ($in['channel'] === 'stored_value'
+                        ? 'Uplatnění poukazu / kreditu (EET)' : 'Platba přijatá s posouzením EET'),
+                    'created_by' => $userId > 0 ? $userId : null,
+                ],
+            );
+            // Alokace je v měně faktury (stejně jako úhrada), částka události v CZK.
+            $this->events->allocate($supplierId, $eventId, $in['amount'], [
+                'invoice_id' => (int) $invoice['id'],
+                'invoice_payment_id' => (int) $payment['payment_id'],
+            ]);
+            $invoiceId = (int) $invoice['id'];
+        }
+
+        $recordId = null;
+        if ($decision->createsRecord()) {
+            $record = $this->records->create($supplierId, $eventId, $settings, [
+                'device_id' => $in['device_id'],
+                'sale_at' => $receivedAt,
+                'total_amount' => $fx['amount'],
+                'credit_topup_amount' => $credit['credit_topup_amount'],
+                'credit_draw_amount' => $credit['credit_draw_amount'],
+                'policy_decision' => $decision->decision,
+                'policy_reason' => $decision->reasonCode,
+                'created_by' => $userId > 0 ? $userId : null,
+                'now' => $now,
+            ]);
+            $recordId = $record['id'];
+            $pdo->prepare('UPDATE payment_events SET device_id = ?, unit_id = ? WHERE id = ? AND supplier_id = ?')
+                ->execute([$record['device_id'], $record['unit_id'], $eventId, $supplierId]);
+        }
+
+        return ['event_id' => $eventId, 'record_id' => $recordId, 'invoice_id' => $invoiceId];
     }
 
     /**
