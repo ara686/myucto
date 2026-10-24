@@ -136,6 +136,9 @@ function outcomeLabel(o: string): string {
         {{ t('eet.pay.eet_stored_waiting') }}
         <span v-if="record.next_attempt_at" class="block text-xs mt-1">{{ t('eet.detail.next_attempt', { at: formatDateTime(record.next_attempt_at) }) }}</span>
       </div>
+      <div v-if="record.status === 'external'" class="mb-4 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-700" data-test="eet-detail-external">
+        {{ t('eet.detail.external_note') }}
+      </div>
       <div v-if="record.status === 'action_required'" class="mb-4 rounded-lg border border-danger-500/40 bg-danger-50 px-4 py-3 text-sm text-danger-700" data-test="eet-detail-action">
         <strong>{{ t('eet.state.action_required') }}</strong>
         <span v-if="record.action_code"> ({{ record.action_code }})</span>
@@ -160,10 +163,16 @@ function outcomeLabel(o: string): string {
                 <span v-if="record.payment_event.exchange_rate_source" class="block text-xs text-neutral-500">{{ record.payment_event.exchange_rate_source }}</span>
               </dd>
             </template>
-            <dt :class="label">{{ t('eet.records.col_number') }}</dt><dd class="font-mono">{{ record.sequence_number }}</dd>
+            <template v-if="record.credit_topup_amount">
+              <dt :class="label">{{ t('eet.detail.credit_topup') }}</dt><dd data-test="eet-detail-credit-topup">{{ formatMoney(Number(record.credit_topup_amount), currency) }}</dd>
+            </template>
+            <template v-if="record.credit_draw_amount">
+              <dt :class="label">{{ t('eet.detail.credit_draw') }}</dt><dd data-test="eet-detail-credit-draw">{{ formatMoney(Number(record.credit_draw_amount), currency) }}</dd>
+            </template>
+            <dt :class="label">{{ t('eet.records.col_number') }}</dt><dd class="font-mono">{{ record.sequence_number ?? t('eet.records.none') }}</dd>
             <dt :class="label">{{ t('eet.detail.sale_at') }}</dt><dd>{{ formatDateTime(record.sale_at) }}</dd>
             <dt :class="label">EIČ</dt><dd class="font-mono break-all">{{ record.eic }}</dd>
-            <dt :class="label">{{ t('eet.detail.unit_device') }}</dt><dd>{{ record.unit_number }} / {{ record.device_code }}</dd>
+            <dt :class="label">{{ t('eet.detail.unit_device') }}</dt><dd>{{ record.unit_number ?? '-' }} / {{ record.device_code ?? '-' }}</dd>
             <dt :class="label">{{ t('eet.records.col_deadline') }}</dt><dd>{{ record.deadline_at ? formatDateTime(record.deadline_at) : '' }}</dd>
             <dt :class="label">{{ t('eet.detail.confirmed_at') }}</dt><dd>{{ record.confirmed_at ? formatDateTime(record.confirmed_at) : t('eet.records.none') }}</dd>
             <dt :class="label">POK</dt><dd class="font-mono text-xs break-all">{{ record.pok || t('eet.records.none') }}</dd>

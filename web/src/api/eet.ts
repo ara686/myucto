@@ -165,9 +165,11 @@ export type EetMoney = string
 
 export type EetRecordStatus =
   | 'pending' | 'sending' | 'retry_wait' | 'confirmed' | 'confirmed_warning' | 'action_required' | 'verification_ok'
+  /** Tržbu evidoval jiný systém (e-shop); MyÚčto ji neodesílá. */
+  | 'external'
 
 export type EetPaymentChannel =
-  | 'cash' | 'card_terminal' | 'qr_in_person' | 'bank_transfer' | 'card_online' | 'cash_on_delivery' | 'other'
+  | 'cash' | 'card_terminal' | 'qr_in_person' | 'bank_transfer' | 'card_online' | 'cash_on_delivery' | 'other' | 'stored_value'
 export type EetPaymentMethod =
   | 'bank_transfer' | 'direct_debit' | 'card' | 'cash' | 'cash_on_delivery' | 'offset' | 'other'
 export type EetContactContext = 'in_person' | 'on_premises' | 'in_vehicle' | 'remote' | 'unknown'
@@ -187,7 +189,7 @@ export interface EetPaymentRequest {
 }
 
 export interface EetPolicyResult {
-  decision: 'required' | 'voluntary' | 'not_subject' | 'unknown' | 'unsupported' | 'inactive'
+  decision: 'required' | 'voluntary' | 'not_subject' | 'unknown' | 'unsupported' | 'inactive' | 'external'
   reason_code: string
   message: string
   policy_version: string
@@ -205,6 +207,10 @@ export interface EetPaymentPreview {
   exchange_rate?: string | null
   exchange_rate_source?: string | null
   exchange_rate_error?: { code: string; message: string } | null
+  /** Část tržby v Kč pro urceno_cerp_zuct (dobití kreditu / hodnotový poukaz). */
+  credit_topup_amount?: EetMoney | null
+  /** Část tržby v Kč pro cerp_zuct (úhrada poukazem / kreditem). */
+  credit_draw_amount?: EetMoney | null
   invoice?: { id: number; currency: string; remaining: EetMoney } | null
 }
 
@@ -286,13 +292,18 @@ export interface EetRecord extends EetRecordState {
   corrects_record_id?: number | null
   correction_reason?: EetCorrectionReason | null
   eic?: string
-  unit_id?: number
-  unit_number?: number
-  device_id?: number
-  device_code?: string
-  sequence_number?: string
+  /** U tržby evidované externím systémem může chybět jednotka i zařízení. */
+  unit_id?: number | null
+  unit_number?: number | null
+  device_id?: number | null
+  device_code?: string | null
+  sequence_number?: string | null
+  /** Tržbu evidoval jiný systém (stav external). */
+  external?: boolean
   sale_at?: string
   total_amount?: EetMoney
+  credit_topup_amount?: EetMoney | null
+  credit_draw_amount?: EetMoney | null
   currency?: string
   policy?: { decision?: string | null; reason_code?: string | null; version?: string | null }
   deadline_at?: string
@@ -352,12 +363,16 @@ export interface EetCorrectionRequest {
   reason?: EetCorrectionReason
   note?: string
   device_id?: number
+  /** Vratka tržby uhrazené poukazem / kreditem zpět na kartu / kredit. */
+  refund_to_stored_value?: boolean
 }
 
 export interface EetCorrectionPreview {
   original: EetRecord
   corrected_total: EetMoney
   remaining: EetMoney
+  /** Tržba byla uhrazena poukazem / kreditem. */
+  stored_value_payment?: boolean
   foreign?: {
     currency: string
     original_amount: EetMoney
@@ -368,6 +383,9 @@ export interface EetCorrectionPreview {
   proposed: {
     total_amount: EetMoney
     original_amount?: EetMoney | null
+    credit_topup_amount?: EetMoney | null
+    credit_draw_amount?: EetMoney | null
+    refund_to_stored_value?: boolean
     reason?: string | null
     device_id?: number
     environment?: string
