@@ -137,6 +137,7 @@
     "propertyServiceLifecycle",
     "propertySettlements",
     "propertySetup",
+    "publicReceipt",
     "public_holidays",
     "purchase_invoice",
     "purchase_submissions",
@@ -203,6 +204,9 @@
     ],
     "payroll-document-access": [
       "payrollDocumentAccess"
+    ],
+    "receipt-public": [
+      "publicReceipt"
     ],
     "not-found": [
       "errors"

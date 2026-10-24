@@ -81,6 +81,9 @@ const routes: RouteRecordRaw[] = [
   // Web faktura — veřejný náhled vystavené faktury (singular /invoice/…, interní UI je /invoices/…)
   { path: '/invoice/:token([a-f0-9]{32,128})', name: 'invoice-public',
     component: () => import('@/pages/InvoicePublic.vue'), meta: { public: true } },
+  // Veřejná účtenka zákazníka (QR z mobilní aplikace) — token s omezenou platností, bez přihlášení
+  { path: '/r/:token([a-f0-9]{64})', name: 'receipt-public',
+    component: () => import('@/pages/public/PublicReceipt.vue'), meta: { public: true } },
   {
     path: '/:pathMatch(.*)*',
     name: 'not-found',
