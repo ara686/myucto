@@ -1084,7 +1084,8 @@
         "2180_work_report_link_session_expiry.sql",
         "2181_eet_settings_units_devices_certificates.sql",
         "2182_eet_payment_events_records_attempts.sql",
-        "2183_eet_role_permissions.sql"
+        "2183_eet_role_permissions.sql",
+        "2184_eet_payment_events_foreign_currency.sql"
     ],
     "tables": {
         "abra_flexi_connections": {
@@ -10061,6 +10062,8 @@
                 "device_id": "bigint(20) unsigned NULL DEFAULT NULL",
                 "eet_decision": "enum('required','voluntary','not_subject','unknown','unsupported','inactive') NOT NULL",
                 "eet_reason_code": "varchar(60) NULL DEFAULT NULL",
+                "exchange_rate": "decimal(18,8) NULL DEFAULT NULL",
+                "exchange_rate_source": "varchar(40) NULL DEFAULT NULL",
                 "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
                 "idempotency_key": "varchar(80) NULL DEFAULT NULL COLLATE ascii_bin",
                 "invoice_id": "bigint(20) unsigned NULL DEFAULT NULL",
@@ -10068,6 +10071,8 @@
                 "note": "varchar(255) NULL DEFAULT NULL",
                 "ordered_at": "datetime(6) NULL DEFAULT NULL",
                 "origin": "enum('invoice_payment','cash_document','quick_sale','payment_intent','correction','bank_reconciliation','api') NOT NULL",
+                "original_amount": "decimal(14,2) NULL DEFAULT NULL",
+                "original_currency": "char(3) NULL DEFAULT NULL COLLATE ascii_bin",
                 "paid_on": "date NULL DEFAULT NULL",
                 "payment_method": "varchar(30) NULL DEFAULT NULL",
                 "payment_order_status": "enum('initiated','operator_confirmed','settled','failed','cancelled') NOT NULL",
