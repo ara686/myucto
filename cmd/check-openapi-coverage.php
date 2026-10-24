@@ -274,6 +274,20 @@ $sessionActions = [
     'MyInvoice\\Action\\Eet\\EetCertificatesAction::upload',
     'MyInvoice\\Action\\Eet\\EetCertificatesAction::deactivate',
     'MyInvoice\\Action\\Eet\\EetDiagnosticsAction::__invoke',
+    'MyInvoice\\Action\\Eet\\EetPaymentAction::preview',
+    'MyInvoice\\Action\\Eet\\EetPaymentAction::accept',
+    'MyInvoice\\Action\\Eet\\EetPaymentAction::detail',
+    'MyInvoice\\Action\\Eet\\EetPaymentAction::createIntent',
+    'MyInvoice\\Action\\Eet\\EetPaymentAction::confirmIntent',
+    'MyInvoice\\Action\\Eet\\EetPaymentAction::cancelIntent',
+    'MyInvoice\\Action\\Eet\\EetRecordAction::list',
+    'MyInvoice\\Action\\Eet\\EetRecordAction::detail',
+    'MyInvoice\\Action\\Eet\\EetRecordAction::retry',
+    'MyInvoice\\Action\\Eet\\EetRecordAction::correctionPreview',
+    'MyInvoice\\Action\\Eet\\EetRecordAction::correction',
+    'MyInvoice\\Action\\Eet\\EetRecordAction::queue',
+    'MyInvoice\\Action\\Eet\\EetRecordAction::export',
+    'MyInvoice\\Action\\Eet\\EetRecordAction::invoice',
 ];
 $isSessionAction = static fn (array $route): bool => in_array($route['action'], $sessionActions, true);
 

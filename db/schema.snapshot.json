@@ -1081,7 +1081,9 @@
         "2135_payroll_child_claim_other_caregiver_birth_number.sql",
         "2136_sessions_supplier_domain_binding.sql",
         "2160_tax_profile_family_birth_number_sealed.sql",
-        "2180_work_report_link_session_expiry.sql"
+        "2180_work_report_link_session_expiry.sql",
+        "2181_eet_settings_units_devices_certificates.sql",
+        "2182_eet_payment_events_records_attempts.sql"
     ],
     "tables": {
         "abra_flexi_connections": {
@@ -5308,6 +5310,263 @@
             },
             "foreign_keys": [],
             "checks": []
+        },
+        "eet_attempts": {
+            "type": "BASE TABLE",
+            "engine": "InnoDB",
+            "collation": "utf8mb4_unicode_ci",
+            "columns": {
+                "attempt_no": "int(10) unsigned NOT NULL",
+                "certificate_id": "bigint(20) unsigned NULL DEFAULT NULL",
+                "created_at": "datetime(6) NOT NULL DEFAULT current_timestamp(6)",
+                "duration_ms": "int(10) unsigned NULL DEFAULT NULL",
+                "error_code": "int(11) NULL DEFAULT NULL",
+                "error_message": "varchar(500) NULL DEFAULT NULL",
+                "first_attempt": "tinyint(1) NOT NULL",
+                "http_status": "smallint(6) NULL DEFAULT NULL",
+                "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
+                "outcome": "varchar(30) NOT NULL COLLATE ascii_bin",
+                "pok": "varchar(39) NULL DEFAULT NULL COLLATE ascii_bin",
+                "received_at": "varchar(32) NULL DEFAULT NULL",
+                "record_id": "bigint(20) unsigned NOT NULL",
+                "request_sha256": "char(64) NULL DEFAULT NULL COLLATE ascii_bin",
+                "request_xml": "mediumtext NULL DEFAULT NULL",
+                "response_xml": "mediumtext NULL DEFAULT NULL",
+                "sent_at": "datetime(6) NOT NULL",
+                "signature_verified": "tinyint(1) NOT NULL DEFAULT 0",
+                "supplier_id": "int(10) unsigned NOT NULL",
+                "test_flag": "tinyint(1) NULL DEFAULT NULL",
+                "uuid_zpravy": "char(36) NOT NULL COLLATE ascii_bin",
+                "verification": "tinyint(1) NOT NULL DEFAULT 0"
+            },
+            "indexes": {
+                "PRIMARY": "UNIQUE BTREE (id)",
+                "ix_eet_attempts_record": "BTREE (supplier_id, record_id, attempt_no)",
+                "uq_eet_attempts_no": "UNIQUE BTREE (record_id, attempt_no)",
+                "uq_eet_attempts_uuid": "UNIQUE BTREE (uuid_zpravy)"
+            },
+            "foreign_keys": {
+                "fk_eet_attempts_record": "(record_id) -> eet_records (id) ON UPDATE RESTRICT ON DELETE CASCADE",
+                "fk_eet_attempts_supplier": "(supplier_id) -> supplier (id) ON UPDATE RESTRICT ON DELETE CASCADE"
+            },
+            "checks": []
+        },
+        "eet_certificates": {
+            "type": "BASE TABLE",
+            "engine": "InnoDB",
+            "collation": "utf8mb4_unicode_ci",
+            "columns": {
+                "created_at": "timestamp NOT NULL DEFAULT current_timestamp()",
+                "eic": "varchar(12) NOT NULL COLLATE ascii_bin",
+                "environment": "enum('playground','production') NOT NULL",
+                "fingerprint_sha256": "char(64) NOT NULL COLLATE ascii_bin",
+                "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
+                "issuer": "varchar(255) NULL DEFAULT NULL",
+                "label": "varchar(120) NULL DEFAULT NULL",
+                "not_after": "datetime NOT NULL",
+                "not_before": "datetime NOT NULL",
+                "p12_enc": "mediumtext NOT NULL",
+                "password_enc": "text NOT NULL",
+                "retired_at": "datetime NULL DEFAULT NULL",
+                "serial_number": "varchar(80) NULL DEFAULT NULL COLLATE ascii_bin",
+                "status": "enum('active','retired','revoked') NOT NULL DEFAULT 'active'",
+                "subject_cn": "varchar(64) NULL DEFAULT NULL",
+                "supplier_id": "int(10) unsigned NOT NULL",
+                "uploaded_by": "bigint(20) unsigned NULL DEFAULT NULL"
+            },
+            "indexes": {
+                "PRIMARY": "UNIQUE BTREE (id)",
+                "ix_eet_certificate_active": "BTREE (supplier_id, environment, status, not_after)",
+                "uq_eet_certificate_fingerprint": "UNIQUE BTREE (supplier_id, fingerprint_sha256)",
+                "uq_eet_certificate_tenant": "UNIQUE BTREE (supplier_id, id)"
+            },
+            "foreign_keys": {
+                "fk_eet_certificate_supplier": "(supplier_id) -> supplier (id) ON UPDATE RESTRICT ON DELETE CASCADE"
+            },
+            "checks": []
+        },
+        "eet_devices": {
+            "type": "BASE TABLE",
+            "engine": "InnoDB",
+            "collation": "utf8mb4_unicode_ci",
+            "columns": {
+                "active": "tinyint(1) NOT NULL DEFAULT 1",
+                "cash_register_id": "bigint(20) unsigned NULL DEFAULT NULL",
+                "code": "varchar(20) NOT NULL COLLATE ascii_bin",
+                "created_at": "timestamp NOT NULL DEFAULT current_timestamp()",
+                "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
+                "name": "varchar(120) NOT NULL",
+                "next_sequence": "int(10) unsigned NOT NULL DEFAULT 1",
+                "sequence_year": "smallint(5) unsigned NULL DEFAULT NULL",
+                "supplier_id": "int(10) unsigned NOT NULL",
+                "unit_id": "bigint(20) unsigned NOT NULL",
+                "updated_at": "timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE CURRENT_TIMESTAMP()"
+            },
+            "indexes": {
+                "PRIMARY": "UNIQUE BTREE (id)",
+                "ix_eet_device_cash_register": "BTREE (cash_register_id)",
+                "ix_eet_device_unit": "BTREE (supplier_id, unit_id)",
+                "uq_eet_device_code": "UNIQUE BTREE (supplier_id, code)",
+                "uq_eet_device_tenant": "UNIQUE BTREE (supplier_id, id)"
+            },
+            "foreign_keys": {
+                "fk_eet_device_cash_register": "(cash_register_id) -> cash_registers (id) ON UPDATE RESTRICT ON DELETE SET NULL",
+                "fk_eet_device_supplier": "(supplier_id) -> supplier (id) ON UPDATE RESTRICT ON DELETE CASCADE",
+                "fk_eet_device_unit": "(supplier_id, unit_id) -> eet_units (supplier_id, id) ON UPDATE RESTRICT ON DELETE CASCADE"
+            },
+            "checks": []
+        },
+        "eet_records": {
+            "type": "BASE TABLE",
+            "engine": "InnoDB",
+            "collation": "utf8mb4_unicode_ci",
+            "columns": {
+                "action_code": "varchar(40) NULL DEFAULT NULL COLLATE ascii_bin",
+                "attempt_count": "int(10) unsigned NOT NULL DEFAULT 0",
+                "confirmed_at": "datetime(6) NULL DEFAULT NULL",
+                "correction_reason": "enum('refund','failed_payment','wrong_data','duplicate','other') NULL DEFAULT NULL",
+                "corrects_record_id": "bigint(20) unsigned NULL DEFAULT NULL",
+                "created_at": "datetime(6) NOT NULL DEFAULT current_timestamp(6)",
+                "created_by": "bigint(20) unsigned NULL DEFAULT NULL",
+                "credit_draw_amount": "decimal(12,2) NULL DEFAULT NULL",
+                "credit_topup_amount": "decimal(12,2) NULL DEFAULT NULL",
+                "deadline_at": "datetime NOT NULL",
+                "delegating_eic": "varchar(12) NULL DEFAULT NULL COLLATE ascii_bin",
+                "device_code": "varchar(20) NOT NULL COLLATE ascii_bin",
+                "device_id": "bigint(20) unsigned NOT NULL",
+                "eic": "varchar(12) NOT NULL COLLATE ascii_bin",
+                "environment": "enum('playground','production') NOT NULL",
+                "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
+                "kind": "enum('sale','correction','diagnostic') NOT NULL",
+                "last_error_code": "int(11) NULL DEFAULT NULL",
+                "last_error_message": "varchar(500) NULL DEFAULT NULL",
+                "lease_token": "char(64) NULL DEFAULT NULL COLLATE ascii_bin",
+                "lease_until": "datetime(6) NULL DEFAULT NULL",
+                "next_attempt_at": "datetime(6) NULL DEFAULT NULL",
+                "overdue": "tinyint(1) NOT NULL DEFAULT 0",
+                "payment_event_id": "bigint(20) unsigned NULL DEFAULT NULL",
+                "pok": "varchar(39) NULL DEFAULT NULL COLLATE ascii_bin",
+                "policy_decision": "varchar(20) NULL DEFAULT NULL",
+                "policy_reason": "varchar(60) NULL DEFAULT NULL",
+                "policy_version": "varchar(20) NULL DEFAULT NULL",
+                "public_id": "char(36) NOT NULL COLLATE ascii_bin",
+                "sale_at": "datetime NOT NULL",
+                "sale_at_offset": "char(6) NOT NULL COLLATE ascii_bin",
+                "sequence_number": "varchar(25) NOT NULL COLLATE ascii_bin",
+                "status": "enum('pending','sending','retry_wait','confirmed','confirmed_warning','action_required','verification_ok') NOT NULL DEFAULT 'pending'",
+                "supplier_id": "int(10) unsigned NOT NULL",
+                "total_amount": "decimal(12,2) NOT NULL",
+                "unit_id": "bigint(20) unsigned NOT NULL",
+                "unit_number": "int(10) unsigned NOT NULL",
+                "updated_at": "datetime(6) NOT NULL DEFAULT current_timestamp(6) ON UPDATE CURRENT_TIMESTAMP(6)",
+                "warnings_json": "longtext NULL DEFAULT NULL"
+            },
+            "indexes": {
+                "PRIMARY": "UNIQUE BTREE (id)",
+                "ix_eet_due": "BTREE (status, next_attempt_at, id)",
+                "ix_eet_records_confirmed": "BTREE (supplier_id, confirmed_at)",
+                "ix_eet_records_corrects": "BTREE (supplier_id, corrects_record_id)",
+                "ix_eet_records_device_sale": "BTREE (supplier_id, device_id, sale_at, id)",
+                "ix_eet_records_sale": "BTREE (supplier_id, sale_at, id)",
+                "ix_eet_records_status_deadline": "BTREE (supplier_id, status, deadline_at, id)",
+                "ix_eet_records_status_sale": "BTREE (supplier_id, status, sale_at, id)",
+                "ix_eet_records_unit_sale": "BTREE (supplier_id, unit_id, sale_at, id)",
+                "uq_eet_records_event_kind": "UNIQUE BTREE (payment_event_id, kind)",
+                "uq_eet_records_public": "UNIQUE BTREE (public_id)",
+                "uq_eet_records_sequence": "UNIQUE BTREE (device_id, sequence_number)"
+            },
+            "foreign_keys": {
+                "fk_eet_records_event": "(payment_event_id) -> payment_events (id) ON UPDATE RESTRICT ON DELETE CASCADE",
+                "fk_eet_records_supplier": "(supplier_id) -> supplier (id) ON UPDATE RESTRICT ON DELETE CASCADE"
+            },
+            "checks": {
+                "chk_eet_records_amount": "`total_amount` > -100000000 and `total_amount` < 100000000",
+                "warnings_json": "`warnings_json` is null or json_valid(`warnings_json`)"
+            }
+        },
+        "eet_settings": {
+            "type": "BASE TABLE",
+            "engine": "InnoDB",
+            "collation": "utf8mb4_unicode_ci",
+            "columns": {
+                "active_from": "date NULL DEFAULT NULL",
+                "active_to": "date NULL DEFAULT NULL",
+                "created_at": "timestamp NOT NULL DEFAULT current_timestamp()",
+                "default_device_id": "bigint(20) unsigned NULL DEFAULT NULL",
+                "dispatch_blocked": "tinyint(1) NOT NULL DEFAULT 0",
+                "eic": "varchar(12) NULL DEFAULT NULL COLLATE ascii_bin",
+                "enabled": "tinyint(1) NOT NULL DEFAULT 0",
+                "environment": "enum('playground','production') NOT NULL DEFAULT 'playground'",
+                "exemption_reason": "varchar(255) NULL DEFAULT NULL",
+                "regime": "enum('standard','exempt','eet_off') NOT NULL DEFAULT 'standard'",
+                "response_timeout_ms": "int(10) unsigned NOT NULL DEFAULT 3000",
+                "row_version": "int(10) unsigned NOT NULL DEFAULT 1",
+                "supplier_id": "int(10) unsigned NOT NULL",
+                "updated_at": "timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE CURRENT_TIMESTAMP()",
+                "updated_by": "bigint(20) unsigned NULL DEFAULT NULL"
+            },
+            "indexes": {
+                "PRIMARY": "UNIQUE BTREE (supplier_id)",
+                "ix_eet_settings_default_device": "BTREE (default_device_id)"
+            },
+            "foreign_keys": {
+                "fk_eet_settings_default_device": "(default_device_id) -> eet_devices (id) ON UPDATE RESTRICT ON DELETE SET NULL",
+                "fk_eet_settings_supplier": "(supplier_id) -> supplier (id) ON UPDATE RESTRICT ON DELETE CASCADE"
+            },
+            "checks": {
+                "chk_eet_settings_validity": "`active_to` is null or `active_from` is null or `active_to` >= `active_from`"
+            }
+        },
+        "eet_settings_history": {
+            "type": "BASE TABLE",
+            "engine": "InnoDB",
+            "collation": "utf8mb4_unicode_ci",
+            "columns": {
+                "changed_at": "datetime(6) NOT NULL",
+                "changed_by": "bigint(20) unsigned NULL DEFAULT NULL",
+                "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
+                "snapshot_json": "longtext NOT NULL",
+                "supplier_id": "int(10) unsigned NOT NULL"
+            },
+            "indexes": {
+                "PRIMARY": "UNIQUE BTREE (id)",
+                "ix_eet_settings_history": "BTREE (supplier_id, changed_at, id)"
+            },
+            "foreign_keys": {
+                "fk_eet_settings_history_supplier": "(supplier_id) -> supplier (id) ON UPDATE RESTRICT ON DELETE CASCADE"
+            },
+            "checks": {
+                "snapshot_json": "json_valid(`snapshot_json`)"
+            }
+        },
+        "eet_units": {
+            "type": "BASE TABLE",
+            "engine": "InnoDB",
+            "collation": "utf8mb4_unicode_ci",
+            "columns": {
+                "created_at": "timestamp NOT NULL DEFAULT current_timestamp()",
+                "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
+                "kind": "enum('premises','online','vehicle','mobile','other') NOT NULL",
+                "name": "varchar(120) NOT NULL",
+                "notified_to_fs": "tinyint(1) NOT NULL DEFAULT 1",
+                "supplier_id": "int(10) unsigned NOT NULL",
+                "unit_number": "int(10) unsigned NOT NULL",
+                "updated_at": "timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE CURRENT_TIMESTAMP()",
+                "valid_from": "date NOT NULL",
+                "valid_to": "date NULL DEFAULT NULL"
+            },
+            "indexes": {
+                "PRIMARY": "UNIQUE BTREE (id)",
+                "ix_eet_unit_valid": "BTREE (supplier_id, valid_from)",
+                "uq_eet_unit_number": "UNIQUE BTREE (supplier_id, unit_number)",
+                "uq_eet_unit_tenant": "UNIQUE BTREE (supplier_id, id)"
+            },
+            "foreign_keys": {
+                "fk_eet_unit_supplier": "(supplier_id) -> supplier (id) ON UPDATE RESTRICT ON DELETE CASCADE"
+            },
+            "checks": {
+                "chk_eet_unit_validity": "`valid_to` is null or `valid_to` >= `valid_from`"
+            }
         },
         "email_profiles": {
             "type": "BASE TABLE",
@@ -9749,6 +10008,91 @@
                 "chk_pc_analytic_suffix": "`analytic_suffix` is null or `analytic_suffix` regexp '^[0-9]{1,6}$'",
                 "chk_pc_last4": "`last4` regexp '^[0-9]{4}$'",
                 "chk_pc_validity": "`valid_from` is null or `valid_to` is null or `valid_to` >= `valid_from`"
+            }
+        },
+        "payment_event_allocations": {
+            "type": "BASE TABLE",
+            "engine": "InnoDB",
+            "collation": "utf8mb4_unicode_ci",
+            "columns": {
+                "amount": "decimal(14,2) NOT NULL",
+                "bank_transaction_id": "bigint(20) unsigned NULL DEFAULT NULL",
+                "cash_document_id": "bigint(20) unsigned NULL DEFAULT NULL",
+                "created_at": "datetime(6) NOT NULL DEFAULT current_timestamp(6)",
+                "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
+                "invoice_id": "bigint(20) unsigned NULL DEFAULT NULL",
+                "invoice_payment_id": "bigint(20) unsigned NULL DEFAULT NULL",
+                "payment_event_id": "bigint(20) unsigned NOT NULL",
+                "supplier_id": "int(10) unsigned NOT NULL"
+            },
+            "indexes": {
+                "PRIMARY": "UNIQUE BTREE (id)",
+                "fk_payment_event_alloc_event": "BTREE (payment_event_id)",
+                "ix_payment_event_alloc_event": "BTREE (supplier_id, payment_event_id)",
+                "ix_payment_event_alloc_invoice": "BTREE (supplier_id, invoice_id)",
+                "uq_payment_event_alloc_cash_document": "UNIQUE BTREE (cash_document_id, payment_event_id)",
+                "uq_payment_event_alloc_invoice_payment": "UNIQUE BTREE (invoice_payment_id)"
+            },
+            "foreign_keys": {
+                "fk_payment_event_alloc_event": "(payment_event_id) -> payment_events (id) ON UPDATE RESTRICT ON DELETE CASCADE",
+                "fk_payment_event_alloc_invoice_payment": "(invoice_payment_id) -> invoice_payments (id) ON UPDATE RESTRICT ON DELETE SET NULL",
+                "fk_payment_event_alloc_supplier": "(supplier_id) -> supplier (id) ON UPDATE RESTRICT ON DELETE CASCADE"
+            },
+            "checks": []
+        },
+        "payment_events": {
+            "type": "BASE TABLE",
+            "engine": "InnoDB",
+            "collation": "utf8mb4_unicode_ci",
+            "columns": {
+                "accounting_settlement_status": "enum('not_applicable','pending','settled') NOT NULL DEFAULT 'pending'",
+                "amount": "decimal(14,2) NOT NULL",
+                "bank_verification_status": "enum('not_applicable','pending','verified') NOT NULL DEFAULT 'not_applicable'",
+                "business_purpose": "enum('sale','order_deposit','credit_topup','credit_draw','security_deposit','other') NOT NULL DEFAULT 'sale'",
+                "channel": "enum('cash','card_terminal','qr_in_person','bank_transfer','card_online','cash_on_delivery','other') NULL DEFAULT NULL",
+                "confirm_idempotency_key": "varchar(80) NULL DEFAULT NULL COLLATE ascii_bin",
+                "confirm_request_hash": "char(64) NULL DEFAULT NULL COLLATE ascii_bin",
+                "contact_context": "enum('in_person','on_premises','in_vehicle','remote','unknown') NOT NULL",
+                "corrects_event_id": "bigint(20) unsigned NULL DEFAULT NULL",
+                "created_at": "datetime(6) NOT NULL DEFAULT current_timestamp(6)",
+                "created_by": "bigint(20) unsigned NULL DEFAULT NULL",
+                "currency": "char(3) NOT NULL DEFAULT 'CZK' COLLATE ascii_bin",
+                "device_id": "bigint(20) unsigned NULL DEFAULT NULL",
+                "eet_decision": "enum('required','voluntary','not_subject','unknown','unsupported','inactive') NOT NULL",
+                "eet_reason_code": "varchar(60) NULL DEFAULT NULL",
+                "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
+                "idempotency_key": "varchar(80) NULL DEFAULT NULL COLLATE ascii_bin",
+                "invoice_id": "bigint(20) unsigned NULL DEFAULT NULL",
+                "kind": "enum('payment','refund','intent') NOT NULL",
+                "note": "varchar(255) NULL DEFAULT NULL",
+                "ordered_at": "datetime(6) NULL DEFAULT NULL",
+                "origin": "enum('invoice_payment','cash_document','quick_sale','payment_intent','correction','bank_reconciliation','api') NOT NULL",
+                "paid_on": "date NULL DEFAULT NULL",
+                "payment_method": "varchar(30) NULL DEFAULT NULL",
+                "payment_order_status": "enum('initiated','operator_confirmed','settled','failed','cancelled') NOT NULL",
+                "policy_version": "varchar(20) NULL DEFAULT NULL",
+                "public_id": "char(36) NOT NULL COLLATE ascii_bin",
+                "received_at": "datetime(6) NULL DEFAULT NULL",
+                "recorded_at": "datetime(6) NOT NULL",
+                "request_hash": "char(64) NULL DEFAULT NULL COLLATE ascii_bin",
+                "supplier_id": "int(10) unsigned NOT NULL",
+                "unit_id": "bigint(20) unsigned NULL DEFAULT NULL",
+                "updated_at": "datetime(6) NOT NULL DEFAULT current_timestamp(6) ON UPDATE CURRENT_TIMESTAMP(6)"
+            },
+            "indexes": {
+                "PRIMARY": "UNIQUE BTREE (id)",
+                "ix_payment_events_corrects": "BTREE (supplier_id, corrects_event_id)",
+                "ix_payment_events_invoice": "BTREE (supplier_id, invoice_id)",
+                "ix_payment_events_recorded": "BTREE (supplier_id, recorded_at, id)",
+                "uq_payment_events_confirm_idempotency": "UNIQUE BTREE (supplier_id, confirm_idempotency_key)",
+                "uq_payment_events_idempotency": "UNIQUE BTREE (supplier_id, idempotency_key)",
+                "uq_payment_events_public": "UNIQUE BTREE (public_id)"
+            },
+            "foreign_keys": {
+                "fk_payment_events_supplier": "(supplier_id) -> supplier (id) ON UPDATE RESTRICT ON DELETE CASCADE"
+            },
+            "checks": {
+                "chk_payment_events_amount": "`amount` <> 0"
             }
         },
         "payment_matches": {

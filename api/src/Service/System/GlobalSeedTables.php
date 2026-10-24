@@ -220,6 +220,8 @@ final class GlobalSeedTables
         'supplier_bank_accounts', 'payment_cards', 'credit_card_accounts',
         'credit_card_settings', 'card_clearing_settings',
         'bank_connections', 'bank_oauth_clients', 'bank_oauth_sessions',
+        // Nastavení EET: jednotky z DIS+, pokladní zařízení (čítač řady jde dál) a certifikáty.
+        'eet_settings', 'eet_settings_history', 'eet_units', 'eet_devices', 'eet_certificates',
         // Napojení e-shopů a platebních bran (přístupy a mapování, ne stažená data).
         // Kurzory synchronizace (integration_*_state) se mažou, aby se data stáhla znovu.
         'integration_connections', 'external_bank_account_mappings',
@@ -365,6 +367,7 @@ final class GlobalSeedTables
         'cars',
         'cash_document_vat_lines', 'cash_documents', 'cash_journal_notes', 'cash_registers',
         'catalog_job_items', 'catalog_job_lanes', 'catalog_jobs',
+        'eet_attempts', 'eet_records', 'payment_event_allocations', 'payment_events',
         'client_bank_accounts', 'client_email_contacts', 'client_revenue_cache',
         'clients',
         'credit_note_offsets',
