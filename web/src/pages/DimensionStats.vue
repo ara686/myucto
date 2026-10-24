@@ -8,7 +8,7 @@ import { useDimensions } from '@/composables/useDimensions'
 import { useToast } from '@/composables/useToast'
 import { useSupplierStore } from '@/stores/supplier'
 import { useChartColors } from '@/composables/useTheme'
-import { formatMoney } from '@/composables/useFormat'
+import { formatMoneyWhole } from '@/composables/useFormat'
 import { ICONS, btnFilled, btnOutline } from '@/components/ui/buttonStyles'
 import EmptyState from '@/components/ui/EmptyState.vue'
 
@@ -44,7 +44,7 @@ const noValues = computed(() => dims.overview.value !== null && types.value.leng
   && !dims.values.value.some(value => types.value.some(type => type.id === value.type_id)))
 const currentName = computed(() => supplier.currentSupplier?.company_name || t('dimensions.analytics_current'))
 const availableCompanies = computed(() => (report.value?.available_companies ?? []).filter(item => item.id !== supplier.currentSupplierId))
-const money = (amount: number) => formatMoney(amount, 'CZK')
+const money = (amount: number) => formatMoneyWhole(amount, 'CZK')
 const zeroAmounts: DimensionAnalyticsAmounts = { revenue: 0, cost: 0, result: 0, tax_deductible_cost: 0, non_deductible_cost: 0, income_tax_cost: 0 }
 const resultClass = (amount: number) => amount > 0 ? 'text-success-600' : amount < 0 ? 'text-danger-600' : ''
 const margin = (amounts: DimensionProfitAmounts) => amounts.revenue === 0 ? null : amounts.result / amounts.revenue * 100
@@ -248,7 +248,6 @@ watch(() => supplier.currentSupplierId, async () => {
             <option v-if="selectedType?.level === 'global'" value="all">{{ t('dimensions.analytics_all_companies') }}</option>
             <option v-for="item in availableCompanies" :key="item.id" :value="String(item.id)">{{ item.company_name }}</option>
           </select>
-          <p v-if="selectedType?.level !== 'global'" class="mt-1 text-xs text-neutral-500">{{ t('dimensions.analytics_company_local') }}</p>
         </div>
         <div>
           <label class="block text-xs font-medium text-neutral-500 mb-1">{{ t('dimensions.analytics_year') }}</label>

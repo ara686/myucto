@@ -357,6 +357,12 @@ final class RateLimitMiddleware implements MiddlewareInterface
             return ['rl:pubinv:ip:' . $this->ipBucket($ip), (int) ($rl['invoice_public_per_min_per_ip'] ?? 60), 60];
         }
 
+        // Veřejná účtenka zákazníka (bez auth, jen token z QR) — stejný model jako web
+        // faktura: náhled + PDF, IP bucket proti anonymnímu DoS.
+        if (str_starts_with($path, '/api/public/receipt/')) {
+            return ['rl:pubrcpt:ip:' . $this->ipBucket($ip), (int) ($rl['receipt_public_per_min_per_ip'] ?? 60), 60];
+        }
+
         // Veřejný náhled výkazu práce (bez auth, jen token). GET je čtení jako
         // u faktury; POST je citlivější: request-code ODESÍLÁ E-MAIL s ověřovacím
         // kódem a verify je brute-force plocha na ten kód. Proto vlastní, přísnější

@@ -32,6 +32,7 @@ import { formatMoney, formatNumber, formatPercent } from '@/composables/useForma
 import { formatAdjustment } from '@/pages/eshop/priceAdjustment'
 import { evalMath } from '@/directives/vMath'
 import { apiErrorMessage } from '@/api/errors'
+import { useEetCapabilities } from '@/composables/useEetCapabilities'
 import { useSupplierStore } from '@/stores/supplier'
 import { useAuthStore } from '@/stores/auth'
 import SearchableSelect from '@/components/ui/SearchableSelect.vue'
@@ -2665,7 +2666,11 @@ async function submit() {
         toast.warning(apiErrorMessage(e, t('invoice.attachments.post_save_failed')))
       }
     }
-    router.push(`/invoices/${saved.id}`)
+    if (eetChoiceVisible.value && eetOnSave.value !== 'none') {
+      router.push({ path: `/invoices/${saved.id}`, query: { eet: eetOnSave.value } })
+    } else {
+      router.push(`/invoices/${saved.id}`)
+    }
   } catch (e: any) {
     error.value = apiErrorMessage(e, t('common.save_failed'))
     // Toast + scroll k bannéru — uživatel může být odscrollovaný dole u tlačítka Uložit.
@@ -2676,6 +2681,12 @@ async function submit() {
     submitting.value = false
   }
 }
+
+// ─── EET: platba hned po vystavení (žádné „Reportovat do EET", politiku řeší server) ───
+const eetCaps = useEetCapabilities()
+const eetOnSave = ref<'none' | 'accept' | 'qr'>('none')
+const eetChoiceVisible = computed(() =>
+  eetCaps.canAccept.value && form.value.invoice_type === 'invoice' && (!isEdit.value || editedStatus.value === 'draft'))
 
 async function deleteDraft() {
   if (!invoiceId.value) return
@@ -4125,6 +4136,23 @@ useWindowTitle(
       <div v-if="error" data-error-banner class="rounded-md bg-danger-50 border border-danger-500/40 px-3 py-2 text-sm text-danger-500">
         {{ error }}
       </div>
+
+      <fieldset v-if="eetChoiceVisible" class="bg-surface border border-neutral-200 rounded-lg p-4 shadow-sm space-y-2" data-test="eet-on-save">
+        <legend class="px-1 text-sm font-semibold text-neutral-700">{{ t('eet.editor.title') }}</legend>
+        <label class="flex items-start gap-2 text-sm cursor-pointer">
+          <input v-model="eetOnSave" type="radio" value="none" class="mt-1" />
+          <span>{{ t('eet.editor.none') }}</span>
+        </label>
+        <label class="flex items-start gap-2 text-sm cursor-pointer">
+          <input v-model="eetOnSave" type="radio" value="accept" class="mt-1" />
+          <span>{{ t('eet.editor.accept') }}</span>
+        </label>
+        <label class="flex items-start gap-2 text-sm cursor-pointer">
+          <input v-model="eetOnSave" type="radio" value="qr" class="mt-1" />
+          <span>{{ t('eet.editor.qr') }}</span>
+        </label>
+        <p v-if="eetOnSave !== 'none'" class="text-xs text-neutral-500">{{ t('eet.editor.hint') }}</p>
+      </fieldset>
 
       <!-- Action bar -->
       <div class="bg-surface border border-neutral-200 rounded-lg p-4 flex justify-between items-center shadow-sm">

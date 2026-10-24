@@ -13,6 +13,7 @@ import { useSupplierStore } from '@/stores/supplier'
 import { canUsePurchaseAiExtraction } from '@/security/purchaseAiExtraction'
 import { ICONS, btnFilled, btnOutlineSm } from '@/components/ui/buttonStyles'
 import ExtractionReviewModal from '@/components/purchase/ExtractionReviewModal.vue'
+import CapturePhotoButton from '@/components/upload/CapturePhotoButton.vue'
 
 const { t } = useI18n()
 const toast = useToast()
@@ -337,6 +338,9 @@ watch(() => suppliers.currentSupplierId, () => {
       <p class="text-xs text-neutral-500 mb-4">{{ t('integrations.ai.extract_hint') }}</p>
 
       <div class="space-y-3">
+        <div v-if="!quotaExhausted" class="flex flex-wrap gap-2 justify-end">
+          <CapturePhotoButton :disabled="aiExtracting || aiBatchRunning" @captured="(f: File) => acceptAiFiles([f])" />
+        </div>
         <label class="block border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition"
           :class="aiDragOver
             ? 'border-primary-500 bg-primary-50'

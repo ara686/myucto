@@ -369,7 +369,7 @@ vybudovala ručně a které převod z jiného programu nezaloží.
 
 Profil se hodí hlavně při opakovaném převodu firmy z jiného programu: stáhněte ho před smazáním firmy nebo před novým
 převodem a po ostrém převodu ho nahrajte zpět. Průvodci převodem ho nabízejí přímo (viz
-[§ 103.10.8](103_Prechod_z_Money_S3.md#103108-opakovany-prevod)). Nahrát profil smí jen uživatel, který smí měnit každou
+[§ 106.10.8](106_Prechod_z_Money_S3.md#106108-opakovany-prevod)). Nahrát profil smí jen uživatel, který smí měnit každou
 část nastavení, kterou profil obsahuje (nastavení firmy, účetnictví, pravidla banky). Podrobnosti a příkazy pro
 příkazovou řádku viz [§ 96.16.10](#961610-profil-firmy-podrobnosti).
 

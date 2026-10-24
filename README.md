@@ -77,7 +77,7 @@ Každý modul má vlastní kapitolu manuálu — odkazy vedou na detail.
 | **Mzdy a personalistika** | [Karty zaměstnanců](manual/86_Zamestnanci.md) s více pracovními vztahy a souběhy, [mzdové složky](manual/91_Mzdove_slozky_a_vstupy.md), [absence a dovolená](manual/76_Absence_a_dovolena.md), [docházka a směny](manual/77_Dochazka_a_smeny.md), [mzdové běhy](manual/80_Mzdove_behy.md), [srážky a exekuce](manual/88_Srazky_a_exekuce.md), [roční zúčtování](manual/84_Rocni_zuctovani.md), [podání a hlášení](manual/85_Podani_a_hlaseni.md), [shoda účtování mezd](manual/81_Shoda_uctovani_mezd.md). |
 | **Majetek a sklad** | Karty majetku a odpisy, skladové karty a pohyby, inventura, automatická výdejka při fakturaci, napojení e-shopu. |
 | **Reporting a portál** | Přehled tržeb, nákladů, pohledávek a cash-flow, [klientský portál](manual/50_Pruvodce_ucetniho.md), responzivní rozhraní, role admin / účetní / klient / pouze pro čtení. |
-| **Více firem a API** | [Neomezený počet firemních agend](manual/95_Multi_supplier.md) v jedné instalaci, [REST API v1](manual/104_API.md) s osobními tokeny a scopes. |
+| **Více firem a API** | [Neomezený počet firemních agend](manual/95_Multi_supplier.md) v jedné instalaci, [REST API v1](manual/103_API.md) s osobními tokeny a scopes. |
 
 ![Vydané faktury](manual/img/08_faktury_list.webp)
 
@@ -276,7 +276,7 @@ postup v [SECURITY.md](SECURITY.md).
 Veřejné REST API v1 používá osobní přístupové tokeny, které lze omezit na čtení
 nebo zápis, konkrétní firmu a dobu platnosti. Určené pro integrace s e-shopy,
 CRM, BI a automatizačními platformami. OpenAPI specifikace:
-[api/openapi.yaml](api/openapi.yaml), postup: [kapitola REST API](manual/104_API.md).
+[api/openapi.yaml](api/openapi.yaml), postup: [kapitola REST API](manual/103_API.md).
 
 ## Technologický základ
 

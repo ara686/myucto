@@ -8,6 +8,8 @@
     "common",
     "crm",
     "demo",
+    "eet",
+    "favorites",
     "hosting",
     "instance_alert",
     "invoice",
@@ -52,6 +54,7 @@
     "bank_accounts",
     "bank_connection",
     "bank_template_admin",
+    "capture_photo",
     "cash",
     "cash_settlement",
     "checks",
@@ -135,6 +138,7 @@
     "propertyServiceLifecycle",
     "propertySettlements",
     "propertySetup",
+    "publicReceipt",
     "public_holidays",
     "purchase_invoice",
     "purchase_submissions",
@@ -201,6 +205,9 @@
     ],
     "payroll-document-access": [
       "payrollDocumentAccess"
+    ],
+    "receipt-public": [
+      "publicReceipt"
     ],
     "not-found": [
       "errors"
@@ -374,6 +381,7 @@
       "purchase_invoice"
     ],
     "purchase-invoice-submissions": [
+      "capture_photo",
       "dimensions",
       "purchase_invoice",
       "purchase_submissions"
@@ -457,6 +465,7 @@
     ],
     "purchase-invoice-ai-import": [
       "aiGateway",
+      "capture_photo",
       "dimensions",
       "integrations",
       "purchase_invoice"
@@ -464,6 +473,7 @@
     "purchase-invoice-new": [
       "accrual_suggest",
       "automation",
+      "capture_photo",
       "cash",
       "cash_settlement",
       "dimensions",
@@ -496,6 +506,7 @@
     "purchase-invoice-edit": [
       "accrual_suggest",
       "automation",
+      "capture_photo",
       "cash",
       "cash_settlement",
       "dimensions",
@@ -509,6 +520,7 @@
       "vendor"
     ],
     "documents": [
+      "capture_photo",
       "documents"
     ],
     "scan-attach": [
@@ -1062,6 +1074,9 @@
       "bank",
       "cash",
       "purchase_invoice"
+    ],
+    "eet-settings": [
+      "cash"
     ],
     "credit-cards": [
       "credit_cards"

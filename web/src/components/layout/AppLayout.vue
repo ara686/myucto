@@ -8,6 +8,7 @@ import { canUsePurchaseAiExtraction } from '@/security/purchaseAiExtraction'
 import { hasFrameworkScope } from '@/security/frameworkScope'
 import { useSupplierStore } from '@/stores/supplier'
 import { useAutomationStore } from '@/stores/automation'
+import { useFavoritesStore } from '@/stores/favorites'
 import { updateApi, type PublicVersion } from '@/api/update'
 import { settingsApi } from '@/api/settings'
 import { CHROME_FILLED_PRIMARY } from '@/components/ui/buttonStyles'
@@ -32,6 +33,8 @@ import WorkspaceHost from '@/components/workspace/WorkspaceHost.vue'
 import WorkspaceNavLink from '@/components/workspace/WorkspaceNavLink.vue'
 import WorkspaceWindowSwitcher from '@/components/workspace/WorkspaceWindowSwitcher.vue'
 import WorkspaceWindowButton from '@/components/workspace/WorkspaceWindowButton.vue'
+import WorkspaceFavorites from '@/components/workspace/WorkspaceFavorites.vue'
+import WorkspaceFavoritesButton from '@/components/workspace/WorkspaceFavoritesButton.vue'
 import { getWindowManager } from '@/workspace/windowRegistry'
 import type { AccessLevel, PermissionKey } from '@/security/permissions'
 import { useSessionSecurityStore } from '@/stores/sessionSecurity'
@@ -41,7 +44,21 @@ import { usesClientNavigation } from '@/security/clientRoutePolicy'
 import { useWorkspaceNavigation } from '@/composables/useWorkspaceNavigation'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { manualChapter, manualChapterPath } from '@/config/manualChapters'
-import { canFitCompactNavigation, prefersCompactNavigation, shouldUseAutomaticSideNavigation } from '@/utils/navigationLayout'
+import {
+  canFitCompactNavigation,
+  NAV_COMPACT_SIDE,
+  NAV_LAYOUT_TOGGLE_SAVING,
+  NAV_LOGO_TEXT_GAP,
+  NAV_LOGO_TEXT_WIDTH_FALLBACK,
+  NAV_MENU_ARROW_WIDTH,
+  NAV_MENU_PADDING_SAVING,
+  NAV_MENU_PADDING_SAVING_XL,
+  NAV_USER_COMPACT_WIDTH,
+  NAV_USER_FULL_WIDTH_FALLBACK,
+  prefersCompactNavigation,
+  selectNavCompactLevel,
+  userInitials,
+} from '@/utils/navigationLayout'
 
 const { t, locale } = useI18n()
 
@@ -55,6 +72,7 @@ const toast = useToast()
 const keyboardShortcuts = useKeyboardShortcuts()
 const paletteShortcutLabel = formatShortcut('ctrl+k')
 const workspace = useWorkspaceStore()
+const favoritesStore = useFavoritesStore()
 const workspaceNavigation = useWorkspaceNavigation()
 const activeRoute = computed(() => router.resolve(workspace.activeFullPath))
 const canExtractPurchase = computed(() => canUsePurchaseAiExtraction(auth, supplierStore.currentSupplier))
@@ -409,7 +427,7 @@ const navSections = computed<NavSection[]>(() => {
   const isDoubleEntry = accountingEnabled && supplierStore.currentSupplier?.accounting_mode === 'double_entry'
   // Daňová evidence (Epic DE) — zrcadlo isDoubleEntry; sekce jen pro režim daňové evidence.
   const isTaxEvidence = accountingEnabled && supplierStore.currentSupplier?.accounting_mode === 'tax_evidence'
-  // Pokladna patří do bezplatné části (§ 105 manuálu) a nezávisí na „Vést účetnictví"
+  // Pokladna patří do bezplatné části (§ 104 manuálu) a nezávisí na „Vést účetnictví"
   // ani na licenci; za licencí je jen její zaúčtování. Zrcadlí route guard requiresCashMode.
   const cashAvailable = ['double_entry', 'tax_evidence'].includes(supplierStore.currentSupplier?.accounting_mode ?? '')
   // Sklad (Epic SKLAD) — nezávislé na accounting_mode (funguje i pro tax_evidence).
@@ -811,6 +829,8 @@ const navSections = computed<NavSection[]>(() => {
       ...(dimensionsEnabled ? [{ to: '/company/dimensions', label: t('nav.dimensions'), icon: ICONS.codebooks, permission: 'accounting' as PermissionKey }] : []),
       { to: '/profile/api-tokens',          label: t('nav.api_tokens'),      icon: ICONS.api_tokens },
       { to: '/profile/mcp-server',          label: t('nav.mcp_server'),      icon: ICONS.mcp },
+      { to: '/eet/records',                label: t('eet.records.nav'),     icon: ICONS.cash, permission: 'eet' as PermissionKey },
+      { to: '/eet/settings',               label: t('eet.nav'),             icon: ICONS.cash, permission: 'eet.settings' as PermissionKey },
       { to: '/document-requests',           label: t('nav.document_requests'), icon: ICONS.requestDoc },
     ],
   })
@@ -1062,6 +1082,22 @@ const desktopNavigationMode = computed<'top' | 'side' | 'rail'>(() => {
   if (sideNavigation.value) return 'side'
   return 'top'
 })
+// Úroveň šetření místem v horní liště (0 = plná podoba, 1..5 = kumulativní úspory;
+// 6 = boční menu, to drží `autoSideNavigation`). Platí jen pro automatický horní režim.
+const navCompactLevel = ref(0)
+const displayedCompactLevel = computed(() => (topNavigation.value ? navCompactLevel.value : 0))
+const userCompact = computed(() => displayedCompactLevel.value >= 1)
+const logoTextHidden = computed(() => displayedCompactLevel.value >= 2)
+const menuArrowsHidden = computed(() => displayedCompactLevel.value >= 3)
+const menuTight = computed(() => displayedCompactLevel.value >= 4)
+const layoutToggleCompact = computed(() => displayedCompactLevel.value >= 5)
+const userDisplayName = computed(() => auth.user?.name || auth.user?.email || '')
+const userMenuInitials = computed(() => userInitials(auth.user?.name, auth.user?.email))
+const userMenuButton = ref<HTMLElement | null>(null)
+const logoText = ref<HTMLElement | null>(null)
+// Naposledy změřené šířky prvků, které se v úsporných úrovních skrývají.
+let userFullWidth = NAV_USER_FULL_WIDTH_FALLBACK
+let logoTextWidth = NAV_LOGO_TEXT_WIDTH_FALLBACK
 let navResizeObserver: ResizeObserver | null = null
 let navFitFrame: number | null = null
 let desktopStateFrame: number | null = null
@@ -1070,21 +1106,44 @@ function evaluateDesktopNavFit(): void {
   const host = desktopNavHost.value
   if (!isDesktop.value || !host) {
     autoSideNavigation.value = false
+    navCompactLevel.value = 0
     return
   }
   const row = host.querySelector<HTMLElement>('nav')
   const requiredWidth = row
     ? [...row.children].reduce((width, child) => width + (child as HTMLElement).offsetWidth, 0)
     : 0
+  const sectionCount = row?.children.length ?? 0
   const reclaimableSideControls = sideSupplierHost.value
     ? sideSupplierHost.value.offsetWidth + 4
     : 0
-  const useSideNavigation = shouldUseAutomaticSideNavigation(
-    requiredWidth,
-    host.clientWidth + reclaimableSideControls,
-    autoSideNavigation.value,
-  )
+
+  // Boční menu měří plnou podobu horní lišty (úsporné úrovně platí jen nahoře).
+  const sideDisplayed = sideNavigation.value || tabletNavigationRail.value
+  const measuredLevel = sideDisplayed ? NAV_COMPACT_SIDE : navCompactLevel.value
+  if (displayedCompactLevel.value === 0 && userMenuButton.value && userMenuButton.value.offsetWidth > 0) {
+    userFullWidth = userMenuButton.value.offsetWidth
+  }
+  if (logoText.value && logoText.value.offsetWidth > 0) logoTextWidth = logoText.value.offsetWidth
+
+  const wide = window.matchMedia('(min-width: 96rem)').matches // 2xl: utility vpravo a text loga
+  const extraLarge = window.matchMedia('(min-width: 80rem)').matches // xl: širší padding položek
+  const logoSaving = wide ? logoTextWidth + NAV_LOGO_TEXT_GAP : 0
+  // V postranním režimu je text loga vždy vidět, i tam, kde ho horní lišta schovává.
+  const sideLogoExtra = sideDisplayed && !wide ? logoTextWidth + NAV_LOGO_TEXT_GAP : 0
+  const savings = [
+    Math.max(0, userFullWidth - NAV_USER_COMPACT_WIDTH),
+    logoSaving,
+    sectionCount * NAV_MENU_ARROW_WIDTH,
+    sectionCount * (extraLarge ? NAV_MENU_PADDING_SAVING_XL : NAV_MENU_PADDING_SAVING),
+    wide ? NAV_LAYOUT_TOGGLE_SAVING : 0,
+  ]
+  const slack = host.clientWidth + reclaimableSideControls + sideLogoExtra - requiredWidth
+  const nextLevel = selectNavCompactLevel(slack, measuredLevel, savings)
+  const useSideNavigation = nextLevel === NAV_COMPACT_SIDE
   if (useSideNavigation !== autoSideNavigation.value) autoSideNavigation.value = useSideNavigation
+  const nextCompact = useSideNavigation ? 0 : nextLevel
+  if (nextCompact !== navCompactLevel.value) navCompactLevel.value = nextCompact
 }
 
 function scheduleDesktopNavFit(): void {
@@ -1121,6 +1180,7 @@ function setDesktopNavigationMode(mode: 'top' | 'side' | 'rail'): void {
     desktopNavigationPreference.value = null
     saveNavigationPreference(null)
     autoSideNavigation.value = false
+    navCompactLevel.value = 0
     void nextTick(scheduleDesktopNavFit)
     return
   }
@@ -1267,6 +1327,8 @@ const shortcutActions = computed<ShortcutAction[]>(() => {
   }, {
     id: 'windows.reload', label: t('workspace.reload_window'), group: 'general',
   }, {
+    id: 'windows.favorites', label: t('favorites.title'), group: 'general',
+  }, {
     // Registruje se vždy, i když v aktuální agendě zakládat nejde — jinak by
     // zkratka zmizela z nastavení v profilu. Prázdné `to` handler ignoruje.
     id: 'create.contextual',
@@ -1333,13 +1395,17 @@ function onGlobalShortcut(event: KeyboardEvent): void {
   const windowAction = action.id.startsWith('windows.')
   const modalOpen = [...document.querySelectorAll('[role="dialog"][aria-modal="true"], dialog[open]')]
     .some(dialog => !dialog.closest('[hidden], [aria-hidden="true"]'))
-  if (modalOpen && !(windowAction && workspace.windowSwitcherOpen)) return
+  if (modalOpen && !(windowAction && (workspace.windowSwitcherOpen || favoritesStore.open))) return
   if (isEditableTarget(event.target) && action.id !== 'search.global' && !windowAction) return
 
   event.preventDefault()
   if (windowAction) {
     event.stopImmediatePropagation()
     if (action.id === 'windows.switcher') workspace.windowSwitcherOpen = !workspace.windowSwitcherOpen
+    else if (action.id === 'windows.favorites') {
+      workspace.windowSwitcherOpen = false
+      favoritesStore.open = !favoritesStore.open
+    }
     else {
       workspace.windowSwitcherOpen = false
       const manager = getWindowManager()
@@ -1597,7 +1663,7 @@ onBeforeUnmount(() => {
       <div class="h-12 px-3 flex items-center gap-1">
         <WorkspaceNavLink to="/" class="flex h-10 items-center gap-2 shrink-0 px-1.5 rounded-md hover:bg-neutral-100" @click="mobileOpen = false">
           <img src="/styles/logo.svg" alt="MyÚčto" class="w-7 h-7" />
-          <span class="text-sm font-semibold leading-tight select-none" :class="sideNavigation || tabletNavigationRail ? 'inline' : 'inline lg:hidden 2xl:inline'">
+          <span ref="logoText" class="text-sm font-semibold leading-tight select-none" :class="sideNavigation || tabletNavigationRail ? 'inline' : (logoTextHidden ? 'hidden' : 'inline lg:hidden 2xl:inline')">
             My<span class="text-primary-600">Účto</span><span class="text-neutral-400 font-normal">.cz</span>
           </span>
         </WorkspaceNavLink>
@@ -1616,6 +1682,8 @@ onBeforeUnmount(() => {
             :shortcut-for="navShortcutLabel"
             :quick-new-label="t('nav.quick_new')"
             :menu-label="t('nav.main_menu')"
+            :show-arrows="!menuArrowsHidden"
+            :tight="menuTight"
           />
         </div>
 
@@ -1625,6 +1693,7 @@ onBeforeUnmount(() => {
             :quick-actions="quickActions"
             :manual-href="manualHref"
             placement="below"
+            :compact-layout="layoutToggleCompact"
           />
 
           <div
@@ -1645,20 +1714,27 @@ onBeforeUnmount(() => {
 
           <div class="relative hidden lg:flex h-full items-center">
             <button
+              ref="userMenuButton"
               type="button"
-              class="cursor-pointer inline-flex max-w-44 items-center gap-1.5 h-8 px-2 rounded-md text-neutral-700 hover:bg-neutral-100 hover:text-primary-700"
-              :class="{ 'bg-neutral-100 text-primary-700': userMenuOpen }"
+              class="cursor-pointer inline-flex items-center h-8 rounded-md text-neutral-700 hover:bg-neutral-100 hover:text-primary-700"
+              :class="[
+                userCompact ? 'w-8 justify-center' : 'max-w-44 gap-1.5 px-2',
+                { 'bg-neutral-100 text-primary-700': userMenuOpen },
+              ]"
               :aria-expanded="userMenuOpen"
+              :aria-label="userCompact ? `${t('nav.user_menu')}: ${userDisplayName}` : undefined"
+              :title="userCompact ? userDisplayName : undefined"
               aria-haspopup="menu"
               @click="userMenuOpen = !userMenuOpen"
             >
               <span class="inline-flex w-6 h-6 shrink-0 items-center justify-center rounded-full bg-primary-100 text-primary-700">
-                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <span v-if="userCompact && userMenuInitials" class="text-[11px] font-semibold leading-none" aria-hidden="true">{{ userMenuInitials }}</span>
+                <svg v-else class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                   <path fill-rule="evenodd" d="M12 2.75a5 5 0 1 0 0 10 5 5 0 0 0 0-10ZM4 20.25a8 8 0 0 1 16 0 1 1 0 0 1-1 1H5a1 1 0 0 1-1-1Z" clip-rule="evenodd" />
                 </svg>
               </span>
-              <span class="truncate">{{ auth.user?.name }}</span>
-              <svg class="w-3 h-3 shrink-0 transition-transform" :class="{ 'rotate-180': userMenuOpen }" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <span v-if="!userCompact" class="truncate">{{ auth.user?.name }}</span>
+              <svg v-if="!userCompact" class="w-3 h-3 shrink-0 transition-transform" :class="{ 'rotate-180': userMenuOpen }" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
               </svg>
             </button>
@@ -1672,8 +1748,8 @@ onBeforeUnmount(() => {
             >
               <div v-if="userMenuOpen" class="absolute right-0 top-full max-h-[calc(100dvh-var(--app-header-height,3rem))] overflow-y-auto overscroll-contain w-64 bg-surface border border-neutral-200 rounded-b-lg shadow-xl py-1.5 z-40" role="menu">
                 <div class="px-3 pt-1 pb-2 border-b border-neutral-200 mb-1">
-                  <div class="font-medium text-neutral-900 truncate">{{ auth.user?.name }}</div>
-                  <div class="text-xs text-neutral-500 truncate">{{ auth.user?.email }}</div>
+                  <div class="font-medium text-neutral-900 truncate">{{ userDisplayName }}</div>
+                  <div v-if="auth.user?.name" class="text-xs text-neutral-500 truncate">{{ auth.user?.email }}</div>
                 </div>
                 <WorkspaceNavLink to="/profile/password" class="flex items-center gap-2.5 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50 hover:text-primary-700" role="menuitem">
                   <svg class="w-4 h-4 text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15 7a2 2 0 1 1 2 2m4 0a6 6 0 1 1-7.7 5.75L11 17H9v2H7v2H4a1 1 0 0 1-1-1v-2.6a1 1 0 0 1 .3-.7l6-6A6 6 0 0 1 21 9z"/></svg>
@@ -2012,6 +2088,7 @@ onBeforeUnmount(() => {
              stačí ji mít v layoutu jednou. -->
         <CommandPalette ref="paletteRef" :nav-items="paletteNavItems" :quick-actions="quickActions" />
         <WorkspaceWindowSwitcher />
+        <WorkspaceFavorites />
 
         <main
           class="flex-1 px-5 sm:px-8 py-6 w-full"
@@ -2047,8 +2124,11 @@ onBeforeUnmount(() => {
              takže nosí i stejnou tmavou plochu. Světlá patička pod tmavou lištou
              působila jako nedodělaná půlka — takhle obsah rámují z obou stran. -->
         <footer ref="appFooter" class="nav-inverted sticky bottom-0 z-20 border-t border-neutral-200 bg-surface shadow-[0_-2px_10px_rgba(21,19,29,0.10)]">
-          <div class="hidden lg:grid h-11 grid-cols-[minmax(14rem,1fr)_auto_minmax(14rem,1fr)] 2xl:grid-cols-[minmax(14rem,1fr)_auto_minmax(23rem,1fr)] items-center gap-4 px-3">
-            <div class="flex w-full max-w-lg items-center gap-2">
+          <!-- Pod 2xl nese pravý sloupec i ikony oblíbených, oken a panelů, takže má
+               šířku podle obsahu (`auto`) a zužuje se hledání vlevo; jinak by přetekl
+               přes přepínač firmy uprostřed. -->
+          <div class="hidden lg:grid h-11 grid-cols-[minmax(10rem,1fr)_auto_auto] 2xl:grid-cols-[minmax(14rem,1fr)_auto_minmax(23rem,1fr)] items-center gap-4 px-3">
+            <div class="flex w-full max-w-60 2xl:max-w-lg items-center gap-2">
               <div class="min-w-0 flex-1">
                 <GlobalSearch
                   ref="desktopSearchRef"
@@ -2111,7 +2191,7 @@ onBeforeUnmount(() => {
                   <svg v-else class="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M3 4h5v16H3V4zm2 3h1m-1 4h1m-1 4h1m6-10h9m-9 5h9m-9 5h9" />
                   </svg>
-                  {{ t('nav.menu_style') }}
+                  <span class="hidden 2xl:inline">{{ t('nav.menu_style') }}</span>
                 </button>
                 <div v-if="navigationLayoutOpen" class="fixed inset-0 z-10" aria-hidden="true" @click="navigationLayoutOpen = false"></div>
                 <div v-if="navigationLayoutOpen" class="absolute bottom-full right-0 z-40 mb-2 w-56 rounded-lg border border-neutral-200 bg-surface p-1.5 text-sm shadow-xl" role="menu">
@@ -2208,6 +2288,7 @@ onBeforeUnmount(() => {
               </button>
               <LanguageToggle />
               <ThemeToggle />
+              <WorkspaceFavoritesButton class="border border-neutral-200" />
               <WorkspaceWindowButton class="border border-neutral-200" />
             </div>
             <div class="flex flex-wrap items-center justify-end gap-1.5">

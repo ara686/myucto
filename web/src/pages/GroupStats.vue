@@ -7,7 +7,7 @@ import { useSupplierStore } from '@/stores/supplier'
 import { groupDashboardApi, type Aging, type CashWeek, type Financial, type GroupCompany, type GroupDashboard, type GroupSection, type Monthly, type Risk } from '@/api/groupDashboard'
 import { GROUP_SECTIONS, SECTION_FIELDS, accountingGroupKey, groupRiskDestination, margin, metricState, yearChange, type GroupField, type MetricState } from '@/utils/groupDashboard'
 import { useSupplierSwitch } from '@/composables/useSupplierSwitch'
-import { formatMoney, formatNumber } from '@/composables/useFormat'
+import { formatMoneyWhole, formatNumber } from '@/composables/useFormat'
 import { ICONS, btnOutline } from '@/components/ui/buttonStyles'
 import GroupDashboardChart, { type GroupChartSeries } from '@/components/group-dashboard/GroupDashboardChart.vue'
 import GroupForecast from '@/components/group-dashboard/GroupForecast.vue'
@@ -44,7 +44,7 @@ const report = computed(() => {
   return data && currencyChoice.value === ALL_CURRENCIES && data.converted_czk ? { ...data, companies: data.converted_czk.companies, totals: data.converted_czk.totals } : data
 })
 const fields = computed(() => SECTION_FIELDS[active.value])
-const money = (value: number | null | undefined, code: string) => value === null || value === undefined ? '-' : formatMoney(value, code)
+const money = (value: number | null | undefined, code: string) => value === null || value === undefined ? '-' : formatMoneyWhole(value, code)
 const date = (value: string | null | undefined) => value ? new Intl.DateTimeFormat(locale.value).format(new Date(`${value.slice(0, 10)}T12:00:00`)) : '-'
 const pct = (value: number | null | undefined) => value === null || value === undefined ? '-' : `${formatNumber(value, { maximumFractionDigits: 1 })} %`
 const resultClass = (value: number | null | undefined) => value === null || value === undefined ? 'text-neutral-400' : value < 0 ? 'text-danger-600' : value > 0 ? 'text-success-600' : 'text-neutral-700'

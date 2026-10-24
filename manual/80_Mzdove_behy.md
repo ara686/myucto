@@ -503,7 +503,7 @@ jen tehdy, když v něm měsíc čeká na převzetí) a u firmy bez převzatých
 se nezobrazí. Převod z Money S3 převzaté mzdy jednotlivých zaměstnanců nemá
 (Money je vede v šifrované databázi agendy); protokol převodu ukáže jen
 kontrolní úhrny celé firmy po měsících, viz
-[§ 103.10.2.2](103_Prechod_z_Money_S3.md#1031022-mzdy).
+[§ 106.10.2.2](106_Prechod_z_Money_S3.md#1061022-mzdy).
 
 **Převzatý běh** je zrcadlo cizího výpočtu, ne pracovní dokument:
 

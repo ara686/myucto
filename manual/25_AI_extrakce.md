@@ -85,7 +85,7 @@ Volitelné kroky:
 ## 25.4 Krok za krokem: importovat přijaté faktury z PDF
 
 1. Otevřete `Nákup → AI import`.
-2. Vyberte nebo přetáhněte jeden nebo více souborů (PDF, obrázek). Při více souborech vznikne dávka, která se zpracuje
+2. Vyberte nebo přetáhněte jeden nebo více souborů (PDF, obrázek), nebo na telefonu a tabletu klikněte na **Vyfotit**: doklad se vyfotí, zmenší a po potvrzení náhledu se použije jako vybraný soubor. Při více souborech vznikne dávka, která se zpracuje
    postupně po jednom.
 3. Počkejte na zpracování. U každého souboru uvidíte stav, dodavatele, částku a **typ dokladu**.
 4. Případně změňte **Typ dokladu** přímo v tabulce (například účtenku placenou kartou, kterou AI zařadila jako

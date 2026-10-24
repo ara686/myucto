@@ -8,7 +8,7 @@ import { useExpandableItems } from '@/composables/useExpandableItems'
 import { useRouter, useRoute, RouterLink } from 'vue-router'
 import { invoicesApi, type MonthGroup, type InvoiceListItem, type InvoiceItem,
   type OssBulkResult, type OssBulkScope, type OssBulkSet, type OssBulkFailure, type OssReviewScope } from '@/api/invoices'
-import { formatMoney, formatDate, formatMonth, formatNumber, statusLabel, typeLabel, statusBadgeClass, isOverdue, invoiceRowClass, displayStatus, taxDateClass } from '@/composables/useFormat'
+import { formatMoney, formatMoneyWhole, formatDate, formatMonth, formatNumber, statusLabel, typeLabel, statusBadgeClass, isOverdue, invoiceRowClass, displayStatus, taxDateClass } from '@/composables/useFormat'
 import { useRowLink } from '@/composables/useRowLink'
 import { useToast } from '@/composables/useToast'
 import { useI18n } from 'vue-i18n'
@@ -1511,10 +1511,10 @@ useWindowRefresh(['invoices', 'clients', 'bank', 'bank-transactions', 'cash', 'a
           <div class="flex flex-wrap items-center justify-end gap-x-3 gap-y-0.5 min-w-0 text-xs">
             <span v-for="tot in g.totals_per_currency" :key="tot.currency" class="font-mono">
               <span class="text-neutral-500">{{ tot.currency }}:</span>
-              <span class="font-semibold text-neutral-900 ml-1">{{ formatMoney(tot.with_vat, tot.currency) }}</span>
+              <span class="font-semibold text-neutral-900 ml-1">{{ formatMoneyWhole(tot.with_vat, tot.currency) }}</span>
               <span v-if="tot.draft_with_vat !== 0" class="ml-1 text-primary-600"
-                :title="t('invoice.prediction_hint', { amount: formatMoney(tot.draft_with_vat, tot.currency) })">
-                → {{ formatMoney(tot.with_vat + tot.draft_with_vat, tot.currency) }}
+                :title="t('invoice.prediction_hint', { amount: formatMoneyWhole(tot.draft_with_vat, tot.currency) })">
+                → {{ formatMoneyWhole(tot.with_vat + tot.draft_with_vat, tot.currency) }}
                 <span class="text-[10px] uppercase tracking-wide text-primary-500">{{ t('invoice.prediction') }}</span>
               </span>
             </span>

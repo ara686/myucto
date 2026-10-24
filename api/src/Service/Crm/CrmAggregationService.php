@@ -1827,6 +1827,9 @@ final class CrmAggregationService
             'items' => $items,
             'total' => count($items),
             'dismissed_count' => count($dismissals),
+            // Klientské položky (např. instalace na plochu) server nevytváří, jejich odložení
+            // si ale drží tady; klient podle tohoto seznamu pozná, že je nemá nabízet.
+            'dismissed_types' => array_keys($dismissals),
         ];
     }
 
@@ -3066,7 +3069,7 @@ final class CrmAggregationService
         $validTypes = ['overdue_invoices', 'bank_unmatched', 'recurring_due', 'overdue_payables',
             'purchase_drafts', 'unbooked_documents', 'journal_integrity', 'tax_deadline', 'kh_deadline',
             'shv_deadline', 'churn_risk', 'dppo_balance_due', 'tax_advance_due',
-            'purchase_approvals_pending', 'purchase_approvals_rejected', 'bank_notice_unprocessed'];
+            'purchase_approvals_pending', 'purchase_approvals_rejected', 'bank_notice_unprocessed', 'pwa_install'];
         $validModes = ['day', 'week', 'forever', 'historical'];
         if (!in_array($itemType, $validTypes, true)) {
             throw new \InvalidArgumentException("Invalid item_type: {$itemType}");

@@ -1,5 +1,6 @@
 import './styles/main.css'
 import { parseWindowFrameBootstrap } from '@/workspace/frameProtocol'
+import { initPwaInstall } from '@/composables/usePwaInstall'
 
 // Nasazení nové verze uklidí assety předchozích vydání a záložka se starou verzí pak
 // chunk nedotáhne. Načte se znovu (nový index.html má nové chunky), nejvýš jednou za 30 s.
@@ -49,6 +50,8 @@ if (frame) {
   ])
 
   await ensureInitialLocaleReady()
+
+  initPwaInstall()
 
   const app = createApp(App)
   const pinia = createPinia()

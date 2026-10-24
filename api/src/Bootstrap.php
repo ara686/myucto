@@ -175,6 +175,10 @@ final class Bootstrap
                 fn (ContainerInterface $c) => $c->get(
                     \MyInvoice\Service\Payroll\Submission\Jmhz\Transport\JmhzProtocolSignatureVerifier::class,
                 ),
+            \MyInvoice\Service\Eet\Transport\EetTransportInterface::class =>
+                fn () => new \MyInvoice\Service\Eet\Transport\SoapEetTransport(),
+            \MyInvoice\Service\Eet\EetCredentialProvider::class =>
+                fn (ContainerInterface $c) => $c->get(\MyInvoice\Service\Eet\EetCertificateVault::class),
             \MyInvoice\Service\Submission\SubmissionInboxMessageProcessor::class =>
                 fn (ContainerInterface $c) => $c->get(
                     \MyInvoice\Service\Submission\CompositeSubmissionInboxMessageProcessor::class,
@@ -838,6 +842,7 @@ final class Bootstrap
                 // zaplacené služby ale musí být TÁŽ instance jako všude jinde —
                 // jinak by se po zápisu nového rozsahu nezahodila jeho cache.
                 entitlement: $c->get(\MyInvoice\Service\System\InstanceEntitlement::class),
+                consistency: $c->get(\MyInvoice\Service\License\LicenseConsistency::class),
             ),
             \MyInvoice\Service\Tenant\SupplierAccessResolver::class => fn (ContainerInterface $c) => new \MyInvoice\Service\Tenant\SupplierAccessResolver(
                 $c->get(Connection::class),

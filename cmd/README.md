@@ -65,6 +65,7 @@ má vždy přednost před oběma.
 | `cron-send-approval-reminders.{cmd,sh}` | Upomínky zákazníkům, kteří neschválili výkaz víceprací (`--days=N`, `--dry-run`) |
 | `cron-purchase-approval-reminders.{cmd,sh}` | Připomínky schvalovatelům přijatých dokladů (schvalování manažerem střediska; `--days=N`, `--dry-run`) |
 | `cron-document-request-reminders.{cmd,sh}` | Upomínky na nevyřízené požadavky na dodání dokladů |
+| `cron-eet-dispatch.{cmd,sh}` | Záložní odesílání evidence tržeb EET: čekající záznamy, opakování dočasných chyb s backoffem, záznamy po doplnění certifikátu; běží i bez komerční licence (`--limit=N`) |
 | `cron-epo-status.{cmd,sh}` | Bezpečné vyzvedávání dodejek a stavů přímých EPO podání s řízeným odstupem; původní podání nikdy neopakuje |
 | `cron-jmhz-poll.{cmd,sh}` | Dotažení protokolu ČSSZ k měsíčnímu hlášení a uzavření transakce u VREP; neúspěšný dotaz nikdy neuzavře podání (`--limit=N`) |
 | `cron-jmhz-source-monitor.{cmd,ps1,sh}` | Denní read-only sledování veřejných indexů dokumentace JMHZ MPSV/ČSSZ, aktualit, struktur EPO a stránek ČSSZ „Definice e-Podání" (NEMPRI, HZUPN, ELDP, REGZEC). Do **Systém → Plánované úlohy** ukládá konkrétní nový/změněný dokument, starou a novou verzi, URL a hash; nikdy samo neaktualizuje číselník (`--dry-run`) |
@@ -158,6 +159,7 @@ při přidání nové citlivé cesty rozšiř seznam v něm i tady.
 | `cron-send-approval-reminders` | 1× denně (pracovní dny) | 09:15, Po–Pá |
 | `cron-purchase-approval-reminders` | 1× denně (pracovní dny) | 09:20, Po–Pá |
 | `cron-document-request-reminders` | 1× denně (pracovní dny) | 09:30, Po–Pá |
+| `cron-eet-dispatch` | každou minutu (kritická úloha, zákonná lhůta 48 h; bez otevřených záznamů skončí hned) | `* * * * *` |
 | `cron-epo-status` | každou minutu; jednotlivé pokusy mají vlastní backoff | `* * * * *` |
 | `cron-jmhz-poll` | každých 10 minut; odstup dotazů si řídí sám ledger pokusů | `*/10 * * * *` |
 | `cron-jmhz-source-monitor` | 1× denně; jen kontroluje veřejné podklady a vypíše diff, nic neaktualizuje | 07:00 |
@@ -255,6 +257,7 @@ schtasks /create /tn "MyUcto Reminders" /tr "C:\inetpub\wwwroot\myucto.cz\cmd\cr
 schtasks /create /tn "MyUcto ApprovalReminders" /tr "C:\inetpub\wwwroot\myucto.cz\cmd\cron-send-approval-reminders.cmd" /sc weekly /d MON,TUE,WED,THU,FRI /st 09:15 /ru SYSTEM
 schtasks /create /tn "MyUcto PurchaseApprovalReminders" /tr "C:\inetpub\wwwroot\myucto.cz\cmd\cron-purchase-approval-reminders.cmd" /sc weekly /d MON,TUE,WED,THU,FRI /st 09:20 /ru SYSTEM
 schtasks /create /tn "MyUcto DocumentRequestReminders" /tr "C:\inetpub\wwwroot\myucto.cz\cmd\cron-document-request-reminders.cmd" /sc weekly /d MON,TUE,WED,THU,FRI /st 09:30 /ru SYSTEM
+schtasks /create /tn "MyUcto EetDispatch" /tr "C:\inetpub\wwwroot\myucto.cz\cmd\cron-eet-dispatch.cmd" /sc minute /mo 1 /ru SYSTEM
 schtasks /create /tn "MyUcto EpoStatus" /tr "C:\inetpub\wwwroot\myucto.cz\cmd\cron-epo-status.cmd" /sc minute /mo 1 /ru SYSTEM
 schtasks /create /tn "MyUcto JmhzPoll"  /tr "C:\inetpub\wwwroot\myucto.cz\cmd\cron-jmhz-poll.cmd" /sc minute /mo 10 /ru SYSTEM
 schtasks /create /tn "MyUcto JmhzSourceMonitor" /tr "C:\inetpub\wwwroot\myucto.cz\cmd\cron-jmhz-source-monitor.cmd" /sc daily /st 07:00 /ru SYSTEM
@@ -328,6 +331,7 @@ Edituj `crontab -e` (nebo `/etc/cron.d/myucto`):
  15  9  *   *   1-5  /var/www/myucto.cz/cmd/cron-send-approval-reminders.sh
  20  9  *   *   1-5  /var/www/myucto.cz/cmd/cron-purchase-approval-reminders.sh
  30  9  *   *   1-5  /var/www/myucto.cz/cmd/cron-document-request-reminders.sh
+  *  *  *   *   *    /var/www/myucto.cz/cmd/cron-eet-dispatch.sh
   *  *  *   *   *    /var/www/myucto.cz/cmd/cron-epo-status.sh
 */10 *  *   *   *    /var/www/myucto.cz/cmd/cron-jmhz-poll.sh
   0  7  *   *   *    /var/www/myucto.cz/cmd/cron-jmhz-source-monitor.sh

@@ -1033,11 +1033,11 @@ příkaz vypíše sloupce, ve kterých zůstala hodnota shodná s originálem
 > MyInvoice zůstávají plně funkční včetně zápisu. Komerční moduly se skryjí
 > i pro čtení a API, jejich data ale zůstávají beze změny ve vlastní databázi
 > a po obnovení licence se znovu zpřístupní. Detail v
-> [105. Licence a aktivace](105_Licence_a_aktivace.md).
+> [104. Licence a aktivace](104_Licence_a_aktivace.md).
 
 ## 101.12 Související kapitoly
 
 - [Přihlášení](08_Prihlaseni.md)
 - [Nastavení](96_Nastaveni.md)
-- [Licence a aktivace](105_Licence_a_aktivace.md)
+- [Licence a aktivace](104_Licence_a_aktivace.md)
 - [Řešení problémů](999_Reseni_problemu.md)

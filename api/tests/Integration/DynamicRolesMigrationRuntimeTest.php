@@ -185,7 +185,7 @@ final class DynamicRolesMigrationRuntimeTest extends TestCase
         $db->exec('CREATE TABLE app_meta (k VARCHAR(64) PRIMARY KEY, v MEDIUMTEXT NOT NULL) ENGINE=InnoDB');
         $db->exec("INSERT INTO roles VALUES (1, 'admin', 'staff'), (2, 'admin_plus', 'staff'), (3, 'accountant', 'staff'), (4, 'readonly', 'staff'), (5, 'client', 'client'), (6, NULL, 'staff')");
         $db->exec("INSERT INTO role_permissions VALUES (2, 'reports.submissions.manage', 0), (6, 'reports.submit', 2)");
-        $migration = ['2181_client_tax_submission_permissions.sql'];
+        $migration = ['2189_client_tax_submission_permissions.sql'];
         $this->runMigrator($migration);
         $grants = $db->query("SELECT role_id, access_level FROM role_permissions WHERE permission_key='reports.submissions.manage' ORDER BY role_id")->fetchAll(PDO::FETCH_KEY_PAIR);
         self::assertSame([1 => 2, 2 => 0, 3 => 2], array_map('intval', $grants));
@@ -194,7 +194,7 @@ final class DynamicRolesMigrationRuntimeTest extends TestCase
 
         $db->exec("DELETE FROM role_permissions WHERE role_id=1 AND permission_key='reports.submissions.manage'");
         $db->exec("UPDATE role_permissions SET access_level=1 WHERE role_id=3 AND permission_key='reports.submissions.manage'");
-        $db->exec("DELETE FROM migrations WHERE filename='2181_client_tax_submission_permissions.sql'");
+        $db->exec("DELETE FROM migrations WHERE filename='2189_client_tax_submission_permissions.sql'");
         $this->runMigrator($migration);
         $grants = $db->query("SELECT role_id, access_level FROM role_permissions WHERE permission_key='reports.submissions.manage' ORDER BY role_id")->fetchAll(PDO::FETCH_KEY_PAIR);
         self::assertSame([2 => 0, 3 => 1], array_map('intval', $grants), 'Opakování neobnoví odebrané právo ani nepřepíše výslovně uloženou úroveň.');
@@ -375,7 +375,8 @@ final class DynamicRolesMigrationRuntimeTest extends TestCase
                 '2075_purchase_invoice_vat_treatment_permission.sql',
                 '2109_property_funds_role_defaults.sql',
                 '2118_property_service_unwind_permission.sql',
-                '2181_client_tax_submission_permissions.sql',
+                '2183_eet_role_permissions.sql',
+                '2189_client_tax_submission_permissions.sql',
             ]),
         ];
         $env = getenv();

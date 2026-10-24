@@ -843,7 +843,7 @@ odeslání ke schválení a jeho zrušení patří ke změně stavu přijaté fa
 ### 114.11.16 Převod z Money S3
 
 Převod z Money S3 dimenze zapne a středisko i zakázku z deníku Money převede na
-dimenze. Podrobnosti v kapitole [Přechod z Money S3](103_Prechod_z_Money_S3.md).
+dimenze. Podrobnosti v kapitole [Přechod z Money S3](106_Prechod_z_Money_S3.md).
 
 ### 114.11.17 Systémové dimenze a původ přiřazení
 
@@ -931,4 +931,4 @@ a MCP poskytují čtení klíčů, zdrojů a historie v rozsahu dostupné firmy.
 - [Přijaté faktury](23_Prijate_faktury.md) - schvalování a dimenze na přijatých dokladech
 - [AI extrakce](25_AI_extrakce.md) - dimenze při vytěžení dokladů
 - [Majetek](28_Majetek.md) - dimenze karet majetku
-- [Přechod z Money S3](103_Prechod_z_Money_S3.md) - převod středisek a zakázek
+- [Přechod z Money S3](106_Prechod_z_Money_S3.md) - převod středisek a zakázek

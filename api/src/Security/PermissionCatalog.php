@@ -6,12 +6,12 @@ namespace MyInvoice\Security;
 
 final class PermissionCatalog
 {
-    public const VERSION = '2026-10-client-tax-submissions-v1';
+    public const VERSION = '2026-10-eet-client-tax-submissions-v1';
 
     /** @var list<string> */
     private const GROUPS = [
         'dashboard', 'clients', 'projects', 'invoices', 'purchase_invoices', 'recurring', 'price_list',
-        'bank', 'documents', 'accounting', 'property', 'other_items', 'tax_evidence', 'reports', 'payroll', 'cash', 'assets',
+        'bank', 'documents', 'accounting', 'property', 'other_items', 'tax_evidence', 'reports', 'payroll', 'cash', 'eet', 'assets',
         'stock', 'eshop', 'logbook', 'settings', 'utilities', 'profile',
     ];
 
@@ -148,6 +148,12 @@ final class PermissionCatalog
             ['cash', 'cash', 'Pokladna', $staffOnly],
             ['cash.document.write', 'cash', 'Pokladní doklady', $staffOnly],
             ['cash.close', 'cash', 'Uzavřít pokladnu a trvale mazat doklady', $staffOnly],
+            ['eet', 'eet', 'EET – evidence tržeb', $staffOnly],
+            ['eet.accept_payment', 'eet', 'Přijímat platby s evidencí EET', $staffOnly],
+            ['eet.correct', 'eet', 'Opravy a vratky EET, ruční opakování', $staffOnly],
+            ['eet.settings', 'eet', 'Nastavení EET, jednotky a zařízení', $staffOnly],
+            ['eet.certificates', 'eet', 'Správa pokladních certifikátů EET', $staffOnly],
+            ['eet.export', 'eet', 'Export evidence EET', $staffOnly],
             ['assets', 'assets', 'Majetek', $staffOnly],
             ['assets.write', 'assets', 'Spravovat majetek', $staffOnly],
             ['assets.depreciation', 'assets', 'Odpisy', $staffOnly],
@@ -243,11 +249,13 @@ final class PermissionCatalog
                 // ve výchozím stavu zůstávají: prodloužit lhůtu nebo zadržet výmaz
                 // je konzervativní směr, kterým se nic neztratí.
                 'payroll.erasure',
+                // Pokladní certifikát s privátním klíčem podepisuje evidenci tržeb jménem firmy.
+                'eet.certificates',
             ];
             $read = [
                 'dashboard', 'dashboard.portfolio', 'tax_evidence', 'tax_evidence.export',
                 'reports.export', 'settings.company', 'price_list', 'utilities',
-                'property.export',
+                'property.export', 'eet.settings',
                 'utilities.export', 'utilities.archives', 'profile.tokens',
             ];
             $permissions = [];
@@ -263,7 +271,7 @@ final class PermissionCatalog
                 'dashboard', 'dashboard.portfolio', 'clients', 'projects', 'invoices',
                 'purchase_invoices', 'purchase_invoices.approve', 'recurring', 'price_list', 'bank', 'documents', 'documents.requests', 'documents.inbox',
                 'accounting', 'property', 'other_items', 'tax_evidence', 'tax_evidence.export', 'reports', 'reports.export',
-                'cash', 'assets', 'stock', 'eshop', 'logbook', 'settings.company', 'utilities',
+                'cash', 'eet', 'assets', 'stock', 'eshop', 'logbook', 'settings.company', 'utilities',
                 'utilities.export', 'utilities.archives', 'profile', 'profile.tokens',
             ],
             'client' => [

@@ -58,6 +58,7 @@ import VendorPicker from '@/components/purchase/VendorPicker.vue'
 import ClientFormModal from '@/components/modals/ClientFormModal.vue'
 import { clientsApi, type Client } from '@/api/clients'
 import PdfDropzone from '@/components/purchase/PdfDropzone.vue'
+import CapturePhotoButton from '@/components/upload/CapturePhotoButton.vue'
 import PurchaseForceModeDialog from '@/components/purchase/PurchaseForceModeDialog.vue'
 import DocumentSidePreview from '@/components/documents/DocumentSidePreview.vue'
 import PaymentCurrencyBlock from '@/components/purchase/PaymentCurrencyBlock.vue'
@@ -1729,6 +1730,7 @@ useWindowTitle(
       <!-- DRAG & DROP PDF (jen nahoře u nové faktury, schovaný po prvním interaction) -->
       <div v-if="!isEdit && !submissionId && dropzoneVisible" class="bg-surface border border-neutral-200 rounded-lg p-5 shadow-sm">
         <PdfDropzone accept-structured :uploading="pdfUploading" @file-dropped="onPdfDropped" @error="onPdfError" />
+        <div class="mt-2 flex flex-wrap gap-2"><CapturePhotoButton :disabled="pdfUploading" @captured="onPdfDropped" /></div>
         <p class="text-xs text-neutral-500 mt-2">
           {{ t('purchase_invoice.extraction.ai_pending') }}
         </p>
@@ -1886,6 +1888,7 @@ useWindowTitle(
       <!-- Replace dropzone když user vybere replace -->
       <div v-else-if="isEdit && dropzoneVisible" class="bg-surface border border-neutral-200 rounded-lg p-5 shadow-sm">
         <PdfDropzone :uploading="pdfUploading" @file-dropped="onPdfDropped" @error="onPdfError" />
+        <div class="mt-2 flex flex-wrap gap-2"><CapturePhotoButton :disabled="pdfUploading" @captured="onPdfDropped" /></div>
       </div>
 
       <!-- Box 1: Hlavička — vendor + typ + čísla + datumy + měna -->
