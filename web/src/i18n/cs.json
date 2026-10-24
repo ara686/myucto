@@ -732,6 +732,17 @@
     "drop_link_here": "Otevřít odkaz v tomto panelu",
     "drag_row": "Přetáhnout do jiného panelu"
   },
+  "capture_photo": {
+    "button": "Vyfotit",
+    "title": "Fotka dokladu",
+    "processing": "Zpracovávám fotku...",
+    "decode_failed": "Fotku se nepodařilo zpracovat. Prohlížeč formát pravděpodobně neumí přečíst (například HEIC).",
+    "fallback_hint": "Můžete nahrát původní soubor beze změny, nebo vyfotit znovu.",
+    "upload": "Nahrát",
+    "upload_original": "Nahrát původní soubor",
+    "retake": "Vyfotit znovu",
+    "cancel": "Zrušit"
+  },
   "documents": {
     "ai": {
       "title": "AI",
