@@ -62,6 +62,7 @@ final class CancelInvoiceAction
         private readonly CashSettlementService $cashSettlement,
         private readonly TaxConstantsRepository $taxConstants,
         private readonly \MyInvoice\Service\Invoice\CreditNoteOffsetService $creditNoteOffsets,
+        private readonly \MyInvoice\Service\Eet\EetHistoryGuard $eetHistory,
     ) {}
 
     public function __invoke(Request $request, Response $response, array $args): Response
@@ -310,10 +311,10 @@ final class CancelInvoiceAction
         // Stornovaná faktura odejde z revenue cache
         $this->stats->recomputeForInvoiceId((int) $invoice['id']);
 
-        return Json::ok($response, [
+        return Json::ok($response, $this->withEetWarning($supplierId, (int) $invoice['id'], [
             'cancellation_id' => $cancellationId,
             'invoice'         => $this->repo->find($invoice['id']),
-        ]);
+        ]));
     }
 
     private function createCreditNote(Request $request, Response $response, array $invoice, string $reason): Response
@@ -516,9 +517,25 @@ final class CancelInvoiceAction
         ], $ip, $request->getHeaderLine('User-Agent'));
 
         // Credit note je draft (revenue se nepočítá), ale parent dostal cancelled stav až po issue dobropisu — nepřepočítáváme tady.
-        return Json::ok($response, [
+        return Json::ok($response, $this->withEetWarning((int) $invoice['supplier_id'], (int) $invoice['id'], [
             'credit_note_id' => $creditNoteId,
             'edit_url'       => "/invoices/$creditNoteId/edit",
-        ], 201);
+        ]), 201);
+    }
+
+    /**
+     * EET-07: storno ani dobropis evidovanou tržbu automaticky neopravují. Odpověď
+     * jen upozorní (`eet_warning`); u faktury bez tržeb zůstává beze změny.
+     *
+     * @param array<string,mixed> $payload
+     * @return array<string,mixed>
+     */
+    private function withEetWarning(int $supplierId, int $invoiceId, array $payload): array
+    {
+        $warning = $this->eetHistory->cancellationWarning($supplierId, $invoiceId);
+        if ($warning !== null) {
+            $payload['eet_warning'] = $warning;
+        }
+        return $payload;
     }
 }

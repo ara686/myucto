@@ -17,6 +17,7 @@ import { apiErrorMessage } from '@/api/errors'
 import { btnFilled, btnOutline } from '@/components/ui/buttonStyles'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import PdfDropzone from '@/components/purchase/PdfDropzone.vue'
+import CapturePhotoButton from '@/components/upload/CapturePhotoButton.vue'
 import ExtractionReviewModal from '@/components/purchase/ExtractionReviewModal.vue'
 import DimensionFields from '@/components/dimensions/DimensionFields.vue'
 import DimensionChips from '@/components/dimensions/DimensionChips.vue'
@@ -315,6 +316,12 @@ function addDroppedFiles(dropped: File[]) {
     ...files.value,
     ...dropped.filter(f => !known.has(`${f.name}:${f.size}:${f.lastModified}`)),
   ])
+}
+
+/** Fotka z fotoaparátu se přidá do výběru a odešle stejnou cestou jako vybrané soubory. */
+function onPhotoCaptured(photo: File) {
+  addDroppedFiles([photo])
+  void upload()
 }
 
 function clearFiles() {
@@ -620,6 +627,7 @@ onBeforeUnmount(() => { context++; loadRequest++ })
           {{ t('purchase_submissions.choose_files') }}
           <input ref="fileInput" type="file" multiple :accept="ALLOWED_FILES" class="hidden" @change="selectFiles" />
         </label>
+        <CapturePhotoButton :disabled="uploading" @captured="onPhotoCaptured" />
         <span v-if="files.length" class="text-sm text-neutral-600">
           {{ t('purchase_submissions.files_selected', { n: files.length }) }}
         </span>

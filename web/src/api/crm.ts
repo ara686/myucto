@@ -244,6 +244,7 @@ export interface ActionItemsResult {
   items: ActionItem[]
   total: number
   dismissed_count: number
+  dismissed_types?: string[]
 }
 
 export interface CashFlowWeek {

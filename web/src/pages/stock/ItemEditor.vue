@@ -159,6 +159,7 @@ const form = ref<StockItemPayload>({
   sku: '',
   name: '',
   item_type: 'goods',
+  eet_item_kind: 'standard',
   unit: 'ks',
   tracking_mode: 'none',
   ean: null,
@@ -1116,6 +1117,7 @@ async function loadProduct(id: number) {
     sku: p.sku,
     name: p.name,
     item_type: p.item_type,
+    eet_item_kind: p.eet_item_kind ?? 'standard',
     unit: p.unit,
     tracking_mode: p.tracking_mode ?? 'none',
     ean: p.ean,
@@ -1526,6 +1528,17 @@ function onImgError(e: Event) {
                 <option value="product">{{ t('stock.item_type.product') }}</option>
               </select>
             </div>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-neutral-700 mb-1">{{ t('stock.items.eet_kind.label') }}</label>
+            <select v-model="form.eet_item_kind" data-test="stock-eet-kind" class="w-full h-10 px-3 border border-neutral-300 rounded-md bg-surface focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 outline-none">
+              <option value="standard">{{ t('stock.items.eet_kind.standard') }}</option>
+              <option value="specific_voucher">{{ t('stock.items.eet_kind.specific_voucher') }}</option>
+              <option value="stored_value">{{ t('stock.items.eet_kind.stored_value') }}</option>
+            </select>
+            <p class="text-xs text-neutral-500 mt-1">{{ form.eet_item_kind === 'stored_value' ? t('stock.items.eet_kind.hint_stored_value')
+              : form.eet_item_kind === 'specific_voucher' ? t('stock.items.eet_kind.hint_specific_voucher') : t('stock.items.eet_kind.hint_standard') }}</p>
           </div>
 
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">

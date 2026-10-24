@@ -3118,6 +3118,9 @@ paths:
 
         Force-delete nedraftové faktury maže i její zápisy v deníku, proto je to
         účetní úkon: přes API token vrací 403 `token_write_forbidden`.
+
+        Doklad s historií evidence tržeb (platební událost, QR záměr, tržba EET)
+        nelze smazat ani s `force=1` (409 `eet_history_exists`); jde jen stornovat.
       parameters:
         - in: query
           name: force
@@ -3136,7 +3139,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
         '409':
-          description: Doklad je uzamčený nebo nelze bezpečně stornovat jeho účetní či skladový zápis
+          description: Doklad je uzamčený, nelze bezpečně stornovat jeho účetní či skladový zápis, nebo má historii EET (`eet_history_exists`)
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -3292,24 +3295,54 @@ paths:
         U faktury doplní platbu na zbývající kladnou částku. U dobropisu
         zaznamená dokončenou vratku pouze změnou stavu a data, bez kladného
         záznamu v `invoice_payments`.
+
+        Firma s aktivní evidencí tržeb posílá okolnosti platby
+        (`InvoicePaymentEetContext`); evidovaná tržba vyžaduje `Idempotency-Key`
+        a odpověď nese `eet`, platba mimo evidenci `eet_decision`. Platba faktury
+        v cizí měně se do EET uvádí v Kč přepočtená kurzem úhrady ke dni přijetí
+        (`eet.amount_czk`, `eet.exchange_rate`); chybí-li kurz, vrací 422
+        `eet_fx_rate_unavailable`.
+
+        Dobropis, jehož opravovaná faktura má evidované tržby: klient posílá, jak
+        peníze vrátil (`channel`, `contact_context`, nebo `eet_context = remote_transfer`).
+        Kontaktní vrácení (hotově, kartou na terminálu na místě) vytvoří záporné
+        opravy tržeb faktury od nejnovější, nejvýš do jejich neopravené části;
+        odpověď nese `eet` (`CreditNoteRefundEetResult`, případně s varováním) a
+        datum vrácení je dnešek. Vrácení převodem na účet jde původní cestou
+        s `eet_decision`. Faktura bez evidované tržby (zaplacená převodem z domova)
+        ani firma bez aktivní evidence se nemění. `Idempotency-Key` se u vrácení
+        nevyžaduje, opakované označení druhou opravu nezaloží.
+      parameters:
+        - $ref: '#/components/parameters/EetIdempotencyKey'
       requestBody:
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                paid_at:
-                  type: string
-                  format: date
-                  description: Datum platby nebo vratky (default = dnes)
+              allOf:
+                - $ref: '#/components/schemas/InvoicePaymentEetContext'
+                - type: object
+                  properties:
+                    paid_at:
+                      type: string
+                      format: date
+                      description: Datum platby nebo vratky (default = dnes)
       responses:
         '200':
           description: OK
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Invoice' }
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Invoice'
+                  - type: object
+                    properties:
+                      eet:
+                        oneOf:
+                          - $ref: '#/components/schemas/InvoicePaymentEetResult'
+                          - $ref: '#/components/schemas/CreditNoteRefundEetResult'
+                      eet_decision: { $ref: '#/components/schemas/EetDecision' }
         '400':
-          description: "Neplatné datum platby (`invalid_date`)"
+          description: "Neplatné datum platby (`invalid_date`) nebo chybí/je neplatná hlavička `Idempotency-Key` u evidované tržby (`idempotency_key_required`, `idempotency_key_invalid`, vyhrazená předpona `sys:` = `idempotency_key_reserved`)"
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -3322,7 +3355,22 @@ paths:
           description: |
             Doklad nelze označit za uhrazený, protože není vystavený ani odeslaný
             (`invalid_state`), běžná faktura nemá kladnou částku k úhradě
-            (`invalid_amount`) nebo operaci odmítla evidence úhrad (`invalid_payment`).
+            (`invalid_amount`), operaci odmítla evidence úhrad (`invalid_payment`),
+            stejný `Idempotency-Key` přišel s jiným tělem (`idempotency_conflict`)
+            nebo externí tržba se stejnou trojicí EIČ + id_pokl + porad_cis má jiný
+            obsah (`eet_external_duplicate`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: |
+            Firma eviduje tržby a chybí okolnosti platby (`eet_context_required`),
+            jsou neplatné (`eet_validation`), scénář evidence není podporovaný
+            (`eet_unsupported_scenario`), chybí nastavení EET (`eet_not_configured`)
+            nebo by úhrada kryla dluh blokovaný potvrzeným QR příkazem čekajícím na banku
+            (`eet_qr_pending`; neprovedenou QR platbu řeší oprava EET `failed_payment`).
+            Platbu v cizí měně nejde přepočítat, protože pro den platby chybí kurz
+            (`eet_fx_rate_unavailable`).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -3371,25 +3419,38 @@ paths:
         Přidá platbu v měně faktury. Pokud suma plateb pokryje `amount_to_pay`
         (tolerance 0,05), faktura se označí jako zaplacená (`paid_at` = datum
         poslední platby). Stávající `mark-paid` je zkratka „platba na zbytek".
+
+        Firma s aktivní evidencí tržeb posílá okolnosti platby
+        (`InvoicePaymentEetContext`). Evidovaná tržba (hotovost, terminál nebo QR na
+        místě…) jde přes společný platební příkaz s `Idempotency-Key`: jedna platební
+        událost, jedna úhrada a jeden EET záznam, odpověď nese `eet`. Platba mimo
+        evidenci (např. `eet_context = remote_transfer`) se zapíše jako dosud
+        a odpověď nese `eet_decision`. Úhrada tržby, kterou evidoval e-shop
+        (`eet_context = external`, volitelně `external_eet`), se zapíše účetně
+        a odpověď nese `eet` se stavem záznamu `external` (neodesílá se).
+      parameters:
+        - $ref: '#/components/parameters/EetIdempotencyKey'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              required: [amount]
-              properties:
-                amount:
-                  type: number
-                  format: float
-                  description: Částka platby v měně faktury (> 0)
-                paid_on:
-                  type: string
-                  format: date
-                  description: Datum platby (default = dnes)
-                variable_symbol: { type: [string, "null"], maxLength: 20 }
-                bank_reference: { type: [string, "null"], maxLength: 120 }
-                note: { type: [string, "null"], maxLength: 255 }
+              allOf:
+                - $ref: '#/components/schemas/InvoicePaymentEetContext'
+                - type: object
+                  required: [amount]
+                  properties:
+                    amount:
+                      type: number
+                      format: float
+                      description: Částka platby v měně faktury (> 0)
+                    paid_on:
+                      type: string
+                      format: date
+                      description: Datum platby (default = dnes)
+                    variable_symbol: { type: [string, "null"], maxLength: 20 }
+                    bank_reference: { type: [string, "null"], maxLength: 120 }
+                    note: { type: [string, "null"], maxLength: 255 }
       responses:
         '200':
           description: OK
@@ -3405,8 +3466,34 @@ paths:
                   payment: { $ref: '#/components/schemas/InvoicePayment' }
                   became_paid: { type: boolean }
                   remaining: { type: number, format: float }
+                  eet: { $ref: '#/components/schemas/InvoicePaymentEetResult' }
+                  eet_decision: { $ref: '#/components/schemas/EetDecision' }
+        '400':
+          description: |
+            Chybí částka (`invalid_amount`) nebo u evidované tržby hlavička
+            `Idempotency-Key` (`idempotency_key_required`, `idempotency_key_invalid`, vyhrazená předpona `sys:` = `idempotency_key_reserved`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '409':
-          description: Neplatný stav/částka (draft, storno, dobropis…)
+          description: |
+            Neplatný stav/částka (draft, storno, dobropis…; `invalid_payment`),
+            stejný `Idempotency-Key` s jiným tělem (`idempotency_conflict`) nebo
+            externí tržba se stejnou trojicí EIČ + id_pokl + porad_cis a jiným obsahem
+            (`eet_external_duplicate`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: |
+            Firma eviduje tržby a chybí okolnosti platby (`eet_context_required`),
+            jsou neplatné (`eet_validation`), scénář evidence není podporovaný
+            (`eet_unsupported_scenario`), chybí nastavení EET (`eet_not_configured`)
+            nebo by úhrada kryla dluh blokovaný potvrzeným QR příkazem čekajícím na banku
+            (`eet_qr_pending`; neprovedenou QR platbu řeší oprava EET `failed_payment`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   /api/v1/invoices/{id}/payments/{paymentId}:
     parameters:
@@ -3427,6 +3514,8 @@ paths:
         unmatch v detailu výpisu. Platbu s vystaveným daňovým dokladem k přijaté
         platbě lze smazat až po smazání/stornu dokladu. Pokud po smazání přestane
         být doklad pokrytý, vrátí se ze stavu `paid` zpět (`sent`/`issued`).
+        Úhradu zachycenou jako evidovaná tržba EET smazat nelze (409
+        `eet_history_exists`); vrácení peněz se zadává jako oprava EET.
       responses:
         '200':
           description: OK
@@ -3442,7 +3531,12 @@ paths:
                   became_unpaid: { type: boolean }
                   remaining: { type: number, format: float }
         '409':
-          description: Platba je zamčená (bankovní vazba / daňový doklad)
+          description: |
+            Platba je zamčená (bankovní vazba / daňový doklad; `payment_locked`) nebo
+            má evidenci tržeb EET (`eet_history_exists`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   /api/v1/invoices/{id}/payments/{paymentId}/tax-document:
     parameters:
@@ -4045,6 +4139,154 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
         '404': { description: "Faktura nenalezena, nebo je web faktura na instalaci vypnutá (`public_links_disabled`)" }
 
+  /api/v1/invoices/{id}/receipt-link:
+    parameters:
+      - $ref: '#/components/parameters/SupplierIdHeader'
+      - in: path
+        name: id
+        required: true
+        schema: { type: integer, format: int64 }
+    post:
+      tags: [InvoiceComms]
+      summary: Veřejná účtenka — nový odkaz /r/{token} pro zákazníka
+      description: |
+        Vytvoří neuhodnutelný odkaz `/r/{token}` na účtenku zaplaceného dokladu
+        (rychlá účtenka, zjednodušený daňový doklad, faktura zaplacená na místě).
+        Zákazník si ji bez přihlášení načte z QR kódu: firma, číslo a datum
+        dokladu, položky, rekapitulace DPH, celkem, způsob úhrady a údaje EET
+        (EIČ, provozovna, pokladní zařízení, pořadové číslo, čas, POK, je-li).
+
+        Token má 256 bitů a ukládá se jen jeho otisk, proto ho vrací jen tahle
+        odpověď. Každé volání vytvoří nový odkaz; dřívější platí dál, dokud
+        nevyprší nebo je neodvolá `DELETE`. Platnost je `ttl_days` (1 až 365),
+        výchozí z konfigurace instalace (90 dní). Při vypnutých veřejných odkazech
+        (`invoices.public_links` v cfg.php) 404 `public_links_disabled`.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ttl_days: { type: integer, minimum: 1, maximum: 365 }
+      responses:
+        '201':
+          description: Vytvořený odkaz
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReceiptLink' }
+        '404': { description: "Faktura nenalezena, nebo jsou veřejné odkazy vypnuté (`public_links_disabled`)" }
+        '409':
+          description: Doklad není vystavený (`receipt_not_issued`), není to faktura (`receipt_invalid_type`) nebo není zaplacený (`receipt_not_paid`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: Neplatná platnost odkazu (`validation_failed`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    delete:
+      tags: [InvoiceComms]
+      summary: Veřejná účtenka — odvolá všechny platné odkazy dokladu
+      responses:
+        '200':
+          description: Počet odvolaných odkazů
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  revoked: { type: integer }
+        '404': { description: "Faktura nenalezena, nebo jsou veřejné odkazy vypnuté (`public_links_disabled`)" }
+
+  /api/v1/mobile/receipts:
+    parameters:
+      - $ref: '#/components/parameters/SupplierIdHeader'
+    post:
+      tags: [Invoices]
+      summary: Rychlá účtenka — doklad, okamžitá úhrada a tržba EET v jedné transakci
+      description: |
+        Prodej bez předchozí faktury (mobilní aplikace, pokladna). V jedné
+        transakci vznikne vystavený doklad s položkami, jeho úhrada a případná
+        tržba EET:
+
+        - bez `client_id` zjednodušený daňový doklad (§ 30 ZDPH) na koncového
+          zákazníka; nad limit zjednodušeného dokladu 422 `client_required`
+          (vyberte odběratele, vystaví se běžný daňový doklad),
+        - číslo z řady dokladů (vlastní řada zjednodušených dokladů, je-li
+          nastavená), DPH a rekapitulace z řádků, sazby z číselníku k dnešku,
+        - `cash` s pokladnou (`cash_register_id`, jinak pokladna zařízení EET):
+          příjmový pokladní doklad k dokladu; jedna úhrada a jedna tržba,
+        - `card_terminal`, `stored_value` a hotovost bez pokladny: úhrada dokladu
+          přes společný platební příkaz EET.
+
+        Firma bez aktivní EET dostane doklad a úhradu bez tržby (`eet.decision =
+        inactive`). Tržba se odesílá až po uložení; odpověď nese oddělené stavy
+        peněz, dokladu a EET (`states`) jako `/api/eet/payments`. `received_amount`
+        (jen hotovost) slouží jen k výpočtu vráceno (`payment.change_amount`).
+        `public_receipt_url` = odkaz na veřejnou účtenku pro zákazníka (QR).
+
+        Vyžaduje `invoices.create`, `invoices.issue`, `invoices.mark_paid`
+        a u firmy s aktivní EET `eet.accept_payment`. Token se scope `read_write`.
+        Datum dokladu je dnešek a nesmí ležet v uzavřeném účetním období.
+        Opakování se stejným `Idempotency-Key` vrátí původní účtenku (200,
+        `idempotent_replay = true`), jiné tělo 409 `idempotency_conflict`.
+        Doklad se vystavuje jen v Kč (jinak 422 `currency_unsupported`).
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          description: 8 až 80 znaků (písmena, číslice, `.` `_` `:` `-`); předpona `sys:` je vyhrazená.
+          schema: { type: string, minLength: 8, maxLength: 80 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/QuickReceiptInput' }
+      responses:
+        '201':
+          description: Vystavená a zaplacená účtenka
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QuickReceipt' }
+        '200':
+          description: Opakovaný požadavek se stejným klíčem a tělem — původní účtenka
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QuickReceipt' }
+        '400':
+          description: Chybí nebo je neplatná hlavička `Idempotency-Key` (`idempotency_key_required`, `idempotency_key_invalid`, `idempotency_key_reserved`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Chybí oprávnění (`forbidden`), licence, nebo token nemá scope `read_write` (`insufficient_scope`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Odběratel (`client_not_found`), pokladní zařízení (`device_not_found`) nebo pokladna (`cash_register_not_found`) nepatří firmě
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Stejný `Idempotency-Key` s jiným tělem (`idempotency_conflict`), uzavřené období (`period_closed`) nebo nedostatek zboží (`stock.error.*`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: |
+            Neplatný vstup (`validation_failed`), účtenka nad limit zjednodušeného
+            dokladu bez odběratele (`client_required`), daňová brána vystavení
+            (`not_vat_payer_at_date`, `simplified_document_not_allowed`), cizí měna
+            (`currency_unsupported`), hotovost nešla do pokladny
+            (`cash_settlement_failed`) nebo odmítnutí EET (`eet_validation`,
+            `eet_unsupported_scenario`, `eet_device_required`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /api/v1/invoices/{id}/pdfs:
     parameters:
       - $ref: '#/components/parameters/SupplierIdHeader'
@@ -4526,7 +4768,9 @@ paths:
     post:
       tags: [InvoiceOps]
       summary: Vrátí fakturu z „paid" zpět do „issued"
-      description: "Reverzace omylem označené platby. Audit log: `invoice.unmark_paid`."
+      description: |
+        Reverzace omylem označené platby. Audit log: `invoice.unmark_paid`.
+        Úhrady zachycené jako evidovaná tržba EET se nemažou (409 `eet_history_exists`).
       responses:
         '200':
           description: OK
@@ -4534,7 +4778,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Invoice' }
         '409':
-          description: Faktura není ve stavu `paid`
+          description: Faktura není ve stavu `paid` (`invalid_state`), má bankovní vazbu nebo daňový doklad, nebo úhradu s evidencí EET (`eet_history_exists`)
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -4660,6 +4904,11 @@ paths:
                     allOf:
                       - $ref: '#/components/schemas/Invoice'
                     description: Původní faktura po stornu (status `cancelled`).
+                  eet_warning:
+                    type: string
+                    description: |
+                      Jen u faktury s dosud neopravenou tržbou EET: storno tržbu
+                      neopravuje, vrácení peněz se zadává jako oprava EET.
         '201':
           description: "Vytvořen draft dobropisu (`mode: credit_note`)"
           content:
@@ -4671,6 +4920,9 @@ paths:
                   edit_url:
                     type: string
                     description: Relativní odkaz do editoru draftu dobropisu.
+                  eet_warning:
+                    type: string
+                    description: Jen u faktury s dosud neopravenou tržbou EET (dobropis tržbu neopravuje).
         '400':
           description: "Chybí nebo neplatný `mode` (`invalid_mode`)"
           content:
@@ -4692,8 +4944,9 @@ paths:
             jde o stornovací doklad (`invalid_type`), je to dobropis a `mode` není
             `internal` (`invalid_mode`), doklad byl mezitím zaúčtován (`document_locked`),
             existuje navazující finální faktura k daňovému dokladu k přijaté platbě
-            (`advance_tax_document_settled`), nebo brání pokladní doklad (`cash_*`),
-            zápis v deníku (`journal_*`) či skladový pohyb (`stock.error.*`).
+            (`advance_tax_document_settled`), nebo brání pokladní doklad (`cash_*`,
+            např. `cash_eet_history_exists`: hotovostní vyrovnání s evidovanou tržbou
+            EET se samo neruší), zápis v deníku (`journal_*`) či skladový pohyb (`stock.error.*`).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -10338,6 +10591,10 @@ paths:
                     items: { $ref: '#/components/schemas/CrmActionItem' }
                   total: { type: integer }
                   dismissed_count: { type: integer }
+                  dismissed_types:
+                    type: array
+                    description: Typy položek, které má uživatel právě odložené (i klientské, např. `pwa_install`).
+                    items: { type: string }
 
   /api/v1/crm/cash-flow-forecast:
     get:
@@ -17542,11 +17799,21 @@ paths:
         (`purpose=purchase_payment`) bez vyplněného `partner_name` doplní server partnera
         z odběratele (FV) nebo dodavatele (PF) placeného dokladu; nevyplněné `partner_ic`
         a `partner_dic` převezme z téhož kontaktu. Zadaný partner má přednost.
+
+        Evidence tržeb (EET): příjmový doklad účelu `sale` nebo `invoice_payment` u firmy
+        s aktivní evidencí zaúčtování zaeviduje jako hotovostní tržbu. Zařízení: `eet_device_id`,
+        jinak zařízení namapované na pokladnu, jinak výchozí zařízení firmy; bez zařízení doklad
+        nezaúčtuje (422 `cash.error.eet_device_required`). Čas tržby se odvodí z dokladu (dnešní
+        doklad = teď, jinak čas pořízení ve dni vystavení, jinak poledne dne vystavení). Úhrada
+        faktury z dokladu sdílí s tržbou jednu platební událost (druhá tržba nevznikne) a nesmí
+        krýt dluh blokovaný potvrzeným QR příkazem čekajícím na banku (422
+        `cash.error.eet_qr_pending`). Povinnou tržbu mimo podporovaný rozsah (cizí měna) doklad
+        nezaúčtuje (422 `cash.error.eet_unsupported_scenario`).
       parameters:
         - $ref: '#/components/parameters/SupplierIdHeader'
       requestBody:
         required: true
-        content: { application/json: { schema: { type: object, required: [register_id, doc_type, purpose, issue_date, description, total_amount], properties: { register_id: { type: integer }, doc_type: { type: string, enum: [in, out] }, purpose: { type: string, enum: [sale, purchase, invoice_payment, purchase_payment, transfer, other] }, issue_date: { type: string, format: date }, tax_date: { type: string, format: date }, partner_name: { type: string }, partner_ic: { type: string }, partner_dic: { type: string }, description: { type: string }, vat_mode: { type: string, enum: [none, vat] }, total_amount: { type: number }, amount_foreign: { type: number, nullable: true, description: "Částka v měně pokladny u valutové pokladny (§11); CZK ekvivalent do total_amount dopočítá server" }, fx_rate: { type: number, description: "Ruční kurz; vynechte, ať se použije kurz ČNB k datu vystavení" }, vat_lines: { type: array, items: { type: object, properties: { vat_rate: { type: number }, base_amount: { type: number }, vat_amount: { type: number }, vat_deduction: { type: string, enum: [full, none, proportional, reduced], default: full, description: "Rozsah nároku na odpočet DPH řádku (§ 75/76)" }, vat_deduction_percent: { type: number, default: 100, description: "Poměrný / skutečný roční koeficient odpočtu v procentech (0–100)" }, tax_treatment: { type: string, enum: [deductible, non_deductible, not_expense], default: deductible, description: "Uznatelnost řádku pro daň z příjmů (§ 24/25), nezávislá na DPH" }, is_fixed_asset: { type: boolean, default: false, description: "Pořízení dlouhodobého majetku (§ 4 odst. 4) — hodnota se v přiznání uvede navíc na ř. 47. Uplatní se jen u výdajového dokladu (doc_type=out); u příjmového se ignoruje." } } } }, invoice_id: { type: integer }, purchase_invoice_id: { type: integer }, rule_key: { type: string }, counter_account_code: { $ref: '#/components/schemas/CashDocumentCounterAccountCode' }, post: { type: boolean, default: true } } } } }
+        content: { application/json: { schema: { type: object, required: [register_id, doc_type, purpose, issue_date, description, total_amount], properties: { register_id: { type: integer }, doc_type: { type: string, enum: [in, out] }, purpose: { type: string, enum: [sale, purchase, invoice_payment, purchase_payment, transfer, other] }, issue_date: { type: string, format: date }, tax_date: { type: string, format: date }, partner_name: { type: string }, partner_ic: { type: string }, partner_dic: { type: string }, description: { type: string }, vat_mode: { type: string, enum: [none, vat] }, total_amount: { type: number }, amount_foreign: { type: number, nullable: true, description: "Částka v měně pokladny u valutové pokladny (§11); CZK ekvivalent do total_amount dopočítá server" }, fx_rate: { type: number, description: "Ruční kurz; vynechte, ať se použije kurz ČNB k datu vystavení" }, vat_lines: { type: array, items: { type: object, properties: { vat_rate: { type: number }, base_amount: { type: number }, vat_amount: { type: number }, vat_deduction: { type: string, enum: [full, none, proportional, reduced], default: full, description: "Rozsah nároku na odpočet DPH řádku (§ 75/76)" }, vat_deduction_percent: { type: number, default: 100, description: "Poměrný / skutečný roční koeficient odpočtu v procentech (0–100)" }, tax_treatment: { type: string, enum: [deductible, non_deductible, not_expense], default: deductible, description: "Uznatelnost řádku pro daň z příjmů (§ 24/25), nezávislá na DPH" }, is_fixed_asset: { type: boolean, default: false, description: "Pořízení dlouhodobého majetku (§ 4 odst. 4) — hodnota se v přiznání uvede navíc na ř. 47. Uplatní se jen u výdajového dokladu (doc_type=out); u příjmového se ignoruje." } } } }, invoice_id: { type: integer }, purchase_invoice_id: { type: integer }, rule_key: { type: string }, counter_account_code: { $ref: '#/components/schemas/CashDocumentCounterAccountCode' }, post: { type: boolean, default: true }, eet_device_id: { type: integer, description: "Zařízení EET pro tržbu, když pokladna žádné namapované nemá" } } } } }
       responses:
         '201': { description: Vytvořeno, content: { application/json: { schema: { type: object } } } }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -17630,6 +17897,7 @@ paths:
         Varování chodí jen tehdy, když doklad číslo skutečně měl (`doc_number != null`) —
         po draftu smazaném přes `?force=1` žádná díra nevzniká.
         Preferovanou cestou je storno (`/reverse`), které auditní stopu zachová.
+        Doklad s evidovanou tržbou EET smazat nelze (409 `cash.error.eet_history_exists`).
       parameters:
         - $ref: '#/components/parameters/SupplierIdHeader'
         - { in: path, name: id, required: true, schema: { type: integer } }
@@ -17637,16 +17905,23 @@ paths:
       responses:
         '200': { description: "OK — `{deleted, warnings}`; s `?force=1` navíc `doc_number` a `deleted_entry_ids`", content: { application/json: { schema: { type: object } } } }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '409': { description: "Doklad má živou vazbu z jiné agendy (kód `cash.error.has_dependencies`, `error.blocked_by` uvádí počty po druzích) — typicky je použit jako doklad o vyplacení mezd. Nebo z úhrady zálohy už vznikl navazující doklad (`cash.error.followup_document_exists`) a je potřeba zrušit nejdřív ten." }
+        '409': { description: "Doklad má živou vazbu z jiné agendy (kód `cash.error.has_dependencies`, `error.blocked_by` uvádí počty po druzích) — typicky je použit jako doklad o vyplacení mezd. Nebo z úhrady zálohy už vznikl navazující doklad (`cash.error.followup_document_exists`) a je potřeba zrušit nejdřív ten. Nebo má doklad evidovanou tržbu EET (`cash.error.eet_history_exists`), jde jen stornovat." }
         '422': { $ref: '#/components/responses/ValidationFailed' }
 
   /api/v1/accounting/cash-documents/{id}/post:
     post:
       tags: [Accounting]
       summary: Zaúčtování draftu (idempotentní na dvojklik) — účetní|admin
+      description: |
+        Příjmový doklad `sale` / `invoice_payment` u firmy s aktivní evidencí tržeb vytvoří
+        při zaúčtování tržbu EET (viz založení dokladu); `eet_device_id` volí zařízení, když
+        pokladna žádné namapované nemá.
       parameters:
         - $ref: '#/components/parameters/SupplierIdHeader'
         - { in: path, name: id, required: true, schema: { type: integer } }
+      requestBody:
+        required: false
+        content: { application/json: { schema: { type: object, properties: { eet_device_id: { type: integer } } } } }
       responses:
         '200': { description: OK, content: { application/json: { schema: { type: object } } } }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -17666,12 +17941,18 @@ paths:
         `warnings` nesou klíče `cash.warning.*`: `reversal_date_shifted` (protizápis
         skončil u jiného data než původní zápis) a `negative_balance_after_reverse`
         (pokladna je po stornu v mínusu). Nejsou to chyby — storno proběhlo.
+
+        Storno dokladu s evidovanou tržbou EET je vrácení peněz z pokladny: vytvoří zápornou
+        opravu EET celé dosud neopravené části (důvod `eet_correction_reason`, default `refund`;
+        `wrong_data` / `duplicate` u chybně pořízeného dokladu). Oprava je idempotentně vázaná
+        na doklad a odešle se po commitu. Zařízení opravy volí `eet_device_id`; jinak původní
+        zařízení, je-li aktivní, jinak výchozí nebo jiné aktivní zařízení téže provozovny.
       parameters:
         - $ref: '#/components/parameters/SupplierIdHeader'
         - { in: path, name: id, required: true, schema: { type: integer } }
       requestBody:
         required: true
-        content: { application/json: { schema: { type: object, required: [reason], properties: { reason: { type: string, minLength: 3 }, entry_date: { type: string, format: date, description: "Datum protizápisu; vynechte, ať se použije datum původního zápisu" } } } } }
+        content: { application/json: { schema: { type: object, required: [reason], properties: { reason: { type: string, minLength: 3 }, entry_date: { type: string, format: date, description: "Datum protizápisu; vynechte, ať se použije datum původního zápisu" }, eet_correction_reason: { type: string, enum: [refund, wrong_data, duplicate], description: "Důvod opravy EET u dokladu s evidovanou tržbou (default refund)" }, eet_device_id: { type: integer, description: "Zařízení EET pro opravu, když původní není aktivní" } } } } }
       responses:
         '200': { description: OK, content: { application/json: { schema: { type: object, properties: { reversal_entry_id: { type: [integer, "null"] }, warnings: { type: array, items: { type: string } } } } } } }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -20148,6 +20429,8 @@ paths:
                   - goods
                   - product
                   default: goods
+                eet_item_kind:
+                  $ref: '#/components/schemas/StockItemEetKind'
                 unit:
                   type: string
                   default: ks
@@ -20238,6 +20521,7 @@ paths:
                 sku: { type: string, maxLength: 50 }
                 name: { type: string, maxLength: 255 }
                 item_type: { type: string, enum: [material, goods, product] }
+                eet_item_kind: { $ref: '#/components/schemas/StockItemEetKind' }
                 unit: { type: string }
                 tracking_mode: { type: string, enum: [none, lot, serial] }
                 ean: { type: [string, "null"] }
@@ -33186,6 +33470,17 @@ components:
         HTTP vývoji změnit konfigurací; produkční výchozí používá prefix `__Host-`.
 
   parameters:
+    EetIdempotencyKey:
+      in: header
+      name: Idempotency-Key
+      required: false
+      description: |
+        Povinné, když firma eviduje tržby (EET) a platba podle okolností tržbou je.
+        8 až 80 znaků (písmena, číslice, `.` `_` `:` `-`). Stejný klíč se stejným tělem
+        vrátí původní výsledek (`eet.idempotent_replay = true`), s jiným tělem 409
+        `idempotency_conflict`. Předpona `sys:` je vyhrazená interním klíčům serveru
+        (400 `idempotency_key_reserved`).
+      schema: { type: string, minLength: 8, maxLength: 80 }
     CashJournalClassificationFilter:
       in: query
       name: classification
@@ -33271,6 +33566,209 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
 
   schemas:
+    InvoicePaymentEetContext:
+      type: object
+      description: |
+        Okolnosti platby pro evidenci tržeb (EET). Firma bez aktivní evidence je
+        ignoruje. Firma s aktivní evidencí musí poslat `channel` (a u bezhotovostní
+        platby `contact_context`), nebo zkratku `eet_context = remote_transfer`
+        (převod z domova) či `eet_context = external` (tržbu evidoval e-shop sám),
+        jinak 422 `eet_context_required`. Klientské rozhodnutí „evidovat / neevidovat"
+        server nepřijímá, povinnost určuje sám.
+
+        `eet_context = external`: úhrada se zapíše běžnou účetní cestou a MyÚčto tržbu
+        jen zaznamená se stavem `external`, nikdy ji neodešle (žádné dvojí hlášení).
+        Volitelné `external_eet` nese údaje externí evidence. Stejná trojice
+        `eic` + `id_pokl` + `porad_cis` se převezme jen jednou: stejný obsah vrátí
+        původní výsledek (`eet.idempotent_replay = true`), jiný obsah 409
+        `eet_external_duplicate`. `Idempotency-Key` je u externí evidence volitelný.
+        API token s volbou „Úhrady z tohoto klíče eviduje EET externí systém" posílá
+        úhradu bez `eet_context` i bez `channel` jako `external`.
+      properties:
+        channel:
+          type: string
+          enum: [cash, card_terminal, qr_in_person, bank_transfer, card_online, cash_on_delivery, other, stored_value]
+          description: '`stored_value` = úhrada poukazem / kreditem (čerpání kreditu, `cerp_zuct`).'
+        contact_context:
+          type: string
+          enum: [in_person, on_premises, in_vehicle, remote, unknown]
+        business_purpose:
+          type: string
+          enum: [sale, order_deposit, credit_topup, credit_draw, security_deposit, other]
+          description: Default `sale`, u zálohové faktury `order_deposit`, u kanálu `stored_value` `credit_draw`.
+        device_id:
+          type: integer
+          format: int64
+          description: Pokladní zařízení EET (default = výchozí zařízení firmy).
+        received_at:
+          type: string
+          format: date-time
+          description: |
+            Okamžik přijetí platby (ISO 8601 se zónou, nejvýše 48 h zpět). U evidované
+            tržby určuje i datum úhrady; jiné `paid_on`/`paid_at` vrací 422.
+        eet_context:
+          type: string
+          enum: [remote_transfer, external]
+          description: |
+            `remote_transfer` = vzdálený bankovní převod (nepodléhá EET),
+            `external` = tržbu evidoval jiný systém (e-shop), MyÚčto ji jen zaznamená.
+        external_eet:
+          $ref: '#/components/schemas/ExternalEetRecord'
+        eet_device_id:
+          type: integer
+          format: int64
+          description: Pokladní zařízení pro zápornou tržbu při vrácení k dobropisu (alias `device_id`, default = výchozí zařízení firmy).
+    StockItemEetKind:
+      type: string
+      enum: [standard, specific_voucher, stored_value]
+      default: standard
+      description: |
+        Druh položky pro EET. `specific_voucher` = dárkový poukaz na konkrétní zboží
+        či službu (běžný prodej), `stored_value` = hodnotový poukaz na blíže
+        nespecifikované zboží nebo dobití kreditu (při prodeji jde jeho podíl do
+        `urceno_cerp_zuct`). Klientská role pole měnit nesmí.
+    ExternalEetRecord:
+      type: object
+      additionalProperties: false
+      description: |
+        Volitelné údaje tržby evidované externím systémem (formáty podle XSD EET).
+        `id_pokl` a `porad_cis` se uvádějí obě, nebo žádné; `eic` musí odpovídat
+        EIČ firmy v nastavení EET. Bez `dat_trzby` platí `received_at` (nebo teď),
+        bez `celk_trzba` částka platby v Kč.
+      properties:
+        pok: { type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}-[0-9a-fA-F]{2}$', description: Potvrzovací kód (39 znaků) }
+        eic: { type: string, pattern: '^CZ[0-9]{8,10}$' }
+        id_jednotky: { type: integer, minimum: 1, maximum: 999999999 }
+        id_pokl: { type: string, pattern: '^[0-9a-zA-Z.,:;/#\-_ ]{1,20}$' }
+        porad_cis: { type: string, pattern: '^[0-9a-zA-Z.,:;/#\-_ ]{1,25}$' }
+        dat_trzby: { type: string, format: date-time, description: 'RRRR-MM-DDThh:mm:ss s časovou zónou, ne v budoucnosti' }
+        celk_trzba: { type: string, description: Celková částka tržby v Kč (kladná) }
+    InvoicePaymentEetResult:
+      type: object
+      additionalProperties: true
+      description: |
+        Platební událost evidované tržby: `payment_event_id`, oddělené stavy
+        `payment_order_status` / `bank_verification_status` /
+        `accounting_settlement_status`, `eet_decision`, `allocations`, `eet` (stav
+        odeslání, POK) a `idempotent_replay`. `amount` a `currency` jsou částka
+        a měna platby, `amount_czk` částka evidovaná v EET (vždy Kč), u cizí měny
+        s `exchange_rate` a `exchange_rate_source` (např. `cnb:2026-11-02`).
+    CreditNoteRefundEetResult:
+      type: object
+      description: |
+        Vrácení peněz k dobropisu zaevidované jako záporné opravy tržeb opravované
+        faktury. Částky `requested`, `refunded` a `not_recorded` jsou v měně
+        dobropisu, `refunded_czk` je součet vrácených částek v Kč (záporné tržby).
+      properties:
+        corrections:
+          type: array
+          items:
+            type: object
+            properties:
+              event_id: { type: integer, format: int64 }
+              record_id: { type: integer, format: int64 }
+              total_amount: { type: string, description: Záporná částka opravy v Kč }
+              original_amount: { type: [string, 'null'], description: Záporná částka v měně původní tržby }
+        requested: { type: string }
+        refunded: { type: string }
+        refunded_czk: { type: string }
+        not_recorded: { type: string, description: Část vrácení nad neopravenou evidovanou částku; do EET se nehlásí }
+        warning: { type: [string, 'null'] }
+        replayed: { type: boolean }
+    ReceiptLink:
+      type: object
+      properties:
+        token: { type: string, description: "64 hex znaků; vrací se jen při vytvoření" }
+        url: { type: string, example: "https://faktury.example.cz/r/3f2a…" }
+        expires_at: { type: string, format: date-time }
+    QuickReceiptItem:
+      type: object
+      required: [unit_price]
+      properties:
+        stock_item_id: { type: [integer, "null"], format: int64, description: "Skladová karta; bez popisu se vezme její název" }
+        description: { type: string, maxLength: 500, description: "Povinný bez skladové karty" }
+        quantity: { type: [number, string], default: 1, description: "Kladné, nejvýš 3 desetinná místa" }
+        unit: { type: string, maxLength: 20 }
+        unit_price: { type: [number, string], description: "Jednotková cena, nejvýš 2 desetinná místa" }
+        vat_rate: { type: [number, string], default: 0, description: "Sazba DPH v procentech (21, 12, 0)" }
+        prices_include_vat: { type: boolean, default: true, description: "Ceny s DPH (DPH shora); musí být stejné u všech položek" }
+    QuickReceiptInput:
+      type: object
+      required: [channel, items]
+      properties:
+        channel: { type: string, enum: [cash, card_terminal, stored_value] }
+        contact_context: { type: string, enum: [in_person, on_premises, in_vehicle, remote, unknown], default: in_person }
+        device_id: { type: [integer, "null"], format: int64, description: "Pokladní zařízení EET; výchozí zařízení firmy" }
+        cash_register_id: { type: [integer, "null"], format: int64, description: "Pokladna pro hotovost; výchozí pokladna zařízení" }
+        client_id: { type: [integer, "null"], format: int64, description: "Odběratel; bez něj zjednodušený doklad na koncového zákazníka" }
+        currency: { type: string, enum: [CZK], default: CZK }
+        received_amount: { type: [number, string, "null"], description: "Přijatá hotovost (jen cash), informativně" }
+        note: { type: [string, "null"], maxLength: 255, description: "Interní poznámka obsluhy, na doklad se netiskne" }
+        public_link: { type: boolean, default: true, description: "Vytvořit odkaz na veřejnou účtenku" }
+        items:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items: { $ref: '#/components/schemas/QuickReceiptItem' }
+    QuickReceipt:
+      type: object
+      properties:
+        receipt_id: { type: integer, format: int64 }
+        idempotent_replay: { type: boolean }
+        invoice:
+          type: object
+          properties:
+            id: { type: integer, format: int64 }
+            number: { type: string }
+            is_simplified: { type: boolean }
+            issue_date: { type: string, format: date }
+            status: { type: string }
+            currency: { type: string }
+            total_without_vat: { type: string }
+            total_vat: { type: string }
+            total_with_vat: { type: string }
+            vat_breakdown: { type: array, items: { type: object, additionalProperties: true } }
+            pdf_url: { type: string }
+        payment:
+          type: object
+          properties:
+            channel: { type: string }
+            payment_method: { type: string }
+            amount: { type: string }
+            received_amount: { type: [string, "null"] }
+            change_amount: { type: [string, "null"], description: "Vráceno = přijato − k úhradě" }
+            event:
+              oneOf:
+                - $ref: '#/components/schemas/InvoicePaymentEetResult'
+                - type: "null"
+        cash_document:
+          type: [object, "null"]
+          properties:
+            id: { type: integer, format: int64 }
+            doc_number: { type: string }
+            register_id: { type: integer, format: int64 }
+            status: { type: string }
+        states:
+          type: object
+          description: Oddělené stavy peněz, dokladu a EET
+          properties:
+            money: { type: string, description: "payment_order_status platby (settled, operator_confirmed)" }
+            document: { type: string, description: "Stav dokladu (paid)" }
+            eet: { type: string, description: "Stav záznamu EET (pending, confirmed…), bez záznamu rozhodnutí politiky (inactive, not_subject…)" }
+        eet:
+          type: object
+          properties:
+            decision: { type: string, enum: [required, voluntary, not_subject, unknown, unsupported, inactive] }
+            record: { type: [object, "null"], additionalProperties: true }
+        public_receipt_url: { type: [string, "null"] }
+        public_receipt_expires_at: { type: [string, "null"], format: date-time }
+    EetDecision:
+      type: object
+      properties:
+        decision: { type: string, enum: [required, voluntary, not_subject, unknown, unsupported, inactive] }
+        reason_code: { type: string }
+        message: { type: string }
+        policy_version: { type: string }
     PropertyAccountingCents:
       type: string
       pattern: ^-?(0|[1-9][0-9]*)$
@@ -40201,6 +40699,8 @@ components:
           type: string
         avg_unit_cost:
           type: string
+        eet_item_kind:
+          $ref: '#/components/schemas/StockItemEetKind'
         intrastat_cn8_code:
           type: [string, 'null']
           pattern: '^[0-9]{8}$'

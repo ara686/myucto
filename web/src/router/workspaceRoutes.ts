@@ -420,6 +420,10 @@ export function createWorkspaceRoutes(): RouteRecordRaw[] {
       { path: 'payment-cards',           name: 'payment-cards',       component: () => import('@/pages/company/PaymentCardsPage.vue'),  meta: { requiresSupplier: true } },
       { path: 'payment-cards/new',       name: 'payment-card-new',    component: () => import('@/pages/company/PaymentCardDetail.vue'), meta: { requiresSupplier: true } },
       { path: 'payment-cards/:id(\\d+)', name: 'payment-card-detail', component: () => import('@/pages/company/PaymentCardDetail.vue'), meta: { requiresSupplier: true } },
+      // Firma → EET: nastavení evidence tržeb (profil, jednotky, zařízení, certifikáty, diagnostika, aktivace).
+      { path: 'eet/settings',           name: 'eet-settings',        component: () => import('@/pages/company/EetSettingsPage.vue'),   meta: { requiresSupplier: true, staffOnly: true } },
+      { path: 'eet/records',            name: 'eet-records',         component: () => import('@/pages/eet/EetRecordsPage.vue'),        meta: { requiresSupplier: true, staffOnly: true } },
+      { path: 'eet/records/:id',        name: 'eet-record-detail',   component: () => import('@/pages/eet/EetRecordDetail.vue'),       meta: { requiresSupplier: true, staffOnly: true } },
       // Peníze → Kreditní karty: úvěrové účty ke kartě (231.x), import PDF výpisů, nastavení účtování.
       { path: 'credit-cards',            name: 'credit-cards',        component: () => import('@/pages/company/CreditCardsPage.vue'),   meta: { staffOnly: true, requiresSupplier: true } },
       { path: 'credit-cards/:id(\\d+)',  name: 'credit-card-detail',  component: () => import('@/pages/company/CreditCardDetail.vue'),  meta: { staffOnly: true, requiresSupplier: true } },
