@@ -267,6 +267,10 @@ final readonly class JmhzPreparationSnapshotService
                     $supplierId,
                     $this->employeeIds($input),
                 ),
+                $this->childIdentities->caregiverBirthNumbersFor(
+                    $supplierId,
+                    $this->employeeIds($input),
+                ),
             );
             $snapshotJson = $snapshot->canonicalJson();
             $snapshotFingerprint = $this->sensitiveData->keyedFingerprint(

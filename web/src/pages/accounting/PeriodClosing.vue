@@ -18,7 +18,8 @@ import {
   type LegalProvisionSection,
   type ProvisionsPreview,
   type IncomeTaxPreview,
-  type ProfitDistributionPreview,
+  type ProfitDistribution500Preview as ProfitDistributionPreview,
+  type ProfitDistribution504Preview,
   type ProfitDistributionAllocation,
   type SmallAssetAccrualPreview,
   type SmallAssetAccrualMode,
@@ -38,6 +39,11 @@ import FxSaldoDetails from '@/components/accounting/FxSaldoDetails.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import DateInput from '@/components/ui/DateInput.vue'
 import PaginationBar from '@/components/ui/PaginationBar.vue'
+import ResultDecision504 from '@/components/accounting/ResultDecision504.vue'
+import DeferredTax504Panel from '@/components/accounting/DeferredTax504Panel.vue'
+import AssetReserve504 from '@/components/accounting/AssetReserve504.vue'
+import LegalProvisions504 from '@/components/accounting/LegalProvisions504.vue'
+import FxRevaluation504 from '@/components/accounting/FxRevaluation504.vue'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -47,11 +53,13 @@ const pageId = useId()
 
 const periodId = Number(route.params.id)
 
-const STEP_ORDER: ClosingStepKey[] = [
+const BASE_STEP_ORDER: ClosingStepKey[] = [
   'precheck', 'depreciation', 'fx_revaluation', 'estimates', 'deferrals', 'provisions', 'income_tax', 'stock', 'close_books', 'open_next',
 ]
 
 const state = ref<ClosingState | null>(null)
+const stepOrder = computed<ClosingStepKey[]>(() => state.value?.accounting_framework === 'cz_504'
+  ? BASE_STEP_ORDER.flatMap(key => key === 'income_tax' ? [key, 'deferred_tax'] : [key]) : BASE_STEP_ORDER)
 const loading = ref(false)
 const busy = ref(false)
 const selected = ref<ClosingStepKey>('precheck')
@@ -113,7 +121,7 @@ async function load() {
   try {
     state.value = await closingApi.state(periodId)
     // Předvyber první nehotový krok — nerelevantní kroky přeskoč.
-    const firstPending = STEP_ORDER.find(
+    const firstPending = stepOrder.value.find(
       k => stepApplicable(k) && (stepsByKey.value[k]?.status ?? 'pending') === 'pending',
     )
     if (firstPending && (stepsByKey.value[selected.value]?.status ?? 'pending') !== 'pending') {
@@ -315,6 +323,7 @@ function validBankRows() {
 }
 
 async function loadFxPreview(withRows: boolean) {
+  if (state.value?.accounting_framework === 'cz_504') return
   fxLoading.value = true
   try {
     fxPreview.value = await closingApi.fxPreview(periodId, withRows ? validBankRows() : undefined)
@@ -630,7 +639,7 @@ function bookIncomeTax() {
 }
 
 watch(selected, (k) => {
-  if (k === 'provisions' && !provisionsPreview.value) loadProvisions()
+  if (k === 'provisions' && state.value?.accounting_framework !== 'cz_504' && !provisionsPreview.value) loadProvisions()
   if (k === 'income_tax' && !incomeTaxPreview.value) loadIncomeTax()
   if (k === 'deferrals' && !peAccrualPreview.value) loadPrepaidExpenseAccrual()
   if (k === 'deferrals' && !drAccrualPreview.value) loadDeferredRevenueAccrual()
@@ -641,6 +650,7 @@ watch(selected, (k) => {
 // ── D10: rozdělení výsledku hospodaření (431 → 428/429/364…) ────────────────
 const showProfitDistribution = ref(false)
 const pdPreview = ref<ProfitDistributionPreview | null>(null)
+const pd504Preview = ref<ProfitDistribution504Preview | null>(null)
 const pdAllocations = ref<ProfitDistributionAllocation[]>([])
 const pdDecisionDate = ref('')
 const pdWithholdingRate = ref(0.15)
@@ -651,7 +661,14 @@ const pdRemaining = computed(() => Math.abs(pdPreview.value?.available_profit ??
 async function openProfitDistribution() {
   showProfitDistribution.value = true
   try {
-    pdPreview.value = await closingApi.profitDistributionPreview(periodId)
+    const preview = await closingApi.profitDistributionPreview(periodId)
+    if (preview.accounting_framework === 'cz_504') {
+      pd504Preview.value = preview
+      pdPreview.value = null
+      return
+    }
+    pd504Preview.value = null
+    pdPreview.value = preview
     pdWithholdingRate.value = pdPreview.value.withholding_rate
     if (!pdAllocations.value.length) {
       pdAllocations.value = [{ account_code: pdPreview.value.is_loss ? '429' : '428', amount: 0, kind: pdPreview.value.is_loss ? 'loss_coverage' : 'retained' }]
@@ -786,7 +803,7 @@ function stepIcon(key: ClosingStepKey): string {
   const st = step(key)?.status ?? 'pending'
   if (st === 'done') return '✓'
   if (st === 'skipped') return '–'
-  return String(STEP_ORDER.indexOf(key) + 1)
+  return String(stepOrder.value.indexOf(key) + 1)
 }
 function stepIconClass(key: ClosingStepKey): string {
   if (!stepApplicable(key)) return 'bg-neutral-100 text-neutral-400'
@@ -819,9 +836,14 @@ const canOpenNextStage = computed(() => ['closed', 'reviewed', 'approved'].inclu
           </span>
         </p>
       </div>
-      <div class="flex items-center gap-2">
+      <div class="flex flex-wrap items-center gap-2">
         <RouterLink to="/accounting/periods" class="text-sm text-neutral-500 hover:text-neutral-700">
           {{ t('common.back') }}
+        </RouterLink>
+        <RouterLink v-if="state?.accounting_framework === 'cz_504' && auth.can('accounting')"
+          :to="{ name: 'accounting-nonprofit-tax', params: { id: periodId } }" :class="btnOutline('neutral')">
+          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path :d="ICONS.chart" /></svg>
+          {{ t('nonprofitTax.title') }}
         </RouterLink>
         <RouterLink v-if="auth.can('accounting')" :to="{ name: 'accounting-statement-notes', params: { id: periodId } }"
           :class="btnOutline('neutral')">
@@ -850,7 +872,7 @@ const canOpenNextStage = computed(() => ['closed', 'reviewed', 'approved'].inclu
     <div v-else-if="state" class="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4">
       <!-- Levý sloupec: kroky -->
       <div class="bg-surface border border-neutral-200 rounded-lg shadow-sm p-2 h-fit">
-        <button v-for="key in STEP_ORDER" :key="key" @click="selected = key"
+        <button v-for="key in stepOrder" :key="key" @click="selected = key"
           class="cursor-pointer w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-left text-sm"
           :class="selected === key ? 'bg-primary-50 text-primary-700 font-medium' : 'hover:bg-neutral-50'">
           <span class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold shrink-0"
@@ -971,7 +993,10 @@ const canOpenNextStage = computed(() => ['closed', 'reviewed', 'approved'].inclu
 
         <!-- 3) Kurzové rozdíly -->
         <template v-else-if="selected === 'fx_revaluation'">
-          <div v-if="!isClosing && step('fx_revaluation')?.status === 'pending'" class="text-sm text-neutral-500">
+          <FxRevaluation504 v-if="state.accounting_framework === 'cz_504'" :supplier-id="state.period.supplier_id" :period-id="state.period.id"
+            :row-version="rowVersion" :ends-on="state.period.ends_on" :can-write="isClosing && auth.canWrite('accounting.periods.close')"
+            :can-revert="!!state.can_revert_fx_revaluation" @updated="load" />
+          <div v-else-if="!isClosing && step('fx_revaluation')?.status === 'pending'" class="text-sm text-neutral-500">
             {{ t('accounting.closing.fx.needs_closing') }}
           </div>
           <template v-else>
@@ -1301,9 +1326,10 @@ const canOpenNextStage = computed(() => ['closed', 'reviewed', 'approved'].inclu
                       </tr>
                     </thead>
                     <tbody>
-                      <tr v-for="it in drAccrualPreview.items" :key="it.item_id" class="border-b border-neutral-100">
+                      <tr v-for="it in drAccrualPreview.items" :key="`${it.source}:${it.item_id}`" class="border-b border-neutral-100">
                         <td class="py-1 pr-2">
-                          <RouterLink :to="`/invoices/${it.invoice_id}`" class="text-primary-700 hover:underline">{{ it.invoice_number }}</RouterLink>
+                          <RouterLink v-if="it.invoice_id !== null" :to="`/invoices/${it.invoice_id}`" class="text-primary-700 hover:underline">{{ it.invoice_number }}</RouterLink>
+                          <span v-else>{{ it.invoice_number }}</span>
                           <span class="block text-xs text-neutral-400">{{ it.description }}</span>
                         </td>
                         <td class="py-1 px-2 whitespace-nowrap">{{ formatDate(it.accrual_from) }} – {{ formatDate(it.accrual_to) }}</td>
@@ -1367,10 +1393,12 @@ const canOpenNextStage = computed(() => ['closed', 'reviewed', 'approved'].inclu
 
         <!-- D9) Opravné položky k pohledávkám -->
         <template v-else-if="selected === 'provisions'">
-          <div v-if="!isClosing && step('provisions')?.status === 'pending'" class="text-sm text-neutral-500">
+          <AssetReserve504 v-if="state?.accounting_framework === 'cz_504' && auth.can('assets')" :period-id="periodId" :row-version="rowVersion" :can-write="auth.canWrite('accounting.periods.close')" :is-closing="isClosing" @updated="load" />
+          <LegalProvisions504 v-if="state?.accounting_framework === 'cz_504'" :period-id="periodId" :row-version="rowVersion" :can-write="auth.canWrite('accounting.periods.close')" :is-closing="isClosing" @updated="load" />
+          <div v-if="state?.accounting_framework !== 'cz_504' && !isClosing && step('provisions')?.status === 'pending'" class="text-sm text-neutral-500">
             {{ t('accounting.closing.assist.needs_closing') }}
           </div>
-          <template v-else>
+          <template v-else-if="state?.accounting_framework !== 'cz_504'">
             <div class="flex flex-wrap items-center gap-2">
               <button @click="loadProvisions()" :disabled="busy || provisionsLoading" :class="btnOutline('neutral')">
                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" :d="ICONS.cycle" /></svg>
@@ -1471,6 +1499,10 @@ const canOpenNextStage = computed(() => ['closed', 'reviewed', 'approved'].inclu
               {{ t('accounting.closing.step_done_at', { date: formatDate(step('provisions')?.done_at) }) }}
             </div>
           </template>
+        </template>
+
+        <template v-else-if="selected === 'deferred_tax' && state?.accounting_framework === 'cz_504'">
+          <DeferredTax504Panel :period-id="periodId" :row-version="rowVersion" :can-write="isClosing && auth.canWrite('accounting.periods.close') && !busy" @updated="load" />
         </template>
 
         <!-- D11) Splatná daň z příjmů -->
@@ -1787,8 +1819,8 @@ const canOpenNextStage = computed(() => ['closed', 'reviewed', 'approved'].inclu
       class="bg-surface border border-neutral-200 rounded-lg shadow-sm p-5 mt-4 space-y-3">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 class="text-lg font-semibold">{{ t('accounting.closing.profit_distribution.title') }}</h2>
-          <p class="text-sm text-neutral-500 mt-0.5">{{ t('accounting.closing.profit_distribution.description') }}</p>
+          <h2 class="text-lg font-semibold">{{ t(state.accounting_framework === 'cz_504' ? 'accounting.result504.title' : 'accounting.closing.profit_distribution.title') }}</h2>
+          <p v-if="state.accounting_framework !== 'cz_504'" class="text-sm text-neutral-500 mt-0.5">{{ t('accounting.closing.profit_distribution.description') }}</p>
         </div>
         <button v-if="!showProfitDistribution" @click="openProfitDistribution" :disabled="busy" :class="btnOutline('primary')">
           <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" :d="ICONS.coin" /></svg>
@@ -1796,6 +1828,7 @@ const canOpenNextStage = computed(() => ['closed', 'reviewed', 'approved'].inclu
         </button>
       </div>
 
+      <ResultDecision504 v-if="showProfitDistribution && pd504Preview" :period-id="periodId" :initial="pd504Preview" :can-write="auth.canWrite('accounting.periods.close')" @updated="load" />
       <template v-if="showProfitDistribution && pdPreview">
         <div class="text-sm flex flex-wrap gap-x-6 gap-y-1">
           <div>{{ t('accounting.closing.profit_distribution.target_period') }}: <strong>{{ pdPreview.target_period.fiscal_year }}</strong></div>

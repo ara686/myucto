@@ -178,7 +178,7 @@ final class SaldoService
      */
     private function buildAccount(int $supplierId, string $asOf, string $code, ?int $partnerId, array $balances, int $budget): ?array
     {
-        $acc = $this->saldo->resolveAccount($supplierId, $code);
+        $acc = $this->saldo->resolveAccount($supplierId, $code, $asOf);
         if ($acc === null) {
             return null;
         }

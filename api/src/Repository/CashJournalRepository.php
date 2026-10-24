@@ -144,6 +144,7 @@ final class CashJournalRepository
         $vp = $isVatPayer ? 1 : 0; // literál pro DPH prorata v agregacích (R7)
         $payerAtIp = VatStatusService::payerAtExpr((string) $sid, 'ip.paid_on', (string) $vp);
         $payerAtBank = VatStatusService::payerAtExpr((string) $sid, 'bt2.posted_at', (string) $vp);
+        $ipCoverage = self::ipCoverageSql($sid);
         $legs = [];
 
         // ── Noha A — hotovost (cash_documents posted) ────────────────────────
@@ -162,6 +163,9 @@ final class CashJournalRepository
                     ci.total_without_vat AS inv_without_vat, ci.total_vat AS inv_vat,
                     ci.total_with_vat AS inv_with_vat,
                     ci.income_tax_exempt AS inv_exempt, ci.status AS inv_status,
+                    CASE WHEN cip.id IS NOT NULL AND cip.amount <> 0
+                         THEN ROUND(cd.total_amount * (cip.amount - ccov.covered) / cip.amount, 2)
+                    END AS inv_overpaid,
                     cd.purchase_invoice_id AS purchase_invoice_id,
                     cpi.total_without_vat AS pi_without_vat, cpi.total_vat AS pi_vat,
                     cpi.total_with_vat AS pi_with_vat,
@@ -193,6 +197,12 @@ final class CashJournalRepository
                             FROM cash_document_vat_lines GROUP BY cash_document_id) cav
                       ON cav.cash_document_id = cd.id
                LEFT JOIN invoices ci          ON ci.id = cd.invoice_id AND ci.supplier_id = {$sid}
+               -- #247: pokladní úhrada faktury nese vazbu na konkrétní úhradu, a tedy i
+               -- na to, jakou část dokladu hradí a co je přeplatek (viz ipCoverageSql).
+               -- Doklad bez vazby (vratka k dobropisu) se dělí poměrem DPH jako dosud.
+               LEFT JOIN invoice_payments cip ON cip.id = cd.invoice_payment_id
+                                             AND cip.invoice_id = cd.invoice_id AND cip.supplier_id = {$sid}
+               LEFT JOIN ({$ipCoverage}) ccov ON ccov.ip_id = cip.id
                LEFT JOIN purchase_invoices cpi ON cpi.id = cd.purchase_invoice_id AND cpi.supplier_id = {$sid}
                LEFT JOIN de_movement_classification ccls
                       ON ccls.supplier_id = {$sid} AND ccls.source_type = 'cash' AND ccls.cash_document_id = cd.id
@@ -226,6 +236,22 @@ final class CashJournalRepository
             // kurz ke dni skutečného peněžního toku). Fallback na kurz faktury, když pro
             // dané datum/měnu chybí záznam v exchange_rates (NE tichý fallback na 1:1).
             $ipRateBank = $this->ipRateSql('i');
+            // #247: legacy 1:1 pohyb (jen matched_invoice_id, bez úhrady v invoice_payments)
+            // je úhradou sám. Krytou částku dokladu dopočítá stejné pravidlo jako
+            // ipCoverageSql, dříve uhrazeno = úhrady faktury s dřívějším datem. Pohyb v jiné
+            // měně, než je faktura, se s bruttem porovnat nedá, ten zůstává bez přeplatku.
+            $legacyPrior = "(SELECT COALESCE(SUM(lp.amount), 0) FROM invoice_payments lp
+                              WHERE lp.invoice_id = bi.id AND lp.supplier_id = {$sid}
+                                AND lp.paid_on < bt.posted_at)";
+            $legacyCovered = "ABS(LEAST(GREATEST(SIGN(bi.total_with_vat) * ({$legacyPrior} + bt.amount), 0), ABS(bi.total_with_vat))
+                                - LEAST(GREATEST(SIGN(bi.total_with_vat) * {$legacyPrior}, 0), ABS(bi.total_with_vat)))";
+            $legacyOverpaid =
+                "CASE WHEN binc.btid IS NULL AND bexp.btid IS NULL AND bi.id IS NOT NULL AND bt.amount <> 0
+                           AND COALESCE(NULLIF(bt.currency, ''), 'CZK')
+                               = COALESCE((SELECT lc.code FROM currencies lc WHERE lc.id = bi.currency_id AND lc.supplier_id = {$sid}), 'CZK')
+                      THEN ROUND(ROUND(ABS(bt.amount) * {$feeRate}, 2) * (ABS(bt.amount) - {$legacyCovered})
+                                 / ABS(bt.amount), 2)
+                 END";
             // #164: částka řádku je VŽDY skutečný bankovní pohyb. Součet navázaných úhrad
             // (binc/bexp) ho dřív přebíjel, takže duplicitní párování nafouklo výdaj
             // i zůstatek a nedopárovaný zbytek pohybu z deníku tiše zmizel. Alokace se
@@ -248,6 +274,8 @@ final class CashJournalRepository
                         bi.total_without_vat AS inv_without_vat, bi.total_vat AS inv_vat,
                         bi.total_with_vat AS inv_with_vat,
                         bi.income_tax_exempt AS inv_exempt, bi.status AS inv_status,
+                        CASE WHEN binc.btid IS NOT NULL THEN ABS(binc.czk_overpaid)
+                             ELSE {$legacyOverpaid} END AS inv_overpaid,
                         bexp.any_pi_id AS purchase_invoice_id,
                         bpi.total_without_vat AS pi_without_vat, bpi.total_vat AS pi_vat,
                         bpi.total_with_vat AS pi_with_vat,
@@ -276,9 +304,12 @@ final class CashJournalRepository
                                    <> COALESCE(NULLIF(ibt.currency, ''), 'CZK')) AS cross_ccy,
                                -- Paid gross contains rounding. Only the stored VAT is
                                -- excluded from income (same rule as CashJournalService::prorateBase).
+                               -- #247: poměrem DPH se dělí jen krytá část úhrady (bcov.covered,
+                               -- nejvýš do dosud neuhrazeného brutta faktury). Přeplatek nad
+                               -- brutto DPH nenese a celý zůstává v příjmu.
                                SUM(ROUND(CASE WHEN i.income_tax_exempt = 1 THEN 0
                                               WHEN {$payerAtIp} = 1 AND i.total_with_vat <> 0
-                                                   THEN ip.amount * (1 - LEAST(1, GREATEST(0, i.total_vat / i.total_with_vat)))
+                                                   THEN ip.amount - bcov.covered * LEAST(1, GREATEST(0, i.total_vat / i.total_with_vat))
                                               ELSE ip.amount END
                                          * {$ipRateBank}, 2)) AS czk_base,
                                -- Osvobozená noha se dělí na základ/DPH STEJNĚ jako zdanitelná
@@ -288,12 +319,15 @@ final class CashJournalRepository
                                -- income_nontax v CashJournalService::bankIncomeAlloc().
                                SUM(ROUND(CASE WHEN i.income_tax_exempt <> 1 THEN 0
                                               WHEN {$payerAtIp} = 1 AND i.total_with_vat <> 0
-                                                   THEN ip.amount * (1 - LEAST(1, GREATEST(0, i.total_vat / i.total_with_vat)))
+                                                   THEN ip.amount - bcov.covered * LEAST(1, GREATEST(0, i.total_vat / i.total_with_vat))
                                               ELSE ip.amount END
                                          * {$ipRateBank}, 2)) AS czk_exempt,
+                               -- Přeplatek v CZK, podklad pro ruční zařazení pohybu (1027).
+                               SUM(ROUND((ip.amount - bcov.covered) * {$ipRateBank}, 2)) AS czk_overpaid,
                                MIN(ip.invoice_id) AS any_invoice_id
                           FROM invoice_payments ip
                           JOIN invoices i ON i.id = ip.invoice_id AND i.supplier_id = {$sid}
+                          JOIN ({$ipCoverage}) bcov ON bcov.ip_id = ip.id
                           JOIN bank_transactions ibt ON ibt.id = ip.bank_transaction_id
                          WHERE ip.supplier_id = {$sid} AND ip.bank_transaction_id IS NOT NULL
                            AND i.status <> 'cancelled'
@@ -360,6 +394,7 @@ final class CashJournalRepository
                     ii.total_without_vat AS inv_without_vat, ii.total_vat AS inv_vat,
                     ii.total_with_vat AS inv_with_vat,
                     ii.income_tax_exempt AS inv_exempt, ii.status AS inv_status,
+                    ROUND(ip.amount * {$ipRateC1}, 2) - ROUND(ccov1.covered * {$ipRateC1}, 2) AS inv_overpaid,
                     NULL AS purchase_invoice_id, NULL AS pi_without_vat, NULL AS pi_vat, NULL AS pi_with_vat,
                     NULL AS pi_deductible, NULL AS pi_kind, NULL AS pi_vat_deduction,
                     NULL AS pi_vat_deduction_percent, NULL AS pi_is_fixed_asset, NULL AS override_bucket,
@@ -372,6 +407,7 @@ final class CashJournalRepository
                     " . self::NO_BANK_ALLOCATION . "
                FROM invoice_payments ip
                JOIN invoices ii      ON ii.id = ip.invoice_id AND ii.supplier_id = {$sid}
+               JOIN ({$ipCoverage}) ccov1 ON ccov1.ip_id = ip.id
                LEFT JOIN clients icl ON icl.id = ii.client_id
               WHERE ip.supplier_id = {$sid} AND ip.source IN ('manual', 'mark_paid', 'legacy')
                 AND ip.bank_transaction_id IS NULL
@@ -397,7 +433,7 @@ final class CashJournalRepository
                     NULL AS cash_purpose, NULL AS cash_vat_base, NULL AS cash_vat_amount,
                     NULL AS bank_class, NULL AS bank_income_base, NULL AS bank_income_exempt,
                     NULL AS invoice_id, NULL AS inv_type, NULL AS inv_without_vat, NULL AS inv_vat, NULL AS inv_with_vat,
-                    NULL AS inv_exempt, NULL AS inv_status,
+                    NULL AS inv_exempt, NULL AS inv_status, NULL AS inv_overpaid,
                     pi.id AS purchase_invoice_id, pi.total_without_vat AS pi_without_vat, pi.total_vat AS pi_vat,
                     pi.total_with_vat AS pi_with_vat, pi.tax_deductible AS pi_deductible,
                     pi.document_kind AS pi_kind, pi.vat_deduction AS pi_vat_deduction,
@@ -447,7 +483,7 @@ final class CashJournalRepository
                     gcn.id AS invoice_id, gcn.invoice_type AS inv_type,
                     gcn.total_without_vat AS inv_without_vat, gcn.total_vat AS inv_vat,
                     gcn.total_with_vat AS inv_with_vat,
-                    gcn.income_tax_exempt AS inv_exempt, gcn.status AS inv_status,
+                    gcn.income_tax_exempt AS inv_exempt, gcn.status AS inv_status, NULL AS inv_overpaid,
                     NULL AS purchase_invoice_id, NULL AS pi_without_vat, NULL AS pi_vat, NULL AS pi_with_vat,
                     NULL AS pi_deductible, NULL AS pi_kind, NULL AS pi_vat_deduction,
                     NULL AS pi_vat_deduction_percent, NULL AS pi_is_fixed_asset, NULL AS override_bucket,
@@ -480,6 +516,41 @@ final class CashJournalRepository
                     COALESCE(" . self::backwardRateSql('ip.currency', 'ip.paid_on')
                         . ", {$invoiceAlias}.exchange_rate, "
                         . self::forwardRateSql('ip.currency', 'ip.paid_on') . '))';
+    }
+
+    /**
+     * #247: krytá část každé úhrady vydané faktury (`covered`, v měně faktury, znaménko
+     * jako `ip.amount`). Úhrada hradí doklad jen do výše jeho dosud neuhrazeného brutta;
+     * co platba přinese navíc, je přeplatek. Ten u plátce DPH žádnou DPH nenese, poměrem
+     * DPH faktury se proto dělí jen krytá část (CashJournalService::invoiceIncomeBase).
+     *
+     * Dříve uhrazeno = součet všech předchozích úhrad téže faktury (jakýkoli source, i zápočet
+     * a dobropis, protože i ty snižují neuhrazené brutto) v pořadí datum úhrady a id. Přeplatek
+     * tak nese až úhrada, která zbytek faktury překročí, a součet DPH všech úhrad nikdy
+     * nepřesáhne DPH faktury.
+     *
+     * Počítá se v relativních hodnotách vůči znaménku brutta (SIGN), takže dobropis se
+     * zápornými součty a zápornými úhradami se chová zrcadlově k faktuře. Opačná úhrada
+     * (vratka) nejdřív ubírá z přeplatku a teprve potom z kryté části. Nedoplatek zůstává
+     * celý krytý, tedy dál poměrně dělený. Brutto 0 nemá co krýt, celá úhrada je mimo DPH
+     * (shodně s prorateBase, která nulové brutto nedělí).
+     *
+     * Okno se počítá nad VŠEMI úhradami firmy bez datového filtru deníku, jinak by úhrada
+     * z prosince neviděla zálohu z listopadu mimo zobrazené období.
+     */
+    private static function ipCoverageSql(int $sid): string
+    {
+        return "SELECT q.ip_id,
+                       q.s * (LEAST(GREATEST(q.s * (q.prior + q.amount), 0), q.w)
+                              - LEAST(GREATEST(q.s * q.prior, 0), q.w)) AS covered
+                  FROM (SELECT ip.id AS ip_id, ip.amount,
+                               SIGN(i.total_with_vat) AS s, ABS(i.total_with_vat) AS w,
+                               COALESCE(SUM(ip.amount) OVER (PARTITION BY ip.invoice_id
+                                                                ORDER BY ip.paid_on, ip.id
+                                                                ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) AS prior
+                          FROM invoice_payments ip
+                          JOIN invoices i ON i.id = ip.invoice_id AND i.supplier_id = {$sid}
+                         WHERE ip.supplier_id = {$sid}) q";
     }
 
     private function piRateSql(): string
@@ -863,7 +934,7 @@ final class CashJournalRepository
         foreach (['cash_vat_base', 'cash_vat_amount', 'inv_without_vat', 'inv_vat', 'inv_with_vat',
                   'pi_without_vat', 'pi_vat', 'pi_with_vat', 'pi_vat_deduction_percent',
                   'bank_income_base', 'bank_income_exempt', 'bank_alloc_czk', 'bank_alloc_native',
-                  'bank_native_amount'] as $k) {
+                  'bank_native_amount', 'inv_overpaid'] as $k) {
             $r[$k] = (!array_key_exists($k, $r) || $r[$k] === null) ? null : round((float) $r[$k], 2);
         }
         $r['bank_alloc_cross_ccy'] = (int) ($r['bank_alloc_cross_ccy'] ?? 0) === 1;

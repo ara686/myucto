@@ -52,3 +52,30 @@ describe('CheckFindings FX', () => {
     expect(wrapper.text()).toContain('EUR')
   })
 })
+
+it.each([
+  [{ applicable: false, complete: false }, 'not_applicable'],
+  [{ applicable: true, complete: false }, 'pending'],
+  [{ applicable: true, complete: true }, 'completed'],
+])('shows deferred tax assessment state %j', (value, key) => {
+  const wrapper = mount(CheckFindings, { props: { checkKey: 'deferred_tax_assessment', label: 'Deferred tax', value } })
+  expect(wrapper.text()).toContain(`checks.value.${key}`)
+})
+
+it.each([
+  ['filing_required', 'other_taxable_income', true],
+  ['filing_not_required', 'only_exempt_or_withheld_income', true],
+  ['unassessed', 'assessment_incomplete', false],
+])('ukáže předkontrolu SVJ %s', (status, reason, complete) => {
+  const value = { applicable: true, complete, findings: [], svj_precheck: { status, reason, legal_basis: 'zdp_38mb_b', taxable_source_count: 2 } }
+  const wrapper = mount(CheckFindings, { props: { checkKey: 'nonprofit_tax_assessment', label: 'Tax', value } })
+  const text = wrapper.get('[data-test="svj-precheck"]').text()
+  expect(text).toContain(`checks.svj_precheck.status.${status}`)
+  expect(text).toContain(`checks.svj_precheck.reason.${reason}`)
+  expect(wrapper.text()).toContain(complete ? 'checks.value.completed' : 'checks.value.pending')
+})
+
+it('neukáže předkontrolu SVJ u jiného poplatníka 504', () => {
+  const wrapper = mount(CheckFindings, { props: { checkKey: 'nonprofit_tax_assessment', label: 'Tax', value: { applicable: true, complete: true, findings: [] } } })
+  expect(wrapper.find('[data-test="svj-precheck"]').exists()).toBe(false)
+})

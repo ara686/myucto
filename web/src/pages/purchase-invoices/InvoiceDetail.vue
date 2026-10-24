@@ -88,7 +88,10 @@ const bankMatchTarget = ref<{ id: number; ref: string | null } | null>(null)
 const canMatchBankPayment = computed(() => !!invoice.value && !lockedForMe.value
   && !auth.isClientRole && auth.canRead('bank') && auth.canWrite('bank.match')
   && Number(invoice.value.amount_to_pay) !== 0
-  && ['received', 'booked', 'paid'].includes(invoice.value.status))
+  && ['received', 'booked', 'paid'].includes(invoice.value.status)
+  // Úhrady už pokrývají celý doklad: není co párovat.
+  && !((invoice.value.paid_amount ?? 0) > 0.005 && invoice.value.remaining_amount !== undefined
+    && Math.abs(invoice.value.remaining_amount) <= 0.005))
 function openBankMatch() {
   if (invoice.value && canMatchBankPayment.value) bankMatchTarget.value = { id: invoice.value.id, ref: invoice.value.vendor_invoice_number || invoice.value.varsymbol }
 }
@@ -249,11 +252,9 @@ async function dismissAdvanceSuggestion() {
 const activity = ref<Array<{
   id: number
   user_id: number | null
-  user_email: string | null
   user_name: string | null
   action: string
   payload: Record<string, unknown> | null
-  ip: string | null
   created_at: string
 }>>([])
 const activityOpen = ref(false)
@@ -870,7 +871,8 @@ const purchaseActions = computed<ActionItem[]>(() => {
     show: canEdit.value && w && !lockedForMe.value, to: `/purchase-invoices/${inv.id}/edit` })
 
   // Platební kalendář (issue #140): další platby se stejným číslem dokladu podle tohoto vzoru.
-  items.push({ key: 'payment-calendar', label: t('purchase_invoice.payment_calendar.action'), icon: 'cycle', tier: 'secondary', variant: 'primary',
+  // Týká se jen dokladů pro opakované platby (nájem, energie), proto v „…", ne v hlavní liště.
+  items.push({ key: 'payment-calendar', label: t('purchase_invoice.payment_calendar.action'), icon: 'cycle', tier: 'overflow', variant: 'primary',
     show: ['invoice', 'receipt', 'advance'].includes(inv.document_kind) && inv.status !== 'cancelled'
       && Number(inv.total_with_vat) > 0 && auth.canWrite('purchase_invoices.create'),
     disabled: acting.value, run: () => { paymentCalendarOpen.value = true } })
@@ -906,15 +908,19 @@ const purchaseActions = computed<ActionItem[]>(() => {
   items.push({ key: 'settle-rest', label: t('purchase_invoice.payment_summary.settle_rest'), icon: 'coin', tier: 'secondary', variant: 'warning',
     show: canSettleRest.value, run: () => { settleRestOpen.value = true } })
 
+  items.push({ key: 'post', label: t('common.post_document'), icon: 'clipboardCheck', tier: 'secondary', variant: 'primary',
+    show: canPostToJournal.value, disabled: acting.value, loading: acting.value, run: postToJournal })
+
+  // V liště jsou nejvýš 3 akce: platba, zaúčtování a dodavatel. Ostatní jdou do „…".
+  items.push({ key: 'vendor', label: t('purchase_invoice.vendor_detail'), icon: 'user', tier: 'secondary', variant: 'neutral',
+    show: !!inv.vendor_id, to: `/clients/${inv.vendor_id}` })
+
   items.push({ key: 'qr', label: t('purchase_invoice.qr.button'), icon: 'qr', tier: 'secondary', variant: 'primary',
     show: canPayWithQr.value, run: openQr })
 
   items.push({ key: 'vat-treatment', label: t('purchase_invoice.vat_treatment.change.action'), icon: 'tag', tier: 'secondary', variant: 'warning',
     show: canChangeVatTreatment.value, title: t('purchase_invoice.vat_treatment.change.action_hint') as string,
     disabled: acting.value, run: () => { vatTreatmentOpen.value = true } })
-
-  items.push({ key: 'post', label: t('common.post_document'), icon: 'clipboardCheck', tier: 'secondary', variant: 'primary',
-    show: canPostToJournal.value, disabled: acting.value, loading: acting.value, run: postToJournal })
 
   items.push({ key: 'expense-template', label: t('accounting.template.create_expense'), icon: 'doc', tier: 'overflow', variant: 'neutral',
     show: isDoubleEntry.value && auth.canWrite('accounting') && inv.vendor_id > 0,
@@ -945,9 +951,7 @@ const purchaseActions = computed<ActionItem[]>(() => {
   items.push({ key: 'delete', label: t('common.delete'), icon: 'trash', tier: 'overflow', variant: 'danger',
     show: canDelete.value && canDeletePermission && !lockedForMe.value, disabled: acting.value, run: remove })
 
-  // odkaz na dodavatele + admin „force" akce (pod „Pokročilé")
-  items.push({ key: 'vendor', label: t('purchase_invoice.vendor_detail'), icon: 'user', tier: 'overflow', variant: 'neutral',
-    show: !!inv.vendor_id, to: `/clients/${inv.vendor_id}` })
+  // admin „force" akce (pod „Pokročilé")
   items.push({ key: 'force-edit', label: t('purchase_invoice.force_edit'), icon: 'edit', tier: 'advanced', variant: 'warning',
     show: canForceEdit.value, title: t('purchase_invoice.force_edit_hint') as string, run: confirmForceEdit })
   items.push({ key: 'force-delete', label: t('purchase_invoice.force_delete'), icon: 'trash', tier: 'advanced', variant: 'danger',
@@ -1995,7 +1999,7 @@ useWindowRefresh(['purchase-invoices', 'clients', 'bank', 'bank-transactions', '
                   <td class="px-5 py-2 whitespace-nowrap">
                     <span class="text-xs px-2 py-0.5 rounded font-medium" :class="actionBadgeClass(a.action)">{{ actionShortLabel(a.action) }}</span>
                   </td>
-                  <td class="px-3 py-2 text-xs text-neutral-500 whitespace-nowrap">{{ a.user_name || a.user_email || '—' }}</td>
+                  <td class="px-3 py-2 text-xs text-neutral-500 whitespace-nowrap">{{ a.user_name || '—' }}</td>
                   <td class="px-3 py-2 font-mono text-xs text-neutral-400 whitespace-nowrap">{{ a.created_at.replace('T', ' ').slice(0, 19) }}</td>
                   <td class="px-3 py-2 text-xs text-neutral-600 break-all whitespace-pre-wrap leading-snug">{{ payloadText(a.payload) }}</td>
                 </tr>
@@ -2009,7 +2013,7 @@ useWindowRefresh(['purchase-invoices', 'clients', 'bank', 'bank-transactions', '
                 <span class="text-xs px-2 py-0.5 rounded font-medium" :class="actionBadgeClass(a.action)">{{ actionShortLabel(a.action) }}</span>
                 <span class="font-mono text-xs text-neutral-400 whitespace-nowrap">{{ a.created_at.replace('T', ' ').slice(0, 19) }}</span>
               </div>
-              <div class="text-xs text-neutral-500">{{ a.user_name || a.user_email || '—' }}</div>
+              <div class="text-xs text-neutral-500">{{ a.user_name || '—' }}</div>
               <div v-if="a.payload" class="text-xs text-neutral-600 break-all whitespace-pre-wrap leading-snug">{{ payloadText(a.payload) }}</div>
             </li>
           </ul>

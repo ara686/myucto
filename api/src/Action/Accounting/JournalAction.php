@@ -448,6 +448,14 @@ final class JournalAction
                     }
                 }
             }
+            foreach ($line['dimensions'] ?? [] as $typeId => $_) {
+                $line['dimension_origins'][$typeId] = ['origin' => 'explicit', 'ref' => null];
+            }
+            foreach ($line['dimension_splits'] ?? [] as $typeId => $shares) {
+                foreach ($shares as $valueId => $_) {
+                    $line['dimension_split_origins'][$typeId][$valueId] = ['origin' => 'explicit', 'ref' => null];
+                }
+            }
             $lines[] = $line;
         }
 
@@ -898,8 +906,9 @@ final class JournalAction
 
         try {
             $lines = $sourceType === 'invoice'
-                ? $this->posting->buildFromInvoice($supplierId, $docId)
+                ? $this->posting->buildFromInvoice($supplierId, $docId, ['entry_date' => $docDate])
                 : $this->posting->buildFromPurchaseInvoice($supplierId, $docId, array_filter([
+                    'entry_date' => $docDate,
                     'debit_account_code' => $aiOverride,
                 ], static fn (mixed $value): bool => $value !== null));
         } catch (\Throwable $e) {
@@ -1129,8 +1138,9 @@ final class JournalAction
 
         try {
             $lines = $customLines ?? ($sourceType === 'invoice'
-                ? $this->posting->buildFromInvoice($supplierId, $docId)
+                ? $this->posting->buildFromInvoice($supplierId, $docId, ['entry_date' => $entryDate ?? $docDate])
                 : $this->posting->buildFromPurchaseInvoice($supplierId, $docId, array_filter([
+                    'entry_date' => $entryDate ?? $docDate,
                     'debit_account_code' => $this->aiOverrides->debitOverrideForPurchase($supplierId, $docId),
                 ], static fn (mixed $value): bool => $value !== null)));
 
@@ -1329,6 +1339,9 @@ final class JournalAction
         $attachmentRows = [];
         try {
             (new DimensionPeriodGuard($this->db))->lockPeriods($supplierId);
+            (new \MyInvoice\Service\Property\Charges\Issuance\IssuanceUseGuard($this->db))->assertPostingEntriesMutable($supplierId, [$id]);
+            (new \MyInvoice\Service\Property\Payments\Workflow\PaymentMutationContext($this->db))->assertEntriesMutable($supplierId, [$id]);
+            (new \MyInvoice\Service\Accounting\Allocation\JointAllocationUseGuard($this->db))->assertEntriesMutable($supplierId, [$id]);
             $stmt = $pdo->prepare(
                 'SELECT je.id, je.period_id, je.entry_date, je.document_no, je.source_type,
                         je.source_id, je.posted_at, je.reversed_by, p.status AS period_status,
@@ -1564,6 +1577,9 @@ final class JournalAction
             if ($ownTx && $pdo->inTransaction()) {
                 $pdo->rollBack();
             }
+            if ($e instanceof PostingException && (str_starts_with($e->errorCode, 'allocation_') || in_array($e->errorCode, ['property_charge_issue_source_immutable', 'property_payment_source_immutable'], true))) {
+                return $this->mapPostingError($response, $e);
+            }
             throw $e;
         }
 
@@ -1640,6 +1656,9 @@ final class JournalAction
         $attachmentRows = [];
         try {
             (new DimensionPeriodGuard($this->db))->lockPeriods($supplierId);
+            (new \MyInvoice\Service\Property\Charges\Issuance\IssuanceUseGuard($this->db))->assertPostingEntriesMutable($supplierId, [$id]);
+            (new \MyInvoice\Service\Property\Payments\Workflow\PaymentMutationContext($this->db))->assertEntriesMutable($supplierId, [$id]);
+            (new \MyInvoice\Service\Accounting\Allocation\JointAllocationUseGuard($this->db))->assertEntriesMutable($supplierId, [$id]);
             $load = $pdo->prepare(
                 'SELECT je.id, je.period_id, je.entry_date, je.document_no, je.description,
                         je.source_type, je.source_id, je.reversed_by, p.status AS period_status,
@@ -1681,6 +1700,9 @@ final class JournalAction
                 $original = $selected;
             }
             $reversalId = (int) $original['reversed_by'];
+            (new \MyInvoice\Service\Property\Charges\Issuance\IssuanceUseGuard($this->db))->assertPostingEntriesMutable($supplierId, [$originalId, $reversalId]);
+            (new \MyInvoice\Service\Property\Payments\Workflow\PaymentMutationContext($this->db))->assertEntriesMutable($supplierId, [$originalId, $reversalId]);
+            (new \MyInvoice\Service\Accounting\Allocation\JointAllocationUseGuard($this->db))->assertEntriesMutable($supplierId, [$originalId, $reversalId]);
             $load->execute([$reversalId, $supplierId]);
             $reversal = $load->fetch(\PDO::FETCH_ASSOC);
             if ($reversal === false) {
@@ -1852,6 +1874,9 @@ final class JournalAction
             );
         } catch (\Throwable $e) {
             if ($ownTx && $pdo->inTransaction()) $pdo->rollBack();
+            if ($e instanceof PostingException && (str_starts_with($e->errorCode, 'allocation_') || in_array($e->errorCode, ['property_charge_issue_source_immutable', 'property_payment_source_immutable'], true))) {
+                return $this->mapPostingError($response, $e);
+            }
             throw $e;
         }
 

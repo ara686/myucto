@@ -30,6 +30,7 @@ vi.mock('@/api/settings', () => ({
   settingsApi: {
     getSupplier: m.getSupplier,
     updateSupplier: m.updateSupplier,
+    getModeSwitchPreview: vi.fn().mockResolvedValue({ total: 0 }),
     getVatRegistrationCheck: vi.fn().mockResolvedValue(null),
     searchNaceCodes: vi.fn().mockResolvedValue([]),
   },
@@ -176,6 +177,114 @@ describe('Nastavení — samostatný ISDOC', () => {
     } finally {
       wrapper.unmount()
     }
+  })
+})
+
+
+describe('Accounting decree settings', () => {
+  it('shows the derived decree read-only and omits the preserved manual value from save', async () => {
+    m.getSupplier.mockResolvedValue({ ...SUPPLIER, accounting_mode: 'double_entry', tax_accounting_decree: '504', tax_accounting_decree_effective: '500', tax_accounting_decree_is_derived: true })
+    const wrapper = await mountSettings('accounting')
+    expect(wrapper.get('[data-test="derived-accounting-decree"]').text()).toContain('500')
+    expect(wrapper.findAll('select').some(s => s.find('option[value="501"]').exists())).toBe(false)
+    await wrapper.findAll('button').find(b => b.text() === 'settings.save_supplier')!.trigger('click')
+    await flushPromises()
+    expect(m.updateSupplier).toHaveBeenCalledOnce()
+    expect(m.updateSupplier.mock.calls[0]![0]).not.toHaveProperty('tax_accounting_decree')
+    wrapper.unmount()
+  })
+
+  it('allows saving the manual decree in tax evidence', async () => {
+    m.getSupplier.mockResolvedValue({ ...SUPPLIER, tax_accounting_decree: '504', tax_accounting_decree_effective: '504', tax_accounting_decree_is_derived: false })
+    const wrapper = await mountSettings('accounting')
+    expect(wrapper.find('[data-test="derived-accounting-decree"]').exists()).toBe(false)
+    const select = wrapper.findAll('select').find(s => s.find('option[value="501"]').exists())!
+    await select.setValue('501')
+    await wrapper.findAll('button').find(b => b.text() === 'settings.save_supplier')!.trigger('click')
+    await flushPromises()
+    expect(m.updateSupplier).toHaveBeenCalledWith(expect.objectContaining({ tax_accounting_decree: '501' }))
+    wrapper.unmount()
+  })
+
+  it('merges framework decree fields without replacing unrelated unsaved form values', async () => {
+    m.getSupplier.mockResolvedValue({ ...SUPPLIER, accounting_mode: 'double_entry', tax_accounting_decree: '504', tax_accounting_decree_effective: '500' })
+    const wrapper = await mountSettings('accounting')
+    const status = wrapper.findAll('select').find(s => s.find('option[value="liquidation"]').exists())!
+    await status.setValue('liquidation')
+    wrapper.findComponent({ name: 'AccountingFrameworkSettings' }).vm.$emit('updated', { id: 1, accounting_framework: 'cz_504', accounting_framework_history: [], tax_accounting_decree_effective: '504', tax_accounting_decree_is_derived: true })
+    await flushPromises()
+    expect(wrapper.get('[data-test="derived-accounting-decree"]').text()).toContain('504')
+    expect((status.element as HTMLSelectElement).value).toBe('liquidation')
+    wrapper.unmount()
+  })
+})
+
+
+describe('Unsaved accounting mode and decree', () => {
+  it('previews the framework decree on switching to double entry and omits the manual value', async () => {
+    m.getSupplier.mockResolvedValue({ ...SUPPLIER, tax_accounting_decree: '501', tax_accounting_decree_effective: '501', tax_accounting_decree_is_derived: false, accounting_framework: 'cz_500' })
+    const wrapper = await mountSettings('accounting')
+    const mode = wrapper.findAll('select').find(s => s.find('option[value="double_entry"]').exists())!
+    await mode.setValue('double_entry')
+    expect(wrapper.get('[data-test="derived-accounting-decree"]').text()).toContain('500')
+    expect(wrapper.get('[data-test="derived-accounting-decree"]').text()).not.toContain('501')
+    await wrapper.findAll('button').find(b => b.text() === 'settings.save_supplier')!.trigger('click')
+    await flushPromises()
+    expect(m.updateSupplier).toHaveBeenCalledOnce()
+    expect(m.updateSupplier.mock.calls[0]![0]).not.toHaveProperty('tax_accounting_decree')
+    wrapper.unmount()
+  })
+
+  it('restores the manual choice when reversing an unsaved mode switch', async () => {
+    m.getSupplier.mockResolvedValue({ ...SUPPLIER, tax_accounting_decree: '501', tax_accounting_decree_effective: '501', tax_accounting_decree_is_derived: false, accounting_framework: 'cz_504' })
+    const wrapper = await mountSettings('accounting')
+    const mode = wrapper.findAll('select').find(s => s.find('option[value="double_entry"]').exists())!
+    await mode.setValue('double_entry')
+    expect(wrapper.get('[data-test="derived-accounting-decree"]').text()).toContain('504')
+    await mode.setValue('tax_evidence')
+    const manual = wrapper.findAll('select').find(s => s.find('option[value="501"]').exists())!
+    expect((manual.element as HTMLSelectElement).value).toBe('501')
+    await wrapper.findAll('button').find(b => b.text() === 'settings.save_supplier')!.trigger('click')
+    await flushPromises()
+    expect(m.updateSupplier).toHaveBeenCalledWith(expect.objectContaining({ tax_accounting_decree: '501' }))
+    wrapper.unmount()
+  })
+
+  it('uses the framework fallback when an older response omits the effective fields', async () => {
+    m.getSupplier.mockResolvedValue({ ...SUPPLIER, accounting_mode: 'double_entry', tax_accounting_decree: '501' })
+    const wrapper = await mountSettings('accounting')
+    expect(wrapper.get('[data-test="derived-accounting-decree"]').text()).toBe('500 - settings.income_tax_profile.accounting_decree_500')
+    wrapper.unmount()
+  })
+})
+
+
+describe('Effective accounting mode history and decree', () => {
+  it('keeps the manual decree editable before a future switch to double entry', async () => {
+    m.getSupplier.mockResolvedValue({ ...SUPPLIER, accounting_mode: 'double_entry', accounting_framework: 'cz_500', tax_accounting_decree: '501', tax_accounting_decree_effective: '501', tax_accounting_decree_is_derived: false })
+    const wrapper = await mountSettings('accounting')
+    expect(wrapper.find('[data-test="derived-accounting-decree"]').exists()).toBe(false)
+    const manual = wrapper.findAll('select').find(s => s.find('option[value="501"]').exists())!
+    expect((manual.element as HTMLSelectElement).value).toBe('501')
+    expect(wrapper.text()).toContain('settings.income_tax_profile.accounting_decree_hint')
+    await manual.setValue('502')
+    await wrapper.findAll('button').find(b => b.text() === 'settings.save_supplier')!.trigger('click')
+    await flushPromises()
+    expect(m.updateSupplier).toHaveBeenCalledWith(expect.objectContaining({ tax_accounting_decree: '502' }))
+    wrapper.unmount()
+  })
+
+  it('keeps the decree derived before a future switch to tax evidence', async () => {
+    m.getSupplier.mockResolvedValue({ ...SUPPLIER, accounting_mode: 'tax_evidence', accounting_framework: 'cz_500', tax_accounting_decree: '501', tax_accounting_decree_effective: '500', tax_accounting_decree_is_derived: true })
+    const wrapper = await mountSettings('accounting')
+    expect(wrapper.get('[data-test="derived-accounting-decree"]').text()).toContain('500')
+    expect(wrapper.findAll('select').some(s => s.find('option[value="501"]').exists())).toBe(false)
+    expect(wrapper.text()).toContain('settings.income_tax_profile.accounting_decree_derived_hint')
+    await wrapper.findAll('button').find(b => b.text() === 'settings.save_supplier')!.trigger('click')
+    await flushPromises()
+    expect(m.updateSupplier).toHaveBeenCalledOnce()
+    expect(m.updateSupplier.mock.calls[0]![0]).not.toHaveProperty('tax_accounting_decree')
+    wrapper.unmount()
   })
 })
 

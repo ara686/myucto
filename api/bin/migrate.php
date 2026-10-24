@@ -336,6 +336,14 @@ function runAutoBackfills(\PDO $db, string $binDir, Connection $connection): voi
             'script'  => 'backfill-card-last4.php',
         ],
         [
+            // Rodná čísla dětí a manžela/manželky v daňovém profilu uložená otevřeně
+            // před migrací 2160 (H28). Šifruje PHP, viz TaxFamilyBirthNumberBackfill.
+            'name'    => 'tax-family-birth-numbers',
+            'reason'  => 'otevřeně uložených rodných čísel v daňovém profilu',
+            'count'   => static fn (): int => \MyInvoice\Service\Tax\TaxFamilyBirthNumberBackfill::pendingIn($db),
+            'script'  => 'backfill-tax-family-birth-numbers.php',
+        ],
+        [
             // Originály příchozích dokladů uložené do kořene Dokumentů před zavedením
             // složky „Příchozí doklady / rok / měsíc", viz SubmissionFolderBackfill.
             'name'    => 'submission-folders',

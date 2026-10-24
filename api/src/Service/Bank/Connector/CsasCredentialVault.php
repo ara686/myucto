@@ -34,6 +34,13 @@ final class CsasCredentialVault
                     $current['access_token'] = $tokens['access_token'];
                     $current['access_expires_at'] = time() + $tokens['expires_in'];
                     $current['refresh_token'] = $tokens['refresh_token'] ?? $current['refresh_token'];
+                    // Odvolání platebního oprávnění se projeví hned; scope bez platby čtení nezastaví.
+                    // Obnova ale platby nepřidá: připojení jen pro čtení je získá jen novým souhlasem.
+                    if (isset($tokens['scope'])) {
+                        $current['scope'] = CsasApiClient::grantsPayments((string) ($current['scope'] ?? ''))
+                            ? $tokens['scope']
+                            : implode(' ', array_values(array_diff(preg_split('/\s+/', trim($tokens['scope'])) ?: [], ['siblings.payments'])));
+                    }
                     return $current;
                 },
                 function (array $current) use ($supplierId, $connectionId): bool {
@@ -55,8 +62,13 @@ final class CsasCredentialVault
             $data['environment'] ??= 'production';
             $required = ['version', 'supplier_id', 'connection_id', 'api_key', 'client_id', 'client_secret', 'redirect_uri',
                 'access_token', 'refresh_token', 'access_expires_at', 'account_id', 'account_iban', 'account_currency', 'call_guard_key', 'environment'];
-            if (!is_array($data) || array_diff(array_keys($data), $required) || array_diff($required, array_keys($data))
+            // Přístupy z doby, kdy konektor jen četl, udělený scope ani vhodnost účtu pro platby nemají.
+            $optional = ['scope', 'payment_account_suitable'];
+            if (!is_array($data) || array_diff(array_keys($data), $required, $optional) || array_diff($required, array_keys($data))
                 || $data['version'] !== 1) throw new \RuntimeException();
+            if (array_key_exists('scope', $data) && (!is_string($data['scope']) || strlen($data['scope']) > 1024
+                || preg_match('/[\x00-\x1f\x7f]/', $data['scope']))) throw new \RuntimeException();
+            if (array_key_exists('payment_account_suitable', $data) && !is_bool($data['payment_account_suitable'])) throw new \RuntimeException();
             foreach (['supplier_id', 'connection_id', 'access_expires_at'] as $key) {
                 if (!is_int($data[$key]) || $data[$key] < 1) throw new \RuntimeException();
             }
@@ -79,6 +91,19 @@ final class CsasCredentialVault
         $value = json_encode($data, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
         $this->decode($value);
         return $value;
+    }
+
+    /**
+     * Smí napojení zakládat platby? Souhlas musí obsahovat siblings.payments a banka musela
+     * účet při připojení označit jako vhodný (suitableScope.PISP). Starý přístup bez těchto
+     * údajů umí jen číst; odesílání zpřístupní nový souhlas.
+     *
+     * @return 'available'|'authorization_scope_missing'|'account_not_suitable'
+     */
+    public static function paymentAvailability(#[\SensitiveParameter] array $data): string
+    {
+        if (!CsasApiClient::grantsPayments((string) ($data['scope'] ?? ''))) return 'authorization_scope_missing';
+        return ($data['payment_account_suitable'] ?? false) === true ? 'available' : 'account_not_suitable';
     }
 
     public static function context(int $supplierId, int $connectionId): string

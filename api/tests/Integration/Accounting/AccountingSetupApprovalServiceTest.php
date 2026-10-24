@@ -765,10 +765,26 @@ final class AccountingSetupApprovalServiceTest extends BankPostingTestCase
      * N7: přijatá faktura převzatá z jiného účetního programu má kontaci zdroje. Přeřazení
      * historie ji vynechá a vypíše jako `taken_over`, nativní doklad se přeřadí dál.
      */
-    public function testReclassificationSkipsDocumentTakenOverFromAnotherProgram(): void
+    public static function takenOverPostingVariants(): iterable
+    {
+        yield 'přímý zápis' => [false];
+        yield 'vlastněný zápis po stornu přímého členu' => [true];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('takenOverPostingVariants')]
+    public function testReclassificationSkipsDocumentTakenOverFromAnotherProgram(bool $reversedSource): void
     {
         $supplierId = $this->supplierId;
         [$invoiceId, $entryId, $bundle] = $this->serviceDefaultAnalyticScenario('SYN-SERVICE-TAKEN');
+        if ($reversedSource) {
+            $owned = $this->posting->postDocument($supplierId, 'manual', null, [
+                ['account_code' => '518', 'side' => 'debit', 'amount' => 1000],
+                ['account_code' => '321', 'side' => 'credit', 'amount' => 1000],
+            ], ['entry_date' => self::YEAR . '-06-10']);
+            $this->attachPostingGroup($invoiceId, [$entryId, $owned]);
+            $this->posting->reverse($supplierId, $entryId);
+            $entryId = $owned;
+        }
         $this->db->pdo()->prepare("INSERT INTO money_s3_import_map (supplier_id, kind, money_key, target_id) VALUES (?, 'journal_entry', 'synth|PF-TAKEN', ?)")
             ->execute([$supplierId, $entryId]);
         $setup = $this->container->get(AccountingSetupRepository::class);
@@ -814,7 +830,7 @@ final class AccountingSetupApprovalServiceTest extends BankPostingTestCase
     }
 
     /** Rozdělený předpis (základ + DPH) přeřazení nesmí tiše vykázat jako hotový. */
-    public function testReclassificationReportsFailureForSplitPostingGroup(): void
+    public function testReclassificationSkipsSplitPostingGroupBeforeApply(): void
     {
         $supplierId = $this->supplierId;
         [$invoiceId, $entryId, $bundle] = $this->serviceDefaultAnalyticScenario('SYN-SERVICE-SPLIT');
@@ -827,7 +843,8 @@ final class AccountingSetupApprovalServiceTest extends BankPostingTestCase
         $items = $this->applyReclassification($bundle);
 
         self::assertCount(1, $items);
-        self::assertSame('failed', $items[0]['status'], json_encode($items[0]) ?: '');
+        self::assertSame('skipped', $items[0]['status'], json_encode($items[0]) ?: '');
+        self::assertSame('posting_group_requires_repost', $items[0]['error_code']);
         self::assertStringContainsString('Přeúčtujte celou skupinu', (string) $items[0]['error_message']);
         self::assertContains('518', $this->entryAccountCodes($entryId, $supplierId));
     }
@@ -864,6 +881,7 @@ final class AccountingSetupApprovalServiceTest extends BankPostingTestCase
         $runner->run($dryJobId);
         $dryItems = $setup->reclassificationItems($this->supplierId, $dryJobId);
         self::assertCount(1, $dryItems);
+        if ($dryItems[0]['status'] === 'skipped') return $dryItems;
         self::assertSame('would_change', $dryItems[0]['status']);
         $applyJobId = $jobs->create($this->supplierId, 'accounting_history_reclassification', $params + [
             'dry_run' => false,

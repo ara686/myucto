@@ -132,8 +132,9 @@ final class DocumentJournalSync
 
                 // Znovu zaúčtuj opravený doklad do AKTUÁLNÍHO otevřeného období (dnešek).
                 $lines = $sourceType === 'invoice'
-                    ? $this->posting->buildFromInvoice($supplierId, $sourceId)
+                    ? $this->posting->buildFromInvoice($supplierId, $sourceId, ['entry_date' => $today])
                     : $this->posting->buildFromPurchaseInvoice($supplierId, $sourceId, array_filter([
+                        'entry_date' => $today,
                         'debit_account_code' => $this->aiOverrides->debitOverrideForPurchase($supplierId, $sourceId),
                     ], static fn (mixed $value): bool => $value !== null));
                 $postMeta = $meta;
@@ -173,8 +174,9 @@ final class DocumentJournalSync
                 $existing = $members[0];
 
                 $lines = $sourceType === 'invoice'
-                    ? $this->posting->buildFromInvoice($supplierId, $sourceId)
+                    ? $this->posting->buildFromInvoice($supplierId, $sourceId, ['entry_date' => $meta['entry_date'] ?? (string) $existing['entry_date']])
                     : $this->posting->buildFromPurchaseInvoice($supplierId, $sourceId, array_filter([
+                        'entry_date' => $meta['entry_date'] ?? (string) $existing['entry_date'],
                         'debit_account_code' => $this->aiOverrides->debitOverrideForPurchase($supplierId, $sourceId),
                     ], static fn (mixed $value): bool => $value !== null));
                 $postMeta = $meta + [

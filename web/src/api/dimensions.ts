@@ -11,6 +11,7 @@ export interface DimensionType {
   code: string
   name: string
   kind: DimensionKind
+  system_key?: string | null
   is_active: boolean
   show_on_documents: boolean
   sort_order: number
@@ -57,6 +58,7 @@ export interface DimensionAccountCandidate {
 export interface DimensionValue {
   id: number
   type_id: number
+  semantic_key?: string | null
   supplier_id: number | null
   supplier_group_id: number | null
   level: DimensionLevel

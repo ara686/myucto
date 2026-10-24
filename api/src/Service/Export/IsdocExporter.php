@@ -124,7 +124,7 @@ final class IsdocExporter
 
         if (count($invoices) === 1) {
             $inv = $invoices[0];
-            $vs = ExportFilename::sanitize((string) ($inv['varsymbol'] ?? ('draft-' . $inv['id'])));
+            $vs = self::fileToken($inv);
             return [
                 'filename' => "Faktura-{$vs}.isdoc",
                 'content'  => $build($inv),
@@ -139,7 +139,7 @@ final class IsdocExporter
             throw new \RuntimeException('Nelze vytvořit ZIP.');
         }
         foreach ($invoices as $inv) {
-            $vs = ExportFilename::sanitize((string) ($inv['varsymbol'] ?? ('draft-' . $inv['id'])));
+            $vs = self::fileToken($inv);
             $type = match ($inv['invoice_type']) {
                 'proforma'     => 'Proforma',
                 'credit_note'  => 'Dobropis',
@@ -152,12 +152,29 @@ final class IsdocExporter
         $content = (string) file_get_contents($tmpZip);
         @unlink($tmpZip);
 
-        $base = 'isdoc-' . ($monthLabel !== '' ? $monthLabel : date('Y-m-d'));
+        $label = $monthLabel !== '' ? self::strictToken($monthLabel) : '';
+        $base = 'isdoc-' . ($label !== '' ? $label : date('Y-m-d'));
         return [
             'filename' => "$base.zip",
             'content'  => $content,
             'mime'     => 'application/zip',
         ];
+    }
+
+    /**
+     * Číslo dokladu do názvu souboru a ZIP položky stejně jako sourozenecké exporty
+     * (PDF ZIP, samostatný ISDOC): jen `[A-Za-z0-9_-]`, takže ani tečky nevytvoří
+     * cestu typu `../` při naivním rozbalení archivu.
+     */
+    private static function fileToken(array $invoice): string
+    {
+        $token = self::strictToken((string) ($invoice['varsymbol'] ?? ('draft-' . ($invoice['id'] ?? ''))));
+        return $token !== '' ? $token : 'draft-' . (int) ($invoice['id'] ?? 0);
+    }
+
+    private static function strictToken(string $value): string
+    {
+        return (string) preg_replace('/[^A-Za-z0-9_-]/', '_', ExportFilename::transliterate($value));
     }
 
     public function buildXml(array $invoice): string

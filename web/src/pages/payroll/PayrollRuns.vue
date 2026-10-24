@@ -2059,7 +2059,7 @@ onMounted(load)
               {{ money(run.result_snapshot.totals.cash_payable_minor) }}
             </dd>
           </div>
-          <div class="rounded-lg bg-payroll-50 p-3">
+          <div v-if="run.result_snapshot.totals.enforcement_withheld_minor != null" class="rounded-lg bg-payroll-50 p-3" data-test="run-enforcement-withheld">
             <dt class="text-xs text-payroll-700">{{ t('payroll.runs.enforcement_withheld') }}</dt>
             <dd class="mt-1 font-semibold text-payroll-700">
               {{ money(run.result_snapshot.totals.enforcement_withheld_minor) }}

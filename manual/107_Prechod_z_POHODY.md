@@ -35,6 +35,12 @@ z POHODY Mzdy nebo PAMICA převádí samostatný průvodce, viz
 
 ## 107.2 Než začnete
 
+Převod nebyl ověřen pro neziskové organizace a další účetní jednotky podle
+vyhlášky 504/2002 Sb. Průvodce je výrazně upozorní a převod účetnictví do
+období vedeného podle vyhlášky 504 odmítne (podrobnosti v kapitole
+[Přechod z Money S3](103_Prechod_z_Money_S3.md), oddíl 103.2). Neziskovka
+před převodem kontaktuje podporu.
+
 1. **Firma v MyÚčtu.** Musí existovat a mít vyplněné stejné IČO jako v POHODĚ.
    Převádí se do firmy, ve které právě pracujete; novou firmu nejdřív založte
    (kapitola [Multi supplier](95_Multi_supplier.md)). Firma, která zatím vede
@@ -211,6 +217,8 @@ Pravidla (perioda resetu, zděděná šablona) jsou v
 | Faktura uhrazená v nevybraném roce zůstala neuhrazená | Pozdější rok jste nevybrali | Převeďte pozdější rok opakovaným převodem ([§ 107.9.7](#10797-opakovany-prevod)) |
 | Přeskočený doklad s neznámým typem | Neznámý typ faktury, banky, pokladny nebo zdroj úhrady | Doklad doplňte ručně, číslo a důvod uvádí protokol |
 | Karta majetku je koncept | Neznámý typ majetku nebo odpisu, jiná vstupní cena, chybí plán nebo účet | Zkontrolujte kartu podle důvodu v protokolu |
+| Nástroj hlásí, že datový soubor je chráněný heslem databáze | MDB má heslo databáze | Spusťte nástroj znovu a heslo zadejte, když se zeptá, nebo parametrem `-Heslo` |
+| Nástroj hlásí, že datový soubor drží jiný program | POHODA je otevřená na jiném počítači, nebo chybí právo ke čtení | Zavřete POHODU u všech uživatelů, případně pracujte s kopií souboru |
 
 ## 107.9 Podrobnosti a pravidla
 
@@ -317,6 +325,7 @@ Export-PohodaMdb.cmd -Mdb "C:\...\StwPh_12345678_2026.mdb" -Vystup .\pohoda_expo
 | `-Mdb` | datový soubor POHODY |
 | `-SqlServer`, `-Databaze` | místo `-Mdb` databáze POHODA SQL (`StwPh_<IČO>_<rok>`) |
 | `-Vystup` | složka agendy pojmenovaná `<IČO>_<rok>`; podle ní průvodce pozná firmu a rok |
+| `-Heslo` | heslo databáze, je-li jím datový soubor chráněný; bez parametru se na něj skript zeptá |
 
 Složku `<IČO>_<rok>` pak zabalte do ZIP (samotnou, nebo spolu s XML exportem
 agendy) a nahrajte do průvodce. Soubor vznikne, jen když v datovém souboru
@@ -327,7 +336,11 @@ mzdy zpracuje [Přechod z PAMICA](108_Prechod_z_PAMICA.md). Systémové údaje
 
 Pro `.mdb` je potřeba ovladač Microsoft Access Database Engine, který se
 instaluje s POHODOU. Když ho 64bitový PowerShell nenajde, skript se sám spustí
-v 32bitovém.
+v 32bitovém. Když se datový soubor neotevře z jiného důvodu (heslo databáze,
+soubor drží jiný program, nejde o databázi Accessu), skript ten důvod vypíše
+i s hlášením ovladače. Datový soubor chráněný heslem databáze otevře
+s parametrem `-Heslo`; bez něj se na heslo zeptá. Totéž platí pro převodník
+`Export-PohodaMdbAccounting` (cesta 2).
 
 #### 107.9.1.5 Cesta 2: účetnictví z MDB přes místní převodník
 

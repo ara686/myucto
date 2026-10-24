@@ -101,6 +101,7 @@ final class TrialBalanceReconciliation
      */
     public static function balanceSheet(array $balanceSheet): array
     {
+        self::assertStatementFrameworkSupported($balanceSheet['accounting_framework'] ?? 'cz_500');
         $unmapped = array_map(
             static fn (array $u): array => ['account' => (string) $u['account_code'], 'name' => (string) $u['name'], 'balance' => round((float) $u['balance'], 2)],
             (array) ($balanceSheet['checks']['unmapped_accounts'] ?? [])
@@ -141,6 +142,14 @@ final class TrialBalanceReconciliation
             $year,
             implode('; ', $parts),
         );
+    }
+
+    public static function assertStatementFrameworkSupported(string $framework): void
+    {
+        if ($framework === 'cz_504') {
+            throw new \MyInvoice\Service\Accounting\Reports\ReportException('statement_conversion_framework_unsupported',
+                'Převod účetních výkazů podle vyhlášky 504 a jejich porovnání s jiným účetním programem zatím nejsou podporovány.');
+        }
     }
 
     /** @param list<array{ok:bool}> $checks */

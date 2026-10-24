@@ -6850,7 +6850,8 @@ export interface PayrollRunResultPerson {
 export interface PayrollRunResultSnapshot {
   totals?: {
     cash_payable_minor?: number
-    enforcement_withheld_minor?: number
+    /** `null`, když volající nemá právo `payroll.enforcement`. */
+    enforcement_withheld_minor?: number | null
     payable_after_enforcement_minor?: number
   }
   people?: PayrollRunResultPerson[]
@@ -7127,6 +7128,7 @@ export interface PayrollDependantClaim {
   other_caregiver_given_name: string | null
   other_caregiver_family_name: string | null
   other_caregiver_birth_date: string | null
+  other_caregiver_birth_number_masked: string | null
   effective_from: string
   effective_to: string | null
   superseded_by_id: number | null
@@ -7194,6 +7196,8 @@ export interface PayrollDependantClaimPayload {
   other_caregiver_given_name: string | null
   other_caregiver_family_name: string | null
   other_caregiver_birth_date: string | null
+  /** Prázdné (null) ponechá uložené rodné číslo beze změny. */
+  other_caregiver_birth_number?: string | null
   ztp_p: boolean
   effective_from: string
   effective_to: string | null

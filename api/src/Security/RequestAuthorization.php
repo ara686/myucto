@@ -55,6 +55,30 @@ final class RequestAuthorization
     }
 
     /**
+     * Firma, na kterou je požadavek pevně vázaný: API token vydaný pro jednu firmu,
+     * nebo vlastní doména firmy. NULL = požadavek vázaný není.
+     *
+     * Přehledy napříč firmami (automatizace, přehled firem) se musí na tuhle firmu
+     * zúžit samy, protože seznam firem skládají z členství uživatele a ne
+     * z {@see \MyInvoice\Service\Tenant\SupplierAccessResolver}. Doména má přednost
+     * stejně jako v resolveru; nesoulad tokenu a domény resolver odmítne dřív.
+     */
+    public static function boundSupplierId(Request $request): ?int
+    {
+        $domain = $request->getAttribute(\MyInvoice\Middleware\TenantDomainMiddleware::ATTR_CONTEXT);
+        if ($domain instanceof \MyInvoice\Service\Tenant\TenantDomainContext && $domain->locksSupplier()) {
+            return (int) $domain->supplierId;
+        }
+        $token = $request->getAttribute(\MyInvoice\Middleware\AuthMiddleware::ATTR_API_TOKEN);
+        // Poškozená vazba (0) zůstává vazbou: zúží výběr na nic, nerozšíří ho.
+        if (is_array($token) && ($token['supplier_id'] ?? null) !== null) {
+            return (int) $token['supplier_id'];
+        }
+
+        return null;
+    }
+
+    /**
      * Název způsobu ověření pro VÝPIS, ne pro rozhodování.
      *
      * Používá ho `/api/auth/api-me`, které o sobě říká, čím je požadavek
@@ -178,6 +202,15 @@ final class RequestAuthorization
     }
 
     /**
+     * Akceptace nativního výpočtu DPPO 504 odblokuje finalizaci, XML a podání. Jde o
+     * rozhodnutí správce firmy, nikoli delegované účetní role.
+     */
+    public static function canAcceptNonprofitDppoCalculation(Request $request): bool
+    {
+        return self::isCompanyAdmin($request);
+    }
+
+    /**
      * Správa automatického stavu tachometru (připojení účtu u zdroje, přiřazení aut, načtení):
      * patří k práci s knihou jízd, ne k administraci integrací.
      */
@@ -186,18 +219,24 @@ final class RequestAuthorization
         return self::allows($request, 'logbook.write', AccessLevel::WRITE);
     }
 
+    /**
+     * Smí čtecí požadavek (GET stažení, náhled) mimochodem zapsat? Doplnění kurzů,
+     * posun zámku podání, založení konceptu nebo párování záloh dělá jen člověk
+     * v aplikaci s právem zápisu. API token je pro účetní a daňovou vrstvu vždy
+     * jen ke čtení, i když jeho uživatel právo zápisu má.
+     */
+    public static function allowsReadSideEffects(Request $request, string $permission): bool
+    {
+        return self::isSessionAuth($request) && self::allows($request, $permission, AccessLevel::WRITE);
+    }
+
     public static function allows(
         Request $request,
         string $permission,
         AccessLevel $minimum = AccessLevel::READ,
     ): bool {
-        $role = self::effectiveRole($request);
-        if ($permission === 'bank' || str_starts_with($permission, 'bank.')
-            || $permission === 'stock' || str_starts_with($permission, 'stock.')) {
-            self::$catalog ??= new PermissionCatalog();
-            self::$checker ??= new PermissionChecker(self::$catalog);
-            return self::$checker->allows($role, $permission, $minimum);
-        }
-        return $role->isSuperadmin() || ($role->isActive && $role->level($permission)->allows($minimum));
+        self::$catalog ??= new PermissionCatalog();
+        self::$checker ??= new PermissionChecker(self::$catalog);
+        return self::$checker->allows(self::effectiveRole($request), $permission, $minimum);
     }
 }

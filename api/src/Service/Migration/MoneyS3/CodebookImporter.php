@@ -8,6 +8,7 @@ use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Repository\ClientBankAccountRepository;
 use MyInvoice\Repository\MoneyS3ImportRepository;
 use MyInvoice\Service\Geo\CountryNameMatcher;
+use MyInvoice\Service\Migration\Shared\PartnerCountry;
 use MyInvoice\Service\Migration\Shared\PartnerIdentityMatcher;
 use PDO;
 
@@ -340,10 +341,8 @@ final class CodebookImporter
     /** Země partnera podle předpony DIČ (EL = Řecko); tuzemské, chybějící nebo neznámé → null. */
     private function countryFromVatId(string $dic): ?int
     {
-        if (preg_match('/^([A-Z]{2})[0-9A-Z]/', $dic, $m) !== 1 || $m[1] === 'CZ') {
-            return null;
-        }
-        return $this->countryMatcher()->idOf($m[1] === 'EL' ? 'GR' : $m[1]);
+        $iso = PartnerCountry::fromVatId($dic);
+        return $iso === null || $iso === 'CZ' ? null : $this->countryMatcher()->idOf($iso);
     }
 
     /** Země podle státu z adresy Money ({@see CountryNameMatcher}); tuzemsko a neznámý stát → null. */

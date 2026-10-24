@@ -421,7 +421,9 @@ final class PayrollRunPersistenceTest extends TestCase
             'Syntetická mzdová účetní',
             'staff',
             true,
-            ['payroll' => AccessLevel::READ->value],
+            // Úplná struktura součtů včetně exekucí; bez payroll.enforcement je skrytá
+            // (PayrollEnforcementDisclosure), to hlídají vlastní testy.
+            ['payroll' => AccessLevel::READ->value, 'payroll.enforcement' => AccessLevel::READ->value],
         );
         $approved = $this->approveInitialRun();
         $runId = (int) $approved->run['id'];

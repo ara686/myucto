@@ -566,6 +566,56 @@ describe('workspace window manager', () => {
     expect(harness.errors).toEqual([])
   })
 
+  it('znovu načte jen okno aktivního panelu s výchozím obsahem a ostatní okna zachová', async () => {
+    const harness = createHarness()
+    const primary = harness.attachPane('primary')
+
+    await harness.manager.open('/editor/1', 'primary')
+    const other = editor(1)
+    const otherInput = await typeDraft(other, 'zůstane')
+    await harness.manager.open('/editor/2', 'primary')
+    const before = editor(2)
+    await typeDraft(before, 'zahodí se')
+
+    await harness.manager.reloadPane('primary')
+
+    const after = editor(2)
+    expect(after).not.toBe(before)
+    expect(after.dataset.instance).not.toBe(before.dataset.instance)
+    expect(primary.target.contains(after)).toBe(true)
+    expect((after.querySelector('[data-testid="draft"]') as HTMLInputElement).value).toBe('')
+    expect(harness.store.windows.map(window => window.fullPath).sort()).toEqual(['/editor/1', '/editor/2'])
+    expect(other.isConnected).toBe(true)
+    expect(otherInput.value).toBe('zůstane')
+    expect(harness.errors).toEqual([])
+  })
+
+  it('zavře okno z přepínače a do panelu vrátí poslední skryté okno', async () => {
+    const harness = createHarness()
+    const primary = harness.attachPane('primary')
+
+    await harness.manager.open('/editor/1', 'primary')
+    const first = editor(1)
+    await harness.manager.open('/editor/2', 'primary')
+    await harness.manager.open('/editor/3', 'primary')
+    const hidden = windowIdFor(harness.store, '/editor/1')
+
+    await harness.manager.closeWindow(hidden)
+    expect(first.isConnected).toBe(false)
+    expect(harness.store.windows.map(window => window.fullPath)).toEqual(['/editor/3', '/editor/2'])
+    expect(primary.target.contains(editor(3))).toBe(true)
+
+    await harness.manager.closeWindow(windowIdFor(harness.store, '/editor/3'))
+    expect(harness.store.windows.map(window => window.fullPath)).toEqual(['/editor/2'])
+    expect(primary.target.contains(editor(2))).toBe(true)
+    expect(harness.store.panes[0]?.fullPath).toBe('/editor/2')
+
+    await harness.manager.closeWindow(windowIdFor(harness.store, '/editor/2'))
+    expect(harness.store.windows).toEqual([])
+    expect(harness.store.panes[0]?.fullPath).toBeNull()
+    expect(harness.errors).toEqual([])
+  })
+
   it('otevře různé parametry jako samostatná okna a přesnou cestu znovu pouze vybere', async () => {
     const harness = createHarness()
     const primary = harness.attachPane('primary')

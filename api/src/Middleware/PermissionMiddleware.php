@@ -10,6 +10,7 @@ use MyInvoice\Repository\PurchaseInvoiceApprovalRepository;
 use MyInvoice\Security\PermissionChecker;
 use MyInvoice\Security\ClientBankRoutePolicy;
 use MyInvoice\Security\ClientStockRoutePolicy;
+use MyInvoice\Security\FrameworkScopePolicy;
 use MyInvoice\Security\PermissionResolver;
 use MyInvoice\Security\RoutePermissionMap;
 use MyInvoice\Service\Tenant\SupplierAccessResolver;
@@ -44,6 +45,7 @@ final class PermissionMiddleware implements MiddlewareInterface
         // Nepovinné kvůli testům, které middleware staví ručně; v aplikaci ho předává
         // Bootstrap výslovně (autowiring nepovinné parametry nedoplňuje).
         private readonly ?PurchaseInvoiceApprovalRepository $purchaseApprovals = null,
+        private readonly ?FrameworkScopePolicy $frameworkScope = null,
     ) {}
 
     public function process(Request $request, Handler $handler): Response
@@ -95,6 +97,16 @@ final class PermissionMiddleware implements MiddlewareInterface
             if ($role->isClientType() && (!ClientBankRoutePolicy::allows($method, $path, $route->key)
                 || !ClientStockRoutePolicy::allows($method, $path, $route->key))) {
                 return $this->forbidden($request);
+            }
+            // Agendy NNO/504 a SVJ: oprávnění nestačí, firma musí být tou organizací.
+            $scope = FrameworkScopePolicy::scopeForPath($path);
+            if ($scope !== null && $this->frameworkScope !== null
+                && !$this->frameworkScope->allows($access->supplierId, $scope)) {
+                return Json::error($this->responseFactory->createResponse(403), 'framework_scope_denied',
+                    $scope === FrameworkScopePolicy::SVJ
+                        ? 'Agenda SVJ je jen pro společenství vlastníků jednotek.'
+                        : 'Agenda je jen pro nevýdělečné organizace a firmy účtující podle vyhlášky 504/2002 Sb.',
+                    403, ['framework_scope' => $scope]);
             }
             return $handler->handle($this->withEffectiveRole($request, $role));
         }

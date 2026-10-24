@@ -27,6 +27,9 @@ import RowActionsMenu, { type RowAction } from '@/components/ui/RowActionsMenu.v
 import WorkspaceTeleport from '@/components/workspace/WorkspaceTeleport.vue'
 import { BTN_ICON_SM_BASE, OUTLINE, ICONS } from '@/components/ui/buttonStyles'
 import type { BankTransactionActions } from '@/composables/useBankTransactionActions'
+import { useSupplierStore } from '@/stores/supplier'
+import { hasFrameworkScope } from '@/security/frameworkScope'
+import { usePropertyBankLinks } from './usePropertyBankLinks'
 
 /** Náš zdrojový účet (jen scope='all' u „Všechny pohyby" — viz UnpostedBankTransaction). */
 type RowTx = BankTransaction & {
@@ -114,6 +117,19 @@ const outsideSaldo = computed(() => props.tx.match_status === 'unmatched'
 // Avízo, jehož pohyb převzal oficiální výpis: je vyřešené, úhradu nese výpis.
 const supersededNotice = computed(() => props.tx.notice_superseded === true)
 const noInvoiceExpected = computed(() => payrollMatched.value || ownTransfer.value || outsideSaldo.value || supersededNotice.value)
+// Úhrady jednotek SVJ: řádek se jen přihlásí o vazbu, dotaz jde jednou za dávku řádků.
+// Firma bez profilu SVJ se neptá vůbec, SVJ bez povolených vazeb jen jednou (usePropertyBankLinks).
+const supplierStore = useSupplierStore()
+const propertyLinks = usePropertyBankLinks()
+const propertyReadable = computed(() => !auth.isClientRole && auth.canRead('property') && props.tx.amount > 0
+  && hasFrameworkScope(supplierStore.currentSupplier, 'svj'))
+watch(() => props.tx.id, id => { if (propertyReadable.value) propertyLinks.track(supplierStore.currentSupplierId, id) }, { immediate: true })
+const propertyLink = computed(() => propertyReadable.value ? propertyLinks.link(supplierStore.currentSupplierId, props.tx.id) : null)
+const propertyUsed = computed(() => !!propertyLink.value?.source)
+const propertyMatchable = computed(() => propertyReadable.value && propertyLinks.enabled(supplierStore.currentSupplierId)
+  && !propertyUsed.value && props.tx.match_status === 'unmatched' && !noInvoiceExpected.value && props.tx.source !== 'email_notice')
+const propertyProposal = computed(() => propertyMatchable.value ? propertyLink.value?.proposal ?? null : null)
+const propertyPaymentTo = computed<RouteLocationRaw>(() => ({ path: '/property/payments', query: { tab: 'receive', bank_transaction: String(props.tx.id) } }))
 const statusText = computed(() => supersededNotice.value
   ? t('bank.match_status.superseded')
   : payrollMatched.value ? t('bank.match_status.payroll')
@@ -261,6 +277,14 @@ function matchActions(tx: BankTransaction): RowAction[] {
       key: 'open-pi', label: t('bank.open'), icon: 'doc', variant: 'neutral',
       to: tx.matched_purchase_invoice_id ? `/purchase-invoices/${tx.matched_purchase_invoice_id}` : undefined,
       show: !tx.matched_invoice_id && !!tx.matched_purchase_invoice_id && auth.canRead('purchase_invoices'),
+    },
+    {
+      key: 'property-unit', label: t('bank.property_payment.match_unit'), icon: 'link', variant: 'primary',
+      to: propertyPaymentTo.value, show: propertyMatchable.value,
+    },
+    {
+      key: 'property-payment', label: t('bank.property_payment.open'), icon: 'doc', variant: 'neutral',
+      to: propertyPaymentTo.value, show: propertyUsed.value,
     },
     {
       key: 'match', label: t('bank.match'), icon: 'link', variant: 'primary',
@@ -426,6 +450,14 @@ function candidateReject() {
           @click="toggleSuggestion(tx.id)">
           ⏳ {{ t('bank.match_v2.badge') }}
         </button>
+        <RouterLink v-if="propertyUsed" :to="propertyPaymentTo" data-test="tx-property-payment"
+          class="mt-1 block text-[11px] text-primary-600 hover:underline whitespace-nowrap">
+          {{ propertyLink?.workflow_id ? t('bank.property_payment.used_workflow', { id: propertyLink.workflow_id }) : t('bank.property_payment.used') }}
+        </RouterLink>
+        <RouterLink v-else-if="propertyProposal && propertyProposal.status !== 'unidentified'" :to="propertyPaymentTo" data-test="tx-property-proposal"
+          class="mt-1 mx-auto inline-flex items-center rounded px-2 py-0.5 text-xs font-medium whitespace-nowrap bg-warning-50 text-warning-600 hover:underline">
+          {{ t(`bank.property_payment.proposal.${propertyProposal.status}`) }}
+        </RouterLink>
         <PostingStatusBadge v-if="isDoubleEntry" class="block"
           :posting="tx.posting" :currency="currency()" />
         <span v-if="isDoubleEntry && tx.period_closed" class="mt-1 inline-flex text-xs px-2 py-0.5 rounded bg-neutral-100 text-neutral-500">
@@ -503,6 +535,14 @@ function candidateReject() {
           @click="toggleSuggestion(tx.id)">
           ⏳ {{ t('bank.match_v2.badge') }}
         </button>
+        <RouterLink v-if="propertyUsed" :to="propertyPaymentTo" data-test="tx-property-payment"
+          class="text-[11px] text-primary-600 hover:underline whitespace-nowrap">
+          {{ propertyLink?.workflow_id ? t('bank.property_payment.used_workflow', { id: propertyLink.workflow_id }) : t('bank.property_payment.used') }}
+        </RouterLink>
+        <RouterLink v-else-if="propertyProposal && propertyProposal.status !== 'unidentified'" :to="propertyPaymentTo" data-test="tx-property-proposal"
+          class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium whitespace-nowrap bg-warning-50 text-warning-600 hover:underline">
+          {{ t(`bank.property_payment.proposal.${propertyProposal.status}`) }}
+        </RouterLink>
         <PostingStatusBadge v-if="isDoubleEntry" :posting="tx.posting" :currency="currency()" />
         <span v-if="isDoubleEntry && tx.period_closed" class="inline-flex text-xs px-2 py-0.5 rounded bg-neutral-100 text-neutral-500">
           {{ t('bank.posting.period_closed_badge') }}

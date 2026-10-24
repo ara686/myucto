@@ -57,6 +57,8 @@ final class FinancialStatementService
         private readonly StatementMapper $mapper,
         private readonly StatementMapResolver $maps,
         private readonly \MyInvoice\Repository\AccountingSupplierSettingsRepository $settings,
+        private readonly StatementFrameworkResolver $frameworkResolver,
+        private readonly Statement504Service $statements504,
         private readonly NetTurnoverProjection $turnover,
     ) {}
 
@@ -77,6 +79,11 @@ final class FinancialStatementService
      */
     public function balanceSheet(int $supplierId, int $periodId, ?string $asOf, string $scope, ?DimensionFilter $dimension = null): array
     {
+        $context = $this->frameworkResolver->context($supplierId, $periodId, $asOf);
+        if ($context['framework'] === 'cz_504') {
+            return $this->statements504->build('balance_sheet', $supplierId, $context, $this->scope504($supplierId, $periodId, $scope), $dimension)
+                + ['entity' => $this->loadEntity($supplierId)];
+        }
         $ctx = $this->buildStatement('balance_sheet', $supplierId, $periodId, $asOf, $scope, $dimension);
 
         // D1 (audit 2026-07, H8): §3a odst. 2 písm. b) vyhl. 500/2002 Sb. — zkrácená
@@ -267,6 +274,11 @@ final class FinancialStatementService
      */
     private function incomeStatementFor(string $type, int $supplierId, int $periodId, ?string $asOf, string $scope, ?DimensionFilter $dimension = null): array
     {
+        $context = $this->frameworkResolver->context($supplierId, $periodId, $asOf);
+        if ($context['framework'] === 'cz_504') {
+            return $this->statements504->build($type, $supplierId, $context, $this->scope504($supplierId, $periodId, $scope), $dimension)
+                + ['entity' => $this->loadEntity($supplierId)];
+        }
         $ctx = $this->buildStatement($type, $supplierId, $periodId, $asOf, $scope, $dimension);
 
         $rows = [];
@@ -329,6 +341,10 @@ final class FinancialStatementService
      */
     public function accountView(int $supplierId, int $periodId, ?string $asOf, ?DimensionFilter $dimension = null): array
     {
+        $context = $this->frameworkResolver->context($supplierId, $periodId, $asOf);
+        if ($context['framework'] === 'cz_504') {
+            return $this->statements504->accountView($supplierId, $context, $dimension) + ['entity' => $this->loadEntity($supplierId)];
+        }
         $period = $this->periods->findById($supplierId, $periodId);
         if ($period === null) {
             throw new ReportException('period_not_found', 'Účetní období #' . $periodId . ' neexistuje.', 404);
@@ -912,5 +928,16 @@ final class FinancialStatementService
     private static function cents(float|int|string|null $amount): int
     {
         return (int) round(((float) $amount) * 100.0);
+    }
+
+    private function scope504(int $supplierId, int $periodId, string $scope): string
+    {
+        if (!in_array($scope, ['auto', 'full', 'small', 'micro'], true)) {
+            throw new ReportException('invalid_statement_scope', 'Neplatný rozsah účetního výkazu.');
+        }
+        if ($scope === 'full') return 'full';
+        $evaluation = $this->categories->evaluate($supplierId, $periodId);
+        if ($evaluation['scope'] === 'full' || !in_array($evaluation['category'], ['micro', 'small'], true)) return 'full';
+        return $scope === 'auto' ? $evaluation['scope'] : $scope;
     }
 }

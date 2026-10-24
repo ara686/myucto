@@ -6,15 +6,23 @@
 [![Vue 3](https://img.shields.io/badge/Vue-3-4FC08D?logo=vuedotjs&logoColor=white)](https://vuejs.org/)
 [![Docker](https://img.shields.io/badge/Docker-multi--arch-2496ED?logo=docker&logoColor=white)](https://github.com/radekhulan/myucto/pkgs/container/myucto)
 
-> **MyÚčto.cz je nástupcem open-source systému
-> [MyInvoice](https://github.com/radekhulan/myinvoice), známého také z
-> [myinvoice.cz](https://myinvoice.cz/). Veškeré funkce MyInvoice zůstávají
-> v MyÚčto navždy zdarma a plně použitelné i bez aktivní licence.**
+> [!CAUTION]
+> ## ⚠️ Zdrojové kódy jsou veřejné, ale MyÚčto.cz NENÍ open-source
 >
-> Komerční licence přidává podvojné účetnictví, účetní nástroje a uzávěrky,
-> sklad a napojení e-shopu, evidenci majetku, EPO podání a archív a rozšířené
-> opravy DPH (§ 74b, § 43, § 46 a § 79). Celý rozsah lze prvních 60 dní
-> bezplatně vyzkoušet.
+> **Kromě menší části převzaté z projektu MyInvoice pod licencí MIT podléhá
+> MyÚčto.cz komerční licenci.**
+>
+> **Bez zakoupené komerční licence NENÍ dovoleno tyto zdrojové kódy používat,
+> kopírovat, upravovat ani z nich vytvářet odvozená díla pro jakékoli použití
+> mimo samotný produkt MyÚčto.cz.** Veřejně dostupný kód není udělením licence.
+> Podrobnosti uvádí článek 3 souboru [LICENCE.txt](LICENCE.txt), o komerční
+> licenci se domluvíte přes [myucto.cz](https://myucto.cz/).
+
+Bezplatná část MyÚčto zůstává navždy zdarma a plně použitelná i bez aktivní
+licence. Komerční licence přidává podvojné účetnictví, účetní nástroje
+a uzávěrky, sklad a napojení e-shopu, evidenci majetku, EPO podání a archív
+a rozšířené opravy DPH (§ 74b, § 43, § 46 a § 79). Celý rozsah lze prvních
+60 dní bezplatně vyzkoušet.
 
 ### Účetnictví od dokladu po uzávěrku. Vaše data, vaše servery.
 

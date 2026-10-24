@@ -45,15 +45,37 @@ final class CsasOnboardingService
     {
         $this->account($supplierId, $currencyId);
         return ['callback_url' => $this->callbackUrl(), 'server_ready' => $this->secrets->validateKey() === null,
-            'environment' => $this->api->environment()];
+            'environment' => $this->api->environment(), 'payment_submission' => $this->paymentSubmission($supplierId, $currencyId)];
+    }
+
+    /**
+     * Stav odesílání plateb připojeného účtu: null = účet není připojený; jinak
+     * {@see CsasCredentialVault::paymentAvailability()}. Nečitelný přístup čtení neblokuje,
+     * jen se pro platby hlásí jako souhlas k obnovení.
+     */
+    private function paymentSubmission(int $supplierId, int $currencyId): ?string
+    {
+        $stored = $this->oauth->connectedCredential($supplierId, $currencyId);
+        if ($stored === null) return null;
+        try {
+            $data = $this->vault->decode($this->secrets->decryptFor($stored['token_ciphertext'],
+                CsasCredentialVault::context($supplierId, $stored['id'])));
+        } catch (\Throwable) {
+            return 'authorization_scope_missing';
+        }
+        return CsasCredentialVault::paymentAvailability($data);
     }
 
     public function start(int $supplierId, int $currencyId, int $userId, #[\SensitiveParameter] array $input): array
     {
         $this->account($supplierId, $currencyId);
-        if ($userId < 1 || array_diff(array_keys($input), ['api_key', 'client_id', 'client_secret'])) {
+        if ($userId < 1 || array_diff(array_keys($input), ['api_key', 'client_id', 'client_secret', 'payments'])
+            || (array_key_exists('payments', $input) && !is_bool($input['payments']))) {
             throw new BankConnectorOperationException('credential_invalid');
         }
+        // Odesílání plateb je vědomá volba; bez ní souhlas žádá jen čtení účtů.
+        $payments = $input['payments'] ?? false;
+        unset($input['payments']);
         if ($this->secrets->validateKey() !== null) throw new BankConnectorOperationException('encryption_key_unavailable');
         $credentials = [];
         foreach (['api_key', 'client_id', 'client_secret'] as $key) {
@@ -65,9 +87,10 @@ final class CsasOnboardingService
         }
         $credentials['redirect_uri'] = $this->callbackUrl();
         $credentials['environment'] = $this->api->environment();
-        return $this->calls->withConnectionLock($supplierId, $currencyId, function () use ($supplierId, $currencyId, $userId, $credentials): array {
+        return $this->calls->withConnectionLock($supplierId, $currencyId, function () use ($supplierId, $currencyId, $userId, $credentials, $payments): array {
             $authorization = $this->flow->authorize();
-            $url = $this->api->authorizationUrl($credentials + ['code_verifier' => (string) $authorization->codeVerifier], $authorization->state);
+            $url = $this->api->authorizationUrl($credentials + ['code_verifier' => (string) $authorization->codeVerifier], $authorization->state, $payments);
+            $credentials['payments_requested'] = $payments;
             // Platí jen poslední zahájené přihlášení, i to rozpracované v původní tabulce.
             $this->oauth->cancelPending($supplierId, $currencyId);
             $this->flow->store($authorization, $supplierId, $userId, 'bank', self::PROVIDER, $currencyId,
@@ -126,7 +149,8 @@ final class CsasOnboardingService
             $account = $this->account($supplierId, $currencyId);
             if (($credentials['redirect_uri'] ?? null) !== $this->callbackUrl()) throw new BankConnectorOperationException('app_url_invalid');
             $tokens = $this->api->exchange($credentials, $code);
-            unset($credentials['code_verifier']);
+            $paymentsRequested = ($credentials['payments_requested'] ?? false) === true;
+            unset($credentials['code_verifier'], $credentials['payments_requested']);
             $credentials['access_token'] = $tokens['access_token'];
             $matches = array_values(array_filter($this->api->accounts($credentials), static fn (array $remote): bool =>
                 is_string($remote['identification']['iban'] ?? null)
@@ -139,7 +163,9 @@ final class CsasOnboardingService
             $credentials += ['version' => 1, 'supplier_id' => $supplierId, 'connection_id' => $connectionId,
                 'refresh_token' => $tokens['refresh_token'], 'access_expires_at' => time() + $tokens['expires_in'],
                 'account_id' => $remote['id'], 'account_iban' => $remote['identification']['iban'],
-                'account_currency' => $remote['currency'], 'call_guard_key' => bin2hex(random_bytes(32))];
+                'account_currency' => $remote['currency'], 'call_guard_key' => bin2hex(random_bytes(32)),
+                'scope' => self::grantedScope($tokens['scope'] ?? '', $paymentsRequested),
+                'payment_account_suitable' => self::suitableForPayments($remote)];
             $ciphertext = $this->secrets->encryptFor($this->vault->encode($credentials), CsasCredentialVault::context($supplierId, $connectionId));
             if (!str_starts_with($ciphertext, 'enc:v2:')) throw new BankConnectorOperationException('encryption_failed');
             $this->connections->saveValidated($supplierId, $connectionId, 'csas', $ciphertext, true,
@@ -151,6 +177,28 @@ final class CsasOnboardingService
             $finish(false, $errorCode);
             throw new BankConnectorOperationException($errorCode);
         }
+    }
+
+    /**
+     * Udělený scope, jak ho vrátila banka. Bez vyžádaných plateb se platební oprávnění
+     * neukládá, ani když ho banka vydá (IdP může vracet všechny scope registrované u aplikace).
+     * Když banka scope nevrátí, platby zůstanou nedostupné.
+     */
+    private static function grantedScope(string $scope, bool $paymentsRequested): string
+    {
+        $parts = preg_split('/\s+/', trim($scope)) ?: [];
+        if (!$paymentsRequested) $parts = array_diff($parts, ['siblings.payments']);
+        return implode(' ', array_values(array_unique(array_filter($parts, static fn (string $part): bool => $part !== ''))));
+    }
+
+    /**
+     * Accounts v3 vrací u účtu suitableScope; klíč PISP znamená, že účet smí platit přes
+     * Premium Payments. Bez suitableScope se účet za vhodný nepovažuje.
+     */
+    private static function suitableForPayments(array $remote): bool
+    {
+        $scope = $remote['suitableScope'] ?? null;
+        return is_array($scope) && array_key_exists('PISP', $scope);
     }
 
     private function account(int $supplierId, int $currencyId): array

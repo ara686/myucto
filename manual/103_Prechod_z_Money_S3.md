@@ -26,6 +26,10 @@
 
 ## 103.2 Než začnete
 
+Účetní převody z Money S3, POHODY, PREMIERU a Stereo NX podporují pouze období vedená po celou dobu podle vyhlášky 500. Historické období 500 lze převést i tehdy, když firma později přešla na rámec 504. Převod zahrnující rámec 504 se odmítne před zápisem účetnictví. Samostatný převod dokladů toto omezení nepřebírá.
+
+Převody z cizích programů nebyly ověřeny pro neziskové organizace (spolky, nadace, ústavy, SVJ a další účetní jednotky podle vyhlášky 504/2002 Sb.). Neznají osnovu a výkazy podle vyhlášky 504, hlavní a hospodářskou činnost ani fondy. Je-li cílová firma podle právní formy nezisková organizace nebo SVJ, nebo vedla-li někdy účetnictví podle vyhlášky 504, ukáže průvodce každého převodu výrazné upozornění. V takovém případě před převodem kontaktujte podporu.
+
 1. **Podvojné účetnictví v Money.** Převod přenáší účetní deník podvojného
    účetnictví. Agendu, kterou Money vede jako daňovou evidenci (peněžní deník),
    převést nejde, viz [§ 103.10.10](#1031010-omezeni).

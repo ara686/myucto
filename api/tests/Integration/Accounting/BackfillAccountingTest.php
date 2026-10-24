@@ -12,6 +12,7 @@ use MyInvoice\Repository\ImportJobRepository;
 use MyInvoice\Service\Accounting\Activation\DocumentBackfill;
 use MyInvoice\Service\Accounting\Activation\PendingBackfillCounter;
 use MyInvoice\Service\Accounting\ChartOfAccountsSeeder;
+use MyInvoice\Service\Accounting\DocumentPostingGroup;
 use MyInvoice\Service\Accounting\PostingBackfillJobService;
 use MyInvoice\Service\Accounting\PostingException;
 use MyInvoice\Service\Accounting\PostingService;
@@ -334,6 +335,34 @@ final class BackfillAccountingTest extends TestCase
         self::assertSame($before, $this->entryHeader($entryId), 'Doúčtování nesmí přepsat už zaúčtovaný doklad.');
         self::assertSame(1, $this->sourceEntryCount('invoice', $unpostedId), 'Nezaúčtovaný doklad se zaúčtuje.');
         self::assertSame(1, (int) $this->jobs->findById($jobId)['created_count']);
+    }
+
+    public function testUnpostedBackfillTakenOverCountExcludesRemainingOwnedPosting(): void
+    {
+        $client = $this->client('Syntetická skupina převzatého předpisu');
+        $docs = [
+            'invoice' => $this->sale('SYN-GROUP-FV', $client, 1000, 210, 21),
+            'purchase_invoice' => $this->purchase('SYN-GROUP-PF', $client, 1000, 210, 21),
+        ];
+        foreach ($docs as $type => $id) {
+            $lines = [['account_code' => '518', 'side' => 'debit', 'amount' => 1000],
+                ['account_code' => '321', 'side' => 'credit', 'amount' => 1000]];
+            $base = $this->posting->postDocument($this->supplierId, $type, $id, $lines, ['entry_date' => self::YEAR . '-06-15']);
+            $owned = $this->posting->postDocument($this->supplierId, 'manual', null, $lines, ['entry_date' => self::YEAR . '-06-15']);
+            (new DocumentPostingGroup($this->db))->attach($this->supplierId, $type, $id, [$base, $owned]);
+            $this->posting->reverse($this->supplierId, $base);
+        }
+        $preview = $this->backfill->run($this->supplierId, null, self::YEAR, true);
+        foreach ($docs as $type => $id) {
+            self::assertSame(1, $preview[$type]['updated'], 'Náhled rozpozná existující vlastněný předpis.');
+            self::assertSame(0, $preview[$type]['posted']);
+            $this->db->pdo()->prepare('INSERT INTO money_s3_import_map (supplier_id, kind, money_key, target_id) VALUES (?, ?, ?, ?)')
+                ->execute([$this->supplierId, $type, 'synth|GROUP-' . $type, $id]);
+        }
+        $unposted = $this->backfill->run($this->supplierId, null, self::YEAR, true, onlyUnposted: true);
+        self::assertSame(['invoice' => 0, 'purchase_invoice' => 0], $unposted['taken_over']);
+        $all = $this->backfill->run($this->supplierId, null, self::YEAR, true);
+        self::assertSame(['invoice' => 1, 'purchase_invoice' => 1], $all['taken_over']);
     }
 
     /**

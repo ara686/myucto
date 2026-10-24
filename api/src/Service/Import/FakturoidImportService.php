@@ -905,6 +905,15 @@ final class FakturoidImportService
             'language'              => 'cs',
             'items'                 => $items,
         ];
+        // #229: poměrný odpočet DPH z Fakturoidu. Doklad od neplátce mimo reverse charge
+        // zůstává bez nároku, jak ho založí výchozí pravidlo createDraft().
+        $deduction = FakturoidSourceDocument::vatDeduction($e);
+        if ($deduction !== null && !($this->vendorIsNonPayer($vendorId) && !$payload['reverse_charge'])) {
+            $payload += $deduction;
+        }
+        if (!FakturoidSourceDocument::taxDeductible($e)) {
+            $payload['tax_deductible'] = false;
+        }
         // Dedup guard — re-import stejné faktury z Fakturoidu (typicky opakovaný pull)
         // by jinak hodil SQL 23000 duplicate key. Vrátíme existující ID.
         $existingId = $this->purchaseRepo->findIdByVendorInvoice(
@@ -949,6 +958,14 @@ final class FakturoidImportService
         $stmt->execute([$supplierId, $fakturoidSubjectId]);
         $id = $stmt->fetchColumn();
         return $id === false ? null : (int) $id;
+    }
+
+    private function vendorIsNonPayer(int $vendorId): bool
+    {
+        $stmt = $this->db->pdo()->prepare('SELECT is_vat_payer FROM clients WHERE id = ? LIMIT 1');
+        $stmt->execute([$vendorId]);
+        $flag = $stmt->fetchColumn();
+        return $flag !== false && $flag !== null && (int) $flag === 0;
     }
 
     private function resolveCurrencyId(string $code, int $supplierId, bool $isActive): int

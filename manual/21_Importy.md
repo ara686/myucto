@@ -813,7 +813,9 @@ importu. V podvojném účetnictví je před zkouškou navíc mapování účtů
 režim neodhaduje. Označení "EU" bez konkrétního státu volbou pro prázdnou zemi
 protistrany určeno není. Vyplněné firemní údaje ze zálohy nejsou předem označené.
 Převzetí údajů používá oprávnění ke správě firmy a při souběžné změně vyžádá nový
-náhled. IČO, režim účetnictví a plátcovství se tím nemění.
+náhled. IČO, režim účetnictví a plátcovství se tím nemění. Převod nebyl ověřen
+pro neziskové organizace a SVJ; průvodce je výrazně upozorní a účetní převod do
+období vedeného podle vyhlášky 504 odmítne.
 
 Pokud vlastnímu bankovnímu účtu chybí dokladová řada, průvodce na to upozorní
 při výběru firmy. Obsahuje-li záloha jediný účet a jedinou řadu bankovních
@@ -1126,6 +1128,15 @@ včetně oblastí mimo rozsah. Potvrďte cílovou firmu a klikněte na
 **Importovat do aktuální firmy**. Cílem je firma vybraná v přepínači aplikace;
 změna firmy zruší výběr souboru i výsledek kontroly. Potřebujete právo zápisu
 pro import, účetní deník a nastavení firmy.
+
+Nese-li export účetnictví (účtovou osnovu, účetní období nebo deník), musí
+cílová firma vést po celou dobu stejný účetní rámec jako zdrojová firma
+(vyhláška 500, nebo 504 u neziskových organizací). Jinak kontrola nanečisto
+převod odmítne s datem, od kterého se rámce liší. Export bez historie rámce
+se posuzuje jako celý vedený podle vyhlášky 500. Evidence členů a příspěvků,
+dotací, kapitálu a podklady daně z příjmů neziskové organizace se nepřenášejí.
+Převod pro neziskové organizace nebyl ověřen a průvodce u nich ukáže výrazné
+upozornění; před převodem kontaktujte podporu.
 
 Průvodce přijímá ZIP do **2 GiB**, nahrává jej po částech a používá stejný
 importér jako CLI. Vybraná data a přílohy mají společný limit **64 MiB / 100 000

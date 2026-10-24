@@ -4,6 +4,8 @@ import { useI18n } from 'vue-i18n'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import {
   accountingApi,
+  isStatement504,
+  type Statement504Report,
   type AccountingPeriod,
   type IncomeStatementReport,
   type EntityCategory,
@@ -12,6 +14,7 @@ import {
   type StatementAccountsReport,
   type StatementParams,
 } from '@/api/accounting'
+import Statement504Table from '@/components/accounting/Statement504Table.vue'
 import StatementAccountsTable from '@/components/accounting/StatementAccountsTable.vue'
 import YearEndTaxEstimate from '@/components/accounting/YearEndTaxEstimate.vue'
 import { useToast } from '@/composables/useToast'
@@ -33,15 +36,21 @@ const unit = ref<'czk' | 'thousands'>('czk')
 function fm(value: number | null | undefined): string {
   if (unit.value === 'czk') return formatMoney(value)
   if (value === null || value === undefined || Number.isNaN(value)) return '—'
+  if (view.value === 'accounts' ? accounts504.value : report504.value) {
+    return new Intl.NumberFormat(locale.value === 'en' ? 'en-US' : 'cs-CZ', { maximumFractionDigits: 0 })
+      .format(Math.sign(value) * Math.round(Math.abs(value) / 1000))
+  }
   return new Intl.NumberFormat(locale.value === 'en' ? 'en-US' : 'cs-CZ', { maximumFractionDigits: 0 })
     .format(Math.round(value / 1000))
 }
 
 const periods = ref<AccountingPeriod[]>([])
 const report = ref<IncomeStatementReport | null>(null)
+const report504 = ref<Statement504Report | null>(null)
+const accounts504 = ref<Statement504Report | null>(null)
 const view = ref<'statement' | 'accounts'>('statement')
 const accountsReport = ref<StatementAccountsReport | null>(null)
-const hasData = computed(() => view.value === 'accounts' ? !!accountsReport.value : !!report.value)
+const hasData = computed(() => view.value === 'accounts' ? !!(accountsReport.value || accounts504.value) : !!(report.value || report504.value))
 const category = ref<EntityCategory | null>(null)
 const loading = ref(false)
 
@@ -92,9 +101,13 @@ async function load() {
   expandedRowCode.value = null
   try {
     if (view.value === 'accounts') {
-      accountsReport.value = await accountingApi.getStatementAccounts(accountsParams())
+      const result = await accountingApi.getStatementAccounts(accountsParams())
+      accounts504.value = isStatement504(result) ? result : null
+      accountsReport.value = isStatement504(result) ? null : result
     } else {
-      report.value = await accountingApi.getIncomeStatement(queryParams())
+      const result = await accountingApi.getIncomeStatement(queryParams())
+      report504.value = isStatement504(result) ? result : null
+      report.value = isStatement504(result) ? null : result
     }
     if (view.value === 'statement' && filters.scope === 'auto') {
       try {
@@ -107,6 +120,8 @@ async function load() {
     }
   } catch (e: any) {
     toast.error(e?.response?.data?.error?.message || t('common.error'))
+    report504.value = null
+    accounts504.value = null
     report.value = null
     accountsReport.value = null
   } finally {
@@ -140,13 +155,13 @@ async function exportFile(format: 'pdf' | 'xlsx') {
   if (!filters.period_id || !hasData.value) return
   exporting.value = true
   try {
-    if (view.value === 'accounts' && accountsReport.value) {
+    if (view.value === 'accounts' && (accountsReport.value || accounts504.value)) {
       const r = await accountingApi.exportReport('/accounting/reports/statement-accounts/export',
         { ...accountsParams(), part: 'profit_loss', unit: unit.value, format })
-      downloadBlob(r.data as unknown as Blob, `vysledovka-po-uctech-${accountsReport.value.as_of}.${format}`)
-    } else if (report.value) {
+      downloadBlob(r.data as unknown as Blob, `vysledovka-po-uctech-${(accountsReport.value || accounts504.value)!.as_of}.${format}`)
+    } else if (report.value || report504.value) {
       const r = await accountingApi.exportReport('/accounting/reports/income-statement/export', { ...queryParams(), format })
-      downloadBlob(r.data as unknown as Blob, `vysledovka-${report.value.as_of}.${format}`)
+      downloadBlob(r.data as unknown as Blob, `vysledovka-${(report.value || report504.value)!.as_of}.${format}`)
     }
   } catch (e: any) {
     toast.error(e?.response?.data?.error?.message || t('common.error'))
@@ -219,7 +234,7 @@ onMounted(async () => {
               class="px-3 py-2 text-sm font-medium border-b-2 -mb-px whitespace-nowrap"
               :class="view === 'accounts' ? 'border-primary-600 text-primary-700' : 'border-transparent text-neutral-500 hover:text-neutral-700'"
               @click="switchView('accounts')">
-        {{ t('accounting.statement_accounts.tab_accounts_income') }}
+        {{ t((view === 'accounts' ? accounts504 : report504) ? 'accounting.statement504.management' : 'accounting.statement_accounts.tab_accounts_income') }}
       </button>
     </div>
 
@@ -266,6 +281,8 @@ onMounted(async () => {
 
     <EmptyState v-else-if="!hasData" boxed accent="neutral" icon="chart" :title="t('accounting.income_statement.empty')" />
 
+    <Statement504Table v-else-if="view === 'accounts' && accounts504" :report="accounts504" :format="fm" :unit="unit" part="profit_loss" />
+    <Statement504Table v-else-if="view === 'statement' && report504" :report="report504" :format="fm" :unit="unit" />
     <template v-else-if="view === 'accounts' && accountsReport">
       <div class="text-xs text-neutral-500 mb-3">
         {{ accountsReport.entity.name }}<template v-if="accountsReport.entity.ico"> · IČO {{ accountsReport.entity.ico }}</template>

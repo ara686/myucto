@@ -25,6 +25,7 @@ import type { Client } from '@/api/clients'
 const POSTING_REASON_KEYS: Record<string, string> = {
   fx_not_supported: 'bank.posting.reason_fx_not_supported',
   document_not_posted: 'bank.posting.reason_document_not_posted',
+  posting_group_saldo_ambiguous: 'bank.posting.reason_posting_group_saldo_ambiguous',
   period_closed: 'bank.posting.err_period_closed',
   not_double_entry: 'bank.posting.reason_not_double_entry',
   already_paid_verify: 'bank.posting.reason_already_paid_verify',

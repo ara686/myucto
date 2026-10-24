@@ -1,8 +1,10 @@
 # 58. Výkaz zisku a ztráty - druhové členění
 
-> Sestavení druhové výsledovky: náklady podle druhu (spotřeba, služby, mzdy, odpisy, finanční náklady) a výnosy podle zákonných řádků přílohy č. 2 části I vyhlášky č. 500/2002 Sb. Kapitola je pro účetní v podvojném účetnictví.
+> Sestavení druhové výsledovky podle účetního rámce platného v daném období: vyhlášky č. 500/2002 Sb. pro podnikatele nebo č. 504/2002 Sb. pro účetní jednotky, jejichž hlavním předmětem činnosti není podnikání. Kapitola je pro účetní v podvojném účetnictví.
 
 ## 58.1 Kdy to potřebujete
+
+Pro období vedené podle vyhlášky 504/2002 Sb. má výkaz sloupce **Hlavní činnost**, **Hospodářská činnost** a **Celkem**. Členění vychází z činnosti na zaúčtovaných řádcích. Chybějící klasifikaci je nutné doplnit; aplikace ji sama nepovažuje za hlavní činnost. Stejnou strukturu zachovávají PDF a XLSX. Malá a mikro jednotka bez povinného auditu používají stejnou zkrácenou sadu položek. Účelová výsledovka pro tento rámec není dostupná.
 
 Kapitolu otevřete, když:
 

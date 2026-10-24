@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace MyInvoice\Service\Migration\Abra;
 
 use MyInvoice\Infrastructure\Database\Connection;
-use MyInvoice\Infrastructure\Database\TableStatistics;
 use MyInvoice\Infrastructure\Database\TransactionFailure;
+use MyInvoice\Service\Accounting\AccountingFrameworkImportGuard;
+use MyInvoice\Service\Accounting\AccountingFrameworkException;
+use MyInvoice\Infrastructure\Database\TableStatistics;
 use MyInvoice\Repository\AbraImportRepository;
 use MyInvoice\Repository\AccountingPeriodRepository;
 use MyInvoice\Repository\ChartOfAccountsRepository;
@@ -217,6 +219,12 @@ final class AbraAccountingImporter
             }
         }
 
+        try {
+            (new AccountingFrameworkImportGuard($this->db))->assertCz500Periods($supplierId, $periods);
+        } catch (AccountingFrameworkException $e) {
+            $blockers[] = $e->errorCode;
+        }
+
         return [
             'ok' => $blockers === [],
             'blockers' => array_values(array_unique($blockers)),
@@ -252,6 +260,7 @@ final class AbraAccountingImporter
         $nested = $pdo->inTransaction();
         try {
             $nested ? $pdo->exec('SAVEPOINT abra_accounting_import') : $pdo->beginTransaction();
+            (new AccountingFrameworkImportGuard($this->db))->assertCz500Periods($supplierId, $preflight['periods'], true);
             $this->checkCancelled($cancelled);
             $sourceOss = $snapshot['_meta']['source_oss'] ?? [];
             if (is_array($sourceOss)) (new AbraOssSettingsImporter($this->db))->apply($supplierId, $sourceOss);
@@ -436,7 +445,7 @@ final class AbraAccountingImporter
                     . ' at ' . basename($e->getFile()) . ':' . $e->getLine());
                 $report['failed']++;
                 $report['blocked'] = true;
-                if ($e instanceof AbraException) $report['warnings'][] = $e->errorCode;
+                if ($e instanceof AbraException || $e instanceof AccountingFrameworkException) $report['warnings'][] = $e->errorCode;
                 $report['warnings'][] = 'import_failed';
             }
         }

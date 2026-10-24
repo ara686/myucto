@@ -1078,6 +1078,9 @@ export interface CashFlowBreakdownRow {
  * konstrukčně. Když nesedí, je vada v datech, ne ve výkazu.
  */
 export interface Section18Statements {
+  accounting_framework?: 'cz_504'
+  available?: boolean
+  reason?: string
   cash_flow: {
     period: ReportPeriod
     opening: number
@@ -1094,7 +1097,7 @@ export interface Section18Statements {
       financing: CashFlowBreakdownRow[]
       unclassified: CashFlowBreakdownRow[]
     }
-  }
+  } | null
   equity: {
     period: ReportPeriod
     rows: Array<{
@@ -1107,8 +1110,8 @@ export interface Section18Statements {
     }>
     totals: { opening: number; increase: number; decrease: number; closing: number }
     reconciles: boolean
-  }
-  category: string
+  } | null
+  category?: string
   /** Povinnost sestavit oba přehledy (velká/střední ÚJ nebo povinný audit). */
   required: boolean
 }
@@ -1348,6 +1351,53 @@ export interface StatementRow {
   amount: number
   prev_amount: number
   accounts: StatementRowAccount[]
+}
+
+export interface Statement504Component {
+  key: string
+  label: string
+  start?: number | null
+  end?: number | null
+  main?: number
+  economic?: number
+  total?: number
+}
+
+export interface Statement504Row {
+  row_code: string
+  display_code: string
+  label: string
+  adis_sentence: 'UR' | 'US' | 'UT'
+  adis_row: number
+  start?: number | null
+  end?: number | null
+  main?: number
+  economic?: number
+  total?: number
+  components?: Statement504Component[]
+}
+
+export interface Statement504Report {
+  accounting_framework: 'cz_504'
+  statement_type: 'balance_sheet' | 'income_statement' | 'account_view'
+  version_code: string
+  as_of: string
+  scope?: EffectiveScope
+  entity: StatementEntity
+  period: ReportPeriod
+  dimension?: ReportDimensionFilter | null
+  view_kind?: 'management'
+  deferred_tax_method?: { enabled: true; version: '504-deferred-own-v1'; reference: string; disclosure: string; faithful_image_reason: string; standard_departure_reason: string; presentation_reason: string; first_adoption: boolean; first_adoption_reason?: string }
+  assets?: Statement504Row[]
+  liabilities?: Statement504Row[]
+  rows?: Statement504Row[]
+  profit_loss?: Statement504Row[]
+  balances?: { account_id: number; code: string; name: string; account_type: string; opening_debit_balance: number; closing_debit_balance: number }[]
+  checks: Record<string, number | boolean>
+}
+
+export function isStatement504(value: object): value is Statement504Report {
+  return 'accounting_framework' in value && value.accounting_framework === 'cz_504'
 }
 
 export interface BalanceSheetReport {
@@ -2301,12 +2351,12 @@ export const accountingApi = {
   applyPairingSuggestions: (accountId: number, payload: { as_of: string; days: number; pairs?: number[][] }) =>
     api.post<{ created: number }>(`/accounting/open-items/${accountId}/suggestions/apply`, payload).then(r => r.data),
   getBalanceSheet: (params: StatementParams) =>
-    api.get<BalanceSheetReport>('/accounting/reports/balance-sheet', { params }).then(r => r.data),
+    api.get<BalanceSheetReport | Statement504Report>('/accounting/reports/balance-sheet', { params }).then(r => r.data),
   getIncomeStatement: (params: StatementParams) =>
-    api.get<IncomeStatementReport>('/accounting/reports/income-statement', { params }).then(r => r.data),
+    api.get<IncomeStatementReport | Statement504Report>('/accounting/reports/income-statement', { params }).then(r => r.data),
   /** Rozvaha a výsledovka po účtech s hospodářským výsledkem (zůstatky před uzávěrkou). */
   getStatementAccounts: (params: Omit<StatementParams, 'scope'>) =>
-    api.get<StatementAccountsReport>('/accounting/reports/statement-accounts', { params }).then(r => r.data),
+    api.get<StatementAccountsReport | Statement504Report>('/accounting/reports/statement-accounts', { params }).then(r => r.data),
   /** Odhad do konce otevřeného roku (náhled DPPO, uzávěrka, odpisy, zálohy) — samostatný request. */
   getYearEndTaxEstimate: (periodId: number) =>
     api.get<YearEndTaxEstimate>('/accounting/reports/statement-accounts/tax-estimate', { params: { period_id: periodId } }).then(r => r.data),
