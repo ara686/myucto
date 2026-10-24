@@ -176,11 +176,14 @@ input[type="file"].form-input::file-selector-button {
   --color-status-cancelled-fg: #A7A0BA;
 
   /* ─── Typografie ───
-     Self-hostované subsety, viz styles/fonts.css. Display řez (Instrument Serif)
-     je záměrně jen pro H1 stránek a hero čísla — v tabulkách a formulářích nikdy. */
+     Self-hostované subsety, viz styles/fonts.css. Utilita `font-mono` u částek a čísel
+     dokladů vede na Geist s tabulárními číslicemi: číslice mají stejnou šířku pod sebou,
+     ale mezera mezi trojicemi zůstane úzká (v neproporcionálním řezu byla široká jako
+     číslice). Skutečný neproporcionální řez nese jen kód přes --font-code. */
   --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Consolas, monospace;
-  --font-display: "Instrument Serif", "Iowan Old Style", Georgia, serif;
+  --font-mono: var(--font-sans);
+  --font-code: "Geist Mono", ui-monospace, "SF Mono", Consolas, monospace;
+  --font-display: var(--font-sans);
 
   --radius-sm: 5px;
   --radius-md: 7px;
@@ -469,15 +472,15 @@ body.workspace-window-single-padded #app {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
 }
+:where(code, kbd, samp, pre) {
+  font-family: var(--font-code);
+}
 
-/* ═══════════════════════ DISPLAY ŘEZ ═══════════════════════
- * Instrument Serif má malý x-height a pod ~20 px se rozpadá — proto ho nosí jen
- * nadpisy stránek a hero čísla, nikdy ne tabulky, formuláře nebo popisky.
- *
- * H1 stylujeme globálně (mimo @layer, aby přebilo `font-semibold` z utilit):
- * v aplikaci je přes 140 nadpisů stránek a ručně jim třídu dopisovat by znamenalo
- * sáhnout do stovky souborů. font-weight musí být 400 — řez má jen jeden tah a
- * `font-semibold` by vyrobil ošklivý syntetický tučný text.
+/* ═══════════════════════ NADPISY ═══════════════════════
+ * Nadpisy stránek a hero čísla jsou v Geistu, řezu 600 s mírně staženým proložením.
+ * H1 stylujeme globálně (mimo @layer, aby přebilo utility z jednotlivých stránek):
+ * v aplikaci je přes 140 nadpisů a ručně jim třídu dopisovat by znamenalo sáhnout
+ * do stovky souborů.
  *
  * Opt-out je `class="font-sans"` na H1 — používá ho logo v hlavičce přihlašovacích
  * a veřejných stránek, kde H1 nese značku „MyÚčto.cz" a ta musí vypadat stejně
@@ -485,21 +488,16 @@ body.workspace-window-single-padded #app {
 .font-display,
 h1:not(.font-sans) {
   font-family: var(--font-display);
-  font-weight: 400;
-  letter-spacing: -0.015em;
-  line-height: 1.15;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
 }
-/* Serif s malým x-heightem opticky ubere velikost — nejčastější `text-2xl`
-   nadpisy proto o kus zvětšíme, ať mají stejnou váhu jako dřív groteskem. */
-h1:where(.text-2xl) { font-size: 1.75rem; }
-h1:where(.text-xl) { font-size: 1.5rem; }
 
 /* Nadpisy detailů nesou vedle názvu i odznaky stavu a akční tlačítka (číslo
-   faktury + „Vystaveno" + „Zaúčtováno" + …). Ty musí zůstat v groteskovém řezu —
-   `font-family` se dědí, takže by se serif propsal i do 11px pilulek, kde se
-   rozpadá. Poznáme je podle zaoblení (každý odznak i tlačítko má `rounded*`). */
+   faktury + „Vystaveno" + „Zaúčtováno" + …); stažené proložení nadpisu do nich
+   nepatří. Poznáme je podle zaoblení (každý odznak i tlačítko má `rounded*`). */
 h1 :where(.badge, button, [class*="rounded"]) {
-  font-family: var(--font-sans);
+  font-weight: 500;
   letter-spacing: normal;
 }
 

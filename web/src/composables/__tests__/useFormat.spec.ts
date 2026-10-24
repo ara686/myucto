@@ -115,7 +115,7 @@ describe('formatUtcDateTime', () => {
 describe('formatMoneyMinor', () => {
   it('dělí setiny za volajícího a chybějící částku nevydává za nulu', () => {
     i18n.global.locale.value = 'cs'
-    expect(formatMoneyMinor(123_456)).toBe('1 234,56 Kč')
+    expect(formatMoneyMinor(123_456)).toBe('1 234,56 Kč')
     expect(formatMoneyMinor(-5)).toBe('-0,05 Kč')
     expect(formatMoneyMinor(0)).toBe('0,00 Kč')
     expect(formatMoneyMinor(null)).toBe('—')

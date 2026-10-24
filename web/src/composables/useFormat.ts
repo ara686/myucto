@@ -20,6 +20,18 @@ function activeLocale(): string {
   return i18n.global.locale.value === 'en' ? 'en-US' : 'cs-CZ'
 }
 
+/**
+ * Oddělovač tisíců v češtině jako úzká nezlomitelná mezera (U+202F) místo
+ * celé nezlomitelné (U+00A0) z Intl. Trojice číslic pak drží u sebe a částka se
+ * čte jako jeden celek; zalomit se pořád nedá.
+ */
+function formatGrouped(formatter: Intl.NumberFormat, value: number): string {
+  if (formatter.resolvedOptions().locale.startsWith('en')) return formatter.format(value)
+  return formatter.formatToParts(value)
+    .map(part => (part.type === 'group' ? ' ' : part.value))
+    .join('')
+}
+
 export function formatHourlyRate(value: number, currency = 'CZK'): string {
   if (value === Math.round(value * 100) / 100) return formatMoney(value, currency)
   const decimals = Math.max(defaultDecimals(currency), Math.min(6, (value.toFixed(6).replace(/0+$/, '').split('.')[1] ?? '').length))
@@ -39,7 +51,7 @@ export function formatMoney(value: number | null | undefined, currency: string =
   // sloupci (účetní deník, banka) odlomilo „Kč" na druhý řádek a částka se
   // rozpadla na dva řádky. Odpovídá to i české typografii — číslo a jednotka
   // k sobě patří. Oddělovač tisíců z Intl(cs-CZ) je nezlomitelný už sám o sobě.
-  return `${formatter.format(value)} ${symbol}`
+  return `${formatGrouped(formatter, value)} ${symbol}`
 }
 
 /**
@@ -64,7 +76,7 @@ export function formatNumber(
   options: Intl.NumberFormatOptions = {},
 ): string {
   if (value === null || value === undefined || Number.isNaN(value)) return '—'
-  return new Intl.NumberFormat(activeLocale(), options).format(value)
+  return formatGrouped(new Intl.NumberFormat(activeLocale(), options), value)
 }
 
 export function formatCompactNumber(value: number | null | undefined): string {
