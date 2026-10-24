@@ -50,6 +50,13 @@ final class RateLimitMiddlewareTest extends TestCase
         self::assertStringContainsString('user:17', $rule[0]);
     }
 
+    public function testPasswordChangeHasOwnPerUserLimit(): void
+    {
+        $rule = $this->rule($this->request('POST', '/api/auth/change-password', str_repeat('a', 64)));
+
+        self::assertSame(['rl:password-change:user:17', 10, 3600], $rule);
+    }
+
     /**
      * 1GB záloha Money S3 je 122 částí po 8 MB; ve sdíleném mutation bucketu
      * (60–120/min) upload spadl na 429 těsně před koncem.

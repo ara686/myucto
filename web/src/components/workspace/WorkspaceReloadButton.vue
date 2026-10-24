@@ -21,9 +21,9 @@ const available = computed(() => workspace.windows.some(window => window.paneId 
     data-reload-window
     @click="getWindowManager()?.reloadPane(workspace.activePaneId)"
   >
-    <svg class="h-[17px] w-[17px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <path d="M20 11a8 8 0 1 0-2.34 5.66" />
-      <path d="M20 4v7h-7" />
+    <svg class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M20.5 12a8.5 8.5 0 1 1-8.5-8.5c2.38 0 4.66.94 6.37 2.6l2.13 2.15" />
+      <path d="M20.5 3.5v4.75h-4.75" />
     </svg>
   </button>
 </template>

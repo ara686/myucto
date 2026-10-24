@@ -59,6 +59,10 @@ final class SessionManager
      * Volající vlastní transakci a musí mít zamčeného uživatele, pokud jde
      * o součást širšího bezpečnostního přechodu.
      *
+     * `$supplierDomainId` váže session na vlastní doménu firmy. Taková session
+     * platí jen na hostname této domény, nikdy na canonical adrese (viz
+     * AuthMiddleware). NULL vydá běžnou canonical session.
+     *
      * @return array{token:string,csrf_token:string,expires_at:int,issued_at:\DateTimeImmutable}
      */
     public function createInTransaction(
@@ -68,9 +72,13 @@ final class SessionManager
         string $ip,
         string $userAgent,
         SessionAuthContext $authContext,
+        ?int $supplierDomainId = null,
     ): array {
         if (!$pdo->inTransaction() || $userId < 1) {
             throw new \LogicException('Vydání session vyžaduje aktivní transakci a uživatele.');
+        }
+        if ($supplierDomainId !== null && $supplierDomainId < 1) {
+            throw new \InvalidArgumentException('Neplatná vazba session na doménu.');
         }
         $packedIp = @inet_pton($ip);
         if ($packedIp === false) {
@@ -87,10 +95,11 @@ final class SessionManager
         $expiresAt = $cutoff->epochSeconds + ($lifetimeDays * 86400);
         $stmt = $pdo->prepare(
             'INSERT INTO sessions
-                (id, user_id, csrf_token, ip, user_agent, created_at, last_seen, expires_at,
+                (id, user_id, csrf_token, ip, user_agent, supplier_domain_id,
+                 created_at, last_seen, expires_at,
                  auth_method, assurance_level, mfa_verified_at, auth_credential_id,
                  last_user_activity_at, session_family_id, generation)
-             VALUES (?, ?, ?, ?, ?, FROM_UNIXTIME(?), FROM_UNIXTIME(?), FROM_UNIXTIME(?),
+             VALUES (?, ?, ?, ?, ?, ?, FROM_UNIXTIME(?), FROM_UNIXTIME(?), FROM_UNIXTIME(?),
                      ?, ?, ?, ?, ?, ?, ?)'
         );
         $stmt->execute([
@@ -99,6 +108,7 @@ final class SessionManager
             $csrf,
             $packedIp,
             mb_substr($userAgent, 0, 255),
+            $supplierDomainId,
             $cutoff->epochSeconds,
             $cutoff->epochSeconds,
             $expiresAt,
@@ -144,7 +154,7 @@ final class SessionManager
         }
 
         $stmt = $this->db->pdo()->prepare(
-            'SELECT s.id, s.user_id, s.csrf_token, s.ip, s.user_agent,
+            'SELECT s.id, s.user_id, s.csrf_token, s.ip, s.user_agent, s.supplier_domain_id,
                     UNIX_TIMESTAMP(s.created_at) AS created_at,
                     UNIX_TIMESTAMP(s.last_seen) AS last_seen,
                     UNIX_TIMESTAMP(s.expires_at) AS expires_at,
@@ -208,7 +218,7 @@ final class SessionManager
         }
 
         $stmt = $this->db->pdo()->prepare(
-            'SELECT id, user_id, csrf_token, ip, user_agent,
+            'SELECT id, user_id, csrf_token, ip, user_agent, supplier_domain_id,
                     UNIX_TIMESTAMP(created_at) AS created_at,
                     UNIX_TIMESTAMP(last_seen) AS last_seen,
                     UNIX_TIMESTAMP(expires_at) AS expires_at,
@@ -602,11 +612,13 @@ final class SessionManager
         $newCsrf = bin2hex(random_bytes(32));
         $insert = $pdo->prepare(
             'INSERT INTO sessions
-                (id, user_id, csrf_token, ip, user_agent, created_at, last_seen, expires_at,
+                (id, user_id, csrf_token, ip, user_agent, supplier_domain_id,
+                 created_at, last_seen, expires_at,
                  auth_method, assurance_level, mfa_verified_at, auth_credential_id,
                  last_user_activity_at, locked_at, lock_reason, last_unlock_at,
                  last_unlock_method, session_family_id, generation, replaced_at, revoked_at)
-             SELECT ?, user_id, ?, ip, user_agent, created_at, FROM_UNIXTIME(?), expires_at,
+             SELECT ?, user_id, ?, ip, user_agent, supplier_domain_id,
+                    created_at, FROM_UNIXTIME(?), expires_at,
                     auth_method, assurance_level, mfa_verified_at, auth_credential_id,
                     ?, NULL, NULL, ?, ?, session_family_id, generation + 1, NULL, NULL
                FROM sessions
@@ -656,6 +668,9 @@ final class SessionManager
         $packedIp = (string) $row['ip'];
         $row['ip'] = $packedIp !== '' ? (@inet_ntop($packedIp) ?: '') : '';
         $row['user_id'] = (int) $row['user_id'];
+        $row['supplier_domain_id'] = isset($row['supplier_domain_id'])
+            ? (int) $row['supplier_domain_id']
+            : null;
         $row['created_at'] = (int) $row['created_at'];
         $row['last_seen'] = (int) $row['last_seen'];
         $row['expires_at'] = (int) $row['expires_at'];

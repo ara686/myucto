@@ -25,6 +25,8 @@ import {
   authorizePendingDomainLogin,
   canonicalDomainLoginSessionCsrf,
   hasPendingCanonicalDomainLogin,
+  isDomainLoginConfirmationRequired,
+  pendingCanonicalDomainLoginQuery,
 } from '@/security/domainLogin'
 
 const { t } = useI18n()
@@ -44,6 +46,11 @@ async function returnToClientDomain() {
   try {
     await authorizePendingDomainLogin()
   } catch (e: any) {
+    if (isDomainLoginConfirmationRequired(e)) {
+      // Potvrzení předání na vlastní doménu zobrazuje přihlašovací stránka.
+      await router.replace({ name: 'login', query: pendingCanonicalDomainLoginQuery() ?? {} })
+      return
+    }
     domainReturnPending.value = hasPendingCanonicalDomainLogin()
     domainReturnError.value = e?.response?.data?.error?.message || t('domain_login.authorize_failed')
   } finally {

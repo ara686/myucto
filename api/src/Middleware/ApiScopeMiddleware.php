@@ -195,6 +195,11 @@ final class ApiScopeMiddleware implements MiddlewareInterface
         '#^/api/invoices/[0-9]+/book$#',
         '#^/api/invoices/[0-9]+/rebuild-snapshots$#',
         '#^/api/bank-transactions/[0-9]+/(post|unpost)$#',
+        // Měnové účty nesou bankovní spojení firmy (číslo účtu, IBAN, BIC), které
+        // se tiskne na faktury a do QR platby. Token je smí jen číst; změnu
+        // příjemce plateb dělá správce ve webovém rozhraní (openapi: mutace jen přes UI).
+        '#^/api/settings/currencies(/|$)#',
+        '#^/api/bank-transactions/[0-9]+/unmatch$#',
         '#^/api/accounting(/|$)#',
         '#^/api/reports(/|$)#',
         '#^/api/tax(/|$)#',

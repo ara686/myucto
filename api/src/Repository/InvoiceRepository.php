@@ -254,6 +254,12 @@ final class InvoiceRepository
         if ($row === false) return null;
 
         $row = $this->castInvoice($row);
+        // Odkaz ke schválení výkazu je bearer oprávnění: kdo zná token, schválí výkaz
+        // za zákazníka a tím fakturu vystaví a odešle. Detail faktury čte i role jen
+        // pro čtení a token se scope `read`, proto token ani jeho otisk z detailu
+        // nevychází. Zákazník ho dostane e-mailem, volající request-approval
+        // v odpovědi; připomínky si ho čtou vlastním dotazem.
+        unset($row['approval_token'], $row['approval_receipt_hash']);
         $row['items'] = $this->itemsFor($id);
 
         // Fakturační emaily projektu (jen popisky, používané v UI hlavičce)

@@ -6850,7 +6850,8 @@ export interface PayrollRunResultPerson {
 export interface PayrollRunResultSnapshot {
   totals?: {
     cash_payable_minor?: number
-    enforcement_withheld_minor?: number
+    /** `null`, když volající nemá právo `payroll.enforcement`. */
+    enforcement_withheld_minor?: number | null
     payable_after_enforcement_minor?: number
   }
   people?: PayrollRunResultPerson[]

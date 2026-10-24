@@ -39,6 +39,7 @@ use MyInvoice\Service\Supplier\SupplierDirectory;
 use MyInvoice\Service\Supplier\SupplierDirectoryQuery;
 use MyInvoice\Service\Supplier\SupplierInitializer;
 use MyInvoice\Service\Supplier\SupplierPersonTitle;
+use MyInvoice\Service\Supplier\SupplierResponseFields;
 use MyInvoice\Service\Tax\Return\TaxpayerTypeCodebook;
 use MyInvoice\Service\Tax\Return\AccountingDecreeService;
 use Psr\Http\Message\ResponseInterface as Response;
@@ -230,7 +231,7 @@ final class SettingsAction
     public function getSupplier(Request $request, Response $response): Response
     {
         $id = (int) $request->getAttribute(SupplierScopeMiddleware::ATTR_CURRENT_ID, 0);
-        return $this->respondSupplier($response, $id);
+        return $this->respondSupplier($request, $response, $id);
     }
 
     /** Update aktuálního supplier (admin). */
@@ -345,7 +346,14 @@ final class SettingsAction
         return $this->pendingBackfill->count($supplierId);
     }
 
-    /** GET /api/suppliers/{id}. Epic F0: firma mimo membership → 404 (konvence pro cizí entity). */
+    /**
+     * GET /api/suppliers/{id}. Epic F0: firma mimo membership → 404 (konvence pro cizí entity).
+     *
+     * Route mapa sem pouští už s `profile` READ (endpoint patří k přepínači firem),
+     * plný detail ale dostane jen ten, kdo smí číst nastavení TÉTO firmy: aktuální firma
+     * požadavku a `settings.company` READ, nebo globální správce. Ostatním jde stejný
+     * bezpečný výřez jako v seznamu firem, ne 403, aby se nerozbili stávající volající.
+     */
     public function getSupplierById(Request $request, Response $response, array $args): Response
     {
         $id = (int) ($args['id'] ?? 0);
@@ -353,7 +361,11 @@ final class SettingsAction
             return Json::error($response, 'not_found', 'Supplier nenalezen.', 404);
         }
 
-        return $this->respondSupplier($response, $id);
+        $currentId = (int) $request->getAttribute(SupplierScopeMiddleware::ATTR_CURRENT_ID, 0);
+        $full = RequestAuthorization::isSuperadmin($request)
+            || ($id === $currentId && RequestAuthorization::allows($request, 'settings.company', AccessLevel::READ));
+
+        return $this->respondSupplier($request, $response, $id, !$full);
     }
 
     /** Epic F0: true = supplier je mimo bound PAT nebo membership. Nebound globální admin vidí vše. */
@@ -447,7 +459,7 @@ final class SettingsAction
             return Json::error($response, 'license_company_limit',
                 'Byl dosažen počet firem podle vaší licence. Rozšiřte předplatné na myucto.cz.', 403);
         } catch (\Throwable $e) {
-            return Json::error($response, 'create_failed', 'Vytvoření supplier selhalo: ' . $e->getMessage(), 500);
+            return Json::internalError($response, 'create_failed', 'Vytvoření supplier selhalo: ' . $e->getMessage(), 500);
         }
 
         // Po commitu (mimo DB transakci — síťová volání na ARES a registr plátců):
@@ -1369,7 +1381,7 @@ final class SettingsAction
             }
             throw $e;
         }
-        return $this->respondSupplier($response, $id);
+        return $this->respondSupplier($request, $response, $id);
     }
 
     /**
@@ -1498,7 +1510,7 @@ final class SettingsAction
             $pdo->commit();
         } catch (\Throwable $e) {
             $pdo->rollBack();
-            return Json::error($response, 'delete_failed', 'Smazání selhalo: ' . $e->getMessage(), 500);
+            return Json::internalError($response, 'delete_failed', 'Smazání selhalo: ' . $e->getMessage(), 500);
         }
 
         // MS-P3-4: smaž PDF cache subfolder pro tohoto supplier
@@ -1545,7 +1557,11 @@ final class SettingsAction
         }
     }
 
-    private function respondSupplier(Response $response, int $id): Response
+    /**
+     * Detail firmy. Sloupce se načtou všechny kvůli dopočtům níže, ven ale jde jen
+     * allowlist {@see SupplierResponseFields} podle oprávnění volajícího.
+     */
+    private function respondSupplier(Request $request, Response $response, int $id, bool $minimal = false): Response
     {
         if ($id <= 0) return Json::error($response, 'not_found', 'Supplier nenalezen.', 404);
         $stmt = $this->db->pdo()->prepare(
@@ -1560,6 +1576,11 @@ final class SettingsAction
         $row = $stmt->fetch(\PDO::FETCH_ASSOC);
         if (!$row) return Json::error($response, 'not_found', 'Supplier nenalezen.', 404);
         $row['id']                       = (int) $row['id'];
+        if ($minimal) {
+            $row['is_vat_payer']    = (bool) $row['is_vat_payer'];
+            $row['accounting_mode'] = (string) ($row['accounting_mode'] ?? 'tax_evidence');
+            return Json::ok($response, SupplierResponseFields::minimal($row));
+        }
         $row['accounting_framework']     = $this->accountingFramework->forDate($id, date('Y-m-d'));
         $row['accounting_framework_history'] = $this->accountingFramework->history($id);
         $row['tax_accounting_decree_effective'] = $this->accountingDecree->forDate($id, date('Y-m-d'));
@@ -1693,30 +1714,6 @@ final class SettingsAction
             'approvals'          => ((bool) $this->config->get('approval.cc_supplier_on_approval', true)) ? 'bcc' : 'off',
             'approval_reminders' => ((bool) $this->config->get('approval.cc_supplier_on_approval_reminder', true)) ? 'bcc' : 'off',
         ];
-        // Bezpečnost: do API NIKDY neposílat žádná tajemství. Redakce vzorem `*_enc`
-        // je odolná vůči nově přidaným šifrovaným sloupcům (původní explicitní výčet
-        // nechával unikat idoklad/fakturoid/anthropic credentials). Doplněno o
-        // obecné secret-ish názvy, aby se případný budoucí tajný sloupec BEZ přípony
-        // `_enc` taky neprosákl (defense-in-depth — allowlist by byl křehčí, supplier
-        // má desítky legitimních polí, které FE potřebuje).
-        foreach (array_keys($row) as $k) {
-            $lk = strtolower((string) $k);
-            if (str_ends_with($lk, '_enc')
-                || str_contains($lk, 'password')
-                || str_contains($lk, 'secret')
-                || str_contains($lk, 'api_key')
-                || str_contains($lk, 'access_token')
-                || str_contains($lk, 'passphrase')
-                || str_contains($lk, 'private_key')
-                // Pseudonymizační salt (ai_pseudo_salt) = random_bytes(32) — tajemství,
-                // které nesmí ven; navíc jde o binární data (nevalidní UTF-8), takže
-                // by shodilo json_encode(JSON_THROW_ON_ERROR) celého endpointu.
-                || str_contains($lk, 'salt')
-            ) {
-                unset($row[$k]);
-            }
-        }
-        unset($row['idoklad_access_token']);
         // Globální cfg fallback pro varsymbol — UI ho použije jako placeholder
         // u prázdných per-supplier polí (aby uživatel viděl, jaká šablona by se
         // použila kdyby ponechal pole prázdné).
@@ -1731,7 +1728,10 @@ final class SettingsAction
         // supplier-wide i per-client šablonami). FE dělá živou kontrolu jen nad
         // supplier-wide poli; backend navíc pokrývá per-client přepsání.
         $row['number_series_collisions'] = $this->seriesCollisions->findForSupplier($id);
-        return Json::ok($response, $row);
+        // Bezpečnost: ven jde jen allowlist, ne `s.*` minus denylist. Tajemství (`*_enc`,
+        // salt, tokeny integrací), adresy AI endpointů, počítadla a interní značky
+        // v něm nejsou vůbec; citlivé skupiny dostane jen ten, kdo je smí upravovat.
+        return Json::ok($response, SupplierResponseFields::full($row, $request));
     }
 
     private function nullable(array $b, string $key): ?string

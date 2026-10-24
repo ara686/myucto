@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { authApi } from '@/api/auth'
-import { advanceCanonicalDomainLoginSession, authorizePendingDomainLogin, canonicalDomainLoginSessionCsrf, captureCanonicalDomainLogin, hasPendingCanonicalDomainLogin, hasPendingCanonicalDomainLoginCleanup, recordCanonicalDomainLoginSession, reconcileCanonicalDomainLoginSession, pendingCanonicalDomainLoginQuery } from '../domainLogin'
+import { advanceCanonicalDomainLoginSession, authorizePendingDomainLogin, canonicalDomainLoginSessionCsrf, captureCanonicalDomainLogin, confirmPendingDomainLogin, hasPendingCanonicalDomainLogin, hasPendingCanonicalDomainLoginCleanup, isDomainLoginConfirmationRequired, needsCanonicalDomainLoginConfirmation, previewPendingDomainLogin, recordCanonicalDomainLoginSession, reconcileCanonicalDomainLoginSession, pendingCanonicalDomainLoginQuery } from '../domainLogin'
 
-vi.mock('@/api/auth', () => ({ authApi: { domainLoginAuthorize: vi.fn(), logout: vi.fn(), sessionStatus: vi.fn() } }))
+vi.mock('@/api/auth', () => ({ authApi: { domainLoginAuthorize: vi.fn(), domainLoginPreview: vi.fn(), logout: vi.fn(), sessionStatus: vi.fn() } }))
 const request = 'r'.repeat(43)
 const state = 's'.repeat(43)
 const redirect = 'https://portal.example.test/domain-login/callback?code=synthetic'
@@ -18,18 +18,65 @@ beforeEach(() => {
 })
 
 describe('portal-only canonical session ownership', () => {
-  it('preserves an existing standalone login', async () => {
+  it('preserves an existing standalone login and passes it only after explicit confirmation', async () => {
+    expect(needsCanonicalDomainLoginConfirmation()).toBe(true)
+    const blocked = await authorizePendingDomainLogin().catch(e => e)
+    expect(isDomainLoginConfirmationRequired(blocked)).toBe(true)
+    expect(authApi.domainLoginAuthorize).not.toHaveBeenCalled()
+    expect(hasPendingCanonicalDomainLogin()).toBe(true)
+
+    confirmPendingDomainLogin()
+    expect(needsCanonicalDomainLoginConfirmation()).toBe(false)
     await authorizePendingDomainLogin()
-    expect(authApi.domainLoginAuthorize).toHaveBeenCalledWith(request, state, undefined)
+    expect(authApi.domainLoginAuthorize).toHaveBeenCalledWith(request, state, undefined, true)
     expect(authApi.logout).not.toHaveBeenCalled()
     expect(replace).toHaveBeenCalledWith(redirect)
     expect(hasPendingCanonicalDomainLogin()).toBe(false)
+  })
+  it('does not carry a confirmation over to a different request', () => {
+    confirmPendingDomainLogin()
+    captureCanonicalDomainLogin(request, state)
+    expect(needsCanonicalDomainLoginConfirmation()).toBe(false)
+    captureCanonicalDomainLogin('n'.repeat(43), state)
+    expect(needsCanonicalDomainLoginConfirmation()).toBe(true)
+  })
+  it('a login within the flow needs no confirmation', () => {
+    recordCanonicalDomainLoginSession('owned')
+    expect(needsCanonicalDomainLoginConfirmation()).toBe(false)
+  })
+  it('keeps the flow and its owned session when the server asks for confirmation', async () => {
+    const failure = { response: { status: 409, data: { error: {
+      code: 'domain_login_confirmation_required', message: 'Potvrďte.', target_hostname: 'portal.example.test', supplier_name: 'Firma',
+    } } } }
+    recordCanonicalDomainLoginSession('owned')
+    vi.mocked(authApi.domainLoginAuthorize).mockRejectedValueOnce(failure)
+    await expect(authorizePendingDomainLogin()).rejects.toEqual(failure)
+    expect(authApi.logout).not.toHaveBeenCalled()
+    expect(hasPendingCanonicalDomainLogin()).toBe(true)
+    expect(canonicalDomainLoginSessionCsrf()).toBe('owned')
+    confirmPendingDomainLogin()
+    await authorizePendingDomainLogin()
+    expect(authApi.domainLoginAuthorize).toHaveBeenLastCalledWith(request, state, 'owned', true)
+    expect(authApi.logout).toHaveBeenCalledWith('owned')
+  })
+  it('previews the pending target and drops a request the user cannot confirm', async () => {
+    vi.mocked(authApi.domainLoginPreview).mockReset()
+      .mockResolvedValueOnce({ target_hostname: 'portal.example.test', supplier_name: 'Firma' })
+    expect(await previewPendingDomainLogin()).toEqual({ target_hostname: 'portal.example.test', supplier_name: 'Firma' })
+    expect(authApi.domainLoginPreview).toHaveBeenCalledWith(request, state, undefined)
+    expect(hasPendingCanonicalDomainLogin()).toBe(true)
+
+    const forbidden = { response: { status: 403, data: { error: { code: 'forbidden_supplier', message: 'Ne.' } } } }
+    vi.mocked(authApi.domainLoginPreview).mockRejectedValueOnce(forbidden)
+    await expect(previewPendingDomainLogin()).rejects.toEqual(forbidden)
+    expect(hasPendingCanonicalDomainLogin()).toBe(false)
+    expect(authApi.domainLoginAuthorize).not.toHaveBeenCalled()
   })
   it('authorizes, revokes only this flow session, then redirects', async () => {
     recordCanonicalDomainLoginSession('owned')
     vi.mocked(authApi.logout).mockImplementation(async csrf => {
       expect(csrf).toBe('owned')
-      expect(authApi.domainLoginAuthorize).toHaveBeenCalledWith(request, state, 'owned')
+      expect(authApi.domainLoginAuthorize).toHaveBeenCalledWith(request, state, 'owned', false)
       expect(hasPendingCanonicalDomainLoginCleanup()).toBe(true)
       expect(replace).not.toHaveBeenCalled()
     })
@@ -72,6 +119,7 @@ describe('portal-only canonical session ownership', () => {
     expect(canonicalDomainLoginSessionCsrf()).toBeNull()
     reconcileCanonicalDomainLoginSession('owned')
     expect(canonicalDomainLoginSessionCsrf()).toBeNull()
+    confirmPendingDomainLogin()
     await authorizePendingDomainLogin()
     expect(authApi.logout).not.toHaveBeenCalled()
   })
@@ -93,7 +141,7 @@ describe('portal-only canonical session ownership', () => {
     expect(canonicalDomainLoginSessionCsrf()).toBe('owned')
     advanceCanonicalDomainLoginSession('owned', 'rotated')
     await authorizePendingDomainLogin()
-    expect(authApi.domainLoginAuthorize).toHaveBeenCalledWith(request, state, 'rotated')
+    expect(authApi.domainLoginAuthorize).toHaveBeenCalledWith(request, state, 'rotated', false)
     expect(authApi.logout).toHaveBeenCalledWith('rotated')
   })
   it.each([
@@ -158,6 +206,7 @@ describe('portal-only canonical session ownership', () => {
   it('preserves an unowned standalone login even on terminal authorization error', async () => {
     const failure = { response: { status: 400, data: { error: { code: 'invalid_domain_login_request' } } } }
     vi.mocked(authApi.domainLoginAuthorize).mockRejectedValueOnce(failure)
+    confirmPendingDomainLogin()
     await expect(authorizePendingDomainLogin()).rejects.toEqual(failure)
     expect(authApi.logout).not.toHaveBeenCalled()
     expect(hasPendingCanonicalDomainLogin()).toBe(false)

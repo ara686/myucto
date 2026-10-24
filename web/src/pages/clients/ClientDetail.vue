@@ -327,7 +327,7 @@ const projectsTable = computed(() => {
 // Smazat lze jen klienta bez navázaných faktur a zakázek (jinak archivovat)
 const canDelete = computed(() => {
   if (!client.value) return false
-  const projects = client.value.projects?.length ?? 0
+  const projects = client.value.projects_count ?? client.value.projects?.length ?? 0
   const invoices = client.value.invoices_count ?? 0
   return projects === 0 && invoices === 0
 })
@@ -756,7 +756,7 @@ useWindowRefresh(['clients', 'invoices', 'purchase-invoices', 'recurring', 'bank
     </div>
 
     <!-- Zakázky — visible pokud is_customer NEBO existují zakázky; role client (F6) zakázky nevidí -->
-    <div v-if="!auth.isClientRole && (client.is_customer !== false || (client.projects?.length ?? 0) > 0)"
+    <div v-if="!auth.isClientRole && auth.canRead('projects') && (client.is_customer !== false || (client.projects?.length ?? 0) > 0)"
          class="bg-surface border border-neutral-200 rounded-lg shadow-sm">
       <div class="px-5 py-3 border-b border-neutral-200 flex items-center justify-between">
         <h3 class="font-semibold">{{ t('client.projects') }}</h3>

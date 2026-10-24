@@ -25,6 +25,13 @@ final class MyuctoImportProfile
         'tax_evidence_bank_rules', 'supplier_email_templates',
     ];
     public const CONFIG_TABLES = ['supplier_vat_status_history'];
+    /**
+     * Tabulky, které se z exportu jen čtou ke kontrole shody s cílem. Nepřevádějí se,
+     * nejsou v otisku dat a protokol je dál vede mimo rozsah převodu.
+     */
+    public const CONTEXT_TABLES = ['supplier_accounting_frameworks'];
+    /** Tabulky účetnictví: když je export nese, musí cíl vést stejný účetní rámec (vyhláška 500/504). */
+    public const FRAMEWORK_BOUND_TABLES = ['chart_of_accounts', 'accounting_periods', 'journal_entries'];
     public const GLOBAL_KEYS = ['countries' => ['iso2'], 'vat_rates' => ['code', 'rate_percent', 'country']];
     public const REUSE_KEYS = [
         'currencies' => ['code', 'decimals'], 'chart_of_accounts' => ['account_code'],

@@ -4,7 +4,7 @@ import { flushPromises, shallowMount } from '@vue/test-utils'
 const mocks = vi.hoisted(() => ({ sync: vi.fn(), info: vi.fn(), success: vi.fn() }))
 vi.mock('vue-i18n', async original => ({ ...await original<typeof import('vue-i18n')>(), useI18n: () => ({ t: (key: string) => key }) }))
 vi.mock('vue-router', async original => ({ ...await original<typeof import('vue-router')>(), useRoute: () => ({ params: { id: '1' } }), useRouter: () => ({}) }))
-vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ canWrite: () => true }) }))
+vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ canWrite: () => true, canRead: () => true }) }))
 vi.mock('@/stores/supplier', () => ({ useSupplierStore: () => ({}) }))
 vi.mock('@/composables/useWindowTitle', () => ({ useWindowTitle: vi.fn() }))
 vi.mock('@/composables/useWindowRefresh', () => ({ useWindowRefresh: vi.fn() }))

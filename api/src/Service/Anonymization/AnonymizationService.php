@@ -523,6 +523,7 @@ final class AnonymizationService
         $type = $spec['type_column'] !== null ? (string) ($row[$spec['type_column']] ?? '') : $spec['field'];
         [$field, $kind] = match ($type) {
             'birth_number', 'personal_identifier' => [PayrollSensitiveField::PERSONAL_IDENTIFIER, 'birth_number'],
+            'tax_family_identifier' => [PayrollSensitiveField::TAX_FAMILY_IDENTIFIER, 'birth_number'],
             'ecp', 'vcp', 'health_insurance_number' => [PayrollSensitiveField::PERSONAL_IDENTIFIER, 'shape'],
             'foreign_tax_identifier' => [PayrollSensitiveField::FOREIGN_TAX_IDENTIFIER, 'shape'],
             'email', 'contact_email' => [PayrollSensitiveField::CONTACT_EMAIL, 'email'],

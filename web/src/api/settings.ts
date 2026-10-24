@@ -283,8 +283,9 @@ export interface Supplier {
    * Platí pro všechny formáty importu, ne jen AI extrakci.
    */
   purchase_import_received_at: 'issue_date' | 'import_date'
-  logo_path: string | null
-  signature_path: string | null
+  /** Interní cesty; server je posílá jen s `settings.branding` (zápis). UI čte `has_email_logo`. */
+  logo_path?: string | null
+  signature_path?: string | null
   pohoda_account_code: string | null
   pohoda_centre_code: string | null
   pohoda_activity_code: string | null
@@ -402,11 +403,13 @@ export interface Supplier {
   opr_jmeno?: string | null
   opr_prijmeni?: string | null
   opr_postaveni?: string | null
-  // Přehled OSVČ pro ČSSZ XML (Fáze 3)
+  // Přehled OSVČ pro ČSSZ XML (Fáze 3). Osobní identifikátory chodí jen s právem
+  // `settings.company.write`; bez něj klíče v odpovědi chybí.
   cssz_vsdp?: string | null
   cssz_ossz_code?: string | null
   health_insurance_number?: string | null
   // AI extrakční brána (Epic F7) — non-secret volby (secrety jen přes /ai/credentials).
+  // Server je posílá jen s `settings.ai_provider`; stránka Integrace je čte z vlastního endpointu.
   client_ai_extraction_enabled?: boolean
   client_ai_extraction_monthly_limit?: number
   ai_provider?: 'anthropic' | 'azure_openai' | 'openai' | 'gemini' | 'ollama'

@@ -6,6 +6,7 @@ namespace MyInvoice\Service\Import;
 
 use GuzzleHttp\Client;
 use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Service\Ai\AiRedirectPolicy;
 use MyInvoice\Service\Auth\SecretEncryption;
 use Psr\Log\LoggerInterface;
 
@@ -50,6 +51,7 @@ final class AnthropicClient implements LlmGatewayInterface
         $this->http = $http ?? new Client([
             'timeout' => self::TIMEOUT,
             'http_errors' => false,
+            'allow_redirects' => AiRedirectPolicy::options(),
         ]);
     }
 

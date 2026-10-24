@@ -1,5 +1,5 @@
 import { api } from './client'
-import { createMigrationApi } from './migrationApi'
+import { createMigrationApi, type MigrationNonprofitNotice } from './migrationApi'
 import { downloadApiFile } from '@/utils/downloadFile'
 import type { AcceptedDifference, MoneyS3Diff, MoneyS3RunStatus, MoneyS3Step, SourceDifference } from './moneyS3'
 
@@ -97,6 +97,7 @@ export interface PohodaMessage {
 }
 
 export interface PohodaUpload {
+  nonprofit_notice?: MigrationNonprofitNotice
   token: string
   status: 'ready'
   file_name: string

@@ -10,6 +10,7 @@ use MyInvoice\Repository\Payroll\PayrollDeletionException;
 use MyInvoice\Repository\Payroll\PayrollEmployeeDeletionRepository;
 use MyInvoice\Repository\Payroll\PayrollEmploymentNotFoundException;
 use MyInvoice\Repository\Payroll\PayrollPeopleRepository;
+use MyInvoice\Repository\Payroll\PayrollPersonIdentifierCollisionException;
 use MyInvoice\Security\AccessLevel;
 use MyInvoice\Security\RequestAuthorization;
 use MyInvoice\Service\IpMatcher;
@@ -18,6 +19,8 @@ use MyInvoice\Service\License\LicensePayrollLimitExceeded;
 use MyInvoice\Service\License\LicenseState;
 use MyInvoice\Service\Payroll\PayrollModuleAccess;
 use MyInvoice\Service\Payroll\PayrollPersonCreateService;
+use MyInvoice\Service\Payroll\Security\PayrollEnforcementDisclosure;
+use MyInvoice\Service\Payroll\Security\PayrollIdentifierProbeGuard;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
@@ -35,6 +38,7 @@ final class PayrollPeopleAction
         private readonly LicenseCapacityGate $licenseCapacity,
         private readonly IpMatcher $ipMatcher,
         private readonly PayrollEmployeeDeletionRepository $deletion,
+        private readonly PayrollIdentifierProbeGuard $identifierProbes,
     ) {}
 
     public function list(Request $request, Response $response): Response
@@ -100,8 +104,13 @@ final class PayrollPeopleAction
 
         // Klíč `items` zůstává, aby stávající volající nespadli; `total`/`limit`/
         // `offset` přibyly vedle něj, protože seznam už nemusí být úplný.
+        $canSeeEnforcement = PayrollEnforcementDisclosure::canSeeEnforcement($request);
+
         return Json::ok($response, [
-            'items' => $page['items'],
+            'items' => array_map(
+                static fn (array $person): array => self::disclosedPerson($person, $canSeeEnforcement),
+                $page['items'],
+            ),
             'total' => $page['total'],
             'limit' => $limit,
             'offset' => $offset,
@@ -127,7 +136,10 @@ final class PayrollPeopleAction
             return Json::error($response, 'not_found', 'Zaměstnanec nenalezen.', 404);
         }
 
-        return Json::ok($response, ['person' => $person]);
+        return Json::ok($response, ['person' => self::disclosedPerson(
+            $person,
+            PayrollEnforcementDisclosure::canSeeEnforcement($request),
+        )]);
     }
 
     /**
@@ -155,6 +167,12 @@ final class PayrollPeopleAction
             return $this->guardFailure($error);
         }
 
+        $serverParams = [];
+        foreach ($request->getServerParams() as $key => $value) {
+            if (is_string($key)) {
+                $serverParams[$key] = $value;
+            }
+        }
         try {
             $body = $request->getParsedBody();
             if (!is_array($body)) {
@@ -166,12 +184,6 @@ final class PayrollPeopleAction
                     throw new \InvalidArgumentException('Tělo požadavku musí být objekt.');
                 }
                 $input[$key] = $value;
-            }
-            $serverParams = [];
-            foreach ($request->getServerParams() as $key => $value) {
-                if (is_string($key)) {
-                    $serverParams[$key] = $value;
-                }
             }
             $person = $this->licenseCapacity->mutatePayrollEmployees(
                 fn (): array => $this->createService->create(
@@ -192,6 +204,20 @@ final class PayrollPeopleAction
                 403,
                 ['buy_url' => '/activation/purchase#payroll-addon'],
             );
+        } catch (PayrollPersonIdentifierCollisionException $e) {
+            // Založení s rodným číslem je táž otázka „patří tahle hodnota
+            // někomu?" jako uložení karty, proto stejný audit shody.
+            $this->identifierProbes->recordCollision(
+                $request,
+                $this->currentSupplierId($request),
+                null,
+                $e->identifierType,
+                'create',
+                false,
+                $this->userId($request),
+                $this->ipMatcher->clientIpFromRequest($serverParams),
+            );
+            return Json::error($response, 'validation_failed', $e->getMessage(), 422);
         } catch (\InvalidArgumentException $e) {
             return Json::error($response, 'validation_failed', $e->getMessage(), 422);
         } catch (\PDOException $e) {
@@ -263,6 +289,17 @@ final class PayrollPeopleAction
                 $request->getHeaderLine('User-Agent'),
             );
         } catch (PayrollDeletionException $e) {
+            if (PayrollEnforcementDisclosure::isRestrictedDeleteBlockerCode(
+                $e->errorCode,
+                PayrollEnforcementDisclosure::canSeeEnforcement($request),
+            )) {
+                return Json::error(
+                    $response,
+                    PayrollEnforcementDisclosure::RESTRICTED_DELETE_BLOCKER,
+                    PayrollEnforcementDisclosure::RESTRICTED_DELETE_MESSAGE,
+                    409,
+                );
+            }
             return Json::error(
                 $response,
                 $e->errorCode,
@@ -302,6 +339,27 @@ final class PayrollPeopleAction
         }
         $error = null;
         return true;
+    }
+
+    /**
+     * Blokátor smazání jmenuje exekuci; bez práva na agendu se nahradí obecnou
+     * větou, aby seznam zaměstnanců neprozradil, na koho exekuce dorazila.
+     *
+     * @param array<string,mixed> $person
+     * @return array<string,mixed>
+     */
+    private static function disclosedPerson(array $person, bool $canSeeEnforcement): array
+    {
+        if (!array_key_exists('delete_blocker', $person)) {
+            return $person;
+        }
+        $blocker = $person['delete_blocker'];
+        $person['delete_blocker'] = PayrollEnforcementDisclosure::redactDeleteBlocker(
+            is_array($blocker) ? $blocker : null,
+            $canSeeEnforcement,
+        );
+
+        return $person;
     }
 
     private function guardFailure(?Response $error): Response

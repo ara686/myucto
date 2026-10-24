@@ -454,8 +454,12 @@ php api/bin/reset-mfa.php vas@email.cz
 
 Skript vypne TOTP, odvolá všechny passkeys, zruší důvěryhodná zařízení,
 čekající OTP, WebAuthn flow, step-up proofy i **záložní kódy** a invaliduje
-všechny session uživatele. Stejný skript lze spustit také přes alias
-`reset-2fa.php`.
+všechny session uživatele. Zruší také všechny **API tokeny a MCP připojení**
+uživatele a vypíše jejich počet; integrace je po obnově účtu potřeba napojit
+novým tokenem. Stejný skript lze spustit také přes alias `reset-2fa.php`.
+
+Běžná změna hesla ani obnova zapomenutého hesla API tokeny neruší: tokeny slouží
+integracím, které na hesle nezávisí. Spravují a ruší se samostatně v aplikaci.
 
 ##### Docker
 

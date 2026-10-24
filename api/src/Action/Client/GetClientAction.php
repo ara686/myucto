@@ -10,6 +10,7 @@ use MyInvoice\Middleware\SupplierScopeMiddleware;
 use MyInvoice\Repository\ClientEmailContactRepository;
 use MyInvoice\Repository\ClientBankAccountRepository;
 use MyInvoice\Repository\ClientRepository;
+use MyInvoice\Security\ProjectAssignmentAccess;
 use MyInvoice\Service\Invoice\OverduePolicy;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -33,7 +34,11 @@ final class GetClientAction
         if ($client === null || (int) ($client['supplier_id'] ?? 0) !== $sid) {
             return Json::error($response, 'not_found', 'Klient nenalezen.', 404);
         }
-        $client['projects'] = $this->repo->projectsForClient($id);
+        // Zakázky (názvy, čísla, hodinové sazby) jen s oprávněním `projects`; jinak prázdný
+        // seznam a počet, aby UI dál poznalo, že klienta se zakázkami nelze smazat.
+        $canReadProjects = ProjectAssignmentAccess::canReadProjects($request);
+        $client['projects'] = $canReadProjects ? $this->repo->projectsForClient($id) : [];
+        $client['projects_count'] = $this->repo->projectsCountForClient($id);
         $client['email_contacts'] = $this->emailContacts->listForClient($id, $sid);
         $client['bank_accounts'] = $this->bankAccounts->listForClient($id, $sid);
         $pdo = $this->db->pdo();
@@ -125,7 +130,8 @@ final class GetClientAction
               ORDER BY total DESC"
         );
         $stmtP->execute([$id]);
-        $client['revenue_by_project'] = array_map(
+        // Obrat po zakázkách nese názvy zakázek, proto platí stejné pravidlo jako u `projects`.
+        $client['revenue_by_project'] = !$canReadProjects ? [] : array_map(
             fn (array $r) => [
                 'project_id'   => $r['project_id'] !== null ? (int) $r['project_id'] : null,
                 'project_name' => $r['project_name'],

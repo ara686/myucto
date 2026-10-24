@@ -6,12 +6,12 @@ import { useI18n } from 'vue-i18n'
 import { clearLoginBounces, loginRedirectLoopDetected } from '@/router'
 
 const { t } = useI18n()
-import { BTN_BASE, FILLED, ICONS } from '@/components/ui/buttonStyles'
+import { BTN_BASE, FILLED, ICONS, OUTLINE } from '@/components/ui/buttonStyles'
 import { isPortalLoggedOut } from '@/security/portalLogout'
 import AppShell from '@/components/layout/AppShell.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useTurnstile } from '@/composables/useTurnstile'
-import { authApi } from '@/api/auth'
+import { authApi, type DomainLoginConfirmation } from '@/api/auth'
 import {
   cancelActiveWebAuthnCeremony,
   getCredential,
@@ -22,9 +22,14 @@ import {
   authorizePendingDomainLogin,
   beginDomainLogin,
   captureCanonicalDomainLogin,
+  clearCanonicalDomainLogin,
+  confirmPendingDomainLogin,
   hasPendingCanonicalDomainLogin,
   hasPendingCanonicalDomainLoginCleanup,
+  isDomainLoginConfirmationRequired,
+  needsCanonicalDomainLoginConfirmation,
   pendingCanonicalDomainLoginHandoff,
+  previewPendingDomainLogin,
   recordCanonicalDomainLoginSession,
   reconcileCanonicalDomainLoginSession,
 } from '@/security/domainLogin'
@@ -65,6 +70,9 @@ const passkeySupported = isWebAuthnAvailable()
 const error = ref<string>('')
 const domainLoginBusy = ref(false)
 const domainCleanupPending = ref(false)
+// Potvrzovací obrazovka předání existujícího přihlášení na vlastní doménu.
+const domainConfirmation = ref<DomainLoginConfirmation | null>(null)
+const domainConfirmationLoading = ref(false)
 const portalLoggedOut = ref(isPortalLoggedOut())
 const captchaRequired = ref(false)
 const captchaSiteKey = ref('')
@@ -259,6 +267,12 @@ async function finishDomainLoginIfNeeded(): Promise<boolean> {
     await router.replace(handoffPath?.startsWith('/setup-mfa') ? handoffPath : '/setup-mfa')
     return true
   }
+  // Přihlášení, které tu existovalo už dřív, se vlastní doméně předá až po
+  // kliknutí. Přihlášení v rámci tohoto toku je potvrzením samo o sobě.
+  if (needsCanonicalDomainLoginConfirmation()) {
+    await showDomainConfirmation()
+    return true
+  }
   if (auth.shouldOfferMfa && handoffPath === '/profile/password?tab=totp') {
     await router.replace('/setup-mfa?method=totp')
     return true
@@ -276,16 +290,52 @@ async function completeCanonicalDomainLogin(): Promise<void> {
   domainLoginBusy.value = true
   domainCleanupPending.value = hasPendingCanonicalDomainLoginCleanup()
   error.value = ''
+  let confirmationRequired = false
   try {
     await authorizePendingDomainLogin()
   } catch (e: any) {
+    confirmationRequired = isDomainLoginConfirmationRequired(e)
     domainCleanupPending.value = hasPendingCanonicalDomainLoginCleanup()
-    error.value = domainCleanupPending.value
-      ? t('domain_login.cleanup_failed')
-      : e?.response?.data?.error?.message || t('domain_login.authorize_failed')
+    if (!confirmationRequired) {
+      error.value = domainCleanupPending.value
+        ? t('domain_login.cleanup_failed')
+        : e?.response?.data?.error?.message || t('domain_login.authorize_failed')
+    }
   } finally {
     domainLoginBusy.value = false
   }
+  // Server může potvrzení vyžádat i u session z tohoto toku, je-li starší
+  // než požadavek (obnovený požadavek z portálu).
+  if (confirmationRequired) await showDomainConfirmation()
+}
+
+async function showDomainConfirmation(): Promise<void> {
+  if (domainLoginBusy.value) return
+  domainLoginBusy.value = true
+  domainConfirmationLoading.value = true
+  error.value = ''
+  try {
+    domainConfirmation.value = await previewPendingDomainLogin()
+  } catch (e: any) {
+    domainConfirmation.value = null
+    error.value = e?.response?.data?.error?.message || t('domain_login.authorize_failed')
+  } finally {
+    domainLoginBusy.value = false
+    domainConfirmationLoading.value = false
+  }
+}
+
+async function confirmDomainLogin(): Promise<void> {
+  if (domainLoginBusy.value) return
+  confirmPendingDomainLogin()
+  domainConfirmation.value = null
+  await finishDomainLoginIfNeeded()
+}
+
+function cancelDomainLogin(): void {
+  clearCanonicalDomainLogin()
+  domainConfirmation.value = null
+  void router.replace('/')
 }
 
 async function submit() {
@@ -501,6 +551,32 @@ async function resendCode() {
             <button type="button" :class="[BTN_BASE, FILLED.primary]" :disabled="domainLoginBusy" @click="startPortalLogin">
               <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M10 17l5-5-5-5M15 12H3M12 3h7a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-7" /></svg>
               {{ t('auth.login') }}
+            </button>
+          </div>
+        </div>
+        <p v-else-if="domainConfirmationLoading" role="status" class="text-sm text-neutral-600">{{ t('domain_login.confirm_loading') }}</p>
+        <div v-else-if="domainConfirmation" class="space-y-4" data-testid="domain-login-confirmation">
+          <h3 class="text-base font-semibold">{{ t('domain_login.confirm_title') }}</h3>
+          <p class="text-sm text-neutral-700">{{ t('domain_login.confirm_intro') }}</p>
+          <dl class="rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm space-y-2">
+            <div>
+              <dt class="text-xs text-neutral-500">{{ t('domain_login.confirm_hostname') }}</dt>
+              <dd class="font-mono font-semibold break-all" data-testid="domain-login-hostname">{{ domainConfirmation.target_hostname }}</dd>
+            </div>
+            <div v-if="domainConfirmation.supplier_name">
+              <dt class="text-xs text-neutral-500">{{ t('domain_login.confirm_company') }}</dt>
+              <dd class="font-semibold break-words" data-testid="domain-login-company">{{ domainConfirmation.supplier_name }}</dd>
+            </div>
+          </dl>
+          <p class="text-sm text-warning-700">{{ t('domain_login.confirm_warning') }}</p>
+          <div v-if="error" role="alert" class="rounded-md bg-danger-50 border border-danger-500/40 px-3 py-2 text-sm text-danger-500">{{ error }}</div>
+          <div class="flex flex-wrap gap-2">
+            <button type="button" :class="[BTN_BASE, FILLED.primary]" :disabled="domainLoginBusy" data-testid="domain-login-continue" @click="confirmDomainLogin">
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M10 17l5-5-5-5M15 12H3M12 3h7a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-7" /></svg>
+              {{ t('domain_login.confirm_continue') }}
+            </button>
+            <button type="button" :class="[BTN_BASE, OUTLINE.neutral]" :disabled="domainLoginBusy" data-testid="domain-login-cancel" @click="cancelDomainLogin">
+              {{ t('domain_login.confirm_cancel') }}
             </button>
           </div>
         </div>

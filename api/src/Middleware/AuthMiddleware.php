@@ -14,6 +14,7 @@ use MyInvoice\Service\Auth\ApiTokenService;
 use MyInvoice\Service\ApiRequestLogger;
 use MyInvoice\Service\Auth\SessionManager;
 use MyInvoice\Service\IpMatcher;
+use MyInvoice\Service\Tenant\TenantDomainContext;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Psr\Http\Server\MiddlewareInterface;
@@ -260,9 +261,25 @@ final class AuthMiddleware implements MiddlewareInterface
         if ($session === null && $token !== '' && $isLogout) {
             $session = $this->sessions->loadTombstoneForLogout($token);
             $logoutTombstone = $session !== null;
-            $user = $logoutTombstone
-                ? $this->loadUser((int) $session['user_id'])
-                : null;
+            $user = null;
+        }
+
+        if ($session !== null && !self::sessionMatchesHost($session, $request)) {
+            // Prohlížeč host-only cookie na cizí hostname nepošle. Session předložená
+            // jinde je přenesená ručně, proto se s ní zachází jako s žádnou.
+            $this->logger?->warning('Session odmítnuta: nepatří k tomuto hostname.', [
+                'user_id' => (int) $session['user_id'],
+                'session_domain_id' => $session['supplier_domain_id'] ?? null,
+                'host' => $request->getUri()->getHost(),
+                'method' => $method,
+                'route' => $path,
+            ]);
+            $session = null;
+            $user = null;
+            $logoutTombstone = false;
+        }
+        if ($logoutTombstone && $session !== null) {
+            $user = $this->loadUser((int) $session['user_id']);
         }
 
         if ($session !== null) {
@@ -306,6 +323,25 @@ final class AuthMiddleware implements MiddlewareInterface
         }
 
         return $handler->handle($request);
+    }
+
+    /**
+     * Session vydaná domain-login výměnou platí jen na své vlastní doméně.
+     * Canonical adresa (a každý request bez kontextu vlastní domény) přijme
+     * pouze session bez vazby, vlastní doména pouze session svázanou s ní.
+     * Jinak by vlastník DNS domény mohl token z výměny přehrát na `app.url`.
+     *
+     * @param array<string,mixed> $session
+     */
+    private static function sessionMatchesHost(array $session, Request $request): bool
+    {
+        $bound = $session['supplier_domain_id'] ?? null;
+        $bound = $bound !== null ? (int) $bound : null;
+        $context = $request->getAttribute(TenantDomainMiddleware::ATTR_CONTEXT);
+        if ($context instanceof TenantDomainContext && $context->mode === TenantDomainContext::CUSTOM) {
+            return $bound !== null && $bound > 0 && $bound === $context->domainId;
+        }
+        return $bound === null;
     }
 
     /**

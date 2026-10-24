@@ -140,7 +140,7 @@ final class KontrolniHlaseniAction
             // s B8/HIGH#1 (readonly download nemutuje) jen s WRITE oprávněním; READ-only
             // nebo když ČNB kurz nezná → tvrdá chyba 422.
             if (!empty($result['missing_rates'])) {
-                if (RequestAuthorization::allows($request, 'reports.export', AccessLevel::WRITE)) {
+                if (RequestAuthorization::allowsReadSideEffects($request, 'reports.export')) {
                     $this->rateFiller->fill($supplierId, $result['missing_rates']);
                     $result = $this->builder->build($supplierId, $year, $month, $period, $variant, $dZjist, $cJedVyzvy);
                 }
@@ -185,7 +185,7 @@ final class KontrolniHlaseniAction
             $supplierId, 'dphkh1', $year, $isQuarterly ? null : $month, $quarter,
             $result['xml'], $result['summary'], $userId ?: null,
             // readonly GET/download nesmí mutovat účetní stav (posun zámku) — dorevize B8, HIGH#1.
-            RequestAuthorization::allows($request, 'reports.export', AccessLevel::WRITE),
+            RequestAuthorization::allowsReadSideEffects($request, 'reports.export'),
             $forma,
         );
         $periodLabel = $isQuarterly ? sprintf('%04d-Q%d', $year, $quarter) : sprintf('%04d-%02d', $year, $month);
