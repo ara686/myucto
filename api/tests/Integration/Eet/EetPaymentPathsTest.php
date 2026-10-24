@@ -363,19 +363,23 @@ final class EetPaymentPathsTest extends TestCase
         self::assertSame(1, $this->rows('eet_records'));
     }
 
-    /** Druhý QR záměr nad dluh faktury nevznikne (otevřené záměry se odečítají). */
-    public function testSecondOpenQrIntentOverDebtIsRejected(): void
+    /**
+     * Nový QR záměr nahradí dřívější nepotvrzený, takže otevřený záměr nikdy nepřesáhne dluh.
+     * Odmítnutý nový záměr (nad dluh) dřívější záměr nezruší: zrušení se vrátí s transakcí.
+     */
+    public function testRejectedQrIntentOverDebtKeepsPreviousIntent(): void
     {
         $invoiceId = $this->invoice(1000);
         $command = $this->container->get(EetPaymentCommand::class);
-        $command->createIntent($this->supplierId, $this->userId, null, ['invoice_id' => $invoiceId]);
+        $first = $command->createIntent($this->supplierId, $this->userId, null, ['invoice_id' => $invoiceId]);
         try {
-            $command->createIntent($this->supplierId, $this->userId, null, ['invoice_id' => $invoiceId, 'amount' => '1000']);
-            self::fail('Druhý QR záměr na celý dluh prošel.');
+            $command->createIntent($this->supplierId, $this->userId, null, ['invoice_id' => $invoiceId, 'amount' => '1001']);
+            self::fail('QR záměr nad dluh faktury prošel.');
         } catch (\MyInvoice\Service\Eet\EetCommandException $e) {
             self::assertSame(422, $e->httpStatus);
         }
         self::assertSame(1, (int) $this->scalar("SELECT COUNT(*) FROM payment_events WHERE supplier_id = ? AND origin = 'payment_intent'", [$this->supplierId]));
+        self::assertSame('initiated', $this->scalar('SELECT payment_order_status FROM payment_events WHERE public_id = ?', [$first['payment_event_id']]));
     }
 
     /** Potvrzení QR záměru pod zámkem faktury znovu ověří dluh: hotovost mezitím fakturu uhradila. */

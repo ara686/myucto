@@ -283,7 +283,15 @@ export interface EetPaymentIntentRequest {
 }
 
 export interface EetPaymentIntent extends EetPaymentEvent {
-  qr?: { spd: string; image_data_uri?: string | null } | null
+  qr?: {
+    spd: string
+    image_data_uri?: string | null
+    account_number?: string | null
+    bank_code?: string | null
+    iban?: string | null
+    variable_symbol?: string | null
+    amount?: string
+  } | null
 }
 
 export interface EetRecord extends EetRecordState {

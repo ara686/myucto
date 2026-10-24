@@ -6,6 +6,7 @@ namespace MyInvoice\Service\Eet;
 
 use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Infrastructure\Database\TransactionFailure;
+use MyInvoice\Service\Bank\VariableSymbolNormalizer;
 use MyInvoice\Service\Invoice\InvoicePaymentService;
 use MyInvoice\Service\Pdf\InvoicePdfRenderer;
 use MyInvoice\Service\Qr\QrPaymentGenerator;
@@ -312,63 +313,88 @@ final class EetPaymentCommand
         }
 
         $now = $this->now();
-        $invoice = $this->invoice($supplierId, (int) $invoiceId, false);
-        // QR na místě je česká QR platba (SPAYD v CZK). Potvrzený příkaz blokuje dluh faktury
-        // a vypořádá ho bankovní párování korunového pohybu; cizoměnový QR příkaz (SEPA)
-        // tímhle tokem nejde. Fakturu v cizí měně lze přijmout hotově nebo kartou na terminálu.
-        if ((string) $invoice['currency'] !== 'CZK') {
-            throw EetCommandException::unsupported(
-                'QR platba na místě je podporovaná jen u faktur v Kč. Fakturu v ' . (string) $invoice['currency']
-                . ' přijměte v hotovosti nebo kartou na terminálu.',
-                'qr_foreign_currency',
-            );
-        }
-        $remaining = $this->remainingCents($supplierId, $invoice, true);
-        $amount = $requestedAmount ?? EetValues::fromCents(max(0, $remaining));
-        if (EetValues::toCents($amount) <= 0) {
-            throw EetCommandException::validation('Faktura nemá nic k úhradě (nebo ji kryjí otevřené QR záměry; nepotřebné zrušte).', 'invoice_id',
-                ['remaining' => EetValues::fromCents(max(0, $remaining))]);
-        }
-        $this->assertInvoiceAccepts($supplierId, $invoice, $amount, 'CZK', true);
-        if ($this->qrPayload($invoice, $amount) === null) {
-            throw EetCommandException::validation('Faktura nemá bankovní účet, ze kterého by šel sestavit QR kód.', 'invoice_id');
-        }
         if ($deviceId !== null) {
             $this->assertDeviceOwned($supplierId, $deviceId);
         }
         $settings = $this->settings->get($supplierId);
-        $decision = $this->policy->evaluate(new EetPolicyInput($settings, $now, 'qr_in_person', $context, 'sale', 'CZK', $amount, 'payment_intent', 'intent'));
-        self::assertAcceptable($decision);
-
+        $pdo = $this->db->pdo();
+        $this->assertNoOpenTransaction($pdo);
         try {
-            $eventId = $this->events->insert([
-                'supplier_id' => $supplierId,
-                'idempotency_key' => $key,
-                'request_hash' => $key !== null ? $hash : null,
-                'kind' => 'intent',
-                'origin' => 'payment_intent',
-                'payment_method' => 'bank_transfer',
-                'channel' => 'qr_in_person',
-                'contact_context' => $context,
-                'business_purpose' => 'sale',
-                'amount' => $amount,
-                'currency' => 'CZK',
-                'recorded_at' => EetValues::dbTime($now),
-                'payment_order_status' => 'initiated',
-                'bank_verification_status' => 'not_applicable',
-                'accounting_settlement_status' => 'pending',
-                'invoice_id' => (int) $invoice['id'],
-                'device_id' => $deviceId,
-                'eet_decision' => $decision->decision,
-                'eet_reason_code' => $decision->reasonCode,
-                'policy_version' => EetRecordingPolicy::VERSION,
-                'note' => $note,
-                'created_by' => $userId > 0 ? $userId : null,
-            ]);
+            $eventId = TransactionFailure::retrying($pdo, function () use ($pdo, $supplierId, $userId, $invoiceId, $deviceId, $context, $note, $requestedAmount, $key, $hash, $now, $settings): int {
+                $pdo->beginTransaction();
+                try {
+                    $invoice = $this->invoice($supplierId, (int) $invoiceId, true);
+                    // QR na místě je česká QR platba (SPAYD v CZK). Potvrzený příkaz blokuje dluh faktury
+                    // a vypořádá ho bankovní párování korunového pohybu; cizoměnový QR příkaz (SEPA)
+                    // tímhle tokem nejde. Fakturu v cizí měně lze přijmout hotově nebo kartou na terminálu.
+                    if ((string) $invoice['currency'] !== 'CZK') {
+                        throw EetCommandException::unsupported(
+                            'QR platba na místě je podporovaná jen u faktur v Kč. Fakturu v ' . (string) $invoice['currency']
+                            . ' přijměte v hotovosti nebo kartou na terminálu.',
+                            'qr_foreign_currency',
+                        );
+                    }
+                    // Nový QR nahrazuje dřívější nepotvrzené záměry téže faktury: obsluha mění
+                    // částku nebo zařízení a zákazník skenuje jen poslední QR. Nepotvrzený záměr
+                    // nemá účetní ani EET účinek; potvrzené (operator_confirmed) se nemění nikdy.
+                    // Zrušení je ve stejné transakci pod zámkem faktury, takže při chybě níže
+                    // zůstanou dřívější záměry beze změny.
+                    $pdo->prepare(
+                        "UPDATE payment_events SET payment_order_status = 'cancelled', accounting_settlement_status = 'not_applicable'
+                          WHERE supplier_id = ? AND invoice_id = ? AND origin = 'payment_intent' AND payment_order_status = 'initiated'"
+                    )->execute([$supplierId, (int) $invoice['id']]);
+
+                    $remaining = $this->remainingCents($supplierId, $invoice, true);
+                    $amount = $requestedAmount ?? EetValues::fromCents(max(0, $remaining));
+                    if (EetValues::toCents($amount) <= 0) {
+                        throw EetCommandException::validation('Faktura nemá nic k úhradě.', 'invoice_id',
+                            ['remaining' => EetValues::fromCents(max(0, $remaining))]);
+                    }
+                    $this->assertInvoiceAccepts($supplierId, $invoice, $amount, 'CZK', true);
+                    if ($this->qrPayload($invoice, $amount) === null) {
+                        throw EetCommandException::validation('Faktura nemá bankovní účet, ze kterého by šel sestavit QR kód.', 'invoice_id');
+                    }
+                    $decision = $this->policy->evaluate(new EetPolicyInput($settings, $now, 'qr_in_person', $context, 'sale', 'CZK', $amount, 'payment_intent', 'intent'));
+                    self::assertAcceptable($decision);
+
+                    $id = $this->events->insert([
+                        'supplier_id' => $supplierId,
+                        'idempotency_key' => $key,
+                        'request_hash' => $key !== null ? $hash : null,
+                        'kind' => 'intent',
+                        'origin' => 'payment_intent',
+                        'payment_method' => 'bank_transfer',
+                        'channel' => 'qr_in_person',
+                        'contact_context' => $context,
+                        'business_purpose' => 'sale',
+                        'amount' => $amount,
+                        'currency' => 'CZK',
+                        'recorded_at' => EetValues::dbTime($now),
+                        'payment_order_status' => 'initiated',
+                        'bank_verification_status' => 'not_applicable',
+                        'accounting_settlement_status' => 'pending',
+                        'invoice_id' => (int) $invoice['id'],
+                        'device_id' => $deviceId,
+                        'eet_decision' => $decision->decision,
+                        'eet_reason_code' => $decision->reasonCode,
+                        'policy_version' => EetRecordingPolicy::VERSION,
+                        'note' => $note,
+                        'created_by' => $userId > 0 ? $userId : null,
+                    ]);
+                    $pdo->commit();
+                    return $id;
+                } catch (\Throwable $e) {
+                    if ($pdo->inTransaction()) {
+                        $pdo->rollBack();
+                    }
+                    throw $e;
+                }
+            });
         } catch (\PDOException $e) {
             if ($key === null) {
                 throw $e;
             }
+            // Souběžný požadavek se stejným klíčem doběhl dřív; zrušení výše se vrátilo s rollbackem.
             return $this->intentResult($supplierId, $this->replayAfterRace($e, $supplierId, $key, $hash), true);
         }
         return $this->intentResult($supplierId, (array) $this->events->find($supplierId, $eventId), false);
@@ -904,13 +930,37 @@ final class EetPaymentCommand
         if ((string) $event['payment_order_status'] === 'initiated' && $event['invoice_id'] !== null) {
             $invoice = $this->invoice($supplierId, (int) $event['invoice_id'], false);
             $payload = $this->qrPayload($invoice, (string) $event['amount']);
+            $bank = $this->bankSnapshot($invoice);
             $out['qr'] = $payload === null ? null : [
                 'spd' => $payload,
                 'image_data_uri' => $this->qr->generate('CZK', (float) $event['amount'], (string) ($invoice['varsymbol'] ?? ''),
-                    $this->bankSnapshot($invoice), '', null, 'Faktura ' . (string) ($invoice['varsymbol'] ?? '')),
-            ];
+                    $bank, '', null, 'Faktura ' . (string) ($invoice['varsymbol'] ?? '')),
+            ] + self::manualTransferDetails($bank, (string) ($invoice['varsymbol'] ?? ''), (string) $event['amount']);
         }
         return $out;
+    }
+
+    /**
+     * Údaje pro ruční přepis příkazu ze stejného účtu a VS, ze kterých se skládá QR
+     * (QrPaymentGenerator: tuzemský účet má přednost, jinak IBAN; VS jen číslice).
+     *
+     * @param array<string,mixed> $bank
+     * @return array{account_number:?string, bank_code:?string, iban:?string, variable_symbol:?string, amount:string}
+     */
+    private static function manualTransferDetails(array $bank, string $varsymbol, string $amount): array
+    {
+        $accountNumber = trim((string) ($bank['account_number'] ?? ''));
+        $bankCode = trim((string) ($bank['bank_code'] ?? ''));
+        $domestic = $accountNumber !== '' && $bankCode !== '';
+        $iban = trim(str_replace(' ', '', (string) ($bank['iban'] ?? '')));
+        $vs = VariableSymbolNormalizer::forPayment($varsymbol);
+        return [
+            'account_number' => $domestic ? $accountNumber : null,
+            'bank_code' => $domestic ? $bankCode : null,
+            'iban' => $iban !== '' ? $iban : null,
+            'variable_symbol' => $vs !== '' ? $vs : null,
+            'amount' => EetValues::amount($amount),
+        ];
     }
 
     /** @param array<string,mixed> $invoice */

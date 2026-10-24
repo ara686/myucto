@@ -357,6 +357,15 @@ final class EetPaymentFlowTest extends TestCase
 
             self::assertNotNull($intent['qr']['spd'] ?? null, 'Účet měny doplní QR i bez snapshotu dokladu.');
             self::assertStringStartsWith('SPD*1.0*', $intent['qr']['spd']);
+            // Údaje pro ruční přepis jsou ze stejného zdroje jako QR.
+            self::assertSame(['1000000005', '0100', '1210.00'],
+                [$intent['qr']['account_number'], $intent['qr']['bank_code'], $intent['qr']['amount']]);
+            self::assertStringContainsString('*ACC:CZ', $intent['qr']['spd']);
+            self::assertStringContainsString('01000000001000000005', $intent['qr']['spd']);
+            self::assertStringContainsString('*AM:1210.00', $intent['qr']['spd']);
+            if ($intent['qr']['variable_symbol'] !== null) {
+                self::assertStringContainsString('*X-VS:' . $intent['qr']['variable_symbol'], $intent['qr']['spd']);
+            }
         } finally {
             $pdo->prepare('UPDATE currencies SET account_number = ?, bank_code = ?, iban = ? WHERE id = ?')
                 ->execute([$before['account_number'], $before['bank_code'], $before['iban'], $this->currencyId]);
@@ -418,6 +427,49 @@ final class EetPaymentFlowTest extends TestCase
         self::assertSame(0, $this->rows('eet_records'));
         $this->expectException(EetCommandException::class);
         $this->command()->confirmIntent($this->supplierId, $this->userId, $intent['payment_event_id'], 'confirm-key-03', []);
+    }
+
+    public function testNewQrIntentCancelsPreviousInitiatedIntentOfInvoice(): void
+    {
+        $invoiceId = $this->invoice(500);
+        $first = $this->command()->createIntent($this->supplierId, $this->userId, 'intent-key-11', ['invoice_id' => $invoiceId]);
+        self::assertSame('500.00', $first['amount']);
+
+        $second = $this->command()->createIntent($this->supplierId, $this->userId, 'intent-key-12', ['invoice_id' => $invoiceId]);
+        self::assertSame('500.00', $second['amount'], 'Nepotvrzený záměr nesmí blokovat nový QR na celou částku.');
+        self::assertSame('initiated', $second['payment_order_status']);
+        self::assertSame('cancelled', $this->scalar('SELECT payment_order_status FROM payment_events WHERE public_id = ?', [$first['payment_event_id']]));
+
+        $replay = $this->command()->createIntent($this->supplierId, $this->userId, 'intent-key-11', ['invoice_id' => $invoiceId]);
+        self::assertTrue($replay['idempotent_replay']);
+        self::assertSame($first['payment_event_id'], $replay['payment_event_id']);
+        self::assertSame('initiated', $this->scalar('SELECT payment_order_status FROM payment_events WHERE public_id = ?', [$second['payment_event_id']]),
+            'Opakování starého klíče nesmí zrušit aktuální záměr.');
+        self::assertSame(0, $this->rows('eet_records'));
+    }
+
+    public function testChangedAmountReplacesInitiatedIntent(): void
+    {
+        $invoiceId = $this->invoice(500);
+        $first = $this->command()->createIntent($this->supplierId, $this->userId, 'intent-key-21', ['invoice_id' => $invoiceId]);
+        $second = $this->command()->createIntent($this->supplierId, $this->userId, 'intent-key-22', ['invoice_id' => $invoiceId, 'amount' => '120']);
+        self::assertSame('120.00', $second['amount']);
+        self::assertSame('initiated', $second['payment_order_status']);
+        self::assertSame('cancelled', $this->scalar('SELECT payment_order_status FROM payment_events WHERE public_id = ?', [$first['payment_event_id']]));
+        self::assertSame(1, (int) $this->scalar(
+            "SELECT COUNT(*) FROM payment_events WHERE invoice_id = ? AND payment_order_status = 'initiated'", [$invoiceId]));
+    }
+
+    public function testNewQrIntentKeepsConfirmedIntent(): void
+    {
+        $invoiceId = $this->invoice(500);
+        $confirmedIntent = $this->command()->createIntent($this->supplierId, $this->userId, 'intent-key-31', ['invoice_id' => $invoiceId, 'amount' => '200']);
+        $this->command()->confirmIntent($this->supplierId, $this->userId, $confirmedIntent['payment_event_id'], 'confirm-key-31', []);
+
+        $next = $this->command()->createIntent($this->supplierId, $this->userId, 'intent-key-32', ['invoice_id' => $invoiceId]);
+        self::assertSame('300.00', $next['amount'], 'Potvrzený příkaz dál blokuje svou část dluhu.');
+        self::assertSame('operator_confirmed', $this->scalar('SELECT payment_order_status FROM payment_events WHERE public_id = ?', [$confirmedIntent['payment_event_id']]));
+        self::assertSame(1, $this->rows('eet_records'));
     }
 
     public function testCorrectionOfPartOfSaleAndLimit(): void

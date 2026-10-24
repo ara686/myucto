@@ -524,6 +524,13 @@ paths:
       tags:
       - EET
       summary: QR platba na místě — příprava záměru a QR dat (není inkaso ani tržba)
+      description: >-
+        Založí platební záměr k faktuře a vrátí QR data. Nový záměr ve stejné transakci pod zámkem
+        faktury zruší (payment_order_status = cancelled) dřívější nepotvrzené záměry téže faktury ve
+        stavu initiated, které nemají účetní ani EET účinek; zbývající částka se počítá až poté.
+        Potvrzené záměry (operator_confirmed) se nemění a dál blokují svou část dluhu. Bez částky se
+        použije celá zbývající částka. Stejný Idempotency-Key se stejným tělem vrátí původní výsledek;
+        opakování nic dalšího neruší. Odmítnutý záměr dřívější záměry nezruší.
       parameters:
       - name: Idempotency-Key
         in: header
@@ -2063,6 +2070,25 @@ components:
                 type: string
                 nullable: true
                 description: PNG jako data URI
+              account_number:
+                type: string
+                nullable: true
+                description: Tuzemské číslo účtu (s předčíslím) z QR; null, pokud QR nese jen IBAN
+              bank_code:
+                type: string
+                nullable: true
+                description: Kód banky k account_number
+              iban:
+                type: string
+                nullable: true
+                description: IBAN účtu bez mezer, pokud je znám
+              variable_symbol:
+                type: string
+                nullable: true
+                description: Variabilní symbol z QR (jen číslice)
+              amount:
+                type: string
+                description: Částka k úhradě v Kč (desetinná tečka, dvě místa)
     EetRecord:
       allOf:
       - $ref: '#/components/schemas/EetRecordState'
