@@ -288,6 +288,11 @@ $sessionActions = [
     'MyInvoice\\Action\\Eet\\EetRecordAction::queue',
     'MyInvoice\\Action\\Eet\\EetRecordAction::export',
     'MyInvoice\\Action\\Eet\\EetRecordAction::invoice',
+    // Oblíbené stránky uživatele - stav UI, akce je jen z webového rozhraní.
+    'MyInvoice\\Action\\UserSettings\\FavoriteAction::list',
+    'MyInvoice\\Action\\UserSettings\\FavoriteAction::create',
+    'MyInvoice\\Action\\UserSettings\\FavoriteAction::update',
+    'MyInvoice\\Action\\UserSettings\\FavoriteAction::delete',
 ];
 $isSessionAction = static fn (array $route): bool => in_array($route['action'], $sessionActions, true);
 

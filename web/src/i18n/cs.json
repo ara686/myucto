@@ -679,6 +679,23 @@
     "title": "MyÚčto.cz",
     "subtitle": "Fakturační systém"
   },
+  "favorites": {
+    "title": "Oblíbené",
+    "group_label": "Oblíbené, obnovení a okna",
+    "add_current": "Přidat aktuální stránku",
+    "remove_current": "Odebrat aktuální stránku",
+    "limit_reached": "Je dosažen limit {max} oblíbených stránek.",
+    "empty": "Zatím nemáte žádné oblíbené stránky.",
+    "company_unavailable": "Firma už není dostupná - stránka se otevře v aktuální firmě",
+    "company_hint": "Klik otevře stránku v uložené firmě, Shift+klik v aktuální firmě.",
+    "keyboard_hint": "Šipky vyberou stránku, Enter ji otevře, Shift+Enter v aktuální firmě, F2 ji přejmenuje, Delete odebere, Esc zavře panel.",
+    "rename": "Přejmenovat",
+    "rename_named": "Přejmenovat {title}",
+    "remove": "Odebrat z oblíbených",
+    "remove_named": "Odebrat {title} z oblíbených",
+    "save_failed": "Oblíbené se nepodařilo uložit.",
+    "record_in_other_company": "Konkrétní záznam z jiné firmy v aktuální firmě neexistuje, otevřel se nejbližší seznam."
+  },
   "workspace": {
     "layout_label": "Rozložení pracovního prostoru",
     "layout_1": "Jeden panel",

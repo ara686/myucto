@@ -3,6 +3,7 @@ import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import WorkspaceLayoutToggle from '@/components/workspace/WorkspaceLayoutToggle.vue'
 import WorkspaceWindowButton from '@/components/workspace/WorkspaceWindowButton.vue'
+import WorkspaceFavoritesButton from '@/components/workspace/WorkspaceFavoritesButton.vue'
 import WorkspaceReloadButton from '@/components/workspace/WorkspaceReloadButton.vue'
 import WorkspaceNavLink from '@/components/workspace/WorkspaceNavLink.vue'
 
@@ -26,8 +27,11 @@ watch(() => props.manualHref, () => { open.value = false })
 
 <template>
   <div class="items-center gap-1 text-sm">
-    <WorkspaceReloadButton />
-    <WorkspaceWindowButton />
+    <div class="flex h-8 items-center gap-0.5 rounded-lg bg-neutral-100/80 p-0.5 shadow-inner ring-1 ring-neutral-200/80" role="group" :aria-label="t('favorites.group_label')">
+      <WorkspaceFavoritesButton class="h-7! hover:bg-surface!" />
+      <WorkspaceReloadButton class="h-7! hover:bg-surface!" />
+      <WorkspaceWindowButton class="h-7! hover:bg-surface!" />
+    </div>
     <WorkspaceLayoutToggle />
 
     <div v-if="quickActions.length > 0" class="relative">

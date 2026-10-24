@@ -4106,6 +4106,11 @@ final class Routes
         $app->put   ('/api/user/filters/{id:[0-9]+}',         [\MyInvoice\Action\UserSettings\SavedFilterAction::class, 'update']);
         $app->delete('/api/user/filters/{id:[0-9]+}',         [\MyInvoice\Action\UserSettings\SavedFilterAction::class, 'delete']);
 
+        $app->get   ('/api/user/favorites',                   [\MyInvoice\Action\UserSettings\FavoriteAction::class, 'list']);
+        $app->post  ('/api/user/favorites',                   [\MyInvoice\Action\UserSettings\FavoriteAction::class, 'create']);
+        $app->put   ('/api/user/favorites/{id:[0-9]+}',       [\MyInvoice\Action\UserSettings\FavoriteAction::class, 'update']);
+        $app->delete('/api/user/favorites/{id:[0-9]+}',       [\MyInvoice\Action\UserSettings\FavoriteAction::class, 'delete']);
+
         $app->get   ('/api/user/preferences',                 [\MyInvoice\Action\UserSettings\UserPreferenceAction::class, 'list']);
         $app->put   ('/api/user/preferences/{key:[a-z0-9_.-]+}', [\MyInvoice\Action\UserSettings\UserPreferenceAction::class, 'put']);
         $app->delete('/api/user/preferences/{key:[a-z0-9_.-]+}', [\MyInvoice\Action\UserSettings\UserPreferenceAction::class, 'delete']);

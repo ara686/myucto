@@ -679,6 +679,23 @@
     "title": "MyÚčto.cz",
     "subtitle": "Invoicing system"
   },
+  "favorites": {
+    "title": "Favorites",
+    "group_label": "Favorites, reload and windows",
+    "add_current": "Add current page",
+    "remove_current": "Remove current page",
+    "limit_reached": "The limit of {max} favorite pages has been reached.",
+    "empty": "You have no favorite pages yet.",
+    "company_unavailable": "The company is no longer available - the page opens in the current company",
+    "company_hint": "Click opens the page in the saved company, Shift+click in the current company.",
+    "keyboard_hint": "Arrow keys select a page, Enter opens it, Shift+Enter opens it in the current company, F2 renames it, Delete removes it, Esc closes the panel.",
+    "rename": "Rename",
+    "rename_named": "Rename {title}",
+    "remove": "Remove from favorites",
+    "remove_named": "Remove {title} from favorites",
+    "save_failed": "The favorites could not be saved.",
+    "record_in_other_company": "The specific record from another company does not exist in the current company, the nearest list was opened."
+  },
   "workspace": {
     "layout_label": "Workspace layout",
     "layout_1": "One panel",

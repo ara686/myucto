@@ -780,6 +780,7 @@ final class AnonymizationPolicy
         'trip_templates' => ['destination' => 'city', 'label' => 'text', 'origin' => 'city', 'purpose' => 'text'],
         'trips' => ['destination' => 'city', 'note' => 'text', 'origin' => 'city', 'purpose' => 'text'],
         'units' => ['code' => 'keep', 'label_cs' => 'keep', 'label_en' => 'keep'],
+        'user_favorites' => ['path' => 'text', 'title' => 'text'],
         'user_preferences' => ['payload' => 'json', 'pref_key' => 'keep'],
         'users' => ['email' => 'email', 'last_login_ip' => 'wipe', 'last_login_ua' => 'wipe', 'name' => 'person_name', 'password_hash' => 'password', 'totp_secret' => 'wipe', 'webauthn_user_handle' => 'wipe'],
         'vat_classifications' => ['code' => 'keep', 'dphdp3_line' => 'keep', 'dphdp3_line_secondary' => 'keep', 'kh_bad_debt' => 'keep', 'kh_regime_code' => 'keep', 'kh_section' => 'keep', 'kod_pred_pl' => 'keep', 'label' => 'keep'],
