@@ -43,7 +43,7 @@ přílohy k produktu).
 ## 37.2 Než začnete
 
 1. **Licence.** Přepínač skladu je dostupný jen s komerční licencí (viz
-   [Licence a aktivace](105_Licence_a_aktivace.md)). Bez ní zůstane zamčený.
+   [Licence a aktivace](104_Licence_a_aktivace.md)). Bez ní zůstane zamčený.
 2. **Zapnutý modul.** Dokud sklad v nastavení firmy nezapnete, sekce **Sklad**
    se v menu nezobrazí a skladové funkce odmítají i čtení (hláška „Skladový
    modul není pro tuto firmu zapnutý“). Zapnutí je v
@@ -665,7 +665,7 @@ ani napsaná pevná cena sama o sobě nenahrazuje tuto kalkulaci: cenu objednáv
 určuje její zachycená kalkulace.
 
 Sady lze číst, zakládat a upravovat i přes veřejné API, včetně hromadného
-zakládání z PIM nebo e-shopu ([Sady přes API](104_API.md#104919-sady-virtualni-sety)).
+zakládání z PIM nebo e-shopu ([Sady přes API](103_API.md#103919-sady-virtualni-sety)).
 
 #### 37.12.2.7 Kompletace výrobku
 
@@ -1189,7 +1189,7 @@ Karta, která nemá jediný pohyb ani objednávku, ukazuje ve všech čtyřech d
 **nuly**, ne prázdno. Je to záměr: „nula“ je odpověď, „-“ by byla chyba.
 
 Hodnota **prodejné** vlastní dlaždici nemá. Je to číslo pro strojové odběratele
-([REST API](104_API.md) a [MCP server](106_MCP_server.md)), odkud si ho bere e-shop.
+([REST API](103_API.md) a [MCP server](105_MCP_server.md)), odkud si ho bere e-shop.
 Může vyjít i **záporně**: znamená to, že je vyfakturováno víc, než je fyzicky skladem,
 a záměrně se to neschovává nulou.
 
@@ -1601,8 +1601,8 @@ a odhad ceny. Filtrovat jde podle skladu, **Jen pod minimem** a **Koeficientu**
 **Vytvořit objednávky** hromadně založíte: vznikne jedna objednávka na dodavatele,
 vždy jako koncept, a karty bez dodavatele nebo množství se vypíšou jako přeskočené.
 Odeslat objednávku (a tím pustit zboží „na cestu“) můžete až na jejím detailu.
-Stejný výpočet je dostupný i přes [REST API](104_API.md) a
-[MCP server](106_MCP_server.md).
+Stejný výpočet je dostupný i přes [REST API](103_API.md) a
+[MCP server](105_MCP_server.md).
 
 ### 37.12.13 Vychystání, expedice a vratky
 
@@ -1784,6 +1784,6 @@ Nákupní část modulu záměrně řeší jen evidenci objednaného zboží. To
 - [Přijaté faktury](23_Prijate_faktury.md): naskladnění z přijaté faktury.
 - [Uzávěrka](72_Uzaverka.md): konečný a počáteční stav zásob.
 - [Nastavení](96_Nastaveni.md): uložené filtry a předvolby zobrazení.
-- [REST API](104_API.md) a [MCP server](106_MCP_server.md): množstevní veličiny
+- [REST API](103_API.md) a [MCP server](105_MCP_server.md): množstevní veličiny
   a doplnění zásob.
 - [Po instalaci](05_Po_instalaci.md): plánovač a úlohy na pozadí.

@@ -1,4 +1,4 @@
-# 106. MCP server (napojení AI asistenta)
+# 105. MCP server (napojení AI asistenta)
 
 > Návod, jak připojit AI asistenta (Claude, ChatGPT, Codex, Gemini, Copilot)
 > k datům vaší firmy: zapnutí vzdáleného serveru, připojení asistenta, lokální
@@ -8,14 +8,14 @@
 MCP server propojí **AI asistenta** s daty vaší firmy. Po zprovoznění se ptáte
 běžnou češtinou („kolik zaplatíme na DPH", „kdo nám dluží", „jaký byl loni
 zisk") a asistent si sám vybere správný nástroj a zavolá ho přes
-[REST API](104_API.md).
+[REST API](103_API.md).
 
 Nastavení je v aplikaci: `Firma → MCP server`. Stránka má dvě záložky:
 **Připojit online** pro vzdálený MCP server běžící přímo v této instalaci a
 **Spustit lokálně (.mjs)** pro server na vašem počítači. Každá instalace má
 vlastní adresu; žádný společný server MyÚčta není potřeba.
 
-## 106.1 Kdy to potřebujete
+## 105.1 Kdy to potřebujete
 
 - Chcete se asistenta ptát na faktury, pohledávky, DPH, zakázky, dokumenty,
   sklad nebo mzdy.
@@ -28,12 +28,12 @@ vlastní adresu; žádný společný server MyÚčta není potřeba.
 | Kdy | Co udělat | Kde |
 |---|---|---|
 | jednou po instalaci | Superadmin zapne vzdálený server | `Firma → MCP server`, **Zapnout server** |
-| pro každého asistenta | Připojit konektor | [§ 106.4](#1064-krok-za-krokem-pripojeni-asistenta-online) |
-| na počítači bez internetového přístupu k instalaci | Spustit lokální soubor `.mjs` | [§ 106.5](#1065-krok-za-krokem-lokalni-server-mjs) |
-| po zkušebním dotazu | Zkontrolovat log volání | [§ 106.6](#1066-krok-za-krokem-odvolani-pristupu-a-kontrola-logu) |
+| pro každého asistenta | Připojit konektor | [§ 105.4](#1054-krok-za-krokem-pripojeni-asistenta-online) |
+| na počítači bez internetového přístupu k instalaci | Spustit lokální soubor `.mjs` | [§ 105.5](#1055-krok-za-krokem-lokalni-server-mjs) |
+| po zkušebním dotazu | Zkontrolovat log volání | [§ 105.6](#1056-krok-za-krokem-odvolani-pristupu-a-kontrola-logu) |
 | při změně pracovníka nebo asistenta | Odvolat přístup | stejná stránka, **Aktivní připojení** |
 
-## 106.2 Než začnete
+## 105.2 Než začnete
 
 1. **Model dat.** MCP server nevytváří vlastní kopii dat. Výsledek nástroje
    ale dostane připojený AI asistent a může jej podle svého provozního modelu
@@ -57,9 +57,9 @@ vlastní adresu; žádný společný server MyÚčta není potřeba.
 > Do účetnictví a daní asistent nezapisuje. Zaúčtovat doklad, uzavřít období,
 > zaevidovat opravu podle § 46 / § 74b ani odeslat podání na EPO nemůže.
 > Mzdy: může jen číst a zapisovat připravované vstupy, nikdy mzdy nepočítá,
-> neschvaluje, neodesílá. Podrobnosti v [§ 106.8.2](#10682-rozsah-co-asistent-umi).
+> neschvaluje, neodesílá. Podrobnosti v [§ 105.8.2](#10582-rozsah-co-asistent-umi).
 
-## 106.3 Krok za krokem: zapnutí vzdáleného serveru (superadmin)
+## 105.3 Krok za krokem: zapnutí vzdáleného serveru (superadmin)
 
 1. Otevřete `Firma → MCP server`, záložku **Připojit online**.
 2. Zkontrolujte stav v části **Vzdálený MCP server**. Je-li **Vypnuto**,
@@ -77,9 +77,9 @@ serveru** (končí `/mcp`).
 > Hlásí-li Claude při přidávání konektoru, že na adrese žádný server
 > neodpověděl, zkontrolujte nejdřív tento přepínač. Vypnutý `/mcp` vrací
 > `404 mcp_disabled`. Docker, IIS a spravovanou instalaci řeší
-> [§ 106.8.3.5](#106835-vzdalene-pripojeni-bez-stahovani).
+> [§ 105.8.3.5](#105835-vzdalene-pripojeni-bez-stahovani).
 
-## 106.4 Krok za krokem: připojení asistenta online
+## 105.4 Krok za krokem: připojení asistenta online
 
 1. Na záložce **Připojit online** klikněte na **Kopírovat adresu** a
    zkopírujte adresu MCP serveru vaší instalace (například
@@ -111,15 +111,15 @@ připojení**.
 
 Mobilní aplikace Claude používá konektor přidaný k účtu. Ručně přidaný server
 v ChatGPT je vázaný na desktopového hostitele a do běžného mobilního chatu se
-nepřenáší (viz [§ 106.8.3.5](#106835-vzdalene-pripojeni-bez-stahovani)).
+nepřenáší (viz [§ 105.8.3.5](#105835-vzdalene-pripojeni-bez-stahovani)).
 
-## 106.5 Krok za krokem: lokální server (.mjs)
+## 105.5 Krok za krokem: lokální server (.mjs)
 
 Použijte, když nechcete, nebo nemůžete použít online připojení (například
 Codex CLI, Claude Code).
 
 1. **Token.** V `Firma → API tokeny` vytvořte nový token (viz
-   [Kapitola 104](104_API.md)). Pro zkoušení zvolte rozsah **čtení**, rozsah
+   [Kapitola 103](103_API.md)). Pro zkoušení zvolte rozsah **čtení**, rozsah
    **čtení a zápis** až tehdy, když má asistent opravdu vystavovat doklady nebo
    měnit ceny. Token omezte na svou IP adresu.
 2. **Server.** Použijte přiložený soubor `MCP/dist/myucto-mcp.mjs` (jediný
@@ -141,9 +141,9 @@ Codex CLI, Claude Code).
 
 **Jak poznáte, že je hotovo:** Volání se hned objeví v logu na stránce MCP
 serveru. Konfigurace pro další asistenty a proměnné prostředí jsou v
-[§ 106.8.3](#10683-zprovozneni) a [§ 106.8.4](#10684-nastaveni).
+[§ 105.8.3](#10583-zprovozneni) a [§ 105.8.4](#10584-nastaveni).
 
-## 106.6 Krok za krokem: odvolání přístupu a kontrola logu
+## 105.6 Krok za krokem: odvolání přístupu a kontrola logu
 
 1. Otevřete `Firma → MCP server`, záložku **Připojit online**.
 2. V části **Aktivní připojení** klikněte u aplikace na **Odvolat přístup** a
@@ -156,17 +156,17 @@ serveru. Konfigurace pro další asistenty a proměnné prostředí jsou v
 **Jak poznáte, že je hotovo:** Připojení zmizelo ze seznamu a asistent hlásí
 chybu přihlášení. Záznamy se drží 90 dní.
 
-## 106.7 Když něco nejde
+## 105.7 Když něco nejde
 
 <!-- cols: 30 34 36 -->
 | Co vidíte | Proč | Co udělat |
 |---|---|---|
 | Server nenaběhne, hlásí chybnou konfiguraci | `MYUCTO_API_URL` nekončí `/api/v1`, nebo token nezačíná `mi_pat_` | Opravte konfiguraci |
-| Asistent hlásí, že **server neodpovídá** | Častou příčinou je nedůvěryhodný HTTPS certifikát; nebo je vzdálený server vypnutý | Viz [§ 106.8.13](#106813-vlastni-https-certifikat); ověřte dostupnost API a přepínač serveru |
+| Asistent hlásí, že **server neodpovídá** | Častou příčinou je nedůvěryhodný HTTPS certifikát; nebo je vzdálený server vypnutý | Viz [§ 105.8.13](#105813-vlastni-https-certifikat); ověřte dostupnost API a přepínač serveru |
 | `401 invalid_token` | Token je zrušený nebo expirovaný | Vygenerujte nový |
 | `403 token_ip_forbidden` | Token má omezení podle IP a tahle adresa mezi nimi není | Přidejte IP v omezení tokenu |
 | `403 insufficient_scope` | Token má jen rozsah čtení, operace vyžaduje zápis | Vytvořte token s rozsahem čtení a zápis |
-| `403 token_write_forbidden` | Zápis do účetnictví nebo daní přes API nejde (viz [§ 104.9.7](104_API.md#10497-scopes)) | Úkon proveďte v aplikaci; výjimkou jsou koncepty ostatních pohledávek a závazků a analytické účty osnovy ([§ 106.8.8.5](#106885-ostatni-pohledavky-a-zavazky)) |
+| `403 token_write_forbidden` | Zápis do účetnictví nebo daní přes API nejde (viz [§ 103.9.7](103_API.md#10397-scopes)) | Úkon proveďte v aplikaci; výjimkou jsou koncepty ostatních pohledávek a závazků a analytické účty osnovy ([§ 105.8.8.5](#105885-ostatni-pohledavky-a-zavazky)) |
 | `403 other_items.error.auto_post_session_only` | Automatické účtování opakování nebo koncept, který by se automaticky zaúčtoval | Řeší se ve webovém rozhraní |
 | `403 stock_disabled` | Skladový a e-shopový modul není pro firmu zapnutý | Zapněte ho v nastavení firmy |
 | `409` u mazání zboží, výrobce, kategorie, skladu | Záznam je někde použitý | Archivujte ho (`archived`), případně zboží či sklad jen deaktivujte |
@@ -175,11 +175,11 @@ chybu přihlášení. Záznamy se drží 90 dní.
 | `429` | Překročen limit | Snižte `MYUCTO_MAX_RPS` |
 | Asistent nástroje nevidí | Asistent načetl starý seznam | Restartujte aplikaci asistenta; u Gemini CLI ověřte příkazem `/mcp`; u online konektoru obnovte seznam nástrojů a začněte nový chat |
 | V logu nejsou žádná volání | Server se nespustil | Zkontrolujte cestu k `index.mjs` a že proběhlo `npm install` |
-| Test nástrojů hlásí chybu | Node most nenabízí nástroje | Zkontrolujte Node.js, PHP CLI a `proc_open` ([§ 106.8.3.5](#106835-vzdalene-pripojeni-bez-stahovani)) |
+| Test nástrojů hlásí chybu | Node most nenabízí nástroje | Zkontrolujte Node.js, PHP CLI a `proc_open` ([§ 105.8.3.5](#105835-vzdalene-pripojeni-bez-stahovani)) |
 
-## 106.8 Podrobnosti a pravidla
+## 105.8 Podrobnosti a pravidla
 
-### 106.8.1 Co je MCP
+### 105.8.1 Co je MCP
 
 **Model Context Protocol** je otevřený standard pro připojení nástrojů k AI
 modelům. Server běží buď přímo v instalaci MyÚčta, nebo jako malý program na vašem
@@ -197,35 +197,35 @@ Podstatné vlastnosti:
   vazba na firmu, omezení podle IP a oprávnění role vydaného API tokenu.
 - **Všechno je vidět v logu.** Každé volání se zapíše včetně názvu nástroje.
 
-### 106.8.2 Rozsah - co asistent umí
+### 105.8.2 Rozsah - co asistent umí
 
 | Oblast | Rozsah |
 |---|---|
 | Fakturace | čtení, založení, úprava a smazání konceptu (hlavička i jednotlivé položky), vystavování, odesílání a příjemci, storno a dobropis, kopie dokladu, vyúčtování a propojení zálohy, penalizační faktura, evidence a mazání úhrad, daňový doklad k platbě, platební kalendář s rozpisem plateb, ISDOC, upomínky jednotlivě i hromadně |
 | Pravidelná fakturace | čtení šablon a vygenerovaných faktur, založení, úprava, smazání, pozastavení, obnovení, přeplánování a ruční vygenerování faktury |
 | Odběratelé | vyhledání, založení a úprava karty, dotažení údajů z ARES |
-| Přijaté faktury | čtení, založení a úprava konceptu (hlavička i jednotlivé položky), přijetí, úhrada, storno, zálohy, zakázka, druh nákladu, účet dodavatele, příprava příkazu k úhradě; zaúčtování a odeslání do banky ne (viz [§ 106.8.8.4](#106884-prijate-faktury)) |
+| Přijaté faktury | čtení, založení a úprava konceptu (hlavička i jednotlivé položky), přijetí, úhrada, storno, zálohy, zakázka, druh nákladu, účet dodavatele, příprava příkazu k úhradě; zaúčtování a odeslání do banky ne (viz [§ 105.8.8.4](#105884-prijate-faktury)) |
 | Výkazy práce a materiálu | přidání a odebrání řádků u konceptu faktury, automatická hodinová sazba |
 | Zakázky | **čtení i zápis** - založení, úprava, archivace, rozpočty a ziskovost |
 | Dokumenty | metadata, fulltext a omezené čtení vytěženého textu; úprava tagů a vazeb; nahrání a stažení originálu |
-| Soubory a přílohy | stažení PDF a ISDOC vydané faktury, příloh, PDF přijaté faktury a originálu dokumentu; nahrání přílohy faktury, PDF přijaté faktury, dokumentu a obrázku ke zboží; založení přijaté faktury ze souboru ISDOC (viz [§ 106.8.8.6](#106886-soubory-a-prilohy)) |
+| Soubory a přílohy | stažení PDF a ISDOC vydané faktury, příloh, PDF přijaté faktury a originálu dokumentu; nahrání přílohy faktury, PDF přijaté faktury, dokumentu a obrázku ke zboží; založení přijaté faktury ze souboru ISDOC (viz [§ 105.8.8.6](#105886-soubory-a-prilohy)) |
 | Kniha jízd | **čtení i zápis** - vozidla, jízdy a tankování; daňový souhrn jen ke čtení |
 | Pohledávky a závazky | zaplacené / nezaplacené / po splatnosti, stáří pohledávek |
 | Daně | odhad DPH za měsíc i kvartál, kontrolní a souhrnné hlášení, daň z příjmů, daňový kalendář - **jen čtení** |
 | Účetnictví | obratovka, rozvaha, výsledovka, hlavní kniha, saldo, deník: **jen čtení**; výjimkou jsou koncepty ostatních pohledávek a závazků a založení či úprava analytického účtu v osnově |
-| Ostatní pohledávky a závazky | čtení dokladů, úhrad, opakování a splátek; **zápis jen konceptů**: založení, úprava, smazání, splátkový kalendář (i vyčtený ze smlouvy), opakování bez automatického účtování, dimenze a připojení smlouvy. Nic se nezaúčtuje ([§ 106.8.8.5](#106885-ostatni-pohledavky-a-zavazky)) |
+| Ostatní pohledávky a závazky | čtení dokladů, úhrad, opakování a splátek; **zápis jen konceptů**: založení, úprava, smazání, splátkový kalendář (i vyčtený ze smlouvy), opakování bez automatického účtování, dimenze a připojení smlouvy. Nic se nezaúčtuje ([§ 105.8.8.5](#105885-ostatni-pohledavky-a-zavazky)) |
 | Dimenze | typy a hodnoty, zisk, roční a měsíční vývoj, manažerské cash flow, rozvaha a výsledovka s filtrem dimenze, přiřazení na dokladech a kontrola pravidel - **jen čtení** |
 | Statistika | tržby, zisk, trendy, top odběratelé a dodavatelé, cash flow, platební morálka, koncentrace, riziko odchodu |
 | Všechny firmy | manažerské součty přístupných firem za přesné období, měsíční vývoj, roční predikce, cashflow, zůstatky a rizika přes `group_dashboard`; původní měny i samostatný přepočet CZK |
-| E-shop a sklad | **kompletní správa včetně zápisu** - zboží, obsah karet, ceny, dodavatelé, média, kategorie, číselníky, sklady, příjemky a výdejky, inventury (viz [§ 106.8.9](#10689-e-shop-a-sklad)) |
-| Objednávky u dodavatele | **čtení i zápis** - založení, odeslání, potvrzení, uzavření, storno, příjemka z objednávky a hromadné objednání podle návrhu doplnění zásob ([§ 106.8.9](#10689-e-shop-a-sklad)) |
+| E-shop a sklad | **kompletní správa včetně zápisu** - zboží, obsah karet, ceny, dodavatelé, média, kategorie, číselníky, sklady, příjemky a výdejky, inventury (viz [§ 105.8.9](#10589-e-shop-a-sklad)) |
+| Objednávky u dodavatele | **čtení i zápis** - založení, odeslání, potvrzení, uzavření, storno, příjemka z objednávky a hromadné objednání podle návrhu doplnění zásob ([§ 105.8.9](#10589-e-shop-a-sklad)) |
 | Mzdy | čtení zaměstnanců, pracovních podmínek a výsledků; změna sjednané mzdy, mzdové vstupy, přesčasy a absence; řízení mzdového běhu, platby, podání a dokumenty jsou zakázané |
 | Hledání | globální vyhledávání napříč odběrateli a doklady |
 
-V režimu jen pro čtení (`MYUCTO_READ_ONLY=1`, [§ 106.8.4](#10684-nastaveni))
+V režimu jen pro čtení (`MYUCTO_READ_ONLY=1`, [§ 105.8.4](#10584-nastaveni))
 server nezveřejňuje nástroje, které mění data. Každé použití nástroje dále omezují
 aktuální práva uživatele. Přesný počet vypíše server při startu do `stderr`
-([§ 106.8.3](#10683-zprovozneni), krok 4).
+([§ 105.8.3](#10583-zprovozneni), krok 4).
 
 #### Dotazy podle dimenzí
 
@@ -259,10 +259,10 @@ peněžní pohyb konkrétního projektu.
 > zaevidovat opravu podle § 46 / § 74b ani odeslat podání na EPO nemůže. Je to
 > agenda s daňovou odpovědností, kde chyba znamená opravné podání - dělá ji člověk
 > v aplikaci. Zákaz vynucuje server, ne jen MCP: i token s právem zápisu dostane
-> na takovou operaci `403 token_write_forbidden` (viz [§ 104.9.7](104_API.md#10497-scopes)).
+> na takovou operaci `403 token_write_forbidden` (viz [§ 103.9.7](103_API.md#10397-scopes)).
 >
 > Výjimkou jsou **koncepty ostatních pohledávek a závazků** a **analytické účty
-> účtové osnovy** ([§ 106.8.8.5](#106885-ostatni-pohledavky-a-zavazky)). Koncept
+> účtové osnovy** ([§ 105.8.8.5](#105885-ostatni-pohledavky-a-zavazky)). Koncept
 > nemá zápis v deníku, potvrdí a zaúčtuje ho účetní v aplikaci. Založení
 > analytiky nic nezaúčtuje.
 >
@@ -273,12 +273,12 @@ peněžní pohyb konkrétního projektu.
 > plateb, uzavření, podání ani mzdové dokumenty. Nová absence zůstane ve stavu
 > k posouzení a schválí ji člověk v aplikaci.
 
-### 106.8.3 Zprovoznění
+### 105.8.3 Zprovoznění
 
-Pro online připojení použijte [§ 106.8.3.5](#106835-vzdalene-pripojeni-bez-stahovani).
+Pro online připojení použijte [§ 105.8.3.5](#105835-vzdalene-pripojeni-bez-stahovani).
 Následující čtyři kroky popisují lokální soubor `.mjs`.
 
-#### 106.8.3.1 Krok 1 - API token
+#### 105.8.3.1 Krok 1 - API token
 
 V `Firma → API tokeny` vytvořte nový token. Zobrazí se **jen jednou**, hned si
 ho zkopírujte.
@@ -287,7 +287,7 @@ ho zkopírujte.
   když má asistent opravdu vystavovat doklady nebo měnit ceny.
 - Token rovnou **omezte na svou IP adresu** (sloupec *IP omezení* u tokenu).
 
-#### 106.8.3.2 Krok 2 - příprava serveru
+#### 105.8.3.2 Krok 2 - příprava serveru
 
 Server vyžaduje **Node 20 nebo novější**. Ve vydané distribuci je už připravený
 hotový build; nic nemusíte sestavovat ani instalovat. Máte dvě možnosti.
@@ -328,7 +328,7 @@ Server pak běží z `MCP/src/index.mjs` a potřebuje vedle sebe `node_modules`.
 > externích závislostí - Node musí být nainstalovaný v obou případech. Odpadá
 > jen `npm install` a adresář `node_modules`.
 
-#### 106.8.3.3 Krok 3 - registrace u asistenta
+#### 105.8.3.3 Krok 3 - registrace u asistenta
 
 Na stránce **Firma → MCP server** vyberte v kroku 3 svého asistenta; zobrazí se
 hotová konfigurace i s adresou vaší instance, kterou stačí zkopírovat.
@@ -360,12 +360,12 @@ ve všech ukázkách naráz.
 > vzdálený MCP server. Pro připojení bez souboru zvolte záložku **Připojit online**,
 > případně pro lokální soubor použijte **Codex CLI**.
 
-#### 106.8.3.4 Krok 4 - ověření
+#### 105.8.3.4 Krok 4 - ověření
 
 Napište asistentovi „ověř připojení k MyÚčtu“. Zavolá nástroj `whoami` a vrátí
 uživatele, roli a firmu. Volání se hned objeví v logu na stránce MCP serveru.
 
-#### 106.8.3.5 Vzdálené připojení bez stahování
+#### 105.8.3.5 Vzdálené připojení bez stahování
 
 V záložce **Připojit online** zkopírujte adresu MCP serveru své instalace, například
 `https://ucto.vase-firma.cz/mcp`. Do asistenta zadávejte adresu **své** instalace,
@@ -480,7 +480,7 @@ V organizaci musí vlastní konektor nejprve přidat vlastník v nastavení orga
 V konverzaci jej zapněte přes **+ → Connectors**. Anthropic potvrzuje, že jednou
 přidaný [vzdálený konektor funguje také v mobilní aplikaci Claude](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp).
 
-### 106.8.4 Nastavení
+### 105.8.4 Nastavení
 
 Lokální server `.mjs` se konfiguruje proměnnými prostředí:
 
@@ -504,9 +504,9 @@ nenaplánuje postup, který by stejně nedokončil.
 Stropy `MAX_RPS` a `MAX_CONCURRENT` nejsou kosmetika: API sdílí PHP procesy
 s běžícím webem, takže asistent bez omezení zpomalí i běžné uživatele.
 Přebytečná volání čekají ve frontě. Nezávisle na nich platí serverový
-[rate limit](104_API.md) tokenu.
+[rate limit](103_API.md) tokenu.
 
-### 106.8.5 Příklady dotazů
+### 105.8.5 Příklady dotazů
 
 **Fakturace a pohledávky**
 
@@ -521,7 +521,7 @@ Přebytečná volání čekají ve frontě. Nezávisle na nich platí serverový
 - „Odeber poslední položku, je tam omylem.“
 - „Posuň splatnost konceptu o 14 dní a doplň poznámku.“
 
-Podrobnosti v [§ 106.8.7.4](#106874-uprava-konceptu-faktury).
+Podrobnosti v [§ 105.8.7.4](#105874-uprava-konceptu-faktury).
 
 **Další práce s vydanými fakturami** *(token čtení a zápis)*
 
@@ -534,7 +534,7 @@ Podrobnosti v [§ 106.8.7.4](#106874-uprava-konceptu-faktury).
 - „Z přiložené smlouvy udělej splátkový kalendář na nájem a nastav rozpis plateb.“
 - „Pošli upomínky ke všem fakturám, které jsou víc než 30 dní po splatnosti.“
 
-Podrobnosti v [§ 106.8.7.5](#106875-dalsi-prace-s-vydanymi-fakturami).
+Podrobnosti v [§ 105.8.7.5](#105875-dalsi-prace-s-vydanymi-fakturami).
 
 **Pravidelná fakturace** *(token čtení a zápis)*
 
@@ -543,7 +543,7 @@ Podrobnosti v [§ 106.8.7.5](#106875-dalsi-prace-s-vydanymi-fakturami).
 - „Pozastav pravidelnou fakturaci pro ACME, dokud se nedohodneme.“
 - „Vygeneruj fakturu z paušálu pro ACME hned, jen jako koncept.“
 
-Podrobnosti v [§ 106.8.7.6](#106876-pravidelna-fakturace).
+Podrobnosti v [§ 105.8.7.6](#105876-pravidelna-fakturace).
 
 **Přijaté faktury** *(token čtení a zápis)*
 
@@ -553,7 +553,7 @@ Podrobnosti v [§ 106.8.7.6](#106876-pravidelna-fakturace).
 - „Spáruj fakturu od Dodavatele se zálohou, kterou jsme platili v srpnu.“
 - „Připrav příkaz k úhradě na všechny faktury splatné tento týden.“
 
-Podrobnosti v [§ 106.8.8.4](#106884-prijate-faktury).
+Podrobnosti v [§ 105.8.8.4](#105884-prijate-faktury).
 
 **Odběratelé**
 
@@ -569,7 +569,7 @@ Podrobnosti v [§ 106.8.8.4](#106884-prijate-faktury).
 - „Přidej do výkazu 5 metrů kabeláže po 120 Kč.“
 - „Smaž poslední řádek z výkazu, zadal jsem ho omylem.“
 
-Podrobnosti v [§ 106.8.7](#10687-koncept-faktury-vykazy-prace-a-materialu).
+Podrobnosti v [§ 105.8.7](#10587-koncept-faktury-vykazy-prace-a-materialu).
 
 **Zakázky, dokumenty a kniha jízd**
 
@@ -580,7 +580,7 @@ Podrobnosti v [§ 106.8.7](#10687-koncept-faktury-vykazy-prace-a-materialu).
 - „Přidej dnešní služební jízdu Praha–Kolín, 120 km.“ *(asistent si nechá vybrat kategorii; token čtení a zápis)*
 - „Zapiš tankování 40 litrů za 1 520 Kč.“ *(token čtení a zápis)*
 
-Podrobnosti v [§ 106.8.8](#10688-zakazky-dokumenty-a-kniha-jizd).
+Podrobnosti v [§ 105.8.8](#10588-zakazky-dokumenty-a-kniha-jizd).
 
 **Soubory a přílohy**
 
@@ -590,7 +590,7 @@ Podrobnosti v [§ 106.8.8](#10688-zakazky-dokumenty-a-kniha-jizd).
 - „Tady je ISDOC od dodavatele, založ z něj přijatou fakturu.“ *(token čtení a zápis)*
 - „Nahraj tuhle smlouvu do Dokumentů, označ ji tagem smlouvy a připoj ji k ACME.“ *(token čtení a zápis)*
 
-Podrobnosti v [§ 106.8.8.6](#106886-soubory-a-prilohy).
+Podrobnosti v [§ 105.8.8.6](#105886-soubory-a-prilohy).
 
 **Daně**
 
@@ -615,7 +615,7 @@ Podrobnosti v [§ 106.8.8.6](#106886-soubory-a-prilohy).
 - „Opakuj ten nájem každý měsíc do konce roku.“
 - „Pozastav opakování pojistného.“
 
-Podrobnosti v [§ 106.8.8.5](#106885-ostatni-pohledavky-a-zavazky).
+Podrobnosti v [§ 105.8.8.5](#105885-ostatni-pohledavky-a-zavazky).
 
 **Statistika**
 
@@ -632,7 +632,7 @@ Podrobnosti v [§ 106.8.8.5](#106885-ostatni-pohledavky-a-zavazky).
 - „Zdraž všechno zboží značky Acme o pět procent.“ *(token čtení a zápis)*
 - „Nasklaď 20 kusů kabelu na hlavní sklad za 89 Kč a příjemku zaúčtuj.“ *(token čtení a zápis)*
 
-Celá kapitola: [§ 106.8.9](#10689-e-shop-a-sklad).
+Celá kapitola: [§ 105.8.9](#10589-e-shop-a-sklad).
 
 **Mzdy a zaměstnanci**
 
@@ -646,7 +646,7 @@ Celá kapitola: [§ 106.8.9](#10689-e-shop-a-sklad).
 Mzdový běh tím nevznikne ani se neposune do dalšího stavu. Výpočet, kontrola,
 schválení, zaúčtování, platby, uzavření a odeslání zůstávají na člověku v aplikaci.
 
-### 106.8.6 Odběratelé a ARES
+### 105.8.6 Odběratelé a ARES
 
 Nového odběratele stačí zadat IČEM:
 
@@ -658,13 +658,13 @@ tím, co vrátí rejstřík - může jít o změnu, která se do ARES ještě ne
 
 Bez IČO je potřeba název, ulice, město a PSČ; asistent si o ně řekne.
 
-#### 106.8.6.1 Ochrana proti duplicitám
+#### 105.8.6.1 Ochrana proti duplicitám
 
 Před založením se kontroluje, jestli odběratel se stejným **IČO nebo DIČ** už
 neexistuje. Pokud ano, **nic se nezaloží** a asistent ukáže stávající kartu.
 Druhou kartu téže firmy lze vytvořit jen vědomě, na výslovné potvrzení.
 
-#### 106.8.6.2 Úprava
+#### 105.8.6.2 Úprava
 
 Stačí říct, co se má změnit - zbytek karty zůstane. Asistent si ji načte,
 změnu do ní vloží a uloží celou zpět, takže se nic nevynuluje.
@@ -677,7 +677,7 @@ Když je ARES nedostupný, u úpravy se **nic nemění** (raději nic než půlk
 starých a půlka nových údajů). U zakládání se použijí údaje ze zadání, pokud
 stačí - asistent do odpovědi napíše, odkud data vzal.
 
-### 106.8.7 Koncept faktury, výkazy práce a materiálu
+### 105.8.7 Koncept faktury, výkazy práce a materiálu
 
 Výkaz je navázaný na **koncept faktury** - přesně jako v aplikaci. Stačí tedy říct:
 
@@ -686,7 +686,7 @@ Výkaz je navázaný na **koncept faktury** - přesně jako v aplikaci. Stačí 
 Asistent zakázku dohledá, najde její koncept faktury a řádek přidá. Existující
 řádky zůstanou beze změny.
 
-#### 106.8.7.1 Jak se určí hodinová sazba
+#### 105.8.7.1 Jak se určí hodinová sazba
 
 Sazbu zadávat nemusíte. Doplní se v tomhle pořadí a první nenulová vyhraje:
 
@@ -699,7 +699,7 @@ Sazbu zadávat nemusíte. Doplní se v tomhle pořadí a první nenulová vyhraj
 Když sazbu nemá nikdo, asistent to řekne a požádá o ni - netipuje. Vlastní sazbu
 lze samozřejmě určit („…3 hodiny po 1 800 Kč“).
 
-#### 106.8.7.2 Který doklad se použije
+#### 105.8.7.2 Který doklad se použije
 
 - Pokud řeknete číslo faktury, použije se ta.
 - Pokud jmenujete jen zakázku nebo odběratele, hledá se jeho **koncept** faktury.
@@ -707,14 +707,14 @@ lze samozřejmě určit („…3 hodiny po 1 800 Kč“).
   hodiny na cizí doklad by bylo horší než se doptat.
 - Vystavená faktura je uzamčená; do jejího výkazu se zapsat nedá.
 
-#### 106.8.7.3 Materiál
+#### 105.8.7.3 Materiál
 
 Řádky materiálu fungují stejně (množství, jednotka, cena za jednotku). Jediný
 rozdíl: **sazbu DPH materiálu si asistent nevymýšlí.** Převezme ji z už
 existujícího výkazu, jinak si o ni řekne - špatná sazba by se propsala do
 přiznání k DPH.
 
-#### 106.8.7.4 Úprava konceptu faktury
+#### 105.8.7.4 Úprava konceptu faktury
 
 Koncept, který asistent připravil, nemusíte opravovat ručně v editoru. Stačí mu
 říct, co změnit, a koncept upraví:
@@ -724,7 +724,7 @@ Koncept, který asistent připravil, nemusíte opravovat ručně v editoru. Sta�
 | `update_invoice` | změní hlavičku: data, splatnost, měnu, jazyk, způsob úhrady, poznámky, zakázku, slevu, variabilní symbol |
 | `add_invoice_item` | přidá položku na konec nebo na zvolené místo; s `kind: "text"` přidá textový řádek jen s popisem |
 | `update_invoice_item` | změní jednu položku (text, množství, jednotku, cenu, sazbu DPH, časové rozlišení); u textového řádku jen text |
-| `remove_invoice_item` | odebere jednu položku, jen s potvrzením ([§ 106.8.9.4](#106894-potvrzovani-nevratnych-kroku)) |
+| `remove_invoice_item` | odebere jednu položku, jen s potvrzením ([§ 105.8.9.4](#105894-potvrzovani-nevratnych-kroku)) |
 
 Platí přitom:
 
@@ -737,7 +737,7 @@ Platí přitom:
   ji nechá, dokud ji výslovně nezměníte. Po změně sazby, data zdanitelného plnění
   nebo přenesené daňové povinnosti si aplikace zařazení položek pro přiznání
   k DPH a OSS odvodí znovu.
-- Doklad se dohledá stejně jako u výkazu práce ([§ 106.8.7.2](#106872-ktery-doklad-se-pouzije)):
+- Doklad se dohledá stejně jako u výkazu práce ([§ 105.8.7.2](#105872-ktery-doklad-se-pouzije)):
   má-li odběratel víc konceptů, asistent je vypíše a nechá vás vybrat.
 - Součty a DPH spočítá aplikace; asistent vrátí upravený doklad.
 - **Upravit jde jen koncept.** Vystavenou fakturu asistent odmítne změnit,
@@ -748,7 +748,7 @@ Platí přitom:
 V režimu jen pro čtení se tyto nástroje nenabízejí; vyžadují token
 s oprávněním čtení a zápis.
 
-#### 106.8.7.5 Další práce s vydanými fakturami
+#### 105.8.7.5 Další práce s vydanými fakturami
 
 Kromě konceptu umí asistent s vydanými doklady totéž, co detail faktury v aplikaci:
 
@@ -771,7 +771,7 @@ Kromě konceptu umí asistent s vydanými doklady totéž, co detail faktury v a
 Platí přitom:
 
 - **Storno a dobropis jsou daňové kroky.** Asistent je udělá jen na váš výslovný
-  pokyn a vždy až po potvrzení ([§ 106.8.9.4](#106894-potvrzovani-nevratnych-kroku)).
+  pokyn a vždy až po potvrzení ([§ 105.8.9.4](#105894-potvrzovani-nevratnych-kroku)).
   Interní storno je pro doklad, který odběratel nepřevzal: faktura dostane stav
   stornovaná a vypadne z evidence DPH. Pokud doklad odběratel už má, patří k němu
   dobropis. Ten vznikne jako koncept, zkontrolujete ho a vystavíte stejně jako fakturu.
@@ -788,7 +788,7 @@ Platí přitom:
 - Upomínka i poděkování za platbu jsou e-maily odběrateli, posílají se jen na váš pokyn.
 - Zaúčtování dokladu asistent neumí, to zůstává v aplikaci.
 
-#### 106.8.7.6 Pravidelná fakturace
+#### 105.8.7.6 Pravidelná fakturace
 
 Šablony pravidelné fakturace asistent čte (`list_recurring_invoices`,
 `get_recurring_invoice`, `recurring_invoice_history`) a umí je i spravovat:
@@ -811,9 +811,9 @@ Platí přitom:
   řekne, co se stane. Na požádání vytvoří jen koncept.
 - Úprava šablony se týká až faktur, které z ní teprve vzniknou.
 
-### 106.8.8 Zakázky, dokumenty a kniha jízd
+### 105.8.8 Zakázky, dokumenty a kniha jízd
 
-#### 106.8.8.1 Zakázky
+#### 105.8.8.1 Zakázky
 
 Asistent umí zakázku založit, upravit, archivovat i bezpečně smazat, pokud ještě
 nemá doklady. Při úpravě nejdřív načte současný stav a zachová všechna nezadaná
@@ -824,7 +824,7 @@ Přehled ziskovosti je **jen ke čtení**. V podvojném účetnictví vychází 
 v daňové evidenci z dokladů, a upozorní i na nezaúčtované doklady. Asistent přes
 něj nic nezaúčtuje ani neopraví.
 
-#### 106.8.8.2 Dokumenty
+#### 105.8.8.2 Dokumenty
 
 MCP umí dokumenty vypsat, hledat v názvu, popisu i vytěženém textu, přečíst
 omezený úsek textu, upravit název, popis a tagy a připojit dokument k odběrateli,
@@ -832,11 +832,11 @@ dokladu nebo zakázce. Dlouhý text se vrací po částech nejvýše 50 000 znak
 Platí stejná firemní a osobní oprávnění jako v aplikaci.
 
 Soubor umí asistent do Dokumentů i nahrát a originál stáhnout, postup a limity
-popisuje [§ 106.8.8.6](#106886-soubory-a-prilohy). Pro práci s obsahem dokumentu je
+popisuje [§ 105.8.8.6](#105886-soubory-a-prilohy). Pro práci s obsahem dokumentu je
 ale levnější vytěžený text než celý soubor. Odpojení vazby vyžaduje potvrzení,
 dokument samotný ale nemaže.
 
-#### 106.8.8.3 Kniha jízd
+#### 105.8.8.3 Kniha jízd
 
 Asistent umí spravovat vozidla, přidávat a upravovat jízdy a tankování a číst
 roční souhrn kilometrů a spotřeby. U nové jízdy vyžaduje vozidlo, datum,
@@ -848,7 +848,7 @@ Smazání vozidla, jízdy nebo tankování vyžaduje potvrzení. Používané vo
 nelze smazat; lze ho pouze archivovat. Roční daňový souhrn je dostupný jen ke
 čtení a žádný účetní zápis z MCP nevytváří.
 
-#### 106.8.8.4 Přijaté faktury
+#### 105.8.8.4 Přijaté faktury
 
 Došlý doklad od dodavatele asistent zapíše jako **koncept**. Do evidence DPH,
 závazků a účetnictví vstoupí až přijetím, do té doby jde koncept opravit nebo
@@ -899,12 +899,12 @@ Platí přitom:
   `link_purchase_advance`; náklad se pak nepočítá dvakrát.
 - **Příkaz k úhradě asistent jen připraví.** Do banky nic neodesílá a faktury
   neoznačí jako uhrazené. Soubor pro banku stáhnete a odešlete v aplikaci.
-- PDF dokladu nahrajete, stáhnete nebo z ISDOC založíte doklad nástroji ze [§ 106.8.8.6](#106886-soubory-a-prilohy).
+- PDF dokladu nahrajete, stáhnete nebo z ISDOC založíte doklad nástroji ze [§ 105.8.8.6](#105886-soubory-a-prilohy).
 
 V režimu jen pro čtení se zápisové nástroje nenabízejí; vyžadují token
 s oprávněním čtení a zápis.
 
-#### 106.8.8.5 Ostatní pohledávky a závazky
+#### 105.8.8.5 Ostatní pohledávky a závazky
 
 Nájem, půjčka nebo úvěr, leasing, kauce, pojistné a poplatky se evidují jako
 ostatní pohledávky a závazky (viz [kapitola 52](52_Ucetni_denik.md)). Asistent
@@ -981,7 +981,7 @@ Přes asistenta **nejde**: potvrdit nebo zaúčtovat doklad, stornovat ho,
 přeúčtovat, spárovat nebo odpojit úhradu ani ručně vygenerovat doklady
 z opakování. Tyto kroky dělá účetní v aplikaci.
 
-#### 106.8.8.6 Soubory a přílohy
+#### 105.8.8.6 Soubory a přílohy
 
 Asistent umí soubory stahovat i nahrávat. Soubor přitom **jde celý přes
 asistenta**: obsah se přenáší v konverzaci a model s ním pracuje stejně jako se
@@ -997,7 +997,7 @@ opravdu potřebujete. Na otázku, co je v dokumentu napsané, stačí vytěžen�
 | **E-shop** | nic | nahrát obrázek nebo PDF ke kartě zboží |
 
 **Velikost.** Lokální server přenese soubor do 10 MB (mění se proměnnou
-`MYUCTO_MAX_FILE_MB`, [§ 106.8.4](#10684-nastaveni)), serverový MCP do 5 MB, protože
+`MYUCTO_MAX_FILE_MB`, [§ 105.8.4](#10584-nastaveni)), serverový MCP do 5 MB, protože
 tam soubor putuje několika procesy aplikace. Větší soubor nástroj odmítne se
 zprávou `file_too_large`; stáhněte nebo nahrajte ho přímo v aplikaci. Platí i limity
 samotné agendy, například u přílohy faktury nejvýš 10 MB na soubor a 20 MB na
@@ -1029,9 +1029,9 @@ chce předat dalšímu nástroji.
 Pro nahrání musí mít token oprávnění čtení a zápis a v režimu jen pro čtení se
 nahrávací nástroje nenabízejí. Doklad v uzavřeném období aplikace změnit
 nedovolí stejně jako v aplikaci. Smazání přílohy nebo PDF a náhrada už
-archivovaného PDF vyžadují potvrzení ([§ 106.8.9.4](#106894-potvrzovani-nevratnych-kroku)).
+archivovaného PDF vyžadují potvrzení ([§ 105.8.9.4](#105894-potvrzovani-nevratnych-kroku)).
 
-### 106.8.9 E-shop a sklad
+### 105.8.9 E-shop a sklad
 
 Na rozdíl od účetnictví je e-shopová a skladová agenda **obousměrná** - asistent
 umí katalog nejen číst, ale i zakládat, upravovat a mazat. Důvod je prostý:
@@ -1043,7 +1043,7 @@ vzniká až v účetní vrstvě, která zůstává jen ke čtení.
 > Celá tahle agenda je **volitelný modul**. Když ho firma nemá zapnutý,
 > nástroje vracejí `403 stock_disabled` - zapíná se v nastavení firmy.
 
-#### 106.8.9.1 Co asistent umí
+#### 105.8.9.1 Co asistent umí
 
 | Oblast | Čtení | Zápis |
 |---|---|---|
@@ -1066,7 +1066,7 @@ vzniká až v účetní vrstvě, která zůstává jen ke čtení.
 | **Příjemky, výdejky, převodky** | seznam, detail s řádky | založit koncept, upravit, zaúčtovat, stornovat, smazat koncept |
 | **Inventury** | seznam, detail s rozdíly | založit, spustit, zapsat napočítané množství, uzavřít |
 
-#### 106.8.9.2 Dávkové čtení katalogu
+#### 105.8.9.2 Dávkové čtení katalogu
 
 Když asistent potřebuje více karet najednou, použije `get_products_batch`
 nebo `get_product_prices_batch` místo stovek jednotlivých dotazů. Oba nástroje
@@ -1092,7 +1092,7 @@ kartu a měnu neexistuje, je `null`, ne nula.
 hodnot filtrů nad celou odpovídající množinou. `get_catalog_job` ukáže
 průběh a souhrnný výsledek úlohy, ke které má uživatel oprávnění.
 
-#### 106.8.9.3 Ceny pro konkrétního odběratele
+#### 105.8.9.3 Ceny pro konkrétního odběratele
 
 Na otázku „za kolik to prodáme firmě ACME“ asistent odpoví nástrojem
 `quote_product_prices`. Ten spočítá cenu stejně jako faktura: nejdřív
@@ -1113,7 +1113,7 @@ Asistent z něj umí vypsat položky, jejich ceny po měnách, individuální ce
 zákazníků i výslednou cenu pro konkrétního odběratele a měnu dokladu. Ceník také
 jen čte.
 
-#### 106.8.9.4 Potvrzování nevratných kroků
+#### 105.8.9.4 Potvrzování nevratných kroků
 
 Mazání, storno dokladu, uzavření inventury, odebrání položky z konceptu
 faktury, smazání konceptu ostatní pohledávky nebo závazku, zrušení celého
@@ -1142,7 +1142,7 @@ nesmaže fotku cizímu zboží.
 Praktický dopad: **asistent se vás před smazáním vždycky zeptá.** Řetězec „ukliď
 nepoužívané štítky“ neproběhne jedním vrzem, ale jako výpis a dotaz.
 
-#### 106.8.9.5 Kolekce se nahrazují celé
+#### 105.8.9.5 Kolekce se nahrazují celé
 
 Ceny, dodavatelé, jazykové verze, kategorie, štítky, parametry a řádky
 skladového dokladu se ukládají **jako celek** - co v uloženém seznamu není, to se
@@ -1154,7 +1154,7 @@ jistí, řekněte si o vypsání současného stavu předem:
 
 > „Ukaž ceny toho zboží, pak k nim přidej eurovou cenu s marží 25 %.“
 
-#### 106.8.9.6 Skladové doklady mají dvě fáze
+#### 105.8.9.6 Skladové doklady mají dvě fáze
 
 Příjemka, výdejka i převodka vznikají jako **koncept**, který se stavem skladu
 nedělá nic - teprve zaúčtování pohyb provede, přidělí dokladu číslo a doklad
@@ -1172,7 +1172,7 @@ opačný protidoklad v původních cenách a oba zůstanou ve skladové knize.
 Server sám odmítne (`409`) výdej do minusu, jakýkoli pohyb na skladu
 s rozběhnutou inventurou a doklad do uzavřeného účetního období.
 
-#### 106.8.9.7 Objednávky u dodavatele
+#### 105.8.9.7 Objednávky u dodavatele
 
 Asistent umí celý životní cyklus objednávky
 ([§ 37.12.11](37_Sklad.md#371211-objednavky-u-dodavatele)) - a drží se v něm stejných
@@ -1203,7 +1203,7 @@ na konkrétní faktury.
 > → asistent přečte množstevní pohledy a návrh doplnění, objednávky ale založí
 > jako koncepty, které si odsouhlasíte.
 
-#### 106.8.9.8 Inventura
+#### 105.8.9.8 Inventura
 
 Postup kopíruje aplikaci: založit → spustit (udělá se snímek očekávaných stavů
 a **sklad se zablokuje** pro zaúčtování dokladů) → zapsat napočítané množství →
@@ -1211,7 +1211,7 @@ uzavřít. Uzavření vygeneruje rozdílovou příjemku na přebytky a výdejku 
 rovnou zaúčtované - proto vyžaduje potvrzení a proto asistent před ním hlásí,
 kolik řádků zůstalo nespočítaných (ty se přeskočí).
 
-#### 106.8.9.9 Co přes MCP nejde
+#### 105.8.9.9 Co přes MCP nejde
 
 - **Hromadný import zboží z XLSX/CSV** ani **import ceníku dodavatele**. Oba
   importy mají v aplikaci vlastní průvodce s náhledem.
@@ -1219,7 +1219,7 @@ kolik řádků zůstalo nespočítaných (ty se přeskočí).
 - **Stáhnout PDF nebo XLSX** skladového dokladu, inventurního soupisu či sestavy.
   Data sestav asistent přečte, hotový soubor si stáhnete v aplikaci.
 
-### 106.8.10 Log volání
+### 105.8.10 Log volání
 
 Stránka **Firma → MCP server** má dole **Log volání** - každé volání vašich API
 tokenů včetně zamítnutých. U volání z MCP serveru je vidět i **název nástroje**,
@@ -1229,12 +1229,12 @@ Filtruje se podle tokenu, metody, cesty, zdroje a na samotné chyby. Volání p�
 online připojení nese štítek **OAuth** a místo technického názvu tokenu název
 aplikace, které přístup patří. Superadmin může zaškrtnout **Všichni uživatelé**:
 log pak ukazuje volání všech uživatelů instance se sloupcem **Uživatel** (jméno
-a e-mail). Podrobnosti jsou v [§ 104.9.9](104_API.md#10499-log-volani-api).
+a e-mail). Podrobnosti jsou v [§ 103.9.9](103_API.md#10399-log-volani-api).
 
-### 106.8.11 Bezpečnost
+### 105.8.11 Bezpečnost
 
 Následující pravidla pro API tokeny se týkají lokálního souboru `.mjs`.
-Online připojení používá přihlášení a souhlas popsané v [§ 106.8.3.5](#106835-vzdalene-pripojeni-bez-stahovani).
+Online připojení používá přihlášení a souhlas popsané v [§ 105.8.3.5](#105835-vzdalene-pripojeni-bez-stahovani).
 
 - Token se ukládá jen jako **SHA-256 hash**; plaintext se zobrazí jednou.
 - **Omezte token na IP** - uniklý token je pak mimo vaši síť k ničemu.
@@ -1247,7 +1247,7 @@ Online připojení používá přihlášení a souhlas popsané v [§ 106.8.3.5]
 - Nepoužívaný token **zrušte**. Historie volání v logu zůstane.
 - **Mazání a storna se neprovedou napoprvé.** Nástroje, které nejdou vzít zpět,
   vyžadují potvrzení a při prvním zavolání jen vypíšou, čeho by se změna týkala
-  (viz [§ 106.8.9](#10689-e-shop-a-sklad)). Je to pojistka proti tomu, aby asistent
+  (viz [§ 105.8.9](#10589-e-shop-a-sklad)). Je to pojistka proti tomu, aby asistent
   smazal něco, co si domyslel - ne náhrada za `MYUCTO_READ_ONLY=1`, který je
   u nedozorovaného provozu pořád ta správná volba.
 - **Argumenty se ověřují proti schématu nástroje.** Lokální i serverový MCP
@@ -1256,7 +1256,7 @@ Online připojení používá přihlášení a souhlas popsané v [§ 106.8.3.5]
   číslo, takže podvržená hodnota typu `../../invoices/123` nesměruje nástroj
   na jiný záznam. Chyba uvede název parametru a asistent volání opraví.
 
-### 106.8.13 Vlastní HTTPS certifikát
+### 105.8.13 Vlastní HTTPS certifikát
 
 Instance s certifikátem od firemní nebo vlastní autority (typicky testovací
 prostředí) je zvláštní případ: **Node má vlastní seznam kořenových autorit
@@ -1289,14 +1289,14 @@ vypnout přes `MYUCTO_INSECURE_TLS=1`. Server na to při startu hlasitě upozorn
 Na produkci to nepoužívejte: bez ověření certifikátu jde spojení odposlechnout
 i podvrhnout, a token v hlavičce je to první, co útočník získá.
 
-### 106.8.14 Účetní kontext k datu
+### 105.8.14 Účetní kontext k datu
 
 Nástroj `get_accounting_context` čte účetní rámec, metodu, role účtů a
 identifikátory metadat k povinnému `date`. Zachovává `complete`, `findings`,
 `temporal_source` i `null`; neúplná historie není nula ani neplatný účet.
 Používá současnou znalost evidence. Nepřijímá `known_at`, neinicializuje
 osnovu nebo dimenze a nemění účetnictví. Podrobnosti jsou v kapitole
-[REST API](104_API.md).
+[REST API](103_API.md).
 
 ## Čtecí nástroje služeb a financování vlastníků
 
@@ -1315,9 +1315,9 @@ Investiční zdroje a fondy zpřístupňují
 číselné vazby bez osobních a právních textů. Zachovávají `null` a výslovné
 neúplné pending pokrytí. Nemění účetnictví a nepotvrzují finanční operace.
 
-## 106.9 Související kapitoly
+## 105.9 Související kapitoly
 
-- [REST API](104_API.md) - tokeny, limity a práva
+- [REST API](103_API.md) - tokeny, limity a práva
 - [Bezpečnost](101_Bezpecnost.md) - passkeys a TOTP při schvalování připojení
 - [Sklad](37_Sklad.md)
 - [Dimenze](114_Dimenze.md)

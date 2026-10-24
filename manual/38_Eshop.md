@@ -1584,5 +1584,5 @@ pro zbytek karty.
 - [Klienti](18_Klienti.md): role dodavatele a cenová hladina odběratele.
 - [Editor faktury](15_Faktura_editor.md): cenová hladina dokladu a nacenění skladových řádků.
 - [Nastavení](96_Nastaveni.md): zapnutí skladu a ceník pro firmy bez skladu.
-- [REST API](104_API.md): veřejné API pro změny katalogu.
+- [REST API](103_API.md): veřejné API pro změny katalogu.
 - [Po instalaci](05_Po_instalaci.md): plánovač a úlohy na pozadí.

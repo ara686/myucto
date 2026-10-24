@@ -408,7 +408,7 @@ const navSections = computed<NavSection[]>(() => {
   const isDoubleEntry = accountingEnabled && supplierStore.currentSupplier?.accounting_mode === 'double_entry'
   // Daňová evidence (Epic DE) — zrcadlo isDoubleEntry; sekce jen pro režim daňové evidence.
   const isTaxEvidence = accountingEnabled && supplierStore.currentSupplier?.accounting_mode === 'tax_evidence'
-  // Pokladna patří do bezplatné části (§ 105 manuálu) a nezávisí na „Vést účetnictví"
+  // Pokladna patří do bezplatné části (§ 104 manuálu) a nezávisí na „Vést účetnictví"
   // ani na licenci; za licencí je jen její zaúčtování. Zrcadlí route guard requiresCashMode.
   const cashAvailable = ['double_entry', 'tax_evidence'].includes(supplierStore.currentSupplier?.accounting_mode ?? '')
   // Sklad (Epic SKLAD) — nezávislé na accounting_mode (funguje i pro tax_evidence).

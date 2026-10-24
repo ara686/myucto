@@ -1,4 +1,4 @@
-# 105. Licence a aktivace
+# 104. Licence a aktivace
 
 > Návod pro správce instalace: jak zakoupit předplatné MyÚčta, aktivovat
 > licenční klíč, navýšit počet uživatelů, přenést licenci na jinou instalaci
@@ -9,7 +9,7 @@ MyÚčto.cz je nástupcem open-source systému MyInvoice. Všechny funkce MyInvo
 zůstávají v MyÚčto navždy zdarma; rozšířená účetní nadstavba je komerční
 produkt na předplatné.
 
-## 105.1 Kdy to potřebujete
+## 104.1 Kdy to potřebujete
 
 Kapitolu otevřete, když:
 
@@ -31,7 +31,7 @@ Kapitolu otevřete, když:
 | při stěhování instalace | Deaktivovat klíč na staré instalaci a aktivovat na nové | `Systém → Zakoupení` |
 | před koncem zaplaceného období | Zrušit automatické prodlužování, pokud ho nechcete | `Systém → Zakoupení`, **Automatické prodlužování** |
 
-## 105.2 Než začnete
+## 104.2 Než začnete
 
 - **Role.** Správu licence (stránku **Zakoupení**) vidí a ovládá jen
   administrátor. Běžný uživatel stránku otevře, ale operace nejsou dostupné.
@@ -50,7 +50,7 @@ Správa licence je v menu `Systém` rozdělená do tří položek:
 | **Obchodní podmínky** | Shrnutí hlavních článků podmínek předplatného (závazné je plné znění na myucto.cz). |
 | **Zakoupení** | Provozní stránka: aktuální stav licence, zakoupení předplatného, aktivace klíčem, navýšení uživatelů, zrušení automatického prodlužování a deaktivace. |
 
-## 105.3 Krok za krokem: zakoupení předplatného
+## 104.3 Krok za krokem: zakoupení předplatného
 
 1. Otevřete `Systém → Zakoupení` a klikněte na **Zakoupit předplatné**.
 2. Aplikace otevře objednávku na myucto.cz s předvyplněnými fakturačními údaji
@@ -72,9 +72,9 @@ ukazuje stav **Aktivní**. Potvrzení a licenční klíč zároveň přijdou e-m
 > Roční předplatné je 10 měsíčních plateb (dva měsíce zdarma).
 
 Když se automatický návrat nepodaří, aplikace to oznámí a klíč z e-mailu
-aktivujete ručně podle [§ 105.4](#1054-krok-za-krokem-aktivace-licencnim-klicem).
+aktivujete ručně podle [§ 104.4](#1044-krok-za-krokem-aktivace-licencnim-klicem).
 
-## 105.4 Krok za krokem: aktivace licenčním klíčem
+## 104.4 Krok za krokem: aktivace licenčním klíčem
 
 1. Otevřete `Systém → Zakoupení`.
 2. V sekci **Aktivace licenčního klíče** vložte klíč z e-mailu (formát
@@ -87,9 +87,9 @@ historií dat.
 
 Aktivací se licence naváže na tuto instalaci. Jeden klíč smí být v jednom
 okamžiku aktivní na jedné instalaci. Ověřování licence běží samo na pozadí
-a nevyžaduje žádné nastavení (viz [§ 105.10.3](#105103-zkusebni-obdobi-a-stavy-licence)).
+a nevyžaduje žádné nastavení (viz [§ 104.10.3](#104103-zkusebni-obdobi-a-stavy-licence)).
 
-## 105.5 Krok za krokem: navýšení počtu uživatelů nebo změna tarifu
+## 104.5 Krok za krokem: navýšení počtu uživatelů nebo změna tarifu
 
 Změna za běhu předplatného se dělá přímo v aplikaci, nový nákup není potřeba.
 
@@ -117,7 +117,7 @@ fakturou.
 > (**Naplánovat od dalšího období**). Za současné období není vratka ani
 > dobropis.
 
-## 105.6 Krok za krokem: přechod z měsíčního předplatného na roční
+## 104.6 Krok za krokem: přechod z měsíčního předplatného na roční
 
 1. Otevřete `Systém → Zakoupení` a najděte sekci **Přechod na roční
    předplatné**.
@@ -134,7 +134,7 @@ se nezobrazí u ročního předplatného ani tehdy, když je na předplatném
 naplánovaná změna na další období (nižší tarif, méně uživatelů, menší prostor
 nebo změna Mezd); tu je potřeba nejdřív zrušit.
 
-## 105.7 Krok za krokem: přenos licence na jinou instalaci
+## 104.7 Krok za krokem: přenos licence na jinou instalaci
 
 Licenci lze přesunout nejvýše dvakrát za 30 dní.
 
@@ -160,7 +160,7 @@ Licenci lze přesunout nejvýše dvakrát za 30 dní.
 > Vyčerpáte-li limit přenosů, další povolí poskytovatel na žádost (kontakt na
 > myucto.cz).
 
-## 105.8 Krok za krokem: zrušení automatického prodlužování
+## 104.8 Krok za krokem: zrušení automatického prodlužování
 
 1. Otevřete `Systém → Zakoupení` a najděte sekci **Automatické prodlužování**.
    Vidíte v ní, zda se licence prodlužuje sama a kdy je **Další platba**.
@@ -182,14 +182,14 @@ zadejte novou platební kartu (původní se při zrušení u brány zneplatnila)
 a zaplaťte další období. Po ukončení provozu hostované instalace obnova z
 aplikace není možná a nabídne se kontakt na podporu.
 
-## 105.9 Když něco nejde
+## 104.9 Když něco nejde
 
 <!-- cols: 30 70 -->
 | Co vidíte | Co udělat |
 |---|---|
 | **Klíč nejde aktivovat** | Zkontrolujte, že jste klíč zkopírovali celý (formát `MYU-XXXX-…`) a že je instalace online. Chyba serveru se vypíše přímo pod polem. |
-| **Tato licence je aktivní na jiné instalaci.** | Klíč běží jinde (typicky po přeinstalaci bez deaktivace). Použijte **Aktivovat na této instalaci (přenést)**, viz [§ 105.7](#1057-krok-za-krokem-prenos-licence-na-jinou-instalaci). |
-| **Překročili jste rozsah licence.** | Máte víc aktivních uživatelů nebo firem, než pokrývá klíč. Navyšte rozsah podle [§ 105.5](#1055-krok-za-krokem-navyseni-poctu-uzivatelu-nebo-zmena-tarifu), nebo počty srovnejte. Na rozšíření máte lhůtu 14 dní. |
+| **Tato licence je aktivní na jiné instalaci.** | Klíč běží jinde (typicky po přeinstalaci bez deaktivace). Použijte **Aktivovat na této instalaci (přenést)**, viz [§ 104.7](#1047-krok-za-krokem-prenos-licence-na-jinou-instalaci). |
+| **Překročili jste rozsah licence.** | Máte víc aktivních uživatelů nebo firem, než pokrývá klíč. Navyšte rozsah podle [§ 104.5](#1045-krok-za-krokem-navyseni-poctu-uzivatelu-nebo-zmena-tarifu), nebo počty srovnejte. Na rozšíření máte lhůtu 14 dní. |
 | **Poslední kontrola selhala** | Krátký výpadek internetu nevadí, potvrzení platí 14 dní. Když výpadek trvá, ověřte konektivitu na `myucto.cz`. Můžete použít **Aktualizovat stav licence ze serveru**. |
 | **Komerční moduly zmizely z menu** | Vypršelo předplatné nebo skončilo zkušební období. Bezplatné funkce zůstávají plně dostupné. Komerční funkce obnovíte aktivací licence na stránce **Zakoupení**; jejich data zůstávají v databázi beze změny. |
 | Změna se nezobrazuje, stav je **Platba se zpracovává.** | Platební brána zpracovává platbu asynchronně. Stav aplikace průběžně ověřuje; změnu neobjednávejte znovu. |
@@ -197,9 +197,9 @@ aplikace není možná a nabídne se kontakt na podporu.
 Další diagnostika a časté chyby jsou v kapitole
 [999. Řešení problémů](999_Reseni_problemu.md).
 
-## 105.10 Podrobnosti a pravidla
+## 104.10 Podrobnosti a pravidla
 
-### 105.10.1 Licenční model
+### 104.10.1 Licenční model
 
 MyÚčto stojí na dvou vrstvách:
 
@@ -233,13 +233,13 @@ nezakládá právo produkt jako celek provozovat bez licence.
 
 Cena účetní licence je **za jednoho aktivního uživatele a měsíc**; celková cena
 je násobkem tarifu a počtu aktivních uživatelů (viz
-[§ 105.10.3](#105103-zkusebni-obdobi-a-stavy-licence) ke způsobu započítání).
+[§ 104.10.3](#104103-zkusebni-obdobi-a-stavy-licence) ke způsobu započítání).
 Mzdy jsou samostatný volitelný doplněk s vlastní cenou za aktivního mzdového
 uživatele. Úplné znění licenčního ujednání je v souboru `LICENCE.txt` v rootu
 instalace a na <https://myucto.cz/licence>; podmínky prodeje předplatného
 upravují obchodní podmínky na <https://myucto.cz/obchodni-podminky>.
 
-### 105.10.2 Mzdové pásmo a mzdoví uživatelé
+### 104.10.2 Mzdové pásmo a mzdoví uživatelé
 
 Mzdové pásmo se určuje podle součtu aktivních zaměstnanců všech firem v celé
 instalaci. Nabídka obsahuje pásma do 25 zaměstnanců, do 50 zaměstnanců a
@@ -255,7 +255,7 @@ Bez aktivního mzdového nároku po zkušební době nelze Mzdy zapnout ani otev
 Aplikace v takovém případě nabídne zakoupení nebo rozšíření licence. Server při
 změně rozsahu Mezd účtuje poměrný doplatek do konce období.
 
-### 105.10.3 Zkušební období a stavy licence
+### 104.10.3 Zkušební období a stavy licence
 
 Stav licence se počítá při každém přihlášeném požadavku a promítá se do banneru
 v aplikaci i do karty stavu na stránce `Systém → Zakoupení`.
@@ -307,9 +307,9 @@ internetu proto provoz neomezí. Ověřování běží samo na pozadí a nevyža
 > firem, zaměstnanců a mzdových uživatelů. Žádná účetní ani osobní data se na
 > licenční server neposílají.
 
-### 105.10.4 Pravidla změn kapacity
+### 104.10.4 Pravidla změn kapacity
 
-Stejný postup jako v [§ 105.5](#1055-krok-za-krokem-navyseni-poctu-uzivatelu-nebo-zmena-tarifu)
+Stejný postup jako v [§ 104.5](#1045-krok-za-krokem-navyseni-poctu-uzivatelu-nebo-zmena-tarifu)
 platí i při překročení rozsahu (overage): navýšením přečerpání odstraníte.
 Změna licence, tarifu a počtu uživatelů funguje stejně u samostatného
 self-hosted předplatného i u spravovaného SaaS hostingu.
@@ -340,12 +340,12 @@ Z ročního předplatného zpátky na měsíční se z aplikace přejít nedá a
 zaplacenou roční licenci nelze prodloužit dopředu o další rok. Další rok se
 naúčtuje sám řádnou obnovou na konci zaplaceného období.
 
-### 105.10.5 Přehled dokladů a plateb
+### 104.10.5 Přehled dokladů a plateb
 
 - **Daňový doklad** za každou platbu chodí e-mailem.
 - **Opakované platby** (kartou přes platební bránu) běží automaticky v pevné
   výši, měsíčně nebo ročně, s vaším souhlasem. Zrušit je můžete kdykoli ke
-  konci zaplaceného období, buď přímo v aplikaci ([§ 105.8](#1058-krok-za-krokem-zruseni-automatickeho-prodluzovani)),
+  konci zaplaceného období, buď přímo v aplikaci ([§ 104.8](#1048-krok-za-krokem-zruseni-automatickeho-prodluzovani)),
   nebo přes odkaz v e-mailu. Přehled objednávek, změnu karty a fakturační
   údaje řeší web [myucto.cz](https://myucto.cz/).
 
@@ -355,7 +355,7 @@ se už nestrhne další platba. Komerční funkce ani přístup k datům se zru�
 okamžitě nemění. Poměrná část se nevrací. Detailní pravidla jsou v
 `Systém → Obchodní podmínky`.
 
-## 105.11 Související kapitoly
+## 104.11 Související kapitoly
 
 - [Aktualizace](102_Aktualizace.md)
 - [Řešení problémů](999_Reseni_problemu.md)

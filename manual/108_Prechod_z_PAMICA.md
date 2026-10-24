@@ -127,7 +127,7 @@ nehlásí chybu. Parametry a konfigurace jsou v
 **Jak poznáte, že je hotovo:** Zkouška skončí stavem **V pořádku** nebo **S
 upozorněními** a protokol ukazuje počty zaměstnanců a měsíců, které odpovídají
 exportu. Selže-li jen na **Rozdílech k přijetí**, postupujte podle
-[§ 103.10.5.1](103_Prechod_z_Money_S3.md#1031051-chyby-upozorneni-a-rozdily-k-prijeti).
+[§ 106.10.5.1](106_Prechod_z_Money_S3.md#1061051-chyby-upozorneni-a-rozdily-k-prijeti).
 
 > [!WARNING]
 > Se zapnutým schválením spuštěný mzdový běh měsíc spočítá znovu podle vlastní
@@ -733,7 +733,7 @@ převod spusťte znovu.
 
 Měsíc, který se nepodařilo převést, je v protokolu rozdíl k přijetí: ostatní
 měsíce se převedou a ostrý převod jde po zkoušce nanečisto spustit i s ním,
-viz [§ 103.10.5.1](103_Prechod_z_Money_S3.md#1031051-chyby-upozorneni-a-rozdily-k-prijeti).
+viz [§ 106.10.5.1](106_Prechod_z_Money_S3.md#1061051-chyby-upozorneni-a-rozdily-k-prijeti).
 
 ### 108.9.10 Kontrola převzatých mezd
 
