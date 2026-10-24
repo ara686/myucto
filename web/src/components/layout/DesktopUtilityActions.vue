@@ -27,7 +27,7 @@ watch(() => props.manualHref, () => { open.value = false })
 
 <template>
   <div class="items-center gap-1 text-sm">
-    <div class="flex h-8 items-center gap-0.5 rounded-lg bg-neutral-100/80 p-0.5 shadow-inner ring-1 ring-neutral-200/80" role="group" :aria-label="t('favorites.group_label')">
+    <div class="mr-1 flex h-8 items-center gap-0.5 rounded-lg bg-neutral-100/80 p-0.5 shadow-inner ring-1 ring-neutral-200/80" role="group" :aria-label="t('favorites.group_label')">
       <WorkspaceFavoritesButton class="h-7! hover:bg-surface!" />
       <WorkspaceReloadButton class="h-7! hover:bg-surface!" />
       <WorkspaceWindowButton class="h-7! hover:bg-surface!" />
