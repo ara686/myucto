@@ -269,9 +269,13 @@ final class DomainLoginFlowTest extends TestCase
      */
     #[TestWith(['member'])]
     #[TestWith(['superadmin-member'])]
+    #[TestWith(['superadmin'])]
     public function testExchangedSessionIsBoundToDomainAndRejectedOnCanonical(string $victim): void
     {
         $userId = $this->userId;
+        if ($victim === 'superadmin') {
+            $userId = $this->createSuperadminWithoutMembership();
+        }
         if ($victim === 'superadmin-member') {
             $userId = $this->createSuperadminWithoutMembership();
             $this->db->pdo()->prepare('INSERT INTO user_suppliers (user_id, supplier_id) VALUES (?, ?)')
@@ -437,10 +441,10 @@ final class DomainLoginFlowTest extends TestCase
     }
 
     /**
-     * Superadmin bez přiřazení k firmě se přes předání na její vlastní doménu
-     * nepřihlásí ani po potvrzení. Do firmy vstupuje přes canonical adresu.
+     * Superadmin má přístup ke všem firmám, na vlastní doménu firmy se tedy
+     * dostane i bez přiřazení. Předání ale vždy výslovně potvrzuje.
      */
-    public function testSuperadminWithoutMembershipCannotUseDomainLogin(): void
+    public function testSuperadminWithoutMembershipMustConfirmDomainLogin(): void
     {
         $superadminId = $this->createSuperadminWithoutMembership();
         $canonical = $this->sessions->create(
@@ -451,13 +455,18 @@ final class DomainLoginFlowTest extends TestCase
         );
         $flow = $this->start(self::opaqueToken());
 
-        foreach ([['preview' => true], ['confirmed' => true], []] as $extra) {
-            $response = $this->authorizeViaAction($canonical['token'], $flow, $extra);
-            self::assertSame(403, $response['status']);
-            self::assertSame('forbidden_supplier', $response['body']['error']['code'] ?? null);
-            self::assertArrayNotHasKey('target_hostname', $response['body']['error'] ?? []);
-        }
+        $preview = $this->authorizeViaAction($canonical['token'], $flow, ['preview' => true]);
+        self::assertSame(200, $preview['status']);
+        self::assertSame($this->hostname, $preview['body']['confirmation']['target_hostname'] ?? null);
+
+        $unconfirmed = $this->authorizeViaAction($canonical['token'], $flow);
+        self::assertSame(409, $unconfirmed['status']);
+        self::assertSame('domain_login_confirmation_required', $unconfirmed['body']['error']['code'] ?? null);
         self::assertSame(0, $this->authorizedRequests($flow));
+
+        $confirmed = $this->authorizeViaAction($canonical['token'], $flow, ['confirmed' => true]);
+        self::assertSame(200, $confirmed['status']);
+        self::assertSame(1, $this->authorizedRequests($flow));
     }
 
     public function testCanonicalSessionIsNotAcceptedOnCustomDomain(): void

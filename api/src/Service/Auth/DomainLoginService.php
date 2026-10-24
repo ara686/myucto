@@ -7,6 +7,7 @@ namespace MyInvoice\Service\Auth;
 use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Middleware\TenantDomainMiddleware;
 use MyInvoice\Repository\UserSupplierRepository;
+use MyInvoice\Security\UserRoleProfile;
 use MyInvoice\Service\Tenant\ClientRoutePolicy;
 use MyInvoice\Service\Tenant\TenantDomainContext;
 use MyInvoice\Service\Tenant\TenantDomainResolver;
@@ -23,6 +24,7 @@ final class DomainLoginService
         private readonly Connection $db,
         private readonly TenantDomainResolver $domainResolver,
         private readonly UserSupplierRepository $memberships,
+        private readonly UserRoleProfile $roles,
         private readonly ClientRoutePolicy $clientRoutes,
         private readonly SecurityClock $clock,
         private readonly SessionManager $sessions,
@@ -135,6 +137,7 @@ final class DomainLoginService
      * až v rámci tohoto předání, tedy přihlášením na canonical adrese po
      * založení požadavku. Starší session by jinak po jediném kliknutí na
      * podstrčený odkaz předala přihlášení doméně, kterou ovládá kdokoli s její DNS.
+     * Superadmin bez přiřazení k firmě potvrzuje předání vždy, i hned po přihlášení.
      *
      * @param array<string,mixed> $user
      * @param array<string,mixed> $session
@@ -154,7 +157,7 @@ final class DomainLoginService
         $pdo->beginTransaction();
         try {
             $row = $this->authorizableRequest($pdo, $requestToken, $state, $userId, true);
-            if (!$confirmed && !self::sessionStartedWithin($session, $row)) {
+            if (!$confirmed && (!self::sessionStartedWithin($session, $row) || $row['superadmin_without_membership'])) {
                 throw new DomainLoginException(
                     'domain_login_confirmation_required',
                     'Předání přihlášení na vlastní doménu je potřeba potvrdit.',
@@ -225,8 +228,10 @@ final class DomainLoginService
 
     /**
      * Načte platný, dosud neautorizovaný požadavek a ověří členství uživatele
-     * ve firmě, které doména patří. Výjimka pro superadmina tu záměrně není:
-     * do firmy, kde není členem, vstupuje přes canonical adresu, ne přes její doménu.
+     * ve firmě, které doména patří. Superadmin smí i bez přiřazení (má přístup
+     * ke všem firmám), vždy ale s výslovným potvrzením. Session domény je pak
+     * svázaná s jejím hostname, zamčená na její firmu a na doméně projdou jen
+     * cesty klientského rozhraní, takže víc než canonical adresa nedává.
      *
      * @return array<string,mixed>
      */
@@ -256,9 +261,11 @@ final class DomainLoginService
             throw new DomainLoginException('invalid_domain_login_request', 'Požadavek na přihlášení je neplatný nebo expiroval.', 400);
         }
 
-        if (!in_array((int) $row['supplier_id'], $this->memberships->allowedSupplierIds($userId), true)) {
+        $member = in_array((int) $row['supplier_id'], $this->memberships->allowedSupplierIds($userId), true);
+        if (!$member && !$this->roles->isSuperadmin($userId)) {
             throw new DomainLoginException('forbidden_supplier', 'K portálu této firmy nemáš oprávnění.', 403);
         }
+        $row['superadmin_without_membership'] = !$member;
         return $row;
     }
 
@@ -360,9 +367,10 @@ final class DomainLoginService
                 throw new DomainLoginException('authentication_expired', 'Uživatel už není aktivní.', 401);
             }
             $userId = (int) $user['id'];
-            // Membership ověř znovu těsně před session. Superadmin bez přiřazení
-            // k firmě session její domény nedostane, stejně jako ostatní.
-            if (!in_array($context->supplierId, $this->memberships->allowedSupplierIds($userId), true)) {
+            // Membership ověř znovu těsně před session (superadmin má přístup ke všem firmám).
+            if (!in_array($context->supplierId, $this->memberships->allowedSupplierIds($userId), true)
+                && !$this->roles->isSuperadmin($userId)
+            ) {
                 throw new DomainLoginException('forbidden_supplier', 'Přístup k firmě byl mezitím odebrán.', 403);
             }
 
