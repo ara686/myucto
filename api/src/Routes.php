@@ -387,6 +387,7 @@ final class Routes
         \MyInvoice\Routes\PropertyAccountingCatalogRoutes::register($app);
         \MyInvoice\Routes\SecuritiesDebt504Routes::register($app);
         \MyInvoice\Routes\FrameworkConversionRoutes::register($app);
+        \MyInvoice\Routes\EetPaymentRoutes::register($app);
         $app->get('/api/health',  HealthAction::class);
         $app->get('/api/version', VersionAction::class);
 

@@ -1,0 +1,556 @@
+# Část aplikačního API EET (platby, QR záměry, evidence, opravy, fronta, export).
+# Integrátor ji sloučí do api/openapi-app-eet.yaml (paths + components).
+paths:
+  /api/eet/payments/preview:
+    post:
+      tags: [EET]
+      summary: Náhled rozhodnutí politiky evidence bez zápisu
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EetPaymentInput' }
+      responses:
+        '200':
+          description: Výsledek politiky
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EetPaymentPreview' }
+        '422': { $ref: '#/components/responses/EetError' }
+  /api/eet/payments:
+    post:
+      tags: [EET]
+      summary: Přijetí platby s posouzením a případnou evidencí tržby
+      description: >-
+        V jedné transakci vznikne platební událost, případná úhrada faktury a EET záznam.
+        První odeslání proběhne po uložení; timeout FS platbu neruší (EET zůstane ve frontě).
+        Klientské `eet_required` se ignoruje.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EetPaymentInput' }
+      responses:
+        '200':
+          description: Uložená platební událost (i opakovaný požadavek se stejným klíčem)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EetPaymentEvent' }
+        '400': { $ref: '#/components/responses/EetError' }
+        '409': { $ref: '#/components/responses/EetError' }
+        '422': { $ref: '#/components/responses/EetError' }
+  /api/eet/payments/{publicId}:
+    get:
+      tags: [EET]
+      summary: Detail platební události s oddělenými stavy
+      parameters:
+        - $ref: '#/components/parameters/EetPublicId'
+      responses:
+        '200':
+          description: Platební událost
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EetPaymentEvent' }
+        '404': { $ref: '#/components/responses/EetError' }
+  /api/eet/payment-intents:
+    post:
+      tags: [EET]
+      summary: QR platba na místě — příprava záměru a QR dat (není inkaso ani tržba)
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema: { type: string, minLength: 8, maxLength: 80, pattern: '^[A-Za-z0-9._:\-]+$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EetPaymentIntentInput' }
+      responses:
+        '201':
+          description: Založený záměr s QR daty
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EetPaymentIntent' }
+        '409': { $ref: '#/components/responses/EetError' }
+        '422': { $ref: '#/components/responses/EetError' }
+  /api/eet/payment-intents/{publicId}/confirm:
+    post:
+      tags: [EET]
+      summary: „Zákazník zadal platbu" — okamžik příkazu a evidence tržby
+      description: >-
+        EET záznam vznikne hned. Účetní úhrada faktury vzniká až bankovním párováním
+        (accounting_settlement_status = pending, bank_verification_status = pending).
+      parameters:
+        - $ref: '#/components/parameters/EetPublicId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ordered_at: { type: string, format: date-time, description: 'Čas zadání příkazu (−48 h … +5 min); výchozí čas serveru' }
+                note: { type: string, maxLength: 255 }
+      responses:
+        '200':
+          description: Potvrzená platební událost
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EetPaymentEvent' }
+        '404': { $ref: '#/components/responses/EetError' }
+        '409': { $ref: '#/components/responses/EetError' }
+        '422': { $ref: '#/components/responses/EetError' }
+  /api/eet/payment-intents/{publicId}/cancel:
+    post:
+      tags: [EET]
+      summary: Zrušení neprovedeného záměru (jen ve stavu initiated)
+      parameters:
+        - $ref: '#/components/parameters/EetPublicId'
+      responses:
+        '200':
+          description: Zrušený záměr
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EetPaymentEvent' }
+        '404': { $ref: '#/components/responses/EetError' }
+        '409': { $ref: '#/components/responses/EetError' }
+  /api/eet/records:
+    get:
+      tags: [EET]
+      summary: Evidence tržeb (keyset stránkování od nejnovější)
+      parameters:
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date }, description: 'Včetně' }
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/EetRecordStatus' } }
+        - { name: unit_id, in: query, schema: { type: integer } }
+        - { name: device_id, in: query, schema: { type: integer } }
+        - { name: kind, in: query, schema: { type: string, enum: [sale, correction] } }
+      responses:
+        '200':
+          description: Stránka záznamů
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next_cursor]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/EetRecord' } }
+                  next_cursor: { type: string, nullable: true }
+        '422': { $ref: '#/components/responses/EetError' }
+  /api/eet/records/{id}:
+    get:
+      tags: [EET]
+      summary: Detail záznamu s pokusy a opravami
+      description: XML pokusů jen pro přihlášenou relaci s právem eet.correct; bearer token ho nedostane nikdy.
+      parameters:
+        - $ref: '#/components/parameters/EetRecordId'
+      responses:
+        '200':
+          description: Detail
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EetRecordDetail' }
+        '404': { $ref: '#/components/responses/EetError' }
+  /api/eet/records/{id}/retry:
+    post:
+      tags: [EET]
+      summary: Okamžité opakování odeslání (retry_wait / action_required)
+      parameters:
+        - $ref: '#/components/parameters/EetRecordId'
+      responses:
+        '200':
+          description: Stav po pokusu
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EetRecordState' }
+        '404': { $ref: '#/components/responses/EetError' }
+        '409': { $ref: '#/components/responses/EetError' }
+  /api/eet/records/{id}/corrections/preview:
+    post:
+      tags: [EET]
+      summary: Náhled záporné opravy
+      parameters:
+        - $ref: '#/components/parameters/EetRecordId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EetCorrectionInput' }
+      responses:
+        '200':
+          description: Náhled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EetCorrectionPreview' }
+        '404': { $ref: '#/components/responses/EetError' }
+        '422': { $ref: '#/components/responses/EetError' }
+  /api/eet/records/{id}/corrections:
+    post:
+      tags: [EET]
+      summary: Záporná oprava tržby (vlastní číslo, aktuální čas, max do neopravené části)
+      parameters:
+        - $ref: '#/components/parameters/EetRecordId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EetCorrectionInput' }
+      responses:
+        '201':
+          description: Oprava (i opakovaný požadavek se stejným klíčem)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EetCorrection' }
+        '400': { $ref: '#/components/responses/EetError' }
+        '404': { $ref: '#/components/responses/EetError' }
+        '409': { $ref: '#/components/responses/EetError' }
+        '422': { $ref: '#/components/responses/EetError' }
+  /api/eet/queue:
+    get:
+      tags: [EET]
+      summary: Souhrn fronty, nejstarší lhůta, poslední potvrzení, certifikáty
+      responses:
+        '200':
+          description: Souhrn
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EetQueueSummary' }
+  /api/eet/export:
+    get:
+      tags: [EET]
+      summary: CSV export evidence (bez XML a tajemství)
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/EetRecordStatus' } }
+        - { name: unit_id, in: query, schema: { type: integer } }
+        - { name: device_id, in: query, schema: { type: integer } }
+      responses:
+        '200':
+          description: CSV (UTF-8 s BOM, středník)
+          content:
+            text/csv:
+              schema: { type: string }
+        '422': { $ref: '#/components/responses/EetError' }
+  /api/invoices/{id}/eet:
+    get:
+      tags: [EET]
+      summary: EET souhrn faktury po platebních událostech
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: Platební události faktury s EET záznamy
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      allOf:
+                        - $ref: '#/components/schemas/EetPaymentEvent'
+                        - type: object
+                          properties:
+                            eet_record:
+                              allOf: [{ $ref: '#/components/schemas/EetRecord' }]
+                              nullable: true
+
+components:
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Stejný klíč se stejným tělem vrátí původní výsledek, s jiným tělem 409 idempotency_conflict.
+      schema: { type: string, minLength: 8, maxLength: 80, pattern: '^[A-Za-z0-9._:\-]+$' }
+    EetPublicId:
+      name: publicId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    EetRecordId:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer }
+  responses:
+    EetError:
+      description: >-
+        Chyba (kódy eet_validation, eet_not_configured, eet_unsupported_scenario,
+        idempotency_conflict, idempotency_key_required, idempotency_key_invalid,
+        eet_state_conflict, not_found)
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                type: object
+                required: [code, message]
+                properties:
+                  code: { type: string }
+                  message: { type: string }
+                  field: { type: string }
+                  reason_code: { type: string }
+                  remaining: { $ref: '#/components/schemas/EetMoney' }
+                additionalProperties: true
+  schemas:
+    EetMoney:
+      type: string
+      pattern: '^-?\d+\.\d{2}$'
+      example: '1210.00'
+    EetRecordStatus:
+      type: string
+      enum: [pending, sending, retry_wait, confirmed, confirmed_warning, action_required, verification_ok]
+    EetPaymentInput:
+      type: object
+      required: [amount]
+      properties:
+        amount: { $ref: '#/components/schemas/EetMoney' }
+        currency: { type: string, default: CZK, example: CZK }
+        channel: { type: string, enum: [cash, card_terminal, qr_in_person, bank_transfer, card_online, cash_on_delivery, other] }
+        payment_method: { type: string, enum: [bank_transfer, direct_debit, card, cash, cash_on_delivery, offset, other] }
+        contact_context: { type: string, enum: [in_person, on_premises, in_vehicle, remote, unknown], default: unknown }
+        business_purpose: { type: string, enum: [sale, order_deposit, credit_topup, credit_draw, security_deposit, other], default: sale }
+        invoice_id: { type: integer }
+        device_id: { type: integer, description: 'Pokladní zařízení; bez něj výchozí zařízení firmy' }
+        received_at: { type: string, format: date-time, description: 'Čas přijetí (−48 h … +5 min); výchozí čas serveru' }
+        note: { type: string, maxLength: 255 }
+    EetPolicyResult:
+      type: object
+      required: [decision, reason_code, message, policy_version]
+      properties:
+        decision: { type: string, enum: [required, voluntary, not_subject, unknown, unsupported, inactive] }
+        reason_code: { type: string }
+        message: { type: string }
+        policy_version: { type: string }
+    EetPaymentPreview:
+      type: object
+      required: [eet, creates_record, blocks_acceptance, requires, amount, currency]
+      properties:
+        eet: { $ref: '#/components/schemas/EetPolicyResult' }
+        creates_record: { type: boolean }
+        blocks_acceptance: { type: boolean }
+        requires: { type: array, items: { type: string, enum: [channel, contact_context] } }
+        amount: { $ref: '#/components/schemas/EetMoney' }
+        currency: { type: string }
+        invoice:
+          type: object
+          nullable: true
+          properties:
+            id: { type: integer }
+            currency: { type: string }
+            remaining: { $ref: '#/components/schemas/EetMoney' }
+    EetRecordState:
+      type: object
+      required: [record_id, public_id, status, environment, warnings, overdue]
+      properties:
+        record_id: { type: integer }
+        public_id: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/EetRecordStatus' }
+        action_code: { type: string, nullable: true, description: 'certificate_missing, rejected, …' }
+        pok: { type: string, nullable: true }
+        environment: { type: string, enum: [playground, production] }
+        warnings:
+          type: array
+          items:
+            type: object
+            properties:
+              code: { oneOf: [{ type: integer }, { type: string }] }
+              message: { type: string }
+        overdue: { type: boolean }
+        attempt_count: { type: integer }
+        next_attempt_at: { type: string, format: date-time, nullable: true }
+        last_error:
+          type: object
+          nullable: true
+          properties:
+            code: { type: integer, nullable: true }
+            message: { type: string, nullable: true }
+        attempted: { type: boolean }
+    EetAllocation:
+      type: object
+      properties:
+        invoice_id: { type: integer, nullable: true }
+        invoice_payment_id: { type: integer, nullable: true }
+        cash_document_id: { type: integer, nullable: true }
+        bank_transaction_id: { type: integer, nullable: true }
+        amount: { $ref: '#/components/schemas/EetMoney' }
+    EetPaymentEvent:
+      type: object
+      required: [payment_event_id, kind, origin, amount, currency, payment_order_status, bank_verification_status, accounting_settlement_status, eet_decision, eet]
+      properties:
+        payment_event_id: { type: string, format: uuid }
+        kind: { type: string, enum: [payment, refund, intent] }
+        origin: { type: string, enum: [invoice_payment, cash_document, quick_sale, payment_intent, correction, bank_reconciliation, api] }
+        amount: { $ref: '#/components/schemas/EetMoney' }
+        currency: { type: string }
+        payment_method: { type: string, nullable: true }
+        channel: { type: string, nullable: true }
+        contact_context: { type: string }
+        business_purpose: { type: string }
+        invoice_id: { type: integer, nullable: true }
+        ordered_at: { type: string, format: date-time, nullable: true }
+        received_at: { type: string, format: date-time, nullable: true }
+        recorded_at: { type: string, format: date-time }
+        paid_on: { type: string, format: date, nullable: true }
+        payment_order_status: { type: string, enum: [initiated, operator_confirmed, settled, failed, cancelled] }
+        bank_verification_status: { type: string, enum: [not_applicable, pending, verified] }
+        accounting_settlement_status: { type: string, enum: [not_applicable, pending, settled] }
+        eet_decision:
+          type: object
+          properties:
+            decision: { type: string }
+            reason_code: { type: string, nullable: true }
+            policy_version: { type: string, nullable: true }
+        allocations: { type: array, items: { $ref: '#/components/schemas/EetAllocation' } }
+        eet:
+          allOf: [{ $ref: '#/components/schemas/EetRecordState' }]
+          nullable: true
+        idempotent_replay: { type: boolean }
+        poll_after_seconds: { type: integer, description: 'Doporučený interval dalšího čtení, dokud EET čeká' }
+    EetPaymentIntentInput:
+      type: object
+      required: [invoice_id]
+      properties:
+        invoice_id: { type: integer }
+        amount: { $ref: '#/components/schemas/EetMoney' }
+        device_id: { type: integer }
+        contact_context: { type: string, enum: [in_person, on_premises, in_vehicle], default: in_person }
+        note: { type: string, maxLength: 255 }
+    EetPaymentIntent:
+      allOf:
+        - $ref: '#/components/schemas/EetPaymentEvent'
+        - type: object
+          properties:
+            qr:
+              type: object
+              nullable: true
+              properties:
+                spd: { type: string, description: 'Řetězec SPAYD (SPD*1.0*…)' }
+                image_data_uri: { type: string, nullable: true, description: 'PNG jako data URI' }
+    EetRecord:
+      allOf:
+        - $ref: '#/components/schemas/EetRecordState'
+        - type: object
+          properties:
+            kind: { type: string, enum: [sale, correction, diagnostic] }
+            payment_event_id: { type: integer, nullable: true }
+            corrects_record_id: { type: integer, nullable: true }
+            correction_reason: { type: string, nullable: true, enum: [refund, failed_payment, wrong_data, duplicate, other] }
+            eic: { type: string }
+            unit_id: { type: integer }
+            unit_number: { type: integer }
+            device_id: { type: integer }
+            device_code: { type: string }
+            sequence_number: { type: string, example: '2026/000001' }
+            sale_at: { type: string, format: date-time }
+            total_amount: { $ref: '#/components/schemas/EetMoney' }
+            currency: { type: string, example: CZK }
+            policy:
+              type: object
+              properties:
+                decision: { type: string, nullable: true }
+                reason_code: { type: string, nullable: true }
+                version: { type: string, nullable: true }
+            deadline_at: { type: string, format: date-time }
+            confirmed_at: { type: string, format: date-time, nullable: true }
+            created_at: { type: string, format: date-time, nullable: true }
+    EetAttempt:
+      type: object
+      properties:
+        attempt_no: { type: integer }
+        uuid_zpravy: { type: string, format: uuid }
+        sent_at: { type: string, format: date-time }
+        first_attempt: { type: boolean }
+        verification: { type: boolean }
+        certificate_id: { type: integer, nullable: true }
+        outcome: { type: string }
+        http_status: { type: integer, nullable: true }
+        error_code: { type: integer, nullable: true }
+        error_message: { type: string, nullable: true }
+        pok: { type: string, nullable: true }
+        test_flag: { type: boolean, nullable: true }
+        signature_verified: { type: boolean }
+        duration_ms: { type: integer, nullable: true }
+        request_sha256: { type: string, nullable: true }
+        received_at: { type: string, nullable: true }
+        request_xml: { type: string, nullable: true, description: 'Jen relace s eet.correct' }
+        response_xml: { type: string, nullable: true, description: 'Jen relace s eet.correct' }
+    EetRecordDetail:
+      allOf:
+        - $ref: '#/components/schemas/EetRecord'
+        - type: object
+          properties:
+            payment_event:
+              allOf: [{ $ref: '#/components/schemas/EetPaymentEvent' }]
+              nullable: true
+            corrections: { type: array, items: { $ref: '#/components/schemas/EetRecord' } }
+            attempts: { type: array, items: { $ref: '#/components/schemas/EetAttempt' } }
+    EetCorrectionInput:
+      type: object
+      properties:
+        amount: { $ref: '#/components/schemas/EetMoney' }
+        reason: { type: string, enum: [refund, failed_payment, wrong_data, duplicate, other] }
+        note: { type: string, maxLength: 255 }
+        device_id: { type: integer }
+    EetCorrectionPreview:
+      type: object
+      properties:
+        original: { $ref: '#/components/schemas/EetRecord' }
+        corrected_total: { $ref: '#/components/schemas/EetMoney' }
+        remaining: { $ref: '#/components/schemas/EetMoney' }
+        proposed:
+          type: object
+          properties:
+            total_amount: { $ref: '#/components/schemas/EetMoney' }
+            reason: { type: string, nullable: true }
+            device_id: { type: integer }
+            environment: { type: string }
+            sale_at: { type: string, format: date-time }
+        allowed: { type: boolean }
+        accounting: { type: string }
+    EetCorrection:
+      allOf:
+        - $ref: '#/components/schemas/EetPaymentEvent'
+        - type: object
+          properties:
+            correction:
+              allOf: [{ $ref: '#/components/schemas/EetRecord' }]
+              nullable: true
+            original_remaining: { $ref: '#/components/schemas/EetMoney' }
+    EetQueueSummary:
+      type: object
+      properties:
+        counts:
+          type: object
+          properties:
+            pending: { type: integer }
+            sending: { type: integer }
+            retry_wait: { type: integer }
+            action_required: { type: integer }
+        open_total: { type: integer }
+        action_required_by_code: { type: object, additionalProperties: { type: integer } }
+        overdue: { type: integer }
+        oldest_deadline_at: { type: string, format: date-time, nullable: true }
+        last_confirmed_at: { type: string, format: date-time, nullable: true }
+        environment: { type: string, enum: [playground, production] }
+        dispatch_blocked: { type: boolean }
+        certificates:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              valid_until: { type: string, format: date-time, nullable: true }
+              expired: { type: boolean }

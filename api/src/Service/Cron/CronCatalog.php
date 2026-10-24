@@ -292,6 +292,19 @@ final class CronCatalog
                 'critical' => false,
             ],
             [
+                // Záložní odesílání EET: první pokus dělá příkaz hned po commitu,
+                // worker doručí tržby po výpadku FS, pádu procesu nebo doplnění
+                // certifikátu. Zákonná lhůta je 48 h, proto kritická a každou minutu.
+                // Bez EET záznamů skončí preflightem bez stavby kontejneru.
+                'script' => 'cron-eet-dispatch',
+                'recommended' => 'every_1_min',
+                'linux_cron' => '* * * * *',
+                'windows_schtasks' => '/sc minute /mo 1',
+                'max_age_hours' => 1,
+                'weekdays_only' => false,
+                'critical' => true,
+            ],
+            [
                 'script' => 'cron-epo-status',
                 'requires_usage' => CronJobGate::USAGE_EPO_PENDING,
                 'recommended' => 'every_1_min',

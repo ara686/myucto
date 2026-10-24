@@ -175,6 +175,10 @@ final class Bootstrap
                 fn (ContainerInterface $c) => $c->get(
                     \MyInvoice\Service\Payroll\Submission\Jmhz\Transport\JmhzProtocolSignatureVerifier::class,
                 ),
+            \MyInvoice\Service\Eet\Transport\EetTransportInterface::class =>
+                fn (ContainerInterface $c) => $c->get(\MyInvoice\Service\Eet\Transport\SoapEetTransport::class),
+            \MyInvoice\Service\Eet\EetCredentialProvider::class =>
+                fn (ContainerInterface $c) => $c->get(\MyInvoice\Service\Eet\EetCertificateVault::class),
             \MyInvoice\Service\Submission\SubmissionInboxMessageProcessor::class =>
                 fn (ContainerInterface $c) => $c->get(
                     \MyInvoice\Service\Submission\CompositeSubmissionInboxMessageProcessor::class,
