@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { formatShortcut, useKeyboardShortcuts } from '@/composables/useKeyboardShortcuts'
 import { useFavoritesStore } from '@/stores/favorites'
 import { useSupplierStore } from '@/stores/supplier'
 import { useWorkspaceStore } from '@/stores/workspace'
@@ -9,6 +10,7 @@ const { t } = useI18n()
 const favorites = useFavoritesStore()
 const workspace = useWorkspaceStore()
 const supplier = useSupplierStore()
+const shortcuts = useKeyboardShortcuts()
 
 const isFavorite = computed(() => favorites.items.some(item => item.path === workspace.activeFullPath
   && (item.supplier_id === null || item.supplier_id === supplier.currentSupplierId)))
@@ -21,7 +23,7 @@ onMounted(() => { void favorites.load() })
     type="button"
     class="relative inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-primary-700 focus-visible:ring-2 focus-visible:ring-primary-400"
     :class="favorites.open ? 'bg-neutral-100 text-primary-700' : ''"
-    :title="t('favorites.title')"
+    :title="[t('favorites.title'), formatShortcut(shortcuts.comboFor('windows.favorites'))].filter(Boolean).join(' · ')"
     :aria-label="t('favorites.title')"
     :aria-expanded="favorites.open"
     aria-haspopup="dialog"

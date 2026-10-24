@@ -8,6 +8,7 @@ import { canUsePurchaseAiExtraction } from '@/security/purchaseAiExtraction'
 import { hasFrameworkScope } from '@/security/frameworkScope'
 import { useSupplierStore } from '@/stores/supplier'
 import { useAutomationStore } from '@/stores/automation'
+import { useFavoritesStore } from '@/stores/favorites'
 import { updateApi, type PublicVersion } from '@/api/update'
 import { settingsApi } from '@/api/settings'
 import { CHROME_FILLED_PRIMARY } from '@/components/ui/buttonStyles'
@@ -57,6 +58,7 @@ const toast = useToast()
 const keyboardShortcuts = useKeyboardShortcuts()
 const paletteShortcutLabel = formatShortcut('ctrl+k')
 const workspace = useWorkspaceStore()
+const favoritesStore = useFavoritesStore()
 const workspaceNavigation = useWorkspaceNavigation()
 const activeRoute = computed(() => router.resolve(workspace.activeFullPath))
 const canExtractPurchase = computed(() => canUsePurchaseAiExtraction(auth, supplierStore.currentSupplier))
@@ -1270,6 +1272,8 @@ const shortcutActions = computed<ShortcutAction[]>(() => {
   }, {
     id: 'windows.reload', label: t('workspace.reload_window'), group: 'general',
   }, {
+    id: 'windows.favorites', label: t('favorites.title'), group: 'general',
+  }, {
     // Registruje se vždy, i když v aktuální agendě zakládat nejde — jinak by
     // zkratka zmizela z nastavení v profilu. Prázdné `to` handler ignoruje.
     id: 'create.contextual',
@@ -1336,13 +1340,17 @@ function onGlobalShortcut(event: KeyboardEvent): void {
   const windowAction = action.id.startsWith('windows.')
   const modalOpen = [...document.querySelectorAll('[role="dialog"][aria-modal="true"], dialog[open]')]
     .some(dialog => !dialog.closest('[hidden], [aria-hidden="true"]'))
-  if (modalOpen && !(windowAction && workspace.windowSwitcherOpen)) return
+  if (modalOpen && !(windowAction && (workspace.windowSwitcherOpen || favoritesStore.open))) return
   if (isEditableTarget(event.target) && action.id !== 'search.global' && !windowAction) return
 
   event.preventDefault()
   if (windowAction) {
     event.stopImmediatePropagation()
     if (action.id === 'windows.switcher') workspace.windowSwitcherOpen = !workspace.windowSwitcherOpen
+    else if (action.id === 'windows.favorites') {
+      workspace.windowSwitcherOpen = false
+      favoritesStore.open = !favoritesStore.open
+    }
     else {
       workspace.windowSwitcherOpen = false
       const manager = getWindowManager()
