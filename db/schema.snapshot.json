@@ -1087,7 +1087,9 @@
         "2183_eet_role_permissions.sql",
         "2184_eet_payment_events_foreign_currency.sql",
         "2185_eet_stored_value_and_external.sql",
-        "2186_user_favorites.sql"
+        "2186_user_favorites.sql",
+        "2187_receipt_links.sql",
+        "2188_quick_receipts.sql"
     ],
     "tables": {
         "abra_flexi_connections": {
@@ -22261,6 +22263,39 @@
             },
             "checks": []
         },
+        "quick_receipts": {
+            "type": "BASE TABLE",
+            "engine": "InnoDB",
+            "collation": "utf8mb4_unicode_ci",
+            "columns": {
+                "cash_document_id": "bigint(20) unsigned NULL DEFAULT NULL",
+                "channel": "varchar(20) NOT NULL COLLATE ascii_bin",
+                "created_at": "datetime(6) NOT NULL DEFAULT current_timestamp(6)",
+                "created_by": "bigint(20) unsigned NULL DEFAULT NULL",
+                "device_id": "bigint(20) unsigned NULL DEFAULT NULL",
+                "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
+                "idempotency_key": "varchar(80) NOT NULL COLLATE ascii_bin",
+                "invoice_id": "bigint(20) unsigned NULL DEFAULT NULL",
+                "note": "varchar(255) NULL DEFAULT NULL",
+                "payment_event_id": "bigint(20) unsigned NULL DEFAULT NULL",
+                "received_amount": "decimal(14,2) NULL DEFAULT NULL",
+                "request_hash": "char(64) NOT NULL COLLATE ascii_bin",
+                "supplier_id": "int(10) unsigned NOT NULL"
+            },
+            "indexes": {
+                "PRIMARY": "UNIQUE BTREE (id)",
+                "fk_quick_receipts_user": "BTREE (created_by)",
+                "ix_quick_receipts_created": "BTREE (supplier_id, created_at, id)",
+                "uq_quick_receipts_idempotency": "UNIQUE BTREE (supplier_id, idempotency_key)",
+                "uq_quick_receipts_invoice": "UNIQUE BTREE (invoice_id)"
+            },
+            "foreign_keys": {
+                "fk_quick_receipts_invoice": "(invoice_id) -> invoices (id) ON UPDATE RESTRICT ON DELETE CASCADE",
+                "fk_quick_receipts_supplier": "(supplier_id) -> supplier (id) ON UPDATE RESTRICT ON DELETE CASCADE",
+                "fk_quick_receipts_user": "(created_by) -> users (id) ON UPDATE RESTRICT ON DELETE SET NULL"
+            },
+            "checks": []
+        },
         "rate_limit_counters": {
             "type": "BASE TABLE",
             "engine": "MEMORY",
@@ -22276,6 +22311,34 @@
                 "idx_rlc_expires": "BTREE (expires_at)"
             },
             "foreign_keys": [],
+            "checks": []
+        },
+        "receipt_links": {
+            "type": "BASE TABLE",
+            "engine": "InnoDB",
+            "collation": "utf8mb4_unicode_ci",
+            "columns": {
+                "created_at": "datetime NOT NULL DEFAULT current_timestamp()",
+                "created_by": "bigint(20) unsigned NULL DEFAULT NULL",
+                "expires_at": "datetime NOT NULL",
+                "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
+                "invoice_id": "bigint(20) unsigned NOT NULL",
+                "revoked_at": "datetime NULL DEFAULT NULL",
+                "supplier_id": "int(10) unsigned NOT NULL",
+                "token_hash": "char(64) NOT NULL COLLATE ascii_bin"
+            },
+            "indexes": {
+                "PRIMARY": "UNIQUE BTREE (id)",
+                "fk_receipt_links_invoice": "BTREE (invoice_id)",
+                "fk_receipt_links_user": "BTREE (created_by)",
+                "ix_receipt_links_invoice": "BTREE (supplier_id, invoice_id, revoked_at)",
+                "uq_receipt_links_token": "UNIQUE BTREE (token_hash)"
+            },
+            "foreign_keys": {
+                "fk_receipt_links_invoice": "(invoice_id) -> invoices (id) ON UPDATE RESTRICT ON DELETE CASCADE",
+                "fk_receipt_links_supplier": "(supplier_id) -> supplier (id) ON UPDATE RESTRICT ON DELETE CASCADE",
+                "fk_receipt_links_user": "(created_by) -> users (id) ON UPDATE RESTRICT ON DELETE SET NULL"
+            },
             "checks": []
         },
         "recurring_invoice_template_items": {
