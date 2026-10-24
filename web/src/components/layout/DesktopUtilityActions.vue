@@ -17,6 +17,8 @@ const props = defineProps<{
   quickActions: QuickAction[]
   manualHref: string
   placement: 'above' | 'below'
+  /** Úsporný režim lišty: přepínač panelů jako jedno tlačítko s nabídkou. */
+  compactLayout?: boolean
 }>()
 
 const { t } = useI18n()
@@ -32,7 +34,7 @@ watch(() => props.manualHref, () => { open.value = false })
       <WorkspaceReloadButton class="h-7! hover:bg-surface!" />
       <WorkspaceWindowButton class="h-7! hover:bg-surface!" />
     </div>
-    <WorkspaceLayoutToggle />
+    <WorkspaceLayoutToggle :compact="compactLayout" />
 
     <div v-if="quickActions.length > 0" class="relative">
       <button
