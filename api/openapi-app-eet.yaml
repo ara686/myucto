@@ -390,7 +390,17 @@ paths:
       - EET – certifikáty
       operationId: eetCertificatesDeactivate
       summary: Místní vyřazení certifikátu z podepisování (není revokace u CA)
-      description: Vyžaduje `eet.certificates` (zápis).
+      description: 'Vyžaduje `eet.certificates` (zápis), webovou relaci a opětovné ověření
+
+        uživatele (`password`, `totp_code` nebo `step_up_token`), stejně jako upload.
+
+        '
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EetStepUpProof'
       responses:
         '200':
           description: Certifikát
@@ -398,6 +408,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/EetCertificate'
+        '401':
+          $ref: '#/components/responses/Forbidden'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
   /api/eet/diagnostics:
@@ -408,7 +422,8 @@ paths:
       summary: Ověřovací test spojení (overeni=true)
       description: 'Vyžaduje `eet.settings` (zápis). Úspěch (`ok=true`) znamená odpověď FS
 
-        `Chyba kod=0` v ověřovacím módu, nikoli evidovanou tržbu. Nic se neukládá
+        `Chyba kod=0` v ověřovacím módu s UUID odeslané zprávy (`outcome=verification_ok`),
+        nikoli evidovanou tržbu. Nic se neukládá
 
         do evidence.
 
@@ -1490,6 +1505,20 @@ components:
         label:
           type: string
           maxLength: 120
+        password:
+          type: string
+          writeOnly: true
+          description: Opětovné ověření uživatele (heslo účtu).
+        totp_code:
+          type: string
+          writeOnly: true
+        step_up_token:
+          type: string
+          writeOnly: true
+          description: Doklad o ověření druhým faktorem (WebAuthn) místo hesla.
+    EetStepUpProof:
+      type: object
+      properties:
         password:
           type: string
           writeOnly: true

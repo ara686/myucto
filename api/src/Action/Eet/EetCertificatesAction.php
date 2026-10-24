@@ -29,6 +29,8 @@ use Psr\Http\Message\UploadedFileInterface;
  */
 final class EetCertificatesAction
 {
+    private const MAX_PKCS12_BYTES = 65_536;
+
     public function __construct(
         private readonly EetCertificateVault $vault,
         private readonly EetSettingsService $settings,
@@ -68,7 +70,7 @@ final class EetCertificatesAction
 
         $pkcs12 = $this->pkcs12($request, $body);
         if ($pkcs12 === null) {
-            return Json::error($response, EetException::VALIDATION, 'Nahrajte soubor pokladního certifikátu ve formátu P12.', 422);
+            return Json::error($response, EetException::VALIDATION, 'Nahrajte soubor pokladního certifikátu ve formátu P12 (nejvýš 64 kB).', 422);
         }
         $environment = $body['environment'] ?? $this->settings->get($supplierId)['environment'];
         $label = $body['label'] ?? null;
@@ -114,14 +116,28 @@ final class EetCertificatesAction
         if (($denied = EetActionSupport::deny($request, $response, 'eet.certificates', AccessLevel::WRITE)) !== null) {
             return $denied;
         }
+        $userId = EetActionSupport::userId($request);
+        if ($userId === null) {
+            return Json::error($response, 'unauthenticated', 'Nepřihlášený uživatel.', 401);
+        }
+        // Deaktivace zastaví evidenci tržeb stejně účinně jako výměna certifikátu,
+        // proto platí stejná ochrana jako pro upload: jen relace a opětovné ověření.
+        if (!RequestAuthorization::isSessionAuth($request)) {
+            return Json::sessionRequired($response, 'Pokladní certifikát EET lze deaktivovat jen z webového rozhraní.');
+        }
+        try {
+            $this->stepUp->verify($request, $userId, EetActionSupport::body($request), 'credential_delete');
+        } catch (EpoSubmissionException $exception) {
+            return Json::error($response, $exception->errorCode, $exception->getMessage(), $exception->httpStatus);
+        }
         $supplierId = SupplierGuard::currentId($request);
         $id = EetActionSupport::id($args);
         try {
-            $this->vault->deactivate($supplierId, $id, EetActionSupport::userId($request));
+            $this->vault->deactivate($supplierId, $id, $userId);
         } catch (EetException $exception) {
             return EetActionSupport::error($response, $exception);
         }
-        $this->logger->log('eet_certificate_deactivate', EetActionSupport::userId($request), 'eet_certificate', $id, null, null, null, $supplierId);
+        $this->logger->log('eet_certificate_deactivate', $userId, 'eet_certificate', $id, null, null, null, $supplierId);
 
         return Json::ok($response, $this->vault->find($supplierId, $id));
     }
@@ -131,6 +147,10 @@ final class EetCertificatesAction
     {
         $file = $request->getUploadedFiles()['file'] ?? null;
         if ($file instanceof UploadedFileInterface && $file->getError() === UPLOAD_ERR_OK) {
+            // Velikost z hlavičky uploadu, ať se příliš velký soubor vůbec nenačítá.
+            if (($file->getSize() ?? 0) > self::MAX_PKCS12_BYTES) {
+                return null;
+            }
             $bytes = (string) $file->getStream();
             return $bytes === '' ? null : $bytes;
         }

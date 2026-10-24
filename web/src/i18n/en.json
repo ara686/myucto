@@ -38923,7 +38923,7 @@
       "step_up_totp": "Authenticator app code",
       "step_up_password_missing": "Enter your password to verify.",
       "step_up_totp_missing": "Enter the six-digit code from the authenticator app.",
-      "step_up_hint": "Uploading the certificate requires you to verify your identity again.",
+      "step_up_hint": "Uploading or deactivating the certificate requires you to verify your identity again.",
       "step_up_or_password": "or enter your password",
       "verify_passkey": "Verify with passkey",
       "passkey_verified": "Verified with passkey",

@@ -6,6 +6,7 @@ namespace MyInvoice\Action\Eet;
 
 use MyInvoice\Http\Json;
 use MyInvoice\Http\SupplierGuard;
+use MyInvoice\Security\AccessLevel;
 use MyInvoice\Security\RequestAuthorization;
 use MyInvoice\Service\ActivityLogger;
 use MyInvoice\Service\Eet\EetCommandException;
@@ -115,6 +116,10 @@ final class EetRecordAction
 
     public function invoice(Request $request, Response $response, array $args): Response
     {
+        // Route vyžaduje `eet`; souhrn ale vypovídá o faktuře, takže i čtení faktur.
+        if (($denied = EetActionSupport::deny($request, $response, 'invoices', AccessLevel::READ)) !== null) {
+            return $denied;
+        }
         $supplierId = SupplierGuard::currentId($request);
         return Json::ok($response, ['items' => $this->query->forInvoice($supplierId, (int) ($args['id'] ?? 0))]);
     }

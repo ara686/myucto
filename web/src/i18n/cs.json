@@ -38923,7 +38923,7 @@
       "step_up_totp": "Kód z autentizační aplikace",
       "step_up_password_missing": "Zadejte své heslo pro ověření.",
       "step_up_totp_missing": "Zadejte šestimístný kód z autentizační aplikace.",
-      "step_up_hint": "Nahrání certifikátu vyžaduje opětovné ověření vaší identity.",
+      "step_up_hint": "Nahrání i deaktivace certifikátu vyžaduje opětovné ověření vaší identity.",
       "step_up_or_password": "nebo zadejte heslo",
       "verify_passkey": "Ověřit přístupovým klíčem",
       "passkey_verified": "Ověřeno přístupovým klíčem",

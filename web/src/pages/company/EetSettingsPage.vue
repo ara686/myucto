@@ -389,22 +389,39 @@ async function uploadCertificate() {
     certBusy.value = false
   }
 }
+// Deaktivace vyžaduje stejné opětovné ověření jako nahrání.
+const deactivateTarget = ref<EetCertificate | null>(null)
 function deactivateCertificate(c: EetCertificate) {
-  askConfirm({
-    title: t('eet.certificates.deactivate_title'),
-    message: t('eet.certificates.deactivate_confirm', { eic: c.eic, env: t(`eet.environment.${c.environment}`) }),
-    confirm: t('eet.certificates.deactivate'),
-    variant: 'danger',
-    run: async () => {
-      try {
-        await eetApi.deactivateCertificate(c.id)
-        toast.success(t('eet.certificates.deactivated'))
-        await load(true)
-      } catch (e) {
-        toast.error(apiErrorMessage(e, t('eet.certificates.deactivate_failed')))
-      }
-    },
-  })
+  resetStepUp()
+  deactivateTarget.value = c
+}
+function closeDeactivate() {
+  deactivateTarget.value = null
+  resetStepUp()
+}
+async function runDeactivate() {
+  const c = deactivateTarget.value
+  if (!c) return
+  if (stepUpMissing.value !== '') {
+    toast.error(stepUpMissing.value)
+    return
+  }
+  certBusy.value = true
+  try {
+    await eetApi.deactivateCertificate(c.id, {
+      password: stepPassword.value || undefined,
+      totp_code: stepTotp.value.trim() || undefined,
+      step_up_token: stepPasskeyToken.value || undefined,
+    })
+    toast.success(t('eet.certificates.deactivated'))
+    closeDeactivate()
+    await load(true)
+  } catch (e) {
+    stepPasskeyToken.value = ''
+    toast.error(apiErrorMessage(e, t('eet.certificates.deactivate_failed')))
+  } finally {
+    certBusy.value = false
+  }
 }
 function expiryBadge(c: EetCertificate): 'expired' | 'critical' | 'warning' | null {
   if (c.status !== 'active') return null
@@ -1038,6 +1055,48 @@ const th = 'px-3 py-2 text-left font-medium'
           <button type="button" :class="btnFilled('primary')" :disabled="!canUpload" @click="uploadCertificate">
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" :d="ICONS.upload" /></svg>
             {{ certBusy ? t('common.loading') : t('eet.certificates.upload_action') }}
+          </button>
+        </div>
+      </template>
+    </Modal>
+
+    <!-- Dialog deaktivace certifikátu -->
+    <Modal v-if="deactivateTarget" :title="t('eet.certificates.deactivate_title')" width-class="max-w-lg" @close="closeDeactivate">
+      <div class="space-y-4">
+        <p class="text-sm text-neutral-700">
+          {{ t('eet.certificates.deactivate_confirm', { eic: deactivateTarget.eic, env: t(`eet.environment.${deactivateTarget.environment}`) }) }}
+        </p>
+        <div class="grid gap-3 sm:grid-cols-2 rounded-lg border border-neutral-200 p-4">
+          <div v-if="hasPasskey" class="sm:col-span-2 flex flex-wrap items-center gap-3">
+            <div v-if="stepPasskeyToken" class="text-sm font-medium text-success-600">{{ t('eet.certificates.passkey_verified') }}</div>
+            <template v-else-if="passkeySupported">
+              <button type="button" :class="btnOutline('primary')" :disabled="passkeyBusy || certBusy" @click="verifyPasskey">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" :d="ICONS.lock" /></svg>
+                {{ passkeyBusy ? t('common.loading') : t('eet.certificates.verify_passkey') }}
+              </button>
+              <span class="text-xs text-neutral-500">{{ t('eet.certificates.step_up_or_password') }}</span>
+            </template>
+            <p v-else class="text-xs text-warning-700">{{ t('eet.certificates.passkey_unsupported') }}</p>
+          </div>
+          <template v-if="!stepPasskeyToken">
+            <label class="text-xs text-neutral-600">
+              {{ t('eet.certificates.step_up_password') }}
+              <input v-model="stepPassword" type="password" autocomplete="current-password" :class="[formInput, 'mt-1']" />
+            </label>
+            <label v-if="hasTotp" class="text-xs text-neutral-600">
+              {{ t('eet.certificates.step_up_totp') }}
+              <input v-model="stepTotp" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code" :class="[formInput, 'mt-1']" />
+            </label>
+          </template>
+          <p class="sm:col-span-2 text-xs text-neutral-500">{{ t('eet.certificates.step_up_hint') }}</p>
+        </div>
+      </div>
+      <template #footer>
+        <div class="flex flex-wrap justify-end gap-2 px-5 py-3">
+          <button type="button" :class="btnOutline('neutral')" @click="closeDeactivate">{{ t('common.cancel') }}</button>
+          <button type="button" :class="btnFilled('danger')" :disabled="certBusy || stepUpMissing !== ''" @click="runDeactivate">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" :d="ICONS.pause" /></svg>
+            {{ certBusy ? t('common.loading') : t('eet.certificates.deactivate') }}
           </button>
         </div>
       </template>
