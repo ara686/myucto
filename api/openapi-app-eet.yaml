@@ -1,0 +1,604 @@
+openapi: 3.1.0
+info:
+  title: MyÚčto – aplikační API EET 2.0
+  version: 2026-10.1
+  description: |
+    Aplikační API evidence tržeb EET 2.0 pro webové rozhraní a budoucí mobilní
+    aplikaci. Není součástí veřejného read-only subsetu `/api/v1` (viz `openapi.yaml`).
+
+    Firma se odvozuje z ověřeného scope požadavku (hlavička `X-Supplier-Id`
+    u relace). Peníze se přenášejí jako desetinné řetězce s měnou, časy jako
+    ISO 8601 s offsetem. Soukromý klíč ani heslo certifikátu se nikdy nevrací.
+    Upload certifikátu je možný jen z webové relace s opětovným ověřením uživatele.
+servers:
+  - url: /
+security:
+  - session: []
+  - bearer: []
+tags:
+  - name: EET – nastavení
+  - name: EET – certifikáty
+paths:
+  /api/eet/capabilities:
+    get:
+      tags: [EET – nastavení]
+      operationId: eetCapabilities
+      summary: Schopnosti modulu EET, režim, prostředí a práva uživatele
+      description: Vyžaduje oprávnění `eet` (čtení).
+      responses:
+        '200':
+          description: Schopnosti
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EetCapabilities' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/eet/settings:
+    get:
+      tags: [EET – nastavení]
+      operationId: eetSettingsShow
+      summary: Profil EET, překážky aktivace a historie změn
+      description: Vyžaduje `eet.settings` (čtení).
+      responses:
+        '200':
+          description: Profil
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [settings, activation_obstacles, history]
+                properties:
+                  settings: { $ref: '#/components/schemas/EetSettings' }
+                  activation_obstacles:
+                    type: array
+                    items: { $ref: '#/components/schemas/EetActivationObstacle' }
+                  history:
+                    type: array
+                    items: { $ref: '#/components/schemas/EetSettingsHistoryEntry' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    put:
+      tags: [EET – nastavení]
+      operationId: eetSettingsUpdate
+      summary: Změna profilu EET (částečná) s kontrolou souběžné úpravy
+      description: |
+        Vyžaduje `eet.settings` (zápis). Zapnutí (`enabled=true`) vyžaduje aktivní
+        komerční licenci a splněné podmínky: EIČ, účinnost, účinná jednotka, aktivní
+        zařízení a platný certifikát pro prostředí se shodným EIČ.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EetSettingsPatch' }
+      responses:
+        '200':
+          description: Uložený profil
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [settings, activation_obstacles]
+                properties:
+                  settings: { $ref: '#/components/schemas/EetSettings' }
+                  activation_obstacles:
+                    type: array
+                    items: { $ref: '#/components/schemas/EetActivationObstacle' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Validation' }
+  /api/eet/units:
+    get:
+      tags: [EET – nastavení]
+      operationId: eetUnitsList
+      summary: Evidenční jednotky
+      description: Vyžaduje `eet.settings` (čtení).
+      responses:
+        '200':
+          description: Seznam jednotek
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/EetUnit' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [EET – nastavení]
+      operationId: eetUnitsCreate
+      summary: Založení místního mapování jednotky z DIS+
+      description: Vyžaduje `eet.settings` (zápis).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EetUnitInput' }
+      responses:
+        '201':
+          description: Jednotka
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EetUnit' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Validation' }
+  /api/eet/units/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    put:
+      tags: [EET – nastavení]
+      operationId: eetUnitsUpdate
+      summary: Úprava jednotky
+      description: Vyžaduje `eet.settings` (zápis).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EetUnitInput' }
+      responses:
+        '200':
+          description: Jednotka
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EetUnit' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Validation' }
+    delete:
+      tags: [EET – nastavení]
+      operationId: eetUnitsEndValidity
+      summary: Ukončení účinnosti jednotky (jednotka se nemaže)
+      description: Vyžaduje `eet.settings` (zápis).
+      parameters:
+        - name: valid_to
+          in: query
+          required: false
+          description: Poslední den účinnosti; výchozí dnes.
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: Jednotka s ukončenou účinností
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EetUnit' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Validation' }
+  /api/eet/devices:
+    get:
+      tags: [EET – nastavení]
+      operationId: eetDevicesList
+      summary: Logická zařízení (pokladny)
+      description: Vyžaduje `eet.settings` (čtení).
+      responses:
+        '200':
+          description: Seznam zařízení
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/EetDevice' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [EET – nastavení]
+      operationId: eetDevicesCreate
+      summary: Založení zařízení
+      description: Vyžaduje `eet.settings` (zápis).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EetDeviceInput' }
+      responses:
+        '201':
+          description: Zařízení
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EetDevice' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Validation' }
+  /api/eet/devices/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    put:
+      tags: [EET – nastavení]
+      operationId: eetDevicesUpdate
+      summary: Úprava zařízení (kód nelze změnit po vydání první účtenky)
+      description: Vyžaduje `eet.settings` (zápis).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EetDeviceInput' }
+      responses:
+        '200':
+          description: Zařízení
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EetDevice' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Validation' }
+    delete:
+      tags: [EET – nastavení]
+      operationId: eetDevicesDeactivate
+      summary: Deaktivace zařízení (zařízení se nemaže)
+      description: Vyžaduje `eet.settings` (zápis).
+      responses:
+        '200':
+          description: Deaktivované zařízení
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EetDevice' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/eet/certificates:
+    get:
+      tags: [EET – certifikáty]
+      operationId: eetCertificatesList
+      summary: Metadata pokladních certifikátů
+      description: Vyžaduje `eet.certificates` (čtení). Nikdy nevrací klíč ani heslo.
+      responses:
+        '200':
+          description: Seznam certifikátů
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/EetCertificate' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [EET – certifikáty]
+      operationId: eetCertificatesUpload
+      summary: Chráněný upload pokladního certifikátu (.p12)
+      description: |
+        Vyžaduje `eet.certificates` (zápis), webovou relaci a opětovné ověření
+        uživatele (`password`, `totp_code` nebo `step_up_token`). Server ověří soukromý klíč, shodu
+        s certifikátem, CN = EIČ, účel podpisu, platnost a řetězec k autoritě EET
+        zvoleného prostředí.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/EetCertificateUploadFields'
+                - type: object
+                  required: [file]
+                  properties:
+                    file:
+                      type: string
+                      contentMediaType: application/x-pkcs12
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/EetCertificateUploadFields'
+                - type: object
+                  required: [pkcs12_base64]
+                  properties:
+                    pkcs12_base64:
+                      type: string
+                      contentEncoding: base64
+      responses:
+        '201':
+          description: Uložený certifikát (metadata)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EetCertificate' }
+        '401': { $ref: '#/components/responses/Forbidden' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Validation' }
+  /api/eet/certificates/{id}/deactivate:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [EET – certifikáty]
+      operationId: eetCertificatesDeactivate
+      summary: Místní vyřazení certifikátu z podepisování (není revokace u CA)
+      description: Vyžaduje `eet.certificates` (zápis).
+      responses:
+        '200':
+          description: Certifikát
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EetCertificate' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/eet/diagnostics:
+    post:
+      tags: [EET – nastavení]
+      operationId: eetDiagnosticsRun
+      summary: Ověřovací test spojení (overeni=true)
+      description: |
+        Vyžaduje `eet.settings` (zápis). Úspěch (`ok=true`) znamená odpověď FS
+        `Chyba kod=0` v ověřovacím módu, nikoli evidovanou tržbu. Nic se neukládá
+        do evidence.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                device_id:
+                  type: [integer, 'null']
+                  description: Zařízení; výchozí je výchozí zařízení firmy.
+      responses:
+        '200':
+          description: Výsledek ověření
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EetDiagnosticsResult' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Validation' }
+        '502': { $ref: '#/components/responses/Validation' }
+components:
+  securitySchemes:
+    session:
+      type: apiKey
+      in: cookie
+      name: __Host-myinvoice_session
+    bearer:
+      type: http
+      scheme: bearer
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer, minimum: 1 }
+  responses:
+    Forbidden:
+      description: Chybí oprávnění, relace nebo licence
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Záznam ve firmě neexistuje
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: Konflikt stavu (souběžná změna, duplicita)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Validation:
+      description: Neplatný vstup nebo nesplněná podmínka
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              examples: [eet_validation, eet_not_configured, eet_conflict, eet_not_found, license_commercial_feature_unavailable]
+            message: { type: string }
+            field: { type: string }
+            obstacles:
+              type: array
+              items: { $ref: '#/components/schemas/EetActivationObstacle' }
+          additionalProperties: true
+    EetEnvironment:
+      type: string
+      enum: [playground, production]
+    EetPermissionLevel:
+      type: string
+      enum: [none, read, write]
+    EetCapabilities:
+      type: object
+      required: [contract_version, enabled, environment, regime, eic, active_from, supported_scenarios, unsupported_scenarios, permissions, default_device_id, has_active_certificate, certificate_expires_at, commercial_license]
+      properties:
+        contract_version: { type: string, examples: ['2026-10.1'] }
+        enabled: { type: boolean }
+        environment: { $ref: '#/components/schemas/EetEnvironment' }
+        regime: { type: string, enum: [standard, exempt, eet_off] }
+        eic: { type: [string, 'null'] }
+        active_from: { type: [string, 'null'], format: date }
+        supported_scenarios:
+          type: array
+          items: { type: string, enum: [cash, card_terminal_confirmed, qr_in_person, refund, correction] }
+        unsupported_scenarios:
+          type: array
+          items: { type: string, enum: [foreign_currency, credit, security_deposit, delegation] }
+        permissions:
+          type: object
+          required: [eet, eet.accept_payment, eet.correct, eet.settings, eet.certificates, eet.export]
+          properties:
+            eet: { $ref: '#/components/schemas/EetPermissionLevel' }
+            eet.accept_payment: { $ref: '#/components/schemas/EetPermissionLevel' }
+            eet.correct: { $ref: '#/components/schemas/EetPermissionLevel' }
+            eet.settings: { $ref: '#/components/schemas/EetPermissionLevel' }
+            eet.certificates: { $ref: '#/components/schemas/EetPermissionLevel' }
+            eet.export: { $ref: '#/components/schemas/EetPermissionLevel' }
+        default_device_id: { type: [integer, 'null'] }
+        has_active_certificate: { type: boolean }
+        certificate_expires_at: { type: [string, 'null'], format: date-time }
+        commercial_license: { type: boolean }
+    EetSettings:
+      type: object
+      required: [enabled, environment, eic, active_from, active_to, regime, exemption_reason, default_device_id, response_timeout_ms, dispatch_blocked, row_version, updated_by, updated_at]
+      properties:
+        enabled: { type: boolean }
+        environment: { $ref: '#/components/schemas/EetEnvironment' }
+        eic: { type: [string, 'null'], pattern: '^CZ[0-9]{8,10}$' }
+        active_from: { type: [string, 'null'], format: date }
+        active_to: { type: [string, 'null'], format: date }
+        regime: { type: string, enum: [standard, exempt, eet_off] }
+        exemption_reason: { type: [string, 'null'], maxLength: 255 }
+        default_device_id: { type: [integer, 'null'] }
+        response_timeout_ms: { type: integer, minimum: 2000, maximum: 10000 }
+        dispatch_blocked:
+          type: boolean
+          description: Nastavuje jen server (např. anonymizovaná kopie); odesílání je zastavené.
+        row_version:
+          type: integer
+          description: Verze pro kontrolu souběžné změny; 0 = profil ještě není uložený.
+        updated_by: { type: [integer, 'null'] }
+        updated_at: { type: [string, 'null'], format: date-time }
+    EetSettingsPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        enabled: { type: boolean }
+        environment: { $ref: '#/components/schemas/EetEnvironment' }
+        eic: { type: [string, 'null'], pattern: '^CZ[0-9]{8,10}$' }
+        active_from: { type: [string, 'null'], format: date }
+        active_to: { type: [string, 'null'], format: date }
+        regime: { type: string, enum: [standard, exempt, eet_off] }
+        exemption_reason: { type: [string, 'null'], maxLength: 255 }
+        default_device_id: { type: [integer, 'null'] }
+        response_timeout_ms: { type: integer, minimum: 2000, maximum: 10000 }
+        row_version:
+          type: integer
+          description: Očekávaná verze; při nesouladu 409 eet_conflict.
+    EetActivationObstacle:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum: [regime_not_standard, eic_missing, active_from_missing, unit_missing, device_missing, certificate_missing]
+        message: { type: string }
+    EetSettingsHistoryEntry:
+      type: object
+      required: [id, changed_at, changed_by, snapshot]
+      properties:
+        id: { type: integer }
+        changed_at: { type: string, format: date-time }
+        changed_by: { type: [integer, 'null'] }
+        snapshot:
+          type: object
+          additionalProperties: true
+    EetUnitKind:
+      type: string
+      enum: [premises, online, vehicle, mobile, other]
+    EetUnit:
+      type: object
+      required: [id, unit_number, name, kind, valid_from, valid_to, notified_to_fs, created_at, updated_at]
+      properties:
+        id: { type: integer }
+        unit_number:
+          type: integer
+          minimum: 1
+          maximum: 999999
+          description: Číslo jednotky (id_provoz) z DIS+.
+        name: { type: string, maxLength: 120 }
+        kind: { $ref: '#/components/schemas/EetUnitKind' }
+        valid_from: { type: string, format: date }
+        valid_to: { type: [string, 'null'], format: date }
+        notified_to_fs: { type: boolean }
+        created_at: { type: [string, 'null'], format: date-time }
+        updated_at: { type: [string, 'null'], format: date-time }
+    EetUnitInput:
+      type: object
+      required: [unit_number, name, kind, valid_from]
+      properties:
+        unit_number: { type: integer, minimum: 1, maximum: 999999 }
+        name: { type: string, minLength: 1, maxLength: 120 }
+        kind: { $ref: '#/components/schemas/EetUnitKind' }
+        valid_from: { type: string, format: date }
+        valid_to: { type: [string, 'null'], format: date }
+        notified_to_fs: { type: boolean, default: true }
+    EetDevice:
+      type: object
+      required: [id, unit_id, unit_number, unit_name, unit_valid_from, unit_valid_to, code, name, cash_register_id, active, sequence_year, next_sequence, created_at, updated_at]
+      properties:
+        id: { type: integer }
+        unit_id: { type: integer }
+        unit_number: { type: integer }
+        unit_name: { type: string }
+        unit_valid_from: { type: string, format: date }
+        unit_valid_to: { type: [string, 'null'], format: date }
+        code:
+          type: string
+          pattern: '^[0-9a-zA-Z.,:;/#\-_ ]{1,20}$'
+          description: Označení pokladního zařízení (id_pokl).
+        name: { type: string, maxLength: 120 }
+        cash_register_id: { type: [integer, 'null'] }
+        active: { type: boolean }
+        sequence_year: { type: [integer, 'null'] }
+        next_sequence: { type: integer }
+        created_at: { type: [string, 'null'], format: date-time }
+        updated_at: { type: [string, 'null'], format: date-time }
+    EetDeviceInput:
+      type: object
+      required: [unit_id, code, name]
+      properties:
+        unit_id: { type: integer, minimum: 1 }
+        code: { type: string, pattern: '^[0-9a-zA-Z.,:;/#\-_ ]{1,20}$' }
+        name: { type: string, minLength: 1, maxLength: 120 }
+        cash_register_id: { type: [integer, 'null'] }
+        active: { type: boolean, default: true }
+    EetCertificate:
+      type: object
+      required: [id, environment, eic, subject_cn, serial_number, fingerprint_sha256, issuer, not_before, not_after, label, status, uploaded_by, created_at, retired_at, valid_now, expires_in_days, expiry_warning]
+      properties:
+        id: { type: integer }
+        environment: { $ref: '#/components/schemas/EetEnvironment' }
+        eic: { type: string }
+        subject_cn: { type: [string, 'null'] }
+        serial_number: { type: [string, 'null'] }
+        fingerprint_sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        issuer: { type: [string, 'null'] }
+        not_before: { type: string, format: date-time }
+        not_after: { type: string, format: date-time }
+        label: { type: [string, 'null'] }
+        status: { type: string, enum: [active, retired, revoked] }
+        uploaded_by: { type: [integer, 'null'] }
+        created_at: { type: [string, 'null'], format: date-time }
+        retired_at: { type: [string, 'null'], format: date-time }
+        valid_now: { type: boolean }
+        expires_in_days:
+          type: integer
+          description: Celé dny do konce platnosti (záporné = prošlý).
+        expiry_warning:
+          type: [string, 'null']
+          enum: [warning, critical, expired, null]
+          description: Upozornění u aktivního certifikátu (méně než 30, resp. 7 dní).
+    EetCertificateUploadFields:
+      type: object
+      properties:
+        environment: { $ref: '#/components/schemas/EetEnvironment' }
+        pfx_password:
+          type: string
+          writeOnly: true
+          description: Heslo k souboru P12; nikdy se nevrací ani neloguje.
+        label: { type: string, maxLength: 120 }
+        password:
+          type: string
+          writeOnly: true
+          description: Opětovné ověření uživatele (heslo účtu).
+        totp_code:
+          type: string
+          writeOnly: true
+        step_up_token:
+          type: string
+          writeOnly: true
+          description: Doklad o ověření druhým faktorem (WebAuthn) místo hesla.
+    EetDiagnosticsResult:
+      type: object
+      required: [ok, outcome, error_code, message, duration_ms, environment, device_id, certificate_id]
+      properties:
+        ok: { type: boolean }
+        outcome: { type: string }
+        error_code: { type: [integer, 'null'] }
+        message: { type: [string, 'null'] }
+        duration_ms: { type: integer }
+        environment: { $ref: '#/components/schemas/EetEnvironment' }
+        device_id: { type: integer }
+        certificate_id: { type: [integer, 'null'] }

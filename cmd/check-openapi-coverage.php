@@ -257,6 +257,23 @@ $sessionActions = [
     'MyInvoice\\Action\\Logbook\\OdometerSourceAction::selectVehicle',
     'MyInvoice\\Action\\Logbook\\OdometerSourceAction::sync',
     'MyInvoice\\Action\\Logbook\\OdometerSourceAction::disconnect',
+    // EET 2.0 — aplikační API webu a budoucího mobilu, mimo veřejný read-only subset;
+    // kontrakt je v api/openapi-app-eet.yaml.
+    'MyInvoice\\Action\\Eet\\EetCapabilitiesAction::__invoke',
+    'MyInvoice\\Action\\Eet\\EetSettingsAction::show',
+    'MyInvoice\\Action\\Eet\\EetSettingsAction::update',
+    'MyInvoice\\Action\\Eet\\EetUnitsAction::list',
+    'MyInvoice\\Action\\Eet\\EetUnitsAction::create',
+    'MyInvoice\\Action\\Eet\\EetUnitsAction::update',
+    'MyInvoice\\Action\\Eet\\EetUnitsAction::endValidity',
+    'MyInvoice\\Action\\Eet\\EetDevicesAction::list',
+    'MyInvoice\\Action\\Eet\\EetDevicesAction::create',
+    'MyInvoice\\Action\\Eet\\EetDevicesAction::update',
+    'MyInvoice\\Action\\Eet\\EetDevicesAction::deactivate',
+    'MyInvoice\\Action\\Eet\\EetCertificatesAction::list',
+    'MyInvoice\\Action\\Eet\\EetCertificatesAction::upload',
+    'MyInvoice\\Action\\Eet\\EetCertificatesAction::deactivate',
+    'MyInvoice\\Action\\Eet\\EetDiagnosticsAction::__invoke',
 ];
 $isSessionAction = static fn (array $route): bool => in_array($route['action'], $sessionActions, true);
 

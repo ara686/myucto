@@ -110,6 +110,8 @@ final class AnonymizationPolicy
         'UPDATE isds_gateway_registrations SET is_active = 0',
         'UPDATE mcp_server_settings SET enabled = 0',
         'UPDATE users SET totp_enabled = 0',
+        // Kopie nesmí odesílat tržby do EET pod identitou originální firmy.
+        'UPDATE eet_settings SET dispatch_blocked = 1',
     ];
 
     /**
@@ -351,6 +353,11 @@ final class AnonymizationPolicy
         'email_profiles' => ['code' => 'keep', 'dkim_domain' => 'host', 'dkim_selector' => 'keep', 'from_email' => 'email', 'from_name' => 'party_name', 'imap_folder' => 'keep', 'imap_host' => 'host', 'imap_password_enc' => 'wipe', 'imap_username' => 'login', 'name' => 'text', 'reply_to_email' => 'email', 'reply_to_name' => 'party_name', 'sendmail_command' => 'keep', 'smtp_host' => 'host', 'smtp_password_enc' => 'wipe', 'smtp_username' => 'login'],
         'email_templates' => ['body_html' => 'text', 'body_text' => 'text', 'code' => 'keep', 'locale' => 'keep', 'subject' => 'text'],
         'supplier_email_templates' => ['body_html' => 'text', 'body_text' => 'text', 'code' => 'keep', 'locale' => 'keep', 'subject' => 'text'],
+        'eet_certificates' => ['eic' => 'dic', 'fingerprint_sha256' => 'keep', 'issuer' => 'keep', 'label' => 'text', 'p12_enc' => 'wipe', 'password_enc' => 'wipe', 'serial_number' => 'keep', 'subject_cn' => 'dic'],
+        'eet_devices' => ['code' => 'keep', 'name' => 'text'],
+        'eet_settings' => ['eic' => 'dic', 'exemption_reason' => 'text'],
+        'eet_settings_history' => ['snapshot_json' => 'json'],
+        'eet_units' => ['name' => 'text'],
         'epo_signing_credentials' => ['fingerprint_sha256' => 'keep', 'issuer_dn' => 'keep', 'label' => 'text', 'passphrase_ciphertext' => 'wipe', 'pfx_ciphertext' => 'wipe', 'serial_hex' => 'keep', 'subject_dn' => 'text'],
         'exchange_rates' => ['currency_code' => 'keep'],
         'expense_categories' => ['code' => 'keep', 'label' => 'keep'],

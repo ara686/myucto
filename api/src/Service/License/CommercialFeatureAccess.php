@@ -74,6 +74,13 @@ final class CommercialFeatureAccess
         '#^/api/reports/submissions/settings(/|$)#',
         '#^/api/reports/submissions/epo-credentials(/|$)#',
         '#^/api/reports/submissions/[0-9]+/epo-#',
+        // EET: za licencí je jen PŘIJETÍ NOVÉ platby. Detail platby, evidence,
+        // fronta, opakování, opravy, export i zrušení neprovedeného záměru běží
+        // dál i po expiraci — již vzniklou evidenční povinnost nelze zatajit.
+        // Aktivaci evidence (PUT nastavení s enabled=true) hlídá akce, protože
+        // cesta sama o obsahu požadavku nic neví.
+        '#^/api/eet/payments(?:/preview)?$#',
+        '#^/api/eet/payment-intents(?:/[^/]+/confirm)?$#',
     ];
 
     public function __construct(private readonly LicenseService $license) {}

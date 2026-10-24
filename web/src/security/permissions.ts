@@ -26,6 +26,7 @@ export const PERMISSION_KEYS = [
   'payroll.insolvency', 'payroll.reports', 'payroll.rulesets', 'payroll.documents',
   'payroll.retention', 'payroll.erasure', 'payroll.health_evidence',
   'cash', 'cash.document.write', 'cash.close',
+  'eet', 'eet.accept_payment', 'eet.correct', 'eet.settings', 'eet.certificates', 'eet.export',
   'assets', 'assets.write', 'assets.depreciation', 'assets.dispose',
   'stock', 'stock.items.write', 'stock.documents.write', 'stock.orders.write', 'stock.vendors.write',
   'stock.take', 'stock.close', 'stock.fulfillment.write', 'stock.fulfillment.override',
