@@ -16,6 +16,8 @@ const props = defineProps<{
   refreshKey?: number
 }>()
 
+const emit = defineEmits<{ (e: 'loaded', items: EetInvoiceSummaryItem[]): void }>()
+
 const { t } = useI18n()
 const items = ref<EetInvoiceSummaryItem[]>([])
 const loaded = ref(false)
@@ -25,9 +27,9 @@ async function load() {
   const gen = ++generation
   try {
     const r = await eetApi.invoiceSummary(props.invoiceId)
-    if (gen === generation) items.value = r.items
+    if (gen === generation) { items.value = r.items; emit('loaded', r.items) }
   } catch {
-    if (gen === generation) items.value = []
+    if (gen === generation) { items.value = []; emit('loaded', []) }
   } finally {
     if (gen === generation) loaded.value = true
   }

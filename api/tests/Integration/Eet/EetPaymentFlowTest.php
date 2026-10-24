@@ -341,6 +341,28 @@ final class EetPaymentFlowTest extends TestCase
         self::assertCount(0, $this->transport->callsFor($this->deviceCode));
     }
 
+    public function testQrIntentUsesCurrencyAccountWhenInvoiceHasNoBankSnapshot(): void
+    {
+        $pdo = $this->db->pdo();
+        $original = $pdo->prepare('SELECT account_number, bank_code, iban FROM currencies WHERE id = ?');
+        $original->execute([$this->currencyId]);
+        $before = $original->fetch(PDO::FETCH_ASSOC);
+        self::assertIsArray($before);
+        $pdo->prepare("UPDATE currencies SET account_number = '1000000005', bank_code = '0100' WHERE id = ?")->execute([$this->currencyId]);
+        try {
+            $invoiceId = $this->invoice(1210);
+            $pdo->prepare('UPDATE invoices SET bank_snapshot = NULL WHERE id = ?')->execute([$invoiceId]);
+
+            $intent = $this->command()->createIntent($this->supplierId, $this->userId, null, ['invoice_id' => $invoiceId]);
+
+            self::assertNotNull($intent['qr']['spd'] ?? null, 'Účet měny doplní QR i bez snapshotu dokladu.');
+            self::assertStringStartsWith('SPD*1.0*', $intent['qr']['spd']);
+        } finally {
+            $pdo->prepare('UPDATE currencies SET account_number = ?, bank_code = ?, iban = ? WHERE id = ?')
+                ->execute([$before['account_number'], $before['bank_code'], $before['iban'], $this->currencyId]);
+        }
+    }
+
     public function testQrIntentConfirmRecordsEetWithoutAccountingPayment(): void
     {
         $invoiceId = $this->invoice(1210);

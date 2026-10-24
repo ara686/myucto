@@ -313,6 +313,7 @@ export interface EetAttempt {
 
 export interface EetRecordDetail extends EetRecord {
   payment_event?: EetPaymentEvent | null
+  source_invoices?: { id: number; number: string }[]
   corrections?: EetRecord[]
   attempts?: EetAttempt[]
 }

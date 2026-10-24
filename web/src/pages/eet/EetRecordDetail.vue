@@ -79,13 +79,26 @@ const actions = computed<ActionItem[]>(() => [
 ])
 
 const currency = computed(() => record.value?.currency || 'CZK')
-const invoiceIds = computed(() => {
+const sourceInvoices = computed(() => {
+  const r = record.value
+  if (r?.source_invoices?.length) return r.source_invoices
   const ids = new Set<number>()
-  const ev = record.value?.payment_event
+  const ev = r?.payment_event
   if (ev?.invoice_id) ids.add(ev.invoice_id)
   for (const a of ev?.allocations ?? []) if (a.invoice_id) ids.add(a.invoice_id)
-  return [...ids]
+  return [...ids].map(id => ({ id, number: '' }))
 })
+
+function decisionLabel(v?: string | null): string {
+  if (!v) return ''
+  const key = `eet.detail.decisions.${v}`
+  return te(key) ? t(key) : v
+}
+function reasonLabel(v?: string | null): string {
+  if (!v) return ''
+  const key = `eet.detail.reason_codes.${v}`
+  return te(key) ? t(key) : v
+}
 const BADGE = 'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset whitespace-nowrap'
 const th = 'px-3 py-2 text-left font-medium whitespace-nowrap'
 const label = 'text-neutral-500'
@@ -154,18 +167,18 @@ function outcomeLabel(o: string): string {
         <section :class="formBox" data-test="eet-detail-reason">
           <h2 class="text-base font-semibold">{{ t('eet.detail.reason') }}</h2>
           <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
-            <dt :class="label">{{ t('eet.detail.decision') }}</dt><dd>{{ record.policy?.decision ?? '' }}</dd>
-            <dt :class="label">{{ t('eet.detail.reason_code') }}</dt><dd class="font-mono text-xs break-all">{{ record.policy?.reason_code ?? '' }}</dd>
+            <dt :class="label">{{ t('eet.detail.decision') }}</dt><dd>{{ decisionLabel(record.policy?.decision) }}</dd>
+            <dt :class="label">{{ t('eet.detail.reason_code') }}</dt><dd class="break-all">{{ reasonLabel(record.policy?.reason_code) }}</dd>
             <dt :class="label">{{ t('eet.detail.policy_version') }}</dt><dd class="font-mono text-xs">{{ record.policy?.version ?? '' }}</dd>
             <template v-if="record.correction_reason">
               <dt :class="label">{{ t('eet.correction.reason') }}</dt><dd>{{ t(`eet.correction.reasons.${record.correction_reason}`) }}</dd>
             </template>
           </dl>
-          <div v-if="invoiceIds.length" class="pt-1 text-sm">
+          <div v-if="sourceInvoices.length" class="pt-1 text-sm">
             <h3 class="text-xs font-semibold uppercase tracking-wide text-neutral-500">{{ t('eet.detail.sources') }}</h3>
             <div class="flex flex-wrap gap-x-3 gap-y-1 pt-1">
-              <RouterLink v-for="id in invoiceIds" :key="id" :to="`/invoices/${id}`" class="text-primary-700 hover:underline whitespace-nowrap">
-                {{ t('eet.detail.invoice_link', { id }) }}
+              <RouterLink v-for="inv in sourceInvoices" :key="inv.id" :to="`/invoices/${inv.id}`" class="text-primary-700 hover:underline whitespace-nowrap">
+                {{ t('eet.detail.invoice_link', { number: inv.number || `#${inv.id}` }) }}
               </RouterLink>
             </div>
           </div>
@@ -212,6 +225,7 @@ function outcomeLabel(o: string): string {
                   <th :class="th">{{ t('eet.detail.att_time') }}</th>
                   <th :class="th">UUID</th>
                   <th :class="th">{{ t('eet.detail.att_result') }}</th>
+                  <th :class="th">HTTP</th>
                   <th :class="th">{{ t('eet.detail.att_code') }}</th>
                   <th :class="th">POK</th>
                   <th :class="th">{{ t('eet.detail.att_duration') }}</th>
@@ -228,7 +242,8 @@ function outcomeLabel(o: string): string {
                     <span v-if="a.verification" :class="[BADGE, 'ml-1 bg-neutral-100 text-neutral-600 ring-neutral-500/20']">{{ t('eet.detail.verification') }}</span>
                     <span v-if="a.error_message" class="block text-xs text-neutral-600">{{ a.error_message }}</span>
                   </td>
-                  <td class="px-3 py-2 whitespace-nowrap">{{ a.error_code ?? a.http_status ?? '' }}</td>
+                  <td class="px-3 py-2 whitespace-nowrap">{{ a.http_status ?? '' }}</td>
+                  <td class="px-3 py-2 whitespace-nowrap">{{ a.error_code ?? '' }}</td>
                   <td class="px-3 py-2 font-mono text-xs break-all">{{ a.pok ?? '' }}</td>
                   <td class="px-3 py-2 whitespace-nowrap">{{ a.duration_ms != null ? `${a.duration_ms} ms` : '' }}</td>
                 </tr>

@@ -14,7 +14,7 @@ import {
   type EetPaymentRequest,
 } from '@/api/eet'
 import { apiErrorCode, apiErrorMessage } from '@/api/errors'
-import { formatDateTime, formatMoney } from '@/composables/useFormat'
+import { formatDate, formatDateTime, formatMoney } from '@/composables/useFormat'
 import { loadEetDevices, newIdempotencyKey, rememberEetDevice, rememberedEetDevice } from '@/composables/useEetCapabilities'
 import { useSupplierStore } from '@/stores/supplier'
 import EetPaymentStates from './EetPaymentStates.vue'
@@ -287,7 +287,7 @@ const selectedDevice = computed(() => devices.value.find(d => d.id === form.devi
           </label>
           <div :class="formLabel">
             <span>{{ t('eet.pay.accounting_date') }}</span>
-            <span class="flex h-9 items-center text-sm text-neutral-700">{{ accountingDate }}</span>
+            <span class="flex h-9 items-center text-sm text-neutral-700">{{ formatDate(accountingDate) }}</span>
             <span class="text-xs text-neutral-500">{{ t('eet.pay.accounting_date_hint') }}</span>
           </div>
         </div>
