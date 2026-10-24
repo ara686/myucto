@@ -167,9 +167,9 @@ final class EetInvoicePaymentGate
      *
      * @param array<string,mixed>|null $apiToken řádek tokenu z AuthMiddleware
      */
-    public static function tokenDefaultsToExternal(?array $apiToken, mixed $authMethod): bool
+    public static function tokenDefaultsToExternal(?array $apiToken, bool $isBearer): bool
     {
-        return $authMethod === 'bearer' && $apiToken !== null && !empty($apiToken['eet_external_by_default']);
+        return $isBearer && $apiToken !== null && !empty($apiToken['eet_external_by_default']);
     }
 
     private static function contextRequired(string $reasonCode, string $message): EetCommandException

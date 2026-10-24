@@ -81,7 +81,7 @@ final class CreatePaymentAction
                 $body,
                 $request->getHeaderLine('Idempotency-Key'),
                 'manual',
-                EetInvoicePaymentGate::tokenDefaultsToExternal($request->getAttribute(AuthMiddleware::ATTR_API_TOKEN), $request->getAttribute(AuthMiddleware::ATTR_METHOD)),
+                EetInvoicePaymentGate::tokenDefaultsToExternal($request->getAttribute(AuthMiddleware::ATTR_API_TOKEN), RequestAuthorization::isBearerAuth($request)),
             );
             if ($route['mode'] === 'eet') {
                 $eet = (array) $route['result'];
