@@ -218,20 +218,20 @@ final class AdvanceSettlementSync
 
         try {
             $rebuilt = $side === 'sale'
-                ? $this->posting->buildFromInvoice($supplierId, $finalId)
-                : $this->posting->buildFromPurchaseInvoice($supplierId, $finalId);
+                ? $this->posting->buildFromInvoice($supplierId, $finalId, ['entry_date' => (string) $entry['entry_date']])
+                : $this->posting->buildFromPurchaseInvoice($supplierId, $finalId, ['entry_date' => (string) $entry['entry_date']]);
         } catch (PostingException $e) {
             return $this->stale($supplierId, $sourceType, $finalId, $entryId, $e->errorCode, $userId);
         }
         $expected = [];
         foreach ($rebuilt as $line) {
-            $code = $this->posting->redirectedAccountCode($supplierId, (string) $line['account_code']);
+            $code = $this->posting->redirectedAccountCode($supplierId, (string) $line['account_code'], (string) $entry['entry_date']);
             if ($isPair($code, (string) $line['side'])) {
                 $expected[] = ['account_code' => $code] + $line;
             }
         }
 
-        $accountMap = $this->accounts->idToAccountMap($supplierId);
+        $accountMap = $this->accounts->idToAccountMap($supplierId, (string) $entry['entry_date']);
         $current = [];
         $currentIds = [];
         foreach ($this->journal->linesForEntry($entryId, $supplierId) as $line) {

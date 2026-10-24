@@ -62,12 +62,15 @@ final class MonthlyReportService
         $entity = $this->loadEntity($supplierId);
 
         $incomeYtd = $this->statements->incomeStatement($supplierId, $periodId, $asOf, 'auto');
+        $is504 = ($incomeYtd['accounting_framework'] ?? '') === 'cz_504';
         $prevAsOf = (new \DateTimeImmutable($monthStart))->modify('-1 day')->format('Y-m-d');
         $incomeMonth = $prevAsOf >= (string) $period['starts_on']
             ? $this->monthOnlyRows($incomeYtd, $this->statements->incomeStatement($supplierId, $periodId, $prevAsOf, 'auto'))
             : $incomeYtd['rows']; // leden fiskálního roku = měsíc == YTD
 
-        $balanceSheet = $this->statements->balanceSheet($supplierId, $periodId, $asOf, 'auto');
+        $balanceSheet = $is504
+            ? $this->statements->accountView($supplierId, $periodId, $asOf)
+            : $this->statements->balanceSheet($supplierId, $periodId, $asOf, 'auto');
 
         $saldoData = $this->saldo->build($supplierId, $periodId, $asOf);
         $receivables = $this->topOverdue($saldoData, ['311']);
@@ -76,7 +79,7 @@ final class MonthlyReportService
         $vat = $this->buildVatSection($supplierId, $year, $month);
         $upcomingDeadlines = $this->advances->upcoming($supplierId, 8);
 
-        return [
+        return ($is504 ? ['accounting_framework' => 'cz_504', 'view_kind' => 'management'] : []) + [
             'entity'              => $entity,
             'period'              => ['year' => $year, 'month' => $month, 'as_of' => $asOf],
             'generated_at'        => date('Y-m-d H:i'),
@@ -102,6 +105,9 @@ final class MonthlyReportService
      */
     private function monthOnlyRows(array $ytd, array $prev): array
     {
+        if (($ytd['accounting_framework'] ?? '') === 'cz_504') {
+            return \MyInvoice\Service\Accounting\Reports\Statement504PeriodComparison::difference($ytd, $prev);
+        }
         $prevByCode = [];
         foreach ((array) $prev['rows'] as $r) {
             $prevByCode[(string) $r['row_code']] = (float) $r['amount'];

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace MyInvoice\Service\Migration\MoneyS3;
 
 use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Service\Accounting\AccountingFrameworkException;
+use MyInvoice\Service\Accounting\AccountingFrameworkImportGuard;
 use MyInvoice\Infrastructure\Database\TableStatistics;
 use MyInvoice\Infrastructure\Database\TransactionFailure;
 use MyInvoice\Repository\AccountingPeriodRepository;
@@ -206,6 +208,10 @@ final class MoneyS3Importer
         }
 
         $plan = $journalPreview['plan'] ?? $this->journal->plan($backup, $options, $calendar);
+        if ($plan !== []) {
+            try { (new AccountingFrameworkImportGuard($this->db))->assertCz500Periods($supplierId, $plan); }
+            catch (AccountingFrameworkException $e) { $add('error', $e->errorCode, $e->getMessage()); }
+        }
         if ($plan === [] && $agenda->taxRecordsOnly()) {
             $add('error', 'tax_records_not_supported', AgendaInfo::TEXT_TAX_RECORDS_NOT_SUPPORTED);
         } elseif ($plan === [] && $options->fromYear !== null) {
@@ -300,6 +306,8 @@ final class MoneyS3Importer
         $ctx->runId = $runId;
         $ctx->progress = $progress;
 
+        $frameworkGuard = new AccountingFrameworkImportGuard($this->db);
+        $frameworkPeriods = $this->journal->plan($backup, $options, $this->periods->fiscalCalendar($supplierId));
         $pdo = $this->db->pdo();
         $dryRun = $options->isDryRun();
         // Zkouška nanečisto uvnitř cizí transakce (testy, vnořené volání) jede přes
@@ -315,14 +323,16 @@ final class MoneyS3Importer
             // nebo spadlý běh ji nechal vypnutou) — jinak by se „obnovilo" vypnuto. K běhu
             // se ukládá PŘED vypnutím: kdyby spadl i tenhle běh, další snímek najde.
             $snapshot = ($dryRun ? null : $this->map->pendingAutomationSnapshot($supplierId)) ?? $this->unit->snapshot($supplierId);
-            if (!$dryRun && $runId !== null) {
-                $this->map->saveAutomationSnapshot($runId, $supplierId, $snapshot);
-            }
             // Zkouška nanečisto vypnutí automatiky jen ohlásí. Zápis do řádku firmy by v její
             // jediné transakci držel zámek až do konce a každý nový doklad firmy (cizí klíč
             // na firmu) by na něj čekal; převod sám automatiku ke své práci nepotřebuje.
             if (!$dryRun) {
-                $this->unit->disableAutomation($supplierId, $userId > 0 ? $userId : null);
+                $frameworkGuard->writeCz500Periods($supplierId, $frameworkPeriods, function () use ($runId, $supplierId, $snapshot, $userId): void {
+                    if ($runId !== null) $this->map->saveAutomationSnapshot($runId, $supplierId, $snapshot);
+                    $this->unit->disableAutomation($supplierId, $userId > 0 ? $userId : null);
+                });
+            } else {
+                $frameworkGuard->assertCz500Periods($supplierId, $frameworkPeriods, true);
             }
             $automation = ['before' => $snapshot, 'during' => $dryRun ? 'off' : $this->unit->automationLevel($supplierId), 'restored' => false, 'after' => null];
             $protocol->set('automation', $automation);
@@ -346,14 +356,17 @@ final class MoneyS3Importer
                     if ($dryRun || $key === HistoricalYearCloser::STEP) {
                         $fn();
                     } else {
-                        $this->transactional($fn);
+                        $this->transactional(function () use ($frameworkGuard, $supplierId, $frameworkPeriods, $fn): void {
+                            $frameworkGuard->assertCz500Periods($supplierId, $frameworkPeriods, true);
+                            $fn();
+                        });
                     }
                     $protocol->finish($key);
                 } catch (\Throwable $e) {
                     // Odvolaná transakce (1020/1213) nesmí zůstat viset jako otevřená:
                     // savepoint zkušebního běhu i zbytek převodu by jinak pracovaly naslepo.
                     TransactionFailure::rollbackIfAborted($pdo, $e);
-                    if ($e instanceof MoneyS3Exception) {
+                    if ($e instanceof MoneyS3Exception || $e instanceof AccountingFrameworkException) {
                         $protocol->error($key, $e->errorCode, $e->getMessage());
                     } else {
                         // Text výjimky (SQL, cesty) do protokolu viditelného v UI nepatří.
@@ -380,6 +393,9 @@ final class MoneyS3Importer
                 $automation['after'] = $this->unit->automationLevel($supplierId);
             }
             $protocol->set('automation', $automation);
+        } catch (AccountingFrameworkException $e) {
+            $protocol->error(self::STEP_PREFLIGHT, $e->errorCode, $e->getMessage());
+            $protocol->fail(self::STEP_PREFLIGHT);
         } finally {
             if ($savepoint && $pdo->inTransaction()) {
                 $pdo->exec('ROLLBACK TO SAVEPOINT money_s3_dry_run');
@@ -393,8 +409,11 @@ final class MoneyS3Importer
     /** @return array<string,callable():void> */
     private function steps(ImportContext $ctx): array
     {
+        $plan = $this->journal->plan($ctx->backup, $ctx->options, $ctx->calendar);
+        $first = $plan[0];
+        $seedDate = $this->periods->findByYear($ctx->supplierId, $first['year'])['starts_on'] ?? $first['starts_on'];
         return [
-            ChartImporter::STEP => fn () => $this->chart->run($ctx),
+            ChartImporter::STEP => fn () => $this->chart->run($ctx, $seedDate),
             JournalImporter::STEP => fn () => $this->journal->run($ctx),
             self::STEP_ACCOUNTING_MODE => fn () => $this->switchMode($ctx),
             CodebookImporter::STEP_PARTNERS => fn () => $this->codebooks->importPartners($ctx),

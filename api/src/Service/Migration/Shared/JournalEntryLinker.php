@@ -183,7 +183,8 @@ final class JournalEntryLinker
      * Pohyby, které zdrojový program zaúčtoval bez dokladu (poplatky, převody mezi vlastními
      * účty, mzdy, odvody), jsou vyřízené: v MyÚčtu pro ně faktura není a výpis by jinak
      * trvale svítil jako nedopárovaný. Označí se jako ignorované s poznámkou; jen pohyby,
-     * které jsou ještě nespárované. Uživatel to u pohybu může vrátit.
+     * které jsou ještě nespárované. Uživatel to u pohybu může vrátit. Pohyb přiřazený
+     * ostatní pohledávce či závazku je vyřízený alokací a jeho stav měnit nelze (trigger).
      *
      * @param list<int> $transactionIds pohyby převodu, o kterých se rozhoduje
      * @param string $reason `bank_transactions.match_reason` (`money_s3_booked`…)
@@ -199,7 +200,8 @@ final class JournalEntryLinker
             $stmt = $this->db->pdo()->prepare(
                 "UPDATE bank_transactions t JOIN bank_statements s ON s.id = t.statement_id
                     SET t.match_status = 'ignored', t.match_reason = ?, t.matched_at = NOW(), t.matched_by = ?, t.ignore_note = ?
-                  WHERE s.supplier_id = ? AND t.match_status = 'unmatched'"
+                  WHERE s.supplier_id = ? AND t.match_status = 'unmatched'
+                    AND NOT EXISTS (SELECT 1 FROM other_item_allocations oia WHERE oia.bank_transaction_id = t.id)"
                     . ($condition !== '' ? ' AND ' . $condition : '') . '
                     AND t.id IN (' . implode(',', array_fill(0, count($chunk), '?')) . ')'
             );

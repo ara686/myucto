@@ -15,6 +15,8 @@ import {
 import { usePaneDom } from '@/composables/usePaneDom'
 import { requestSupplierId } from '@/workspace/supplierContext'
 import { useAuthStore } from '@/stores/auth'
+import { useSupplierStore } from '@/stores/supplier'
+import { hasFrameworkScope } from '@/security/frameworkScope'
 import { useToast } from '@/composables/useToast'
 import { formatDate, formatDateTime, formatMoney } from '@/composables/useFormat'
 import SavedFiltersMenu from '@/components/ui/SavedFiltersMenu.vue'
@@ -113,10 +115,14 @@ function accountName(code: string): string {
 
 const SOURCE_TYPES = [
   'manual', 'invoice', 'purchase_invoice', 'other_item', 'bank', 'gopay', 'cash',
-  'depreciation', 'asset', 'asset_disposal',
+  'depreciation', 'asset', 'asset_disposal', 'unit_charge',
   'closing', 'opening', 'fx_revaluation', 'stock',
   'offset', 'settlement', 'vat_clearing', 'card_settlement', 'card_writeoff',
 ] as const
+// Předpis SVJ vzniká jen u SVJ; proklik z URL ho přijme i jinde, výběr ho nenabízí.
+const supplierStore = useSupplierStore()
+const sourceTypeOptions = computed(() => SOURCE_TYPES.filter(type =>
+  type !== 'unit_charge' || hasFrameworkScope(supplierStore.currentSupplier, 'svj')))
 
 // Drill-down z detailu dokladu (FV/PF): ?source_type=&source_id= → filtruje deník na
 // zápis(y) přesně tohoto dokladu. Deep-link, ne uživatelský ovladač → mimo saved filters;
@@ -976,7 +982,7 @@ function entryRange(entry: JournalEntryDetail): { from: string; to: string } {
           <select v-model="filters.source_type" @change="applyFilters"
             class="w-full h-9 px-2 border border-neutral-300 rounded-md text-sm bg-surface">
             <option value="">{{ t('common.all') }}</option>
-            <option v-for="s in SOURCE_TYPES" :key="s" :value="s">{{ sourceLabel(s) }}</option>
+            <option v-for="s in sourceTypeOptions" :key="s" :value="s">{{ sourceLabel(s) }}</option>
           </select>
         </div>
         <div>

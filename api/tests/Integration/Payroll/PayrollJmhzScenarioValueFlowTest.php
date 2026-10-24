@@ -314,7 +314,7 @@ final class PayrollJmhzScenarioValueFlowTest extends TestCase
 
         self::assertStringContainsString(
             '<form:zalohaNaDan><form:zakladDane>8000</form:zakladDane><form:vypoctenaZaloha>1200</form:vypoctenaZaloha>'
-                . '<form:danZalohaPoSleve>0</form:danZalohaPoSleve><form:danBonus>0</form:danBonus></form:zalohaNaDan>',
+                . '<form:danZalohaPoSleve>0</form:danZalohaPoSleve></form:zalohaNaDan>',
             $xml,
         );
         self::assertSame(['8000'], $this->relationshipTaxBases($xml));

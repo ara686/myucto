@@ -26,6 +26,8 @@
 
 ## 103.2 Než začnete
 
+Účetní převody z Money S3, POHODY, PREMIERU a Stereo NX podporují pouze období vedená po celou dobu podle vyhlášky 500. Historické období 500 lze převést i tehdy, když firma později přešla na rámec 504. Převod zahrnující rámec 504 se odmítne před zápisem účetnictví. Samostatný převod dokladů toto omezení nepřebírá.
+
 1. **Podvojné účetnictví v Money.** Převod přenáší účetní deník podvojného
    účetnictví. Agendu, kterou Money vede jako daňovou evidenci (peněžní deník),
    převést nejde, viz [§ 103.10.10](#1031010-omezeni).

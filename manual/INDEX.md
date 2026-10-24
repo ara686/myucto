@@ -106,6 +106,9 @@ nasazuje). Zbytek je psaný pro běžného uživatele — bez programátorského
 63. [Měsíční přehled](63_Mesicni_report.md)
 111. [Souběh se starým systémem](111_Soubeh_se_starym_systemem.md)
 64. [Mzdová rekapitulace a mzdový list](64_Mzdy.md)
+117. [Granty a účelové dary](117_Granty_a_ucelove_dary.md)
+119. [Investiční zdroje a fondy](119_Investicni_zdroje_a_fondy.md)
+120. [Členové a členské příspěvky](120_Clenove_a_clenske_prispevky.md)
 
 ### Nástroje
 
@@ -156,6 +159,8 @@ nasazuje). Zbytek je psaný pro běžného uživatele — bez programátorského
 98. [Odesílací brána ISDS](98_Odesilaci_brana_ISDS.md)
 99. [Elektronické podpisy](99_Elektronicke_podpisy.md)
 114. [Dimenze](114_Dimenze.md)
+116. [Registr domů a jednotek SVJ](116_Registr_domu_a_jednotek.md)
+118. [Zálohy na správu a příjmy vlastníků](118_Zalohy_a_prijmy_vlastniku.md)
 
 ### Systém
 

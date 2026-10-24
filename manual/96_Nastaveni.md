@@ -41,6 +41,16 @@ Správa opakovaně používaných fakturačních položek je kvůli návaznosti 
 
 Nastavení globálních položek smí měnit jen superadministrátor nebo administrátor; viz [§ 96.4](#964-krok-za-krokem-uzivatele-role-a-pristup-k-firmam).
 
+V **Nastavení / Účetní rámec** lze pro testování zvolit **Nevýdělečné organizace (vyhláška 504)**. Zadejte první den existujícího účetního období a použijte **Uložit účetní rámec samostatně**. Změna vyžaduje příslušné oprávnění a v dotčeném intervalu nesmějí být zaúčtované zápisy. Přímo zde lze rámec 504 zapnout jen firmě bez účetní historie, tedy bez jediného zápisu v deníku a s prázdnou nebo nedotčenou výchozí osnovou. Nedotčená osnova podle vyhlášky 500 (žádný vlastní ani upravený účet a žádné použití v dokladech, předkontacích ani nastavení) se při uložení nahradí osnovou podle vyhlášky 504. Firmě, která už účtuje, aplikace změnu odmítne a nabídne odkaz na **Převod účetního rámce**. Platnost změn je vidět v historii rámce.
+
+U rozpoznané právní formy spolku, nadace, ústavu nebo SVJ se zobrazí doporučení rámce 504. Tlačítko **Zvolit doporučený rámec** pouze připraví výběr. Nic neukládá a nenahrazuje datum účinnosti ani samostatné potvrzení změny. Právní forma sama nepotvrzuje veřejnou prospěšnost ani osvobození příjmů. Existující účetnictví se převádí řízeně na hranici období přes **Převod účetního rámce**. Pro SVJ tato stránka místo formuláře vysvětlí, že se převádějí doložené počáteční stavy jednotek, a nabídne odkaz na Počáteční stavy SVJ. Nová firma, u které rejstřík uvede právní formu spolku, nadace, ústavu nebo SVJ, dostane rámec 504 i osnovu podle vyhlášky 504 rovnou při založení.
+
+> [!WARNING]
+> Účetní rámec 504 je v testování a zatím není vhodný pro produkční účetnictví. Dostupnost výpočtu, finalizace a podání DPPO závisí na období, doložených podkladech a podporované verzi formuláře; podrobnosti jsou v [Daň z příjmů](43_Dan_z_prijmu.md). V této sekci se při výběru nebo používání rámce 504 zobrazuje žluté upozornění.
+
+
+Přepnutí rámce nepřevádí upravený ani používaný účtový rozvrh podle vyhlášky 500. Rozvrh podle vyhlášky 504 vznikne, když je rozvrh prázdný nebo je to nedotčená výchozí šablona.
+
 ## 96.3 Krok za krokem: číselníky
 
 Otevřete `Systém → Sazby a číselníky`. Stránka sdružuje systémové číselníky v záložkách **Sazby DPH**, **Klasifikace DPH**,
@@ -967,6 +977,41 @@ všech přihlašovacích metod, ručního inboxu a odeslání je v kapitole [Dat
 registraci externí aplikace spravuje provozovatel v `Mzdy → Odesílací brána ISDS`; popisuje ji kapitola
 [Odesílací brána ISDS](98_Odesilaci_brana_ISDS.md). Mzdové formuláře a jejich věcný stav popisuje kapitola
 [Podání a hlášení](85_Podani_a_hlaseni.md).
+
+### 96.16.13 Řízený převod z vyhlášky 500 na 504
+
+V nabídce Účetnictví otevřete Převod 500 → 504. Vyberte uzavřené zdrojové období vedené podle
+vyhlášky 500 a bezprostředně následující prázdné otevřené období. Původní období musí mít skutečnou
+účetní uzávěrku. Převod vytváří počáteční stavy nového období a datovanou změnu účtového rámce.
+Výkazy původního období nadále používají původní definice účtů.
+
+Pro každou nabídnutou účetní buňku vyberte cílový účet, hlavní nebo hospodářskou činnost, druh
+činnosti a daňový režim. Náhled ukazuje původní středisko, projekt a dimenze. Výsledek zdrojového
+období se otevírá na 931, nerozdělené výsledky minulých let na 932. Zisky a ztráty různých buněk se
+vzájemně neskrývají ani při celkovém nulovém výsledku.
+
+Zkontrolujte také definice účtů účinné od začátku nového období. Systém zachovává identitu, typ a
+nadřazený účet existujícího účtu; názvy a účetní metadata jsou datovaná. Nové cílové účty nevznikají
+zpětně v historii. Vyplňte referenci podkladu, vytvořte náhled a po kontrole jej výslovně potvrďte.
+Pokud se mezitím účetní podklad změní, vytvořte nový náhled. Při nejistém výsledku přenosu lze
+opakovat stejný příkaz jeho nabízenou akcí.
+
+Převod SVJ vyžaduje průkazný podklad pro převzetí jednotek, vlastníků, právních dluhů a krátkodobých
+i dlouhodobých záloh. Samotný zůstatek hlavní knihy tyto evidence nenahrazuje. Převod rovněž zastaví
+nevyřešené podrozvahové evidence a nativní uzávěrkové zápisy vyžadující navazující převzetí:
+saldokontní kurzové převody a jejich storna, otevření skladového uzavření nebo rozpouštění časového
+rozlišení drobného majetku. Cenné papíry a účelové fondy vyžadují podklad příslušné evidence.
+Zobrazené upozornění uvádí potřebný podklad; nevytváří náhradní evidenci z odhadu.
+
+Dosud nepoužitý převod lze zrušit jeho vlastní akcí po samostatném náhledu. Zrušení odstraní pouze
+jeho počáteční zápis a obnoví jeho vlastní změny konfigurace. Původní uzávěrka zůstává zachována.
+Pokud již existuje navazující účtování, rozhodnutí o výsledku, párování nebo samostatná změna
+konfigurace, zrušení se zablokuje.
+
+Po zrušení převodu lze samostatně vrátit a opravit i původní uzávěrku. Anonymizovaný klon
+zachovává zrušený převod jako samostatnou historii včetně původních částek a identit účetních zápisů.
+Osobní texty v historických podkladech se anonymizují; novější opravy původní historie se s převodem
+nesměšují. Neprůkazný nebo změněný historický podklad klonování zastaví.
 
 ## 96.17 Související kapitoly
 

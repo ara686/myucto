@@ -29,6 +29,22 @@ final class PurchaseVatTreatmentTest extends TestCase
         $this->tearDownPurchaseVatFixture();
     }
 
+    /**
+     * Issue #246: neplátce nemá nárok na odpočet. Doklad založený s výchozím plným nárokem
+     * (podle dodavatele-plátce) se uloží bez nároku podle plátcovství firmy k datu plnění.
+     */
+    public function testNonPayerPurchaseIsStoredWithoutDeduction(): void
+    {
+        $this->db->pdo()->prepare(
+            'INSERT INTO supplier_vat_status_history (supplier_id, effective_from, is_vat_payer, is_identified) VALUES (?, ?, 0, 0)'
+        )->execute([$this->supplierId, '2000-01-01']);
+
+        $id = $this->createPurchase(['vat_deduction' => 'full']);
+
+        self::assertSame('none', $this->repo->find($id, $this->supplierId)['vat_deduction']);
+        self::assertSame([], $this->ledgerList($id), 'Neplátce nemá doklad v evidenci odpočtu.');
+    }
+
     /** Hlavička „bez nároku", rozpis s plným nárokem: odpočet se uplatní a detail to musí říct. */
     public function testEffectiveDeductionFollowsAllocations(): void
     {

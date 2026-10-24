@@ -43,7 +43,7 @@ final class OpenItemsService
      */
     public function build(int $supplierId, int $accountId, string $asOf, bool $onlyOpen, int $page, int $perPage): array
     {
-        $account = $this->account($supplierId, $accountId);
+        $account = $this->account($supplierId, $accountId, $asOf);
         [$periodStart, $anchor] = $this->window($supplierId, $asOf);
 
         $page = max(1, $page);
@@ -250,7 +250,7 @@ final class OpenItemsService
      */
     public function suggestions(int $supplierId, int $accountId, string $asOf, int $days): array
     {
-        $this->account($supplierId, $accountId);
+        $this->account($supplierId, $accountId, $asOf);
         [$periodStart, $anchor] = $this->window($supplierId, $asOf);
         $lines = $this->pairings->unpairedLines($supplierId, $accountId, $asOf, $periodStart, $anchor);
         $days = max(0, $days);
@@ -392,9 +392,9 @@ final class OpenItemsService
     /**
      * @return array{id:int, code:string, name:string, type:string, normal_side:mixed, is_synthetic:bool}
      */
-    private function account(int $supplierId, int $accountId): array
+    private function account(int $supplierId, int $accountId, ?string $asOf = null): array
     {
-        $account = $this->accounts->findById($supplierId, $accountId);
+        $account = $this->accounts->findById($supplierId, $accountId, $asOf);
         if ($account === null) {
             throw new ReportException('account_not_found', 'Účet #' . $accountId . ' neexistuje.', 404);
         }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace MyInvoice\Service\WorkReport;
 
+use MyInvoice\Http\AfterResponseTasks;
 use MyInvoice\Infrastructure\Config\Config;
 use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Repository\WorkReportLinkRepository;
@@ -23,14 +24,17 @@ use Psr\Log\LoggerInterface;
  *   2. Návštěvník otevře /work-report/{token}; pokud nemá platnou cookie-relaci,
  *      vyžádá si kód → issueCode() pošle 6místný kód na e-mail klienta/zakázky.
  *   3. verifyCode() ověří kód → založí relaci, vrátí session token (uloží se do cookie).
- *   4. validateSession() pak při dalších návštěvách pustí rovnou na náhled.
+ *   4. validateSession() pak při dalších návštěvách pustí rovnou na náhled,
+ *      dokud relace nevyprší (expires_at) a ověřený e-mail je stále povolený.
  *   5. buildPreview() živě složí aktuálně otevřené (draft) výkazy práce.
  *
  * Bezpečnost (vzor EmailOtpService + PublicApproval*):
  *   - kódy i session tokeny se ukládají jen jako sha256 hash,
  *   - jednorázový kód s TTL + per-kód attempt cap + resend cooldown,
  *   - povolené e-maily = e-maily klienta (+ u zakázky e-maily zakázky); proti
- *     enumeraci se na request-code vrací generická odpověď a v UI jen maskované adresy.
+ *     enumeraci se na request-code vrací generická odpověď a v UI jen maskované adresy,
+ *   - relace má serverovou platnost (expires_at) a při každém použití se znovu
+ *     ověří, že její e-mail je mezi povolenými; jinak se zneplatní.
  */
 final class WorkReportLinkService
 {
@@ -186,9 +190,12 @@ final class WorkReportLinkService
      * NIC neposílá (a vrátí sent=false) — volající endpoint ale odpoví genericky,
      * aby nešlo enumerovat adresy.
      *
+     * S předaným $afterResponse se e-mail odešle až po odeslání odpovědi (umí-li
+     * to SAPI), takže délka odpovědi neprozradí, zda adresa byla povolená.
+     *
      * @return array{sent:bool, cooldown_remaining:int, allowed:bool}
      */
-    public function issueCode(array $link, string $email, string $ip, bool $force = false): array
+    public function issueCode(array $link, string $email, string $ip, bool $force = false, ?AfterResponseTasks $afterResponse = null): array
     {
         $email = mb_strtolower(trim($email));
         $linkId = (int) $link['id'];
@@ -214,23 +221,30 @@ final class WorkReportLinkService
         $expiresAt = (new \DateTimeImmutable('+' . $this->ttlMinutes() . ' minutes'))->format('Y-m-d H:i:s');
         $this->links->insertCode($linkId, $email, hash('sha256', $code), $expiresAt, @inet_pton($ip) ?: null);
 
-        try {
-            $this->mailer->sendTemplate(
-                'work_report_access_code',
-                $this->clientLocale($link),
-                [$email],
-                [
-                    'code'      => $code,
-                    'expiresIn' => $this->ttlMinutes() . ' min',
-                    'supplier'  => $this->loadSupplierVars((int) $link['supplier_id']),
-                ],
-                templateSupplierId: (int) $link['supplier_id'],
-            );
-        } catch (\Throwable $e) {
-            $this->logger->error('work_report_link.code_mail_failed', [
-                'link_id' => $linkId,
-                'error'   => $e->getMessage(),
-            ]);
+        $deliver = function () use ($link, $linkId, $email, $code): void {
+            try {
+                $this->mailer->sendTemplate(
+                    'work_report_access_code',
+                    $this->clientLocale($link),
+                    [$email],
+                    [
+                        'code'      => $code,
+                        'expiresIn' => $this->ttlMinutes() . ' min',
+                        'supplier'  => $this->loadSupplierVars((int) $link['supplier_id']),
+                    ],
+                    templateSupplierId: (int) $link['supplier_id'],
+                );
+            } catch (\Throwable $e) {
+                $this->logger->error('work_report_link.code_mail_failed', [
+                    'link_id' => $linkId,
+                    'error'   => $e->getMessage(),
+                ]);
+            }
+        };
+        if ($afterResponse !== null && $afterResponse->canDetach()) {
+            $afterResponse->defer($deliver);
+        } else {
+            $deliver();
         }
 
         return ['sent' => true, 'cooldown_remaining' => $this->resendCooldownSeconds(), 'allowed' => true];
@@ -261,18 +275,29 @@ final class WorkReportLinkService
             return null;
         }
 
-        if (hash_equals((string) $active['code_hash'], hash('sha256', $code))) {
-            if (!$this->links->consumeCode((int) $active['id'], $this->maxAttempts())) return null;
-            $sessionToken = bin2hex(random_bytes(32)); // 64 hex znaků
-            $this->links->createSession($linkId, $email, hash('sha256', $sessionToken), @inet_pton($ip) ?: null);
-            return $sessionToken;
+        // Pokus se započte atomicky dřív, než se kód porovná; souběžné pokusy
+        // tak nemohou porovnávat nad zastaralým počtem a obejít strop.
+        if (!$this->links->reserveCodeAttempt((int) $active['id'], $this->maxAttempts())) {
+            return null;
         }
-
-        $this->links->bumpCodeAttempts((int) $active['id'], $this->maxAttempts());
-        return null;
+        if (!hash_equals((string) $active['code_hash'], hash('sha256', $code))) {
+            return null;
+        }
+        if (!$this->links->consumeCode((int) $active['id'])) {
+            return null;
+        }
+        $sessionToken = bin2hex(random_bytes(32)); // 64 hex znaků
+        $expiresAt = (new \DateTimeImmutable('+' . $this->sessionLifetimeDays() . ' days'))->format('Y-m-d H:i:s');
+        $this->links->createSession($linkId, $email, hash('sha256', $sessionToken), $expiresAt, @inet_pton($ip) ?: null);
+        return $sessionToken;
     }
 
-    /** True když cookie-token odpovídá platné relaci tohoto odkazu. */
+    /**
+     * True když cookie-token odpovídá platné relaci tohoto odkazu. Relace musí
+     * být v serverové platnosti (expires_at) a její ověřený e-mail musí být
+     * stále mezi povolenými adresami odkazu. Když klient adresu odebral z
+     * kontaktů, relace se trvale zneplatní a návštěvník se musí znovu ověřit.
+     */
     public function validateSession(array $link, string $sessionToken): bool
     {
         $sessionToken = trim($sessionToken);
@@ -281,6 +306,12 @@ final class WorkReportLinkService
         }
         $session = $this->links->findActiveSession((int) $link['id'], hash('sha256', $sessionToken));
         if ($session === null) {
+            return false;
+        }
+        $email = mb_strtolower(trim((string) $session['email']));
+        if (!in_array($email, $this->resolveAllowedEmails($link), true)) {
+            $this->links->revokeSession((int) $session['id']);
+            $this->logger->info('work_report_link.session_email_removed', ['link_id' => (int) $link['id']]);
             return false;
         }
         $this->links->touchSession((int) $session['id']);

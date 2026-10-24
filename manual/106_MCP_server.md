@@ -1289,6 +1289,32 @@ vypnout přes `MYUCTO_INSECURE_TLS=1`. Server na to při startu hlasitě upozorn
 Na produkci to nepoužívejte: bez ověření certifikátu jde spojení odposlechnout
 i podvrhnout, a token v hlavičce je to první, co útočník získá.
 
+### 106.8.14 Účetní kontext k datu
+
+Nástroj `get_accounting_context` čte účetní rámec, metodu, role účtů a
+identifikátory metadat k povinnému `date`. Zachovává `complete`, `findings`,
+`temporal_source` i `null`; neúplná historie není nula ani neplatný účet.
+Používá současnou znalost evidence. Nepřijímá `known_at`, neinicializuje
+osnovu nebo dimenze a nemění účetnictví. Podrobnosti jsou v kapitole
+[REST API](104_API.md).
+
+## Čtecí nástroje služeb a financování vlastníků
+
+`list_property_service_lifecycles` a `get_property_service_lifecycle` čtou ověřené účetní případy služby. `property_service_reconciliation` porovnává native podklady s hlavním deníkem k výslovnému datu. Jejich znalost je současná a historický `known_at` se nenabízí.
+
+`list_property_fund_operations` čte operace financování vlastníků včetně storen. `property_fund_balances` vrací doložené zůstatky, ledger a rozdíly k datu; volitelný `known_at` omezuje skutečně zaznamenané a zaúčtované podklady. Částky, neúplnost a nepokryté řádky zachovejte. Žádný z těchto nástrojů nepotvrzuje právní titul ani neprovádí účetní nebo platební operaci.
+Granty a dary zpřístupňují pouze čtecí nástroje `list_nonprofit_funding`
+a `get_nonprofit_funding`. Nástroj `get_nonprofit_funding_evidence` čte
+z potvrzeného posouzení J6 ověřitelné podklady jednoho zdroje: přijetí
+a rozhodnutí o osvobození (`purpose`), souhrn čerpání (`usage`) a čerpané
+náklady (`uses`). Slouží k přípravě potvrzení o daru nebo zprávy
+poskytovateli externím nástrojem; stránky procházejte podle `next_cursor`.
+Investiční zdroje a fondy zpřístupňují
+`list_nonprofit_capital`, `get_nonprofit_capital` a
+`list_nonprofit_capital_events`. Zobrazují nativní zaznamenané částky a
+číselné vazby bez osobních a právních textů. Zachovávají `null` a výslovné
+neúplné pending pokrytí. Nemění účetnictví a nepotvrzují finanční operace.
+
 ## 106.9 Související kapitoly
 
 - [REST API](104_API.md) - tokeny, limity a práva

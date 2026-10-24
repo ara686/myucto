@@ -1202,6 +1202,26 @@ final class PurchaseInvoiceRepository
      *   - varsymbol je volitelný — pokud chybí, vygeneruje se až při přechodu na received
      *   - vendor_snapshot je povinné (uložíme aktuální vendor data jako immutable)
      */
+    /**
+     * Nárok na odpočet podle plátcovství ODBĚRATELE (firmy) k datu plnění. Neplátce
+     * odpočet neuplatní, takže tuzemský doklad bez přenesení daňové povinnosti nese
+     * vždy `none`, i když volající poslal výchozí `full` podle dodavatele (issue #246).
+     *
+     * @param array<string,mixed> $data
+     */
+    private static function tenantVatDeduction(\PDO $pdo, int $supplierId, array $data, string $vatDeduction): string
+    {
+        if ($vatDeduction === 'none' || !empty($data['reverse_charge'])) {
+            return $vatDeduction;
+        }
+        $date = (string) (($data['tax_date'] ?? null) ?: ($data['issue_date'] ?? ''));
+        if ($date === '') {
+            return $vatDeduction;
+        }
+
+        return VatStatusService::flagsAt($pdo, $supplierId, $date)['is_vat_payer'] ? $vatDeduction : 'none';
+    }
+
     public function createDraft(array $data, int $userId, int $supplierId): int
     {
         $pdo = $this->db->pdo();
@@ -1235,6 +1255,7 @@ final class PurchaseInvoiceRepository
         $vatDeduction = array_key_exists('vat_deduction', $data)
             ? (in_array($data['vat_deduction'], ['full', 'none', 'proportional', 'reduced'], true) ? (string) $data['vat_deduction'] : 'full')
             : PurchaseInvoiceValidation::defaultVatDeduction($vendorIsVatPayer === null ? null : $vendorIsVatPayer === 1, $data);
+        $vatDeduction = self::tenantVatDeduction($pdo, $supplierId, $data, $vatDeduction);
 
         // Výchozí kategorie nákladu dodavatele — aplikuje se, pokud volající kategorii
         // explicitně neurčil. Platí pro manuální zadání i pro všechny importy
@@ -1711,6 +1732,19 @@ final class PurchaseInvoiceRepository
      */
     public function updateDraft(int $id, array $data, int $supplierId, bool $requireUnbooked = false): bool
     {
+        $guard = new \MyInvoice\Service\Accounting\Dimension\DimensionPeriodGuard($this->db);
+        return $guard->transaction(function () use ($guard, $id, $data, $supplierId, $requireUnbooked): bool {
+            if (array_key_exists('document_kind', $data) || array_key_exists('parent_purchase_invoice_id', $data)) {
+                $guard->lockPeriods($supplierId);
+                $blocker = $this->postedCreditClassificationBlocker($id, $supplierId, $data);
+                if ($blocker !== null) throw new \InvalidArgumentException($blocker);
+            }
+            return $this->updateDraftLocked($id, $data, $supplierId, $requireUnbooked);
+        });
+    }
+
+    private function updateDraftLocked(int $id, array $data, int $supplierId, bool $requireUnbooked): bool
+    {
         $hasVarsymbol = array_key_exists('varsymbol', $data);
         $manualVarsymbol = null;
         if ($hasVarsymbol) {
@@ -1909,7 +1943,12 @@ final class PurchaseInvoiceRepository
             isset($data['paid_amount_invoice_ccy']) ? (float) $data['paid_amount_invoice_ccy'] : null,
             isset($data['exchange_diff_base']) ? (float) $data['exchange_diff_base'] : null,
             isset($data['vat_classification_code']) ? (string) $data['vat_classification_code'] : null,
-            in_array($data['vat_deduction'] ?? 'full', ['full', 'none', 'proportional', 'reduced'], true) ? (string) ($data['vat_deduction'] ?? 'full') : 'full',
+            self::tenantVatDeduction(
+                $this->db->pdo(),
+                $supplierId,
+                $data,
+                in_array($data['vat_deduction'] ?? 'full', ['full', 'none', 'proportional', 'reduced'], true) ? (string) ($data['vat_deduction'] ?? 'full') : 'full',
+            ),
             max(0.0, min(100.0, (float) ($data['vat_deduction_percent'] ?? 100))),
             (array_key_exists('tax_deductible', $data) && !$data['tax_deductible']) ? 0 : 1,
             !empty($data['is_fixed_asset']) ? 1 : 0,
@@ -3454,6 +3493,31 @@ final class PurchaseInvoiceRepository
     }
 
     public function updateDocumentKind(int $id, int $supplierId, string $kind): ?string
+    {
+        $guard = new \MyInvoice\Service\Accounting\Dimension\DimensionPeriodGuard($this->db);
+        return $guard->transaction(function () use ($guard, $id, $supplierId, $kind): ?string {
+            $guard->lockPeriods($supplierId);
+            $blocker = $this->postedCreditClassificationBlocker($id, $supplierId, ['document_kind' => $kind]);
+            return $blocker ?? $this->updateDocumentKindLocked($id, $supplierId, $kind);
+        });
+    }
+
+    private function postedCreditClassificationBlocker(int $id, int $supplierId, array $data): ?string
+    {
+        $q = $this->db->pdo()->prepare('SELECT document_kind, parent_purchase_invoice_id FROM purchase_invoices WHERE supplier_id = ? AND id = ? FOR UPDATE');
+        $q->execute([$supplierId, $id]);
+        $row = $q->fetch(PDO::FETCH_ASSOC);
+        if ($row === false) return null;
+        $kind = array_key_exists('document_kind', $data) ? (string) ($data['document_kind'] ?? 'invoice') : $row['document_kind'];
+        if (!in_array($kind, ['invoice', 'receipt', 'credit_note', 'advance', 'tax_document'], true)) $kind = 'invoice';
+        $parent = array_key_exists('parent_purchase_invoice_id', $data) ? (($data['parent_purchase_invoice_id'] ?? null) ? (int) $data['parent_purchase_invoice_id'] : null) : ($row['parent_purchase_invoice_id'] === null ? null : (int) $row['parent_purchase_invoice_id']);
+        if ($kind !== 'credit_note' && $row['document_kind'] !== 'credit_note') return null;
+        if ($kind === $row['document_kind'] && $parent === ($row['parent_purchase_invoice_id'] === null ? null : (int) $row['parent_purchase_invoice_id'])) return null;
+        if (!$this->hasActivePostedEntry($id, $supplierId)) return null;
+        return 'Druh ani vazbu dobropisu nelze měnit, dokud má doklad zaúčtovaný zápis. Nejprve proveďte řízené storno.';
+    }
+
+    private function updateDocumentKindLocked(int $id, int $supplierId, string $kind): ?string
     {
         $allowed = ['invoice', 'receipt', 'credit_note', 'advance'];
         if (!in_array($kind, $allowed, true)) {

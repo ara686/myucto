@@ -49,6 +49,14 @@ final class ApiScopeMiddleware implements MiddlewareInterface
      * @var list<string>
      */
     private const BEARER_ALLOWED = [
+        '#^/api/property/catalog/unit-legal-roles(/[0-9]+)?$#',
+        '#^/api/property/catalog/openings$#',
+        '#^/api/property/catalog/service-settlements(/[0-9]+(/current)?)?$#',
+        '#^/api/property/catalog/service-lifecycles(/(?:[0-9]+|reconciliation))?$#',
+        '#^/api/property/catalog/funds/(operations|balances)$#',
+        '#^/api/property/catalog/payments/(card|operations|history|reconciliation(/parties)?|saldo)$#',
+        '#^/api/property/catalog/charges/(components|versions(/[0-9]+)?|issues(/[0-9]+)?)$#',
+        '#^/api/property/catalog/(profile|summary|houses|units|services)$#',
         // Systémové + dokumentace + connection-test
         '#^/api/health$#',
         '#^/api/version$#',
@@ -149,9 +157,18 @@ final class ApiScopeMiddleware implements MiddlewareInterface
      * @var list<string>
      */
     private const BEARER_SESSION_ONLY = [
+        '#^/api/accounting/periods/[0-9]+/nonprofit-tax/drafts?(/|$)#',
+        '#^/api/accounting/nonprofit-dppo(/|$)#',
+        '#^/api/accounting/nonprofit-membership(/|$)#',
+        '#^/api/accounting/periods/[0-9]+/nonprofit-membership/reconciliation$#',
+        '#^/api/accounting/nonprofit-(funding|capital)(/|$)#',
+        '#^/api/accounting/periods/[0-9]+/nonprofit-(funding|capital)/choices$#',
+        '#^/api/accounting/periods/[0-9]+/nonprofit-legal-profile(/|$)#',
+        '#^/api/accounting/nonprofit-tax-savings(/|$)#',
         '#^/api/eshop/bulk(/|$)#',
         '#^/api/accounting/payroll(/|$)#',
         '#^/api/accounting/reports/payroll-sheet$#',
+        '#^/api/accounting/periods/[0-9]+/closing/(asset-reserve|legal-provisions)/workspace$#',
         // Přečíslování přijatých dokladů přepisuje čísla i v deníku — jen účetní v aplikaci.
         '#^/api/purchase-invoices/renumber$#',
     ];
@@ -172,11 +189,17 @@ final class ApiScopeMiddleware implements MiddlewareInterface
      * @var list<string>
      */
     private const BEARER_READ_ONLY = [
+        '#^/api/property(/|$)#',
         // Účetní mutace, které historicky leží mimo /api/accounting. Široký
         // allowlist faktur a banky je nesmí omylem zpřístupnit read_write PAT.
         '#^/api/invoices/[0-9]+/book$#',
         '#^/api/invoices/[0-9]+/rebuild-snapshots$#',
         '#^/api/bank-transactions/[0-9]+/(post|unpost)$#',
+        // Měnové účty nesou bankovní spojení firmy (číslo účtu, IBAN, BIC), které
+        // se tiskne na faktury a do QR platby. Token je smí jen číst; změnu
+        // příjemce plateb dělá správce ve webovém rozhraní (openapi: mutace jen přes UI).
+        '#^/api/settings/currencies(/|$)#',
+        '#^/api/bank-transactions/[0-9]+/unmatch$#',
         '#^/api/accounting(/|$)#',
         '#^/api/reports(/|$)#',
         '#^/api/tax(/|$)#',

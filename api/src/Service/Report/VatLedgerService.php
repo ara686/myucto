@@ -368,7 +368,7 @@ final class VatLedgerService
      *
      * MariaDB JSON_VALUE vrací nequotovaný skalár; SQLite (unit testy) má ekvivalent
      * json_extract. `hasColumn` kryje minimalistická testovací schémata bez sloupce.
-     * U PŘIJATÝCH dokladů snapshot DIČ neexistuje — tam zůstává živý join.
+     * Přijaté doklady mají vlastní pravidlo, {@see purchaseCounterpartyDicExpr()}.
      *
      * @param string $invoiceAlias alias tabulky invoices (např. 'i')
      * @param string $clientAlias  alias tabulky clients (např. 'c')
@@ -394,6 +394,35 @@ final class VatLedgerService
                      WHEN JSON_CONTAINS_PATH({$invoiceAlias}.client_snapshot, 'one', '$.dic')
                           THEN NULLIF(JSON_VALUE({$invoiceAlias}.client_snapshot, '$.dic'), '')
                      ELSE {$clientAlias}.dic END";
+    }
+
+    /**
+     * SQL výraz DIČ dodavatele u PŘIJATÉHO dokladu: DIČ uvedené na dokladu
+     * (`vendor_snapshot.dic`), jinak živé `dic` dodavatele. Na rozdíl od vydaného dokladu
+     * prázdné DIČ ve snapshotu kartu nepřebíjí: snapshot přijatého dokladu plní i převod
+     * nebo vytěžení, které DIČ z dokladu nemusí přečíst, a o DIČ dodavatele by doklad
+     * přišel. Naopak DIČ na dokladu má přednost, i když ho karta nemá - jinak plátce
+     * s neúplnou kartou spadne z KH B.2 do B.3.
+     *
+     * Snapshot s `id` jiného kontaktu, než je dodavatel dokladu (dodavatel se po pořízení
+     * přehodil a snapshot zůstal původní), dodavatele nepopisuje a nepoužije se. Snapshot
+     * převodů z cizích programů `id` nenese a platí.
+     *
+     * @param string $purchaseAlias alias tabulky purchase_invoices (např. 'p')
+     * @param string $clientAlias   alias tabulky clients (např. 'c')
+     */
+    public static function purchaseCounterpartyDicExpr(Connection $db, string $purchaseAlias, string $clientAlias): string
+    {
+        if (!$db->hasColumn('purchase_invoices', 'vendor_snapshot')) {
+            return "{$clientAlias}.dic";
+        }
+        $json = $db->pdo()->getAttribute(\PDO::ATTR_DRIVER_NAME) === 'sqlite' ? 'json_extract' : 'JSON_VALUE';
+        $snapshot = "{$purchaseAlias}.vendor_snapshot";
+
+        return "COALESCE(CASE WHEN {$json}({$snapshot}, '$.id') IS NULL
+                                OR {$json}({$snapshot}, '$.id') = {$purchaseAlias}.vendor_id
+                              THEN NULLIF(TRIM({$json}({$snapshot}, '$.dic')), '') END,
+                         {$clientAlias}.dic)";
     }
 
     private static function saleTaxSignExpr(Connection $db, string $alias): string
@@ -956,6 +985,7 @@ final class VatLedgerService
         $windowFrom = (new \DateTimeImmutable((string) $start))->modify('-1 day')->format('Y-m-d');
         $windowTo = (new \DateTimeImmutable((string) $end))->modify('+1 day')->format('Y-m-d');
         $window = [$windowFrom, $windowTo, $windowFrom, $windowTo, $windowFrom, $windowTo];
+        $dicExpr = self::purchaseCounterpartyDicExpr($this->db, 'pi', 'c');
 
         $stmt = $this->db->pdo()->prepare("
             SELECT pi.id AS invoice_id, pi.varsymbol AS doc_number, pi.vendor_invoice_number,
@@ -989,7 +1019,7 @@ final class VatLedgerService
                    pi.reverse_charge AS rc_flag,
                    COALESCE(pii.vat_deduction, pi.vat_deduction) AS vat_deduction,
                    COALESCE(pii.vat_deduction_percent, pi.vat_deduction_percent) AS vat_deduction_percent,
-                   c.company_name AS counterparty_name, c.dic AS counterparty_dic,
+                   c.company_name AS counterparty_name, {$dicExpr} AS counterparty_dic,
                    co.iso2 AS country_iso2, COALESCE(co.is_eu, 0) AS country_is_eu,
                    (CASE WHEN pii.is_fixed_asset = 1 OR pi.is_fixed_asset = 1 THEN 1 ELSE 0 END) AS is_fixed_asset,
                    COALESCE(

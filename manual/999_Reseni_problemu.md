@@ -193,7 +193,7 @@ php api/bin/reset-mfa.php vas@email.cz
 ```
 
 Reset vypne TOTP, odvolá passkeys, smaže důvěryhodná zařízení, čekající ověřovací procesy
-i záložní kódy a zneplatní všechny session. Detail včetně příkazů pro Docker je v
+i záložní kódy, zruší API tokeny a MCP připojení a zneplatní všechny session. Detail včetně příkazů pro Docker je v
 [§ 101.11.2.4](101_Bezpecnost.md#1011124-obnova-pristupu). Neupravujte jen sloupce TOTP
 ručně v databázi: ponechali byste aktivní další faktory a session.
 

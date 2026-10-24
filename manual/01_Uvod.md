@@ -547,7 +547,7 @@ stát s účetnictvím** (detail v [102. Bezpečnost](101_Bezpecnost.md)).
 
 - **Hesla**: bcrypt s pepperem uloženým mimo databázi, min. 12 znaků bez
   horního limitu, indikátor síly
-- **2FA (TOTP)**: Google Authenticator, Authy, 1Password, Bitwarden...; správce
+- **2FA (TOTP)**: Proton Authenticator, Ente Auth, Google Authenticator, 1Password, Bitwarden...; správce
   ho může vynutit pro všechny uživatele instalace
 - **Ověření e-mailem** jako alternativní druhý faktor, reset hesla odkazem
   s platností jedné hodiny

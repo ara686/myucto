@@ -76,6 +76,8 @@ vi.mock('@/security/domainLogin', () => ({
   advanceCanonicalDomainLoginSession: m.advanceSession,
   hasPendingCanonicalDomainLogin: m.pendingDomainLogin,
   authorizePendingDomainLogin: m.authorizeDomainLogin,
+  isDomainLoginConfirmationRequired: (e: any) => e?.response?.data?.error?.code === 'domain_login_confirmation_required',
+  pendingCanonicalDomainLoginQuery: () => ({ domain_login_request: 'r'.repeat(43), state: 's'.repeat(43) }),
 }))
 vi.mock('vue-router', () => ({
   useRoute: () => ({ query: {} }),
@@ -334,6 +336,32 @@ describe('ForcedMfaSetup — portal return after saving recovery codes', () => {
     await flushPromises()
     expect(m.authorizeDomainLogin).toHaveBeenCalledTimes(2)
     expect(m.totpEnable).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
+
+  it('nepotvrzené předání přihlášení pošle na potvrzovací obrazovku přihlášení', async () => {
+    m.refresh.mockResolvedValue(true)
+    m.totpEnable.mockResolvedValue({ enabled: true, recovery_codes: ['AAAA-BBBB'] })
+    m.authorizeDomainLogin.mockRejectedValueOnce({
+      response: { status: 409, data: { error: { code: 'domain_login_confirmation_required' } } },
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+    await wrapper.get('[data-test="totp-current-password"]').setValue('Synthetic-test-password-42')
+    await wrapper.get('[data-test="totp-start"]').trigger('click')
+    await flushPromises()
+    const input = wrapper.get('input[autocomplete="one-time-code"]')
+    await input.setValue('123456')
+    await input.trigger('keydown.enter')
+    await flushPromises()
+    m.pendingDomainLogin.mockReturnValue(true)
+    await wrapper.get('[data-recovery-once-confirm]').trigger('click')
+    await flushPromises()
+    expect(m.replace).toHaveBeenCalledWith({
+      name: 'login',
+      query: { domain_login_request: 'r'.repeat(43), state: 's'.repeat(43) },
+    })
+    expect(wrapper.text()).not.toContain('domain_login.authorize_failed')
     wrapper.unmount()
   })
 

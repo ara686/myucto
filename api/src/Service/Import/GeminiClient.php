@@ -35,7 +35,7 @@ final class GeminiClient implements LlmGatewayInterface
         private readonly LoggerInterface $logger,
         ?Client $http = null,
     ) {
-        $this->http = $http ?? new Client(['timeout' => self::TIMEOUT, 'http_errors' => false]);
+        $this->http = $http ?? new Client(['timeout' => self::TIMEOUT, 'http_errors' => false, 'allow_redirects' => false]);
     }
 
     /**

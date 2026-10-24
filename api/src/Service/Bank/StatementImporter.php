@@ -36,6 +36,9 @@ final class StatementImporter
         // Pravidla pohybů v daňové evidenci (issue #140) — ignorovat / zařadit v peněžním
         // deníku. Nullable a mimo daňovou evidenci no-op.
         private readonly ?\MyInvoice\Service\TaxEvidence\TaxEvidenceBankRules $taxEvidenceRules = null,
+        // Návrhy úhrad jednotek SVJ do fronty k potvrzení. Firma bez profilu SVJ
+        // skončí po jediném čtení profilu; nic se neúčtuje ani nepotvrzuje.
+        private readonly ?\MyInvoice\Service\Property\Payments\BankProposalService $propertyProposals = null,
     ) {}
 
     /**
@@ -122,7 +125,10 @@ final class StatementImporter
         if ($pdo->inTransaction()) {
             throw new \LogicException('Connected import requires its own transaction.');
         }
-        $accountQuery = $pdo->prepare('SELECT account_number, iban, code, bank_code FROM currencies WHERE id = ? AND supplier_id = ?' . ($requireActive ? ' AND is_active = 1' : ''));
+        // Příznak profilu SVJ se čte v tomtéž dotazu na účet, aby import firmy bez SVJ
+        // neměl kvůli návrhům úhrad jednotek ani jeden dotaz navíc.
+        $propertyFlag = $this->propertyProposals === null ? '' : ', ' . \MyInvoice\Service\Property\Payments\BankProposalService::profileFlagSql('currencies.supplier_id') . ' AS property_profile';
+        $accountQuery = $pdo->prepare('SELECT account_number, iban, code, bank_code' . $propertyFlag . ' FROM currencies WHERE id = ? AND supplier_id = ?' . ($requireActive ? ' AND is_active = 1' : ''));
         $accountQuery->execute([$currencyId, $supplierId]);
         $account = $accountQuery->fetch(PDO::FETCH_ASSOC);
         if (!$account || !AccountNumberNormalizer::matchesAny(
@@ -212,6 +218,9 @@ final class StatementImporter
         try {
             $this->payrollSettlements?->recognizeForSupplier($supplierId, $userId);
         } catch (\Throwable) {
+        }
+        if ((int) ($account['property_profile'] ?? 0) === 1) {
+            $this->proposePropertyPayments($supplierId, $touched->toProcess());
         }
         // Až po párování: pravidla berou jen pohyby, které nenašly doklad.
         try {
@@ -518,6 +527,7 @@ final class StatementImporter
             } catch (\Throwable) {
                 // Rozpoznání mzdových úhrad je nadstavba — nesmí shodit import výpisu.
             }
+            $this->proposePropertyPayments($statementSupplierId, $touched->toProcess());
         }
 
         // Rozdíl „řádků v souboru" × „založených pohybů" se nesmí ztratit v tichu: přesně
@@ -684,6 +694,22 @@ final class StatementImporter
         $linkImport->execute([$statementId, $transactionId, $fingerprint, $transactionId]);
         if ($linkImport->rowCount() > 0) {
             $aliasMap[$fingerprint][$transactionId] = true;
+        }
+    }
+
+    /**
+     * Návrhy úhrad jednotek SVJ po spárování. Nadstavba importu: chyba návrhu výpis
+     * neshodí, pohyby zůstanou k ručnímu párování.
+     *
+     * @param list<int> $transactionIds
+     */
+    private function proposePropertyPayments(?int $supplierId, array $transactionIds): void
+    {
+        if ($this->propertyProposals === null) return;
+        try {
+            $this->propertyProposals->afterImport($supplierId, $transactionIds);
+        } catch (\Throwable $e) {
+            $this->logger?->warning('Návrhy úhrad jednotek SVJ selhaly: ' . $e->getMessage());
         }
     }
 

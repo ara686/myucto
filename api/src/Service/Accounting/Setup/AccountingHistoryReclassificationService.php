@@ -128,6 +128,7 @@ final class AccountingHistoryReclassificationService
                         continue;
                     }
                     $calculatedLines = $this->posting->buildFromPurchaseInvoice($supplierId, $invoiceId, [
+                        'entry_date' => $before['entry_date'],
                         'item_classification_overrides' => $itemOverrides,
                     ]);
                     $desiredLines = self::mergeReclassifiedLines((array) $before['lines'], $calculatedLines);
@@ -246,7 +247,8 @@ final class AccountingHistoryReclassificationService
                 throw new \RuntimeException('result_changed_after_dry_run');
             }
             $calculatedLines = $this->posting->buildFromPurchaseInvoice($supplierId, $invoiceId, [
-                'item_classification_overrides' => $itemOverrides,
+                'entry_date' => $before['entry_date'],
+                        'item_classification_overrides' => $itemOverrides,
             ]);
             $lines = self::mergeReclassifiedLines((array) $before['lines'], $calculatedLines);
             if (self::linesHash($lines) !== self::linesHash($expectedAfterLines)) {

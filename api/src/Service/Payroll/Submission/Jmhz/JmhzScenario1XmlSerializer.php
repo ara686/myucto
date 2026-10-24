@@ -1381,7 +1381,9 @@ final class JmhzScenario1XmlSerializer
                 break;
             }
         }
-        $skipAdvance = $withholding !== null && $advanceIsEmpty;
+        // Měsíc bez zdanitelného příjmu (rodičovská, nemoc po celý měsíc)
+        // zálohu také nemá; PAMICA ji v přijatých hlášeních neuvádí.
+        $skipAdvance = $advanceIsEmpty;
         $tax = $this->node($dom, JmhzSchemaCatalog::NS_FORM, 'form:zalohaNaDan');
         foreach ($skipAdvance ? [] : [
             'form:zakladDane' => ['base', '10297'],
@@ -1420,6 +1422,12 @@ final class JmhzScenario1XmlSerializer
                     );
                 }
 
+                continue;
+            }
+            // Nulový bonus se nepíše ani u zaměstnance s prohlášením: XSD ho
+            // má `minOccurs="0"`, PAMICA ho v přijatých hlášeních vynechává
+            // a ČSSZ bere za vyplněný už samotný element (třída chyb 40244).
+            if ($element === 'form:danBonus' && $this->int($advance[$key] ?? null, $attributeId) === 0) {
                 continue;
             }
             $this->text(

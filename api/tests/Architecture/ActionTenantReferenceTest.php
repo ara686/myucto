@@ -79,6 +79,8 @@ final class ActionTenantReferenceTest extends TestCase
         // v Section79Service::register() a `vat_registration_corrections` na nich nemá FK,
         // takže neexistovala ani databázová záchranná síť.
         'Section79Action.php' => ['purchase_invoice_id', 'asset_id'],
+        // Členská evidence NNO — POST /api/accounting/nonprofit-membership/members.
+        'MembershipAction.php' => ['client_id'],
     ];
 
     /**

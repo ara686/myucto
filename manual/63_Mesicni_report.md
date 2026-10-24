@@ -70,6 +70,10 @@ Kapitolu otevřete, když:
 
 ## 63.6 Podrobnosti a pravidla
 
+Pro účetní rámec podle vyhlášky č. 504/2002 Sb. přehled zobrazuje výsledovku za měsíc i od začátku účetního období ve sloupcích **Hlavní činnost, Hospodářská činnost a Celkem**. Měsíční částky jsou rozdílem kumulovaných sestav, také při hospodářském roce. Chybějící klasifikace činnosti na zaúčtovaném řádku sestavení zastaví.
+
+Rozvahová část tohoto manažerského přehledu pro rámec 504 obsahuje počáteční a konečné zůstatky účtů. Kreditní zůstatky jsou záporné. Nevypořádaný účet 931 se zobrazí s upozorněním a odsouhlasením; nezmizí z přehledu ani se automaticky nepřevede na jiný účet. Oficiální rozvahu sestavíte v samostatné sestavě **Rozvaha**.
+
 ### 63.6.1 Volba měsíce a rozhodné datum
 
 Přehled nevytváří vlastní paralelní výpočty. Všechny části přebírá ze stejných služeb jako samostatné účetní a daňové sestavy.

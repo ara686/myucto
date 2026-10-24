@@ -1,8 +1,10 @@
 # 57. Rozvaha
 
-> Sestavení rozvahy (aktiva a pasiva k rozvahovému dni) ve struktuře přílohy č. 1 vyhlášky č. 500/2002 Sb. a úprava toho, do kterého řádku se účet zařadí. Kapitola je pro účetní v podvojném účetnictví.
+> Sestavení rozvahy podle účetního rámce vybraného období, vyhlášky č. 500/2002 Sb. nebo č. 504/2002 Sb. Kapitola je pro účetní v podvojném účetnictví.
 
 ## 57.1 Kdy to potřebujete
+
+Výkaz respektuje účetní rámec platný ve zvoleném období. Pro vyhlášku 504/2002 Sb. zobrazuje počáteční a konečný stav, oprávky jako záporné položky a výsledek hospodaření pouze v konečném sloupci. Rozvaha obsahuje výsledek ve schvalovacím řízení pouze na počátku období. Pokud není do rozvahového dne vypořádán, použijte průběžný přehled zůstatků a doplňte rozhodnutí o výsledku před sestavením závěrkového formuláře. Při volbě budoucího období 504 a prázdného data výkazu se použije první den tohoto období. Editor mapování 500 se pro tento rámec nepoužívá. Následující popis brutto, korekcí a minulého období se týká vyhlášky 500.
 
 Kapitolu otevřete, když:
 

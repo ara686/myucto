@@ -11,7 +11,6 @@ use MyInvoice\Middleware\TenantDomainMiddleware;
 use MyInvoice\Middleware\DomainLoginSessionMiddleware;
 use MyInvoice\Repository\SupplierDomainRepository;
 use MyInvoice\Repository\UserSupplierRepository;
-use MyInvoice\Security\UserRoleProfile;
 use MyInvoice\Service\Auth\DomainLoginException;
 use MyInvoice\Service\Auth\DomainLoginService;
 use MyInvoice\Service\Auth\SecurityClock;
@@ -25,6 +24,7 @@ use MyInvoice\Service\Tenant\TenantDomainResolver;
 use PDO;
 use PDOStatement;
 use PHPUnit\Framework\TestCase;
+use PHPUnit\Framework\Attributes\TestWith;
 use Slim\Psr7\Factory\ServerRequestFactory;
 
 final class DomainLoginMembershipTest extends TestCase
@@ -34,85 +34,163 @@ final class DomainLoginMembershipTest extends TestCase
     private const DOMAIN_ID = 17;
     private const HOSTNAME = 'portal.example.test';
 
-    public function testExistingCanonicalSessionCannotAuthorizeDomainLogin(): void
+    #[TestWith([false])]
+    #[TestWith([true])]
+    public function testExistingCanonicalSessionCannotAuthorizeEvenWithConfirmation(bool $confirmed): void
     {
-        $token = str_repeat('r', 43);
-        $state = str_repeat('s', 43);
-        $row = $this->requestRow($token, $state);
-        $row['authorization_code_hash'] = null;
-        $pdo = $this->pdoForStatements(
-            $this->statementReturning($row), null, $this->statementWithRowCount(1),
-        );
         $memberships = $this->createStub(UserSupplierRepository::class);
+        $memberships->method('allowedSupplierIds')->willReturn([self::SUPPLIER_ID]);
+        $row = $this->requestRow(str_repeat('r', 43), str_repeat('s', 43));
+        $row['authorization_code_hash'] = null;
+        $service = $this->service($this->pdoForStatements(
+            $this->statementReturning($row), null, $this->statementWithRowCount(1),
+        ), $memberships);
         $this->expectException(DomainLoginException::class);
         $this->expectExceptionMessage('nové přihlášení');
-        $this->service($pdo, $memberships, true, false)->authorize(
+        $service->authorize(
             $this->canonicalRequest()->withoutAttribute(DomainLoginSessionMiddleware::ATTR_VERIFIED_FLOW),
-            $token,
-            $state,
+            str_repeat('r', 43),
+            str_repeat('s', 43),
             ['id' => self::USER_ID],
             ['auth_method' => 'passkey', 'assurance_level' => 'strong'],
+            $confirmed,
         );
     }
 
-    public function testSuperadminWithoutMembershipCanAuthorizeDomainLogin(): void
+    /**
+     * Superadmin nemá u předání na vlastní doménu žádnou výjimku: bez přiřazení
+     * k firmě neprojde ani výslovně potvrzená autorizace.
+     */
+    public function testSuperadminWithoutMembershipCannotAuthorizeDomainLogin(): void
     {
         $requestToken = str_repeat('r', 43);
         $state = str_repeat('s', 43);
         $requestRow = $this->requestRow($requestToken, $state);
         $requestRow['authorization_code_hash'] = null;
 
-        $select = $this->statementReturning($requestRow);
-        $update = $this->statementWithRowCount(1);
-        $pdo = $this->pdoForStatements($select, null, $update);
+        $update = $this->createMock(PDOStatement::class);
+        $update->expects(self::never())->method('execute');
+        $pdo = $this->pdoForStatements($this->statementReturning($requestRow), null, $update);
         $memberships = $this->createMock(UserSupplierRepository::class);
-        $memberships->expects(self::never())->method('allowedSupplierIds');
+        $memberships->expects(self::once())
+            ->method('allowedSupplierIds')
+            ->with(self::USER_ID)
+            ->willReturn([]);
 
-        $result = $this->service($pdo, $memberships, true)->authorize(
-            $this->canonicalRequest(),
-            $requestToken,
-            $state,
-            ['id' => self::USER_ID, 'is_superadmin' => true],
-            ['auth_method' => 'passkey', 'assurance_level' => 'strong'],
-        );
-
-        self::assertStringStartsWith(
-            'https://' . self::HOSTNAME . '/domain-login/callback?',
-            $result['redirect_url'],
-        );
+        try {
+            $this->service($pdo, $memberships)->authorize(
+                $this->canonicalRequest(),
+                $requestToken,
+                $state,
+                ['id' => self::USER_ID, 'is_superadmin' => true],
+                ['auth_method' => 'passkey', 'assurance_level' => 'strong'],
+                true,
+            );
+            self::fail('Superadmin bez přiřazení k firmě nesmí autorizovat předání na její doménu.');
+        } catch (DomainLoginException $e) {
+            self::assertSame('forbidden_supplier', $e->errorCode);
+            self::assertSame(403, $e->httpStatus);
+        }
     }
 
-    public function testSuperadminWithoutMembershipCanExchangeDomainLoginCode(): void
+    public function testSuperadminWithoutMembershipCannotExchangeDomainLoginCode(): void
     {
         $requestToken = str_repeat('r', 43);
         $code = str_repeat('c', 43);
         $state = str_repeat('s', 43);
         $verifier = str_repeat('v', 43);
 
-        $select = $this->statementReturning($this->requestRow(
-            $requestToken,
-            $state,
-            $code,
-            $verifier,
-        ));
-        $user = $this->statementReturning(['id' => self::USER_ID]);
-        $used = $this->statementWithRowCount(1);
-        $pdo = $this->pdoForStatements($select, $user, $used);
+        $pdo = $this->pdoForStatements(
+            $this->statementReturning($this->requestRow($requestToken, $state, $code, $verifier)),
+            $this->statementReturning(['id' => self::USER_ID]),
+            $this->statementWithRowCount(1),
+        );
         $memberships = $this->createMock(UserSupplierRepository::class);
-        $memberships->expects(self::never())->method('allowedSupplierIds');
+        $memberships->expects(self::once())
+            ->method('allowedSupplierIds')
+            ->with(self::USER_ID)
+            ->willReturn([]);
 
-        $result = $this->service($pdo, $memberships, true)->exchange(
-            $this->customRequest(),
+        try {
+            $this->service($pdo, $memberships)->exchange(
+                $this->customRequest(),
+                $requestToken,
+                $code,
+                $state,
+                $verifier,
+                '192.0.2.15',
+            );
+            self::fail('Superadmin bez přiřazení k firmě nesmí získat session její domény.');
+        } catch (DomainLoginException $e) {
+            self::assertSame('forbidden_supplier', $e->errorCode);
+            self::assertSame(403, $e->httpStatus);
+        }
+    }
+
+    public function testOlderSessionNeedsExplicitConfirmationAndDoesNotConsumeRequest(): void
+    {
+        $requestToken = str_repeat('r', 43);
+        $state = str_repeat('s', 43);
+        $requestRow = $this->requestRow($requestToken, $state);
+        $requestRow['authorization_code_hash'] = null;
+
+        $update = $this->createMock(PDOStatement::class);
+        $update->expects(self::never())->method('execute');
+        $pdo = $this->pdoForStatements($this->statementReturning($requestRow), null, $update);
+        $memberships = $this->createStub(UserSupplierRepository::class);
+        $memberships->method('allowedSupplierIds')->willReturn([self::SUPPLIER_ID]);
+
+        try {
+            $this->service($pdo, $memberships)->authorize(
+                $this->canonicalRequest(),
+                $requestToken,
+                $state,
+                ['id' => self::USER_ID],
+                [
+                    'auth_method' => 'passkey',
+                    'assurance_level' => 'strong',
+                    'created_at' => (int) $requestRow['created_epoch'] - 1,
+                ],
+            );
+            self::fail('Session starší než požadavek nesmí předání autorizovat bez potvrzení.');
+        } catch (DomainLoginException $e) {
+            self::assertSame('domain_login_confirmation_required', $e->errorCode);
+            self::assertSame(409, $e->httpStatus);
+            self::assertSame(
+                ['target_hostname' => self::HOSTNAME, 'supplier_name' => 'Firma s.r.o.'],
+                $e->details,
+            );
+        }
+    }
+
+    public function testSessionCreatedWithinFlowAuthorizesWithoutExtraConfirmation(): void
+    {
+        $requestToken = str_repeat('r', 43);
+        $state = str_repeat('s', 43);
+        $requestRow = $this->requestRow($requestToken, $state);
+        $requestRow['authorization_code_hash'] = null;
+
+        $pdo = $this->pdoForStatements(
+            $this->statementReturning($requestRow),
+            null,
+            $this->statementWithRowCount(1),
+        );
+        $memberships = $this->createStub(UserSupplierRepository::class);
+        $memberships->method('allowedSupplierIds')->willReturn([self::SUPPLIER_ID]);
+
+        $result = $this->service($pdo, $memberships)->authorize(
+            $this->canonicalRequest(),
             $requestToken,
-            $code,
             $state,
-            $verifier,
-            '192.0.2.15',
+            ['id' => self::USER_ID],
+            [
+                'auth_method' => 'password',
+                'assurance_level' => 'basic',
+                'created_at' => (int) $requestRow['created_epoch'],
+            ],
         );
 
-        self::assertSame(self::USER_ID, $result['user_id']);
-        self::assertSame(self::SUPPLIER_ID, $result['supplier_id']);
-        self::assertSame('/portal', $result['return_path']);
+        self::assertStringStartsWith('https://' . self::HOSTNAME . '/domain-login/callback?', $result['redirect_url']);
     }
 
     public function testOrdinaryUserWithoutMembershipCannotAuthorizeDomainLogin(): void
@@ -207,6 +285,7 @@ final class DomainLoginMembershipTest extends TestCase
             $state,
             ['id' => self::USER_ID, 'is_superadmin' => false],
             ['auth_method' => 'passkey', 'assurance_level' => 'strong'],
+            true,
         );
         self::assertStringStartsWith(
             'https://' . self::HOSTNAME . '/domain-login/callback?',
@@ -235,8 +314,6 @@ final class DomainLoginMembershipTest extends TestCase
     private function service(
         PDO $pdo,
         UserSupplierRepository $memberships,
-        bool $isSuperadmin = false,
-        bool $expectRoleLookup = true,
     ): DomainLoginService {
         $db = $this->createStub(Connection::class);
         $db->method('pdo')->willReturn($pdo);
@@ -251,12 +328,6 @@ final class DomainLoginMembershipTest extends TestCase
             'expires_at' => 2_000_000_000,
             'issued_at' => new \DateTimeImmutable('2030-01-01T00:00:00Z'),
         ]);
-        $roles = $this->createMock(UserRoleProfile::class);
-        $roles->expects($expectRoleLookup ? self::once() : self::never())
-            ->method('isSuperadmin')
-            ->with(self::USER_ID)
-            ->willReturn($isSuperadmin);
-
         return new DomainLoginService(
             $db,
             new TenantDomainResolver(
@@ -266,7 +337,6 @@ final class DomainLoginMembershipTest extends TestCase
                 new TenantDomainFeature(new Config(['domains' => ['enabled' => true]])),
             ),
             $memberships,
-            $roles,
             new ClientRoutePolicy(),
             $clock,
             $sessions,
@@ -341,6 +411,8 @@ final class DomainLoginMembershipTest extends TestCase
             'auth_credential_id' => null,
             'domain_status' => 'active',
             'domain_purpose' => 'portal',
+            'created_epoch' => '1893456000.250000',
+            'supplier_name' => 'Firma s.r.o.',
         ];
     }
 

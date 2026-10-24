@@ -31,6 +31,7 @@ use MyInvoice\Middleware\TenantDomainMiddleware;
 use MyInvoice\Middleware\WebAuthnBodyLimitMiddleware;
 use MyInvoice\Service\IpMatcher;
 use MyInvoice\Service\Auth\PasskeyService;
+use MyInvoice\Service\Auth\PepperPolicy;
 use MyInvoice\Service\Auth\DatabaseSecurityClock;
 use MyInvoice\Service\Auth\SecurityClock;
 use MyInvoice\Service\Auth\WebAuthnConfigProvider;
@@ -73,11 +74,15 @@ final class Bootstrap
         $rootDir = self::rootDir();
         $config  = Config::load($rootDir);
 
-        // Bezpečnostní guard: v produkci pepper musí být nastavený (jinak hesla nemají druhotnou ochranu)
+        // Bezpečnostní guard: v produkci pepper musí být nastavený a skutečně tajný
+        // (jinak hesla nemají druhotnou ochranu a HKDF fallback šifruje veřejným klíčem).
         $env    = (string) $config->get('app.env', 'production');
         $pepper = (string) $config->get('app.pepper', '');
-        if ($env === 'production' && $pepper === '') {
-            throw new \RuntimeException('cfg.app.pepper není nastaven (vygeneruj: openssl rand -base64 32). V produkci je povinný.');
+        if ($env === 'production') {
+            $pepperProblem = PepperPolicy::productionProblem($pepper);
+            if ($pepperProblem !== null) {
+                throw new \RuntimeException($pepperProblem);
+            }
         }
 
         date_default_timezone_set((string) $config->get('app.timezone', 'Europe/Prague'));
@@ -208,6 +213,9 @@ final class Bootstrap
                 \DI\autowire()->constructorParameter(
                     'purchaseApprovals',
                     \DI\get(\MyInvoice\Repository\PurchaseInvoiceApprovalRepository::class),
+                )->constructorParameter(
+                    'frameworkScope',
+                    \DI\get(\MyInvoice\Security\FrameworkScopePolicy::class),
                 ),
             // Historie podání předchozím programem je nepovinná kvůli testům mostu;
             // bez výslovného předání by kontrola duplicitního řádného hlášení neběžela.
@@ -545,6 +553,7 @@ final class Bootstrap
                 // Nezaúčtované odpisy roku do projekce uzávěrky — bez bindu by je náhled DPPO
                 // v produkci tiše vynechal.
                 $c->get(\MyInvoice\Service\Accounting\Assets\DepreciationPostingService::class),
+                $c->get(\MyInvoice\Service\Tax\Nonprofit\NonprofitDppoDataProvider::class),
             ),
             // JMHZ transport — poslední dva argumenty jsou volitelné kvůli
             // testovacím dvojníkům (falešný VREP, mockovaný ledger), ale
@@ -811,6 +820,7 @@ final class Bootstrap
                 $c->get(\MyInvoice\Service\Payroll\Payment\PayrollPaymentSettlementRecognizer::class),
                 $c->get(LoggerInterface::class),
                 $c->get(\MyInvoice\Service\TaxEvidence\TaxEvidenceBankRules::class),
+                $c->get(\MyInvoice\Service\Property\Payments\BankProposalService::class),
             ),
 
             // EntityCache je v obou službách volitelný class-param (kvůli testovacím
@@ -886,6 +896,10 @@ final class Bootstrap
                 ->constructorParameter(
                     'probe',
                     \DI\get(\MyInvoice\Service\System\InstanceHealthProbe::class),
+                )
+                ->constructorParameter(
+                    'securityConfig',
+                    \DI\get(\MyInvoice\Service\System\InstanceSecurityConfigurationCheck::class),
                 ),
 
             // Licenční klient (E4) má volitelný `?GuzzleHttp\Client $http = null` (test
@@ -1247,7 +1261,7 @@ final class Bootstrap
 
         // Slim 4 LIFO: poslední `add()` = NEJVĚTŠÍ vrstva = běží JAKO PRVNÍ.
         // Cílový order běhu (outside → inside):
-        //   ApiVersionRewrite → MaintenanceMode → IpAllowlist → FirstRunLock → TenantDomain → Auth → ApiRequestLog → SessionLock → RequireMfa → License → StorageQuotaReadOnly → DemoReadOnly → SupplierScope → Permission → ApiScope → RateLimit → CSRF → WebAuthnBodyLimit → Routing → BodyParsing → SubmissionEnvironment → Action
+        //   InternalErrorRedaction → ApiVersionRewrite → MaintenanceMode → IpAllowlist → FirstRunLock → TenantDomain → Auth → ApiRequestLog → SessionLock → RequireMfa → License → StorageQuotaReadOnly → DemoReadOnly → SupplierScope → Permission → ApiScope → RateLimit → CSRF → WebAuthnBodyLimit → Routing → BodyParsing → SubmissionEnvironment → Action
         // → add() v opačném pořadí (innermost první):
         //
         // ⚠️ Middleware se předávají jako CLASS-STRING, ne jako instance. Slim je pak
@@ -1288,6 +1302,9 @@ final class Bootstrap
         // na už přepsané cestě (jinak by /api/v1/health v údržbě spadlo na 503).
         $app->add(MaintenanceModeMiddleware::class);                 // 503 + Retry-After na vše kromě /api/health
         $app->add(new ApiVersionRewriteMiddleware());                // /api/v1/* → /api/* před vším ostatním
+        // Nejvnější uživatelská vrstva: v produkci skryje text výjimky v 500
+        // odpovědích všech vrstev pod ní a detail zaloguje pod request id.
+        $app->add(\MyInvoice\Middleware\InternalErrorRedactionMiddleware::class);
 
         // Stack trace v odpovědích API na cizí infrastruktuře nemá co dělat,
         // takže `app.debug` ve spravované instalaci neplatí, i kdyby se do

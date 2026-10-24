@@ -412,6 +412,20 @@ describe('PayrollRuns', () => {
     expect(m.runDetail).toHaveBeenCalledWith(15)
   })
 
+  // Bez práva `payroll.enforcement` posílá server součet srážek jako null;
+  // dlaždice se pak nevykreslí, místo aby ukázala nulu, která by lhala.
+  it('hides the garnishment total when the API withholds it', async () => {
+    m.runs.mockResolvedValue([
+      run({ id: 15, result_snapshot: { totals: { cash_payable_minor: 100_000, enforcement_withheld_minor: null, payable_after_enforcement_minor: 90_000 } } }),
+      run({ id: 16, period_start: '2026-05-01', result_snapshot: { totals: { cash_payable_minor: 100_000, enforcement_withheld_minor: 10_000, payable_after_enforcement_minor: 90_000 } } }),
+    ])
+
+    const wrapper = mount(PayrollRuns)
+    await flushPromises()
+
+    expect(wrapper.findAll('[data-test="run-enforcement-withheld"]')).toHaveLength(1)
+  })
+
   it('loads revision history lazily and shows the audit trail with a safe total diff', async () => {
     m.runs.mockResolvedValue([run({
       revision_id: 10,

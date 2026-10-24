@@ -113,6 +113,8 @@ zaškrtnuto přeskočení.
 
 ## 7.6 Krok za krokem: ukázková data (volitelné)
 
+Ukázkové účetnictví používá rámec 500. Generování a obnova demo dat ověřují všechna dotčená účetní období; pokud zahrnují rámec 504, účetní data se nevytvoří ani neobnoví.
+
 ![Setup wizard krok 3](img/03_setup_sample.webp)
 
 Ukázková data si můžete vygenerovat jen v kroku **Dodavatel** a jen pokud ho

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MyInvoice\Service\Accounting\Product;
 
 use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Repository\AccountDefinitionRepository;
 use PDO;
 
 /**
@@ -126,7 +127,7 @@ final class ProductPostingDefaults
      * @param self::KIND_* $kind
      * @throws \InvalidArgumentException s česky formulovaným důvodem
      */
-    public function validateAccount(int $supplierId, mixed $code, string $kind): ?string
+    public function validateAccount(int $supplierId, mixed $code, string $kind, ?string $date = null, bool $currentRead = false): ?string
     {
         $code = self::code(is_scalar($code) ? (string) $code : null);
         if ($code === null) {
@@ -136,7 +137,7 @@ final class ProductPostingDefaults
             throw new \InvalidArgumentException("Účet {$code} je delší než 10 znaků.");
         }
         $stmt = $this->db->pdo()->prepare(
-            'SELECT account_type, is_active FROM chart_of_accounts WHERE supplier_id = ? AND account_code = ?'
+            'SELECT account_type, is_active FROM ' . AccountDefinitionRepository::relation($date ?? date('Y-m-d'), $supplierId, $currentRead) . ' a WHERE supplier_id = ? AND account_code = ?'
         );
         $stmt->execute([$supplierId, $code]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);

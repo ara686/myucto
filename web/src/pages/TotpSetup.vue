@@ -7,6 +7,7 @@ import { useToast } from '@/composables/useToast'
 import { useAuthStore } from '@/stores/auth'
 import { getCredential, webAuthnErrorKey } from '@/security/webauthn'
 import RecoveryCodesOnce from '@/components/security/RecoveryCodesOnce.vue'
+import TotpAppRecommendation from '@/components/security/TotpAppRecommendation.vue'
 
 const { t } = useI18n()
 const toast = useToast()
@@ -221,7 +222,7 @@ onMounted(loadStatus)
       </div>
 
       <div v-if="setup" class="space-y-4 pt-2 border-t border-neutral-200">
-        <p class="text-sm text-neutral-700">{{ t('auth.totp_setup_step1') }}</p>
+        <TotpAppRecommendation />
         <div class="flex justify-center bg-neutral-50 rounded-md p-4">
           <img :src="setup.qr_data_uri" :alt="setup.uri" class="border border-neutral-200 rounded" />
         </div>

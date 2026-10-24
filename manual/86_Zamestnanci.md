@@ -150,7 +150,9 @@ Podle situace doplňte i další sekce:
    důvod a stav ověření, **Nárok od (první den měsíce)**. Formulář datum
    předvyplní podle pravidel § 35c.
 4. Odpovězte na otázku, zda děti v domácnosti vyživuje i jiná osoba. Při
-   odpovědi „ano" doplňte její jméno, příjmení a datum narození.
+   odpovědi „ano" doplňte její jméno, příjmení a datum narození, případně
+   i rodné číslo. Rodné číslo je nepovinné, ukládá se šifrovaně a měsíční
+   hlášení ho uvede vedle data narození, stejně jako rodné číslo dítěte.
 5. Dítě, které uplatňuje druhý rodič, zapište také a zvolte **Jiná osoba
    v domácnosti (pořadí N)**. Drží pořadí ostatních dětí.
 6. Uložte lištou **Uložit vše**.

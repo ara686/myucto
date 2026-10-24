@@ -317,6 +317,31 @@ function greenStampPath(string $apiDir): string
     return $apiDir . '/.phpunit.cache/green-full-suite.json';
 }
 
+/** Výsledek posledního běhu plné sady (i neúspěšného): otisk kódu a padlé třídy. */
+function lastFullSuitePath(string $apiDir): string
+{
+    return $apiDir . '/.phpunit.cache/last-full-suite.json';
+}
+
+/**
+ * Patří testovací třída do sady AuditCore? Sada je celý strom testů bez výjimek
+ * z phpunit-audit.xml, takže stačí převést třídu na cestu a porovnat s výjimkami.
+ */
+function auditCoreContainsClass(string $apiDir, string $class): bool
+{
+    static $rules = null;
+    if ($rules === null) {
+        $xml = simplexml_load_file($apiDir . '/phpunit-audit.xml');
+        $rules = ['dirs' => [], 'excludes' => []];
+        foreach ($xml->testsuites->testsuite->directory ?? [] as $directory) $rules['dirs'][] = rtrim((string) $directory, '/') . '/';
+        foreach ($xml->testsuites->testsuite->exclude ?? [] as $exclude) $rules['excludes'][] = (string) $exclude;
+    }
+    if (!str_starts_with($class, 'MyInvoice\\Tests\\')) return false;
+    $path = 'tests/' . str_replace('\\', '/', substr($class, strlen('MyInvoice\\Tests\\'))) . '.php';
+    if (!array_any($rules['dirs'], static fn (string $dir): bool => str_starts_with($path, $dir))) return false;
+    return !array_any($rules['excludes'], static fn (string $exclude): bool => $path === $exclude || str_starts_with($path, rtrim($exclude, '/') . '/'));
+}
+
 /**
  * Třídy s padlým testem podle JUnit reportu (failure i error).
  *
@@ -347,11 +372,34 @@ if (defined('MYINVOICE_PARALLEL_RUNNER_FUNCTIONS_ONLY')) {
 
 require_once dirname(__DIR__) . '/tests/Support/ParallelRuntime.php';
 
-$options = getopt('', ['processes::', 'source::', 'keep-databases', 'testsuite::', 'application', 'timings::', 'log-junit::', 'rerun-failures', 'green-check']);
+$options = getopt('', ['processes::', 'source::', 'keep-databases', 'testsuite::', 'application', 'timings::', 'log-junit::', 'rerun-failures', 'green-check', 'audit-check']);
 if (in_array('--help', $_SERVER['argv'], true) || in_array('-h', $_SERVER['argv'], true)) {
     fwrite(STDOUT, "Použití: php api/bin/test-parallel.php [--processes=N] [--source=DB] [--keep-databases] [--timings=PATH] [--log-junit=PATH] [--rerun-failures] [--testsuite=Application|Architecture|Invariants|AuditCore|--application]\n"
-        . "        php api/bin/test-parallel.php --green-check   (exit 0 = plná sada už prošla nad stejným kódem)\n");
+        . "        php api/bin/test-parallel.php --green-check   (exit 0 = plná sada už prošla nad stejným kódem)\n"
+        . "        php api/bin/test-parallel.php --audit-check   (výsledek AuditCore z plné sady nad stejným kódem: 0 = bez pádů, 2 = padlo, 1 = běh chybí)\n");
     exit(0);
+}
+
+// AuditCore je podmnožina plné sady. Proběhla-li plná sada nad stejným kódem, její výsledek
+// rozhoduje i o AuditCore a opakovat ji nemá smysl: brána jen přečte, které třídy padly.
+if (array_key_exists('audit-check', $options)) {
+    $apiDir = dirname(__DIR__);
+    $last = is_file(lastFullSuitePath($apiDir)) ? json_decode((string) file_get_contents(lastFullSuitePath($apiDir)), true) : null;
+    $current = treeFingerprint(dirname(__DIR__, 2));
+    if ($current === null || !is_array($last) || ($last['fingerprint'] ?? null) !== $current || !is_array($last['failed_classes'] ?? null)) {
+        fwrite(STDOUT, "[PARALLEL TEST] Pro aktuální kód výsledek plné sady není.\n");
+        exit(1);
+    }
+    $core = array_values(array_filter($last['failed_classes'], static fn (string $class): bool => auditCoreContainsClass($apiDir, $class)));
+    $outside = count($last['failed_classes']) - count($core);
+    if ($core === []) {
+        fwrite(STDOUT, '[PARALLEL TEST] Plná sada nad stejným kódem (' . (string) ($last['finished_at'] ?? '') . '): AuditCore bez pádů'
+            . ($outside > 0 ? ", mimo jádro padlo {$outside} tříd" : '') . ".\n");
+        exit(0);
+    }
+    fwrite(STDOUT, '[PARALLEL TEST] Plná sada nad stejným kódem (' . (string) ($last['finished_at'] ?? '') . '): v AuditCore padlo '
+        . count($core) . " tříd:\n  - " . implode("\n  - ", $core) . "\n");
+    exit(2);
 }
 
 // Zelený otisk: plná sada (všechny testsuity) prošla nad přesně tímhle kódem. Brána ho
@@ -517,7 +565,8 @@ try {
     ];
     // Zopakování padlých tříd potřebuje vědět, které padly — bez vlastního reportu
     // si JUnit zapíše do runtime adresáře běhu.
-    $paratestJunit = $junitPaths['parallel'] ?? ($rerunFailures ? $runtimeRoot . '/paratest-junit.xml' : null);
+    // Plná sada potřebuje padlé třídy i pro --audit-check auditní brány.
+    $paratestJunit = $junitPaths['parallel'] ?? (($rerunFailures || $fullSuite) ? $runtimeRoot . '/paratest-junit.xml' : null);
     if ($paratestJunit !== null) {
         $command[] = '--log-junit=' . $paratestJunit;
     }
@@ -581,7 +630,15 @@ try {
     }
     fwrite(STDERR, '[PARALLEL TEST] ' . $details . "\n");
     $exitCode = 1;
+    $runCrashed = true;
 } finally {
+    // Padlé třídy plné sady pro --audit-check. Neznámý výsledek (pád běhu, nenulový exit bez
+    // padlé třídy v JUnit, např. fatální chyba workeru) se nezapíše a brána sadu pustí sama.
+    $fullSuiteFailures = null;
+    if ($fullSuite && !isset($runCrashed) && isset($paratestJunit) && is_file($paratestJunit)) {
+        $failed = $exitCode === 0 ? [] : failedTestClasses($paratestJunit);
+        $fullSuiteFailures = $exitCode !== 0 && $failed === [] ? null : $failed;
+    }
     if ($exitCode !== 0) {
         foreach (glob($runtimeRoot . '/worker-*/log/php-errors.log') ?: [] as $errorLog) {
             foreach (file($errorLog, FILE_IGNORE_NEW_LINES) ?: [] as $line) {
@@ -619,6 +676,22 @@ try {
         ], JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR) . "\n");
     } elseif ($fullSuite && is_file($stampPath)) {
         @unlink($stampPath);
+    }
+    if ($fullSuite) {
+        $lastPath = lastFullSuitePath($apiDir);
+        if ($fullSuiteFailures !== null && $fingerprint !== null && $fingerprint === treeFingerprint($rootDir)) {
+            @mkdir(dirname($lastPath), 0770, true);
+            sort($fullSuiteFailures);
+            file_put_contents($lastPath, json_encode([
+                'fingerprint'    => $fingerprint,
+                'finished_at'    => date('Y-m-d H:i:s'),
+                'run_id'         => $runId,
+                'exit_code'      => $exitCode,
+                'failed_classes' => $fullSuiteFailures,
+            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n");
+        } elseif (is_file($lastPath)) {
+            @unlink($lastPath);
+        }
     }
     $timings['total_seconds'] = (hrtime(true) - $started) / 1e9;
     $timings['exit_code'] = $exitCode;

@@ -1069,6 +1069,37 @@ final class JmhzPreparationSnapshotBuilderTest extends TestCase
         self::assertCount(1, $evidence['other_household_caregivers']);
     }
 
+    /**
+     * Rodné číslo jiné vyživující osoby (10434) zmrazená evidence nenese; přidá se
+     * podle `id` nároku a tatáž osoba z jiného nároku bez něj se nezdvojí.
+     */
+    public function testOtherCaregiverBirthNumberIsAttachedByClaimId(): void
+    {
+        $caregiver = [
+            'shared_household_confirmed' => true,
+            'other_household_caregiver_status' => 'present',
+            'other_caregiver_given_name' => 'Petr',
+            'other_caregiver_family_name' => 'Novák',
+            'other_caregiver_birth_date' => '1988-06-06',
+        ];
+        $snapshot = (new JmhzPreparationSnapshotBuilder())->build(
+            7,
+            'test',
+            $this->source(childClaims: [
+                ['id' => 41, 'child_reference' => 'dependant-9', 'child_order' => 2, 'ztp_p' => false, 'evidence_status' => 'verified', 'other_claimant_excluded' => true] + $caregiver,
+                ['id' => 42, 'child_reference' => 'dependant-8', 'child_order' => 1, 'ztp_p' => false, 'evidence_status' => 'verified', 'other_claimant_excluded' => true] + $caregiver,
+            ]),
+            [],
+            [],
+            caregiverBirthNumberSources: [11 => [42 => '8806060005']],
+        );
+
+        self::assertSame(
+            [['given_name' => 'Petr', 'family_name' => 'Novák', 'birth_date' => '1988-06-06', 'birth_number' => '8806060005']],
+            $snapshot->payload['people'][0]['child_credit_evidence']['other_household_caregivers'],
+        );
+    }
+
     /** Odpovědi „ne" a „ano" u téže domácnosti si odporují dál. */
     public function testContradictingCaregiverAnswersStayInconsistent(): void
     {

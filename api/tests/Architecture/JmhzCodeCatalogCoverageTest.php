@@ -45,6 +45,8 @@ final class JmhzCodeCatalogCoverageTest extends TestCase
         'eldp_control_export' => 'key',
         // Vazba výzvy v důchodovém pojištění na připravený list (payroll_pension_requests).
         'eldp_environment' => 'table',
+        // Alias tabulky dokumentů v SQL viditelnosti dokladů (DocumentVisibility).
+        'eldp_evidence_doc' => 'table',
         'eldp_evidence_id' => 'field',
         'eldp_manual_completion' => 'key',
         'eldp_sections' => 'field',

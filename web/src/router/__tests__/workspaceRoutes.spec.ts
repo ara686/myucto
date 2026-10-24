@@ -77,6 +77,18 @@ describe('workspace route factory', () => {
     })
   })
 
+  it('pouští registr SVJ s právem property READ bez podmínky na účetní režim nebo právní formu', () => {
+    const records: RouteRecordRaw[] = [{ path: '/', meta: { requiresAuth: true }, children: createWorkspaceRoutes() }]
+    applyAuthorizationMeta(records)
+    const route = (records[0]!.children ?? []).find(item => item.name === 'property-registry')!
+
+    expect(route.path).toBe('property/registry')
+    expect(route.meta).toMatchObject({ permission: 'property', access: 'read', requiresSupplier: true })
+    for (const gate of ['requiresDoubleEntry', 'requiresAccountingMode', 'requiresTaxEvidence', 'requiresVat', 'adminPlusOnly', 'superadminOnly']) {
+      expect(route.meta?.[gate], gate).toBeUndefined()
+    }
+  })
+
   it('řídí importy a firemní číselníky jejich skutečnými oprávněními', () => {
     const records: RouteRecordRaw[] = [{
       path: '/',
