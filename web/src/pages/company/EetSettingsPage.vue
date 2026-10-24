@@ -90,11 +90,13 @@ async function load(silent = false) {
   if (!silent) loading.value = true
   try {
     const [s, u, d] = await Promise.all([eetApi.settings(), eetApi.units(), eetApi.devices()])
+    // Rozpracovaný draft se posuzuje proti dosavadnímu stavu, ne proti právě načtenému.
+    const keepDraft = dirty.value
     settings.value = s.settings
     obstacles.value = s.activation_obstacles
     units.value = u
     devices.value = d
-    if (!dirty.value) fillDraft(s.settings)
+    if (!keepDraft) fillDraft(s.settings)
     certificates.value = canReadCerts.value ? await eetApi.certificates() : []
     // Pokladny jsou jen volitelná vazba zařízení; bez práva na pokladnu se výběr nenabídne.
     registers.value = await cashApi.listRegisters().catch(() => [])

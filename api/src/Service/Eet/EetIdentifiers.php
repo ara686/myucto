@@ -16,8 +16,8 @@ final class EetIdentifiers
     /** `id_pokl`: XSD typ string20 s omezenou abecedou. */
     public const DEVICE_CODE_PATTERN = '/^[0-9a-zA-Z\.,:;\/#\-_ ]{1,20}$/D';
 
-    /** `id_provoz`: kladné celé číslo, nejvýš šest číslic. */
-    public const UNIT_NUMBER_MAX = 999999;
+    /** `id_jednotky` (XSD IdEvidJednotkyType): kladné celé číslo, nejvýš devět číslic. */
+    public const UNIT_NUMBER_MAX = 999999999;
 
     public const ENVIRONMENTS = ['playground', 'production'];
     public const REGIMES = ['standard', 'exempt', 'eet_off'];

@@ -125,7 +125,7 @@ final class EetUnitRepository
             $number = (int) $number;
         }
         if (!is_int($number) || $number < 1 || $number > EetIdentifiers::UNIT_NUMBER_MAX) {
-            throw EetException::validation('Číslo jednotky (id_provoz z DIS+) musí být celé číslo 1–999999.', ['field' => 'unit_number']);
+            throw EetException::validation('Číslo jednotky (id_jednotky z DIS+) musí být celé číslo 1–999999999.', ['field' => 'unit_number']);
         }
         $name = trim((string) (is_scalar($pick('name')) ? $pick('name') : ''));
         if ($name === '' || mb_strlen($name) > 120) {

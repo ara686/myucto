@@ -38840,7 +38840,7 @@
     },
     "units": {
       "title": "Recording units",
-      "hint": "Take the unit numbers (id_provoz) from DIS+.",
+      "hint": "Take the unit numbers (id_jednotky) from DIS+.",
       "add": "Add unit",
       "edit": "Edit unit",
       "empty": "No recording unit yet",
@@ -38850,8 +38850,8 @@
       "col_kind": "Type",
       "col_validity": "Validity",
       "col_status": "Status",
-      "number": "Unit number (id_provoz)",
-      "number_hint": "Whole number 1 to 999999.",
+      "number": "Unit number (id_jednotky)",
+      "number_hint": "Whole number 1 to 999999999 as assigned by the Financial Administration.",
       "name": "Name",
       "kind_label": "Unit type",
       "kind": {

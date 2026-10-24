@@ -38840,7 +38840,7 @@
     },
     "units": {
       "title": "Evidenční jednotky",
-      "hint": "Čísla jednotek (id_provoz) převezměte z DIS+.",
+      "hint": "Čísla jednotek (id_jednotky) převezměte z DIS+.",
       "add": "Přidat jednotku",
       "edit": "Upravit jednotku",
       "empty": "Zatím žádná evidenční jednotka",
@@ -38850,8 +38850,8 @@
       "col_kind": "Typ",
       "col_validity": "Účinnost",
       "col_status": "Stav",
-      "number": "Číslo jednotky (id_provoz)",
-      "number_hint": "Celé číslo 1 až 999999.",
+      "number": "Číslo jednotky (id_jednotky)",
+      "number_hint": "Celé číslo 1 až 999999999, jak ho přidělila finanční správa.",
       "name": "Název",
       "kind_label": "Typ jednotky",
       "kind": {

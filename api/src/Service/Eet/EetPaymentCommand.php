@@ -7,6 +7,7 @@ namespace MyInvoice\Service\Eet;
 use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Infrastructure\Database\TransactionFailure;
 use MyInvoice\Service\Invoice\InvoicePaymentService;
+use MyInvoice\Service\Pdf\InvoicePdfRenderer;
 use MyInvoice\Service\Qr\QrPaymentGenerator;
 use MyInvoice\Service\Stats\StatsRecomputer;
 use MyInvoice\Support\PaymentMethods;
@@ -59,6 +60,7 @@ final class EetPaymentCommand
         private readonly EetSettingsService $settings,
         private readonly InvoicePaymentService $invoicePayments,
         private readonly QrPaymentGenerator $qr,
+        private readonly InvoicePdfRenderer $invoicePdf,
         private readonly StatsRecomputer $stats,
         private readonly ClockInterface $clock,
     ) {}
@@ -490,7 +492,7 @@ final class EetPaymentCommand
             $out['qr'] = $payload === null ? null : [
                 'spd' => $payload,
                 'image_data_uri' => $this->qr->generate('CZK', (float) $event['amount'], (string) ($invoice['varsymbol'] ?? ''),
-                    self::bankSnapshot($invoice), '', null, 'Faktura ' . (string) ($invoice['varsymbol'] ?? '')),
+                    $this->bankSnapshot($invoice), '', null, 'Faktura ' . (string) ($invoice['varsymbol'] ?? '')),
             ];
         }
         return $out;
@@ -499,15 +501,15 @@ final class EetPaymentCommand
     /** @param array<string,mixed> $invoice */
     private function qrPayload(array $invoice, string $amount): ?string
     {
-        return $this->qr->buildPayload('CZK', (float) $amount, (string) ($invoice['varsymbol'] ?? ''), self::bankSnapshot($invoice),
+        return $this->qr->buildPayload('CZK', (float) $amount, (string) ($invoice['varsymbol'] ?? ''), $this->bankSnapshot($invoice),
             '', null, 'Faktura ' . (string) ($invoice['varsymbol'] ?? ''));
     }
 
     /** @param array<string,mixed> $invoice @return array<string,mixed> */
-    private static function bankSnapshot(array $invoice): array
+    private function bankSnapshot(array $invoice): array
     {
-        $bank = json_decode((string) ($invoice['bank_snapshot'] ?? ''), true);
-        return is_array($bank) ? $bank : [];
+        // Stejný účet jako QR na PDF faktury: snapshot dokladu doplněný aktuálním účtem měny.
+        return $this->invoicePdf->resolveBank($invoice) ?? [];
     }
 
     private function afterCommit(?int $invoiceId, ?int $recordId): void
@@ -634,7 +636,7 @@ final class EetPaymentCommand
     private function invoice(int $supplierId, int $invoiceId, bool $forUpdate): array
     {
         $stmt = $this->db->pdo()->prepare(
-            'SELECT i.id, i.invoice_type, i.status, i.amount_to_pay, i.paid_total, i.varsymbol, i.bank_snapshot,
+            'SELECT i.id, i.invoice_type, i.status, i.amount_to_pay, i.paid_total, i.varsymbol, i.bank_snapshot, i.currency_id,
                     cur.code AS currency
                FROM invoices i
                JOIN currencies cur ON cur.id = i.currency_id
