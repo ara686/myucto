@@ -14,7 +14,7 @@ vi.mock('@/api/groupDashboard', () => ({ groupDashboardApi: { get: mocks.get } }
 vi.mock('@/composables/useSupplierSwitch', () => ({ useSupplierSwitch: () => ({ switching: ref(false), switchTo: mocks.switchTo }) }))
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => auth }))
 vi.mock('@/stores/supplier', () => ({ useSupplierStore: () => supplier }))
-vi.mock('@/composables/useFormat', () => ({ formatMoney: (value: number, currency: string) => `${value} ${currency}`, formatNumber: (value: number) => String(value) }))
+vi.mock('@/composables/useFormat', () => ({ formatMoneyWhole: (value: number, currency: string) => `${value} ${currency}`, formatNumber: (value: number) => String(value) }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string, params?: object) => key + (params ? JSON.stringify(params) : ''), locale: ref('cs') }) }))
 vi.mock('vue-router', () => ({ useRoute: () => ({ query: {} }), useRouter: () => ({ push: mocks.push, replace: mocks.replace }) }))
 
