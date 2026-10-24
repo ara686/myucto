@@ -482,7 +482,7 @@ final class ReportXlsxExporter
             $r = $head2 + 1;
             foreach ($rows as $row) {
                 $sheet->setCellValueExplicit([1, $r], (string) $row['account_code'], DataType::TYPE_STRING);
-                $sheet->setCellValue([2, $r], (string) $row['name']);
+                $sheet->setCellValueExplicit([2, $r], (string) $row['name'], DataType::TYPE_STRING);
                 $sheet->setCellValue([3, $r], (float) $row['amount']);
                 $r++;
             }
@@ -520,7 +520,7 @@ final class ReportXlsxExporter
         $r = $head + 1;
         foreach ($data['rows'] ?? [] as $row) {
             $sheet->setCellValueExplicit([1, $r], (string) $row['account_code'], DataType::TYPE_STRING);
-            $sheet->setCellValue([2, $r], (string) $row['name']);
+            $sheet->setCellValueExplicit([2, $r], (string) $row['name'], DataType::TYPE_STRING);
             $sheet->setCellValue([3, $r], (float) $row['opening']);
             $sheet->setCellValue([4, $r], (float) $row['increase']);
             $sheet->setCellValue([5, $r], (float) $row['decrease']);

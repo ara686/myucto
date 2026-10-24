@@ -37,7 +37,8 @@ final class AiProviderHttpClient
         private readonly LoggerInterface $logger,
         ?Client $http = null,
     ) {
-        $this->http = $http ?? new Client(['timeout' => 60, 'http_errors' => false]);
+        // Azure endpoint zadává admin; přesměrování jen v rámci hostu (AiRedirectPolicy).
+        $this->http = $http ?? new Client(['timeout' => 60, 'http_errors' => false, 'allow_redirects' => AiRedirectPolicy::options()]);
     }
 
     /**
@@ -103,13 +104,17 @@ final class AiProviderHttpClient
                 $headers = ['Authorization' => 'Bearer ' . $ctx['credentials']['api_key']];
                 $model = 'text-embedding-3-small';
             } else {
+                self::assertAzureEndpoint((string) $ctx['credentials']['endpoint']);
                 $deployment = (string) $ctx['credentials']['deployment'];
                 $url = rtrim((string) $ctx['credentials']['endpoint'], '/') . '/openai/deployments/'
                     . rawurlencode($deployment) . '/embeddings?api-version=' . rawurlencode((string) $ctx['credentials']['api_version']);
                 $headers = ['api-key' => $ctx['credentials']['api_key']];
                 $model = $deployment;
             }
-            $response = $this->http->post($url, ['headers' => $headers + ['content-type' => 'application/json'], 'json' => $payload]);
+            $response = $this->http->post($url, [
+                'headers' => $headers + ['content-type' => 'application/json'], 'json' => $payload,
+                'allow_redirects' => AiRedirectPolicy::options(),
+            ]);
             $body = json_decode((string) $response->getBody(), true);
             if ($response->getStatusCode() !== 200 || !is_array($body['data'] ?? null)) {
                 return ['ok' => false, 'error' => $this->httpError($response->getStatusCode(), $body)];
@@ -359,12 +364,16 @@ final class AiProviderHttpClient
                 $url = rtrim((string) $creds['base_url'], '/') . '/v1/chat/completions';
                 $headers = ['Authorization' => 'Bearer ' . $creds['api_key']];
             } else {
+                self::assertAzureEndpoint((string) $creds['endpoint']);
                 unset($payload['model']);
                 $url = rtrim((string) $creds['endpoint'], '/') . '/openai/deployments/' . rawurlencode((string) $creds['deployment'])
                     . '/chat/completions?api-version=' . rawurlencode((string) $creds['api_version']);
                 $headers = ['api-key' => $creds['api_key']];
             }
-            $response = $this->http->post($url, ['headers' => $headers + ['content-type' => 'application/json'], 'json' => $payload] + $extra);
+            $response = $this->http->post($url, [
+                'headers' => $headers + ['content-type' => 'application/json'], 'json' => $payload,
+                'allow_redirects' => AiRedirectPolicy::options(),
+            ] + $extra);
             $body = json_decode((string) $response->getBody(), true);
             if ($response->getStatusCode() !== 200) {
                 return ['ok' => false, 'error' => $this->httpError($response->getStatusCode(), $body)];
@@ -476,6 +485,14 @@ final class AiProviderHttpClient
             $this->logger->warning('Ollama classifier request failed', ['supplier_id' => $supplierId, 'code' => $code, 'mapped' => $mapped]);
         }
         return $mapped;
+    }
+
+    /** Uložený Azure endpoint se ověřuje i před voláním, nejen při uložení nastavení. */
+    private static function assertAzureEndpoint(string $endpoint): void
+    {
+        if (AzureOpenAiClient::endpointError($endpoint) !== null) {
+            throw new \RuntimeException('provider_not_configured');
+        }
     }
 
     private function safeRuntimeError(\RuntimeException $e): string

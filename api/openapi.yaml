@@ -2338,12 +2338,14 @@ paths:
       description: |
         Vrátí klienta + odvozené metriky pro detail stránku:
 
-        - `projects` — seznam zakázek klienta,
+        - `projects` — seznam zakázek klienta (jen s oprávněním `projects`, jinak prázdný),
+        - `projects_count` — počet všech zakázek klienta bez ohledu na oprávnění,
         - `invoices_count` — celkový počet faktur,
         - `revenue_by_month` — obrat po měsících za posledních 24 měsíců (VAT-aware),
         - `revenue_by_year` — obrat po letech (VAT-aware),
         - `revenue_by_project` — obrat agregovaný per zakázka pro graf „Obrat podle zakázek"
-          (faktury bez `project_id` se agregují pod `project_id: null`),
+          (faktury bez `project_id` se agregují pod `project_id: null`; bez oprávnění
+          `projects` prázdný seznam),
         - `unpaid_summary` — nezaplaceno / po splatnosti per měna.
 
         Obraty zahrnují vystavené faktury + dobropisy (`issued`, `sent`,
@@ -5469,12 +5471,17 @@ paths:
         Vrátí transakci do stavu unmatched a odstraní případnou poznámku k ignorování.
         Platba vzniklá párováním se z faktury odebere a stav faktury se přepočte ze
         zbývajících plateb — fakturu, kterou kryje jiná platba, nechá zaplacenou.
-        Zaúčtovaný pohyb se stornuje.
+        Zaúčtovaný pohyb se stornuje; u zaúčtovaného pohybu proto endpoint vyžaduje
+        stejná práva jako `unpost` (`bank.unpost` a zápis do účetnictví).
+        Přes API token je endpoint jen pro čtení (`token_write_forbidden`).
       responses:
         '200':
           description: OK
         '403':
-          description: Chybí oprávnění k párování nebo změně úhrady dokladu.
+          description: |
+            Chybí oprávnění k párování nebo změně úhrady dokladu, u zaúčtovaného pohybu
+            oprávnění odúčtovat banku (`forbidden`), nebo jde o volání API tokenem
+            (`token_write_forbidden`).
         '409':
           description: |
             Zrušení párování odmítnuto — zápis leží v uzavřeném nebo zamčeném období
@@ -6981,6 +6988,12 @@ paths:
       description: |
         Membership (Epic F0): firma mimo `user_suppliers` přiřazení uživatele
         vrací `404` (konvence pro cizí entity).
+
+        Plný detail (`SupplierFull`) jen pro aktuální firmu požadavku
+        (`X-Supplier-Id` nebo firma tokenu) s oprávněním `settings.company` READ,
+        případně pro globálního správce. Ostatním volajícím s oprávněním `profile`
+        vrací jen výřez `id, company_name, display_name, ic, dic, is_vat_payer,
+        email, accounting_mode, country_iso`.
       responses:
         '200':
           description: OK
@@ -11110,6 +11123,11 @@ paths:
         Uzavřený rok → `mode: retrospective` (srovnání režimů na skutečném příjmu +
         YoY). Běžící rok → `mode: forecast` (YTD příjem + projekce a sledování limitů
         DPH/paušál). Vrací `profile`, `constants`, `available_years`, `is_vat_payer`.
+
+        Rodná čísla dětí a manžela/manželky jsou v `profile` jen maskovaná. Přes API token
+        nese `profile.children` a `profile.spouse_claim` jen údaje pro výpočet slevy
+        a zvýhodnění (měsíce, pořadí, ZTP/P, doložení), bez jmen, rodných čísel, dat
+        narození a příjmu manžela/manželky.
       parameters:
         - $ref: '#/components/parameters/SupplierIdHeader'
         - { in: query, name: year, schema: { type: integer }, description: 'Default = aktuální rok' }
@@ -11128,6 +11146,10 @@ paths:
 
         Částečná aktualizace (viz úvod). Všechna skalární pole jsou nepovinná a vynechané pole
         zachová uloženou hodnotu. Výchozí hodnoty se použijí jen při prvním založení profilu.
+
+        Rodná čísla v `children[]` a `spouse_claim` se ukládají šifrovaně. Prázdné
+        `birth_number` (nebo vrácená maska) u položky s `id` ponechá uložené číslo,
+        nové číslo ho nahradí a `birth_number_clear: true` ho odebere.
       parameters: [{ $ref: '#/components/parameters/SupplierIdHeader' }]
       requestBody:
         required: true
@@ -11145,7 +11167,35 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
         '200': { description: 'OK ({ profile: {...} })' }
         '400': { description: Žádný supplier scope }
-        '422': { description: Neplatný rok }
+        '422': { description: Neplatný rok nebo stejné rodné číslo u dvou dětí }
+
+  /api/v1/tax/profile/family-reveal:
+    post:
+      tags: [Tax]
+      summary: Odhalí rodná čísla dětí a manžela/manželky z daňového profilu roku
+      description: |
+        Profil vrací rodná čísla jen maskovaná (`birth_number_masked`, `has_birth_number`).
+        Plnou hodnotu vydá jen tenhle endpoint: výhradně přihlášené relaci (API token
+        dostane `session_required`) s právem zápisu do daní, s povinným důvodem 10 až 500
+        znaků. Odhalení se zapisuje do auditní stopy (bez hodnot) a sdílí přísný limit
+        počtu odhalení se mzdami.
+      parameters: [{ $ref: '#/components/parameters/SupplierIdHeader' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [year, reason]
+              properties:
+                year: { type: integer }
+                reason: { type: string, minLength: 10, maxLength: 500 }
+      responses:
+        '200': { description: 'OK ({ reveal: { year, children: [{ id, birth_number }], spouse: { id, birth_number } | null } })' }
+        '401': { description: Odhalení vyžaduje přihlášenou relaci }
+        '403': { description: Chybí právo zápisu do daní }
+        '409': { description: Uložená hodnota neprošla kontrolou integrity }
+        '422': { description: Neplatný rok nebo důvod }
 
   # ── Klienti / vyhledávání — doplňující endpointy ─────────────────────────
   /api/v1/clients/{id}/vat-status:
@@ -28785,6 +28835,8 @@ paths:
         Jednohodnotová akce: klíč `project_id` je povinný. Chybí-li v těle, vrací 400
         `validation_failed` (`fields.project_id`); `null` zakázku odebere.
         Skutečná změna zakázky na zápisu uzavřeného období vrací 409 `period_not_open`.
+        Bez oprávnění `projects` (READ) vrací 403 `forbidden_permission`; klientská role
+        na zamčeném (zaúčtovaném) dokladu 403 `document_locked`.
         Uložení stejné hodnoty je povoleno; datumový zámek otevřeného období změně analytiky nebrání.
       requestBody:
         required: true
@@ -29062,6 +29114,8 @@ paths:
         Jednohodnotová akce: klíč `project_id` je povinný (může být `null`, což zakázku odebere).
         Chybí-li v těle, vrací 400 `validation_failed`.
         Skutečná změna zakázky na zápisu uzavřeného období vrací 409 `period_not_open`.
+        Bez oprávnění `projects` (READ) vrací 403 `forbidden_permission`; klientská role
+        na zamčeném (zaúčtovaném) dokladu 403 `document_locked`.
         Uložení stejné hodnoty je povoleno; datumový zámek otevřeného období změně analytiky nebrání.
       requestBody:
         required: true
@@ -44752,7 +44806,11 @@ components:
               items: { $ref: '#/components/schemas/ClientBankAccount' }
             projects:
               type: array
+              description: Zakázky klienta; bez oprávnění `projects` prázdný seznam.
               items: { $ref: '#/components/schemas/Project' }
+            projects_count:
+              type: integer
+              description: Počet všech zakázek klienta včetně archivovaných, bez ohledu na oprávnění.
             invoices_count:
               type: integer
               description: Celkový počet faktur klienta.
@@ -44777,7 +44835,7 @@ components:
                   count: { type: integer }
             revenue_by_project:
               type: array
-              description: 'Obrat agregovaný per zakázka — pro graf "Obrat podle zakázek". Faktury bez project_id agregovány pod project_id=null.'
+              description: 'Obrat agregovaný per zakázka — pro graf "Obrat podle zakázek". Faktury bez project_id agregovány pod project_id=null. Bez oprávnění `projects` prázdný seznam.'
               items:
                 type: object
                 properties:
@@ -46697,10 +46755,24 @@ components:
     SupplierFull:
       type: object
       description: |
-        Kompletní data dodavatele (per-supplier konfigurace). Vrací `SELECT s.*`
-        + odvozená pole. Bankovní účty NEJSOU součástí — jsou per-měna
-        na `GET /api/settings/currencies`. (Pozn.: response obsahuje i další
-        sloupce mimo tento výčet — branding, integrace, payment-thanks ap.)
+        Data dodavatele (per-supplier konfigurace) + odvozená pole. Bankovní účty
+        NEJSOU součástí — jsou per-měna na `GET /api/settings/currencies`.
+
+        Odpověď skládá allowlist (`SupplierResponseFields`): kromě zde popsaných
+        polí obsahuje další provozní nastavení, která používá formulář Nastavení
+        firmy (branding, payment-thanks, číselné řady, Pohoda, EPO údaje). Tajemství,
+        adresy a modely AI endpointů, identifikátory importních integrací, počítadla
+        a interní značky v ní nejsou nikdy. Citlivé skupiny jsou podmíněné oprávněním
+        volajícího a token se scope `read` je nedostane:
+        `health_insurance_number`, `cssz_vsdp`, `cssz_ossz_code` jen se zápisem
+        `settings.company.write`; `ai_provider`, `ai_data_region`,
+        `ai_eu_residency_required`, `client_ai_extraction_*` jen s `settings.ai_provider`;
+        `logo_path`, `signature_path` jen se zápisem `settings.branding`.
+
+        `GET /api/suppliers/{id}` vrací tento detail jen pro aktuální firmu požadavku
+        s `settings.company` READ (nebo globálnímu správci); jinak jen výřez
+        `id, company_name, display_name, ic, dic, is_vat_payer, email,
+        accounting_mode, country_iso`.
       properties:
         accounting_profile_recommendation:
           type: object

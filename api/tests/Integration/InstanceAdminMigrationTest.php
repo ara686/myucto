@@ -13,7 +13,7 @@ use PHPUnit\Framework\TestCase;
 #[Group('integration')]
 final class InstanceAdminMigrationTest extends TestCase
 {
-    private const MIGRATION = '2137_instance_admin.sql';
+    private const MIGRATION = '2182_instance_admin.sql';
     private PDO $pdo;
     private string $database;
     private string $root;
@@ -79,7 +79,7 @@ final class InstanceAdminMigrationTest extends TestCase
         self::assertSame(0, (int) $this->pdo->query('SELECT all_suppliers FROM user_technical_access WHERE user_id = 1')->fetchColumn());
         self::assertSame(1, (int) $this->pdo->query('SELECT all_suppliers FROM user_technical_access WHERE user_id = 2')->fetchColumn());
         $this->runMigrator();
-        self::assertSame(1, (int) $this->pdo->query("SELECT COUNT(*) FROM migrations WHERE filename = '2137_instance_admin.sql'")->fetchColumn());
+        self::assertSame(1, (int) $this->pdo->query("SELECT COUNT(*) FROM migrations WHERE filename = '2182_instance_admin.sql'")->fetchColumn());
     }
 
     private function runMigrator(): void

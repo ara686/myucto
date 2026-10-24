@@ -231,6 +231,47 @@ final class PasskeyActionTest extends TestCase
         self::assertSame(200, $response->getStatusCode());
     }
 
+    public function testWrongPasswordForRegistrationIsCountedIntoBruteForceGuard(): void
+    {
+        $this->policy->method('isMethodAllowed')->willReturnMap([
+            ['passkey', true],
+        ]);
+        $this->mockFreshUser(['totp_enabled' => 0]);
+        $this->credentials->method('countActiveForUser')->willReturn(0);
+        $this->bruteForce->method('check')->willReturn(BruteForceGuard::STATE_OK);
+        $this->bruteForce->expects(self::once())->method('recordFailure');
+        $this->passwords->method('verify')->willReturn(false);
+        $this->ceremonies->expects(self::never())->method('create');
+
+        $response = $this->action()->registerOptions(
+            $this->sessionRequest('POST', '/api/auth/webauthn/register/options')
+                ->withParsedBody(['current_password' => 'Wrong-synthetic-password']),
+            (new ResponseFactory())->createResponse(),
+        );
+
+        self::assertSame(403, $response->getStatusCode());
+    }
+
+    public function testLockedBruteForceGuardRefusesRegistrationBeforePasswordCheck(): void
+    {
+        $this->policy->method('isMethodAllowed')->willReturnMap([
+            ['passkey', true],
+        ]);
+        $this->mockFreshUser(['totp_enabled' => 0]);
+        $this->credentials->method('countActiveForUser')->willReturn(0);
+        $this->bruteForce->method('check')->willReturn(BruteForceGuard::STATE_LOCKED_24H);
+        $this->passwords->expects(self::never())->method('verify');
+        $this->ceremonies->expects(self::never())->method('create');
+
+        $response = $this->action()->registerOptions(
+            $this->sessionRequest('POST', '/api/auth/webauthn/register/options')
+                ->withParsedBody(['current_password' => 'Synthetic-test-password-42']),
+            (new ResponseFactory())->createResponse(),
+        );
+
+        self::assertSame(429, $response->getStatusCode());
+    }
+
     public function testLoginVerifyIssuesStrongPasskeySessionOnlyAfterCounterUpdate(): void
     {
         $stored = $this->storedCredential(42, 17, 'Pixel 9');

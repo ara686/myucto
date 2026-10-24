@@ -350,7 +350,7 @@ final class IssueInvoiceAction
                 $vatStatusDate,
             );
         } catch (\RuntimeException $e) {
-            return Json::error($response, 'snapshot_failed', $e->getMessage(), 500);
+            return Json::internalError($response, 'snapshot_failed', $e->getMessage(), 500);
         }
 
         // Finální daňový doklad plně pokrytý zálohou (amount_to_pay <= 0) je fakticky
@@ -434,7 +434,7 @@ final class IssueInvoiceAction
                 } catch (\InvalidArgumentException | \RuntimeException $e) {
                     if (TransactionFailure::rollbackIfAborted($pdo, $e)) throw $e;
                     if ($ownTransaction && $pdo->inTransaction()) $pdo->rollBack();
-                    return Json::error($response, 'varsymbol_failed', $e->getMessage(), 500);
+                    return Json::internalError($response, 'varsymbol_failed', $e->getMessage(), 500);
                 }
                 $allocated = true;
                 $issueParams[0] = $varsymbol;

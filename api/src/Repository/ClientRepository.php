@@ -851,6 +851,14 @@ final class ClientRepository
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
+    /** Počet všech zakázek odběratele (i archivovaných), stejné pravidlo jako blokace smazání klienta. */
+    public function projectsCountForClient(int $clientId): int
+    {
+        $stmt = $this->db->pdo()->prepare('SELECT COUNT(*) FROM projects WHERE client_id = ?');
+        $stmt->execute([$clientId]);
+        return (int) $stmt->fetchColumn();
+    }
+
     private function countryIdFromIso2(string $iso2): int
     {
         $iso2 = strtoupper($iso2);

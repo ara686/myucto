@@ -10,6 +10,7 @@ use MyInvoice\Repository\AccountingPeriodRepository;
 use MyInvoice\Service\Accounting\Closing\ClosingSourceId;
 use MyInvoice\Service\Accounting\Reports\FinancialStatementService;
 use MyInvoice\Repository\TaxConstantsRepository;
+use MyInvoice\Service\Tax\TaxFamilyIdentifierService;
 
 /**
  * Předfinalizační kontrolní checklist přiznání k dani z příjmů („závěrková kontrola
@@ -150,7 +151,7 @@ final class PreFinalizeCheckService
             if (!is_array($child)
                 || trim((string) ($child['first_name'] ?? '')) === ''
                 || trim((string) ($child['last_name'] ?? '')) === ''
-                || (empty($child['birth_number']) && empty($child['birth_date']))
+                || (!TaxFamilyIdentifierService::hasBirthNumber($child) && empty($child['birth_date']))
                 || empty($child['shared_household_proved'])
                 || empty($child['other_parent_not_claimed_proved'])
                 || (array) ($child['months'] ?? []) === []) {
@@ -180,7 +181,7 @@ final class PreFinalizeCheckService
         if ($spouse !== null) {
             $spouseOk = trim((string) ($spouse['first_name'] ?? '')) !== ''
                 && trim((string) ($spouse['last_name'] ?? '')) !== ''
-                && (!empty($spouse['birth_number']) || !empty($spouse['birth_date']))
+                && (TaxFamilyIdentifierService::hasBirthNumber($spouse) || !empty($spouse['birth_date']))
                 && !empty($spouse['income_proved'])
                 && !empty($spouse['shared_household_proved'])
                 && !empty($spouse['child_under_three_proved'])

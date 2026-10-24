@@ -67,6 +67,8 @@ final class TaxReturnService
         private readonly \MyInvoice\Service\Pdf\EquityChangesPdfRenderer $equityChangesPdf,
         // Zastoupení daňovým poradcem (§29/2 DŘ) do dan_por/pln_moc — viz representationMeta().
         private readonly TaxRepresentationService $representation,
+        // Rodná čísla rodiny z daňového profilu (H28): do XML odhalená, ven maskovaná.
+        private readonly \MyInvoice\Service\Tax\TaxFamilyIdentifierService $familyIdentifiers,
     ) {}
 
     private const TYPES = ['fo', 'po'];
@@ -81,7 +83,7 @@ final class TaxReturnService
      *
      * @return array<string,mixed>
      */
-    public function getReturn(int $supplierId, int $year, string $type, ?int $userId, string $variant = 'radne', int $variantSeq = 1): array
+    public function getReturn(int $supplierId, int $year, string $type, ?int $userId, string $variant = 'radne', int $variantSeq = 1, bool $sideEffects = true): array
     {
         $this->assertAccountingDecree($supplierId, $year, $type);
         $this->assertType($type);
@@ -90,7 +92,16 @@ final class TaxReturnService
         $seq = $this->resolveSeq($supplierId, $year, $type, $variant, $variantSeq);
         $row = $this->returns->find($supplierId, $year, $type, $variant, $seq);
         if ($row === null) {
-            $row = $this->returns->create($supplierId, $year, $type, [], $userId, $variant, $seq);
+            // Čtení přes API token koncept nezakládá: výpočet proběhne nad prázdnými vstupy
+            // a vrátí se neuložený řádek.
+            $row = $sideEffects
+                ? $this->returns->create($supplierId, $year, $type, [], $userId, $variant, $seq)
+                : [
+                    'year' => $year, 'taxpayer_type' => $type, 'variant' => $variant, 'variant_seq' => $seq,
+                    'status' => 'draft', 'row_version' => 0, 'inputs' => [], 'computed' => null,
+                    'last_submission_id' => null, 'final_snapshot_id' => null,
+                    'finalized_at' => null, 'finalized_by' => null, 'updated_at' => null,
+                ];
         }
 
         // Párování dle účtu FÚ AUTOMATICKY při náhledu řádného přiznání: reálně zaplacené
@@ -98,7 +109,7 @@ final class TaxReturnService
         // platby". Jen JISTÉ (exact) shody se zapíšou do zaplacených záloh a předvyplní do
         // prázdného pole; nejisté/doplatky zůstanou jako návrh k potvrzení. Best-effort —
         // nikdy nesmí shodit náhled; po prefillu se řádek načte znovu, aby ho výpočet viděl.
-        if ($row['status'] !== 'final' && $variant === 'radne') {
+        if ($sideEffects && $row['status'] !== 'final' && $variant === 'radne') {
             $this->autoMatchAdvancesQuietly($supplierId, $year, $type);
             $row = $this->returns->find($supplierId, $year, $type, $variant, $seq) ?? $row;
         }
@@ -144,8 +155,10 @@ final class TaxReturnService
             'last_known_tax_suggested' => $variant === 'dodatecne'
                 ? $this->returns->findLastKnownTax($supplierId, $year, $type)
                 : null,
-            'computed' => $computation['result'],
-            'podklady' => $computation['podklady'],
+            // Rodná čísla rodiny jen maskovaná (H28) — i u starších finálních přiznání,
+            // jejichž uložený výpočet je ještě nese otevřeně.
+            'computed' => $this->familyIdentifiers->maskResult($computation['result']),
+            'podklady' => $this->familyIdentifiers->maskPodklady($computation['podklady']),
             'warnings' => $computation['warnings'],
             'tax_losses' => $this->losses->card($supplierId, $year, $type),
             'prefinalize_check' => $prefinalize,
@@ -251,8 +264,8 @@ final class TaxReturnService
             $paid = (float) ($stored['computed']['advances_paid'] ?? 0);
             return [
                 'status' => 'final',
-                'result' => (array) $stored['computed'],
-                'podklady' => (array) ($stored['podklady'] ?? []),
+                'result' => $this->familyIdentifiers->maskResult((array) $stored['computed']),
+                'podklady' => $this->familyIdentifiers->maskPodklady((array) ($stored['podklady'] ?? [])),
                 'advances_source' => $paid > 0 ? 'return' : 'none',
             ];
         }
@@ -262,8 +275,8 @@ final class TaxReturnService
 
         return [
             'status' => $read['status'],
-            'result' => $computation['result'],
-            'podklady' => $computation['podklady'],
+            'result' => $this->familyIdentifiers->maskResult($computation['result']),
+            'podklady' => $this->familyIdentifiers->maskPodklady($computation['podklady']),
             'advances_source' => $read['advances_source'],
         ];
     }
@@ -450,7 +463,14 @@ final class TaxReturnService
             $meta = ['verze_sw' => $this->loadAppVersion() ?? '0']
                 + $this->amendmentXmlMeta($type, $variant, $computation['result'])
                 + $this->representationMeta($supplierId, null);
-            $built = $this->dpfoXml->build($supplier, $year, $computation['result'], $meta);
+            // Rodná čísla rodiny jsou náležitostí podání: odhalí se jen pro sestavení XML,
+            // uložený výpočet (snapshot níže) je nese dál jen maskovaná (H28).
+            $built = $this->dpfoXml->build(
+                $supplier,
+                $year,
+                $this->familyIdentifiers->withFilingIdentifiers($supplierId, $year, $computation['result']),
+                $meta,
+            );
             $snapshotXml = $built['xml'];
             $snapshot['warnings'] = array_values(array_unique(array_merge($snapshot['warnings'], $built['warnings'])));
             $xsd = $this->xmlValidator->validate($snapshotXml, 'dpfdp7');
@@ -598,13 +618,16 @@ final class TaxReturnService
     /**
      * E9 — předpisy záloh za rok (period_year), volitelně jen daný typ. @return array<string,mixed>
      */
-    public function advanceScheduleList(int $supplierId, int $periodYear, ?string $type = null): array
+    public function advanceScheduleList(int $supplierId, int $periodYear, ?string $type = null, bool $sideEffects = true): array
     {
         if ($type !== null) {
             $this->assertType($type);
             // Karta záloh: spáruj reálné platby dle účtu FÚ automaticky (best-effort), ať
-            // se zaplacené zálohy zobrazí bez ručního „Spárovat platby".
-            $this->autoMatchAdvancesQuietly($supplierId, $periodYear, $type);
+            // se zaplacené zálohy zobrazí bez ručního „Spárovat platby". Čtení přes API
+            // token jen čte.
+            if ($sideEffects) {
+                $this->autoMatchAdvancesQuietly($supplierId, $periodYear, $type);
+            }
         }
         return ['year' => $periodYear, 'schedules' => $this->advanceSchedules->listForYear($supplierId, $periodYear, $type)];
     }
@@ -1020,7 +1043,12 @@ final class TaxReturnService
             + $this->amendmentXmlMeta($type, $variant, $computation['result'])
             + $this->representationMeta($supplierId, null);
         $supplier = $this->loadSupplier($supplierId);
-        $built = $this->dpfoXml->build($supplier, $year, $computation['result'], $meta);
+        $built = $this->dpfoXml->build(
+            $supplier,
+            $year,
+            $this->familyIdentifiers->withFilingIdentifiers($supplierId, $year, $computation['result']),
+            $meta,
+        );
         $businessErrors = $this->dpfoBusinessValidator->validate($computation['result'], $computation['podklady']);
         $unsupported = UnsupportedCaseDetector::detectForSupplier(
             $supplier, 'fo', $computation['podklady'], $computation['result'], $inputs
@@ -1286,7 +1314,7 @@ final class TaxReturnService
      *
      * @return array{xml:string,form_code:string,filename:string,validation_status:string,validation_errors:list<string>,submission_id:int}
      */
-    public function generateXml(int $supplierId, int $year, string $type, ?int $userId, string $variant = 'radne', int $variantSeq = 1): array
+    public function generateXml(int $supplierId, int $year, string $type, ?int $userId, string $variant = 'radne', int $variantSeq = 1, bool $sideEffects = true): array
     {
         $this->assertAccountingDecree($supplierId, $year, $type);
         if ($this->isNonprofit($supplierId,$year,$type)) {
@@ -1300,10 +1328,10 @@ final class TaxReturnService
         $archived = $this->archiver->archive(
             $supplierId, $built['form_code'], $year, null, null,
             $built['xml'], $built['summary'], $userId,
-            true,
+            $sideEffects,
             self::FORMA[$variant] ?? 'B',
         );
-        if ($row !== null) {
+        if ($row !== null && $sideEffects) {
             $this->returns->setLastSubmission($supplierId, $year, $type, (int) $archived['submission_id'], $variant, $seq);
         }
 

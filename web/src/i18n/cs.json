@@ -1805,6 +1805,12 @@
     "property_funds": "Zálohy a příjmy vlastníků",
     "property_issuance": "Vydání předpisů"
   },
+  "migration_nonprofit_notice": {
+    "title": "Převod pro neziskové organizace nebyl ověřen",
+    "body": "Tato firma je nezisková organizace nebo jiná účetní jednotka podle vyhlášky 504/2002 Sb. (spolek, nadace, ústav, SVJ). Převod dat počítá s osnovou a výkazy podnikatele podle vyhlášky 500/2002 Sb. a nezná hlavní a hospodářskou činnost, fondy ani výkazy podle vyhlášky 504. Převod účetnictví do období vedeného podle vyhlášky 504 se odmítne. Před převodem proto kontaktujte podporu.",
+    "body_native": "Tato firma je nezisková organizace nebo jiná účetní jednotka podle vyhlášky 504/2002 Sb. (spolek, nadace, ústav, SVJ). Export MyÚčto přenese osnovu a účetní deník jen do firmy se stejným účetním rámcem (vyhláška 500, nebo 504) a nepřenáší evidenci členů a příspěvků, dotací, kapitálu ani podklady daně z příjmů neziskové organizace. Převod pro neziskové organizace nebyl ověřen, před převodem proto kontaktujte podporu.",
+    "contact": "Kontaktovat podporu"
+  },
   "migration_overview": {
     "myucto_hint": "Přenos jedné firmy z Kompletního exportu dat MyÚčta nebo databázové zálohy MyInvoice, včetně pravidelné fakturace.",
     "title": "Přechod z jiných účetních systémů",
@@ -7082,6 +7088,7 @@
           "deduction_assessment_incomplete": "Nebyla potvrzena úplnost posouzení pokračujících srážek.",
           "pension_category_assessment_incomplete": "Nebylo potvrzeno posouzení důchodových kategorií před rokem 1993.",
           "deduction_source_mismatch": "Zadané právní údaje neodpovídají aktuálním nárokům v evidenci srážek.",
+          "deduction_permission_required": "Zápočtový list obsahuje pokračující srážky, ke kterým nemáte oprávnění. Vystavit ho musí kolega s oprávněním ke srážkám ze mzdy.",
           "relationship_kind_not_supported": "Tento typ pracovního vztahu zatím nelze zpracovat.",
           "pension_category_period_invalid": "Období důchodové kategorie není platné."
         }
@@ -10903,7 +10910,10 @@
         "payroll_annual_document_revisions": "roční doklady a jejich revize",
         "payroll_jmhz_eldp_evidence_snapshots": "odeslané ELDP (evidenční listy)",
         "payroll_jmhz_ordinary_evidence_snapshots": "odeslaná hlášení ČSSZ",
-        "payroll_registration_identity_snapshots": "odeslané registrační údaje ČSSZ"
+        "payroll_registration_identity_snapshots": "odeslané registrační údaje ČSSZ",
+        "payroll_run_persons": "výsledky výpočtu mezd ve zmrazených bězích",
+        "payroll_run_revisions": "zmrazené revize mzdových běhů (vstupy a výsledky)",
+        "payroll_period_exports": "archivy mezd (ZIP) za období s výplatou osoby"
       }
     },
     "features": {
@@ -20648,12 +20658,13 @@
     "ip_hint": "Podporuje IPv4 i IPv6, samostatnou adresu i CIDR rozsah - např. 203.0.113.7, 192.168.1.0/24, 2001:db8::1, 2001:db8::/32."
   },
   "license": {
-    "banner_trial": "Zkušební období končí za {days} dní - aktivujte licenci, aby zůstaly dostupné podvojné účetnictví, sklad a další komerční moduly.",
+    "banner_trial": "Zkušební období končí dnes - aktivujte licenci, aby zůstaly dostupné podvojné účetnictví, sklad a další komerční moduly. | Zkušební období končí zítra - aktivujte licenci, aby zůstaly dostupné podvojné účetnictví, sklad a další komerční moduly. | Zkušební období končí za {days} dny - aktivujte licenci, aby zůstaly dostupné podvojné účetnictví, sklad a další komerční moduly. | Zkušební období končí za {days} dní - aktivujte licenci, aby zůstaly dostupné podvojné účetnictví, sklad a další komerční moduly.",
     "banner_overage": "Překročili jste rozsah licence. Rozšiřte předplatné do {days} dní, jinak se obnova pozastaví.",
     "banner_overage_nodeadline": "Překročili jste rozsah licence. Rozšiřte prosím předplatné.",
     "banner_trial_expired": "Zkušební období skončilo - placené účetní moduly nejsou dostupné. Fakturace a bezplatný základ fungují dál.",
     "banner_degraded": "Licence vypršela - placené účetní moduly nejsou dostupné. Fakturace a bezplatný základ fungují dál.",
     "banner_cta": "Zakoupit / aktivovat",
+    "banner_buy_web": "Koupit licenci na MyUcto.cz",
     "purchase_title": "Zakoupení a aktivace",
     "purchase_subtitle": "Stav licence, aktivace klíčem a předplatné.",
     "no_admin": "Správu licence vidí jen administrátor.",
@@ -20943,6 +20954,12 @@
     "warning_app_url_invalid_origin": "`cfg.app.url` není platný HTTP(S) origin. Odstraňte přihlašovací údaje, cestu, query a fragment; ponechte jen schéma, hostname a volitelný port.",
     "warning_app_url_webauthn_incompatible": "Běžné rozhraní může přes HTTP nebo LAN IP fungovat, ale passkeys vyžadují HTTPS DNS origin. Výjimkou je `http://localhost`.",
     "warning_app_url_hostname_conflict": "Hostname z `cfg.app.url` je současně uložený jako vlastní doména firmy. Obnovte původní canonical adresu, vlastní doménu deaktivujte a smažte, nebo nastavte jiný canonical hostname.",
+    "warning_cookie_insecure_title": "Přihlašovací cookie bez příznaku Secure",
+    "warning_cookie_insecure_text": "`cfg.app.url` používá HTTPS, ale `cfg.session.cookie_secure` je vypnuté, takže se přihlašovací cookie může odeslat i nešifrovaně. Nastavte `cookie_secure = true` a ideálně názvy cookie s prefixem `__Host-`.",
+    "warning_env_development_title": "Vývojový režim na veřejné adrese",
+    "warning_env_development_text": "Instance běží s `cfg.app.env = development`, ačkoli `cfg.app.url` nevede na localhost. Pro veřejně dostupnou instanci nastavte `app.env = production`.",
+    "warning_payroll_hash_key_title": "Klíč mzdových otisků se odvozuje z pepperu",
+    "warning_payroll_hash_key_text": "`cfg.app.payroll_hash_key` není nastavený, otisky rodných čísel a dokladů jsou proto chráněné jen pepperem. Pepper uchovávejte stejně bezpečně jako šifrovací klíč. Na instalaci s mzdovými daty klíč nedoplňujte ani neměňte, uložené otisky by přestaly platit.",
     "warning_generic_title": "Upozornění systému",
     "warning_generic_text": "Zkontrolujte konfiguraci aplikace.",
     "how_it_works": "Jak upgrade funguje",
@@ -28142,6 +28159,14 @@
     "first_name": "Jméno",
     "last_name": "Příjmení",
     "birth_number": "Rodné číslo",
+    "birth_number_saved": "Uložené rodné číslo",
+    "birth_number_replace_hint": "nové číslo zadané do pole ho přepíše",
+    "birth_number_will_remove": "při uložení se odebere",
+    "birth_number_keep": "Ponechat",
+    "birth_number_remove": "Odebrat rodné číslo",
+    "birth_number_reveal": "Zobrazit rodná čísla",
+    "birth_number_hide": "Skrýt rodná čísla",
+    "birth_number_reveal_failed": "Rodná čísla se nepodařilo zobrazit.",
     "eligible_months": "Počet oprávněných měsíců",
     "shared_household_proved": "Doložena společná domácnost",
     "other_parent_proved": "Doloženo neuplatnění druhým poplatníkem",
@@ -30878,7 +30903,15 @@
     "return_to_client": "Vrátit se do klientského rozhraní",
     "returning": "Vracím se…",
     "invalid_callback": "Návrat z přihlášení je neplatný nebo vypršel. Začněte znovu na firemní doméně.",
-    "exchange_failed": "Přihlášení na firemní doméně se nepodařilo dokončit."
+    "exchange_failed": "Přihlášení na firemní doméně se nepodařilo dokončit.",
+    "confirm_title": "Přihlásit se do klientského rozhraní",
+    "confirm_intro": "Jste přihlášeni na hlavní adrese. Toto přihlášení se předá klientskému rozhraní na adrese níže.",
+    "confirm_hostname": "Adresa",
+    "confirm_company": "Firma",
+    "confirm_warning": "Pokračujte jen, pokud jste přihlášení do klientského rozhraní na této adrese sami zahájili. Pokud jste sem přišli z cizího odkazu, zvolte Zrušit.",
+    "confirm_continue": "Pokračovat",
+    "confirm_cancel": "Zrušit",
+    "confirm_loading": "Načítám údaje o přihlášení…"
   },
   "domains": {
     "title": "Klientské domény",

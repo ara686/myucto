@@ -6,6 +6,8 @@ namespace MyInvoice\Service\Migration\Myucto;
 
 use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Infrastructure\Database\SchemaMetadataProvider;
+use MyInvoice\Repository\AccountingFrameworkRepository;
+use MyInvoice\Service\Accounting\AccountingFrameworkService;
 use MyInvoice\Service\Export\Instance\TenantScopeResolver;
 use PDO;
 use RuntimeException;
@@ -81,6 +83,7 @@ final class MyuctoImporter
                 throw new RuntimeException('Země cílové firmy se liší od exportu.');
             }
             $this->assertVatHistory($pdo, $tables['supplier_vat_status_history'] ?? null, $sourceSupplier, $supplierId);
+            $this->assertAccountingFramework($tables, $package['context']['supplier_accounting_frameworks'] ?? null, $sourceSupplier, $supplierId);
             $stmt = $pdo->prepare('SELECT id FROM users WHERE id = ? AND is_active = 1');
             $stmt->execute([$actorId]);
             if ($stmt->fetchColumn() === false) {
@@ -327,6 +330,58 @@ final class MyuctoImporter
                         throw new RuntimeException('Nepodporovaná vazba ' . $table . '.' . $column . '; data se nebudou tiše zahazovat.');
                     }
                 }
+            }
+        }
+    }
+
+    /**
+     * Nese-li export účetnictví, musí cíl vést v každém okamžiku stejný účetní rámec
+     * (vyhláška 500, nebo 504 u neziskových organizací). Osnova i deník se přebírají
+     * beze změny, takže deník podle vyhlášky 504 ve firmě s rámcem 500 (a naopak) by
+     * dal chybné výkazy. Den bez záznamu má rámec 500 jako {@see AccountingFrameworkService::forDate()};
+     * export bez historie rámce je proto celý v rámci 500.
+     *
+     * @param array<string,array<int|string,array<string,mixed>>> $tables
+     * @param array<int|string,array<string,mixed>>|null $source
+     */
+    private function assertAccountingFramework(
+        array $tables,
+        ?array $source,
+        int $sourceSupplier,
+        int $targetSupplier
+    ): void
+    {
+        $bound = false;
+        foreach (MyuctoImportProfile::FRAMEWORK_BOUND_TABLES as $table) {
+            $bound = $bound || ($tables[$table] ?? []) !== [];
+        }
+        if (!$bound) {
+            return;
+        }
+        $frameworks = [AccountingFrameworkService::CZ_500, AccountingFrameworkService::CZ_504];
+        $sourceByDate = [];
+        foreach ($source ?? [] as $row) {
+            $framework = $row['accounting_framework'] ?? null;
+            if (MyuctoExportReader::id($row['supplier_id'] ?? null) !== $sourceSupplier
+                || !is_string($row['effective_from'] ?? null) || isset($sourceByDate[$row['effective_from']])
+                || !in_array($framework, $frameworks, true)) {
+                throw new RuntimeException('Neplatná historie účetního rámce v exportu.');
+            }
+            $sourceByDate[$row['effective_from']] = $framework;
+        }
+        $targetByDate = array_column((new AccountingFrameworkRepository($this->db))->listForTenantForUpdate($targetSupplier), 'accounting_framework', 'effective_from');
+        $dates = array_unique([...array_keys($sourceByDate), ...array_keys($targetByDate)]);
+        sort($dates);
+        $left = AccountingFrameworkService::CZ_500;
+        $right = AccountingFrameworkService::CZ_500;
+        foreach ($dates as $date) {
+            $left = $sourceByDate[$date] ?? $left;
+            $right = $targetByDate[$date] ?? $right;
+            if ($left !== $right) {
+                throw new RuntimeException(sprintf(
+                    'Účetní rámec cílové firmy se liší od exportu k %s: export vede účetnictví podle vyhlášky %s, cílová firma podle vyhlášky %s.',
+                    $date, substr($left, 3), substr($right, 3),
+                ));
             }
         }
     }

@@ -2100,7 +2100,8 @@
                     "status": "ignored"
                 },
                 "Hodnota2": {
-                    "status": "ignored"
+                    "status": "mapped",
+                    "target": "PohodaPayrollPeople"
                 },
                 "Hodnota20": {
                     "status": "ignored"

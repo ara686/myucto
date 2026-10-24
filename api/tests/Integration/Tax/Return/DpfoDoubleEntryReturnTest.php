@@ -93,6 +93,23 @@ final class DpfoDoubleEntryReturnTest extends TestCase
         }
     }
 
+    /** Čtení přes API token koncept přiznání nezakládá; náhled v aplikaci ano. */
+    public function testReadWithoutSideEffectsDoesNotCreateDraft(): void
+    {
+        $count = fn (): int => (int) $this->db->pdo()
+            ->query('SELECT COUNT(*) FROM income_tax_returns WHERE supplier_id = ' . $this->supplierId)
+            ->fetchColumn();
+
+        $read = $this->returns->getReturn($this->supplierId, self::YEAR, 'fo', $this->userId, sideEffects: false);
+
+        self::assertSame('draft', $read['return']['status']);
+        self::assertSame(0, $read['return']['row_version']);
+        self::assertSame(0, $count(), 'Neuložený řádek: čtení nic nezapsalo.');
+
+        $this->returns->getReturn($this->supplierId, self::YEAR, 'fo', $this->userId);
+        self::assertSame(1, $count(), 'Náhled v aplikaci koncept založí jako dosud.');
+    }
+
     public function testSection7DerivedFromProfitAndLoss(): void
     {
         // Výnos 602 = 500 000, náklad 518 = 200 000 → VH = §7 základ = 300 000.

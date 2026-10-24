@@ -377,6 +377,33 @@ final class ApiTokenService
     }
 
     /**
+     * Zruší všechny dosud platné tokeny uživatele (i přístupové tokeny MCP
+     * připojení). Vrací počet skutečně zrušených tokenů.
+     */
+    public function revokeAllForUser(int $userId): int
+    {
+        $stmt = $this->db->pdo()->prepare(
+            'UPDATE api_tokens SET revoked_at = NOW()
+              WHERE user_id = ? AND revoked_at IS NULL
+                AND (expires_at IS NULL OR expires_at > NOW())'
+        );
+        $stmt->execute([$userId]);
+        return $stmt->rowCount();
+    }
+
+    /** Počet tokenů uživatele, které by teď prošly {@see validate()} (nezrušené a neexpirované). */
+    public function countActiveForUser(int $userId): int
+    {
+        $stmt = $this->db->pdo()->prepare(
+            'SELECT COUNT(*) FROM api_tokens
+              WHERE user_id = ? AND revoked_at IS NULL
+                AND (expires_at IS NULL OR expires_at > NOW())'
+        );
+        $stmt->execute([$userId]);
+        return (int) $stmt->fetchColumn();
+    }
+
+    /**
      * Trvale smaže vlastní token. Na rozdíl od {@see revoke()} po něm nezůstane
      * v přehledu nic — proto vrací SNÍMEK smazaného řádku, ať má volající co
      * zapsat do auditní stopy. Bez něj by mazání bylo jediná operace nad tokeny,
