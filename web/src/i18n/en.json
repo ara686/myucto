@@ -14196,6 +14196,15 @@
         "position": "{position} of {total}",
         "load_failed": "The stock item detail could not be loaded.",
         "import": "Import products"
+      },
+      "eet_kind": {
+        "label": "EET item kind",
+        "standard": "Regular goods or service",
+        "specific_voucher": "Gift voucher for specific goods or service",
+        "stored_value": "Stored-value voucher / credit top-up",
+        "hint_standard": "The sale is recorded as a regular sale.",
+        "hint_specific_voucher": "A voucher for a predetermined supply (e.g. a back massage) is a regular sale of that supply. Redeeming it later is not recorded.",
+        "hint_stored_value": "A voucher for unspecified goods or a credit top-up (wallet, prepaid pass). Its share of the sale goes to EET as \"intended for later use\"; redemption is then recorded as credit use (payment method Voucher / credit)."
       }
     },
     "item_detail": {
@@ -20671,7 +20680,13 @@
     "ip_current_hint": "This is the address of this browser. An integration or MCP client may connect from a different IP address.",
     "ip_private_warning": "The application sees a private, local or shared IP address. This may be correct on an internal network. If you connect over the internet through a reverse proxy, check that the real client IP is forwarded; otherwise IP restrictions may only distinguish the proxy.",
     "ip_proxy_docs": "Configure client IP forwarding behind a proxy and in Docker",
-    "ip_hint": "Supports IPv4 and IPv6, a single address as well as a CIDR range — e.g. 203.0.113.7, 192.168.1.0/24, 2001:db8::1, 2001:db8::/32."
+    "ip_hint": "Supports IPv4 and IPv6, a single address as well as a CIDR range — e.g. 203.0.113.7, 192.168.1.0/24, 2001:db8::1, 2001:db8::/32.",
+    "eet_external_on": "EET by e-shop",
+    "eet_external_off": "EET",
+    "eet_external_desc": "Payments made with this key are recorded in EET by an external system (e-shop). An invoice payment without payment circumstances is booked and the sale is only kept on record; MyÚčto does not send it to EET.",
+    "eet_external_confirm": "Payments received with the key \"{name}\" without payment circumstances will be treated as sales recorded by the e-shop itself and MyÚčto will not send them to EET. Continue?",
+    "eet_external_enabled": "Payments from this key are recorded in EET by an external system.",
+    "eet_external_disabled": "Payments from this key are no longer treated as external EET recording."
   },
   "license": {
     "banner_trial": "Trial ends today — activate a license to keep double-entry accounting, stock and other commercial modules available. | Trial ends tomorrow — activate a license to keep double-entry accounting, stock and other commercial modules available. | Trial ends in {days} days — activate a license to keep double-entry accounting, stock and other commercial modules available.",
@@ -38998,7 +39013,8 @@
       "confirmed": "Confirmed (POK)",
       "confirmed_warning": "Confirmed with warning",
       "verification_ok": "Verified",
-      "action_required": "Needs action"
+      "action_required": "Needs action",
+      "external": "Recorded externally"
     },
     "pay": {
       "action": "Accept payment",
@@ -39012,7 +39028,8 @@
         "cash": "Cash",
         "card_terminal": "Card on terminal - I confirm the payment went through",
         "bank_transfer": "Bank transfer (customer pays on their own)",
-        "qr_in_person": "QR payment on site at the customer"
+        "qr_in_person": "QR payment on site at the customer",
+        "stored_value": "Voucher / credit (redemption, credit use)"
       },
       "card_hint": "Confirm a card payment only after the terminal approved it. The app does not verify the card payment itself.",
       "qr_hint": "The QR code shows the customer the payment details. The payment is only recorded after you press \"Customer entered the payment\".",
@@ -39070,7 +39087,10 @@
         "not_applicable": "No accounting payment"
       },
       "fx_to_eet": "To EET: {amount} (rate {rate} CZK/{currency})",
-      "foreign_hint": "A payment in {currency} is recorded in EET in CZK, converted at the rate used to post the payment on the day it was received. In-person QR payment is available only for CZK invoices."
+      "foreign_hint": "A payment in {currency} is recorded in EET in CZK, converted at the rate used to post the payment on the day it was received. In-person QR payment is available only for CZK invoices.",
+      "stored_value_hint": "The customer pays with a previously bought stored-value voucher or credit. EET records it as credit use. The invoice payment is booked as an offset; the accountant settles the advance received for the voucher manually.",
+      "credit_topup": "Of which intended for later use (credit, voucher): {amount}.",
+      "credit_draw": "Of which credit use: {amount}."
     },
     "qr": {
       "action": "QR payment on site (EET)",
@@ -39112,7 +39132,8 @@
       "pending_qr": "After the invoice is issued, the QR payment on site opens.",
       "refund_info": "A refund for this credit note in cash or by card on site is recorded in EET as a negative sale, up to {amount} of the recorded sales of invoice {number}.",
       "refund_done": "The recorded sales of invoice {number} are fully corrected in EET; further refunds are not reported.",
-      "czk_in_eet": "{amount} in EET"
+      "czk_in_eet": "{amount} in EET",
+      "sum_external": "{n} recorded externally"
     },
     "editor": {
       "title": "Payment on issue (EET)",
@@ -39197,7 +39218,8 @@
         "not_subject": "Not recorded",
         "unknown": "Cannot be determined",
         "unsupported": "Not supported",
-        "inactive": "Recording is off"
+        "inactive": "Recording is off",
+        "external": "Recorded by an external system"
       },
       "reason_codes": {
         "cash": "Cash payment",
@@ -39229,7 +39251,11 @@
         "correction_failed_payment": "Correction: payment failed",
         "correction_wrong_data": "Correction: wrong data",
         "correction_duplicate": "Correction: duplicate record",
-        "correction_other": "Correction: other reason"
+        "correction_other": "Correction: other reason",
+        "stored_value_contact": "Voucher or credit redeemed in person",
+        "remote_stored_value": "Credit used remotely",
+        "stored_value_purpose_conflict": "Payment method does not match credit use",
+        "external_system": "Sale recorded by an external system"
       },
       "att_duration": "Duration",
       "verification": "Verification",
@@ -39245,7 +39271,10 @@
         "invalid_response": "Invalid response"
       },
       "original_payment": "Original payment",
-      "original_payment_value": "{amount}, rate {rate} CZK/{currency}"
+      "original_payment_value": "{amount}, rate {rate} CZK/{currency}",
+      "external_note": "This sale was recorded by another system (e.g. an e-shop). MyÚčto only keeps a record of it and never sends it to EET. A refund made through MyÚčto is recorded by MyÚčto as a negative sale.",
+      "credit_topup": "Intended for later use",
+      "credit_draw": "Credit use"
     },
     "correction": {
       "title": "Correct / refund a sale",
@@ -39271,7 +39300,11 @@
       "no_money_back": "The correction only changes the record. Refunding the customer must be done and booked separately.",
       "in_foreign": "Enter the amount in {currency}",
       "foreign_hint": "Sale {amount} at rate {rate}, {remaining} left to correct. The amount is converted at the rate of the original sale.",
-      "proposed_foreign": "In the original currency"
+      "proposed_foreign": "In the original currency",
+      "to_stored_value": "Return to the card / credit",
+      "to_stored_value_hint": "The sale was paid with a voucher or credit. Returning it to the card also reduces credit use in EET. Leave unchecked for a cash refund.",
+      "proposed_topup": "Of which intended for later use",
+      "proposed_draw": "Of which credit use"
     },
     "cash": {
       "title": "EET",

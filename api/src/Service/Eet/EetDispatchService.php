@@ -36,6 +36,8 @@ use Psr\Clock\ClockInterface;
  * Po 48 h od tržby se nastaví `overdue = 1` a odesílá se dál.
  *
  * `eet_settings.dispatch_blocked` a anonymizovaný klon databáze → nic se neodesílá.
+ * Záznam ve stavu `external` (tržbu evidoval jiný systém) žádný claim nepřevezme,
+ * protože podmínky claimu i výběr workeru berou jen otevřené stavy.
  */
 final class EetDispatchService
 {
@@ -293,6 +295,8 @@ final class EetDispatchService
             (string) $record['sequence_number'],
             new \DateTimeImmutable((string) $record['sale_at'] . (string) $record['sale_at_offset']),
             EetValues::toCents((string) $record['total_amount']),
+            $record['credit_topup_amount'] !== null ? EetValues::toCents((string) $record['credit_topup_amount']) : null,
+            $record['credit_draw_amount'] !== null ? EetValues::toCents((string) $record['credit_draw_amount']) : null,
         );
         $totalMs = max(2000, (int) ($settings['response_timeout_ms'] ?? 3000));
         $timeouts = new EetTimeouts(min(2000, $totalMs), $totalMs);

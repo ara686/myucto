@@ -29,6 +29,8 @@ const view = computed(() => {
     case 'sending': return { cls: CLASS.warn, label: t('eet.state.sending') }
     case 'retry_wait': return { cls: CLASS.warn, label: t('eet.state.retry_wait') }
     case 'action_required': return { cls: CLASS.bad, label: t('eet.state.action_required') }
+    // Tržbu evidoval jiný systém (e-shop), MyÚčto ji neodesílá.
+    case 'external': return { cls: CLASS.off, label: t('eet.state.external') }
     default: return { cls: CLASS.off, label: t(props.emptyKey ?? 'eet.state.none') }
   }
 })

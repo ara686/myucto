@@ -42,13 +42,13 @@ const emit = defineEmits<{
   (e: 'qr'): void
 }>()
 
-type Method = 'cash' | 'card_terminal' | 'bank_transfer' | 'qr_in_person'
+type Method = 'cash' | 'card_terminal' | 'bank_transfer' | 'stored_value' | 'qr_in_person'
 const CONTEXTS: EetContactContext[] = ['in_person', 'on_premises', 'in_vehicle', 'remote']
 /** Platba v cizí měně se do EET uvádí v Kč; QR na místě je česká QR platba jen v Kč. */
 const isForeign = computed(() => props.currency.toUpperCase() !== 'CZK')
 const METHODS = computed<Method[]>(() => isForeign.value
-  ? ['cash', 'card_terminal', 'bank_transfer']
-  : ['cash', 'card_terminal', 'bank_transfer', 'qr_in_person'])
+  ? ['cash', 'card_terminal', 'bank_transfer', 'stored_value']
+  : ['cash', 'card_terminal', 'bank_transfer', 'stored_value', 'qr_in_person'])
 
 const { t } = useI18n()
 const supplierStore = useSupplierStore()
@@ -94,6 +94,8 @@ function requestBody(): EetPaymentRequest | null {
   }
   if (form.method === 'cash') { body.channel = 'cash'; body.payment_method = 'cash' }
   else if (form.method === 'card_terminal') { body.channel = 'card_terminal'; body.payment_method = 'card' }
+  // Uplatnění poukazu / čerpání kreditu: zápočet přijaté platby, do EET jako cerp_zuct.
+  else if (form.method === 'stored_value') { body.channel = 'stored_value'; body.payment_method = 'offset' }
   else { body.channel = 'bank_transfer'; body.payment_method = 'bank_transfer' }
   if (form.deviceId) body.device_id = form.deviceId
   if (receivedTouched.value && form.receivedAt) {
@@ -153,6 +155,16 @@ watch(
   schedulePreview,
   { immediate: true },
 )
+
+/** Kreditová část tržby: dobití kreditu z položek faktury (urceno_cerp_zuct) a čerpání (cerp_zuct). */
+const creditView = computed(() => {
+  const p = preview.value
+  if (!p || !p.creates_record) return null
+  const parts: string[] = []
+  if (p.credit_topup_amount) parts.push(t('eet.pay.credit_topup', { amount: formatMoney(Number(p.credit_topup_amount), 'CZK') }))
+  if (p.credit_draw_amount) parts.push(t('eet.pay.credit_draw', { amount: formatMoney(Number(p.credit_draw_amount), 'CZK') }))
+  return parts.length > 0 ? parts.join(' ') : null
+})
 
 /** Přepočet cizoměnové platby na Kč pro EET (kurz úhrady ke dni přijetí). */
 const fxView = computed(() => {
@@ -269,6 +281,9 @@ const selectedDevice = computed(() => devices.value.find(d => d.id === form.devi
       <p v-if="form.method === 'card_terminal'" class="rounded-md bg-neutral-50 px-3 py-2 text-xs text-neutral-700">
         {{ t('eet.pay.card_hint') }}
       </p>
+      <p v-if="form.method === 'stored_value'" class="rounded-md bg-neutral-50 px-3 py-2 text-xs text-neutral-700" data-test="eet-pay-stored-value-hint">
+        {{ t('eet.pay.stored_value_hint') }}
+      </p>
       <p v-if="isForeign" class="rounded-md bg-neutral-50 px-3 py-2 text-xs text-neutral-700" data-test="eet-pay-foreign-hint">
         {{ t('eet.pay.foreign_hint', { currency }) }}
       </p>
@@ -324,6 +339,9 @@ const selectedDevice = computed(() => devices.value.find(d => d.id === form.devi
               : 'border-neutral-200 bg-neutral-50 text-neutral-700'">
           {{ policyView.text }}
         </div>
+        <p v-if="creditView" class="rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-700" data-test="eet-pay-credit">
+          {{ creditView }}
+        </p>
         <div v-if="fxView" data-test="eet-pay-fx"
           class="rounded-md border px-3 py-2 text-sm"
           :class="fxView.tone === 'bad' ? 'border-danger-500/40 bg-danger-50 text-danger-700' : 'border-neutral-200 bg-neutral-50 text-neutral-700'">

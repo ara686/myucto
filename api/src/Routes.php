@@ -507,6 +507,8 @@ final class Routes
             $g->get   ('/tokens/{id:[0-9]+}/ips',                  [\MyInvoice\Action\Auth\Tokens\TokenIpRuleAction::class, 'list']);
             $g->post  ('/tokens/{id:[0-9]+}/ips',                  [\MyInvoice\Action\Auth\Tokens\TokenIpRuleAction::class, 'create']);
             $g->delete('/tokens/{id:[0-9]+}/ips/{ipId:[0-9]+}',    [\MyInvoice\Action\Auth\Tokens\TokenIpRuleAction::class, 'delete']);
+            // Úhrady z tokenu bez kontextu EET eviduje externí systém (e-shop)
+            $g->put   ('/tokens/{id:[0-9]+}/eet-external',         \MyInvoice\Action\Auth\Tokens\TokenEetExternalAction::class);
             // Log volání veřejného API vlastními tokeny (MCP server i přímá integrace)
             $g->get   ('/api-log',                 \MyInvoice\Action\Auth\Tokens\ApiRequestLogAction::class);
         });

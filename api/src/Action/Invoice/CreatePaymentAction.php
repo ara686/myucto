@@ -31,7 +31,8 @@ use Psr\Http\Message\ServerRequestInterface as Request;
  *
  * Firma s aktivní evidencí tržeb (EET-05) posílá i okolnosti platby (channel,
  * contact_context, device_id, received_at, business_purpose nebo zkratku
- * eet_context = remote_transfer) a u evidované tržby hlavičku Idempotency-Key;
+ * eet_context = remote_transfer, u tržby evidované e-shopem eet_context = external s volitelným
+ * external_eet) a u evidované tržby hlavičku Idempotency-Key;
  * rozhoduje {@see EetInvoicePaymentGate}. Ostatní firmy beze změny.
  */
 final class CreatePaymentAction
@@ -79,6 +80,8 @@ final class CreatePaymentAction
                 (string) $body['amount'],
                 $body,
                 $request->getHeaderLine('Idempotency-Key'),
+                'manual',
+                EetInvoicePaymentGate::tokenDefaultsToExternal($request->getAttribute(AuthMiddleware::ATTR_API_TOKEN), $request->getAttribute(AuthMiddleware::ATTR_METHOD)),
             );
             if ($route['mode'] === 'eet') {
                 $eet = (array) $route['result'];

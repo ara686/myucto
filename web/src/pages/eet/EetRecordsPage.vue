@@ -26,7 +26,7 @@ const { t } = useI18n()
 const auth = useAuthStore()
 const toast = useToast()
 
-const STATUSES: EetRecordStatus[] = ['pending', 'sending', 'retry_wait', 'confirmed', 'confirmed_warning', 'action_required', 'verification_ok']
+const STATUSES: EetRecordStatus[] = ['pending', 'sending', 'retry_wait', 'confirmed', 'confirmed_warning', 'action_required', 'verification_ok', 'external']
 const PAGE = 50
 
 const canExport = computed(() => auth.canRead('eet.export'))
@@ -286,7 +286,7 @@ function target(r: EetRecord) {
                 {{ r.sequence_number }}
                 <span v-if="r.kind === 'correction'" :class="[BADGE, 'ml-1 bg-neutral-100 text-neutral-600 ring-neutral-500/20']">{{ t('eet.records.kind_correction') }}</span>
               </td>
-              <td class="px-3 py-2 whitespace-nowrap text-xs">{{ r.unit_number }} / {{ r.device_code }}</td>
+              <td class="px-3 py-2 whitespace-nowrap text-xs">{{ r.unit_number ?? '-' }} / {{ r.device_code ?? '-' }}</td>
               <td class="px-3 py-2 text-right whitespace-nowrap" :class="Number(r.total_amount) < 0 ? 'text-danger-600' : ''">
                 {{ formatMoney(Number(r.total_amount), r.currency || 'CZK') }}
               </td>
@@ -311,7 +311,7 @@ function target(r: EetRecord) {
           </div>
           <div class="text-xs text-neutral-600">{{ formatDateTime(r.sale_at) }} · {{ r.sequence_number }}</div>
           <div class="flex flex-wrap items-center gap-1 text-xs text-neutral-600">
-            <span>{{ r.unit_number }} / {{ r.device_code }}</span>
+            <span>{{ r.unit_number ?? '-' }} / {{ r.device_code ?? '-' }}</span>
             <span v-if="r.overdue" :class="[BADGE, 'bg-danger-50 text-danger-700 ring-danger-600/20']">{{ t('eet.records.overdue') }}</span>
             <span v-if="r.environment === 'playground'" :class="[BADGE, 'bg-warning-50 text-warning-700 ring-warning-600/20']">{{ t('eet.records.playground') }}</span>
           </div>

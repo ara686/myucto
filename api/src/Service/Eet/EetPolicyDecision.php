@@ -12,6 +12,8 @@ final class EetPolicyDecision
     public const UNKNOWN = 'unknown';
     public const UNSUPPORTED = 'unsupported';
     public const INACTIVE = 'inactive';
+    /** Tržbu evidoval jiný systém (e-shop); MyÚčto ji jen zaznamená a neodesílá. */
+    public const EXTERNAL = 'external';
 
     public function __construct(
         public readonly string $decision,

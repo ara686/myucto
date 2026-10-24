@@ -32,7 +32,8 @@ const REASONS: EetCorrectionReason[] = ['refund', 'failed_payment', 'wrong_data'
 
 const { t } = useI18n()
 /** `inForeign`: částka v původní měně cizoměnové tržby, přepočet kurzem původní tržby. */
-const form = reactive({ amount: '', reason: 'refund' as EetCorrectionReason, note: '', inForeign: false })
+/** `toStoredValue`: vratka tržby uhrazené poukazem / kreditem zpět na kartu (záporné cerp_zuct). */
+const form = reactive({ amount: '', reason: 'refund' as EetCorrectionReason, note: '', inForeign: false, toStoredValue: false })
 const preview = ref<EetCorrectionPreview | null>(null)
 const previewError = ref('')
 const previewBusy = ref(false)
@@ -61,6 +62,7 @@ function body(): EetCorrectionRequest {
     else b.amount = normalizedAmount.value
   }
   if (form.note.trim()) b.note = form.note.trim().slice(0, 255)
+  if (form.toStoredValue && form.reason === 'refund' && storedValuePayment.value) b.refund_to_stored_value = true
   return b
 }
 
@@ -81,7 +83,7 @@ async function runPreview() {
     if (my === seq) previewBusy.value = false
   }
 }
-watch(() => [form.amount, form.reason, form.inForeign], () => {
+watch(() => [form.amount, form.reason, form.inForeign, form.toStoredValue], () => {
   if (timer) clearTimeout(timer)
   timer = setTimeout(() => { void runPreview() }, 350)
 }, { immediate: true })
@@ -113,6 +115,8 @@ async function submit() {
 }
 
 const currency = computed(() => props.record.currency || 'CZK')
+/** Tržba byla uhrazena poukazem / kreditem: nabídnout vrácení zpět na kartu. */
+const storedValuePayment = computed(() => !!props.record.credit_draw_amount || !!preview.value?.stored_value_payment)
 /** Cizoměnová stopa tržby z náhledu (null u tržby v Kč). */
 const foreign = computed(() => preview.value?.foreign ?? null)
 const inputCurrency = computed(() => form.inForeign && foreign.value ? foreign.value.currency : currency.value)
@@ -160,6 +164,13 @@ const amountPlaceholder = computed(() =>
           </span>
         </span>
       </label>
+      <label v-if="storedValuePayment && form.reason === 'refund'" class="flex items-start gap-2 text-sm" data-test="eet-correction-stored-value">
+        <input v-model="form.toStoredValue" type="checkbox" class="mt-0.5" />
+        <span>
+          {{ t('eet.correction.to_stored_value') }}
+          <span class="block text-xs text-neutral-500">{{ t('eet.correction.to_stored_value_hint') }}</span>
+        </span>
+      </label>
       <label :class="formLabel">
         <span>{{ t('eet.pay.note') }}</span>
         <input v-model="form.note" type="text" maxlength="255" :class="formInput" />
@@ -170,6 +181,12 @@ const amountPlaceholder = computed(() =>
         <div class="flex flex-wrap justify-between gap-2"><span>{{ t('eet.correction.proposed') }}</span><strong>{{ formatMoney(Number(preview.proposed.total_amount), currency) }}</strong></div>
         <div v-if="foreign && preview.proposed.original_amount" class="flex flex-wrap justify-between gap-2 text-xs text-neutral-600">
           <span>{{ t('eet.correction.proposed_foreign') }}</span><span>{{ formatMoney(Number(preview.proposed.original_amount), foreign.currency) }}</span>
+        </div>
+        <div v-if="preview.proposed.credit_topup_amount" class="flex flex-wrap justify-between gap-2 text-xs text-neutral-600">
+          <span>{{ t('eet.correction.proposed_topup') }}</span><span>{{ formatMoney(Number(preview.proposed.credit_topup_amount), 'CZK') }}</span>
+        </div>
+        <div v-if="preview.proposed.credit_draw_amount" class="flex flex-wrap justify-between gap-2 text-xs text-neutral-600">
+          <span>{{ t('eet.correction.proposed_draw') }}</span><span>{{ formatMoney(Number(preview.proposed.credit_draw_amount), 'CZK') }}</span>
         </div>
         <div class="flex flex-wrap justify-between gap-2"><span>{{ t('eet.correction.already_corrected') }}</span><span>{{ formatMoney(Number(preview.corrected_total), currency) }}</span></div>
         <div class="flex flex-wrap justify-between gap-2"><span>{{ t('eet.correction.remaining') }}</span><span>{{ formatMoney(Number(preview.remaining), currency) }}</span></div>

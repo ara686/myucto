@@ -45,14 +45,16 @@ const counts = computed(() => {
   let waiting = 0
   let action = 0
   let none = 0
+  let external = 0
   for (const it of items.value) {
     const s = it.eet_record?.status ?? it.eet?.status
     if (!s) none++
+    else if (s === 'external') external++
     else if (s === 'confirmed' || s === 'confirmed_warning' || s === 'verification_ok') confirmed++
     else if (s === 'action_required') action++
     else waiting++
   }
-  return { confirmed, waiting, action, none }
+  return { confirmed, waiting, action, none, external }
 })
 
 /** Text k vrácení peněz u dobropisu: kolik se nejvýš zaeviduje jako záporná tržba. */
@@ -73,6 +75,7 @@ const summaryText = computed(() => {
   if (c.confirmed) parts.push(t('eet.invoice.sum_confirmed', { n: c.confirmed }))
   if (c.waiting) parts.push(t('eet.invoice.sum_waiting', { n: c.waiting }))
   if (c.action) parts.push(t('eet.invoice.sum_action', { n: c.action }))
+  if (c.external) parts.push(t('eet.invoice.sum_external', { n: c.external }))
   if (c.none) parts.push(t('eet.invoice.sum_none', { n: c.none }))
   return parts.join(', ')
 })

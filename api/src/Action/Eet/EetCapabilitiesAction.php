@@ -21,9 +21,10 @@ use Psr\Http\Message\ServerRequestInterface as Request;
  */
 final class EetCapabilitiesAction
 {
-    public const CONTRACT_VERSION = '2026-10.2';
-    public const SUPPORTED_SCENARIOS = ['cash', 'card_terminal_confirmed', 'qr_in_person', 'refund', 'correction', 'foreign_currency', 'credit_note_refund'];
-    public const UNSUPPORTED_SCENARIOS = ['credit', 'security_deposit', 'delegation'];
+    public const CONTRACT_VERSION = '2026-10.3';
+    public const SUPPORTED_SCENARIOS = ['cash', 'card_terminal_confirmed', 'qr_in_person', 'refund', 'correction', 'foreign_currency', 'credit_note_refund',
+        'credit', 'external_recording'];
+    public const UNSUPPORTED_SCENARIOS = ['security_deposit', 'delegation'];
 
     public function __construct(
         private readonly EetSettingsService $settings,

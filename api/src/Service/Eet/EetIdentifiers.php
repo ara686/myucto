@@ -16,6 +16,15 @@ final class EetIdentifiers
     /** `id_pokl`: XSD typ string20 s omezenou abecedou. */
     public const DEVICE_CODE_PATTERN = '/^[0-9a-zA-Z\.,:;\/#\-_ ]{1,20}$/D';
 
+    /** `porad_cis`: XSD typ string25 se stejnou abecedou jako `id_pokl`. */
+    public const SEQUENCE_NUMBER_PATTERN = '/^[0-9a-zA-Z\.,:;\/#\-_ ]{1,25}$/D';
+
+    /** `pok` (XSD PokType): UUIDv4 a dvě hexa číslice, celkem 39 znaků. */
+    public const POK_PATTERN = '/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}-[0-9a-fA-F]{2}$/D';
+
+    /** `dat_trzby` (XSD dateTime): bez zlomků sekund, s časovou zónou. */
+    public const DATE_TIME_PATTERN = '/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(Z|[+\-]\d\d:\d\d)$/D';
+
     /** `id_jednotky` (XSD IdEvidJednotkyType): kladné celé číslo, nejvýš devět číslic. */
     public const UNIT_NUMBER_MAX = 999999999;
 
@@ -31,6 +40,21 @@ final class EetIdentifiers
     public static function isDeviceCode(string $value): bool
     {
         return preg_match(self::DEVICE_CODE_PATTERN, $value) === 1;
+    }
+
+    public static function isSequenceNumber(string $value): bool
+    {
+        return preg_match(self::SEQUENCE_NUMBER_PATTERN, $value) === 1;
+    }
+
+    public static function isPok(string $value): bool
+    {
+        return preg_match(self::POK_PATTERN, $value) === 1;
+    }
+
+    public static function isDateTime(string $value): bool
+    {
+        return preg_match(self::DATE_TIME_PATTERN, $value) === 1;
     }
 
     /** Normalizace vstupu EIČ: mezery pryč, velká písmena; validaci dělá volající. */

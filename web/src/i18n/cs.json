@@ -14196,6 +14196,15 @@
         "position": "{position} z {total}",
         "load_failed": "Detail skladové karty se nepodařilo načíst.",
         "import": "Import zboží"
+      },
+      "eet_kind": {
+        "label": "Druh pro EET",
+        "standard": "Běžné zboží nebo služba",
+        "specific_voucher": "Dárkový poukaz na konkrétní zboží či službu",
+        "stored_value": "Hodnotový poukaz / dobití kreditu",
+        "hint_standard": "Prodej se eviduje jako běžná tržba.",
+        "hint_specific_voucher": "Poukaz na předem určené plnění (např. masáž zad) je běžný prodej tohoto plnění. Jeho pozdější uplatnění se už neeviduje.",
+        "hint_stored_value": "Poukaz na blíže neurčené zboží nebo dobití kreditu (peněženka, permanentka s kreditem). Jeho část tržby jde do EET jako „určeno k čerpání\"; uplatnění se pak eviduje jako čerpání kreditu (způsob platby Poukaz / kredit)."
       }
     },
     "item_detail": {
@@ -20671,7 +20680,13 @@
     "ip_current_hint": "Jde o adresu tohoto prohlížeče. Integrace nebo MCP klient se mohou připojovat z jiné IP adresy.",
     "ip_private_warning": "Aplikace vidí privátní, lokální nebo sdílenou IP adresu. V interní síti to může být správně. Pokud přistupujete přes internet a reverse proxy, ověřte předávání skutečné IP klienta; jinak může IP omezení rozlišovat jen proxy.",
     "ip_proxy_docs": "Jak nastavit předávání IP za proxy a v Dockeru",
-    "ip_hint": "Podporuje IPv4 i IPv6, samostatnou adresu i CIDR rozsah - např. 203.0.113.7, 192.168.1.0/24, 2001:db8::1, 2001:db8::/32."
+    "ip_hint": "Podporuje IPv4 i IPv6, samostatnou adresu i CIDR rozsah - např. 203.0.113.7, 192.168.1.0/24, 2001:db8::1, 2001:db8::/32.",
+    "eet_external_on": "EET eviduje e-shop",
+    "eet_external_off": "EET",
+    "eet_external_desc": "Úhrady z tohoto klíče eviduje EET externí systém (e-shop). Úhrada faktury bez okolností platby se zapíše účetně a tržba se jen zaznamená, MyÚčto ji do EET neodešle.",
+    "eet_external_confirm": "Úhrady přijaté klíčem „{name}\" bez okolností platby bude MyÚčto považovat za tržby, které eviduje e-shop sám, a do EET je neodešle. Pokračovat?",
+    "eet_external_enabled": "Úhrady z klíče eviduje EET externí systém.",
+    "eet_external_disabled": "Úhrady z klíče už nejsou považované za externí evidenci EET."
   },
   "license": {
     "banner_trial": "Zkušební období končí dnes - aktivujte licenci, aby zůstaly dostupné podvojné účetnictví, sklad a další komerční moduly. | Zkušební období končí zítra - aktivujte licenci, aby zůstaly dostupné podvojné účetnictví, sklad a další komerční moduly. | Zkušební období končí za {days} dny - aktivujte licenci, aby zůstaly dostupné podvojné účetnictví, sklad a další komerční moduly. | Zkušební období končí za {days} dní - aktivujte licenci, aby zůstaly dostupné podvojné účetnictví, sklad a další komerční moduly.",
@@ -38998,7 +39013,8 @@
       "confirmed": "Potvrzeno (POK)",
       "confirmed_warning": "Potvrzeno s varováním",
       "verification_ok": "Ověřeno",
-      "action_required": "Vyžaduje zásah"
+      "action_required": "Vyžaduje zásah",
+      "external": "Evidováno externě"
     },
     "pay": {
       "action": "Přijmout platbu",
@@ -39012,7 +39028,8 @@
         "cash": "Hotově",
         "card_terminal": "Karta na terminálu - potvrzuji, že platba proběhla",
         "bank_transfer": "Bankovní převod (zákazník platí sám)",
-        "qr_in_person": "QR platba na místě u zákazníka"
+        "qr_in_person": "QR platba na místě u zákazníka",
+        "stored_value": "Poukaz / kredit (uplatnění, čerpání kreditu)"
       },
       "card_hint": "Platbu kartou potvrzujte až po schválení na terminálu. Aplikace platbu karty sama neověřuje.",
       "qr_hint": "QR kód ukáže zákazníkovi platební údaje. Teprve po stisknutí \"Zákazník zadal platbu\" vznikne záznam o platbě.",
@@ -39070,7 +39087,10 @@
         "not_applicable": "Bez účetní úhrady"
       },
       "fx_to_eet": "Do EET: {amount} (kurz {rate} Kč/{currency})",
-      "foreign_hint": "Platba v {currency} se do EET zaeviduje v Kč, přepočtená kurzem, jakým se úhrada zaúčtuje ke dni přijetí. QR platba na místě je jen pro faktury v Kč."
+      "foreign_hint": "Platba v {currency} se do EET zaeviduje v Kč, přepočtená kurzem, jakým se úhrada zaúčtuje ke dni přijetí. QR platba na místě je jen pro faktury v Kč.",
+      "stored_value_hint": "Zákazník platí dříve zakoupeným hodnotovým poukazem nebo kreditem. Do EET se zaeviduje jako čerpání kreditu. Úhrada faktury se zapíše jako zápočet; zúčtování přijaté zálohy na poukaz řeší účetní ručně.",
+      "credit_topup": "Z toho určeno k čerpání (kredit, poukaz): {amount}.",
+      "credit_draw": "Z toho čerpání kreditu: {amount}."
     },
     "qr": {
       "action": "Platba QR na místě (EET)",
@@ -39112,7 +39132,8 @@
       "pending_qr": "Po vystavení faktury se otevře QR platba na místě.",
       "refund_info": "Vrácení peněz k tomuto dobropisu hotově nebo kartou na místě se zaeviduje do EET jako záporná tržba, nejvýš {amount} z evidovaných tržeb faktury {number}.",
       "refund_done": "Evidované tržby faktury {number} jsou v EET opravené celé, další vrácení se nehlásí.",
-      "czk_in_eet": "{amount} v EET"
+      "czk_in_eet": "{amount} v EET",
+      "sum_external": "{n} evidováno externě"
     },
     "editor": {
       "title": "Platba při vystavení (EET)",
@@ -39197,7 +39218,8 @@
         "not_subject": "Neeviduje se",
         "unknown": "Nelze určit",
         "unsupported": "Nepodporováno",
-        "inactive": "Evidence je vypnutá"
+        "inactive": "Evidence je vypnutá",
+        "external": "Evidováno externím systémem"
       },
       "reason_codes": {
         "cash": "Platba v hotovosti",
@@ -39229,7 +39251,11 @@
         "correction_failed_payment": "Oprava: platba neproběhla",
         "correction_wrong_data": "Oprava: chybné údaje",
         "correction_duplicate": "Oprava: duplicitní záznam",
-        "correction_other": "Oprava: jiný důvod"
+        "correction_other": "Oprava: jiný důvod",
+        "stored_value_contact": "Uplatnění poukazu nebo kreditu při osobním kontaktu",
+        "remote_stored_value": "Čerpání kreditu na dálku",
+        "stored_value_purpose_conflict": "Rozpor mezi způsobem platby a čerpáním kreditu",
+        "external_system": "Tržbu evidoval externí systém"
       },
       "att_duration": "Doba",
       "verification": "Ověřovací",
@@ -39245,7 +39271,10 @@
         "invalid_response": "Neplatná odpověď"
       },
       "original_payment": "Původní platba",
-      "original_payment_value": "{amount}, kurz {rate} Kč/{currency}"
+      "original_payment_value": "{amount}, kurz {rate} Kč/{currency}",
+      "external_note": "Tuto tržbu evidoval jiný systém (např. e-shop). MyÚčto ji jen zaznamenalo a do EET ji neodesílá. Vratku přes MyÚčto zaeviduje MyÚčto jako zápornou tržbu.",
+      "credit_topup": "Určeno k čerpání",
+      "credit_draw": "Čerpání kreditu"
     },
     "correction": {
       "title": "Opravit / vrátit tržbu",
@@ -39271,7 +39300,11 @@
       "no_money_back": "Oprava mění jen evidenci. Vrácení peněz zákazníkovi je potřeba provést a zaúčtovat zvlášť.",
       "in_foreign": "Zadat částku v {currency}",
       "foreign_hint": "Tržba {amount} při kurzu {rate}, zbývá opravit {remaining}. Částka se přepočte kurzem původní tržby.",
-      "proposed_foreign": "V původní měně"
+      "proposed_foreign": "V původní měně",
+      "to_stored_value": "Vrátit zpět na kartu / kredit",
+      "to_stored_value_hint": "Tržba byla uhrazena poukazem nebo kreditem. Při vrácení na kartu se v EET sníží i čerpání kreditu. Při vrácení v hotovosti nechte nezaškrtnuté.",
+      "proposed_topup": "Z toho určeno k čerpání",
+      "proposed_draw": "Z toho čerpání kreditu"
     },
     "cash": {
       "title": "EET",

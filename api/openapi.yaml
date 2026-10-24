@@ -3338,8 +3338,10 @@ paths:
           description: |
             Doklad nelze označit za uhrazený, protože není vystavený ani odeslaný
             (`invalid_state`), běžná faktura nemá kladnou částku k úhradě
-            (`invalid_amount`), operaci odmítla evidence úhrad (`invalid_payment`)
-            nebo stejný `Idempotency-Key` přišel s jiným tělem (`idempotency_conflict`).
+            (`invalid_amount`), operaci odmítla evidence úhrad (`invalid_payment`),
+            stejný `Idempotency-Key` přišel s jiným tělem (`idempotency_conflict`)
+            nebo externí tržba se stejnou trojicí EIČ + id_pokl + porad_cis má jiný
+            obsah (`eet_external_duplicate`).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -3406,7 +3408,9 @@ paths:
         místě…) jde přes společný platební příkaz s `Idempotency-Key`: jedna platební
         událost, jedna úhrada a jeden EET záznam, odpověď nese `eet`. Platba mimo
         evidenci (např. `eet_context = remote_transfer`) se zapíše jako dosud
-        a odpověď nese `eet_decision`.
+        a odpověď nese `eet_decision`. Úhrada tržby, kterou evidoval e-shop
+        (`eet_context = external`, volitelně `external_eet`), se zapíše účetně
+        a odpověď nese `eet` se stavem záznamu `external` (neodesílá se).
       parameters:
         - $ref: '#/components/parameters/EetIdempotencyKey'
       requestBody:
@@ -3456,8 +3460,10 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
         '409':
           description: |
-            Neplatný stav/částka (draft, storno, dobropis…; `invalid_payment`) nebo
-            stejný `Idempotency-Key` s jiným tělem (`idempotency_conflict`).
+            Neplatný stav/částka (draft, storno, dobropis…; `invalid_payment`),
+            stejný `Idempotency-Key` s jiným tělem (`idempotency_conflict`) nebo
+            externí tržba se stejnou trojicí EIČ + id_pokl + porad_cis a jiným obsahem
+            (`eet_external_duplicate`).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -20203,6 +20209,8 @@ paths:
                   - goods
                   - product
                   default: goods
+                eet_item_kind:
+                  $ref: '#/components/schemas/StockItemEetKind'
                 unit:
                   type: string
                   default: ks
@@ -20293,6 +20301,7 @@ paths:
                 sku: { type: string, maxLength: 50 }
                 name: { type: string, maxLength: 255 }
                 item_type: { type: string, enum: [material, goods, product] }
+                eet_item_kind: { $ref: '#/components/schemas/StockItemEetKind' }
                 unit: { type: string }
                 tracking_mode: { type: string, enum: [none, lot, serial] }
                 ean: { type: [string, "null"] }
@@ -33340,19 +33349,30 @@ components:
         Okolnosti platby pro evidenci tržeb (EET). Firma bez aktivní evidence je
         ignoruje. Firma s aktivní evidencí musí poslat `channel` (a u bezhotovostní
         platby `contact_context`), nebo zkratku `eet_context = remote_transfer`
-        (převod z domova), jinak 422 `eet_context_required`. Klientské rozhodnutí
-        „evidovat / neevidovat" server nepřijímá, povinnost určuje sám.
+        (převod z domova) či `eet_context = external` (tržbu evidoval e-shop sám),
+        jinak 422 `eet_context_required`. Klientské rozhodnutí „evidovat / neevidovat"
+        server nepřijímá, povinnost určuje sám.
+
+        `eet_context = external`: úhrada se zapíše běžnou účetní cestou a MyÚčto tržbu
+        jen zaznamená se stavem `external`, nikdy ji neodešle (žádné dvojí hlášení).
+        Volitelné `external_eet` nese údaje externí evidence. Stejná trojice
+        `eic` + `id_pokl` + `porad_cis` se převezme jen jednou: stejný obsah vrátí
+        původní výsledek (`eet.idempotent_replay = true`), jiný obsah 409
+        `eet_external_duplicate`. `Idempotency-Key` je u externí evidence volitelný.
+        API token s volbou „Úhrady z tohoto klíče eviduje EET externí systém" posílá
+        úhradu bez `eet_context` i bez `channel` jako `external`.
       properties:
         channel:
           type: string
-          enum: [cash, card_terminal, qr_in_person, bank_transfer, card_online, cash_on_delivery, other]
+          enum: [cash, card_terminal, qr_in_person, bank_transfer, card_online, cash_on_delivery, other, stored_value]
+          description: '`stored_value` = úhrada poukazem / kreditem (čerpání kreditu, `cerp_zuct`).'
         contact_context:
           type: string
           enum: [in_person, on_premises, in_vehicle, remote, unknown]
         business_purpose:
           type: string
           enum: [sale, order_deposit, credit_topup, credit_draw, security_deposit, other]
-          description: Default `sale`, u zálohové faktury `order_deposit`.
+          description: Default `sale`, u zálohové faktury `order_deposit`, u kanálu `stored_value` `credit_draw`.
         device_id:
           type: integer
           format: int64
@@ -33365,12 +33385,41 @@ components:
             tržby určuje i datum úhrady; jiné `paid_on`/`paid_at` vrací 422.
         eet_context:
           type: string
-          enum: [remote_transfer]
-          description: Zkratka pro vzdálený bankovní převod (nepodléhá EET).
+          enum: [remote_transfer, external]
+          description: |
+            `remote_transfer` = vzdálený bankovní převod (nepodléhá EET),
+            `external` = tržbu evidoval jiný systém (e-shop), MyÚčto ji jen zaznamená.
+        external_eet:
+          $ref: '#/components/schemas/ExternalEetRecord'
         eet_device_id:
           type: integer
           format: int64
           description: Pokladní zařízení pro zápornou tržbu při vrácení k dobropisu (alias `device_id`, default = výchozí zařízení firmy).
+    StockItemEetKind:
+      type: string
+      enum: [standard, specific_voucher, stored_value]
+      default: standard
+      description: |
+        Druh položky pro EET. `specific_voucher` = dárkový poukaz na konkrétní zboží
+        či službu (běžný prodej), `stored_value` = hodnotový poukaz na blíže
+        nespecifikované zboží nebo dobití kreditu (při prodeji jde jeho podíl do
+        `urceno_cerp_zuct`). Klientská role pole měnit nesmí.
+    ExternalEetRecord:
+      type: object
+      additionalProperties: false
+      description: |
+        Volitelné údaje tržby evidované externím systémem (formáty podle XSD EET).
+        `id_pokl` a `porad_cis` se uvádějí obě, nebo žádné; `eic` musí odpovídat
+        EIČ firmy v nastavení EET. Bez `dat_trzby` platí `received_at` (nebo teď),
+        bez `celk_trzba` částka platby v Kč.
+      properties:
+        pok: { type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}-[0-9a-fA-F]{2}$', description: Potvrzovací kód (39 znaků) }
+        eic: { type: string, pattern: '^CZ[0-9]{8,10}$' }
+        id_jednotky: { type: integer, minimum: 1, maximum: 999999999 }
+        id_pokl: { type: string, pattern: '^[0-9a-zA-Z.,:;/#\-_ ]{1,20}$' }
+        porad_cis: { type: string, pattern: '^[0-9a-zA-Z.,:;/#\-_ ]{1,25}$' }
+        dat_trzby: { type: string, format: date-time, description: 'RRRR-MM-DDThh:mm:ss s časovou zónou, ne v budoucnosti' }
+        celk_trzba: { type: string, description: Celková částka tržby v Kč (kladná) }
     InvoicePaymentEetResult:
       type: object
       additionalProperties: true
@@ -40340,6 +40389,8 @@ components:
           type: string
         avg_unit_cost:
           type: string
+        eet_item_kind:
+          $ref: '#/components/schemas/StockItemEetKind'
         intrastat_cn8_code:
           type: [string, 'null']
           pattern: '^[0-9]{8}$'
