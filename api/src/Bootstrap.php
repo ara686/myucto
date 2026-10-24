@@ -1127,9 +1127,9 @@ final class Bootstrap
             ),
             \MyInvoice\Service\Import\PdfPageRasterizerInterface::class => fn (ContainerInterface $c)
                 => new \MyInvoice\Service\Import\PdfPageRasterizer($c->get(LoggerInterface::class)),
-            // EET: ověřovací zpráva jde přes skutečný transport s certifikátem firmy.
-            \MyInvoice\Service\Eet\Diagnostics\EetDiagnosticsTransport::class
-                => \DI\autowire(\MyInvoice\Service\Eet\Diagnostics\TransportEetDiagnostics::class),
+            // EET: SOAP transport k FS; konstruktor má volitelné test seamy, proto explicitně.
+            \MyInvoice\Service\Eet\Transport\EetTransportInterface::class
+                => fn () => new \MyInvoice\Service\Eet\Transport\SoapEetTransport(),
             \MyInvoice\Service\Import\OllamaClient::class => fn (ContainerInterface $c) => new \MyInvoice\Service\Import\OllamaClient(
                 $c->get(Connection::class),
                 $c->get(\MyInvoice\Service\Auth\SecretEncryption::class),

@@ -6,18 +6,20 @@ namespace MyInvoice\Service\Eet\Certificate;
 
 use MyInvoice\Service\Eet\EetException;
 use MyInvoice\Service\Eet\EetIdentifiers;
+use MyInvoice\Service\Eet\Transport\EetCredentialException;
+use MyInvoice\Service\Eet\Transport\EetSigningCredential;
 
 /**
  * Ověří nahraný pokladní certifikát EET (PKCS#12 + heslo) dřív, než se uloží.
  *
- * Kontroluje: čitelnost souboru, přítomnost soukromého klíče a jeho shodu
- * s certifikátem, RSA alespoň 2048 bitů, CN = DIČ poplatníka (EIČ), účel
- * „Digital Signature", dobu platnosti a řetězec k připnuté autoritě EET, podle
- * které se určí prostředí (Playground / produkce).
- *
- * Soubor se po ověření znovu zabalí aktuálním šifrováním PKCS#12 (AES), takže
- * pozdější podepisování nepotřebuje legacy provider OpenSSL kvůli RC2 souborům.
- * Text chyb OpenSSL se do odpovědi nikdy nepropisuje.
+ * Soubor otevírá {@see EetSigningCredential::fromPkcs12()} — stejná čtečka,
+ * jakou pak podepisuje transport, takže projde i RC2 z oficiálních souborů CA
+ * bez legacy provideru OpenSSL a uloží se jen to, co půjde použít. Čtečka
+ * ověří soukromý klíč, RSA a shodu klíče s certifikátem; tady navíc délka
+ * klíče, CN = DIČ poplatníka (EIČ), účel „Digital Signature", doba platnosti
+ * a řetězec k připnuté autoritě EET, podle které se určí prostředí. Politika
+ * certifikátu ({@see EetSigningCredential::environmentHint()}) mu nesmí odporovat.
+ * Text chyb OpenSSL ani čtečky se do odpovědi nepropisuje.
  */
 final class EetCertificateInspector
 {
@@ -35,83 +37,43 @@ final class EetCertificateInspector
         if ($pkcs12 === '' || strlen($pkcs12) > self::MAX_PKCS12_BYTES) {
             throw EetException::validation('Nahrajte soubor pokladního certifikátu ve formátu P12 (nejvýš 64 kB).');
         }
-        if (!function_exists('openssl_pkcs12_read')) {
-            throw new EetException('eet_openssl_unavailable', 'Server nepodporuje práci s certifikáty PKCS#12.', 503);
-        }
-
-        while (openssl_error_string() !== false) {
-        }
-        $bundle = [];
-        if (!@openssl_pkcs12_read($pkcs12, $bundle, $password)) {
-            $errors = '';
-            while (($error = openssl_error_string()) !== false) {
-                $errors .= $error . "\n";
-            }
-            // OpenSSL 3 má RC2 (starší exporty PKCS#12) jen v legacy provideru.
-            // Se špatným heslem to nesouvisí, proto vlastní hláška.
-            if (str_contains($errors, 'unsupported')) {
-                throw new EetException(
-                    'eet_certificate_legacy_encryption',
-                    'Soubor P12 používá zastaralé šifrování (RC2), které server bez legacy provideru OpenSSL nepřečte. '
-                    . 'Heslo za tím není. Převeďte soubor příkazy openssl pkcs12 -in puvodni.p12 -legacy -nodes -out docasny.pem '
-                    . 'a openssl pkcs12 -export -in docasny.pem -out novy.p12 (docasny.pem pak smažte), nebo požádejte správce serveru o zapnutí legacy provideru.',
-                    422,
-                );
-            }
-            throw new EetException(
-                'eet_certificate_unreadable',
-                'Soubor certifikátu nelze otevřít. Zkontrolujte soubor a heslo.',
-                422,
-            );
-        }
-
         try {
-            return $this->inspectBundle($bundle, $pkcs12, $password, $now);
-        } finally {
-            unset($bundle);
+            $credential = EetSigningCredential::fromPkcs12($pkcs12, $password);
+        } catch (EetCredentialException $exception) {
+            throw self::fromCredentialException($exception);
         }
+
+        return $this->inspectCredential($credential, $pkcs12, $now);
     }
 
-    /**
-     * Ověření už rozbaleného PKCS#12 (`cert`, `pkey`, `extracerts` jako
-     * z `openssl_pkcs12_read`). Samostatně kvůli testům stavů, které běžný
-     * export PKCS#12 vůbec nevytvoří (soubor bez klíče, cizí klíč).
-     *
-     * @param array<string,mixed> $bundle
-     */
-    public function inspectBundle(
-        #[\SensitiveParameter] array $bundle,
-        #[\SensitiveParameter] string $pkcs12,
-        #[\SensitiveParameter] string $password,
-        \DateTimeImmutable $now,
-    ): EetInspectedCertificate {
-        $certificate = is_string($bundle['cert'] ?? null) ? $bundle['cert'] : '';
-        $privateKey = is_string($bundle['pkey'] ?? null) ? $bundle['pkey'] : '';
-        $extraCerts = array_values(array_filter((array) ($bundle['extracerts'] ?? []), 'is_string'));
-        if ($certificate === '') {
-            throw new EetException('eet_certificate_invalid', 'Soubor neobsahuje certifikát.', 422);
-        }
-        if ($privateKey === '') {
-            throw new EetException('eet_certificate_no_private_key', 'Soubor neobsahuje soukromý klíč. Nahrajte P12 se soukromým klíčem.', 422);
-        }
-        if (!@openssl_x509_check_private_key($certificate, $privateKey)) {
-            throw new EetException('eet_certificate_key_mismatch', 'Soukromý klíč v souboru nepatří k certifikátu.', 422);
-        }
-        $key = @openssl_pkey_get_private($privateKey);
-        $details = $key === false ? false : openssl_pkey_get_details($key);
-        if (!is_array($details) || ($details['type'] ?? null) !== OPENSSL_KEYTYPE_RSA || (int) ($details['bits'] ?? 0) < 2048) {
-            throw new EetException('eet_certificate_key_type', 'Pokladní certifikát musí mít klíč RSA o délce alespoň 2048 bitů.', 422);
-        }
+    /** Převod chyby čtečky PKCS#12 na odpověď API bez technických detailů. */
+    public static function fromCredentialException(EetCredentialException $exception): EetException
+    {
+        return match ($exception->reason) {
+            'private_key_missing' => new EetException('eet_certificate_no_private_key', 'Soubor neobsahuje soukromý klíč. Nahrajte P12 se soukromým klíčem.', 422),
+            'key_mismatch' => new EetException('eet_certificate_key_mismatch', 'Soukromý klíč v souboru nepatří k certifikátu.', 422),
+            'unsupported_key' => new EetException('eet_certificate_key_type', 'Pokladní certifikát musí mít klíč RSA o délce alespoň 2048 bitů.', 422),
+            default => new EetException('eet_certificate_unreadable', 'Soubor certifikátu nelze otevřít. Zkontrolujte soubor a heslo.', 422),
+        };
+    }
 
+    private function inspectCredential(EetSigningCredential $credential, #[\SensitiveParameter] string $pkcs12, \DateTimeImmutable $now): EetInspectedCertificate
+    {
+        $certificate = $credential->certificatePem();
         $parsed = @openssl_x509_parse($certificate);
-        $fingerprint = @openssl_x509_fingerprint($certificate, 'sha256');
-        if (!is_array($parsed) || !is_string($fingerprint) || $fingerprint === '') {
+        if (!is_array($parsed)) {
             throw new EetException('eet_certificate_invalid', 'Certifikát se nepodařilo přečíst.', 422);
         }
 
+        $publicKey = @openssl_pkey_get_public($certificate);
+        $details = $publicKey === false ? false : openssl_pkey_get_details($publicKey);
+        if (!is_array($details) || (int) ($details['bits'] ?? 0) < 2048) {
+            throw new EetException('eet_certificate_key_type', 'Pokladní certifikát musí mít klíč RSA o délce alespoň 2048 bitů.', 422);
+        }
+
         $cn = self::nameField($parsed['subject'] ?? [], 'CN');
-        $eic = EetIdentifiers::normalizeEic($cn);
-        if (!EetIdentifiers::isEic($eic)) {
+        $eic = $credential->eic();
+        if ($eic === null || !EetIdentifiers::isEic($eic)) {
             throw new EetException('eet_certificate_subject', 'Certifikát nemá v CN platné DIČ poplatníka (EIČ). Nejde o pokladní certifikát EET.', 422);
         }
 
@@ -120,8 +82,8 @@ final class EetCertificateInspector
             throw new EetException('eet_certificate_key_usage', 'Certifikát není určen k elektronickému podpisu (chybí Digital Signature).', 422);
         }
 
-        $notBefore = (new \DateTimeImmutable('@' . (int) ($parsed['validFrom_time_t'] ?? 0)))->setTimezone($now->getTimezone());
-        $notAfter = (new \DateTimeImmutable('@' . (int) ($parsed['validTo_time_t'] ?? 0)))->setTimezone($now->getTimezone());
+        $notBefore = $credential->notBefore()->setTimezone($now->getTimezone());
+        $notAfter = $credential->notAfter()->setTimezone($now->getTimezone());
         if ($notBefore > $now) {
             throw new EetException('eet_certificate_not_yet_valid', 'Certifikát ještě není platný (platnost od ' . $notBefore->format('j. n. Y H:i') . ').', 422);
         }
@@ -137,29 +99,28 @@ final class EetCertificateInspector
                 422,
             );
         }
-
-        $normalized = '';
-        $exported = @openssl_pkcs12_export($certificate, $normalized, $privateKey, $password, ['extracerts' => $extraCerts]);
-        if (!$exported || $normalized === '') {
-            $normalized = $pkcs12;
+        $hint = $credential->environmentHint();
+        if ($hint !== null && $hint->value !== $environment) {
+            throw new EetException('eet_certificate_untrusted', 'Politika certifikátu neodpovídá autoritě, která ho vydala.', 422);
         }
 
         return new EetInspectedCertificate(
             $environment,
             $eic,
             mb_substr($cn, 0, 64),
-            substr(strtoupper((string) ($parsed['serialNumberHex'] ?? '')), 0, 80),
-            strtolower($fingerprint),
+            substr($credential->serialNumber(), 0, 80),
+            $credential->fingerprintSha256(),
             mb_substr(self::issuerLabel($parsed['issuer'] ?? []), 0, 255),
             $notBefore,
             $notAfter,
-            $normalized,
+            $pkcs12,
         );
     }
 
     /**
      * Prostředí autority, ke které certifikát vede platným podpisovým řetězcem
-     * až ke kořeni z úložiště důvěry; `null`, když k žádné.
+     * až ke kořeni z úložiště důvěry; `null`, když k žádné. Řetězec přibalený
+     * v souboru se nepoužívá.
      */
     private function trustedEnvironment(string $certificate, \DateTimeImmutable $now): ?string
     {

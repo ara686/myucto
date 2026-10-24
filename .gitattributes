@@ -56,3 +56,4 @@ api/resources/epo/*.pem -text -diff
 api/resources/eet/*.wsdl -text
 api/resources/eet/trust/*.pem -text -diff
 api/tests/Fixtures/eet/*.xml -text
+api/resources/eet/ca/*.pem -text -diff

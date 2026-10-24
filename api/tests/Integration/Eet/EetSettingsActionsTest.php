@@ -17,9 +17,8 @@ use MyInvoice\Middleware\SupplierScopeMiddleware;
 use MyInvoice\Service\ActivityLogger;
 use MyInvoice\Service\Auth\SecretEncryption;
 use MyInvoice\Service\Eet\Certificate\EetCertificateInspector;
-use MyInvoice\Service\Eet\Diagnostics\EetDiagnosticsOutcome;
-use MyInvoice\Service\Eet\Diagnostics\EetDiagnosticsRequest;
-use MyInvoice\Service\Eet\Diagnostics\EetDiagnosticsTransport;
+use MyInvoice\Service\Eet\Transport\EetEnvironment;
+use MyInvoice\Service\Eet\Transport\FakeEetTransport;
 use MyInvoice\Service\Eet\EetCertificateVault;
 use MyInvoice\Service\Eet\EetDeviceRepository;
 use MyInvoice\Service\Eet\EetDiagnosticsService;
@@ -257,14 +256,7 @@ final class EetSettingsActionsTest extends TestCase
         $this->vault->import($this->supplierA, 'playground', EetTestPki::pkcs12('playground', 'CZ00000019'), EetTestPki::PASSWORD, null, null);
         $this->settings->update($this->supplierA, ['eic' => 'CZ00000019'], $this->userId);
 
-        $transport = new class implements EetDiagnosticsTransport {
-            public ?EetDiagnosticsRequest $seen = null;
-            public function verify(EetDiagnosticsRequest $request): EetDiagnosticsOutcome
-            {
-                $this->seen = $request;
-                return new EetDiagnosticsOutcome(true, 'verification_ok', 0, null, 120);
-            }
-        };
+        $transport = new FakeEetTransport();
         $service = new EetDiagnosticsService(
             $this->settings,
             new EetDeviceRepository($this->db),
@@ -278,8 +270,11 @@ final class EetSettingsActionsTest extends TestCase
         self::assertSame(0, $result['error_code']);
         self::assertSame('playground', $result['environment']);
         self::assertSame($device['id'], $result['device_id']);
-        self::assertSame('POK-1', $transport->seen?->deviceCode);
-        self::assertSame(101, $transport->seen?->unitNumber);
+        self::assertSame('verification_ok', $result['outcome']);
+        $call = $transport->lastCall();
+        self::assertSame('POK-1', $call['data']->deviceCode);
+        self::assertSame(101, $call['data']->unitId);
+        self::assertSame(EetEnvironment::Playground, $call['environment']);
 
         try {
             $service->run($this->supplierB, null, $this->userId);

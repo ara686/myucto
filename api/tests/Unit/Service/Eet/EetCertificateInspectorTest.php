@@ -6,6 +6,8 @@ namespace MyInvoice\Tests\Unit\Service\Eet;
 
 use MyInvoice\Service\Eet\Certificate\EetCertificateInspector;
 use MyInvoice\Service\Eet\EetException;
+use MyInvoice\Service\Eet\Transport\EetCredentialException;
+use MyInvoice\Service\Eet\Transport\EetSigningCredential;
 use MyInvoice\Tests\Support\EetTestPki;
 use PHPUnit\Framework\TestCase;
 
@@ -40,16 +42,14 @@ final class EetCertificateInspectorTest extends TestCase
         self::assertSame('CZ1234567890', $result->eic);
     }
 
-    public function testNormalizedPkcs12OpensWithTheSamePassword(): void
+    public function testStoredPkcs12OpensForSigning(): void
     {
         $result = $this->inspector->inspect(EetTestPki::pkcs12(), EetTestPki::PASSWORD);
 
-        $bundle = [];
-        self::assertTrue(openssl_pkcs12_read($result->pkcs12, $bundle, EetTestPki::PASSWORD));
-        self::assertNotEmpty($bundle['pkey']);
-        self::assertSame($result->fingerprintSha256, openssl_x509_fingerprint($bundle['cert'], 'sha256'));
+        $credential = EetSigningCredential::fromPkcs12($result->pkcs12, EetTestPki::PASSWORD);
+        self::assertSame($result->fingerprintSha256, $credential->fingerprintSha256());
+        self::assertSame('CZ00000019', $credential->eic());
     }
-
     public function testWrongPasswordIsRejectedWithoutLeakingDetails(): void
     {
         $this->expectCode('eet_certificate_unreadable', fn () => $this->inspector->inspect(EetTestPki::pkcs12(), 'spatne-heslo'));
@@ -61,26 +61,14 @@ final class EetCertificateInspectorTest extends TestCase
         $this->expectCode('eet_validation', fn () => $this->inspector->inspect('', EetTestPki::PASSWORD));
     }
 
-    public function testMissingPrivateKeyIsRejected(): void
+    public function testMissingOrForeignPrivateKeyIsReportedWithoutDetails(): void
     {
-        $this->expectCode('eet_certificate_no_private_key', fn () => $this->inspector->inspectBundle(
-            EetTestPki::bundle(withKey: false),
-            'p12',
-            EetTestPki::PASSWORD,
-            new \DateTimeImmutable(),
-        ));
-    }
+        $bundle = EetTestPki::bundle();
+        $foreign = EetTestPki::bundle(foreignKey: true);
 
-    public function testPrivateKeyOfAnotherCertificateIsRejected(): void
-    {
-        $this->expectCode('eet_certificate_key_mismatch', fn () => $this->inspector->inspectBundle(
-            EetTestPki::bundle(foreignKey: true),
-            'p12',
-            EetTestPki::PASSWORD,
-            new \DateTimeImmutable(),
-        ));
+        $this->expectCode('eet_certificate_no_private_key', fn () => self::credential($bundle['cert'], ''));
+        $this->expectCode('eet_certificate_key_mismatch', fn () => self::credential($bundle['cert'], $foreign['pkey']));
     }
-
     public function testSubjectWithoutEicIsRejected(): void
     {
         $this->expectCode('eet_certificate_subject', fn () => $this->inspector->inspect(EetTestPki::pkcs12(cn: 'Jan Testovaci'), EetTestPki::PASSWORD));
@@ -127,6 +115,15 @@ final class EetCertificateInspectorTest extends TestCase
                 self::assertStringContainsString('CA:TRUE', (string) ($parsed['extensions']['basicConstraints'] ?? ''));
                 self::assertSame($environment === 'playground', str_starts_with((string) $parsed['subject']['CN'], 'playground'));
             }
+        }
+    }
+
+    private static function credential(string $certificate, string $key): void
+    {
+        try {
+            EetSigningCredential::fromPem($certificate, $key);
+        } catch (EetCredentialException $exception) {
+            throw EetCertificateInspector::fromCredentialException($exception);
         }
     }
 

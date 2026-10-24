@@ -24,3 +24,19 @@ Otisky certifikátů (SHA-256 nad DER):
   (shodný otisk je i v úložišti důvěryhodných certifikátů Mozilla)
 - `I.CA Public CA/RSA 06/2022`: `df5baf6d7e1a7d14e9911c5b8c676ec6ebcad9354a74f4ac7314e133e07a94de`
   (podepsaný kořenem výše, platný do 17. 6. 2032)
+
+## Certifikační autority pokladních certifikátů (`ca/`)
+
+Pokladní certifikát nahraný firmou musí vést k jedné z těchto autorit; podle
+autority se určí prostředí (Playground / produkce). Řetězec přibalený v souboru
+`.p12` se za důvěryhodný nebere.
+
+| Soubor | Původní URL | SHA-256 souboru | SHA-256 certifikátu (DER) |
+| --- | --- | --- | --- |
+| `ca/playground-root.pem` | https://eet.gov.cz/assets/cs/cmsmedia/pro-vyvojare/ca_eet-root_cert-playground.crt | `c0257db7f2d9dde3f9413e904814a330cbd2efa41f2ab4ecd8f91f7c5f73f3b6` | `61c1e3c7229e9d3289f56d5293db2d7909b849ffce871b5ea01c690a7c604619` |
+| `ca/playground-sub.pem` | https://eet.gov.cz/assets/cs/cmsmedia/pro-vyvojare/ca_eet-sub_cert-playground.crt | `28182077cb77338070e209fe9e950481d01ecbc181dfc76ecd7985bd2e0f9046` | `464ffc1fc4810caef379310c857b163be1ca3288ebbe3a5de3413e24d60627ca` |
+| `ca/production-root.pem` | https://eet.gov.cz/assets/cs/cmsmedia/pro-vyvojare/ca_eet-root_prod.pem | `462afa5e88c894ec414690baef1440419478b31c8524d5de5237a20ce305ec8b` | `639554d87815d6893eca4419ec25e8c919984a3d89e92f144cecaeb611197a2f` |
+| `ca/production-sub.pem` | https://eet.gov.cz/assets/cs/cmsmedia/pro-vyvojare/ca_eet-sub_prod.pem | `fd0ae27da503f70c99b85affe3c85640cfbc8569b39aef15252c415c30215800` | `9f54d1fe6df6869d3565e15b86c4eb2d9b93b558420ea1a046f1bc85bc884ae0` |
+
+Názvy souborů začínají prostředím (`playground-*`, `production-*`); podle toho
+je čte `EetTrustStore`. Novou autoritu přidejte se stejnou předponou.
