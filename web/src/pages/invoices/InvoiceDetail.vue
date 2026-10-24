@@ -17,7 +17,11 @@ import {
   type SigningProfile,
 } from '@/api/settings'
 import { adminApi, type InvoiceSmtpLog } from '@/api/admin'
-import { apiErrorMessage } from '@/api/errors'
+import { apiErrorCode, apiErrorMessage } from '@/api/errors'
+import AcceptPaymentDialog from '@/components/eet/AcceptPaymentDialog.vue'
+import QrInPersonPayment from '@/components/eet/QrInPersonPayment.vue'
+import EetInvoiceSummary from '@/components/eet/EetInvoiceSummary.vue'
+import { useEetCapabilities } from '@/composables/useEetCapabilities'
 import { stockApi, type StockDocument } from '@/api/stock'
 import { formatMoney, formatHourlyRate, formatDate, formatNumber, formatPercent, statusLabel, typeLabel, statusBadgeClass, displayStatus } from '@/composables/useFormat'
 import { durationTotal, formatDuration, isTimeItem, itemQuantity, workRowTotal } from '@/utils/timeBilling'
@@ -110,6 +114,14 @@ const wrModalOpen = ref(false)
 const loading = ref(true)
 const error = ref('')
 const busy = ref<string | null>(null)
+
+// ───── EET: přijetí platby s posouzením evidence ─────
+const eet = useEetCapabilities()
+const eetAcceptOpen = ref(false)
+const eetQrOpen = ref(false)
+const eetRefresh = ref(0)
+/** Volba z editoru (?eet=accept|qr): dialog se otevře, jakmile je faktura vystavená. */
+const pendingEet = ref<'accept' | 'qr' | null>(null)
 /** Výčet chybějících zásob z neúspěšného vystavení (okno místo toastu). */
 const insufficientStock = ref<InsufficientStockItem[] | null>(null)
 let loadGeneration = 0
@@ -485,6 +497,7 @@ async function submitPartialPayment() {
     }
     invoicesApi.activity(invoice.value.id).then(a => { activity.value = a }).catch(() => {})
   } catch (e: any) {
+    if (handleEetContextRequired(e)) return
     toast.error(e?.response?.data?.error?.message || t('invoice.operation_failed'))
   } finally {
     busy.value = null
@@ -525,7 +538,7 @@ async function deletePayment(p: InvoicePayment) {
     toast.success(t('invoice.payments.deleted'))
     invoicesApi.activity(invoice.value.id).then(a => { activity.value = a }).catch(() => {})
   } catch (e: any) {
-    toast.error(e?.response?.data?.error?.message || t('invoice.operation_failed'))
+    toast.error(eetHistoryMessage(e) || e?.response?.data?.error?.message || t('invoice.operation_failed'))
   } finally {
     busy.value = null
   }
@@ -884,6 +897,7 @@ async function issue() {
   try {
     invoice.value = await invoicesApi.issue(invoice.value.id)
     toast.success( t('invoice.issued_as', { varsymbol: invoice.value.varsymbol }))
+    if (pendingEet.value) await eet.reload()
     // Prodej majetku (1177): faktura je vystavená, ale karta zůstala v užívání (zavřené
     // období, nedoúčtovaný odpis minulého roku…). Bez téhle hlášky by jediná stopa byla
     // v auditním logu a účetní by na to přišla až u inventarizace.
@@ -972,6 +986,7 @@ async function markPaid() {
     else if (pt?.status === 'failed') toast.warning(t('invoice.payment_thanks_failed'))
     else if (pt?.status === 'skipped' && pt.reason === 'no_recipient') toast.warning(t('invoice.payment_thanks_no_recipient'))
   } catch (e: any) {
+    if (handleEetContextRequired(e)) return
     toast.error( e?.response?.data?.error?.message || t('invoice.operation_failed'))
   } finally {
     busy.value = null
@@ -1016,7 +1031,7 @@ async function unmarkPaid() {
     loadPayments() // unmark-paid evidované platby smazal
     toast.success(t('invoice.unmark_paid_done'))
   } catch (e: any) {
-    toast.error(e?.response?.data?.error?.message || t('invoice.operation_failed'))
+    toast.error(eetHistoryMessage(e) || e?.response?.data?.error?.message || t('invoice.operation_failed'))
   } finally {
     busy.value = null
   }
@@ -1725,6 +1740,51 @@ async function postToJournal() {
 
 const postingRuleOpen = ref(false)
 
+watch(() => route.query.eet, (v) => {
+  if (v !== 'accept' && v !== 'qr') return
+  pendingEet.value = v
+  const { eet: _drop, ...rest } = route.query
+  void router.replace({ query: rest })
+}, { immediate: true })
+
+/** Platbu lze přijmout u vystavené faktury se zbývající částkou a při aktivní EET. */
+const eetPayAvailable = computed(() =>
+  eet.canAccept.value && paymentsRelevant() && !!isIssued.value
+  && remainingToPay.value > 0 && !lockedForMe.value)
+
+watch([pendingEet, eetPayAvailable, () => eet.loaded.value], () => {
+  if (!pendingEet.value || !eet.loaded.value || !invoice.value || isDraft.value) return
+  if (eetPayAvailable.value) {
+    if (pendingEet.value === 'qr') eetQrOpen.value = true
+    else eetAcceptOpen.value = true
+  }
+  pendingEet.value = null
+})
+
+function onEetPaymentDone() {
+  eetRefresh.value++
+  loadPayments()
+  invoicesApi.get(invoice.value!.id).then(inv => { invoice.value = inv }).catch(() => {})
+}
+function closeEetDialogs() {
+  const changed = eetAcceptOpen.value || eetQrOpen.value
+  eetAcceptOpen.value = false
+  eetQrOpen.value = false
+  if (changed) onEetPaymentDone()
+}
+/** Starý endpoint bez kontextu platby při aktivní EET vrací 422; nabídneme nový dialog. */
+function handleEetContextRequired(e: unknown): boolean {
+  if (apiErrorCode(e) !== 'eet_context_required') return false
+  toast.info(t('eet.invoice.context_required'))
+  markPaidOpen.value = false
+  partialOpen.value = false
+  if (eetPayAvailable.value) eetAcceptOpen.value = true
+  return true
+}
+function eetHistoryMessage(e: unknown): string | null {
+  return apiErrorCode(e) === 'eet_history_exists' ? t('eet.invoice.history_exists') : null
+}
+
 // ─── Lišta akcí (sdílená ActionBar) — primary se mění dle lifecyclu dokladu ───
 // Pravidlo „1 primární akce": je-li doklad po splatnosti, primární = Upomínka a Uhradit klesá
 // na sekundární; jinak je primární Uhradit.
@@ -1754,7 +1814,12 @@ const invoiceActions = computed<ActionItem[]>(() => {
       show: canIssueFinal.value && canIssue, disabled: b, loading: busy.value === 'issue-final', run: issueFinalFromProforma },
     { key: 'mark-paid', label: t('invoice.mark_paid'), icon: 'checkCircle',
       tier: markPaidPrimary ? 'primary' : 'secondary', variant: 'success',
-      show: isIssued.value && canMarkPaid.value && canMarkPaidPermission && !lockedForMe.value && !isOpenRefund.value, disabled: b, run: openMarkPaid },
+      show: isIssued.value && canMarkPaid.value && canMarkPaidPermission && !lockedForMe.value && !isOpenRefund.value && !eetPayAvailable.value, disabled: b, run: openMarkPaid },
+    { key: 'eet-accept', label: t('eet.pay.action'), icon: 'checkCircle',
+      tier: markPaidPrimary ? 'primary' : 'secondary', variant: 'success',
+      show: eetPayAvailable.value && !isOpenRefund.value, disabled: b, run: () => { eetAcceptOpen.value = true } },
+    { key: 'eet-qr', label: t('eet.qr.action'), icon: 'qr', tier: 'secondary', variant: 'success',
+      show: eetPayAvailable.value && !isOpenRefund.value, disabled: b, run: () => { eetQrOpen.value = true } },
     { key: 'refund', label: t('refundPayment.action'), icon: 'upload', tier: 'primary', variant: 'primary',
       show: isOpenRefund.value && inv.payment_method !== 'cash' && auth.canRead('purchase_invoices.payment_orders'),
       disabled: b, run: () => { refundDialogOpen.value = true } },
@@ -1774,7 +1839,7 @@ const invoiceActions = computed<ActionItem[]>(() => {
     { key: 'approval', label: t('invoice.approval.send_request'), icon: 'send', tier: 'secondary', variant: 'primary',
       show: canRequestApproval.value && canApprovalPermission, disabled: b, loading: busy.value === 'approval-request', run: requestApproval },
     { key: 'partial', label: t('invoice.partial_payment'), icon: 'coin', tier: 'secondary', variant: 'warning',
-      show: canPartialPayment.value, disabled: b, run: openPartialPayment },
+      show: canPartialPayment.value && !eetPayAvailable.value, disabled: b, run: openPartialPayment },
     { key: 'wr', label: t('invoice.wr_btn'), icon: 'chart', tier: 'secondary', variant: 'primary',
       show: isDraft.value && inv.invoice_type !== 'tax_document' && w && !lockedForMe.value,
       title: t('invoice.wr_btn') as string, run: () => { wrModalOpen.value = true } },
@@ -1942,6 +2007,16 @@ useWindowRefresh(['invoices', 'clients', 'bank', 'bank-transactions', 'cash', 'a
         :thanks="{ enabled: thanksEnabled, hasRecipient: thanksHasRecipient, defaultChecked: sendThanks }"
         :busy="busy === 'paid'"
         @close="markPaidOpen = false" @done="onAltPayDone" @mark-paid="onPlainMarkPaid" />
+
+      <!-- EET: přijetí platby a QR platba na místě -->
+      <AcceptPaymentDialog v-if="eetAcceptOpen && invoice" :invoice-id="invoice.id" :currency="invoice.currency"
+        :remaining="remainingToPay" :default-device-id="eet.capabilities.value?.default_device_id"
+        :environment="eet.capabilities.value?.environment"
+        @close="closeEetDialogs" @done="onEetPaymentDone" @qr="eetAcceptOpen = false; eetQrOpen = true" />
+      <QrInPersonPayment v-if="eetQrOpen && invoice" :invoice-id="invoice.id" :currency="invoice.currency"
+        :remaining="remainingToPay" :default-device-id="eet.capabilities.value?.default_device_id"
+        :environment="eet.capabilities.value?.environment"
+        @close="closeEetDialogs" @done="onEetPaymentDone" />
 
       <!-- Vrátit peníze odběrateli — platební příkaz s jednou vratkou -->
       <RefundPaymentDialog v-if="refundDialogOpen && invoice" :invoice-id="invoice.id"
@@ -2754,6 +2829,12 @@ useWindowRefresh(['invoices', 'clients', 'bank', 'bank-transactions', 'cash', 'a
         class="bg-neutral-50 border border-neutral-200 rounded-lg px-5 py-4 text-sm text-neutral-600">
         {{ t('invoice.payments.imported_without_details', { date: invoice.paid_at ? formatDate(invoice.paid_at) : '—' }) }}
       </div>
+
+      <div v-if="pendingEet && isDraft && eet.enabled.value" class="rounded-lg border border-primary-600/30 bg-primary-50 px-5 py-3 text-sm text-primary-700" data-test="eet-pending-hint">
+        {{ t(pendingEet === 'qr' ? 'eet.invoice.pending_qr' : 'eet.invoice.pending_accept') }}
+      </div>
+
+      <EetInvoiceSummary v-if="eet.capabilities.value && paymentsRelevant()" :invoice-id="invoice.id" :refresh-key="eetRefresh" />
 
       <div v-if="invoice.cash_documents?.length"
         class="bg-surface border border-neutral-200 rounded-lg px-5 py-4 shadow-sm text-sm space-y-1.5" data-invoice-cash-documents>

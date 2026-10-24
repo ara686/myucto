@@ -810,6 +810,7 @@ const navSections = computed<NavSection[]>(() => {
       ...(dimensionsEnabled ? [{ to: '/company/dimensions', label: t('nav.dimensions'), icon: ICONS.codebooks, permission: 'accounting' as PermissionKey }] : []),
       { to: '/profile/api-tokens',          label: t('nav.api_tokens'),      icon: ICONS.api_tokens },
       { to: '/profile/mcp-server',          label: t('nav.mcp_server'),      icon: ICONS.mcp },
+      { to: '/eet/records',                label: t('eet.records.nav'),     icon: ICONS.cash, permission: 'eet' as PermissionKey },
       { to: '/eet/settings',               label: t('eet.nav'),             icon: ICONS.cash, permission: 'eet.settings' as PermissionKey },
       { to: '/document-requests',           label: t('nav.document_requests'), icon: ICONS.requestDoc },
     ],

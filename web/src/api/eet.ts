@@ -147,29 +147,217 @@ export interface EetDiagnosticsResult {
   certificate_id: number
 }
 
-/** Tvary níže pro budoucí endpointy (platby, evidence, fronta) doplní navazující práce. */
+/** Částka jako řetězec s dvěma desetinnými místy (např. '1210.00'). */
 export type EetMoney = string
 
+export type EetRecordStatus =
+  | 'pending' | 'sending' | 'retry_wait' | 'confirmed' | 'confirmed_warning' | 'action_required' | 'verification_ok'
+
+export type EetPaymentChannel =
+  | 'cash' | 'card_terminal' | 'qr_in_person' | 'bank_transfer' | 'card_online' | 'cash_on_delivery' | 'other'
+export type EetPaymentMethod =
+  | 'bank_transfer' | 'direct_debit' | 'card' | 'cash' | 'cash_on_delivery' | 'offset' | 'other'
+export type EetContactContext = 'in_person' | 'on_premises' | 'in_vehicle' | 'remote' | 'unknown'
+export type EetCorrectionReason = 'refund' | 'failed_payment' | 'wrong_data' | 'duplicate' | 'other'
+
 export interface EetPaymentRequest {
-  [key: string]: unknown
+  amount: EetMoney
+  currency?: string
+  channel?: EetPaymentChannel
+  payment_method?: EetPaymentMethod
+  contact_context?: EetContactContext
+  business_purpose?: string
+  invoice_id?: number
+  device_id?: number
+  received_at?: string
+  note?: string
+}
+
+export interface EetPolicyResult {
+  decision: 'required' | 'voluntary' | 'not_subject' | 'unknown' | 'unsupported' | 'inactive'
+  reason_code: string
+  message: string
+  policy_version: string
+}
+
+export interface EetPaymentPreview {
+  eet: EetPolicyResult
+  creates_record: boolean
+  blocks_acceptance: boolean
+  requires: Array<'channel' | 'contact_context'>
+  amount: EetMoney
+  currency: string
+  invoice?: { id: number; currency: string; remaining: EetMoney } | null
+}
+
+export interface EetRecordWarning {
+  code?: number | string
+  message?: string
+}
+
+export interface EetRecordState {
+  record_id: number
+  public_id: string
+  status: EetRecordStatus
+  action_code?: string | null
+  pok?: string | null
+  environment: EetEnvironment
+  warnings: EetRecordWarning[]
+  overdue: boolean
+  attempt_count?: number
+  next_attempt_at?: string | null
+  last_error?: { code?: number | null; message?: string | null } | null
+  attempted?: boolean
+}
+
+export interface EetAllocation {
+  invoice_id?: number | null
+  invoice_payment_id?: number | null
+  cash_document_id?: number | null
+  bank_transaction_id?: number | null
+  amount?: EetMoney
+}
+
+export type EetPaymentOrderStatus = 'initiated' | 'operator_confirmed' | 'settled' | 'failed' | 'cancelled'
+
+export interface EetPaymentEvent {
+  payment_event_id: string
+  kind: 'payment' | 'refund' | 'intent'
+  origin: string
+  amount: EetMoney
+  currency: string
+  payment_method?: string | null
+  channel?: string | null
+  contact_context?: string
+  business_purpose?: string
+  invoice_id?: number | null
+  ordered_at?: string | null
+  received_at?: string | null
+  recorded_at: string
+  paid_on?: string | null
+  payment_order_status: EetPaymentOrderStatus
+  bank_verification_status: 'not_applicable' | 'pending' | 'verified'
+  accounting_settlement_status: 'not_applicable' | 'pending' | 'settled'
+  eet_decision: { decision?: string; reason_code?: string | null; policy_version?: string | null }
+  allocations?: EetAllocation[]
+  eet: EetRecordState | null
+  idempotent_replay?: boolean
+  poll_after_seconds?: number
 }
 
 export interface EetPaymentIntentRequest {
-  [key: string]: unknown
+  invoice_id: number
+  amount?: EetMoney
+  device_id?: number
+  contact_context?: 'in_person' | 'on_premises' | 'in_vehicle'
+  note?: string
+}
+
+export interface EetPaymentIntent extends EetPaymentEvent {
+  qr?: { spd: string; image_data_uri?: string | null } | null
+}
+
+export interface EetRecord extends EetRecordState {
+  kind: 'sale' | 'correction' | 'diagnostic'
+  payment_event_id?: number | null
+  corrects_record_id?: number | null
+  correction_reason?: EetCorrectionReason | null
+  eic?: string
+  unit_id?: number
+  unit_number?: number
+  device_id?: number
+  device_code?: string
+  sequence_number?: string
+  sale_at?: string
+  total_amount?: EetMoney
+  currency?: string
+  policy?: { decision?: string | null; reason_code?: string | null; version?: string | null }
+  deadline_at?: string
+  confirmed_at?: string | null
+  created_at?: string | null
+}
+
+export interface EetAttempt {
+  attempt_no: number
+  uuid_zpravy: string
+  sent_at: string
+  first_attempt?: boolean
+  verification?: boolean
+  certificate_id?: number | null
+  outcome: string
+  http_status?: number | null
+  error_code?: number | null
+  error_message?: string | null
+  pok?: string | null
+  test_flag?: boolean | null
+  signature_verified?: boolean
+  duration_ms?: number | null
+  request_sha256?: string | null
+  received_at?: string | null
+  request_xml?: string | null
+  response_xml?: string | null
+}
+
+export interface EetRecordDetail extends EetRecord {
+  payment_event?: EetPaymentEvent | null
+  corrections?: EetRecord[]
+  attempts?: EetAttempt[]
 }
 
 export interface EetRecordListParams {
   cursor?: string
   limit?: number
-  status?: string
+  status?: EetRecordStatus
   from?: string
   to?: string
+  unit_id?: number
+  device_id?: number
+  kind?: 'sale' | 'correction'
 }
 
-export interface EetExportParams {
-  from?: string
-  to?: string
+export interface EetRecordListResponse {
+  items: EetRecord[]
+  next_cursor: string | null
 }
+
+export interface EetCorrectionRequest {
+  amount?: EetMoney
+  reason?: EetCorrectionReason
+  note?: string
+  device_id?: number
+}
+
+export interface EetCorrectionPreview {
+  original: EetRecord
+  corrected_total: EetMoney
+  remaining: EetMoney
+  proposed: { total_amount: EetMoney; reason?: string | null; device_id?: number; environment?: string; sale_at?: string }
+  allowed: boolean
+  accounting?: string
+}
+
+export interface EetCorrection extends EetPaymentEvent {
+  correction?: EetRecord | null
+  original_remaining?: EetMoney
+}
+
+export interface EetQueueSummary {
+  counts?: { pending?: number; sending?: number; retry_wait?: number; action_required?: number }
+  open_total?: number
+  action_required_by_code?: Record<string, number>
+  overdue?: number
+  oldest_deadline_at?: string | null
+  last_confirmed_at?: string | null
+  environment?: EetEnvironment
+  dispatch_blocked?: boolean
+  certificates?: Record<string, { valid_until?: string | null; expired?: boolean }>
+}
+
+export interface EetInvoiceSummaryItem extends EetPaymentEvent {
+  eet_record?: EetRecord | null
+}
+
+export type EetExportParams = Omit<EetRecordListParams, 'cursor' | 'limit' | 'kind'>
 
 export const eetApi = {
   capabilities: () => api.get<EetCapabilities>('/eet/capabilities').then(r => r.data),
@@ -209,37 +397,38 @@ export const eetApi = {
   diagnostics: (deviceId?: number | null) =>
     api.post<EetDiagnosticsResult>('/eet/diagnostics', deviceId ? { device_id: deviceId } : {}).then(r => r.data),
 
-  // Budoucí endpointy (spec, sekce 2): jen tenké metody, tvary upřesní navazující práce.
   previewPayment: (body: EetPaymentRequest) =>
-    api.post<Record<string, unknown>>('/eet/payments/preview', body).then(r => r.data),
+    api.post<EetPaymentPreview>('/eet/payments/preview', body).then(r => r.data),
   createPayment: (body: EetPaymentRequest, idempotencyKey: string) =>
-    api.post<Record<string, unknown>>('/eet/payments', body, { headers: { 'Idempotency-Key': idempotencyKey } }).then(r => r.data),
+    api.post<EetPaymentEvent>('/eet/payments', body, { headers: { 'Idempotency-Key': idempotencyKey } }).then(r => r.data),
   payment: (publicId: string) =>
-    api.get<Record<string, unknown>>(`/eet/payments/${encodeURIComponent(publicId)}`).then(r => r.data),
+    api.get<EetPaymentEvent>(`/eet/payments/${encodeURIComponent(publicId)}`).then(r => r.data),
 
-  createPaymentIntent: (body: EetPaymentIntentRequest) =>
-    api.post<Record<string, unknown>>('/eet/payment-intents', body).then(r => r.data),
+  createPaymentIntent: (body: EetPaymentIntentRequest, idempotencyKey?: string) =>
+    api.post<EetPaymentIntent>('/eet/payment-intents', body, {
+      headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
+    }).then(r => r.data),
   confirmPaymentIntent: (publicId: string, idempotencyKey: string) =>
-    api.post<Record<string, unknown>>(`/eet/payment-intents/${encodeURIComponent(publicId)}/confirm`, {}, {
+    api.post<EetPaymentEvent>(`/eet/payment-intents/${encodeURIComponent(publicId)}/confirm`, {}, {
       headers: { 'Idempotency-Key': idempotencyKey },
     }).then(r => r.data),
   cancelPaymentIntent: (publicId: string) =>
-    api.post<Record<string, unknown>>(`/eet/payment-intents/${encodeURIComponent(publicId)}/cancel`).then(r => r.data),
+    api.post<EetPaymentEvent>(`/eet/payment-intents/${encodeURIComponent(publicId)}/cancel`).then(r => r.data),
 
   records: (params: EetRecordListParams = {}) =>
-    api.get<Record<string, unknown>>('/eet/records', { params }).then(r => r.data),
-  record: (id: number) => api.get<Record<string, unknown>>(`/eet/records/${id}`).then(r => r.data),
-  retryRecord: (id: number) => api.post<Record<string, unknown>>(`/eet/records/${id}/retry`).then(r => r.data),
-  previewCorrection: (id: number, body: Record<string, unknown>) =>
-    api.post<Record<string, unknown>>(`/eet/records/${id}/corrections/preview`, body).then(r => r.data),
-  createCorrection: (id: number, body: Record<string, unknown>, idempotencyKey: string) =>
-    api.post<Record<string, unknown>>(`/eet/records/${id}/corrections`, body, {
+    api.get<EetRecordListResponse>('/eet/records', { params }).then(r => r.data),
+  record: (id: number) => api.get<EetRecordDetail>(`/eet/records/${id}`).then(r => r.data),
+  retryRecord: (id: number) => api.post<EetRecordState>(`/eet/records/${id}/retry`).then(r => r.data),
+  previewCorrection: (id: number, body: EetCorrectionRequest) =>
+    api.post<EetCorrectionPreview>(`/eet/records/${id}/corrections/preview`, body).then(r => r.data),
+  createCorrection: (id: number, body: EetCorrectionRequest, idempotencyKey: string) =>
+    api.post<EetCorrection>(`/eet/records/${id}/corrections`, body, {
       headers: { 'Idempotency-Key': idempotencyKey },
     }).then(r => r.data),
 
-  queue: () => api.get<Record<string, unknown>>('/eet/queue').then(r => r.data),
+  queue: () => api.get<EetQueueSummary>('/eet/queue').then(r => r.data),
   exportCsv: (params: EetExportParams = {}) =>
     api.get<Blob>('/eet/export', { params, responseType: 'blob' }).then(r => r.data),
   invoiceSummary: (invoiceId: number) =>
-    api.get<Record<string, unknown>>(`/invoices/${invoiceId}/eet`).then(r => r.data),
+    api.get<{ items: EetInvoiceSummaryItem[] }>(`/invoices/${invoiceId}/eet`).then(r => r.data),
 }
