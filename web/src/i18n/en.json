@@ -1805,6 +1805,12 @@
     "framework_conversion": "Controlled conversion 500 → 504",
     "property_charges": "Charge components and rates"
   },
+  "migration_nonprofit_notice": {
+    "title": "Data transfer has not been verified for non-profit organisations",
+    "body": "This company is a non-profit organisation or another accounting unit under Decree 504/2002 Coll. (association, foundation, institute, owners' association). The data transfer assumes the business chart of accounts and statements under Decree 500/2002 Coll. and does not know main and economic activities, funds or the Decree 504 statements. Transferring accounting into a period kept under Decree 504 is refused. Please contact support before the transfer.",
+    "body_native": "This company is a non-profit organisation or another accounting unit under Decree 504/2002 Coll. (association, foundation, institute, owners' association). A MyÚčto export transfers the chart of accounts and the journal only into a company with the same accounting framework (Decree 500 or 504) and does not transfer members and fees, grants, capital or the non-profit income tax records. The transfer has not been verified for non-profit organisations, so please contact support before the transfer.",
+    "contact": "Contact support"
+  },
   "migration_overview": {
     "myucto_hint": "Transfer one company from a MyÚčto Complete data export or a MyInvoice database backup, including recurring invoices.",
     "title": "Switch from another accounting system",
