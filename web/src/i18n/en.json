@@ -13529,7 +13529,8 @@
       "negative_balance_after_reverse": "The cash register is negative after the reversal — check the subsequent documents.",
       "dic_missing_over_10k": "Sale above CZK 10,000 without a VAT No. — add the customer's VAT No. for Control Statement A.4.",
       "dic_not_czech": "The partner VAT number is not in Czech format — only Czech VAT numbers belong in the control statement (A.4). Either fix it or leave the field empty (the document then falls into the A.5 summary).",
-      "fx_rate_deviation": "The entered rate differs from the CNB daily rate — check the rate on the document."
+      "fx_rate_deviation": "The entered rate differs from the CNB daily rate — check the rate on the document.",
+      "eet_refund_partial": "The refund exceeds the not yet corrected recorded part of the invoice sales; only the recorded part was sent to EET as a negative sale."
     },
     "validation": {
       "register": "Select the cash register the document belongs to.",
@@ -13594,7 +13595,8 @@
       "device": "EET device for the sale",
       "default": "default",
       "chosen": "On posting, the document is recorded in EET on the chosen device.",
-      "device_required": "The register has no EET device and the company has no default device. Cash sales must be recorded, so the document cannot be posted. Assign a device to the register in EET settings."
+      "device_required": "The register has no EET device and the company has no default device. Cash sales must be recorded, so the document cannot be posted. Assign a device to the register in EET settings.",
+      "refund_info": "When posted, the credit note refund will be recorded in EET as a negative sale of {amount}."
     }
   },
   "stock": {
@@ -39066,7 +39068,9 @@
         "settled": "Invoice paid",
         "pending": "Invoice payment waits for bank matching",
         "not_applicable": "No accounting payment"
-      }
+      },
+      "fx_to_eet": "To EET: {amount} (rate {rate} CZK/{currency})",
+      "foreign_hint": "A payment in {currency} is recorded in EET in CZK, converted at the rate used to post the payment on the day it was received. In-person QR payment is available only for CZK invoices."
     },
     "qr": {
       "action": "QR payment on site (EET)",
@@ -39087,7 +39091,8 @@
       "bank_unverified": "Receipt of the money by the bank is not verified yet. Only bank matching will verify it; the operator confirmation is not a bank confirmation.",
       "create_failed": "Could not prepare the QR payment.",
       "confirm_failed": "Could not save the confirmation.",
-      "cancel_failed": "Could not cancel the QR payment."
+      "cancel_failed": "Could not cancel the QR payment.",
+      "czk_only": "In-person QR payment is available only for CZK invoices. Accept an invoice in {currency} in cash or by card on the terminal."
     },
     "invoice": {
       "title": "EET",
@@ -39104,7 +39109,10 @@
       "locked_eet": "A payment with a recorded EET sale cannot be deleted, correct a mistake with a negative correction in the EET records.",
       "history_exists": "The payment cannot be deleted because an EET record exists for it. Correct a wrong record with a negative correction in the EET records.",
       "pending_accept": "After the invoice is issued, accepting the payment opens.",
-      "pending_qr": "After the invoice is issued, the QR payment on site opens."
+      "pending_qr": "After the invoice is issued, the QR payment on site opens.",
+      "refund_info": "A refund for this credit note in cash or by card on site is recorded in EET as a negative sale, up to {amount} of the recorded sales of invoice {number}.",
+      "refund_done": "The recorded sales of invoice {number} are fully corrected in EET; further refunds are not reported.",
+      "czk_in_eet": "{amount} in EET"
     },
     "editor": {
       "title": "Payment on issue (EET)",
@@ -39235,7 +39243,9 @@
         "timeout": "Response timed out",
         "transport_error": "Connection error",
         "invalid_response": "Invalid response"
-      }
+      },
+      "original_payment": "Original payment",
+      "original_payment_value": "{amount}, rate {rate} CZK/{currency}"
     },
     "correction": {
       "title": "Correct / refund a sale",
@@ -39258,7 +39268,10 @@
       "submit": "Record the correction",
       "submit_failed": "Could not save the correction.",
       "saved": "The correction is saved.",
-      "no_money_back": "The correction only changes the record. Refunding the customer must be done and booked separately."
+      "no_money_back": "The correction only changes the record. Refunding the customer must be done and booked separately.",
+      "in_foreign": "Enter the amount in {currency}",
+      "foreign_hint": "Sale {amount} at rate {rate}, {remaining} left to correct. The amount is converted at the rate of the original sale.",
+      "proposed_foreign": "In the original currency"
     },
     "cash": {
       "title": "EET",
@@ -39268,6 +39281,21 @@
       "reverse_warning": "The reversal records a negative EET correction of the sale. The money must be returned to the customer and booked separately.",
       "reverse_reason": "EET correction reason",
       "reversed_without_correction": "The document is reversed, but no EET correction was created. Check the record."
+    },
+    "refund": {
+      "title": "Credit note refund",
+      "intro": "Invoice {number} has recorded sales (EET). You are refunding {amount}. How did you return the money?",
+      "method": "Refund method",
+      "methods": {
+        "cash": "In cash",
+        "card_terminal": "By card on the terminal (on site)",
+        "bank_transfer": "By bank transfer"
+      },
+      "will_record": "The refund will be recorded in EET as a negative sale of {amount}.",
+      "over": "The remaining {amount} above the recorded part is not reported to EET.",
+      "remote": "A refund by bank transfer without personal contact is not recorded in EET.",
+      "submit": "Mark as refunded",
+      "saved": "The credit note is marked as refunded. A negative sale of {amount} was recorded in EET."
     }
   }
 }

@@ -2,7 +2,7 @@
 import { computed, onActivated, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
-import { eetApi, type EetInvoiceSummaryItem } from '@/api/eet'
+import { eetApi, type EetCreditNoteRefundInfo, type EetInvoiceSummaryItem } from '@/api/eet'
 import { formatDateTime, formatMoney } from '@/composables/useFormat'
 import EetRecordBadge from './EetRecordBadge.vue'
 
@@ -20,6 +20,8 @@ const emit = defineEmits<{ (e: 'loaded', items: EetInvoiceSummaryItem[]): void }
 
 const { t } = useI18n()
 const items = ref<EetInvoiceSummaryItem[]>([])
+/** Dobropis: zbývající evidovaná část tržeb opravované faktury pro vrácení peněz. */
+const refund = ref<EetCreditNoteRefundInfo | null>(null)
 const loaded = ref(false)
 let generation = 0
 
@@ -27,9 +29,9 @@ async function load() {
   const gen = ++generation
   try {
     const r = await eetApi.invoiceSummary(props.invoiceId)
-    if (gen === generation) { items.value = r.items; emit('loaded', r.items) }
+    if (gen === generation) { items.value = r.items; refund.value = r.refund ?? null; emit('loaded', r.items) }
   } catch {
-    if (gen === generation) { items.value = []; emit('loaded', []) }
+    if (gen === generation) { items.value = []; refund.value = null; emit('loaded', []) }
   } finally {
     if (gen === generation) loaded.value = true
   }
@@ -53,6 +55,18 @@ const counts = computed(() => {
   return { confirmed, waiting, action, none }
 })
 
+/** Text k vrácení peněz u dobropisu: kolik se nejvýš zaeviduje jako záporná tržba. */
+const refundText = computed(() => {
+  const r = refund.value
+  if (!r || r.evidenced.records === 0) return null
+  const remaining = Number(r.evidenced.remaining_czk)
+  if (remaining <= 0) return t('eet.invoice.refund_done', { number: r.invoice_number })
+  const amount = r.evidenced.remaining !== null && r.evidenced.currency
+    ? formatMoney(Number(r.evidenced.remaining), r.evidenced.currency)
+    : formatMoney(remaining, 'CZK')
+  return t('eet.invoice.refund_info', { number: r.invoice_number, amount })
+})
+
 const summaryText = computed(() => {
   const c = counts.value
   const parts: string[] = []
@@ -74,11 +88,12 @@ function moneyLabel(it: EetInvoiceSummaryItem): string {
 </script>
 
 <template>
-  <section v-if="items.length > 0" class="bg-surface border border-neutral-200 rounded-lg shadow-sm overflow-hidden" data-test="eet-invoice-summary">
+  <section v-if="items.length > 0 || refundText" class="bg-surface border border-neutral-200 rounded-lg shadow-sm overflow-hidden" data-test="eet-invoice-summary">
     <div class="px-5 py-3 border-b border-neutral-200 flex flex-wrap items-baseline justify-between gap-2">
       <h3 class="text-sm font-semibold uppercase tracking-wide text-neutral-500">{{ t('eet.invoice.title') }}</h3>
       <span class="text-xs text-neutral-600" data-test="eet-invoice-sum">{{ summaryText }}</span>
     </div>
+    <p v-if="refundText" class="px-5 py-2 text-sm text-neutral-700 border-b border-neutral-100" data-test="eet-invoice-refund">{{ refundText }}</p>
     <div class="hidden md:block overflow-x-auto">
       <table class="w-full text-sm">
         <thead class="bg-neutral-50 text-xs text-neutral-500 uppercase tracking-wide">
@@ -94,7 +109,10 @@ function moneyLabel(it: EetInvoiceSummaryItem): string {
         <tbody class="divide-y divide-neutral-100">
           <tr v-for="it in items" :key="it.payment_event_id">
             <td class="px-4 py-2 whitespace-nowrap">{{ formatDateTime(it.received_at || it.recorded_at) }}</td>
-            <td class="px-4 py-2 text-right whitespace-nowrap">{{ formatMoney(Number(it.amount), it.currency) }}</td>
+            <td class="px-4 py-2 text-right whitespace-nowrap">
+              {{ formatMoney(Number(it.amount), it.currency) }}
+              <span v-if="it.exchange_rate && it.amount_czk" class="block text-xs text-neutral-500">{{ t('eet.invoice.czk_in_eet', { amount: formatMoney(Number(it.amount_czk), 'CZK') }) }}</span>
+            </td>
             <td class="px-4 py-2 text-xs whitespace-nowrap">{{ moneyLabel(it) }}</td>
             <td class="px-4 py-2"><EetRecordBadge :status="it.eet_record?.status ?? it.eet?.status" empty-key="eet.state.not_recorded" /></td>
             <td class="px-4 py-2 font-mono text-xs break-all">{{ it.eet_record?.pok ?? it.eet?.pok ?? '' }}</td>
@@ -109,7 +127,10 @@ function moneyLabel(it: EetInvoiceSummaryItem): string {
     <div class="md:hidden divide-y divide-neutral-100">
       <div v-for="it in items" :key="`m-${it.payment_event_id}`" class="px-4 py-3 space-y-1">
         <div class="flex flex-wrap items-center justify-between gap-2">
-          <span class="font-medium">{{ formatMoney(Number(it.amount), it.currency) }}</span>
+          <span class="font-medium">
+            {{ formatMoney(Number(it.amount), it.currency) }}
+            <span v-if="it.exchange_rate && it.amount_czk" class="text-xs font-normal text-neutral-500">({{ t('eet.invoice.czk_in_eet', { amount: formatMoney(Number(it.amount_czk), 'CZK') }) }})</span>
+          </span>
           <EetRecordBadge :status="it.eet_record?.status ?? it.eet?.status" empty-key="eet.state.not_recorded" />
         </div>
         <div class="text-xs text-neutral-600">{{ formatDateTime(it.received_at || it.recorded_at) }} · {{ moneyLabel(it) }}</div>

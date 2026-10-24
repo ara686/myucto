@@ -21,7 +21,8 @@ import { apiErrorCode, apiErrorMessage } from '@/api/errors'
 import AcceptPaymentDialog from '@/components/eet/AcceptPaymentDialog.vue'
 import QrInPersonPayment from '@/components/eet/QrInPersonPayment.vue'
 import EetInvoiceSummary from '@/components/eet/EetInvoiceSummary.vue'
-import type { EetInvoiceSummaryItem } from '@/api/eet'
+import EetCreditNoteRefundDialog from '@/components/eet/EetCreditNoteRefundDialog.vue'
+import { eetApi, type EetCreditNoteRefundInfo, type EetInvoiceSummaryItem } from '@/api/eet'
 import { useEetCapabilities } from '@/composables/useEetCapabilities'
 import { stockApi, type StockDocument } from '@/api/stock'
 import { formatMoney, formatHourlyRate, formatDate, formatNumber, formatPercent, statusLabel, typeLabel, statusBadgeClass, displayStatus } from '@/composables/useFormat'
@@ -1484,8 +1485,26 @@ const hasCreditNoteOffsetContext = computed(() => {
   return inv.invoice_type === 'invoice' && payments.value.some(p => p.source === 'credit_note')
 })
 
+/** Vrácení k dobropisu s evidovanými tržbami opravované faktury: způsob vrácení rozhoduje o záporné tržbě EET. */
+const eetRefundInfo = ref<EetCreditNoteRefundInfo | null>(null)
+function onEetRefundDone(updated: Invoice) {
+  invoice.value = updated
+  eetRefresh.value++
+  toast.success(t('refundPayment.marked_refunded'))
+}
 async function markRefunded() {
   if (!invoice.value) return
+  if (invoice.value.invoice_type === 'credit_note' && invoice.value.parent_invoice_id && eet.enabled.value) {
+    try {
+      const summary = await eetApi.invoiceSummary(invoice.value.id)
+      if (summary.refund && Number(summary.refund.evidenced.remaining_czk) > 0) {
+        eetRefundInfo.value = summary.refund
+        return
+      }
+    } catch {
+      // Bez souhrnu EET pokračuje původní cesta; server sám odmítne vrácení bez okolností.
+    }
+  }
   if (!window.confirm(t('refundPayment.mark_refunded_confirm', { varsymbol: invoice.value.varsymbol || '' }))) return
   busy.value = 'mark-refunded'
   try {
@@ -1830,7 +1849,7 @@ const invoiceActions = computed<ActionItem[]>(() => {
       tier: markPaidPrimary ? 'primary' : 'secondary', variant: 'success',
       show: eetPayAvailable.value && !isOpenRefund.value, disabled: b, run: () => { eetAcceptOpen.value = true } },
     { key: 'eet-qr', label: t('eet.qr.action'), icon: 'qr', tier: 'secondary', variant: 'success',
-      show: eetPayAvailable.value && !isOpenRefund.value, disabled: b, run: () => { eetQrOpen.value = true } },
+      show: eetPayAvailable.value && !isOpenRefund.value && (invoice.value?.currency ?? 'CZK') === 'CZK', disabled: b, run: () => { eetQrOpen.value = true } },
     { key: 'refund', label: t('refundPayment.action'), icon: 'upload', tier: 'primary', variant: 'primary',
       show: isOpenRefund.value && inv.payment_method !== 'cash' && auth.canRead('purchase_invoices.payment_orders'),
       disabled: b, run: () => { refundDialogOpen.value = true } },
@@ -2028,6 +2047,11 @@ useWindowRefresh(['invoices', 'clients', 'bank', 'bank-transactions', 'cash', 'a
         :remaining="remainingToPay" :default-device-id="eet.capabilities.value?.default_device_id"
         :environment="eet.capabilities.value?.environment"
         @close="closeEetDialogs" @done="onEetPaymentDone" />
+
+      <!-- EET: vrácení peněz k dobropisu jako záporná tržba -->
+      <EetCreditNoteRefundDialog v-if="eetRefundInfo && invoice" :credit-note-id="invoice.id" :refund="eetRefundInfo"
+        :default-device-id="eet.capabilities.value?.default_device_id"
+        @close="eetRefundInfo = null" @done="onEetRefundDone" />
 
       <!-- Vrátit peníze odběrateli — platební příkaz s jednou vratkou -->
       <RefundPaymentDialog v-if="refundDialogOpen && invoice" :invoice-id="invoice.id"
@@ -2846,7 +2870,8 @@ useWindowRefresh(['invoices', 'clients', 'bank', 'bank-transactions', 'cash', 'a
         {{ t(pendingEet === 'qr' ? 'eet.invoice.pending_qr' : 'eet.invoice.pending_accept') }}
       </div>
 
-      <EetInvoiceSummary v-if="eet.capabilities.value && paymentsRelevant()" :invoice-id="invoice.id" :refresh-key="eetRefresh" @loaded="onEetSummaryLoaded" />
+      <EetInvoiceSummary v-if="eet.capabilities.value && (paymentsRelevant() || (invoice.invoice_type === 'credit_note' && !!invoice.parent_invoice_id))"
+        :invoice-id="invoice.id" :refresh-key="eetRefresh" @loaded="onEetSummaryLoaded" />
 
       <div v-if="invoice.cash_documents?.length"
         class="bg-surface border border-neutral-200 rounded-lg px-5 py-4 shadow-sm text-sm space-y-1.5" data-invoice-cash-documents>

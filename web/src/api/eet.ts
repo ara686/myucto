@@ -200,6 +200,11 @@ export interface EetPaymentPreview {
   requires: Array<'channel' | 'contact_context'>
   amount: EetMoney
   currency: string
+  /** Částka, která se zaeviduje (vždy Kč); null, když pro den platby chybí kurz. */
+  amount_czk?: EetMoney | null
+  exchange_rate?: string | null
+  exchange_rate_source?: string | null
+  exchange_rate_error?: { code: string; message: string } | null
   invoice?: { id: number; currency: string; remaining: EetMoney } | null
 }
 
@@ -237,8 +242,13 @@ export interface EetPaymentEvent {
   payment_event_id: string
   kind: 'payment' | 'refund' | 'intent'
   origin: string
+  /** Částka a měna, jak platba proběhla. */
   amount: EetMoney
   currency: string
+  /** Částka evidovaná v EET (vždy Kč). */
+  amount_czk?: EetMoney
+  exchange_rate?: string | null
+  exchange_rate_source?: string | null
   payment_method?: string | null
   channel?: string | null
   contact_context?: string
@@ -337,6 +347,8 @@ export interface EetRecordListResponse {
 
 export interface EetCorrectionRequest {
   amount?: EetMoney
+  /** Částka v původní měně cizoměnové tržby (místo `amount`). */
+  original_amount?: EetMoney
   reason?: EetCorrectionReason
   note?: string
   device_id?: number
@@ -346,8 +358,23 @@ export interface EetCorrectionPreview {
   original: EetRecord
   corrected_total: EetMoney
   remaining: EetMoney
-  proposed: { total_amount: EetMoney; reason?: string | null; device_id?: number; environment?: string; sale_at?: string }
+  foreign?: {
+    currency: string
+    original_amount: EetMoney
+    remaining: EetMoney | null
+    exchange_rate: string
+    exchange_rate_source?: string | null
+  } | null
+  proposed: {
+    total_amount: EetMoney
+    original_amount?: EetMoney | null
+    reason?: string | null
+    device_id?: number
+    environment?: string
+    sale_at?: string
+  }
   allowed: boolean
+  error?: string | null
   accounting?: string
 }
 
@@ -370,6 +397,26 @@ export interface EetQueueSummary {
 
 export interface EetInvoiceSummaryItem extends EetPaymentEvent {
   eet_record?: EetRecord | null
+}
+
+/** Dobropis: kolik z evidovaných tržeb opravované faktury zbývá opravit při vrácení peněz. */
+export interface EetCreditNoteRefundInfo {
+  invoice_id: number
+  invoice_number: string
+  currency: string
+  refund_amount: EetMoney
+  evidenced: { records: number; remaining_czk: EetMoney; remaining: EetMoney | null; currency: string | null }
+}
+
+/** Vrácení peněz k dobropisu zaevidované jako záporné tržby (odpověď mark-paid / výdajového dokladu). */
+export interface EetCreditNoteRefundResult {
+  corrections: { event_id: number; record_id: number; total_amount: EetMoney; original_amount: EetMoney | null }[]
+  requested: EetMoney
+  refunded: EetMoney
+  refunded_czk: EetMoney
+  not_recorded: EetMoney
+  warning: string | null
+  replayed: boolean
 }
 
 export type EetExportParams = Omit<EetRecordListParams, 'cursor' | 'limit' | 'kind'>
@@ -445,5 +492,5 @@ export const eetApi = {
   exportCsv: (params: EetExportParams = {}) =>
     api.get<Blob>('/eet/export', { params, responseType: 'blob' }).then(r => r.data),
   invoiceSummary: (invoiceId: number) =>
-    api.get<{ items: EetInvoiceSummaryItem[] }>(`/invoices/${invoiceId}/eet`).then(r => r.data),
+    api.get<{ items: EetInvoiceSummaryItem[]; refund?: EetCreditNoteRefundInfo }>(`/invoices/${invoiceId}/eet`).then(r => r.data),
 }

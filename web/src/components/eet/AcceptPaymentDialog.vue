@@ -43,8 +43,12 @@ const emit = defineEmits<{
 }>()
 
 type Method = 'cash' | 'card_terminal' | 'bank_transfer' | 'qr_in_person'
-const METHODS: Method[] = ['cash', 'card_terminal', 'bank_transfer', 'qr_in_person']
 const CONTEXTS: EetContactContext[] = ['in_person', 'on_premises', 'in_vehicle', 'remote']
+/** Platba v cizí měně se do EET uvádí v Kč; QR na místě je česká QR platba jen v Kč. */
+const isForeign = computed(() => props.currency.toUpperCase() !== 'CZK')
+const METHODS = computed<Method[]>(() => isForeign.value
+  ? ['cash', 'card_terminal', 'bank_transfer']
+  : ['cash', 'card_terminal', 'bank_transfer', 'qr_in_person'])
 
 const { t } = useI18n()
 const supplierStore = useSupplierStore()
@@ -150,6 +154,15 @@ watch(
   { immediate: true },
 )
 
+/** Přepočet cizoměnové platby na Kč pro EET (kurz úhrady ke dni přijetí). */
+const fxView = computed(() => {
+  const p = preview.value
+  if (!p || p.currency.toUpperCase() === 'CZK') return null
+  if (p.exchange_rate_error) return { tone: 'bad', text: p.exchange_rate_error.message }
+  if (!p.amount_czk || !p.exchange_rate) return null
+  return { tone: 'info', text: t('eet.pay.fx_to_eet', { amount: formatMoney(Number(p.amount_czk), 'CZK'), rate: p.exchange_rate, currency: p.currency }) }
+})
+
 const policyView = computed(() => {
   const p = preview.value
   if (!p) return null
@@ -225,6 +238,9 @@ const selectedDevice = computed(() => devices.value.find(d => d.id === form.devi
         {{ t('eet.pay.saved') }}
       </div>
       <EetPaymentStates :event="result" />
+      <p v-if="result.amount_czk && result.exchange_rate" class="text-sm text-neutral-700" data-test="eet-pay-result-fx">
+        {{ t('eet.pay.fx_to_eet', { amount: formatMoney(Number(result.amount_czk), 'CZK'), rate: result.exchange_rate, currency: result.currency }) }}
+      </p>
       <p v-if="eetUnconfirmed" class="rounded-md border border-warning-500/40 bg-warning-50 px-3 py-2 text-sm text-warning-700" data-test="eet-pay-waiting">
         {{ t('eet.pay.eet_stored_waiting') }}
         <span v-if="pollTimedOut" class="block text-xs mt-1">{{ t('eet.pay.poll_stopped') }}</span>
@@ -252,6 +268,9 @@ const selectedDevice = computed(() => devices.value.find(d => d.id === form.devi
 
       <p v-if="form.method === 'card_terminal'" class="rounded-md bg-neutral-50 px-3 py-2 text-xs text-neutral-700">
         {{ t('eet.pay.card_hint') }}
+      </p>
+      <p v-if="isForeign" class="rounded-md bg-neutral-50 px-3 py-2 text-xs text-neutral-700" data-test="eet-pay-foreign-hint">
+        {{ t('eet.pay.foreign_hint', { currency }) }}
       </p>
 
       <div v-if="form.method === 'qr_in_person'" class="space-y-2 rounded-md border border-neutral-200 bg-neutral-50 p-3 text-sm">
@@ -304,6 +323,11 @@ const selectedDevice = computed(() => devices.value.find(d => d.id === form.devi
             : policyView.tone === 'bad' ? 'border-danger-500/40 bg-danger-50 text-danger-700'
               : 'border-neutral-200 bg-neutral-50 text-neutral-700'">
           {{ policyView.text }}
+        </div>
+        <div v-if="fxView" data-test="eet-pay-fx"
+          class="rounded-md border px-3 py-2 text-sm"
+          :class="fxView.tone === 'bad' ? 'border-danger-500/40 bg-danger-50 text-danger-700' : 'border-neutral-200 bg-neutral-50 text-neutral-700'">
+          {{ fxView.text }}
         </div>
         <p v-else-if="previewError" class="rounded-md border border-danger-500/40 bg-danger-50 px-3 py-2 text-sm text-danger-700">{{ previewError }}</p>
         <p v-else-if="previewBusy" class="text-xs text-neutral-500">{{ t('eet.pay.preview_loading') }}</p>

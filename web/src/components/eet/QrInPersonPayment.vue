@@ -38,6 +38,8 @@ const emit = defineEmits<{
   (e: 'done', event: EetPaymentEvent): void
 }>()
 
+const foreign = computed(() => props.currency.toUpperCase() !== 'CZK')
+
 type Ctx = 'in_person' | 'on_premises' | 'in_vehicle'
 const CONTEXTS: Ctx[] = ['in_person', 'on_premises', 'in_vehicle']
 
@@ -197,6 +199,11 @@ const eetUnconfirmed = computed(() => eetIsOpen(confirmed.value))
       <p class="rounded-md bg-neutral-50 px-3 py-2 text-xs text-neutral-700">{{ t('eet.qr.not_paid_yet') }}</p>
     </div>
 
+    <!-- Česká QR platba (SPAYD) je jen v Kč; fakturu v cizí měně přijměte hotově nebo kartou. -->
+    <p v-else-if="foreign" class="rounded-md border border-warning-500/40 bg-warning-50 px-3 py-2 text-sm text-warning-700" data-test="eet-qr-foreign">
+      {{ t('eet.qr.czk_only', { currency }) }}
+    </p>
+
     <!-- 1. Příprava -->
     <form v-else class="space-y-3" @submit.prevent="createIntent">
       <p class="text-sm text-neutral-600">{{ t('eet.qr.intro') }}</p>
@@ -245,7 +252,7 @@ const eetUnconfirmed = computed(() => eetIsOpen(confirmed.value))
         </template>
         <template v-else>
           <button type="button" :class="btnOutline('neutral')" class="whitespace-nowrap" @click="emit('close')">{{ t('common.cancel') }}</button>
-          <button type="button" :class="btnFilled('primary')" class="whitespace-nowrap" :disabled="!normalizedAmount || busy !== ''" data-test="eet-qr-create" @click="createIntent">
+          <button v-if="!foreign" type="button" :class="btnFilled('primary')" class="whitespace-nowrap" :disabled="!normalizedAmount || busy !== ''" data-test="eet-qr-create" @click="createIntent">
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" :d="ICONS.qr" /></svg>
             {{ busy === 'create' ? t('eet.pay.submitting') : t('eet.qr.show') }}
           </button>

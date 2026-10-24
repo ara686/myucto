@@ -31,7 +31,8 @@ const emit = defineEmits<{
 const REASONS: EetCorrectionReason[] = ['refund', 'failed_payment', 'wrong_data', 'duplicate', 'other']
 
 const { t } = useI18n()
-const form = reactive({ amount: '', reason: 'refund' as EetCorrectionReason, note: '' })
+/** `inForeign`: částka v původní měně cizoměnové tržby, přepočet kurzem původní tržby. */
+const form = reactive({ amount: '', reason: 'refund' as EetCorrectionReason, note: '', inForeign: false })
 const preview = ref<EetCorrectionPreview | null>(null)
 const previewError = ref('')
 const previewBusy = ref(false)
@@ -55,7 +56,10 @@ const amountInvalid = computed(() => normalizedAmount.value === undefined)
 
 function body(): EetCorrectionRequest {
   const b: EetCorrectionRequest = { reason: form.reason }
-  if (typeof normalizedAmount.value === 'string') b.amount = normalizedAmount.value
+  if (typeof normalizedAmount.value === 'string') {
+    if (form.inForeign) b.original_amount = normalizedAmount.value
+    else b.amount = normalizedAmount.value
+  }
   if (form.note.trim()) b.note = form.note.trim().slice(0, 255)
   return b
 }
@@ -77,7 +81,7 @@ async function runPreview() {
     if (my === seq) previewBusy.value = false
   }
 }
-watch(() => [form.amount, form.reason], () => {
+watch(() => [form.amount, form.reason, form.inForeign], () => {
   if (timer) clearTimeout(timer)
   timer = setTimeout(() => { void runPreview() }, 350)
 }, { immediate: true })
@@ -109,6 +113,11 @@ async function submit() {
 }
 
 const currency = computed(() => props.record.currency || 'CZK')
+/** Cizoměnová stopa tržby z náhledu (null u tržby v Kč). */
+const foreign = computed(() => preview.value?.foreign ?? null)
+const inputCurrency = computed(() => form.inForeign && foreign.value ? foreign.value.currency : currency.value)
+const amountPlaceholder = computed(() =>
+  (form.inForeign ? foreign.value?.remaining : preview.value?.remaining) ?? '')
 </script>
 
 <template>
@@ -125,8 +134,8 @@ const currency = computed(() => props.record.currency || 'CZK')
       </p>
       <div class="grid gap-3 sm:grid-cols-2">
         <label :class="formLabel">
-          <span>{{ t('eet.correction.amount') }} ({{ currency }})</span>
-          <input v-model="form.amount" type="text" inputmode="decimal" autocomplete="off" :placeholder="preview?.remaining ?? ''"
+          <span>{{ t('eet.correction.amount') }} ({{ inputCurrency }})</span>
+          <input v-model="form.amount" type="text" inputmode="decimal" autocomplete="off" :placeholder="amountPlaceholder"
             :class="[formInput, amountInvalid ? 'border-danger-500' : '']" data-test="eet-correction-amount" />
           <span v-if="amountInvalid" class="text-xs text-danger-600">{{ t('eet.pay.amount_invalid') }}</span>
           <span v-else class="text-xs text-neutral-500">{{ t('eet.correction.amount_hint') }}</span>
@@ -138,6 +147,19 @@ const currency = computed(() => props.record.currency || 'CZK')
           </select>
         </label>
       </div>
+      <label v-if="foreign" class="flex items-start gap-2 text-sm" data-test="eet-correction-foreign">
+        <input v-model="form.inForeign" type="checkbox" class="mt-0.5" :disabled="foreign.remaining === null" />
+        <span>
+          {{ t('eet.correction.in_foreign', { currency: foreign.currency }) }}
+          <span class="block text-xs text-neutral-500">
+            {{ t('eet.correction.foreign_hint', {
+              amount: formatMoney(Number(foreign.original_amount), foreign.currency),
+              rate: foreign.exchange_rate,
+              remaining: foreign.remaining !== null ? formatMoney(Number(foreign.remaining), foreign.currency) : '-',
+            }) }}
+          </span>
+        </span>
+      </label>
       <label :class="formLabel">
         <span>{{ t('eet.pay.note') }}</span>
         <input v-model="form.note" type="text" maxlength="255" :class="formInput" />
@@ -146,9 +168,12 @@ const currency = computed(() => props.record.currency || 'CZK')
       <div v-if="preview" class="space-y-1 rounded-md border px-3 py-2 text-sm"
         :class="preview.allowed ? 'border-neutral-200 bg-neutral-50' : 'border-danger-500/40 bg-danger-50 text-danger-700'" data-test="eet-correction-preview">
         <div class="flex flex-wrap justify-between gap-2"><span>{{ t('eet.correction.proposed') }}</span><strong>{{ formatMoney(Number(preview.proposed.total_amount), currency) }}</strong></div>
+        <div v-if="foreign && preview.proposed.original_amount" class="flex flex-wrap justify-between gap-2 text-xs text-neutral-600">
+          <span>{{ t('eet.correction.proposed_foreign') }}</span><span>{{ formatMoney(Number(preview.proposed.original_amount), foreign.currency) }}</span>
+        </div>
         <div class="flex flex-wrap justify-between gap-2"><span>{{ t('eet.correction.already_corrected') }}</span><span>{{ formatMoney(Number(preview.corrected_total), currency) }}</span></div>
         <div class="flex flex-wrap justify-between gap-2"><span>{{ t('eet.correction.remaining') }}</span><span>{{ formatMoney(Number(preview.remaining), currency) }}</span></div>
-        <p v-if="!preview.allowed" class="text-xs">{{ t('eet.correction.not_allowed') }}</p>
+        <p v-if="!preview.allowed" class="text-xs">{{ preview.error || t('eet.correction.not_allowed') }}</p>
         <p v-if="preview.accounting" class="text-xs text-neutral-600">{{ preview.accounting }}</p>
       </div>
       <p v-else-if="previewError" class="rounded-md border border-danger-500/40 bg-danger-50 px-3 py-2 text-sm text-danger-700">{{ previewError }}</p>

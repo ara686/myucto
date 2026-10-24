@@ -22,6 +22,7 @@ import DateInput from '@/components/ui/DateInput.vue'
 import DimensionFields from '@/components/dimensions/DimensionFields.vue'
 import { useDocumentDimensions } from '@/composables/useDocumentDimensions'
 import { useEetCapabilities } from '@/composables/useEetCapabilities'
+import { eetApi, type EetCreditNoteRefundInfo } from '@/api/eet'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -387,6 +388,26 @@ const czkEquivalent = computed<number | null>(() => {
 const isPurchaseRefund = computed(() => form.purpose === 'purchase_payment' && form.doc_type === 'in')
 /** Výplata dokladu k vyplacení — výdajový doklad s účelem `invoice_payment`, jen v plné výši. */
 const isInvoiceRefund = computed(() => form.purpose === 'invoice_payment' && form.doc_type === 'out')
+
+// EET: hotovostní vrácení k dobropisu se při zaúčtování zaeviduje jako záporná tržba,
+// nejvýš do neopravené evidované části tržeb opravované faktury.
+const eetRefund = ref<EetCreditNoteRefundInfo | null>(null)
+watch(() => [isInvoiceRefund.value, form.invoice_id, eetCaps.enabled.value] as const, async ([refund, id, enabled]) => {
+  eetRefund.value = null
+  if (!refund || !id || !enabled) return
+  try {
+    const r = await eetApi.invoiceSummary(id)
+    if (form.invoice_id === id) eetRefund.value = r.refund ?? null
+  } catch {
+    // Jen informace; o evidenci rozhoduje server při zaúčtování.
+  }
+})
+const eetRefundAmount = computed<number | null>(() => {
+  const r = eetRefund.value
+  const remaining = Number(r?.evidenced.remaining_czk ?? 0)
+  if (!r || remaining <= 0) return null
+  return Math.min(Number(form.total_amount) || Number(r.refund_amount), remaining)
+})
 
 // PF: úhrada jen v plné výši (R4) → částka readonly. U vratky se naopak vrací
 // libovolná část, takže částka zůstává editovatelná.
@@ -911,6 +932,10 @@ async function save(post = true) {
             </p>
           </template>
           <p v-else data-test="cash-eet-device-required">{{ t('cash.eet.device_required') }}</p>
+        </div>
+        <div v-if="eetRefundAmount !== null && isDraft" class="rounded-md border border-primary-200 bg-primary-50 px-3 py-2 text-sm text-primary-800"
+          data-test="cash-eet-refund">
+          {{ t('cash.eet.refund_info', { amount: formatMoney(eetRefundAmount) }) }}
         </div>
 
         <div v-if="error" class="text-sm text-danger-500">{{ error }}</div>

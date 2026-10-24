@@ -13529,7 +13529,8 @@
       "negative_balance_after_reverse": "Po stornu je pokladna v mínusu - zkontrolujte následné doklady.",
       "dic_missing_over_10k": "Prodej nad 10 000 Kč bez DIČ - pro Kontrolní hlášení A.4 doplňte DIČ odběratele.",
       "dic_not_czech": "DIČ protistrany není v českém tvaru - do kontrolního hlášení (A.4) patří jen české DIČ. Buď jej opravte, nebo pole nechte prázdné (doklad pak spadne do sumace A.5).",
-      "fx_rate_deviation": "Zadaný kurz se liší od denního kurzu ČNB - zkontrolujte kurz na dokladu."
+      "fx_rate_deviation": "Zadaný kurz se liší od denního kurzu ČNB - zkontrolujte kurz na dokladu.",
+      "eet_refund_partial": "Vrácení převyšuje dosud neopravenou evidovanou část tržeb faktury; do EET se jako záporná tržba zaevidovala jen evidovaná část."
     },
     "validation": {
       "register": "Vyberte pokladnu, do které doklad patří.",
@@ -13594,7 +13595,8 @@
       "device": "Zařízení EET pro tržbu",
       "default": "výchozí",
       "chosen": "Při zaúčtování se doklad zaeviduje do EET na zvolené zařízení.",
-      "device_required": "Pokladna nemá přiřazené zařízení EET a firma nemá výchozí zařízení. Hotovostní tržbu je nutné evidovat, proto doklad nepůjde zaúčtovat. V Nastavení EET přiřaďte pokladně zařízení."
+      "device_required": "Pokladna nemá přiřazené zařízení EET a firma nemá výchozí zařízení. Hotovostní tržbu je nutné evidovat, proto doklad nepůjde zaúčtovat. V Nastavení EET přiřaďte pokladně zařízení.",
+      "refund_info": "Vrácení k dobropisu se při zaúčtování zaeviduje do EET jako záporná tržba {amount}."
     }
   },
   "stock": {
@@ -39066,7 +39068,9 @@
         "settled": "Doklad uhrazen",
         "pending": "Úhrada dokladu čeká na bankovní párování",
         "not_applicable": "Bez účetní úhrady"
-      }
+      },
+      "fx_to_eet": "Do EET: {amount} (kurz {rate} Kč/{currency})",
+      "foreign_hint": "Platba v {currency} se do EET zaeviduje v Kč, přepočtená kurzem, jakým se úhrada zaúčtuje ke dni přijetí. QR platba na místě je jen pro faktury v Kč."
     },
     "qr": {
       "action": "Platba QR na místě (EET)",
@@ -39087,7 +39091,8 @@
       "bank_unverified": "Přijetí peněz bankou zatím neověřeno. Ověří ho až bankovní párování, potvrzení obsluhy není bankovní potvrzení.",
       "create_failed": "QR platbu se nepodařilo připravit.",
       "confirm_failed": "Potvrzení se nepodařilo uložit.",
-      "cancel_failed": "QR platbu se nepodařilo zrušit."
+      "cancel_failed": "QR platbu se nepodařilo zrušit.",
+      "czk_only": "QR platba na místě je jen pro faktury v Kč. Fakturu v {currency} přijměte v hotovosti nebo kartou na terminálu."
     },
     "invoice": {
       "title": "EET",
@@ -39104,7 +39109,10 @@
       "locked_eet": "Úhradu s evidovanou tržbou EET nelze smazat, chybu opravte zápornou opravou v evidenci EET.",
       "history_exists": "Úhradu nelze smazat, protože k ní existuje záznam EET. Chybnou evidenci opravte zápornou opravou v evidenci EET.",
       "pending_accept": "Po vystavení faktury se otevře přijetí platby.",
-      "pending_qr": "Po vystavení faktury se otevře QR platba na místě."
+      "pending_qr": "Po vystavení faktury se otevře QR platba na místě.",
+      "refund_info": "Vrácení peněz k tomuto dobropisu hotově nebo kartou na místě se zaeviduje do EET jako záporná tržba, nejvýš {amount} z evidovaných tržeb faktury {number}.",
+      "refund_done": "Evidované tržby faktury {number} jsou v EET opravené celé, další vrácení se nehlásí.",
+      "czk_in_eet": "{amount} v EET"
     },
     "editor": {
       "title": "Platba při vystavení (EET)",
@@ -39235,7 +39243,9 @@
         "timeout": "Vypršel čas odpovědi",
         "transport_error": "Chyba spojení",
         "invalid_response": "Neplatná odpověď"
-      }
+      },
+      "original_payment": "Původní platba",
+      "original_payment_value": "{amount}, kurz {rate} Kč/{currency}"
     },
     "correction": {
       "title": "Opravit / vrátit tržbu",
@@ -39258,7 +39268,10 @@
       "submit": "Zaevidovat opravu",
       "submit_failed": "Opravu se nepodařilo uložit.",
       "saved": "Oprava je uložena.",
-      "no_money_back": "Oprava mění jen evidenci. Vrácení peněz zákazníkovi je potřeba provést a zaúčtovat zvlášť."
+      "no_money_back": "Oprava mění jen evidenci. Vrácení peněz zákazníkovi je potřeba provést a zaúčtovat zvlášť.",
+      "in_foreign": "Zadat částku v {currency}",
+      "foreign_hint": "Tržba {amount} při kurzu {rate}, zbývá opravit {remaining}. Částka se přepočte kurzem původní tržby.",
+      "proposed_foreign": "V původní měně"
     },
     "cash": {
       "title": "EET",
@@ -39268,6 +39281,21 @@
       "reverse_warning": "Storno zaeviduje do EET zápornou opravu tržby. Peníze zákazníkovi je nutné vrátit a zaúčtovat zvlášť.",
       "reverse_reason": "Důvod opravy v EET",
       "reversed_without_correction": "Doklad je stornovaný, ale oprava tržby v EET nevznikla. Zkontrolujte záznam."
+    },
+    "refund": {
+      "title": "Vrácení peněz k dobropisu",
+      "intro": "Faktura {number} má evidované tržby (EET). Vracíte {amount}. Jak jste peníze vrátili?",
+      "method": "Způsob vrácení",
+      "methods": {
+        "cash": "Hotově",
+        "card_terminal": "Kartou na terminálu (na místě)",
+        "bank_transfer": "Převodem na účet"
+      },
+      "will_record": "Vrácení se zaeviduje do EET jako záporná tržba {amount}.",
+      "over": "Zbylých {amount} nad evidovanou část se do EET nehlásí.",
+      "remote": "Vrácení převodem na účet bez osobního kontaktu se do EET neeviduje.",
+      "submit": "Označit jako vrácené",
+      "saved": "Dobropis je označený jako vrácený. Do EET se zaevidovala záporná tržba {amount}."
     }
   }
 }

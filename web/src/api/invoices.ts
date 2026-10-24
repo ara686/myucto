@@ -1,6 +1,7 @@
 import { requestSupplierId } from '@/workspace/supplierContext'
 import { api } from './client'
 import type { DocumentLock } from './locks'
+import type { EetCreditNoteRefundResult } from './eet'
 import { appIsoDate } from '@/utils/date'
 
 export type InvoiceType = 'invoice' | 'proforma' | 'credit_note' | 'cancellation' | 'tax_document' | 'penalty' | 'payment_calendar'
@@ -887,10 +888,16 @@ export const invoicesApi = {
 
   // Akce nad fakturou
   issue:    (id: number) => api.post<Invoice>(`/invoices/${id}/issue`).then(r => r.data),
-  markPaid: (id: number, paidAt?: string, opts?: { sendThanks?: boolean; thanksTrigger?: 'manual' | 'bulk' }) =>
-    api.post<Invoice>(`/invoices/${id}/mark-paid`, {
+  markPaid: (id: number, paidAt?: string, opts?: {
+    sendThanks?: boolean
+    thanksTrigger?: 'manual' | 'bulk'
+    /** Okolnosti vrácení peněz k dobropisu pro EET (channel, contact_context, eet_device_id, eet_context). */
+    eet?: Record<string, string | number>
+  }) =>
+    api.post<Invoice & { eet?: EetCreditNoteRefundResult }>(`/invoices/${id}/mark-paid`, {
       paid_at: paidAt || appIsoDate(),
       ...(opts?.sendThanks ? { send_payment_thanks: true, thanks_trigger: opts.thanksTrigger || 'manual' } : {}),
+      ...(opts?.eet ?? {}),
     }).then(r => r.data),
   unmarkPaid: (id: number) =>
     api.post<Invoice>(`/invoices/${id}/unmark-paid`, {}).then(r => r.data),

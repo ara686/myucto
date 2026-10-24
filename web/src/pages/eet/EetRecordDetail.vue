@@ -149,6 +149,17 @@ function outcomeLabel(o: string): string {
           <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
             <dt :class="label">{{ t('eet.records.col_amount') }}</dt>
             <dd class="font-semibold" :class="Number(record.total_amount) < 0 ? 'text-danger-600' : ''">{{ formatMoney(Number(record.total_amount), currency) }}</dd>
+            <template v-if="record.payment_event?.exchange_rate">
+              <dt :class="label">{{ t('eet.detail.original_payment') }}</dt>
+              <dd data-test="eet-detail-fx">
+                {{ t('eet.detail.original_payment_value', {
+                  amount: formatMoney(Number(record.payment_event.amount), record.payment_event.currency),
+                  rate: record.payment_event.exchange_rate,
+                  currency: record.payment_event.currency,
+                }) }}
+                <span v-if="record.payment_event.exchange_rate_source" class="block text-xs text-neutral-500">{{ record.payment_event.exchange_rate_source }}</span>
+              </dd>
+            </template>
             <dt :class="label">{{ t('eet.records.col_number') }}</dt><dd class="font-mono">{{ record.sequence_number }}</dd>
             <dt :class="label">{{ t('eet.detail.sale_at') }}</dt><dd>{{ formatDateTime(record.sale_at) }}</dd>
             <dt :class="label">EIČ</dt><dd class="font-mono break-all">{{ record.eic }}</dd>
