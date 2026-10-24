@@ -84,6 +84,7 @@ export const MANUAL_CHAPTERS: ManualChapterRule[] = [
   [/^\/tax-evidence(?:\/|$)/, '74_Danova_evidence'],
   [/^\/admin\/suppliers(?:\/|$)/, '95_Multi_supplier'],
   [/^\/payment-cards(?:\/|$)/, '31_Platebni_karty'],
+  [/^\/eet(?:\/|$)/, '121_EET'],
   [/^\/credit-cards(?:\/|$)/, '112_Kreditni_karty'],
   [/^\/admin\/databox(?:\/|$)/, '97_Datova_schranka'],
   [/^\/admin\/isds-gateway(?:\/|$)/, '98_Odesilaci_brana_ISDS'],
