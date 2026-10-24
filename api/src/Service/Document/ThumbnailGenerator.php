@@ -16,6 +16,8 @@ use MyInvoice\Support\Imaging\ImagickGuard;
 final class ThumbnailGenerator
 {
     private const MAX_DIM = 480;
+    /** GD dekóduje celý rastr do paměti PHP (~4 B/px), proto nižší strop než Imagick. */
+    private const GD_MAX_PIXELS = 40_000_000;
 
     /**
      * @return array{status:'generated'|'unsupported'|'failed', path:?string}
@@ -105,7 +107,7 @@ final class ThumbnailGenerator
         $info = @getimagesize($src);
         if ($info === false) return false;
         [$w, $h] = $info;
-        if ($w < 1 || $h < 1 || (int) ($w * $h) > ImagickGuard::MAX_PIXELS) return false; // pixel-bomb guard
+        if ($w < 1 || $h < 1 || (int) ($w * $h) > self::GD_MAX_PIXELS) return false; // pixel-bomb guard
 
         $img = match ($info[2]) {
             IMAGETYPE_JPEG => @imagecreatefromjpeg($src),

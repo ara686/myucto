@@ -1805,6 +1805,12 @@
     "property_funds": "Zálohy a příjmy vlastníků",
     "property_issuance": "Vydání předpisů"
   },
+  "migration_nonprofit_notice": {
+    "title": "Převod pro neziskové organizace nebyl ověřen",
+    "body": "Tato firma je nezisková organizace nebo jiná účetní jednotka podle vyhlášky 504/2002 Sb. (spolek, nadace, ústav, SVJ). Převod dat počítá s osnovou a výkazy podnikatele podle vyhlášky 500/2002 Sb. a nezná hlavní a hospodářskou činnost, fondy ani výkazy podle vyhlášky 504. Převod účetnictví do období vedeného podle vyhlášky 504 se odmítne. Před převodem proto kontaktujte podporu.",
+    "body_native": "Tato firma je nezisková organizace nebo jiná účetní jednotka podle vyhlášky 504/2002 Sb. (spolek, nadace, ústav, SVJ). Export MyÚčto přenese osnovu a účetní deník jen do firmy se stejným účetním rámcem (vyhláška 500, nebo 504) a nepřenáší evidenci členů a příspěvků, dotací, kapitálu ani podklady daně z příjmů neziskové organizace. Převod pro neziskové organizace nebyl ověřen, před převodem proto kontaktujte podporu.",
+    "contact": "Kontaktovat podporu"
+  },
   "migration_overview": {
     "myucto_hint": "Přenos jedné firmy z Kompletního exportu dat MyÚčta nebo databázové zálohy MyInvoice, včetně pravidelné fakturace.",
     "title": "Přechod z jiných účetních systémů",

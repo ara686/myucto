@@ -6,6 +6,7 @@ namespace MyInvoice\Service\Import;
 
 use GuzzleHttp\Client;
 use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Service\Ai\AiRedirectPolicy;
 use MyInvoice\Service\Auth\SecretEncryption;
 use Psr\Log\LoggerInterface;
 
@@ -38,10 +39,10 @@ final class AzureOpenAiClient implements LlmGatewayInterface
         private readonly LoggerInterface $logger,
         ?Client $http = null,
     ) {
-        // Bez přesměrování: endpoint je hostname zadaný adminem (i `*.azure-api.net`,
-        // kam si kdokoli postaví vlastní APIM s redirect politikou). Následovaný
-        // 30x by poslal klíč i tělo do libovolné, i interní, sítě.
-        $this->http = $http ?? new Client(['timeout' => self::TIMEOUT, 'http_errors' => false, 'allow_redirects' => false]);
+        // Endpoint je hostname zadaný adminem (i `*.azure-api.net`, kam si kdokoli
+        // postaví vlastní APIM s redirect politikou). Následuje se nejvýš jedno
+        // přesměrování v rámci hostu, viz AiRedirectPolicy.
+        $this->http = $http ?? new Client(['timeout' => self::TIMEOUT, 'http_errors' => false, 'allow_redirects' => AiRedirectPolicy::options()]);
     }
 
     /**
@@ -293,7 +294,7 @@ final class AzureOpenAiClient implements LlmGatewayInterface
             'headers' => ['api-key' => $creds['api_key'], 'content-type' => 'application/json'],
             'json'    => $payload,
             // Per-request, aby platilo i pro injektovaného klienta.
-            'allow_redirects' => false,
+            'allow_redirects' => AiRedirectPolicy::options(),
         ]);
         $body = json_decode((string) $resp->getBody(), true);
         return ['code' => $resp->getStatusCode(), 'body' => is_array($body) ? $body : null];

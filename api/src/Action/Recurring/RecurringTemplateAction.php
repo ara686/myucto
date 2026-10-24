@@ -572,7 +572,7 @@ final class RecurringTemplateAction
         } catch (\DomainException $e) {
             return Json::error($response, 'cannot_generate', $e->getMessage(), 409);
         } catch (\Throwable $e) {
-            return Json::error($response, 'generation_failed', $e->getMessage(), 500);
+            return Json::internalError($response, 'generation_failed', $e->getMessage(), 500);
         }
 
         return Json::ok($response, $result, 201);

@@ -53,7 +53,7 @@ final class OssReportAction
         try {
             return Json::ok($response, $this->oss->preview($supplierId, $year, $quarter));
         } catch (\Throwable $e) {
-            return Json::error($response, 'build_failed', $e->getMessage(), 500);
+            return Json::internalError($response, 'build_failed', $e->getMessage(), 500);
         }
     }
 
@@ -78,7 +78,7 @@ final class OssReportAction
         try {
             return Json::ok($response, $this->threshold->progress($supplierId, $year));
         } catch (\Throwable $e) {
-            return Json::error($response, 'build_failed', $e->getMessage(), 500);
+            return Json::internalError($response, 'build_failed', $e->getMessage(), 500);
         }
     }
 
@@ -104,7 +104,7 @@ final class OssReportAction
         try {
             $result = $this->xmlExporter->build($supplierId, $year, $quarter);
         } catch (\Throwable $e) {
-            return Json::error($response, 'build_failed', $e->getMessage(), 500);
+            return Json::internalError($response, 'build_failed', $e->getMessage(), 500);
         }
 
         $userId = (int) ($user['id'] ?? 0);

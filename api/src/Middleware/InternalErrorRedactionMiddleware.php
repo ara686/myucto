@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace MyInvoice\Middleware;
 
+use MyInvoice\Http\Json;
 use MyInvoice\I18n\Locale;
 use MyInvoice\Infrastructure\Config\Config;
 use MyInvoice\Service\System\ManagedModeGuard;
@@ -30,6 +31,9 @@ use Slim\Psr7\Factory\StreamFactory;
  *
  * Co se NEmění:
  *   - 4xx (validace, 409 konflikty, 422 business pravidla) jsou záměrné hlášky,
+ *   - 5xx z `Json::error()`, tedy hláška napsaná pro uživatele (například
+ *     „Úložiště jobů není zapisovatelné."). Text výjimky posílá akce přes
+ *     `Json::internalError()`, což hlídá InternalErrorMessageGuardTest,
  *   - 502/503/504 hlásí nedostupnost protistrany (SMTP, ARES, údržba) a jejich
  *     text uživatel potřebuje k nápravě nastavení,
  *   - 507 nese stav diskové kvóty,
@@ -54,9 +58,11 @@ final class InternalErrorRedactionMiddleware implements MiddlewareInterface
     public function process(Request $request, Handler $handler): Response
     {
         $response = $handler->handle($request);
+        $public = $response->hasHeader(Json::HEADER_PUBLIC_MESSAGE);
+        $response = $response->withoutHeader(Json::HEADER_PUBLIC_MESSAGE);
 
         $status = $response->getStatusCode();
-        if ($status < 500 || in_array($status, self::PRESERVED_STATUSES, true)) {
+        if ($status < 500 || in_array($status, self::PRESERVED_STATUSES, true) || $public) {
             return $response;
         }
         if ($this->exposesDetails()) {

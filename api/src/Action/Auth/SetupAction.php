@@ -398,7 +398,7 @@ final class SetupAction
             $pdo->commit();
         } catch (\PDOException $e) {
             $pdo->rollBack();
-            return Json::error($response, 'setup_failed', $e->getMessage(), 500);
+            return Json::internalError($response, 'setup_failed', $e->getMessage(), 500);
         }
 
         // Po commitu (mimo DB transakci — dělá síťové volání): doplň z veřejných

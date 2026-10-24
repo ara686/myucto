@@ -37,9 +37,8 @@ final class AiProviderHttpClient
         private readonly LoggerInterface $logger,
         ?Client $http = null,
     ) {
-        // Bez přesměrování: Azure endpoint zadává admin a 30x z něj by poslal klíč
-        // i obsah dotazu na libovolný host (viz AzureOpenAiClient).
-        $this->http = $http ?? new Client(['timeout' => 60, 'http_errors' => false, 'allow_redirects' => false]);
+        // Azure endpoint zadává admin; přesměrování jen v rámci hostu (AiRedirectPolicy).
+        $this->http = $http ?? new Client(['timeout' => 60, 'http_errors' => false, 'allow_redirects' => AiRedirectPolicy::options()]);
     }
 
     /**
@@ -114,7 +113,7 @@ final class AiProviderHttpClient
             }
             $response = $this->http->post($url, [
                 'headers' => $headers + ['content-type' => 'application/json'], 'json' => $payload,
-                'allow_redirects' => false,
+                'allow_redirects' => AiRedirectPolicy::options(),
             ]);
             $body = json_decode((string) $response->getBody(), true);
             if ($response->getStatusCode() !== 200 || !is_array($body['data'] ?? null)) {
@@ -373,7 +372,7 @@ final class AiProviderHttpClient
             }
             $response = $this->http->post($url, [
                 'headers' => $headers + ['content-type' => 'application/json'], 'json' => $payload,
-                'allow_redirects' => false,
+                'allow_redirects' => AiRedirectPolicy::options(),
             ] + $extra);
             $body = json_decode((string) $response->getBody(), true);
             if ($response->getStatusCode() !== 200) {

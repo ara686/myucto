@@ -3,6 +3,7 @@ import { downloadApiFile } from '@/utils/downloadFile'
 import { uploadChunked, type ChunkedUploadProgress } from './chunkedUpload'
 import { fetchImportJob, type FileImportJob } from './imports'
 import type { MoneyS3ProtocolData, MoneyS3RunStatus } from './moneyS3'
+import type { MigrationNonprofitNotice } from './migrationApi'
 
 const BASE = '/admin/imports/stereo-nx'
 const POLL_MS = 2000
@@ -26,6 +27,7 @@ export interface StereoCompany {
 export interface StereoPreview {
   companies: StereoCompany[]
   target: { ico: string; accounting_mode: string; vat_payer: boolean }
+  nonprofit_notice?: MigrationNonprofitNotice
 }
 
 export interface StereoUpload {

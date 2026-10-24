@@ -1,6 +1,8 @@
 import { api } from './client'
+import type { MigrationNonprofitNotice } from './migrationApi'
 
 export interface AbraFlexiConnection {
+  nonprofit_notice?: MigrationNonprofitNotice
   configured: boolean
   imported: boolean
   years: Array<{ year: number; starts_on: string; ends_on: string }>

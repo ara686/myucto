@@ -16,8 +16,12 @@ namespace MyInvoice\Support\Imaging;
  */
 final class ImagickGuard
 {
-    /** Strop pixelů rastru, stejný jako u GD cesty náhledů. */
-    public const MAX_PIXELS = 40_000_000;
+    /**
+     * Strop pixelů rastru. Pokryje i 48 a 50Mpx fotky z mobilů. Pixel cache nad
+     * paměťový limit odkládá ImageMagick na mapu a disk, takže strop nehrozí
+     * vyčerpáním paměti PHP. GD cesta drží vlastní nižší strop.
+     */
+    public const MAX_PIXELS = 80_000_000;
     public const MAX_EDGE = 20_000;
     public const TIMEOUT = 30;
 

@@ -3451,7 +3451,7 @@ final class BankStatementAction
         } catch (\Throwable $e) {
             self::rollbackAtomic($pdo, $own, $savepoint, $e);
             if (TransactionFailure::aborted($e)) throw $e;
-            return Json::error($response, 'match_failed', 'Manuální párování selhalo: ' . $e->getMessage(), 500);
+            return Json::internalError($response, 'match_failed', 'Manuální párování selhalo: ' . $e->getMessage(), 500);
         }
 
         $this->recordManualMatchV2($txId, SupplierGuard::currentId($request), $userId);
@@ -3874,7 +3874,7 @@ final class BankStatementAction
         } catch (\Throwable $e) {
             self::rollbackAtomic($pdo, $own, $savepoint, $e);
             if (TransactionFailure::aborted($e)) throw $e;
-            return Json::error($response, 'match_failed', 'Sloučené párování selhalo: ' . $e->getMessage(), 500);
+            return Json::internalError($response, 'match_failed', 'Sloučené párování selhalo: ' . $e->getMessage(), 500);
         }
 
         $ip = $this->ipMatcher->clientIpFromRequest($request->getServerParams());
@@ -4192,7 +4192,7 @@ final class BankStatementAction
         } catch (\Throwable $e) {
             self::rollbackAtomic($pdo, $own, $savepoint, $e);
             if (TransactionFailure::aborted($e)) throw $e;
-            return Json::error($response, 'match_failed', 'Sloučené párování přijatých faktur selhalo: ' . $e->getMessage(), 500);
+            return Json::internalError($response, 'match_failed', 'Sloučené párování přijatých faktur selhalo: ' . $e->getMessage(), 500);
         }
 
         $this->recordManualMatchV2($txId, $supplierId, $userId);
@@ -4419,7 +4419,7 @@ final class BankStatementAction
         } catch (\Throwable $e) {
             self::rollbackAtomic($pdo, $own, $savepoint, $e);
             if (TransactionFailure::aborted($e)) throw $e;
-            return Json::error($response, 'match_failed', 'Párování selhalo: ' . $e->getMessage(), 500);
+            return Json::internalError($response, 'match_failed', 'Párování selhalo: ' . $e->getMessage(), 500);
         }
         $this->clientBankAccounts->captureForPurchaseInvoiceTransaction($purchaseInvoiceId, $txId);
         $this->recordManualMatchV2($txId, $supplierId, $userId);
@@ -4574,7 +4574,7 @@ final class BankStatementAction
         } catch (\Throwable $e) {
             self::rollbackAtomic($pdo, $own, $savepoint, $e);
             if (TransactionFailure::aborted($e)) throw $e;
-            return Json::error($response, 'unmatch_failed', 'Zrušení spárování selhalo: ' . $e->getMessage(), 500);
+            return Json::internalError($response, 'unmatch_failed', 'Zrušení spárování selhalo: ' . $e->getMessage(), 500);
         }
 
         $ip = $this->ipMatcher->clientIpFromRequest($request->getServerParams());

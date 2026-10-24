@@ -33,6 +33,12 @@ ke stažení, zálohu vytvoříte přímo v PREMIERu.
 
 ## 109.2 Než začnete
 
+Převod nebyl ověřen pro neziskové organizace a další účetní jednotky podle
+vyhlášky 504/2002 Sb. Průvodce je výrazně upozorní a převod účetnictví do
+období vedeného podle vyhlášky 504 odmítne (podrobnosti v kapitole
+[Přechod z Money S3](103_Prechod_z_Money_S3.md), oddíl 103.2). Neziskovka
+před převodem kontaktuje podporu.
+
 1. **Firma v MyÚčtu.** Musí existovat a mít vyplněné stejné IČO jako v PREMIERu.
    Převádí se do firmy, ve které právě pracujete; novou firmu nejdřív založte
    (kapitola [Multi supplier](95_Multi_supplier.md)). Firma, která zatím vede

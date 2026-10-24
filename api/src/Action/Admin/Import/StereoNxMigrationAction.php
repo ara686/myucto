@@ -19,6 +19,7 @@ use MyInvoice\Security\AccessLevel;
 use MyInvoice\Security\RequestAuthorization;
 use MyInvoice\Service\Auth\SecretEncryption;
 use MyInvoice\Service\BackgroundProcess;
+use MyInvoice\Service\Migration\Shared\NonprofitMigrationNotice;
 use MyInvoice\Service\Migration\StereoNx\StereoNxBackup;
 use MyInvoice\Service\Migration\StereoNx\StereoNxException;
 use MyInvoice\Service\Migration\StereoNx\StereoNxImportJobService;
@@ -189,7 +190,7 @@ final class StereoNxMigrationAction
                     'bank_account_series' => $backup->bankAccountSeriesPlan(),
                     'identity' => $identity, 'matches_target' => $identity['ico'] === $target['ico']];
             }
-            return Json::ok($response, ['companies' => $items, 'target' => $target]);
+            return Json::ok($response, NonprofitMigrationNotice::attach($this->db, $sid, ['companies' => $items, 'target' => $target]));
         } catch (StereoNxException $e) {
             return $this->error($response, $e);
         } catch (\Throwable) {

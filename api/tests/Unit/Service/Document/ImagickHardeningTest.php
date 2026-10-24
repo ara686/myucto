@@ -57,7 +57,9 @@ final class ImagickHardeningTest extends TestCase
     public function testPixelLimit(): void
     {
         self::assertTrue(ImagickGuard::withinPixelLimit(6000, 6000));
-        self::assertFalse(ImagickGuard::withinPixelLimit(7000, 7000));
+        // 50Mpx fotka z mobilu (8160 × 6120) projde, 10000 × 9000 už ne.
+        self::assertTrue(ImagickGuard::withinPixelLimit(8160, 6120));
+        self::assertFalse(ImagickGuard::withinPixelLimit(10000, 9000));
         self::assertFalse(ImagickGuard::withinPixelLimit(30000, 10));
         self::assertFalse(ImagickGuard::withinPixelLimit(0, 10));
     }
