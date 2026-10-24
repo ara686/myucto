@@ -6,7 +6,7 @@ import { ICONS, btnFilled, btnOutline } from '@/components/ui/buttonStyles'
 import { formInput, formLabel } from '@/components/ui/formStyles'
 import {
   eetApi,
-  type EetDevice,
+  type EetCapabilityDevice,
   type EetEnvironment,
   type EetPaymentEvent,
   type EetPaymentIntent,
@@ -54,7 +54,7 @@ const form = reactive({
   context: 'in_person' as Ctx,
   deviceId: null as number | null,
 })
-const devices = ref<EetDevice[]>([])
+const devices = ref<EetCapabilityDevice[]>([])
 onMounted(async () => {
   devices.value = await loadEetDevices()
   const ids = new Set(devices.value.map(d => d.id))

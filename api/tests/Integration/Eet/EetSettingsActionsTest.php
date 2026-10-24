@@ -89,7 +89,7 @@ final class EetSettingsActionsTest extends TestCase
         $this->devicesAction = new EetDevicesAction($devices, $c->get(TenantReferenceGuard::class), $logger);
         $this->settingsAction = new EetSettingsAction($this->settings, $this->commercial, $logger);
         $this->certificatesAction = new EetCertificatesAction($this->vault, $this->settings, $c->get(EpoStepUpService::class), $logger);
-        $this->capabilitiesAction = new EetCapabilitiesAction($this->settings, $this->vault, $this->commercial);
+        $this->capabilitiesAction = new EetCapabilitiesAction($this->settings, $this->vault, $this->commercial, $devices);
     }
 
     protected function tearDown(): void

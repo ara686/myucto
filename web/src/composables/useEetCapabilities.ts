@@ -1,5 +1,5 @@
 import { computed, onActivated, onMounted, ref, watch } from 'vue'
-import { eetApi, type EetCapabilities, type EetDevice } from '@/api/eet'
+import { eetApi, type EetCapabilities, type EetCapabilityDevice } from '@/api/eet'
 import { useAuthStore } from '@/stores/auth'
 import { useSupplierStore } from '@/stores/supplier'
 
@@ -39,12 +39,10 @@ export function useEetCapabilities() {
   return { capabilities, loaded, enabled, canAccept, reload: load }
 }
 
-/** Zařízení nabízená v dialogu; seznam smí číst jen role s právem `eet.settings`. */
-export async function loadEetDevices(): Promise<EetDevice[]> {
-  const auth = useAuthStore()
-  if (!auth.canRead('eet.settings')) return []
+/** Zařízení nabízená v dialogu; aktivní seznam vrací capabilities, takže ho vidí i obsluha bez \et.settings\. */
+export async function loadEetDevices(): Promise<EetCapabilityDevice[]> {
   try {
-    return (await eetApi.devices()).filter(d => d.active)
+    return (await eetApi.capabilities()).devices ?? []
   } catch {
     return []
   }

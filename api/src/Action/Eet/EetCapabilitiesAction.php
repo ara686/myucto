@@ -8,6 +8,7 @@ use MyInvoice\Http\Json;
 use MyInvoice\Http\SupplierGuard;
 use MyInvoice\Security\AccessLevel;
 use MyInvoice\Service\Eet\EetCertificateVault;
+use MyInvoice\Service\Eet\EetDeviceRepository;
 use MyInvoice\Service\Eet\EetSettingsService;
 use MyInvoice\Service\License\CommercialFeatureAccess;
 use Psr\Http\Message\ResponseInterface as Response;
@@ -28,6 +29,7 @@ final class EetCapabilitiesAction
         private readonly EetSettingsService $settings,
         private readonly EetCertificateVault $certificates,
         private readonly CommercialFeatureAccess $commercial,
+        private readonly EetDeviceRepository $devices,
     ) {}
 
     public function __invoke(Request $request, Response $response): Response
@@ -54,6 +56,14 @@ final class EetCapabilitiesAction
             'unsupported_scenarios' => self::UNSUPPORTED_SCENARIOS,
             'permissions' => EetActionSupport::permissions($request),
             'default_device_id' => $settings['default_device_id'],
+            // Výběr zařízení pro obsluhu bez práva `eet.settings`: jen aktivní a bez čítače řady.
+            'devices' => array_values(array_map(
+                static fn (array $d): array => [
+                    'id' => $d['id'], 'code' => $d['code'], 'name' => $d['name'],
+                    'unit_id' => $d['unit_id'], 'unit_number' => $d['unit_number'], 'unit_name' => $d['unit_name'],
+                ],
+                array_filter($this->devices->listFor($supplierId), static fn (array $d): bool => $d['active']),
+            )),
             'has_active_certificate' => $certificate !== null,
             'certificate_expires_at' => $certificate['not_after'] ?? null,
             'commercial_license' => $this->commercial->isAvailable(),

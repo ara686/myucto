@@ -7,7 +7,7 @@ import { formInput, formLabel } from '@/components/ui/formStyles'
 import {
   eetApi,
   type EetContactContext,
-  type EetDevice,
+  type EetCapabilityDevice,
   type EetEnvironment,
   type EetPaymentEvent,
   type EetPaymentPreview,
@@ -69,7 +69,7 @@ const form = reactive({
   note: '',
 })
 const receivedTouched = computed(() => form.receivedAt !== initialReceivedAt)
-const devices = ref<EetDevice[]>([])
+const devices = ref<EetCapabilityDevice[]>([])
 
 const normalizedAmount = computed(() => {
   const raw = form.amount.replace(/\s/g, '').replace(',', '.')

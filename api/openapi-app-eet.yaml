@@ -969,6 +969,7 @@ components:
       - unsupported_scenarios
       - permissions
       - default_device_id
+      - devices
       - has_active_certificate
       - certificate_expires_at
       - commercial_license
@@ -1041,6 +1042,25 @@ components:
           type:
           - integer
           - 'null'
+        devices:
+          type: array
+          description: Aktivní pokladní zařízení pro výběr při přijetí platby (bez čítače řady).
+          items:
+            type: object
+            required: [id, code, name, unit_id, unit_number, unit_name]
+            properties:
+              id:
+                type: integer
+              code:
+                type: string
+              name:
+                type: string
+              unit_id:
+                type: integer
+              unit_number:
+                type: integer
+              unit_name:
+                type: string
         has_active_certificate:
           type: boolean
         certificate_expires_at:

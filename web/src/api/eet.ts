@@ -6,6 +6,16 @@ export type EetRegime = 'standard' | 'exempt' | 'eet_off'
 export type EetUnitKind = 'premises' | 'online' | 'vehicle' | 'mobile' | 'other'
 export type EetPermissionLevel = 'none' | 'read' | 'write'
 
+/** Aktivní zařízení z capabilities (výběr v dialogu i bez práva eet.settings). */
+export interface EetCapabilityDevice {
+  id: number
+  code: string
+  name: string
+  unit_id: number
+  unit_number: number
+  unit_name: string
+}
+
 export interface EetCapabilities {
   contract_version: string
   enabled: boolean
@@ -17,6 +27,7 @@ export interface EetCapabilities {
   unsupported_scenarios: string[]
   permissions: Record<string, EetPermissionLevel>
   default_device_id: number | null
+  devices: EetCapabilityDevice[]
   has_active_certificate: boolean
   certificate_expires_at: string | null
   commercial_license: boolean
