@@ -38779,8 +38779,8 @@
     "giftSource": "Gift accounting evidence"
   },
   "eet": {
-    "nav": "EET",
-    "title": "EET - sales recording",
+    "nav": "EET settings",
+    "title": "EET 2.0 - sales recording",
     "subtitle": "EET 2.0 settings: recording units, cash devices, certificates, connection check and enabling the recording.",
     "reload": "Reload",
     "load_failed": "Could not load the EET settings.",

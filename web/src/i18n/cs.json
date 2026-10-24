@@ -38779,8 +38779,8 @@
     }
   },
   "eet": {
-    "nav": "EET",
-    "title": "EET - evidence tržeb",
+    "nav": "EET nastavení",
+    "title": "EET 2.0 - evidence tržeb",
     "subtitle": "Nastavení EET 2.0: evidenční jednotky, pokladní zařízení, certifikáty, ověření spojení a zapnutí evidence.",
     "reload": "Obnovit",
     "load_failed": "Nastavení EET se nepodařilo načíst.",
@@ -39122,7 +39122,7 @@
       "hint": "Po vystavení faktury se otevře dialog s předvyplněnou částkou. Zda se platba eviduje do EET, rozhodne server podle okolností platby."
     },
     "records": {
-      "nav": "Evidence EET",
+      "nav": "EET evidence",
       "title": "Evidence EET",
       "subtitle": "Evidované tržby, fronta odesílání a záznamy vyžadující zásah.",
       "load_failed": "Evidenci EET se nepodařilo načíst.",
