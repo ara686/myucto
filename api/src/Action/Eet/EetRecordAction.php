@@ -14,6 +14,7 @@ use MyInvoice\Service\Eet\EetCorrectionService;
 use MyInvoice\Service\Eet\EetDispatchService;
 use MyInvoice\Service\Eet\EetQueueService;
 use MyInvoice\Service\Eet\EetRecordQuery;
+use MyInvoice\Service\Eet\EetSalesSummaryService;
 use MyInvoice\Service\Eet\PaymentEventService;
 use MyInvoice\Service\Export\CsvWriter;
 use MyInvoice\Service\IpMatcher;
@@ -30,6 +31,7 @@ use Slim\Psr7\Stream;
  *   POST /api/eet/records/{id}/corrections/preview       náhled opravy
  *   POST /api/eet/records/{id}/corrections               záporná oprava (Idempotency-Key)
  *   GET  /api/eet/queue                                  souhrn fronty
+ *   GET  /api/eet/summary                                souhrn tržeb dne a měsíce (Domů v mobilu)
  *   GET  /api/eet/export                                 CSV po dávkách (filtr období)
  *   GET  /api/invoices/{id}/eet                          EET souhrn faktury
  */
@@ -42,6 +44,7 @@ final class EetRecordAction
         private readonly EetDispatchService $dispatch,
         private readonly EetCorrectionService $corrections,
         private readonly EetQueueService $queue,
+        private readonly EetSalesSummaryService $sales,
         private readonly ActivityLogger $logger,
         private readonly IpMatcher $ipMatcher,
     ) {}
@@ -112,6 +115,12 @@ final class EetRecordAction
     public function queue(Request $request, Response $response): Response
     {
         return Json::ok($response, $this->queue->summary(SupplierGuard::currentId($request)));
+    }
+
+    public function summary(Request $request, Response $response): Response
+    {
+        $date = $request->getQueryParams()['date'] ?? null;
+        return $this->respond($response, fn (): array => $this->sales->summary(SupplierGuard::currentId($request), is_string($date) ? $date : null));
     }
 
     public function invoice(Request $request, Response $response, array $args): Response

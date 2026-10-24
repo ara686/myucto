@@ -95,7 +95,12 @@ final class RoutePermissionMap
         ['POST', '#^/api/eet/records/[^/]+/corrections$#', 'eet.correct', AccessLevel::WRITE],
         ['GET', '#^/api/eet/records(/[^/]+)?$#', 'eet', AccessLevel::READ],
         ['GET', '#^/api/eet/queue$#', 'eet', AccessLevel::READ],
+        ['GET', '#^/api/eet/summary$#', 'eet', AccessLevel::READ],
         ['GET', '#^/api/eet/export$#', 'eet.export', AccessLevel::READ],
+
+        // Rychlá účtenka: route hlídá založení faktury; vystavení, úhradu a evidenci tržby
+        // ověřuje akce (RequestAuthorization::canIssueQuickReceipt, eet.accept_payment).
+        ['POST', '#^/api/mobile/receipts$#', 'invoices.create', AccessLevel::WRITE],
 
         ['GET', '#^/api/invoices/[0-9]+/stock-documents(/|$)#', 'stock', AccessLevel::READ],
         ['*', '#^/api/invoices/[0-9]+/stock-documents(/|$)#', 'stock', AccessLevel::WRITE],

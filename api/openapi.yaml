@@ -4122,6 +4122,154 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
         '404': { description: "Faktura nenalezena, nebo je web faktura na instalaci vypnutá (`public_links_disabled`)" }
 
+  /api/v1/invoices/{id}/receipt-link:
+    parameters:
+      - $ref: '#/components/parameters/SupplierIdHeader'
+      - in: path
+        name: id
+        required: true
+        schema: { type: integer, format: int64 }
+    post:
+      tags: [InvoiceComms]
+      summary: Veřejná účtenka — nový odkaz /r/{token} pro zákazníka
+      description: |
+        Vytvoří neuhodnutelný odkaz `/r/{token}` na účtenku zaplaceného dokladu
+        (rychlá účtenka, zjednodušený daňový doklad, faktura zaplacená na místě).
+        Zákazník si ji bez přihlášení načte z QR kódu: firma, číslo a datum
+        dokladu, položky, rekapitulace DPH, celkem, způsob úhrady a údaje EET
+        (EIČ, provozovna, pokladní zařízení, pořadové číslo, čas, POK, je-li).
+
+        Token má 256 bitů a ukládá se jen jeho otisk, proto ho vrací jen tahle
+        odpověď. Každé volání vytvoří nový odkaz; dřívější platí dál, dokud
+        nevyprší nebo je neodvolá `DELETE`. Platnost je `ttl_days` (1 až 365),
+        výchozí z konfigurace instalace (90 dní). Při vypnutých veřejných odkazech
+        (`invoices.public_links` v cfg.php) 404 `public_links_disabled`.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ttl_days: { type: integer, minimum: 1, maximum: 365 }
+      responses:
+        '201':
+          description: Vytvořený odkaz
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReceiptLink' }
+        '404': { description: "Faktura nenalezena, nebo jsou veřejné odkazy vypnuté (`public_links_disabled`)" }
+        '409':
+          description: Doklad není vystavený (`receipt_not_issued`), není to faktura (`receipt_invalid_type`) nebo není zaplacený (`receipt_not_paid`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: Neplatná platnost odkazu (`validation_failed`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    delete:
+      tags: [InvoiceComms]
+      summary: Veřejná účtenka — odvolá všechny platné odkazy dokladu
+      responses:
+        '200':
+          description: Počet odvolaných odkazů
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  revoked: { type: integer }
+        '404': { description: "Faktura nenalezena, nebo jsou veřejné odkazy vypnuté (`public_links_disabled`)" }
+
+  /api/v1/mobile/receipts:
+    parameters:
+      - $ref: '#/components/parameters/SupplierIdHeader'
+    post:
+      tags: [Invoices]
+      summary: Rychlá účtenka — doklad, okamžitá úhrada a tržba EET v jedné transakci
+      description: |
+        Prodej bez předchozí faktury (mobilní aplikace, pokladna). V jedné
+        transakci vznikne vystavený doklad s položkami, jeho úhrada a případná
+        tržba EET:
+
+        - bez `client_id` zjednodušený daňový doklad (§ 30 ZDPH) na koncového
+          zákazníka; nad limit zjednodušeného dokladu 422 `client_required`
+          (vyberte odběratele, vystaví se běžný daňový doklad),
+        - číslo z řady dokladů (vlastní řada zjednodušených dokladů, je-li
+          nastavená), DPH a rekapitulace z řádků, sazby z číselníku k dnešku,
+        - `cash` s pokladnou (`cash_register_id`, jinak pokladna zařízení EET):
+          příjmový pokladní doklad k dokladu; jedna úhrada a jedna tržba,
+        - `card_terminal`, `stored_value` a hotovost bez pokladny: úhrada dokladu
+          přes společný platební příkaz EET.
+
+        Firma bez aktivní EET dostane doklad a úhradu bez tržby (`eet.decision =
+        inactive`). Tržba se odesílá až po uložení; odpověď nese oddělené stavy
+        peněz, dokladu a EET (`states`) jako `/api/eet/payments`. `received_amount`
+        (jen hotovost) slouží jen k výpočtu vráceno (`payment.change_amount`).
+        `public_receipt_url` = odkaz na veřejnou účtenku pro zákazníka (QR).
+
+        Vyžaduje `invoices.create`, `invoices.issue`, `invoices.mark_paid`
+        a u firmy s aktivní EET `eet.accept_payment`. Token se scope `read_write`.
+        Datum dokladu je dnešek a nesmí ležet v uzavřeném účetním období.
+        Opakování se stejným `Idempotency-Key` vrátí původní účtenku (200,
+        `idempotent_replay = true`), jiné tělo 409 `idempotency_conflict`.
+        Doklad se vystavuje jen v Kč (jinak 422 `currency_unsupported`).
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          description: 8 až 80 znaků (písmena, číslice, `.` `_` `:` `-`); předpona `sys:` je vyhrazená.
+          schema: { type: string, minLength: 8, maxLength: 80 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/QuickReceiptInput' }
+      responses:
+        '201':
+          description: Vystavená a zaplacená účtenka
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QuickReceipt' }
+        '200':
+          description: Opakovaný požadavek se stejným klíčem a tělem — původní účtenka
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QuickReceipt' }
+        '400':
+          description: Chybí nebo je neplatná hlavička `Idempotency-Key` (`idempotency_key_required`, `idempotency_key_invalid`, `idempotency_key_reserved`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Chybí oprávnění (`forbidden`), licence, nebo token nemá scope `read_write` (`insufficient_scope`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Odběratel (`client_not_found`), pokladní zařízení (`device_not_found`) nebo pokladna (`cash_register_not_found`) nepatří firmě
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Stejný `Idempotency-Key` s jiným tělem (`idempotency_conflict`), uzavřené období (`period_closed`) nebo nedostatek zboží (`stock.error.*`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: |
+            Neplatný vstup (`validation_failed`), účtenka nad limit zjednodušeného
+            dokladu bez odběratele (`client_required`), daňová brána vystavení
+            (`not_vat_payer_at_date`, `simplified_document_not_allowed`), cizí měna
+            (`currency_unsupported`), hotovost nešla do pokladny
+            (`cash_settlement_failed`) nebo odmítnutí EET (`eet_validation`,
+            `eet_unsupported_scenario`, `eet_device_required`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /api/v1/invoices/{id}/pdfs:
     parameters:
       - $ref: '#/components/parameters/SupplierIdHeader'
@@ -33452,6 +33600,93 @@ components:
         not_recorded: { type: string, description: Část vrácení nad neopravenou evidovanou částku; do EET se nehlásí }
         warning: { type: [string, 'null'] }
         replayed: { type: boolean }
+    ReceiptLink:
+      type: object
+      properties:
+        token: { type: string, description: "64 hex znaků; vrací se jen při vytvoření" }
+        url: { type: string, example: "https://faktury.example.cz/r/3f2a…" }
+        expires_at: { type: string, format: date-time }
+    QuickReceiptItem:
+      type: object
+      required: [unit_price]
+      properties:
+        stock_item_id: { type: [integer, "null"], format: int64, description: "Skladová karta; bez popisu se vezme její název" }
+        description: { type: string, maxLength: 500, description: "Povinný bez skladové karty" }
+        quantity: { type: [number, string], default: 1, description: "Kladné, nejvýš 3 desetinná místa" }
+        unit: { type: string, maxLength: 20 }
+        unit_price: { type: [number, string], description: "Jednotková cena, nejvýš 2 desetinná místa" }
+        vat_rate: { type: [number, string], default: 0, description: "Sazba DPH v procentech (21, 12, 0)" }
+        prices_include_vat: { type: boolean, default: true, description: "Ceny s DPH (DPH shora); musí být stejné u všech položek" }
+    QuickReceiptInput:
+      type: object
+      required: [channel, items]
+      properties:
+        channel: { type: string, enum: [cash, card_terminal, stored_value] }
+        contact_context: { type: string, enum: [in_person, on_premises, in_vehicle, remote, unknown], default: in_person }
+        device_id: { type: [integer, "null"], format: int64, description: "Pokladní zařízení EET; výchozí zařízení firmy" }
+        cash_register_id: { type: [integer, "null"], format: int64, description: "Pokladna pro hotovost; výchozí pokladna zařízení" }
+        client_id: { type: [integer, "null"], format: int64, description: "Odběratel; bez něj zjednodušený doklad na koncového zákazníka" }
+        currency: { type: string, enum: [CZK], default: CZK }
+        received_amount: { type: [number, string, "null"], description: "Přijatá hotovost (jen cash), informativně" }
+        note: { type: [string, "null"], maxLength: 255, description: "Interní poznámka obsluhy, na doklad se netiskne" }
+        public_link: { type: boolean, default: true, description: "Vytvořit odkaz na veřejnou účtenku" }
+        items:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items: { $ref: '#/components/schemas/QuickReceiptItem' }
+    QuickReceipt:
+      type: object
+      properties:
+        receipt_id: { type: integer, format: int64 }
+        idempotent_replay: { type: boolean }
+        invoice:
+          type: object
+          properties:
+            id: { type: integer, format: int64 }
+            number: { type: string }
+            is_simplified: { type: boolean }
+            issue_date: { type: string, format: date }
+            status: { type: string }
+            currency: { type: string }
+            total_without_vat: { type: string }
+            total_vat: { type: string }
+            total_with_vat: { type: string }
+            vat_breakdown: { type: array, items: { type: object, additionalProperties: true } }
+            pdf_url: { type: string }
+        payment:
+          type: object
+          properties:
+            channel: { type: string }
+            payment_method: { type: string }
+            amount: { type: string }
+            received_amount: { type: [string, "null"] }
+            change_amount: { type: [string, "null"], description: "Vráceno = přijato − k úhradě" }
+            event:
+              oneOf:
+                - $ref: '#/components/schemas/InvoicePaymentEetResult'
+                - type: "null"
+        cash_document:
+          type: [object, "null"]
+          properties:
+            id: { type: integer, format: int64 }
+            doc_number: { type: string }
+            register_id: { type: integer, format: int64 }
+            status: { type: string }
+        states:
+          type: object
+          description: Oddělené stavy peněz, dokladu a EET
+          properties:
+            money: { type: string, description: "payment_order_status platby (settled, operator_confirmed)" }
+            document: { type: string, description: "Stav dokladu (paid)" }
+            eet: { type: string, description: "Stav záznamu EET (pending, confirmed…), bez záznamu rozhodnutí politiky (inactive, not_subject…)" }
+        eet:
+          type: object
+          properties:
+            decision: { type: string, enum: [required, voluntary, not_subject, unknown, unsupported, inactive] }
+            record: { type: [object, "null"], additionalProperties: true }
+        public_receipt_url: { type: [string, "null"] }
+        public_receipt_expires_at: { type: [string, "null"], format: date-time }
     EetDecision:
       type: object
       properties:

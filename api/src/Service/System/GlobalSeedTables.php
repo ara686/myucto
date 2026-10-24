@@ -368,6 +368,7 @@ final class GlobalSeedTables
         'cash_document_vat_lines', 'cash_documents', 'cash_journal_notes', 'cash_registers',
         'catalog_job_items', 'catalog_job_lanes', 'catalog_jobs',
         'eet_attempts', 'eet_records', 'payment_event_allocations', 'payment_events',
+        'quick_receipts', 'receipt_links',
         'client_bank_accounts', 'client_email_contacts', 'client_revenue_cache',
         'clients',
         'credit_note_offsets',

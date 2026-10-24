@@ -739,6 +739,41 @@ final class ApiScopeMiddlewareTest extends TestCase
         }
     }
 
+    /**
+     * Mobilní aplikace a integrace čtou evidenci tržeb tokenem (Domů, Tržby, detail),
+     * zápisové EET a rychlou účtenku jen se scope `read_write`. Nastavení, jednotky,
+     * zařízení, certifikáty, diagnostika a export zůstávají jen pro webovou relaci.
+     */
+    public function testEetAndMobileReceiptBearerBoundary(): void
+    {
+        $uuid = '0f8fad5b-d9cb-469f-a165-70867728950e';
+        foreach (['/api/eet/summary', '/api/eet/records', '/api/eet/records/7', '/api/eet/queue', '/api/eet/capabilities', '/api/eet/payments/' . $uuid] as $path) {
+            self::assertSame(204, $this->middleware()->process($this->bearer('GET', $path, 'read'), $this->okHandler())->getStatusCode(), $path);
+        }
+        foreach ([
+            '/api/eet/payments', '/api/eet/payments/preview', '/api/eet/payment-intents',
+            '/api/eet/payment-intents/' . $uuid . '/confirm', '/api/eet/payment-intents/' . $uuid . '/cancel',
+            '/api/eet/records/7/retry', '/api/eet/records/7/corrections', '/api/eet/records/7/corrections/preview',
+            '/api/mobile/receipts',
+        ] as $path) {
+            $denied = $this->middleware()->process($this->bearer('POST', $path, 'read'), $this->okHandler());
+            self::assertSame(403, $denied->getStatusCode(), $path);
+            self::assertSame('insufficient_scope', $this->errorCode($denied), $path);
+            self::assertSame(204, $this->middleware()->process($this->bearer('POST', $path, 'read_write'), $this->okHandler())->getStatusCode(), $path);
+        }
+        foreach ([
+            ['GET', '/api/eet/certificates'], ['POST', '/api/eet/certificates'], ['POST', '/api/eet/certificates/3/deactivate'],
+            ['GET', '/api/eet/settings'], ['PUT', '/api/eet/settings'], ['GET', '/api/eet/units'], ['POST', '/api/eet/devices'],
+            ['POST', '/api/eet/diagnostics'], ['GET', '/api/eet/export'],
+        ] as [$method, $path]) {
+            $denied = $this->middleware()->process($this->bearer($method, $path, 'read_write'), $this->okHandler());
+            self::assertSame(403, $denied->getStatusCode(), $method . ' ' . $path);
+            self::assertSame('token_endpoint_forbidden', $this->errorCode($denied), $method . ' ' . $path);
+        }
+        // Veřejná účtenka zákazníka: odkaz spravuje token jako ostatní zápisy faktur.
+        self::assertSame(204, $this->middleware()->process($this->bearer('POST', '/api/invoices/7/receipt-link', 'read_write'), $this->okHandler())->getStatusCode());
+        self::assertSame(403, $this->middleware()->process($this->bearer('DELETE', '/api/invoices/7/receipt-link', 'read'), $this->okHandler())->getStatusCode());
+    }
     private function middleware(): ApiScopeMiddleware
     {
         return new ApiScopeMiddleware(new ResponseFactory());

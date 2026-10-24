@@ -286,6 +286,7 @@ $sessionActions = [
     'MyInvoice\\Action\\Eet\\EetRecordAction::correctionPreview',
     'MyInvoice\\Action\\Eet\\EetRecordAction::correction',
     'MyInvoice\\Action\\Eet\\EetRecordAction::queue',
+    'MyInvoice\\Action\\Eet\\EetRecordAction::summary',
     'MyInvoice\\Action\\Eet\\EetRecordAction::export',
     'MyInvoice\\Action\\Eet\\EetRecordAction::invoice',
     // Oblíbené stránky uživatele - stav UI, akce je jen z webového rozhraní.
