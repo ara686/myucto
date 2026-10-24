@@ -901,7 +901,7 @@ const th = 'px-3 py-2 text-left font-medium'
 
       <!-- Jedno společné Uložit pro profil -->
       <div v-if="canWrite && dirty"
-        class="sticky bottom-0 z-10 -mx-1 flex flex-wrap items-center justify-end gap-2 rounded-lg border border-neutral-200 bg-surface px-4 py-3 shadow-[0_-2px_10px_rgba(21,19,29,0.10)]"
+        class="sticky bottom-[var(--app-footer-height,0px)] z-10 -mx-1 flex flex-wrap items-center justify-end gap-2 rounded-lg border border-neutral-200 bg-surface px-4 py-3 shadow-[0_-2px_10px_rgba(21,19,29,0.10)]"
         data-test="eet-save-bar">
         <span class="mr-auto text-sm text-neutral-600">{{ t('eet.profile.unsaved') }}</span>
         <button type="button" :class="btnOutline('neutral')" :disabled="saving" @click="resetProfile">
