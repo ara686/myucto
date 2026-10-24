@@ -2123,8 +2123,11 @@ onBeforeUnmount(() => {
              takže nosí i stejnou tmavou plochu. Světlá patička pod tmavou lištou
              působila jako nedodělaná půlka — takhle obsah rámují z obou stran. -->
         <footer ref="appFooter" class="nav-inverted sticky bottom-0 z-20 border-t border-neutral-200 bg-surface shadow-[0_-2px_10px_rgba(21,19,29,0.10)]">
-          <div class="hidden lg:grid h-11 grid-cols-[minmax(14rem,1fr)_auto_minmax(14rem,1fr)] 2xl:grid-cols-[minmax(14rem,1fr)_auto_minmax(23rem,1fr)] items-center gap-4 px-3">
-            <div class="flex w-full max-w-lg items-center gap-2">
+          <!-- Pod 2xl nese pravý sloupec i ikony oblíbených, oken a panelů, takže má
+               šířku podle obsahu (`auto`) a zužuje se hledání vlevo; jinak by přetekl
+               přes přepínač firmy uprostřed. -->
+          <div class="hidden lg:grid h-11 grid-cols-[minmax(10rem,1fr)_auto_auto] 2xl:grid-cols-[minmax(14rem,1fr)_auto_minmax(23rem,1fr)] items-center gap-4 px-3">
+            <div class="flex w-full max-w-60 2xl:max-w-lg items-center gap-2">
               <div class="min-w-0 flex-1">
                 <GlobalSearch
                   ref="desktopSearchRef"
@@ -2187,7 +2190,7 @@ onBeforeUnmount(() => {
                   <svg v-else class="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M3 4h5v16H3V4zm2 3h1m-1 4h1m-1 4h1m6-10h9m-9 5h9m-9 5h9" />
                   </svg>
-                  {{ t('nav.menu_style') }}
+                  <span class="hidden 2xl:inline">{{ t('nav.menu_style') }}</span>
                 </button>
                 <div v-if="navigationLayoutOpen" class="fixed inset-0 z-10" aria-hidden="true" @click="navigationLayoutOpen = false"></div>
                 <div v-if="navigationLayoutOpen" class="absolute bottom-full right-0 z-40 mb-2 w-56 rounded-lg border border-neutral-200 bg-surface p-1.5 text-sm shadow-xl" role="menu">
