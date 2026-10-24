@@ -39082,7 +39082,7 @@
         "no_movement": "No money movement"
       },
       "doc": {
-        "settled": "Invoice paid",
+        "settled": "Payment recorded on the invoice",
         "pending": "Invoice payment waits for bank matching",
         "not_applicable": "No accounting payment"
       },

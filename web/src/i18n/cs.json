@@ -39082,7 +39082,7 @@
         "no_movement": "Bez pohybu peněz"
       },
       "doc": {
-        "settled": "Doklad uhrazen",
+        "settled": "Úhrada zapsána k dokladu",
         "pending": "Úhrada dokladu čeká na bankovní párování",
         "not_applicable": "Bez účetní úhrady"
       },
