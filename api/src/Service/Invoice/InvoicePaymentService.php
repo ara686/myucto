@@ -472,6 +472,7 @@ final class InvoicePaymentService
         if ($payment === null) {
             throw new \RuntimeException('Platba nenalezena.');
         }
+        $this->assertNoEetRecord('a.invoice_payment_id = ?', [$paymentId]);
         if (!$skipBankGuard && $payment['bank_transaction_id'] !== null) {
             throw new \RuntimeException(
                 'Platba je navázaná na bankovní transakci. Zruš spárování v detailu výpisu.'
@@ -523,6 +524,7 @@ final class InvoicePaymentService
      */
     public function deleteAllForInvoice(int $invoiceId): int
     {
+        $this->assertNoEetRecord('a.invoice_payment_id IN (SELECT p.id FROM invoice_payments p WHERE p.invoice_id = ?)', [$invoiceId]);
         $pdo = $this->db->pdo();
         $ownsTransaction = !$pdo->inTransaction();
         if ($ownsTransaction) {
@@ -753,6 +755,33 @@ final class InvoicePaymentService
         // cache se dopočte při nejbližší přímé akci / cronu).
         if ($committed) {
             $this->stats->recomputeAfterCommit($invoiceId);
+        }
+    }
+
+    /**
+     * Úhrada, kterou platební příkaz EET zachytil jako evidovanou tržbu, se fyzicky
+     * nemaže: evidence je neměnná a smazáním by zmizela vazba tržby na doklad.
+     * Vrácení peněz nebo neprovedenou platbu řeší oprava EET (záporná tržba).
+     * Alokace s bankovním pohybem je jen důkaz o připsání, ne zachycení tržby,
+     * takže zrušení bankovního spárování neblokuje.
+     *
+     * @param list<int> $params
+     */
+    private function assertNoEetRecord(string $allocationWhere, array $params): void
+    {        $stmt = $this->db->pdo()->prepare(
+            "SELECT r.sequence_number
+               FROM payment_event_allocations a
+               JOIN eet_records r ON r.payment_event_id = a.payment_event_id AND r.supplier_id = a.supplier_id
+                                 AND r.kind = 'sale'
+              WHERE {$allocationWhere} AND a.bank_transaction_id IS NULL
+              LIMIT 1"
+        );
+        $stmt->execute($params);
+        $sequence = $stmt->fetchColumn();
+        if ($sequence !== false) {
+            throw new \RuntimeException(
+                'Úhrada má evidenci EET (tržba ' . $sequence . '). Nelze ji smazat, použijte opravu EET.'
+            );
         }
     }
 

@@ -19,7 +19,7 @@ use MyInvoice\Service\Eet\Transport\EetSigningCredential;
  * Lokální deaktivace není revokace u CA — certifikát jen přestane být nabízen
  * k podpisu.
  */
-final class EetCertificateVault
+final class EetCertificateVault implements EetCredentialProvider
 {
     private const CIPHER_PREFIX = 'enc:v2:';
     private const WARNING_DAYS = 30;

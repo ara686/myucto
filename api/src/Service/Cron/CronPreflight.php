@@ -51,6 +51,19 @@ final class CronPreflight
     }
 
     /**
+     * Čeká nějaký EET záznam na odeslání, opakování nebo zásah? Index `ix_eet_due`
+     * (status, …) odpoví bez průchodu potvrzených záznamů.
+     */
+    public static function hasEetDispatchWork(PDO $pdo): bool
+    {
+        return self::probe($pdo, "
+            SELECT 1 FROM eet_records
+             WHERE status IN ('pending','sending','retry_wait','action_required')
+             LIMIT 1
+        ");
+    }
+
+    /**
      * Čeká nějaké přímé podání EPO na stav, třeba i s dotazem až později?
      *
      * Širší protějšek {@see self::hasEpoWork()} bez termínu dalšího dotazu.

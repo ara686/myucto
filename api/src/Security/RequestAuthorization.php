@@ -220,6 +220,16 @@ final class RequestAuthorization
     }
 
     /**
+     * XML pokusů o odeslání EET (podepsaná zpráva a odpověď FS) vidí jen ten, kdo
+     * smí opravovat a opakovat evidenci, a jen z přihlášené relace. Bearer token
+     * (mobil, integrace) ho nedostane nikdy.
+     */
+    public static function canViewEetAttemptXml(Request $request): bool
+    {
+        return self::isSessionAuth($request) && self::allows($request, 'eet.correct', AccessLevel::WRITE);
+    }
+
+    /**
      * Smí čtecí požadavek (GET stažení, náhled) mimochodem zapsat? Doplnění kurzů,
      * posun zámku podání, založení konceptu nebo párování záloh dělá jen člověk
      * v aplikaci s právem zápisu. API token je pro účetní a daňovou vrstvu vždy
