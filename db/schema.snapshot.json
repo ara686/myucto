@@ -1086,7 +1086,8 @@
         "2182_eet_payment_events_records_attempts.sql",
         "2183_eet_role_permissions.sql",
         "2184_eet_payment_events_foreign_currency.sql",
-        "2185_eet_stored_value_and_external.sql"
+        "2185_eet_stored_value_and_external.sql",
+        "2186_user_favorites.sql"
     ],
     "tables": {
         "abra_flexi_connections": {
@@ -27730,6 +27731,30 @@
             "checks": {
                 "quantity_decimals": "`quantity_decimals` is null or `quantity_decimals` <= 3"
             }
+        },
+        "user_favorites": {
+            "type": "BASE TABLE",
+            "engine": "InnoDB",
+            "collation": "utf8mb4_unicode_ci",
+            "columns": {
+                "created_at": "timestamp NOT NULL DEFAULT current_timestamp()",
+                "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
+                "path": "varchar(500) NOT NULL",
+                "position": "int(10) unsigned NOT NULL DEFAULT 0",
+                "supplier_id": "int(10) unsigned NULL DEFAULT NULL",
+                "title": "varchar(190) NOT NULL",
+                "user_id": "bigint(20) unsigned NOT NULL"
+            },
+            "indexes": {
+                "PRIMARY": "UNIQUE BTREE (id)",
+                "fk_uf_supplier": "BTREE (supplier_id)",
+                "idx_uf_user_position": "BTREE (user_id, position)"
+            },
+            "foreign_keys": {
+                "fk_uf_supplier": "(supplier_id) -> supplier (id) ON UPDATE RESTRICT ON DELETE CASCADE",
+                "fk_uf_user": "(user_id) -> users (id) ON UPDATE RESTRICT ON DELETE CASCADE"
+            },
+            "checks": []
         },
         "user_preferences": {
             "type": "BASE TABLE",
