@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Modal from '@/components/ui/Modal.vue'
 import { ICONS, btnFilled, btnOutline } from '@/components/ui/buttonStyles'
@@ -68,8 +68,13 @@ const normalizedAmount = computed(() => {
   if (!/^\d+(\.\d{1,2})?$/.test(raw)) return null
   return Number(raw) > 0 ? Number(raw).toFixed(2) : null
 })
+// Server odečítá i potvrzené QR příkazy čekající na banku, proto první QR nechá spočítat jeho.
+const serverAmount = ref(true)
+const serverMax = ref<number | null>(null)
+let syncingAmount = false
+const maxAmount = computed(() => serverMax.value !== null ? Math.min(serverMax.value, remainingNumber.value) : remainingNumber.value)
 const amountInvalid = computed(() => form.amount.trim() !== '' && normalizedAmount.value === null)
-const amountOver = computed(() => normalizedAmount.value !== null && Number(normalizedAmount.value) > remainingNumber.value + 0.004)
+const amountOver = computed(() => normalizedAmount.value !== null && Number(normalizedAmount.value) > maxAmount.value + 0.004)
 const amountUsable = computed(() => normalizedAmount.value !== null && !amountOver.value)
 
 const intent = ref<EetPaymentIntent | null>(null)
@@ -99,12 +104,12 @@ const { start: startPolling, timedOut: pollTimedOut } = useEetPaymentPolling((fr
 })
 
 function requestBody(): EetPaymentIntentRequest | null {
-  if (!amountUsable.value || !normalizedAmount.value) return null
+  if (!serverAmount.value && (!amountUsable.value || !normalizedAmount.value)) return null
   const body: EetPaymentIntentRequest = {
     invoice_id: props.invoiceId,
-    amount: normalizedAmount.value,
     contact_context: form.context,
   }
+  if (!serverAmount.value && normalizedAmount.value) body.amount = normalizedAmount.value
   if (form.deviceId) body.device_id = form.deviceId
   return body
 }
@@ -142,6 +147,15 @@ function regenerate() {
       // Při novější změně ve frontě ho další krok zruší.
       intent.value = created
       intentBodyJson = json
+      if (serverAmount.value) {
+        const total = Number(created.qr?.amount ?? created.amount)
+        if (Number.isFinite(total) && total > 0) {
+          serverMax.value = total
+          syncingAmount = true
+          form.amount = total.toFixed(2)
+          void nextTick(() => { syncingAmount = false })
+        }
+      }
       confirmKey = newIdempotencyKey()
       if (body.device_id) rememberEetDevice(supplierId.value, body.device_id)
     } catch (e) {
@@ -171,7 +185,7 @@ onMounted(async () => {
     : fallback && (ids.size === 0 || ids.has(fallback)) ? fallback
       : devices.value[0]?.id ?? null
   ready = true
-  if (amountUsable.value) {
+  if (remainingNumber.value > 0) {
     regenerate()
   } else {
     loading.value = false
@@ -180,8 +194,12 @@ onMounted(async () => {
   }
 })
 
+watch(() => form.amount, () => {
+  if (ready && !syncingAmount) serverAmount.value = false
+})
+
 watch(() => [form.amount, form.context, form.deviceId], () => {
-  if (!ready || confirmed.value) return
+  if (!ready || confirmed.value || syncingAmount) return
   if (debounceTimer) clearTimeout(debounceTimer)
   // Do přegenerování nejde potvrdit QR, který už neodpovídá zadání.
   pendingChange.value = requestBody() !== null
@@ -328,8 +346,8 @@ const eetUnconfirmed = computed(() => eetIsOpen(confirmed.value))
               <input v-model="form.amount" type="text" inputmode="decimal" autocomplete="off"
                 :class="[formInput, amountInvalid || amountOver ? 'border-danger-500' : '']" data-test="eet-qr-amount" />
               <span v-if="amountInvalid" class="text-xs text-danger-600">{{ t('eet.pay.amount_invalid') }}</span>
-              <span v-else-if="amountOver" class="text-xs text-danger-600">{{ t('eet.qr.amount_over', { amount: formatMoney(remainingNumber, currency) }) }}</span>
-              <span v-else class="text-xs text-neutral-500">{{ t('eet.pay.remaining', { amount: formatMoney(remainingNumber, currency) }) }}</span>
+              <span v-else-if="amountOver" class="text-xs text-danger-600">{{ t('eet.qr.amount_over', { amount: formatMoney(maxAmount, currency) }) }}</span>
+              <span v-else class="text-xs text-neutral-500">{{ t('eet.pay.remaining', { amount: formatMoney(maxAmount, currency) }) }}</span>
             </label>
             <label :class="formLabel">
               <span>{{ t('eet.pay.context') }}</span>
