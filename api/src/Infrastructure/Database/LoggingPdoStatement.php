@@ -30,7 +30,7 @@ final class LoggingPdoStatement extends PDOStatement
         $before = ($this->transactionState)?->__invoke() ?? false;
         $started = $this->slowLog !== null ? hrtime(true) : 0;
         try {
-            $ok = parent::execute($params);
+            $ok = $this->executeRetryingReprepare($params);
         } catch (PDOException $e) {
             ($this->statementFailed)?->__invoke((string) $this->queryString, $before, $e->errorInfo);
             DbErrorLogger::log($this->logger, $e, (string) $this->queryString, $params ?? []);
@@ -50,5 +50,24 @@ final class LoggingPdoStatement extends PDOStatement
         }
 
         return $ok;
+    }
+
+    /**
+     * MariaDB 1615 (Prepared statement needs to be re-prepared): definice tabulky se mezi
+     * přípravou a provedením změnila nebo vypadla z cache definic (paralelní zátěž,
+     * sekvenční engine). Chyba vzniká PŘED provedením, takže opakování nic nezdvojí
+     * a server při něm příkaz připraví znovu; jiné chyby jdou dál beze změny.
+     */
+    private function executeRetryingReprepare(?array $params): bool
+    {
+        for ($attempt = 0; ; $attempt++) {
+            try {
+                return parent::execute($params);
+            } catch (PDOException $e) {
+                if ($attempt >= 2 || (int) ($e->errorInfo[1] ?? 0) !== 1615) {
+                    throw $e;
+                }
+            }
+        }
     }
 }
