@@ -193,13 +193,7 @@ final class PohodaDocumentLinkerTest extends TestCase
         self::assertSame(2026108, $this->column('purchase_invoices', 'payment_variable_symbol', X::REFUND_ADVANCE_BY_VS), 'Fixture: VS zálohy je převedený.');
         self::assertSame('ZF-2026-8', $this->column('purchase_invoices', 'vendor_invoice_number', X::REFUND_ADVANCE_BY_VS));
 
-        if ($this->refundsOf(X::REFUND_ADVANCE_BY_VS) === []) {
-            self::markTestIncomplete(
-                'Chyba DocumentLinker::inferAdvanceSettlements: vrácení zálohy hledá zálohu jen podle číslic '
-                . 'vendor_invoice_number a varsymbol (= číslo dokladu POHODY), ne podle payment_variable_symbol (symVar zálohy). '
-                . "Vrácení 400 Kč s VS 2026108 zálohy #{$advance} (doklad dodavatele ZF-2026-8) zůstalo nespárované a záloha na 314 otevřená."
-            );
-        }
+        self::assertNotSame(0, $advance);
         self::assertSame([400.0], $this->refundsOf(X::REFUND_ADVANCE_BY_VS));
     }
 

@@ -644,7 +644,7 @@ final class DocumentLinker
         $s = $ctx->supplierId;
         $advanceAccount = "(ca.account_code LIKE '314%' OR COALESCE(pa.account_code, '') LIKE '314%')";
         $rows = $pdo->query(
-            "SELECT a.id, a.vendor_id, a.vendor_invoice_number, a.varsymbol, a.issue_date, a.total_with_vat, a.total_vat,
+            "SELECT a.id, a.vendor_id, a.vendor_invoice_number, a.varsymbol, a.payment_variable_symbol, a.issue_date, a.total_with_vat, a.total_vat,
                     (SELECT COALESCE(SUM(pm.amount), 0) FROM payment_matches pm
                       WHERE pm.supplier_id = a.supplier_id AND pm.purchase_invoice_id = a.id
                         AND EXISTS (SELECT 1 FROM journal_entries e JOIN journal_entry_lines l ON l.entry_id = e.id
@@ -682,7 +682,7 @@ final class DocumentLinker
                 'vendor' => (int) $r['vendor_id'],
                 'left' => round($paid - (float) $r['refunded'] - (float) $r['linked_settled'] - (float) $r['deducted'], 2),
             ];
-            foreach ([(string) $r['vendor_invoice_number'], (string) $r['varsymbol']] as $symbol) {
+            foreach ([(string) $r['vendor_invoice_number'], (string) $r['varsymbol'], (string) $r['payment_variable_symbol']] as $symbol) {
                 $digits = preg_replace('/\D+/', '', $symbol) ?? '';
                 if ($digits !== '') {
                     $bySymbol[$digits][(int) $r['id']] = true;
