@@ -382,4 +382,72 @@ final class MoneyS3ImportTest extends MoneyS3ImportTestCase
         $payments = array_column($protocol->toArray()['steps'], null, 'key')['payments']['counts'] ?? [];
         self::assertSame(1, $payments['cash_multi_invoice'] ?? 0, json_encode($payments));
     }
+
+    /**
+     * Bankovní úhrada vydané faktury je i evidovanou platbou - z ní saldokonto počítá
+     * uhrazenou část. Firma převedená dřívější verzí platbu nemá; opakovaný převod ji
+     * doplní k už spárované úhradě a nic dalšího nezdvojí.
+     */
+    public function testIssuedInvoicePaymentIsRecordedAndRerunBackfillsIt(): void
+    {
+        $supplierId = $this->supplier();
+        $protocol = $this->import($supplierId);
+
+        self::assertFalse($protocol->hasErrors(), $this->explain($protocol));
+        $paid = "invoice_id = (SELECT id FROM invoices WHERE supplier_id = {$supplierId} AND varsymbol = 'FV24001')
+                 AND amount = 24200.00 AND currency = 'CZK' AND source = 'bank' AND paid_on = '2024-03-20' AND bank_transaction_id IS NOT NULL";
+        self::assertSame(1, $this->rowCount('invoice_payments', $supplierId, $paid), $this->explain($protocol));
+        self::assertSame(1, $this->rowCount('invoice_payments', $supplierId));
+
+        $before = $this->snapshotCounts($supplierId);
+        $this->db->pdo()->prepare('DELETE FROM invoice_payments WHERE supplier_id = ?')->execute([$supplierId]);
+        $repair = $this->import($supplierId);
+
+        self::assertFalse($repair->hasErrors(), $this->explain($repair));
+        self::assertSame(1, $this->rowCount('invoice_payments', $supplierId, $paid), $this->explain($repair));
+        self::assertSame(1, $this->rowCount('invoice_payments', $supplierId));
+        self::assertSame($before, $this->snapshotCounts($supplierId));
+    }
+
+    /**
+     * Money drží u faktury jen poslední doklad, který ji vyrovnal (`UDoklad`); dřívější
+     * splátky (a bankovní úhradu faktury dorovnané interním dokladem) najde až párovací
+     * symbol deníku. Uhrazené faktury pak saldokonto nevykazuje jako otevřené a opakovaný
+     * převod nic nezdvojí.
+     */
+    public function testPartialPaymentsArePairedByPairingSymbol(): void
+    {
+        SyntheticAgenda::writeLzFiles($this->tmp . '/agenda.lz', SyntheticAgenda::filesWithPartialPayments());
+        $supplierId = $this->supplier();
+        $protocol = $this->import($supplierId);
+        self::assertFalse($protocol->hasErrors(), $this->explain($protocol));
+
+        $issued = static fn (string $no): string => "invoice_id = (SELECT id FROM invoices WHERE supplier_id = {$supplierId} AND varsymbol = '{$no}')";
+        $purchase = "purchase_invoice_id = (SELECT id FROM purchase_invoices WHERE supplier_id = {$supplierId} AND vendor_invoice_number = 'DF-2025-070')";
+        self::assertSame(2, $this->rowCount('invoice_payments', $supplierId, $issued('FV25002') . " AND source = 'bank' AND amount IN (5000.00, 7100.00)"), $this->explain($protocol));
+        self::assertSame(2, $this->rowCount('payment_matches', $supplierId, $purchase . ' AND amount IN (2000.00, 4050.00)'), $this->explain($protocol));
+        // FV25003 má v `UDoklad` interní doklad s odpisem; bankovní úhradu najde jen párovací symbol.
+        self::assertSame(1, $this->rowCount('invoice_payments', $supplierId, $issued('FV25003') . " AND source = 'bank' AND amount = 1200.00"), $this->explain($protocol));
+
+        $period = $this->periodId($supplierId, 2025);
+        $saldo = $this->container(\MyInvoice\Service\Accounting\Reports\SaldoService::class);
+        $open = [];
+        foreach (['311', '321'] as $account) {
+            foreach ($saldo->build($supplierId, $period, '2025-12-31', $account)['accounts'] as $a) {
+                foreach ($a['partners'] as $partner) {
+                    foreach ($partner['items'] as $item) {
+                        $open[] = $item['doc_no'];
+                    }
+                }
+            }
+        }
+        foreach (['FV25002', 'DF-2025-070'] as $docNo) {
+            self::assertNotContains($docNo, $open, 'Uhrazená faktura nesmí být v saldokontu otevřená: ' . json_encode($open));
+        }
+
+        $before = $this->snapshotCounts($supplierId) + ['invoice_payments' => $this->rowCount('invoice_payments', $supplierId)];
+        $again = $this->import($supplierId);
+        self::assertFalse($again->hasErrors(), $this->explain($again));
+        self::assertSame($before, $this->snapshotCounts($supplierId) + ['invoice_payments' => $this->rowCount('invoice_payments', $supplierId)]);
+    }
 }

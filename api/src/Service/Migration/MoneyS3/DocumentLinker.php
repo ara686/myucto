@@ -151,6 +151,9 @@ final class DocumentLinker
         );
         $cashLink = $pdo->prepare('SELECT invoice_id, purchase_invoice_id FROM cash_documents WHERE id = ? AND supplier_id = ?');
         $cashMulti = [];
+        $movements = $this->bankMovements($ctx->supplierId);
+        $issuedPayments = new IssuedPaymentRecorder($this->db);
+        $matchTx = $pdo->prepare('SELECT bank_transaction_id FROM payment_matches WHERE id = ? AND supplier_id = ? AND invoice_id = ?');
 
         foreach ([['PFaktury', $ctx->purchaseInvoices, false], ['VFaktury', $ctx->issuedInvoices, true]] as [$table, $docs, $isIssued]) {
             foreach ($ctx->backup->rowsAcrossYears($table) as $r) {
@@ -162,13 +165,28 @@ final class DocumentLinker
                     continue;
                 }
                 $mapKey = ($isIssued ? 'v' : 'p') . '|' . $year . '|' . $docNo;
+                $bankCandidates = $bankByDoc[$settledBy] ?? [];
+                $cashCandidates = $cashByDoc[$settledBy] ?? [];
                 if (isset($existing[$mapKey])) {
+                    // Dřívější běh úhradu spároval, ale evidovanou platbu vydané faktury nezaložil.
+                    // Cíl mapy je pokladní doklad (je mezi kandidáty čísla úhrady), nebo párování banky.
+                    if ($isIssued) {
+                        $target = (int) $existing[$mapKey];
+                        if (in_array($target, array_column($cashCandidates, 'id'), true)) {
+                            $this->recordIssuedCash($ctx, $issuedPayments, $docId, $target, $cashCandidates, $settledBy);
+                        } else {
+                            $matchTx->execute([$target, $ctx->supplierId, $docId]);
+                            $txOf = $matchTx->fetchColumn();
+                            if ($txOf !== false) {
+                                $this->recordIssuedBank($ctx, $issuedPayments, $docId, (int) $txOf, $movements, $settledBy);
+                            }
+                        }
+                    }
                     $p->count(self::STEP_PAYMENTS, 'existing');
                     continue;
                 }
                 $paidAt = InvoiceImporter::date($r, ['Uhrazeno']);
                 $docTotal = $this->documentTotal($ctx->supplierId, $isIssued, $docId);
-                $bankCandidates = $bankByDoc[$settledBy] ?? [];
                 $txId = self::choosePayment($bankCandidates, $year, $docTotal, $paidAt);
                 if ($txId !== null) {
                     $txAmount = 0.0;
@@ -189,10 +207,12 @@ final class DocumentLinker
                         ($isIssued ? $markIssuedPaid : $markPurchasePaid)->execute([$paidAt, $docId, $ctx->supplierId]);
                     }
                     $this->map->put($ctx->supplierId, MoneyS3ImportRepository::KIND_PAYMENT, $mapKey, $matchId, $ctx->runId);
+                    if ($isIssued) {
+                        $this->recordIssuedBank($ctx, $issuedPayments, $docId, $txId, $movements, $settledBy);
+                    }
                     $p->count(self::STEP_PAYMENTS, 'bank');
                     continue;
                 }
-                $cashCandidates = $cashByDoc[$settledBy] ?? [];
                 $cashId = self::choosePayment($cashCandidates, $year, $docTotal, $paidAt);
                 if ($cashId !== null) {
                     // Pokladní doklad nese vazbu jen na jeden doklad. Hradí-li víc faktur, zůstane
@@ -217,6 +237,9 @@ final class DocumentLinker
                         ($isIssued ? $markIssuedPaid : $markPurchasePaid)->execute([$paidAt, $docId, $ctx->supplierId]);
                     }
                     $this->map->put($ctx->supplierId, MoneyS3ImportRepository::KIND_PAYMENT, $mapKey, $cashId, $ctx->runId);
+                    if ($isIssued) {
+                        $this->recordIssuedCash($ctx, $issuedPayments, $docId, $cashId, $cashCandidates, $settledBy);
+                    }
                     $p->count(self::STEP_PAYMENTS, 'cash');
                     continue;
                 }
@@ -229,12 +252,63 @@ final class DocumentLinker
                 $p->warn(self::STEP_PAYMENTS, 'payment_not_found', "Úhrada {$settledBy} faktury {$docNo} v převedené bance ani pokladně není.", ['document_no' => $docNo]);
             }
         }
+        (new PairingSymbolMatcher($this->db, $issuedPayments))->match($ctx, $movements);
         $this->markBookedWithoutInvoice($ctx);
         if ($cashMulti !== []) {
             $p->info(self::STEP_PAYMENTS, 'cash_multi_invoice', count($cashMulti) . ' pokladních dokladů hradí víc faktur; pokladní doklad ukazuje vazbu jen na první, faktury jsou uhrazené podle Money.',
                 ['documents' => array_slice(array_keys($cashMulti), 0, 50)]);
         }
         $p->finish(self::STEP_PAYMENTS);
+    }
+
+    /**
+     * Bankovní pohyby firmy jedním dotazem: id => částka v měně pohybu, měna, datum
+     * a částka v Kč (u pohybu v cizí měně z Money, jinak částka sama).
+     *
+     * @return array<int,array{amount:float,currency:string,date:string,czk:float}>
+     */
+    private function bankMovements(int $supplierId): array
+    {
+        $stmt = $this->db->pdo()->prepare(
+            'SELECT t.id, t.amount, t.currency, DATE(t.posted_at) AS posted_on
+               FROM bank_transactions t JOIN bank_statements s ON s.id = t.statement_id
+              WHERE s.supplier_id = ?'
+        );
+        $stmt->execute([$supplierId]);
+        $out = [];
+        while ($r = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $amount = (float) $r['amount'];
+            $out[(int) $r['id']] = ['amount' => $amount, 'currency' => (string) $r['currency'], 'date' => (string) $r['posted_on'], 'czk' => $amount];
+        }
+        return $out;
+    }
+
+    /** @param array<int,array{amount:float,currency:string,date:string,czk:float}> $movements */
+    private function recordIssuedBank(ImportContext $ctx, IssuedPaymentRecorder $payments, int $invoiceId, int $txId, array $movements, string $paymentNo): void
+    {
+        $m = $movements[$txId] ?? null;
+        if ($m === null) {
+            return;
+        }
+        $czk = $m['currency'] === 'CZK' ? $m['amount'] : ($ctx->bankTransactionCzk[$txId] ?? null);
+        $amount = $payments->toInvoiceCurrency($ctx->supplierId, $invoiceId, (float) ($czk ?? 0.0), $m['currency'], $m['amount']);
+        if ($amount !== null) {
+            $payments->record($ctx, $invoiceId, 'bank', $txId, null, $amount, $m['date'], $paymentNo);
+        }
+    }
+
+    /** @param list<array{id:int,year:int,amount:float,date:?string}> $candidates */
+    private function recordIssuedCash(ImportContext $ctx, IssuedPaymentRecorder $payments, int $invoiceId, int $cashId, array $candidates, string $paymentNo): void
+    {
+        foreach ($candidates as $c) {
+            if ($c['id'] === $cashId && $c['date'] !== null) {
+                $amount = $payments->toInvoiceCurrency($ctx->supplierId, $invoiceId, $c['amount']);
+                if ($amount !== null) {
+                    $payments->record($ctx, $invoiceId, 'cash', null, $cashId, $amount, $c['date'], $paymentNo);
+                }
+                return;
+            }
+        }
     }
 
     /**
