@@ -10,6 +10,7 @@ use MyInvoice\Service\Codebook\HealthInsurers;
 use MyInvoice\Service\Payroll\CzechBirthNumber;
 use MyInvoice\Service\Payroll\Import\Attendance\AttendanceRules;
 use MyInvoice\Service\Payroll\Import\Attendance\AttendanceText;
+use MyInvoice\Service\Payroll\Migration\PayrollMigrationReferenceTotals;
 use MyInvoice\Service\Payroll\Time\CzechHolidayCalendar;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -58,7 +59,7 @@ final class PohodaPayrollConverter
     private array $byId = [];
     /** Sloupce `MZ`, které čte skládání sešitu ({@see self::month()}, {@see self::holidayHours()}). */
     private const MZ_COLUMNS = ['ID', 'Rok', 'RelMes', 'RefZAM', 'RefPomer', 'RefPoj', 'KcPrum', 'KcPrumU', 'TUvazek',
-        'DnyFond2', 'HodFond', 'HodOdpra', 'DnyStSv', 'KcHrubaM', 'KcCistaM', 'BezZdr'];
+        'DnyFond2', 'HodFond', 'HodOdpra', 'DnyStSv', 'KcHrubaM', 'KcCistaM', 'KcNahrNem', 'BezZdr'];
 
     /** Sloupce položek mezd, které čte skládání sešitu. */
     private const ITEM_COLUMNS = [
@@ -480,7 +481,7 @@ final class PohodaPayrollConverter
                 'Fond pracovní doby (h)' => round($fund, 3),
                 'Odpracováno (h)' => round($worked, 3),
                 'Hrubá mzda (Kč)' => round(PohodaXml::num($mz, 'KcHrubaM'), 2),
-                'Čistá mzda (Kč)' => round(PohodaXml::num($mz, 'KcCistaM'), 2),
+                'Čistá mzda (Kč)' => round(PayrollMigrationReferenceTotals::pohodaNet($mz), 2),
                 '_start' => $start,
             ];
             foreach ($values as $header => $value) {
@@ -496,7 +497,7 @@ final class PohodaPayrollConverter
             $rows[] = $row;
             $totals['rows']++;
             $totals['gross_minor'] += self::minor(PohodaXml::num($mz, 'KcHrubaM'));
-            $totals['net_minor'] += self::minor(PohodaXml::num($mz, 'KcCistaM'));
+            $totals['net_minor'] += self::minor(PayrollMigrationReferenceTotals::pohodaNet($mz));
             $totals['worked_millihours'] += (int) round($worked * 1000);
         }
         $column('Hrubá mzda (Kč)', 'reference_gross', 'amount');
