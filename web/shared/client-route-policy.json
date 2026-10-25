@@ -2,6 +2,7 @@
   "routes": [
     { "name": "home", "path_pattern": "^/$", "kind": "client_redirect", "redirect_to": "/portal" },
 
+    { "name": "portal-mcp", "path_pattern": "^/portal/mcp/?$", "kind": "self_service" },
     { "name": "portal", "path_pattern": "^/portal/?$", "kind": "permission", "permission": "profile", "access": "read" },
     { "name": "portal-document-requests", "path_pattern": "^/portal/document-requests/?$", "kind": "permission", "permission": "documents.submit", "access": "read" },
     { "name": "portal-purchase-invoice-submissions", "path_pattern": "^/portal/purchase-invoice-submissions/?$", "kind": "permission", "permission": "documents.submit", "access": "read" },

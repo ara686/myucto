@@ -871,6 +871,15 @@ final class Bootstrap
                 $c->get(\MyInvoice\Service\Vat\VatStatusService::class),
                 $c->get(\MyInvoice\Service\Tenant\TenantUrlResolver::class),
             ),
+            \MyInvoice\Action\Mcp\HostedMcpSettingsAction::class => \DI\autowire()->constructorParameter(
+                'resources', \DI\get(\MyInvoice\Service\Mcp\McpResourcePolicy::class),
+            ),
+            \MyInvoice\Action\Mcp\HostedMcpEndpointAction::class => \DI\autowire()->constructorParameter(
+                'clientTools', \DI\get(\MyInvoice\Service\Mcp\ClientMcpToolPolicy::class),
+            ),
+            AuthMiddleware::class => \DI\autowire()->constructorParameter(
+                'mcpResources', \DI\get(\MyInvoice\Service\Mcp\McpResourcePolicy::class),
+            ),
             \MyInvoice\Security\UserRoleProfile::class => fn (ContainerInterface $c) => new \MyInvoice\Security\UserRoleProfile(
                 $c->get(Connection::class),
                 $c->get(\MyInvoice\Infrastructure\Cache\EntityCache::class),

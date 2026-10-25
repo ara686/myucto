@@ -44,7 +44,7 @@ export const PERMISSION_KEYS = [
   'settings.email_profiles', 'settings.email_templates', 'settings.payment_qr', 'settings.signing_profiles',
   'settings.branding', 'settings.ai_provider', 'settings.signing',
   'utilities', 'utilities.export', 'utilities.import', 'utilities.archives',
-  'profile', 'profile.tokens',
+  'profile', 'profile.tokens', 'profile.mcp',
 ] as const
 
 export type PermissionKey = typeof PERMISSION_KEYS[number]
@@ -66,7 +66,7 @@ export const CLIENT_PERMISSION_KEYS = [
   'settings.email_profiles', 'settings.email_templates', 'settings.payment_qr', 'settings.signing_profiles',
   'projects', 'projects.create', 'projects.archive',
   'logbook', 'logbook.write', 'logbook.import', 'logbook.delete',
-  'stock', 'stock.items.write', 'stock.fulfillment.write', 'profile',
+  'stock', 'stock.items.write', 'stock.fulfillment.write', 'profile', 'profile.mcp',
 ] as const satisfies readonly PermissionKey[]
 
 const CLIENT_PERMISSION_SET = new Set<PermissionKey>(CLIENT_PERMISSION_KEYS)

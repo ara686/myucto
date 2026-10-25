@@ -62,7 +62,7 @@ const routes: RouteRecordRaw[] = [
     children: workspaceShellRoutes(createWorkspaceRoutes()),
   },
   { path: '/login',  name: 'login',  component: () => import('@/pages/Login.vue'),          meta: { public: true } },
-  { path: '/oauth/continue', name: 'mcp-oauth-continue', component: () => import('@/pages/McpOAuthContinue.vue'), meta: { requiresAuth: true } },
+  { path: '/oauth/continue', name: 'mcp-oauth-continue', component: () => import('@/pages/McpOAuthContinue.vue'), meta: { requiresAuth: true, canonicalOnly: true } },
   { path: '/domain-login/callback', name: 'domain-login-callback', component: () => import('@/pages/DomainLoginCallback.vue'), meta: { public: true } },
   { path: '/setup',  name: 'setup',  component: () => import('@/pages/Setup.vue'),          meta: { public: true } },
   { path: '/setup-mfa', name: 'setup-mfa', component: () => import('@/pages/ForcedMfaSetup.vue'), meta: { requiresAuth: true, mfaSetupOnly: true } },
@@ -213,7 +213,7 @@ const routePermissions: Record<string, [PermissionKey | readonly PermissionKey[]
   'credit-cards': ['bank'], 'credit-card-detail': ['bank'],
   'reports-dph': ['reports'], 'reports-kh': ['reports'], 'reports-dph-book': ['reports'], 'reports-s74b': ['reports'], 'reports-related-parties': ['reports'], 'reports-vat-coefficient': ['reports'], 'reports-s46': ['reports'], 'reports-vat-corrections': ['reports'], 'reports-shv': ['reports'], 'reports-oss': ['reports'],
   'reports-income-tax': ['reports'], 'reports-cnb-rate-audit': ['reports'], 'reports-invoice-series-completeness': ['reports'], 'reports-foreign-income': ['reports'], 'reports-submissions': ['reports'], 'reports-submissions-kh-evidence': ['reports'],'reports-monthly-export': ['reports.export'], 'tax-optimizer': ['reports'], recurring: ['recurring'], 'recurring-new': ['recurring.create', 'write'],
-  'recurring-detail': ['recurring'], 'recurring-edit': ['recurring', 'write'], 'profile-api-tokens': ['profile.tokens'], 'profile-mcp-server': ['profile.tokens'], 'mcp-oauth-continue': ['profile.tokens'], 'profile-shortcuts': ['profile', 'write'],
+  'recurring-detail': ['recurring'], 'recurring-edit': ['recurring', 'write'], 'profile-api-tokens': ['profile.tokens'], 'profile-mcp-server': ['profile.tokens'], 'mcp-oauth-continue': ['profile'], 'profile-shortcuts': ['profile', 'write'],
 }
 
 const superadminRouteNames = new Set([
@@ -241,7 +241,7 @@ const companyAdminRouteNames = new Set([] as string[])
 // home → setup-mfa → home (#5). Deny-by-default to neoslabuje — routa je pořád za
 // `requiresAuth` a `mfaSetupOnly` je sama gate: koho MFA nečeká, toho guard níž
 // pošle z té stránky pryč.
-const selfServiceRouteNames = new Set(['profile-password', 'setup-totp', 'isds-gateway-callback'])
+const selfServiceRouteNames = new Set(['profile-password', 'setup-totp', 'isds-gateway-callback', 'portal-mcp'])
 const commercialOnlyRouteNames = new Set([
   'accounting-activation',
   // GoPay vede podvojné účetnictví i daňová evidence (requiresAccountingMode), licence platí stejně.
@@ -642,7 +642,7 @@ export function canonicalInternalUrl(
   to: RouteLocationNormalized,
   context: DomainContext | null,
 ): string | null {
-  if (!context?.locked || isClientDomainRouteName(to.name)) return null
+  if (!context?.locked || (!to.meta.canonicalOnly && isClientDomainRouteName(to.name))) return null
   if (!context.canonical_base_url || !to.fullPath.startsWith('/') || to.fullPath.startsWith('//')) return null
   try {
     const origin = new URL(context.canonical_base_url).origin

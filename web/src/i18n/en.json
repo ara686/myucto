@@ -39411,5 +39411,32 @@
     "eet_pok": "Confirmation code (POK)",
     "eet_pending": "The sale is stored and awaiting confirmation by the tax authority.",
     "valid_until": "The receipt is available until {date}."
+  },
+  "client_mcp": {
+    "title": "MCP – connect an AI assistant",
+    "description": "The assistant uses your current permissions and the data of the single company on this domain. You can revoke access at any time.",
+    "connect": "Connect an assistant",
+    "disabled": "Remote MCP is unavailable in this installation. Contact your administrator.",
+    "permission_required": "To create a connection, open the company’s client domain and ask an administrator for the Connect an AI assistant (MCP) permission. You can still revoke existing connections.",
+    "instructions": "Enter this address in an assistant supporting remote MCP with OAuth. Sign-in and confirmation of the company and scope take place on the main MyÚčto domain. Access defaults to read-only.",
+    "copy": "Copy address",
+    "copied": "Address copied.",
+    "copy_error": "Could not copy the address. Select and copy it manually.",
+    "connections": "My connections",
+    "refresh": "Refresh",
+    "loading": "Loading…",
+    "empty": "You have no connections on this domain yet.",
+    "read": "Read only",
+    "read_write": "Read and write",
+    "active": "Active",
+    "inactive": "Inactive",
+    "last_used": "Last used: {date}",
+    "never": "not used yet",
+    "revoke": "Revoke access",
+    "revoke_confirm": "Revoke access for assistant {name}?",
+    "revoked": "Access revoked.",
+    "revoke_error": "Could not revoke access.",
+    "load_error": "Could not load connections.",
+    "permission_label": "Connect an AI assistant (MCP)"
   }
 }

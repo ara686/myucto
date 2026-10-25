@@ -28,6 +28,7 @@ const applicableGroups = computed(() => Object.entries(catalog.value?.groups ?? 
 })).filter(group => group.permissions.length > 0))
 
 function permissionLabel(permission: { key: string; label: string }): string {
+  if (permission.key === 'profile.mcp') return t('client_mcp.permission_label')
   if ((OPERATIONAL_SETTINGS_KEYS as readonly string[]).includes(permission.key)) return t(`roles.operational_permissions.${permission.key.slice(9)}`)
   if (permission.key === 'stock' || (CLIENT_STOCK_ACTION_KEYS as readonly string[]).includes(permission.key)) return t(`roles.stock_permissions.${permission.key.replaceAll('.', '_')}`)
   if (permission.key === 'price_list') return t('permissions.groups.price_list')

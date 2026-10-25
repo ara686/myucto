@@ -99,6 +99,7 @@ export const MANUAL_CHAPTERS: ManualChapterRule[] = [
   [/^\/activation(?:\/|$)|^\/hosting(?:\/|$)/, '104_Licence_a_aktivace'],
   [/^\/admin(?:\/|$)/, '96_Nastaveni'],
   [/^\/profile(?:\/|$)/, '101_Bezpecnost'],
+  [/^\/portal\/mcp(?:\/|$)/, '105_MCP_server'],
   [/^\/portal(?:\/|$)/, '09_Klientsky_portal'],
   [/^\/crm(?:\/|$)/, '11_Zisk'],
   [/^\/group-stats(?:\/|$)/, '12_Trzby'],

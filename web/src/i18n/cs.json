@@ -39411,5 +39411,32 @@
     "eet_pok": "POK",
     "eet_pending": "Tržba je uložená a čeká na potvrzení finanční správou.",
     "valid_until": "Účtenka je dostupná do {date}."
+  },
+  "client_mcp": {
+    "title": "MCP – připojení AI asistenta",
+    "description": "Asistent používá vaše aktuální práva a data jediné firmy na této doméně. Připojení můžete kdykoli odvolat.",
+    "connect": "Připojit asistenta",
+    "disabled": "Vzdálené MCP není v této instalaci dostupné. Obraťte se na správce.",
+    "permission_required": "Pro nové připojení otevřete klientskou doménu firmy a požádejte správce o oprávnění Připojit AI asistenta (MCP). Stávající připojení můžete dále odvolávat.",
+    "instructions": "Zadejte tuto adresu do asistenta podporujícího vzdálené MCP s OAuth. Přihlášení a potvrzení firmy i rozsahu proběhne na hlavní doméně MyÚčta. Výchozí přístup je pouze ke čtení.",
+    "copy": "Kopírovat adresu",
+    "copied": "Adresa byla zkopírována.",
+    "copy_error": "Adresu se nepodařilo zkopírovat. Označte ji a zkopírujte ručně.",
+    "connections": "Moje připojení",
+    "refresh": "Obnovit",
+    "loading": "Načítání…",
+    "empty": "Na této doméně zatím nemáte žádné připojení.",
+    "read": "Pouze čtení",
+    "read_write": "Čtení a zápis",
+    "active": "Aktivní",
+    "inactive": "Neaktivní",
+    "last_used": "Poslední použití: {date}",
+    "never": "dosud nepoužito",
+    "revoke": "Odvolat přístup",
+    "revoke_confirm": "Odvolat přístup asistenta {name}?",
+    "revoked": "Přístup byl odvolán.",
+    "revoke_error": "Přístup se nepodařilo odvolat.",
+    "load_error": "Připojení se nepodařilo načíst.",
+    "permission_label": "Připojit AI asistenta (MCP)"
   }
 }

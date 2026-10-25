@@ -396,7 +396,7 @@ const navSections = computed<NavSection[]>(() => {
         key: 'company',
         title: t('nav.section_company'),
         accent: 'primaryDeep',
-        items: [{
+        items: [{ to: '/portal/mcp', label: t('nav.mcp_server'), icon: ICONS.mcp, permission: 'profile' as PermissionKey }, {
           to: '/portal/settings',
           label: t('nav.company_settings'),
           icon: ICONS.settings,

@@ -58,6 +58,7 @@
     "cash",
     "cash_settlement",
     "checks",
+    "client_mcp",
     "codebookTransfer",
     "company_email_templates",
     "company_profile",
@@ -220,6 +221,9 @@
       "errors",
       "taxReturn",
       "time_billing"
+    ],
+    "portal-mcp": [
+      "client_mcp"
     ],
     "portal": [
       "portal",
@@ -1043,6 +1047,7 @@
       "users"
     ],
     "admin-roles": [
+      "client_mcp",
       "permissions",
       "roles"
     ],

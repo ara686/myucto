@@ -11,6 +11,13 @@ final class RequestAuthorization
     private static ?PermissionCatalog $catalog = null;
     private static ?PermissionChecker $checker = null;
 
+    /** MCP se uděluje samostatně; interní role zachovávají přístup přes správu tokenů. */
+    public static function canUseMcp(Request $request, AccessLevel $minimum = AccessLevel::READ): bool
+    {
+        return self::allows($request, 'profile.mcp', $minimum)
+            || (!self::isClientType($request) && self::allows($request, 'profile.tokens', $minimum));
+    }
+
     /**
      * Je požadavek z přihlášené browserové relace?
      *

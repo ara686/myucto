@@ -10,6 +10,13 @@ menu. Smí vystavovat a upravovat vlastní doklady, dokud je účetní nezaúčt
 
 Administrátor může klientské roli zpřístupnit také **Peníze → Bankovní účty**. Čtení banky, nahrávání výpisů, párování a ignorování plateb jsou volitelná oprávnění; klient bez jejich přidělení banku neuvidí. Přístup se týká pouze jeho firmy, včetně přihlášení na klientské doméně. Podrobnosti popisuje kapitola [Banka](29_Banka.md).
 
+V části **Firma → MCP server** může klient spravovat připojení svého AI asistenta.
+Nové připojení na vlastní doméně firmy vyžaduje výslovně přidělené oprávnění
+**Připojit AI asistenta (MCP)**. Přihlášení a souhlas probíhají na hlavní doméně
+MyÚčta, připojení zůstává omezené na firmu klientské domény a aktuální práva
+uživatele. Vlastní připojení lze odvolat i po odebrání tohoto oprávnění.
+Postup popisuje [MCP server](105_MCP_server.md#10541-pripojeni-klienta-na-vlastni-domene-firmy).
+
 Superadmin má v nabídce **Dokumenty → Předat doklady účetní** také přístup
 k předávání dokladů a odpovědím na požadavky účetní v právě vybrané firmě.
 Zároveň mu zůstávají dostupné účetní funkce.

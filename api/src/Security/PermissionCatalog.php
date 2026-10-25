@@ -6,7 +6,7 @@ namespace MyInvoice\Security;
 
 final class PermissionCatalog
 {
-    public const VERSION = '2026-10-eet-v1';
+    public const VERSION = '2026-10-client-mcp-v1';
 
     /** @var list<string> */
     private const GROUPS = [
@@ -189,6 +189,7 @@ final class PermissionCatalog
             ['utilities.archives', 'utilities', 'ZIP archivy', $staffOnly],
             ['profile', 'profile', 'Osobní profil', $both],
             ['profile.tokens', 'profile', 'API tokeny', $staffOnly],
+            ['profile.mcp', 'profile', 'Připojit AI asistenta (MCP)', $both],
         ];
 
         $definitions = [];
@@ -230,6 +231,8 @@ final class PermissionCatalog
     {
         if ($systemKey === 'accountant') {
             $none = [
+                // MCP zápis je opt-in; účetní zachová dosavadní čtecí přístup přes profile.tokens.
+                'profile.mcp',
                 // Neměnný originál je auditní stopa; trvalé vyřazení je zásah pro správce,
                 // který si ho může kterékoli roli přidělit v editoru rolí.
                 'documents.inbox.delete',

@@ -28,6 +28,7 @@ final class HostedMcpEndpointAction
         private readonly LoggerInterface $logger,
         private readonly Connection $db,
         private readonly UserSupplierRepository $memberships,
+        private readonly ?\MyInvoice\Service\Mcp\ClientMcpToolPolicy $clientTools = null,
     ) {}
 
     public function handle(Request $request, Response $response): Response
@@ -36,7 +37,8 @@ final class HostedMcpEndpointAction
             return Json::error($response, 'mcp_disabled', 'Serverový MCP není zapnutý.', 404);
         }
         if (!RequestAuthorization::isBearerAuth($request)) {
-            return $this->unauthorized($response);
+            $domain = $request->getAttribute(TenantDomainMiddleware::ATTR_CONTEXT);
+            return $this->unauthorized($response, $domain instanceof TenantDomainContext && $domain->locksSupplier() ? $domain->origin : null);
         }
         if ($request->getMethod() === 'GET') {
             return $response->withStatus(405)->withHeader('Allow', 'POST, DELETE');
@@ -70,8 +72,12 @@ final class HostedMcpEndpointAction
         $token = (array) $request->getAttribute(AuthMiddleware::ATTR_API_TOKEN, []);
         $scope = (string) ($token['scope'] ?? 'read');
         $domain = $request->getAttribute(TenantDomainMiddleware::ATTR_CONTEXT);
+        $custom = $domain instanceof TenantDomainContext && $domain->locksSupplier();
+        if ($custom && empty($token['mcp_client_surface'])) return $this->unauthorized($response, $domain->origin);
         $input = [
             'scope' => $scope,
+            'mcpResource' => $token['mcp_resource'] ?? null,
+            'allowedTools' => $custom ? ($this->clientTools?->allowed($request) ?? []) : null,
             'token' => substr($request->getHeaderLine('Authorization'), 7),
             'boundSupplierId' => ($token['supplier_id'] ?? null) !== null ? (int) $token['supplier_id'] : null,
             'lockedSupplierId' => $domain instanceof TenantDomainContext && $domain->locksSupplier()
@@ -202,11 +208,11 @@ final class HostedMcpEndpointAction
             ? $requested : '2025-11-25';
     }
 
-    private function unauthorized(Response $response): Response
+    private function unauthorized(Response $response, ?string $origin = null): Response
     {
         return Json::error($response, 'unauthorized', 'MCP vyžaduje přihlášení.', 401)
             ->withHeader('WWW-Authenticate', 'Bearer resource_metadata="'
-                . substr($this->hosted->endpoint(), 0, -4) . '/.well-known/oauth-protected-resource"');
+                . ($origin ?? substr($this->hosted->endpoint(), 0, -4)) . '/.well-known/oauth-protected-resource"');
     }
 
     private function rpc(Response $response, mixed $id, int $code, string $message, int $status): Response
