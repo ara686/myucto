@@ -147,11 +147,22 @@ final class DocumentLinker
 
         foreach ($ctx->liquidations as $l) {
             $mapKey = $l['doc'] . '|' . $l['id'] . '|' . $l['liq'];
+            $isIssued = $l['doc'] === 'invoice';
             if (isset($existing[$mapKey])) {
+                // Dřívější běh úhradu spároval, ale evidovanou platbu vydané faktury nezaložil.
+                if ($isIssued && $l['agenda'] === 'bank') {
+                    $txOf = $pdo->prepare('SELECT bank_transaction_id FROM payment_matches WHERE id = ? AND supplier_id = ? AND invoice_id = ?');
+                    $txOf->execute([(int) $existing[$mapKey], $ctx->supplierId, $l['id']]);
+                    $txId = $txOf->fetchColumn();
+                    if ($txId !== false) {
+                        $this->recordIssuedPayment($ctx, $l, 'bank', (int) $txId, null);
+                    }
+                } elseif ($isIssued && $l['agenda'] === 'voucher') {
+                    $this->recordIssuedPayment($ctx, $l, 'cash', null, (int) $existing[$mapKey]);
+                }
                 $p->count(self::STEP_PAYMENTS, 'existing');
                 continue;
             }
-            $isIssued = $l['doc'] === 'invoice';
             if ($ctx->skipsDate($l['date'])) {
                 // Úhrada v roce, který se nepřevádí - pohyb v převodu není, doklad zůstává neuhrazený.
                 $p->count(self::STEP_PAYMENTS, 'later_year_skipped');
@@ -181,6 +192,9 @@ final class DocumentLinker
                 $already = $sameMatch->fetchColumn();
                 if ($already !== false) {
                     $this->map->put($ctx->supplierId, PohodaImportRepository::KIND_PAYMENT, $mapKey, (int) $already, $ctx->runId);
+                    if ($isIssued) {
+                        $this->recordIssuedPayment($ctx, $l, 'bank', $txId, null);
+                    }
                     $p->count(self::STEP_PAYMENTS, 'already_matched');
                     continue;
                 }
@@ -199,6 +213,9 @@ final class DocumentLinker
                 $fromPohoda[$matchId] = true;
                 $markTx->execute([$ctx->userOrNull(), $isIssued ? $l['id'] : null, $txId, $ctx->supplierId]);
                 $this->map->put($ctx->supplierId, PohodaImportRepository::KIND_PAYMENT, $mapKey, $matchId, $ctx->runId);
+                if ($isIssued) {
+                    $this->recordIssuedPayment($ctx, $l, 'bank', $txId, null);
+                }
                 $p->count(self::STEP_PAYMENTS, 'bank');
                 continue;
             }
@@ -220,6 +237,9 @@ final class DocumentLinker
                         $p->count(self::STEP_PAYMENTS, 'cash_multi_invoice');
                     }
                     $this->map->put($ctx->supplierId, PohodaImportRepository::KIND_PAYMENT, $mapKey, $cashId, $ctx->runId);
+                    if ($isIssued) {
+                        $this->recordIssuedPayment($ctx, $l, 'cash', null, (int) $cashId);
+                    }
                     $p->count(self::STEP_PAYMENTS, 'cash');
                     continue;
                 }
@@ -227,6 +247,9 @@ final class DocumentLinker
                     'UPDATE cash_documents SET ' . ($isIssued ? 'invoice_id' : 'purchase_invoice_id') . ' = ?, purpose = ? WHERE id = ? AND supplier_id = ?'
                 )->execute([$l['id'], $isIssued ? 'invoice_payment' : 'purchase_payment', $cashId, $ctx->supplierId]);
                 $this->map->put($ctx->supplierId, PohodaImportRepository::KIND_PAYMENT, $mapKey, $cashId, $ctx->runId);
+                if ($isIssued) {
+                    $this->recordIssuedPayment($ctx, $l, 'cash', null, (int) $cashId);
+                }
                 $p->count(self::STEP_PAYMENTS, 'cash');
                 continue;
             }
@@ -265,6 +288,75 @@ final class DocumentLinker
             return null;
         }
         return (int) $candidates[0]['id'];
+    }
+
+    /**
+     * Evidovaná platba vydané faktury (`invoice_payments`) k úhradě z banky či pokladny.
+     * Z ní čte uhrazenou část faktury saldokonto, kontrola úplnosti i uvolnění pohybu;
+     * samotné párování (`payment_matches`, vazba pokladního dokladu) ji nenahradí.
+     *
+     * Uhrazenou částku a stav faktury vede převod podle POHODY, platba je jen nedoplňuje:
+     * součet plateb nepřesáhne `paid_total`. Částka úhrady je v POHODĚ v korunách
+     * (`Uhrady.KcU`), faktura v cizí měně ji dostane přepočtenou kurzem dokladu.
+     * Opakovaný převod platbu nezdvojí (banka: pohyb + faktura, pokladna: doklad + faktura).
+     *
+     * @param array<string,mixed> $l
+     */
+    private function recordIssuedPayment(PohodaContext $ctx, array $l, string $kind, ?int $txId, ?int $cashId): void
+    {
+        $pdo = $this->db->pdo();
+        $invoice = $pdo->prepare(
+            "SELECT i.id, i.status, i.paid_total, i.exchange_rate, cur.code AS currency,
+                    (SELECT COALESCE(SUM(ip.amount), 0) FROM invoice_payments ip WHERE ip.invoice_id = i.id) AS recorded
+               FROM invoices i JOIN currencies cur ON cur.id = i.currency_id
+              WHERE i.id = ? AND i.supplier_id = ?"
+        );
+        $invoice->execute([$l['id'], $ctx->supplierId]);
+        $row = $invoice->fetch(PDO::FETCH_ASSOC);
+        if ($row === false || in_array((string) $row['status'], ['draft', 'cancelled'], true)) {
+            return;
+        }
+        $note = 'Převzato z POHODY, úhrada ' . $l['source'];
+        if ($kind === 'bank') {
+            $dup = $pdo->prepare('SELECT 1 FROM invoice_payments WHERE bank_transaction_id = ? AND invoice_id = ?');
+            $dup->execute([$txId, $l['id']]);
+        } else {
+            $dup = $pdo->prepare("SELECT 1 FROM invoice_payments WHERE invoice_id = ? AND source = 'cash' AND note = ?");
+            $dup->execute([$l['id'], $note]);
+        }
+        if ($dup->fetchColumn() !== false) {
+            return;
+        }
+        $rate = $row['exchange_rate'] !== null && (float) $row['exchange_rate'] > 0 ? (float) $row['exchange_rate'] : null;
+        $amount = abs((float) $l['amount']);
+        if ((string) $row['currency'] !== 'CZK' && $rate !== null) {
+            $amount = $amount / $rate;
+        }
+        $amount = round(min($amount, (float) $row['paid_total'] - (float) $row['recorded']), 2);
+        if ($amount < 0.01) {
+            return;
+        }
+        $date = $l['date'] ?? null;
+        if ($date === null) {
+            $date = $kind === 'bank'
+                ? $pdo->query('SELECT DATE(posted_at) FROM bank_transactions WHERE id = ' . (int) $txId)->fetchColumn()
+                : $pdo->query('SELECT issue_date FROM cash_documents WHERE id = ' . (int) $cashId)->fetchColumn();
+            if (!is_string($date)) {
+                return;
+            }
+        }
+        $pdo->prepare(
+            'INSERT INTO invoice_payments (supplier_id, invoice_id, paid_on, amount, currency, note, source, bank_transaction_id, created_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        )->execute([
+            $ctx->supplierId, $l['id'], $date, number_format($amount, 2, '.', ''), (string) $row['currency'],
+            $note, $kind, $kind === 'bank' ? $txId : null, $ctx->userOrNull(),
+        ]);
+        if ($kind === 'cash') {
+            $pdo->prepare('UPDATE cash_documents SET invoice_payment_id = ? WHERE id = ? AND supplier_id = ? AND invoice_id = ? AND invoice_payment_id IS NULL')
+                ->execute([(int) $pdo->lastInsertId(), $cashId, $ctx->supplierId, $l['id']]);
+        }
+        $ctx->protocol->count(self::STEP_PAYMENTS, 'issued_payments_recorded');
     }
 
     /**

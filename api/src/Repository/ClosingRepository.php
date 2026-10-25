@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MyInvoice\Repository;
 
 use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Service\Accounting\Activation\OpeningBalanceDocuments;
 use MyInvoice\Service\Accounting\Closing\ClosingSourceId;
 use MyInvoice\Service\Accounting\DocumentPostingGroup;
 use MyInvoice\Service\Accounting\ForeignCurrencyAccountPolicy;
@@ -1363,6 +1364,7 @@ final class ClosingRepository
                 AND i.status NOT IN ('draft','cancelled')
                 AND i.invoice_type NOT IN ('proforma','cancellation')
                 AND i.effective_tax_date BETWEEN ? AND ?
+                AND " . OpeningBalanceDocuments::notInOpeningSql('invoice', 'i') . "
                 AND NOT " . DocumentPostingGroup::activePostingExistsSql("'invoice'", 'i.id', 'i.supplier_id') . "
               ORDER BY i.id"
         );
@@ -1397,6 +1399,7 @@ final class ClosingRepository
                 AND pi.status NOT IN ('draft','cancelled')
                 AND pi.document_kind <> 'advance'
                 AND pi.effective_cost_date BETWEEN ? AND ?
+                AND " . OpeningBalanceDocuments::notInOpeningSql('purchase_invoice', 'pi') . "
                 AND NOT " . DocumentPostingGroup::activePostingExistsSql("'purchase_invoice'", 'pi.id', 'pi.supplier_id') . "
               ORDER BY pi.id"
         );
@@ -2039,6 +2042,7 @@ final class ClosingRepository
                JOIN clients cl ON cl.id = p.vendor_id
               WHERE p.supplier_id = ? AND p.document_kind = 'advance' AND p.status = 'paid'
                 AND (p.paid_at IS NULL OR p.paid_at <= ?)
+                AND " . OpeningBalanceDocuments::notInOpeningSql('purchase_invoice', 'p') . "
                 AND NOT EXISTS (
                     SELECT 1 FROM payment_matches pm
                       JOIN journal_entries e ON e.supplier_id = p.supplier_id

@@ -110,6 +110,8 @@ final class PohodaImportTest extends TestCase
         self::assertSame(1, $this->rows('invoices', $supplierId, "status = 'paid' AND total_with_vat = 1210.00"));
         self::assertSame(1, $this->rows('purchase_invoices', $supplierId, "status = 'paid' AND total_with_vat = 605.00 AND vendor_invoice_number = 'D-2026-7'"));
         self::assertSame(2, $this->rows('payment_matches', $supplierId));
+        // Úhrada vydané faktury je i evidovanou platbou - z ní saldokonto počítá uhrazenou část.
+        self::assertSame(1, $this->rows('invoice_payments', $supplierId, "amount = 1210.00 AND currency = 'CZK' AND source = 'bank' AND bank_transaction_id IS NOT NULL"));
         self::assertSame(1, $this->rows('journal_entries', $supplierId, "source_type = 'invoice' AND source_id IS NOT NULL"));
         self::assertSame(2, $this->rows('clients', $supplierId));
 
@@ -151,6 +153,15 @@ final class PohodaImportTest extends TestCase
         self::assertSame(1, $link['previous_period'] ?? 0, $this->explain($again));
         self::assertArrayNotHasKey('orphans', $link, $this->explain($again));
         self::assertSame('completed', $again->status(), $this->explain($again));
+        self::assertSame(1, $this->rows('invoice_payments', $supplierId));
+
+        // Firma převedená dřívější verzí platbu nemá; opakovaný převod ji doplní k už
+        // spárované úhradě a nic dalšího nemění.
+        $this->db->pdo()->prepare('DELETE FROM invoice_payments WHERE supplier_id = ?')->execute([$supplierId]);
+        $repair = $this->importer->run($supplierId, $this->userId, $export, false);
+        self::assertFalse($repair->hasErrors(), $this->explain($repair));
+        self::assertSame(1, $this->rows('invoice_payments', $supplierId, "amount = 1210.00 AND source = 'bank'"));
+        self::assertSame($before, $this->snapshot($supplierId));
     }
 
     public function testUnknownDocumentTypesWarnAndKeepImportingKnownDocuments(): void
