@@ -513,7 +513,7 @@ function candidateReject() {
 
   <div v-else class="p-3 space-y-2" :class="{ 'opacity-50': tx.match_status === 'ignored' }">
     <div class="flex items-baseline justify-between gap-2">
-      <div class="font-mono text-base font-semibold whitespace-nowrap"
+      <div class="font-mono text-sm font-semibold whitespace-nowrap"
         :class="tx.amount > 0 ? 'text-success-700 dark:text-success-600' : 'text-danger-500'">
         {{ tx.amount > 0 ? '+' : '' }}{{ formatMoney(tx.amount, currency()) }}
       </div>
@@ -579,7 +579,7 @@ function candidateReject() {
     </RouterLink>
     <div class="text-xs">
       <div class="font-mono text-neutral-600 truncate">{{ tx.counterparty_account }}<span v-if="tx.counterparty_bank">/{{ tx.counterparty_bank }}</span></div>
-      <div v-if="tx.counterparty_name" class="text-neutral-600 truncate">{{ tx.counterparty_name }}</div>
+      <div v-if="tx.counterparty_name" class="text-sm font-medium text-neutral-900 truncate">{{ tx.counterparty_name }}</div>
       <div v-if="tx.card_last4" class="text-neutral-600 truncate">
         {{ t('payment_cards.tx_card', { last4: tx.card_last4 }) }}<template v-if="tx.card"> · {{ tx.card.holder || tx.card.label }}</template>
       </div>
