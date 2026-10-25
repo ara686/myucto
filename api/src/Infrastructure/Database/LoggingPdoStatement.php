@@ -63,9 +63,9 @@ final class LoggingPdoStatement extends PDOStatement
         for ($attempt = 0; ; $attempt++) {
             try {
                 return parent::execute($params);
-            } catch (PDOException $e) {
-                if ($attempt >= 2 || (int) ($e->errorInfo[1] ?? 0) !== 1615) {
-                    throw $e;
+            } catch (PDOException $retry) {
+                if ($attempt >= 2 || (int) ($retry->errorInfo[1] ?? 0) !== 1615) {
+                    throw $retry;
                 }
             }
         }
