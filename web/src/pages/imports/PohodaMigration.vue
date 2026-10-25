@@ -351,11 +351,14 @@ watch(kind, () => {
   confirmed.value = false
 })
 // Zkouška nanečisto platí jen pro zvolené rozhodnutí o začátku vedení mezd a volbu skladu.
-watch([startDecision, keepStartConfirmed, stockEnabled, stockChoices, periodFrom, periodTo], () => {
+// Porovnává se obsah voleb: obnovení náhledu po doběhu zkoušky přiřadí volbu skladu znovu
+// jako nový objekt se stejnými hodnotami a to zkoušku zneplatnit nesmí.
+const dryRunOptionsKey = computed(() => JSON.stringify([startDecision.value, keepStartConfirmed.value, stockEnabled.value, stockChoices.value, periodFrom.value, periodTo.value]))
+watch(dryRunOptionsKey, () => {
   dryRunPassed.value = false
   clearDifferences()
   confirmed.value = false
-}, { deep: true })
+})
 
 function fileState(state: string): string {
   const key = `file_state.${state}`
