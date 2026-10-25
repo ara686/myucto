@@ -193,12 +193,18 @@ final class DocumentLinker
                     foreach ($bankCandidates as $c) {
                         $txAmount = $c['id'] === $txId ? abs($c['amount']) : $txAmount;
                     }
+                    // Částka párování je v měně pohybu; kandidát nese částku v Kč.
+                    $matched = min($txAmount, abs($docTotal)) ?: $txAmount;
+                    $movement = $movements[$txId] ?? null;
+                    if ($movement !== null && $movement['currency'] !== 'CZK' && $txAmount >= 0.01) {
+                        $matched = abs($movement['amount']) * min(1.0, $matched / $txAmount);
+                    }
                     $insertMatch->execute([
                         $ctx->supplierId,
                         $txId,
                         $isIssued ? $docId : null,
                         $isIssued ? null : $docId,
-                        number_format(min($txAmount, abs($docTotal)) ?: $txAmount, 2, '.', ''),
+                        number_format($matched, 2, '.', ''),
                         $ctx->userId > 0 ? $ctx->userId : null,
                     ]);
                     $matchId = (int) $pdo->lastInsertId();
@@ -252,7 +258,8 @@ final class DocumentLinker
                 $p->warn(self::STEP_PAYMENTS, 'payment_not_found', "Úhrada {$settledBy} faktury {$docNo} v převedené bance ani pokladně není.", ['document_no' => $docNo]);
             }
         }
-        (new PairingSymbolMatcher($this->db, $issuedPayments))->match($ctx, $movements);
+        (new PairingSymbolMatcher($this->db, $this->map, $issuedPayments))->match($ctx, $movements);
+        (new AdvanceLinker($this->db))->link($ctx);
         $this->markBookedWithoutInvoice($ctx);
         if ($cashMulti !== []) {
             $p->info(self::STEP_PAYMENTS, 'cash_multi_invoice', count($cashMulti) . ' pokladních dokladů hradí víc faktur; pokladní doklad ukazuje vazbu jen na první, faktury jsou uhrazené podle Money.',

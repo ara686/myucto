@@ -15,11 +15,10 @@ use PDO;
  *
  * Stav faktury a uhrazenou částku vede převod podle Money (`Uhrazeno`), platby ji jen
  * doplňují: jejich součet nepřesáhne `paid_total`. Částka je v měně faktury. Platby se
- * zakládají jen běžným fakturám: dobropis ani daňový doklad k platbě se v MyÚčtu
- * neplatí a zálohovou fakturu vypořádá až vazba na konečnou fakturu, kterou převod
- * zatím nezakládá (bez ní by uhrazená záloha visela na 324 jako nečerpaná).
- * Opakovaný převod platbu nezdvojí (banka: pohyb + faktura, pokladna: poznámka s číslem
- * dokladu + faktura).
+ * zakládají běžným a zálohovým fakturám (úhrada proformy je inkasem zálohy na 324, čerpá
+ * ji konečná faktura navázaná {@see AdvanceLinker}); dobropis ani daňový doklad k platbě
+ * se v MyÚčtu neplatí. Opakovaný převod platbu nezdvojí (banka: pohyb + faktura, pokladna
+ * a zápočet dobropisu: poznámka s číslem dokladu + faktura).
  */
 final class IssuedPaymentRecorder
 {
@@ -59,30 +58,30 @@ final class IssuedPaymentRecorder
     }
 
     /**
-     * @param 'bank'|'cash' $kind
-     * @return bool true = platba založena
+     * @param 'bank'|'cash'|'credit_note' $kind
+     * @return int|null id založené platby
      */
-    public function record(ImportContext $ctx, int $invoiceId, string $kind, ?int $txId, ?int $cashId, float $amount, string $date, string $paymentNo): bool
+    public function record(ImportContext $ctx, int $invoiceId, string $kind, ?int $txId, ?int $cashId, float $amount, string $date, string $paymentNo): ?int
     {
         $row = $this->invoice($ctx->supplierId, $invoiceId);
         if ($row === null) {
-            return false;
+            return null;
         }
         $pdo = $this->db->pdo();
-        $note = 'Převzato z Money S3, úhrada ' . $paymentNo;
+        $note = ($kind === 'credit_note' ? 'Převzato z Money S3, zápočet dobropisu ' : 'Převzato z Money S3, úhrada ') . $paymentNo;
         if ($kind === 'bank') {
             $dup = $pdo->prepare('SELECT 1 FROM invoice_payments WHERE bank_transaction_id = ? AND invoice_id = ?');
             $dup->execute([$txId, $invoiceId]);
         } else {
-            $dup = $pdo->prepare("SELECT 1 FROM invoice_payments WHERE invoice_id = ? AND source = 'cash' AND note = ?");
-            $dup->execute([$invoiceId, $note]);
+            $dup = $pdo->prepare('SELECT 1 FROM invoice_payments WHERE invoice_id = ? AND source = ? AND note = ?');
+            $dup->execute([$invoiceId, $kind, $note]);
         }
         if ($dup->fetchColumn() !== false) {
-            return false;
+            return null;
         }
         $amount = round(min(abs($amount), $row['paid_total'] - $row['recorded']), 2);
         if ($amount < 0.01) {
-            return false;
+            return null;
         }
         $pdo->prepare(
             'INSERT INTO invoice_payments (supplier_id, invoice_id, paid_on, amount, currency, note, source, bank_transaction_id, created_by)
@@ -91,13 +90,14 @@ final class IssuedPaymentRecorder
             $ctx->supplierId, $invoiceId, substr($date, 0, 10), number_format($amount, 2, '.', ''), $row['currency'],
             $note, $kind, $kind === 'bank' ? $txId : null, $ctx->userId > 0 ? $ctx->userId : null,
         ]);
+        $paymentId = (int) $pdo->lastInsertId();
         if ($kind === 'cash') {
             $pdo->prepare('UPDATE cash_documents SET invoice_payment_id = ? WHERE id = ? AND supplier_id = ? AND invoice_id = ? AND invoice_payment_id IS NULL')
-                ->execute([(int) $pdo->lastInsertId(), $cashId, $ctx->supplierId, $invoiceId]);
+                ->execute([$paymentId, $cashId, $ctx->supplierId, $invoiceId]);
         }
         $this->invoices[$invoiceId]['recorded'] = $row['recorded'] + $amount;
         $ctx->protocol->count(DocumentLinker::STEP_PAYMENTS, 'issued_payments_recorded');
-        return true;
+        return $paymentId;
     }
 
     /** @return array{status:string,type:string,paid_total:float,rate:?float,currency:string,recorded:float}|null */
@@ -122,7 +122,7 @@ final class IssuedPaymentRecorder
             ];
         }
         $row = $this->invoices[$invoiceId];
-        if ($row === null || $row['type'] !== 'invoice' || in_array($row['status'], ['draft', 'cancelled'], true)) {
+        if ($row === null || !in_array($row['type'], ['invoice', 'proforma'], true) || in_array($row['status'], ['draft', 'cancelled'], true)) {
             return null;
         }
         return $row;

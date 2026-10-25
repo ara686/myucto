@@ -426,13 +426,25 @@ final class MoneyS3ImportTest extends MoneyS3ImportTestCase
         $purchase = "purchase_invoice_id = (SELECT id FROM purchase_invoices WHERE supplier_id = {$supplierId} AND vendor_invoice_number = 'DF-2025-070')";
         self::assertSame(2, $this->rowCount('invoice_payments', $supplierId, $issued('FV25002') . " AND source = 'bank' AND amount IN (5000.00, 7100.00)"), $this->explain($protocol));
         self::assertSame(2, $this->rowCount('payment_matches', $supplierId, $purchase . ' AND amount IN (2000.00, 4050.00)'), $this->explain($protocol));
-        // FV25003 má v `UDoklad` interní doklad s odpisem; bankovní úhradu najde jen párovací symbol.
+        // FV25003 má v `UDoklad` interní doklad s odpisem; bankovní úhradu najde jen párovací symbol
+        // a odpis nedoplatku (interní doklad vyrovnávající jedinou fakturu) je na ni navázaný.
         self::assertSame(1, $this->rowCount('invoice_payments', $supplierId, $issued('FV25003') . " AND source = 'bank' AND amount = 1200.00"), $this->explain($protocol));
+        self::assertSame(1, $this->rowCount('journal_entry_document_links', $supplierId,
+            "doc_type = 'invoice' AND " . str_replace('invoice_id', 'doc_id', $issued('FV25003'))
+            . " AND entry_id IN (SELECT id FROM journal_entries WHERE supplier_id = {$supplierId} AND source_type = 'manual' AND document_no = 'ID25005')"));
+        // Dobropis se stejným symbolem se započetl proti faktuře.
+        self::assertSame(1, $this->rowCount('invoice_payments', $supplierId, $issued('FV25004') . " AND source = 'credit_note' AND amount = 484.00"), $this->explain($protocol));
+        self::assertSame(1, $this->rowCount('credit_note_offsets', $supplierId, "doc_type = 'invoice' AND amount = 484.00 AND " . $issued('FV25004')
+            . " AND credit_note_id = (SELECT id FROM invoices WHERE supplier_id = {$supplierId} AND varsymbol = 'DV25002' AND parent_invoice_id IS NOT NULL)"));
+        // Odpočet zálohy na konečné faktuře a DDKP k záloze.
+        $advance = "(SELECT id FROM purchase_invoices WHERE supplier_id = {$supplierId} AND vendor_invoice_number = 'ZF-2025-002')";
+        self::assertSame(1, $this->rowCount('purchase_invoices', $supplierId, "vendor_invoice_number = 'DF-2025-091' AND advance_purchase_invoice_id = {$advance}"), $this->explain($protocol));
+        self::assertSame(1, $this->rowCount('purchase_invoices', $supplierId, "vendor_invoice_number = 'DZ-2025-002' AND parent_purchase_invoice_id = {$advance}"), $this->explain($protocol));
 
         $period = $this->periodId($supplierId, 2025);
         $saldo = $this->container(\MyInvoice\Service\Accounting\Reports\SaldoService::class);
         $open = [];
-        foreach (['311', '321'] as $account) {
+        foreach (['311', '321', '314'] as $account) {
             foreach ($saldo->build($supplierId, $period, '2025-12-31', $account)['accounts'] as $a) {
                 foreach ($a['partners'] as $partner) {
                     foreach ($partner['items'] as $item) {
@@ -441,13 +453,18 @@ final class MoneyS3ImportTest extends MoneyS3ImportTestCase
                 }
             }
         }
-        foreach (['FV25002', 'DF-2025-070'] as $docNo) {
+        foreach (['FV25002', 'FV25003', 'FV25004', 'DV25002', 'DF-2025-070', 'DF-2025-091', 'ZF-2025-002'] as $docNo) {
             self::assertNotContains($docNo, $open, 'Uhrazená faktura nesmí být v saldokontu otevřená: ' . json_encode($open));
         }
 
-        $before = $this->snapshotCounts($supplierId) + ['invoice_payments' => $this->rowCount('invoice_payments', $supplierId)];
+        $counts = fn (): array => $this->snapshotCounts($supplierId) + [
+            'invoice_payments' => $this->rowCount('invoice_payments', $supplierId),
+            'credit_note_offsets' => $this->rowCount('credit_note_offsets', $supplierId),
+            'purchase_advance_deductions' => $this->rowCount('purchase_advance_deductions', $supplierId),
+        ];
+        $before = $counts();
         $again = $this->import($supplierId);
         self::assertFalse($again->hasErrors(), $this->explain($again));
-        self::assertSame($before, $this->snapshotCounts($supplierId) + ['invoice_payments' => $this->rowCount('invoice_payments', $supplierId)]);
+        self::assertSame($before, $counts());
     }
 }
