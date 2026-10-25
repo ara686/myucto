@@ -58,7 +58,8 @@ test('navigation switches to the client experience for every locked custom domai
   assert.match(layout, /canExtractPurchase = computed\(\(\) => canUsePurchaseAiExtraction\(auth, supplierStore\.currentSupplier\)\)/)
   assert.match(layout, /\.\.\.\(canExtractPurchase\.value \? \[\{ to: '\/purchase-invoices\/ai-import'/)
   assert.match(layout, /if \(canExtractPurchase\.value\) \{[\s\S]*?const aiImport = \{ to: '\/purchase-invoices\/ai-import'/)
-  assert.equal((layout.match(/v-if="!clientExperience" to="\/admin\/support"/g) || []).length, 2)
+  // Podpora je jen v desktopové patičce; na mobilu je v menu a v patičce je místo ní Přidat.
+  assert.equal((layout.match(/v-if="!clientExperience" to="\/admin\/support"/g) || []).length, 1)
   assert.match(layout, /if \(!auth\.domainContext\?\.locked \|\| !canonicalBaseUrl\) return path/)
   assert.match(layout, /new URL\(canonicalBaseUrl\)\.origin/)
 })
