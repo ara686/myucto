@@ -64,8 +64,12 @@ final class DynamicRolesMigrationRuntimeTest extends TestCase
 
         $staffPermissions = array_keys(array_filter(
             (new PermissionCatalog())->all(),
-            static fn (array $definition): bool => in_array('staff', $definition['role_types'], true),
+            // Samostatné MCP oprávnění je opt-in; staff zachovává přístup přes profile.tokens.
+            static fn (array $definition): bool => in_array('staff', $definition['role_types'], true)
+                && $definition['key'] !== 'profile.mcp',
         ));
+        self::assertSame(0, (int) $db->query("SELECT COUNT(*) FROM role_permissions WHERE permission_key='profile.mcp'")->fetchColumn(),
+            'Migrace nesmí nové MCP oprávnění automaticky přidělit žádné roli.');
         sort($staffPermissions);
         foreach (['admin', 'admin_plus'] as $systemKey) {
             $stmt = $db->prepare(

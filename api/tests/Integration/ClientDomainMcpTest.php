@@ -325,7 +325,7 @@ final class ClientDomainMcpTest extends TestCase
     {
         $r=(new ServerRequestFactory())->createServerRequest($method,$url,['REMOTE_ADDR'=>'127.0.0.1']);
         if ($token!==null) $r=$r->withHeader('Authorization','Bearer '.$token);
-        if ($session) $r=$r->withCookieParams([$this->cookie=>$this->session['token']])->withHeader('Origin',parse_url($url,PHP_URL_SCHEME).'://'.parse_url($url,PHP_URL_HOST))
+        if ($session) $r=$r->withCookieParams([$this->cookie=>$this->session['token']])->withHeader('Origin',$r->getUri()->getScheme().'://'.$r->getUri()->getAuthority())
             ->withHeader('X-CSRF-Token',$this->session['csrf_token']);
         if ($method==='POST') $r=$r->withHeader('Content-Type',$form?'application/x-www-form-urlencoded':'application/json')
             ->withParsedBody($body)->withBody((new StreamFactory())->createStream($form?http_build_query($body):json_encode($body,JSON_THROW_ON_ERROR)));
