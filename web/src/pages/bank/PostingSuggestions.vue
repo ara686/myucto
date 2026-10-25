@@ -345,14 +345,14 @@ useWindowRefresh(['bank', 'bank-statements', 'bank-transactions', 'bank-match-su
                   :title="(AI_SOURCES as readonly string[]).includes(it.source) ? t('automation.ai_no_bulk') : ''"
                   @change="toggleOne(it.id)" class="rounded border-neutral-300 disabled:opacity-50" />
               </td>
-              <td v-if="tbl.isVisible('date')" class="px-3 py-2 text-xs whitespace-nowrap">{{ formatDate(it.transaction.posted_at) }}</td>
-              <td v-if="tbl.isVisible('amount')" class="px-3 py-2 text-right font-mono text-xs"
+              <td v-if="tbl.isVisible('date')" class="px-3 py-2 whitespace-nowrap">{{ formatDate(it.transaction.posted_at) }}</td>
+              <td v-if="tbl.isVisible('amount')" class="px-3 py-2 text-right font-mono"
                 :class="it.transaction.amount > 0 ? 'text-success-700 dark:text-success-600' : 'text-danger-500'">
                 {{ it.transaction.amount > 0 ? '+' : '' }}{{ formatMoney(it.transaction.amount, it.transaction.currency) }}
               </td>
-              <td v-if="tbl.isVisible('counterparty')" class="px-3 py-2 text-xs">
+              <td v-if="tbl.isVisible('counterparty')" class="px-3 py-2">
                 <div class="text-neutral-700 truncate max-w-xs">{{ it.transaction.counterparty_name || it.transaction.counterparty_account || '—' }}</div>
-                <div v-if="it.transaction.description" class="text-neutral-500 truncate max-w-xs">{{ it.transaction.description }}</div>
+                <div v-if="it.transaction.description" class="text-xs text-neutral-500 truncate max-w-xs">{{ it.transaction.description }}</div>
               </td>
               <td v-if="tbl.isVisible('counterparty_account')" class="px-3 py-2 font-mono text-xs whitespace-nowrap">{{ counterpartyAccount(it) }}</td>
               <td v-if="tbl.isVisible('vs')" class="px-3 py-2 font-mono text-xs whitespace-nowrap">{{ it.transaction.variable_symbol || '—' }}</td>

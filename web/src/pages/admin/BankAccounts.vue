@@ -993,22 +993,22 @@ async function deleteMessage(m: BankEmailProcessedMessage) {
                       <td class="px-3 py-2 text-right font-mono whitespace-nowrap text-neutral-600">
                         {{ a.current_balance_czk !== null ? formatMoney(a.current_balance_czk, 'CZK') : '—' }}
                       </td>
-                      <td class="px-3 py-2 text-xs whitespace-nowrap">
+                      <td class="px-3 py-2 whitespace-nowrap">
                         {{ formatDate(a.statement_date) }}
                         <span v-if="a.current_source === 'bank_api'" :title="t('bank_accounts.balances_source_api_hint')"
-                          class="ml-1 inline-flex items-center px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-500 font-medium">
+                          class="ml-1 inline-flex items-center px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-500 text-xs font-medium">
                           {{ t('bank_accounts.balances_source_api') }}
                         </span>
                         <span v-if="a.current_source === 'import'" :title="t('bank_accounts.balances_source_import_hint')"
-                          class="ml-1 inline-flex items-center px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-500 font-medium">
+                          class="ml-1 inline-flex items-center px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-500 text-xs font-medium">
                           {{ t('bank_accounts.balances_source_import') }}
                         </span>
                         <span v-if="a.current_source === 'email_notice'" :title="t('bank_accounts.balances_source_email_hint')"
-                          class="ml-1 inline-flex items-center px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-500 font-medium">
+                          class="ml-1 inline-flex items-center px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-500 text-xs font-medium">
                           {{ t('bank_accounts.balances_source_email') }}
                         </span>
                       </td>
-                      <td class="px-3 py-2 text-right text-xs">{{ a.statement_count }}</td>
+                      <td class="px-3 py-2 text-right">{{ a.statement_count }}</td>
                     </tr>
                   </tbody>
                   <tfoot class="bg-neutral-50 border-t border-neutral-200">

@@ -361,36 +361,36 @@ function candidateReject() {
 <template>
   <template v-if="layout === 'desktop'">
     <tr :data-tx-id="tx.id" :class="{ 'opacity-50': tx.match_status === 'ignored' }">
-      <td class="px-3 py-2 text-xs">
+      <td class="px-3 py-2 whitespace-nowrap">
         {{ formatDate(tx.posted_at) }}
         <RouterLink v-if="showStatementLink" :to="`/bank/${tx.statement_id}?posting_status=unposted`"
-          class="block text-neutral-400 hover:text-primary-600 hover:underline whitespace-nowrap">
+          class="block text-xs text-neutral-400 hover:text-primary-600 hover:underline whitespace-nowrap">
           {{ t('bank.statement') }} #{{ tx.statement_id }}
         </RouterLink>
       </td>
-      <td class="px-3 py-2 text-right font-mono text-xs"
+      <td class="px-3 py-2 text-right font-mono"
         :class="tx.amount > 0 ? 'text-success-700 dark:text-success-600' : 'text-danger-500'">
         {{ tx.amount > 0 ? '+' : '' }}{{ formatMoney(tx.amount, currency()) }}
       </td>
-      <td v-if="showAccount" class="px-3 py-2 text-xs">
+      <td v-if="showAccount" class="px-3 py-2">
         <div class="font-mono text-neutral-700 whitespace-nowrap">{{ formatAccountNumber(tx.account_number, tx.bank_code) }}</div>
-        <div v-if="tx.account_label" class="text-neutral-500 truncate">{{ tx.account_label }}</div>
+        <div v-if="tx.account_label" class="text-xs text-neutral-500 truncate">{{ tx.account_label }}</div>
       </td>
       <td class="px-3 py-2 font-mono text-xs">
         <span v-if="tx.variable_symbol">{{ tx.variable_symbol }}</span>
         <span v-else class="text-neutral-400">—</span>
         <span v-if="tx.constant_symbol" class="text-neutral-400 ml-1">/ {{ tx.constant_symbol }}</span>
       </td>
-      <td class="px-3 py-2 text-xs">
-        <div class="font-mono text-neutral-600">{{ tx.counterparty_account }}<span v-if="tx.counterparty_bank">/{{ tx.counterparty_bank }}</span></div>
+      <td class="px-3 py-2">
+        <div class="font-mono text-xs text-neutral-600">{{ tx.counterparty_account }}<span v-if="tx.counterparty_bank">/{{ tx.counterparty_bank }}</span></div>
         <div v-if="tx.counterparty_name" class="text-neutral-600">{{ tx.counterparty_name }}</div>
-        <div v-if="tx.card_last4" class="text-neutral-600" data-test="tx-card">
+        <div v-if="tx.card_last4" class="text-xs text-neutral-600" data-test="tx-card">
           {{ t('payment_cards.tx_card', { last4: tx.card_last4 }) }}<template v-if="tx.card"> · {{ tx.card.holder || tx.card.label }}</template>
         </div>
-        <div v-if="tx.match_status === 'ignored' && tx.ignore_note" class="text-neutral-600 whitespace-pre-wrap break-words max-w-xs">{{ t('bank.ignore_note_label') }}: {{ tx.ignore_note }}</div>
-        <div v-if="tx.description" class="text-neutral-500 truncate max-w-xs">{{ tx.description }}</div>
+        <div v-if="tx.match_status === 'ignored' && tx.ignore_note" class="text-xs text-neutral-600 whitespace-pre-wrap break-words max-w-xs">{{ t('bank.ignore_note_label') }}: {{ tx.ignore_note }}</div>
+        <div v-if="tx.description" class="text-xs text-neutral-500 truncate max-w-xs">{{ tx.description }}</div>
         <button v-for="n in journalNotes" :key="n.id" type="button" data-test="tx-journal-note"
-          class="mt-1 flex max-w-xs items-start gap-1 text-left cursor-pointer disabled:cursor-default"
+          class="mt-1 flex max-w-xs items-start gap-1 text-left text-xs cursor-pointer disabled:cursor-default"
           :class="n.pinned ? 'text-warning-600' : 'text-neutral-700'"
           :title="t('bank.note.from_journal')" :disabled="!canWriteNote" @click="openNote">
           <svg class="mt-0.5 h-3 w-3 shrink-0 text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" :d="ICONS.doc" /></svg>
@@ -402,7 +402,7 @@ function candidateReject() {
           <DimensionChips :dimensions="txDimensions" />
         </button>
       </td>
-      <td class="px-3 py-2 text-xs">
+      <td class="px-3 py-2">
         <template v-if="(tx.matched_invoices?.length ?? 0) > 1 && auth.canRead('invoices')">
           <RouterLink v-for="mi in tx.matched_invoices" :key="mi.invoice_id" :to="`/invoices/${mi.invoice_id}`"
             class="text-primary-600 hover:underline block">
