@@ -56,7 +56,8 @@ function hostingHint(item: { hintKey: string; at: number | null; percent: number
 
 /**
  * Instalace na plochu je klientská položka: server o ní neví, jen drží její odložení
- * (`dismissed_types`). Nabízí se na mobilu mimo nainstalovanou aplikaci; viz `usePwaInstall`.
+ * (`dismissed_types`). Nabízí se všude mimo nainstalovanou aplikaci a skrývá se rovnou
+ * napořád; viz `usePwaInstall`.
  */
 const pwa = usePwaInstall()
 const pwaItem = computed<ActionItem | null>(() => {
@@ -182,18 +183,22 @@ onMounted(async () => {
       </RouterLink>
 
       <div v-for="(item, idx) in displayItems" :key="item.type + idx"
-        class="relative px-5 py-3 hover:bg-neutral-50 last:rounded-b-xl">
+        class="relative px-5 py-3 last:rounded-b-xl"
+        :class="item.type === PWA_INSTALL_ITEM_TYPE ? 'bg-primary-50/60 hover:bg-primary-50' : 'hover:bg-neutral-50'">
         <div class="flex items-center justify-between">
         <!-- Instalace na plochu: vlastní řádek bez odkazu, na Androidu s tlačítkem, na iOS s návodem -->
         <div v-if="item.type === PWA_INSTALL_ITEM_TYPE" class="flex items-center gap-3 flex-1 min-w-0 flex-wrap" data-pwa-install>
-          <span class="inline-block w-2.5 h-2.5 rounded-full shrink-0 bg-neutral-400"></span>
+          <span class="-ml-1.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary-100 text-primary-700" aria-hidden="true">
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path stroke-linecap="round" stroke-linejoin="round" d="M12 7.5v6m0 0-2.5-2.5M12 13.5l2.5-2.5M10.5 18.5h3"/></svg>
+          </span>
           <div class="min-w-0 flex-1">
-            <div class="text-sm font-medium text-neutral-700">{{ t('crm.action_items.pwa_install_title') }}</div>
+            <div class="text-sm font-medium text-primary-800">{{ t('crm.action_items.pwa_install_title') }}</div>
             <div v-if="pwa.mode.value === 'ios'" class="text-xs text-neutral-500 mt-0.5">
               {{ t('crm.action_items.pwa_install_ios_before') }}
               <svg class="inline-block w-4 h-4 align-text-bottom" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v12M8 7l4-4 4 4M6 11H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-1"/></svg>
               {{ t('crm.action_items.pwa_install_ios_after') }}
             </div>
+            <div v-else-if="pwa.mode.value === 'manual'" class="text-xs text-neutral-500 mt-0.5">{{ t('crm.action_items.pwa_install_manual') }}</div>
             <div v-else class="text-xs text-neutral-500 mt-0.5">{{ t('crm.action_items.pwa_install_hint') }}</div>
           </div>
           <button v-if="pwa.mode.value === 'prompt'" type="button" @click="installPwa"
@@ -215,7 +220,12 @@ onMounted(async () => {
           <RouterLink v-if="item.type !== PWA_INSTALL_ITEM_TYPE" :to="item.link" class="text-neutral-400 hover:text-primary-700 p-1 transition-transform hover:translate-x-0.5" :title="t('crm.action_items.go_to')">
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
           </RouterLink>
-          <button v-if="item.dismissible !== false && auth.canWrite('dashboard')" type="button" @click.stop="toggleMenu(idx)"
+          <button v-if="item.type === PWA_INSTALL_ITEM_TYPE" type="button" @click.stop="dismissItem(item.type, 'forever')"
+            class="text-neutral-400 hover:text-neutral-700 p-1 rounded hover:bg-neutral-100"
+            :title="t('crm.action_items.pwa_install_hide')" :aria-label="t('crm.action_items.pwa_install_hide')">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+          <button v-else-if="item.dismissible !== false && auth.canWrite('dashboard')" type="button" @click.stop="toggleMenu(idx)"
             class="text-neutral-400 hover:text-neutral-700 p-1 rounded hover:bg-neutral-100"
             :title="t('crm.action_items.dismiss')">
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2zm0 7a1 1 0 1 1 0-2 1 1 0 0 1 0 2zm0 7a1 1 0 1 1 0-2 1 1 0 0 1 0 2z"/></svg>

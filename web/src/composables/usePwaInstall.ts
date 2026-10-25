@@ -8,7 +8,7 @@ interface BeforeInstallPromptEvent extends Event {
 /** Typ položky v „Akcích pro vás" — shodný s whitelistem odložení na serveru. */
 export const PWA_INSTALL_ITEM_TYPE = 'pwa_install'
 
-export type PwaInstallMode = 'prompt' | 'ios'
+export type PwaInstallMode = 'prompt' | 'ios' | 'manual'
 
 const deferredPrompt = shallowRef<BeforeInstallPromptEvent | null>(null)
 const installed = ref(false)
@@ -38,11 +38,6 @@ export function isStandaloneDisplay(): boolean {
   return typeof window.matchMedia === 'function' && window.matchMedia('(display-mode: standalone)').matches
 }
 
-export function isMobileDevice(): boolean {
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false
-  return window.matchMedia('(pointer: coarse)').matches || window.innerWidth <= 767
-}
-
 /** iPhone/iPad, včetně iPadOS, který se hlásí jako Mac s dotykovou obrazovkou. */
 export function isIosDevice(): boolean {
   if (typeof navigator === 'undefined') return false
@@ -51,11 +46,14 @@ export function isIosDevice(): boolean {
 }
 
 export function usePwaInstall() {
-  /** `null` = nic nenabízet (běží z plochy, není mobil, nebo prohlížeč instalaci neumí). */
+  /**
+   * `null` = nic nenabízet, aplikace už běží nainstalovaná. Jinak se nabízí vždy, na mobilu
+   * i desktopu: s tlačítkem, když prohlížeč poslal `beforeinstallprompt`, jinak s návodem.
+   */
   const mode = computed<PwaInstallMode | null>(() => {
-    if (installed.value || isStandaloneDisplay() || !isMobileDevice()) return null
+    if (installed.value || isStandaloneDisplay()) return null
     if (deferredPrompt.value) return 'prompt'
-    return isIosDevice() ? 'ios' : null
+    return isIosDevice() ? 'ios' : 'manual'
   })
 
   async function install(): Promise<boolean> {

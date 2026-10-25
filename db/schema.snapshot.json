@@ -1089,7 +1089,8 @@
         "2185_eet_stored_value_and_external.sql",
         "2186_user_favorites.sql",
         "2187_receipt_links.sql",
-        "2188_quick_receipts.sql"
+        "2188_quick_receipts.sql",
+        "2189_gopay_clearing_longblob.sql"
     ],
     "tables": {
         "abra_flexi_connections": {
@@ -6223,7 +6224,7 @@
                 "cleared_to": "date NOT NULL",
                 "clearing_id": "varchar(40) NOT NULL",
                 "currency": "char(3) NOT NULL",
-                "file_content": "mediumblob NOT NULL",
+                "file_content": "longblob NOT NULL",
                 "file_hash": "char(64) NOT NULL",
                 "file_name": "varchar(255) NOT NULL",
                 "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",

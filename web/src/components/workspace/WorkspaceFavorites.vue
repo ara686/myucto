@@ -195,7 +195,8 @@ watch(() => favorites.open, async open => {
     locked = true
     void favorites.load()
     await nextTick()
-    list.value?.focus()
+    // Na dotyku fokus nepotřebuje nikdo a zvýrazněný seznam jen ruší.
+    if (!window.matchMedia?.('(pointer: coarse)').matches) list.value?.focus()
   } else {
     if (locked) unlockBodyScroll()
     locked = false
@@ -268,7 +269,7 @@ onBeforeUnmount(() => { if (locked) unlockBodyScroll() })
           </div>
           <p v-if="!favorites.items.length" class="px-3 py-6 text-center text-sm text-neutral-500">{{ t('favorites.empty') }}</p>
         </div>
-        <footer class="space-y-1.5 border-t border-neutral-200 bg-neutral-50 px-5 py-3 text-xs text-neutral-500">
+        <footer class="space-y-1.5 border-t pointer-coarse:hidden border-neutral-200 bg-neutral-50 px-5 py-3 text-xs text-neutral-500">
           <p data-favorites-company-hint>{{ t('favorites.company_hint') }}</p>
           <p>{{ t('favorites.keyboard_hint') }}</p>
         </footer>
