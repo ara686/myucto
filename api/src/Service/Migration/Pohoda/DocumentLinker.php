@@ -429,6 +429,7 @@ final class DocumentLinker
         }
         $this->settleByInternalDocuments($ctx, $internal);
         $this->inferAdvanceSettlements($ctx);
+        $this->recordBankFxSettlements($ctx);
         $this->markBookedWithoutDocument($ctx);
         if ($cashMulti !== []) {
             $p->info(self::STEP_PAYMENTS, 'cash_multi_invoice', count($cashMulti) . ' pokladních dokladů hradí víc faktur; pokladní doklad ukazuje vazbu jen na první, faktury jsou uhrazené podle Pohody.',
@@ -743,6 +744,96 @@ final class DocumentLinker
                 $p->count(self::STEP_PAYMENTS, 'advance_deduction_inferred');
             }
             unset($advance);
+        }
+    }
+
+    /**
+     * Kurzový rozdíl nebo poplatek, který POHODA zaúčtovala přímo v zápisu úhrady
+     * (např. 321 MD / 663 D vedle 321 MD / 221 D): dorovnává doklad na saldokontním účtu,
+     * ale spárovaná částka pohybu ho nenese. Zapíše se jako zápočet proti protiúčtu
+     * (`invoice_settlements`, vazba na zápis úhrady), u vydané faktury i s evidovanou
+     * platbou se zdrojem `settlement` - stejně jako zápočet v MyÚčtu. Jen u pohybu, který
+     * hradí jediný doklad uhrazený podle POHODY; opakovaný převod nic nezdvojí.
+     */
+    private function recordBankFxSettlements(PohodaContext $ctx): void
+    {
+        $p = $ctx->protocol;
+        $pdo = $this->db->pdo();
+        $s = $ctx->supplierId;
+        $rows = $pdo->query(
+            "SELECT pm.bank_transaction_id AS tx, MIN(pm.invoice_id) AS invoice_id, MIN(pm.purchase_invoice_id) AS purchase_id,
+                    ABS(MIN(bt.amount)) AS tx_amount, MIN(e.id) AS entry_id, MIN(e.entry_date) AS entry_date
+               FROM payment_matches pm
+               JOIN bank_transactions bt ON bt.id = pm.bank_transaction_id
+               JOIN journal_entries e ON e.supplier_id = pm.supplier_id AND e.source_type = 'bank' AND e.source_id = pm.bank_transaction_id
+                                     AND e.reversed_by IS NULL AND e.posted_at IS NOT NULL
+              WHERE pm.supplier_id = {$s}
+              GROUP BY pm.bank_transaction_id
+             HAVING COUNT(DISTINCT COALESCE(pm.invoice_id, 0), COALESCE(pm.purchase_invoice_id, 0)) = 1"
+        )->fetchAll(PDO::FETCH_ASSOC);
+        $lines = $pdo->prepare(
+            "SELECT l.id, l.side, l.signed_amount, ca.account_code, COALESCE(pa.account_code, ca.account_code) AS synthetic, l.account_id
+               FROM journal_entry_lines l JOIN chart_of_accounts ca ON ca.id = l.account_id LEFT JOIN chart_of_accounts pa ON pa.id = ca.parent_id
+              WHERE l.entry_id = ? ORDER BY l.id"
+        );
+        $exists = $pdo->prepare('SELECT 1 FROM invoice_settlements WHERE supplier_id = ? AND doc_type = ? AND doc_id = ? AND journal_entry_id = ?');
+        $insert = $pdo->prepare(
+            "INSERT INTO invoice_settlements (supplier_id, doc_type, doc_id, settled_on, amount, account_id, note, status, journal_entry_id, invoice_payment_id, created_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?, 'confirmed', ?, ?, ?)"
+        );
+        foreach ($rows as $r) {
+            $issued = $r['invoice_id'] !== null;
+            $docType = $issued ? 'invoice' : 'purchase_invoice';
+            $docId = (int) ($issued ? $r['invoice_id'] : $r['purchase_id']);
+            $table = $issued ? 'invoices' : 'purchase_invoices';
+            $status = $pdo->query("SELECT status FROM {$table} WHERE id = {$docId} AND supplier_id = {$s}")->fetchColumn();
+            if ($status !== 'paid') {
+                continue;
+            }
+            $lines->execute([(int) $r['entry_id']]);
+            $entryLines = $lines->fetchAll(PDO::FETCH_ASSOC);
+            // Saldokontní strana dokladu: přijatý doklad snižuje debet 321/325, vydaný kredit 311/315.
+            $settleSide = $issued ? 'credit' : 'debit';
+            $prefixes = $issued ? ['311', '315'] : ['321', '325'];
+            $onAccount = array_values(array_filter($entryLines, static fn (array $l): bool =>
+                $l['side'] === $settleSide && in_array(substr((string) $l['synthetic'], 0, 3), $prefixes, true)));
+            $surplus = round(array_sum(array_map(static fn (array $l): float => (float) $l['signed_amount'], $onAccount)) - (float) $r['tx_amount'], 2);
+            if ($surplus < 0.01) {
+                continue;
+            }
+            // Protiúčet rozdílu: řádek opačné strany se stejnou částkou mimo finanční a saldokontní účty.
+            $counter = null;
+            foreach ($entryLines as $l) {
+                $code = substr((string) $l['synthetic'], 0, 3);
+                if ($l['side'] !== $settleSide && abs((float) $l['signed_amount'] - $surplus) < 0.01
+                    && !in_array($code, ['211', '213', '221', '261'], true) && !in_array($code, $prefixes, true)) {
+                    $counter = (int) $l['account_id'];
+                    break;
+                }
+            }
+            if ($counter === null) {
+                continue;
+            }
+            $exists->execute([$s, $docType, $docId, (int) $r['entry_id']]);
+            if ($exists->fetchColumn() !== false) {
+                continue;
+            }
+            $paymentId = null;
+            if ($issued) {
+                $inv = $pdo->query("SELECT cur.code, i.paid_total, (SELECT COALESCE(SUM(ip.amount), 0) FROM invoice_payments ip WHERE ip.invoice_id = i.id) AS recorded
+                                      FROM invoices i JOIN currencies cur ON cur.id = i.currency_id WHERE i.id = {$docId}")->fetch(PDO::FETCH_ASSOC);
+                $pay = round(min($surplus, (float) $inv['paid_total'] - (float) $inv['recorded']), 2);
+                if ($pay < 0.01) {
+                    continue;
+                }
+                $pdo->prepare("INSERT INTO invoice_payments (supplier_id, invoice_id, paid_on, amount, currency, note, source, created_by)
+                               VALUES (?, ?, ?, ?, ?, 'Kurzový rozdíl v úhradě (převzato z Pohody)', 'settlement', ?)")
+                    ->execute([$s, $docId, $r['entry_date'], number_format($pay, 2, '.', ''), (string) $inv['code'], $ctx->userOrNull()]);
+                $paymentId = (int) $pdo->lastInsertId();
+            }
+            $insert->execute([$s, $docType, $docId, $r['entry_date'], number_format($surplus, 2, '.', ''), $counter,
+                'Kurzový rozdíl nebo poplatek v úhradě (převzato z Pohody)', (int) $r['entry_id'], $paymentId, $ctx->userOrNull()]);
+            $p->count(self::STEP_PAYMENTS, 'bank_fx_settlement');
         }
     }
 

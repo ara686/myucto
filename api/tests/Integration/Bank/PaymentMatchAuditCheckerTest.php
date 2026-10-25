@@ -336,6 +336,31 @@ final class PaymentMatchAuditCheckerTest extends TestCase
         self::assertEqualsWithDelta(227.63, $found['detail']['fx_on_czk_czk']['amount'], 0.01);
     }
 
+    /**
+     * Bankovní zápis převzatý z jiného programu (POHODA): kurzový rozdíl i částku úhrady
+     * zaúčtoval zdroj. Doklad převzatý v Kč z cizí měny nese kurzový rozdíl na CZK pohybu
+     * a částka nesedí kvůli jinému kanálu úhrady. Nic z toho se nehlásí.
+     */
+    public function testDoesNotFlagAmountOrFxOnTakenOverBankEntry(): void
+    {
+        $date = self::YEAR . '-06-02';
+        $pfId = $this->createPurchaseInvoice('PMA-TAKEN-001', $this->czkId, 1000.0, 1.0, 'paid', $date);
+        $txId = $this->createBankTx('CZK', -1300.0, $date);
+        $this->linkPaymentMatch($txId, $pfId, 1300.0);
+        $entryId = $this->posting->postDocument($this->supplierId, 'bank', $txId, [
+            ['account_code' => '321', 'side' => 'debit', 'amount' => 1000.0],
+            ['account_code' => '563', 'side' => 'debit', 'amount' => 300.0],
+            ['account_code' => '221', 'side' => 'credit', 'amount' => 1300.0],
+        ], ['entry_date' => $date, 'posted_by' => $this->userId, 'user_id' => $this->userId]);
+        $this->db->pdo()->prepare(
+            "INSERT INTO pohoda_import_map (supplier_id, kind, pohoda_key, target_id) VALUES (?, 'journal_entry', 'test|pma', ?)"
+        )->execute([$this->supplierId, $entryId]);
+
+        $items = $this->checker->audit($this->supplierId, self::YEAR . '-01-01', self::YEAR . '-12-31');
+
+        self::assertNull($this->findForTx($items, $txId));
+    }
+
     /** Protistrana platby (bank výpis) zjevně neodpovídá protistraně dokladu. */
     public function testFlagsCounterpartyMismatch(): void
     {

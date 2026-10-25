@@ -142,8 +142,9 @@ final class SyntheticPohodaExport
                 . '<SrcAgenda>FA</SrcAgenda><SrcCislo>26PF0001</SrcCislo><SrcDatum>2026-01-12</SrcDatum><SrcText>Materiál</SrcText><SrcKc>500</SrcKc></DM>'
                 . '<DM><ID>2</ID><Cislo>DM0002</Cislo><SText>Židle</SText><Datum>2025-06-01</Datum><Pocet>2</Pocet><Kc>3000</Kc><KcJedn>1500</KcJedn>'
                 . '<DatLikv>2026-02-01</DatLikv></DM>'
-                // Bez odkazu na doklad: naváže se podle data a částky na položku faktury 26PF0002.
-                . '<DM><ID>3</ID><Cislo>DM0003</Cislo><SText>Sada nářadí</SText><Datum>2026-02-05</Datum><Pocet>1</Pocet><Kc>1200</Kc><KcJedn>1200</KcJedn></DM>'
+                // Bez odkazu na doklad: obě karty se naváží podle data a ceny za kus na položku 2 ks faktury 26PF0002.
+                . '<DM><ID>3</ID><Cislo>DM0003</Cislo><SText>Monitor</SText><Datum>2026-02-05</Datum><Pocet>1</Pocet><Kc>600</Kc><KcJedn>600</KcJedn></DM>'
+                . '<DM><ID>4</ID><Cislo>DM0004</Cislo><SText>Monitor</SText><Datum>2026-02-05</Datum><Pocet>1</Pocet><Kc>600</Kc><KcJedn>600</KcJedn></DM>'
                 . '</mdbExport>');
         }
         return $dir;
@@ -781,13 +782,15 @@ final class SyntheticPohodaExport
             . self::summary('inv', 500, 105)
             . '<inv:liquidations><typ:liquidation><typ:id>2</typ:id><typ:date>2026-01-20</typ:date><typ:sourceAgenda>bank</typ:sourceAgenda><typ:sourceDocument><typ:number>BAN0010002</typ:number></typ:sourceDocument><typ:amount>605</typ:amount></typ:liquidation></inv:liquidations></lst:invoice>';
         if ($withAssets) {
-            // Neuhrazená faktura za nářadí - na její položku se naváže karta drobného majetku DM0003.
+            // Neuhrazená faktura za 2 monitory - na její položku se naváží karty drobného majetku DM0003 a DM0004.
             $received .= '<lst:invoice version="2.0"><inv:invoiceHeader><inv:invoiceType>receivedInvoice</inv:invoiceType><inv:number><typ:numberRequested>26PF0002</typ:numberRequested></inv:number>'
                 . '<inv:symVar>2026008</inv:symVar><inv:originalDocument>D-2026-8</inv:originalDocument><inv:date>2026-02-05</inv:date><inv:dateTax>2026-02-05</inv:dateTax>'
                 . '<inv:dateAccounting>2026-02-05</inv:dateAccounting><inv:dateDue>2026-02-19</inv:dateDue><inv:dateKHDPH>2026-02-05</inv:dateKHDPH>'
                 . '<inv:classificationVAT><typ:ids>PD</typ:ids></inv:classificationVAT><inv:text>Nářadí</inv:text>'
                 . self::partner('inv', 'Dodavatel Test s.r.o.', self::VENDOR_ICO, 'CZ' . self::VENDOR_ICO)
                 . '<inv:liquidation><typ:amountHome>1452</typ:amountHome></inv:liquidation></inv:invoiceHeader>'
+                . '<inv:invoiceDetail><inv:invoiceItem><inv:text>Monitor</inv:text><inv:quantity>2.0</inv:quantity><inv:rateVAT value="21">high</inv:rateVAT>'
+                . '<inv:homeCurrency><typ:unitPrice>600</typ:unitPrice><typ:price>1200</typ:price><typ:priceVAT>252</typ:priceVAT><typ:priceSum>1452</typ:priceSum></inv:homeCurrency></inv:invoiceItem></inv:invoiceDetail>'
                 . self::summary('inv', 1200, 252) . '</lst:invoice>';
         }
 

@@ -545,10 +545,11 @@ final class PohodaImportTest extends TestCase
         self::assertNotNull($year, json_encode($plan['accounting']));
         self::assertEqualsWithDelta(45000.0, (float) $year['amount'], 0.005, 'Duben až prosinec 2026 po 5 000 Kč.');
 
-        // Drobný majetek: karta navázaná na převedenou přijatou fakturu i s položkou, vyřazená karta bez dokladu.
+        // Drobný majetek: karta navázaná na převedenou přijatou fakturu i s položkou, vyřazená karta bez dokladu
+        // a dvě karty bez odkazu navázané cenou za kus na jednu položku se 2 ks.
         $counts = self::stepCounts($protocol, 'small_assets');
         ksort($counts);
-        self::assertSame(['created' => 3, 'linked' => 2, 'matched_by_amount' => 1, 'no_document' => 1], $counts, $this->explain($protocol));
+        self::assertSame(['created' => 4, 'linked' => 3, 'matched_by_amount' => 2, 'no_document' => 1], $counts, $this->explain($protocol));
         $small = $this->db->pdo()->prepare(
             'SELECT s.inventory_number, s.status, s.disposed_at, s.quantity, s.price, s.location, s.document_ref, s.purchase_invoice_item_id,
                     pi.vendor_invoice_number
@@ -556,9 +557,14 @@ final class PohodaImportTest extends TestCase
               WHERE s.supplier_id = ? ORDER BY s.inventory_number'
         );
         $small->execute([$supplierId]);
-        [$drill, $chairs, $tools] = $small->fetchAll(\PDO::FETCH_ASSOC);
-        self::assertSame(['DM0003', 'D-2026-8', 'D-2026-8'], [$tools['inventory_number'], $tools['document_ref'], $tools['vendor_invoice_number']]);
-        self::assertNotNull($tools['purchase_invoice_item_id'], 'Karta bez odkazu se naváže podle data a částky.');
+        [$drill, $chairs, $monitor, $monitor2] = $small->fetchAll(\PDO::FETCH_ASSOC);
+        self::assertSame(['DM0003', 'D-2026-8', 'D-2026-8'], [$monitor['inventory_number'], $monitor['document_ref'], $monitor['vendor_invoice_number']]);
+        self::assertNotNull($monitor['purchase_invoice_item_id'], 'Karta bez odkazu se naváže podle data a ceny za kus.');
+        self::assertSame($monitor['purchase_invoice_item_id'], $monitor2['purchase_invoice_item_id'], 'Položka se 2 ks nese dvě karty.');
+        // Položka s kartou je náklad na drobný majetek - obrat drobného majetku sedí na evidenci.
+        $kinds = $this->db->pdo()->prepare('SELECT id, expense_kind FROM purchase_invoice_items WHERE id IN (?, ?)');
+        $kinds->execute([$monitor['purchase_invoice_item_id'], $drill['purchase_invoice_item_id']]);
+        self::assertSame(['small_asset'], array_values(array_unique($kinds->fetchAll(\PDO::FETCH_KEY_PAIR))));
         self::assertSame(['DM0001', 'in_use', 'Dílna', '26PF0001', 'D-2026-7'],
             [$drill['inventory_number'], $drill['status'], $drill['location'], $drill['document_ref'], $drill['vendor_invoice_number']]);
         self::assertNotNull($drill['purchase_invoice_item_id'], 'Karta je navázaná i na položku faktury.');
@@ -567,9 +573,9 @@ final class PohodaImportTest extends TestCase
 
         $again = $this->importer->run($supplierId, $this->userId, $export, false);
         self::assertSame(1, self::stepCounts($again, 'assets')['existing'] ?? 0, $this->explain($again));
-        self::assertSame(3, self::stepCounts($again, 'small_assets')['existing'] ?? 0, $this->explain($again));
+        self::assertSame(4, self::stepCounts($again, 'small_assets')['existing'] ?? 0, $this->explain($again));
         self::assertSame(1, $this->rows('assets', $supplierId));
-        self::assertSame(3, $this->rows('small_assets', $supplierId));
+        self::assertSame(4, $this->rows('small_assets', $supplierId));
     }
 
     /**
