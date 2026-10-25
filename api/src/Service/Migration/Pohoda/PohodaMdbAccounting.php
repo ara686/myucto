@@ -377,7 +377,7 @@ final class PohodaMdbAccounting
             }
             $tag = $advance ? 'invoiceAdvancePaymentItem' : $prefix . 'Item';
             $d[$prefix . 'Detail'][$tag][] = $item;
-            if ($prefix === 'intDoc' && in_array((int) ($it['RelAgID'] ?? 0), [2, 3, 18, 19], true)) {
+            if ($prefix === 'intDoc' && in_array((int) ($it['RelAgID'] ?? 0), [2, 3, 18, 19, 43, 44], true)) {
                 $linked = $this->lookup('FA', $it['RefPol'] ?? '');
                 if ($linked !== []) {
                     $d['linkedDocuments']['link'][] = [

@@ -1090,7 +1090,8 @@
         "2186_user_favorites.sql",
         "2187_receipt_links.sql",
         "2188_quick_receipts.sql",
-        "2189_gopay_clearing_longblob.sql"
+        "2189_gopay_clearing_longblob.sql",
+        "2190_purchase_advance_deductions.sql"
     ],
     "tables": {
         "abra_flexi_connections": {
@@ -21754,6 +21755,36 @@
             },
             "foreign_keys": [],
             "checks": []
+        },
+        "purchase_advance_deductions": {
+            "type": "BASE TABLE",
+            "engine": "InnoDB",
+            "collation": "utf8mb4_unicode_ci",
+            "columns": {
+                "advance_invoice_id": "bigint(20) unsigned NOT NULL",
+                "amount": "decimal(15,2) NOT NULL",
+                "created_at": "timestamp NOT NULL DEFAULT current_timestamp()",
+                "created_by": "bigint(20) unsigned NULL DEFAULT NULL",
+                "final_invoice_id": "bigint(20) unsigned NOT NULL",
+                "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
+                "supplier_id": "int(10) unsigned NOT NULL"
+            },
+            "indexes": {
+                "PRIMARY": "UNIQUE BTREE (id)",
+                "fk_pad_advance": "BTREE (advance_invoice_id)",
+                "fk_pad_user": "BTREE (created_by)",
+                "ix_pad_advance": "BTREE (supplier_id, advance_invoice_id)",
+                "uq_pad_pair": "UNIQUE BTREE (final_invoice_id, advance_invoice_id)"
+            },
+            "foreign_keys": {
+                "fk_pad_advance": "(advance_invoice_id) -> purchase_invoices (id) ON UPDATE RESTRICT ON DELETE CASCADE",
+                "fk_pad_final": "(final_invoice_id) -> purchase_invoices (id) ON UPDATE RESTRICT ON DELETE CASCADE",
+                "fk_pad_supplier": "(supplier_id) -> supplier (id) ON UPDATE RESTRICT ON DELETE CASCADE",
+                "fk_pad_user": "(created_by) -> users (id) ON UPDATE RESTRICT ON DELETE SET NULL"
+            },
+            "checks": {
+                "chk_pad_amount": "`amount` > 0"
+            }
         },
         "purchase_invoice_approvals": {
             "type": "BASE TABLE",

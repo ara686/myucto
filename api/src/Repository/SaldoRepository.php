@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MyInvoice\Repository;
 
 use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Service\Accounting\Activation\OpeningBalanceDocuments;
 use MyInvoice\Support\Sql\CreditNoteRefundExpr;
 use MyInvoice\Support\Sql\LinkedManualSettlementSql;
 use MyInvoice\Support\Sql\PurchaseSettledExpr;
@@ -212,6 +213,8 @@ final class SaldoRepository
             } elseif ($accountCode === '314') {
                 $result = array_merge(
                     $this->fetchPaidAdvances($supplierId, $accountId, $asOf, $limit, $partnerId, $dueBefore, $orderByDue),
+                    $this->fetchOpeningDocuments($supplierId, $accountId, $asOf, 'advances', $partnerId, $dueBefore),
+                    $this->fetchInvoicePrepayments($supplierId, $accountId, $asOf, $partnerId, $dueBefore),
                     $this->fetchOpenOtherItems($supplierId, $accountId, $asOf, $limit, $partnerId, $dueBefore, $orderByDue),
                 );
             } else {
@@ -227,6 +230,7 @@ final class SaldoRepository
                     $dueBefore === null
                         ? $this->fetchPaidAdvances($supplierId, $accountId, $asOf, $limit, $partnerId, null, $orderByDue, onPayable: true)
                         : [],
+                    $this->fetchOpeningDocuments($supplierId, $accountId, $asOf, 'documents', $partnerId, $dueBefore),
                     $this->fetchOpenOtherItems($supplierId, $accountId, $asOf, $limit, $partnerId, $dueBefore, $orderByDue),
                 );
             }
@@ -339,6 +343,234 @@ final class SaldoRepository
             },
             $limit,
         );
+    }
+
+    /**
+     * Doklady zastoupené v POČÁTEČNÍCH STAVECH: vznikly před začátkem vedení účetnictví
+     * v MyÚčtu (převod z jiného programu, aktivace účetnictví), jejich předpis je jen
+     * v otevíracím zápisu a doklad je na něj navázaný ({@see OpeningBalanceDocuments}).
+     * Vlastní zápis nemají, takže je hlavní zdroje sestavy (vazba přes `source_id`)
+     * nevidí — a neuhrazená faktura minulého roku tak chyběla v saldokontu, přestože
+     * počáteční stav účtu ji nese.
+     *
+     * Bere se doklad navázaný na živý otevírací zápis s řádkem na tomto účtu, který
+     * vlastní předpis nemá. Předpisem je částka dokladu v Kč; úhrady jako u ostatních
+     * položek k asOf. Vydaná faktura započte i úhradu z doby před počátečním stavem
+     * (`paid_total` nad evidovanými platbami), jinak by částečně uhrazená faktura
+     * svítila celou částkou. Záloha (314) se čerpá vyúčtovací fakturou nebo DDKP
+     * stejně jako ve {@see fetchPaidAdvances}.
+     *
+     * @param 'documents'|'advances' $scope doklady saldokontních účtů, nebo zálohy na 314
+     * @return list<array<string,mixed>>
+     */
+    private function fetchOpeningDocuments(
+        int $supplierId,
+        int $accountId,
+        string $asOf,
+        string $scope,
+        ?int $partnerId = null,
+        ?string $dueBefore = null,
+    ): array {
+        $pdo = $this->db->pdo();
+        // Otevírací zápis je jediný zápis s řádky na všech účtech a doklad účet nenese:
+        // účet se proto určí druhem dokladu, jak ho doklady MyÚčta účtují - vydaná
+        // faktura 311, přijatá 321, přijatá záloha 314.
+        $code = $pdo->prepare('SELECT COALESCE(p.account_code, a.account_code) FROM chart_of_accounts a LEFT JOIN chart_of_accounts p ON p.id = a.parent_id WHERE a.id = ?');
+        $code->execute([$accountId]);
+        $synthetic = substr((string) $code->fetchColumn(), 0, 3);
+        if ($scope === 'advances' ? $synthetic !== '314' : !in_array($synthetic, ['311', '321'], true)) {
+            return [];
+        }
+        $onOpening = static fn (string $docType, string $alias): string =>
+            "EXISTS (SELECT 1 FROM journal_entry_document_links ol
+                       JOIN journal_entries oe ON oe.id = ol.entry_id AND oe.supplier_id = ol.supplier_id
+                       JOIN journal_entry_lines oln ON oln.entry_id = oe.id AND oln.supplier_id = oe.supplier_id
+                       JOIN chart_of_accounts oca ON oca.id = oln.account_id
+                      WHERE ol.supplier_id = {$alias}.supplier_id AND ol.doc_type = '{$docType}' AND ol.doc_id = {$alias}.id
+                        AND oe.source_type = 'opening' AND oe.posted_at IS NOT NULL AND oe.reversed_by IS NULL
+                        AND oe.entry_date <= ?
+                        AND (oca.id = {$accountId} OR oca.parent_id = {$accountId}))
+             AND NOT EXISTS (SELECT 1 FROM journal_entries own
+                              WHERE own.supplier_id = {$alias}.supplier_id AND own.source_type = '{$docType}'
+                                AND own.source_id = {$alias}.id AND own.posted_at IS NOT NULL AND own.reversed_by IS NULL)";
+        $home = static fn (string $amount, string $alias): string =>
+            "(CASE WHEN {$alias}.exchange_rate IS NULL OR cur.code = 'CZK' THEN {$amount} ELSE ROUND({$amount} * {$alias}.exchange_rate, 2) END)";
+        $out = [];
+
+        if ($scope === 'documents') {
+            if ($synthetic === '311') {
+                $sql = "SELECT d.id, COALESCE(NULLIF(d.varsymbol, ''), CONCAT('#', d.id)) AS doc_no, d.issue_date, d.due_date, d.status,
+                               cl.id AS partner_id, cl.company_name AS partner_name, cur.code AS currency_code,
+                               {$home('d.total_with_vat', 'd')} AS booked, d.amount_to_pay, d.paid_total,
+                               (SELECT COALESCE(SUM(ip.amount), 0) FROM invoice_payments ip
+                                  LEFT JOIN bank_transactions ipbt ON ipbt.id = ip.bank_transaction_id
+                                 WHERE ip.invoice_id = d.id AND COALESCE(DATE(ipbt.posted_at), ip.paid_on) <= ?) AS paid_as_of,
+                               (SELECT COALESCE(SUM(ip.amount), 0) FROM invoice_payments ip WHERE ip.invoice_id = d.id) AS paid_all
+                          FROM invoices d
+                          JOIN clients cl ON cl.id = d.client_id
+                          JOIN currencies cur ON cur.id = d.currency_id
+                         WHERE d.supplier_id = {$supplierId} AND d.status NOT IN ('draft', 'cancelled')
+                           AND " . $onOpening('invoice', 'd') . self::partnerSql($partnerId) . self::dueBeforeSql('d', $dueBefore);
+                $stmt = $pdo->prepare($sql);
+                $stmt->execute(self::asOfParams($sql, $asOf));
+                foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                    $toPay = abs((float) $r['amount_to_pay']);
+                    $prior = max(0.0, abs((float) $r['paid_total']) - (float) $r['paid_all']);
+                    $ratio = $toPay < 0.005 ? 1.0 : min(1.0, max(0.0, ((float) $r['paid_as_of'] + $prior) / $toPay));
+                    $out[] = self::openingItem('invoice', $r, round((float) $r['booked'], 2), $ratio);
+                }
+            }
+
+            if ($synthetic === '321') {
+                $sql = "SELECT d.id, COALESCE(NULLIF(d.vendor_invoice_number, ''), NULLIF(d.varsymbol, ''), CONCAT('#', d.id)) AS doc_no,
+                               d.issue_date, d.due_date, d.status, d.paid_at,
+                               cl.id AS partner_id, cl.company_name AS partner_name, cur.code AS currency_code,
+                               {$home('d.total_with_vat', 'd')} AS booked, d.amount_to_pay,
+                               (SELECT COALESCE(SUM(pm.amount), 0) FROM payment_matches pm
+                                  JOIN bank_transactions bt ON bt.id = pm.bank_transaction_id
+                                 WHERE pm.supplier_id = d.supplier_id AND pm.purchase_invoice_id = d.id AND DATE(bt.posted_at) <= ?)
+                             + (SELECT COALESCE(SUM(cd.total_amount), 0) FROM cash_documents cd
+                                 WHERE cd.supplier_id = d.supplier_id AND cd.purchase_invoice_id = d.id AND cd.status = 'posted' AND cd.issue_date <= ?)
+                             + " . PurchaseSettledExpr::offsetSettledAsOf('d') . " AS settled
+                          FROM purchase_invoices d
+                          JOIN clients cl ON cl.id = d.vendor_id
+                          JOIN currencies cur ON cur.id = d.currency_id
+                         WHERE d.supplier_id = {$supplierId} AND d.status NOT IN ('draft', 'cancelled') AND d.document_kind <> 'advance'
+                           AND " . $onOpening('purchase_invoice', 'd') . self::partnerSql($partnerId) . self::dueBeforeSql('d', $dueBefore);
+                $stmt = $pdo->prepare($sql);
+                $stmt->execute(self::asOfParams($sql, $asOf));
+                foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                    $toPay = abs((float) $r['amount_to_pay']);
+                    // Uhrazený doklad je k datu úhrady vyrovnaný celý: část mohl uhradit už před
+                    // počátečním stavem, a ta v evidovaných úhradách není (přijatý doklad nemá
+                    // obdobu `paid_total`). Počáteční stav účtu ji pak také nenese.
+                    $paidByStatus = (string) $r['status'] === 'paid'
+                        && ($r['paid_at'] === null || substr((string) $r['paid_at'], 0, 10) <= $asOf);
+                    $ratio = $paidByStatus || $toPay < 0.005 ? 1.0 : min(1.0, max(0.0, abs((float) $r['settled']) / $toPay));
+                    // Závazek je na 321 kreditní: orientace jako fetchOpenPurchases (debet − kredit).
+                    $out[] = self::openingItem('purchase_invoice', $r, -round((float) $r['booked'], 2), $ratio);
+                }
+            }
+            return array_values(array_filter($out, static fn (array $i): bool => self::settlementAmounts($i['booked_signed'], $i['paid_ratio'])['open']));
+        }
+
+        $sql = "SELECT d.id, COALESCE(NULLIF(d.vendor_invoice_number, ''), NULLIF(d.varsymbol, ''), CONCAT('#', d.id)) AS doc_no,
+                       d.issue_date, d.due_date, d.status,
+                       cl.id AS partner_id, cl.company_name AS partner_name, cur.code AS currency_code,
+                       {$home('d.total_with_vat', 'd')} AS booked, {$home('d.total_vat', 'd')} AS vat,
+                       (SELECT COUNT(*) FROM purchase_invoices td WHERE td.supplier_id = d.supplier_id AND td.parent_purchase_invoice_id = d.id
+                           AND td.document_kind = 'tax_document' AND td.status NOT IN ('draft', 'cancelled')) AS tax_documents,
+                       (SELECT COALESCE(SUM(pm.amount), 0) FROM payment_matches pm
+                          JOIN bank_transactions bt ON bt.id = pm.bank_transaction_id AND bt.amount > 0
+                         WHERE pm.supplier_id = d.supplier_id AND pm.purchase_invoice_id = d.id AND DATE(bt.posted_at) <= ?)
+                     + (SELECT COALESCE(SUM(CASE WHEN ch.document_kind = 'tax_document'
+                                                 THEN (CASE WHEN l.side = 'credit' THEN l.signed_amount ELSE -l.signed_amount END)
+                                                 WHEN l.side = 'credit' THEN l.signed_amount ELSE 0 END), 0)
+                          FROM purchase_invoices ch
+                          JOIN journal_entries e ON e.supplier_id = ch.supplier_id AND e.source_type = 'purchase_invoice' AND e.source_id = ch.id
+                          JOIN journal_entry_lines l ON l.entry_id = e.id AND l.supplier_id = e.supplier_id
+                          JOIN chart_of_accounts ca ON ca.id = l.account_id
+                          LEFT JOIN journal_entries rev ON rev.id = e.reversed_by
+                         WHERE ch.supplier_id = d.supplier_id
+                           AND (ch.advance_purchase_invoice_id = d.id
+                                OR (ch.document_kind = 'tax_document' AND ch.parent_purchase_invoice_id = d.id AND ch.advance_purchase_invoice_id IS NULL))
+                           AND e.posted_at IS NOT NULL AND e.entry_date <= ?
+                           AND (e.reversed_by IS NULL OR rev.entry_date > ?)
+                           AND (ca.id = {$accountId} OR ca.parent_id = {$accountId}))
+                     + (SELECT COALESCE(SUM(pad.amount), 0) FROM purchase_advance_deductions pad
+                         WHERE pad.supplier_id = d.supplier_id AND pad.advance_invoice_id = d.id
+                           AND EXISTS (SELECT 1 FROM journal_entries fe LEFT JOIN journal_entries frev ON frev.id = fe.reversed_by
+                                        WHERE fe.supplier_id = pad.supplier_id AND fe.source_type = 'purchase_invoice'
+                                          AND fe.source_id = pad.final_invoice_id AND fe.posted_at IS NOT NULL
+                                          AND fe.entry_date <= ? AND (fe.reversed_by IS NULL OR frev.entry_date > ?))) AS settled
+                  FROM purchase_invoices d
+                  JOIN clients cl ON cl.id = d.vendor_id
+                  JOIN currencies cur ON cur.id = d.currency_id
+                 WHERE d.supplier_id = {$supplierId} AND d.status NOT IN ('draft', 'cancelled') AND d.document_kind = 'advance'
+                   AND " . $onOpening('purchase_invoice', 'd') . self::partnerSql($partnerId) . self::dueBeforeSql('d', $dueBefore);
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute(self::asOfParams($sql, $asOf));
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            // DPH zálohy zaplacené před počátečním stavem čerpal DDKP minulého roku, počáteční
+            // stav zálohového účtu tak nese jen základ - pokud DDKP mezi převedenými doklady není.
+            $booked = round((float) $r['booked'] - ((int) $r['tax_documents'] === 0 ? (float) $r['vat'] : 0.0), 2);
+            $ratio = $booked > 0.0 ? min(1.0, max(0.0, (float) $r['settled'] / $booked)) : 0.0;
+            $out[] = self::openingItem('purchase_invoice', $r, $booked, $ratio);
+        }
+        return array_values(array_filter($out, static fn (array $i): bool => self::settlementAmounts($i['booked_signed'], $i['paid_ratio'])['open']));
+    }
+
+    /**
+     * Záloha placená v konečné faktuře: přijatá faktura, jejíž předpis má DEBET na
+     * zálohovém účtu (typicky „záloha na služby" v měsíční faktuře nájmu, kterou
+     * vyúčtuje až roční vyúčtování služeb). Zálohový doklad k ní neexistuje, takže ji
+     * {@see fetchPaidAdvances} nevidí a hlavní kniha ji přitom nese. Položkou je debet
+     * předpisu na účtu; vyúčtování na ni vazbu nenese, proto zůstává otevřená, dokud
+     * nevznikne čerpání (`purchase_advance_deductions`, záloha = tato faktura).
+     *
+     * @return list<array<string,mixed>>
+     */
+    private function fetchInvoicePrepayments(int $supplierId, int $accountId, string $asOf, ?int $partnerId = null, ?string $dueBefore = null): array
+    {
+        $sql = "SELECT d.id, COALESCE(NULLIF(d.vendor_invoice_number, ''), NULLIF(d.varsymbol, ''), CONCAT('#', d.id)) AS doc_no,
+                       d.issue_date, d.due_date, d.status,
+                       cl.id AS partner_id, cl.company_name AS partner_name, cur.code AS currency_code,
+                       SUM(l.signed_amount) AS booked,
+                       (SELECT COALESCE(SUM(pad.amount), 0) FROM purchase_advance_deductions pad
+                         WHERE pad.supplier_id = d.supplier_id AND pad.advance_invoice_id = d.id
+                           AND EXISTS (SELECT 1 FROM journal_entries fe LEFT JOIN journal_entries frev ON frev.id = fe.reversed_by
+                                        WHERE fe.supplier_id = pad.supplier_id AND fe.source_type = 'purchase_invoice'
+                                          AND fe.source_id = pad.final_invoice_id AND fe.posted_at IS NOT NULL
+                                          AND fe.entry_date <= ? AND (fe.reversed_by IS NULL OR frev.entry_date > ?))) AS settled
+                  FROM purchase_invoices d
+                  JOIN journal_entries e ON e.supplier_id = d.supplier_id AND e.source_type = 'purchase_invoice' AND e.source_id = d.id
+                  JOIN journal_entry_lines l ON l.entry_id = e.id AND l.supplier_id = e.supplier_id AND l.side = 'debit'
+                  JOIN chart_of_accounts ca ON ca.id = l.account_id
+                  LEFT JOIN journal_entries rev ON rev.id = e.reversed_by
+                  JOIN clients cl ON cl.id = d.vendor_id
+                  JOIN currencies cur ON cur.id = d.currency_id
+                 WHERE d.supplier_id = {$supplierId} AND d.document_kind IN ('invoice', 'credit_note')
+                   AND d.status NOT IN ('draft', 'cancelled')
+                   AND e.posted_at IS NOT NULL AND e.entry_date <= ? AND (e.reversed_by IS NULL OR rev.entry_date > ?)
+                   AND (ca.id = {$accountId} OR ca.parent_id = {$accountId})"
+                   . self::partnerSql($partnerId) . self::dueBeforeSql('d', $dueBefore) . "
+                 GROUP BY d.id, doc_no, d.issue_date, d.due_date, d.status, cl.id, cl.company_name, cur.code";
+        $stmt = $this->db->pdo()->prepare($sql);
+        $stmt->execute(self::asOfParams($sql, $asOf));
+        $out = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $booked = round((float) $r['booked'], 2);
+            $ratio = $booked > 0.0 ? min(1.0, max(0.0, (float) $r['settled'] / $booked)) : 0.0;
+            $item = self::openingItem('purchase_invoice', $r, $booked, $ratio);
+            if (self::settlementAmounts($item['booked_signed'], $item['paid_ratio'])['open']) {
+                $out[] = $item;
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * Položka sestavy pro doklad počátečních stavů ({@see fetchOpeningDocuments}).
+     *
+     * @param array<string,mixed> $r
+     * @return array<string,mixed>
+     */
+    private static function openingItem(string $docType, array $r, float $booked, float $ratio): array
+    {
+        return [
+            'doc_type'       => $docType,
+            'doc_id'         => (int) $r['id'],
+            'doc_no'         => (string) $r['doc_no'],
+            'issue_date'     => (string) $r['issue_date'],
+            'due_date'       => (string) $r['due_date'],
+            'status'         => (string) $r['status'],
+            'partner_id'     => (int) $r['partner_id'],
+            'partner_name'   => (string) $r['partner_name'],
+            'currency_code'  => (string) $r['currency_code'],
+            'booked_signed'  => $booked,
+            'foreign_signed' => 0.0,
+            'paid_ratio'     => $ratio,
+        ];
     }
 
     /** `AND cl.id = <id>` (int literál, viz fetchOpenInvoices) nebo prázdný řetězec. */
@@ -784,8 +1016,13 @@ final class SaldoRepository
                          AND parent_purchase_invoice_id IS NOT NULL
                          AND advance_purchase_invoice_id IS NULL";
         } else {
-            $settledAmount = 'l.signed_amount';
-            $settledSide = "AND l.side = 'credit'";
+            // Konečná faktura čerpá zálohu kreditem zálohového účtu; její debet na témž účtu
+            // (např. záloha na služby v téže faktuře) zálohu nečerpá. DDKP se bere čistým
+            // pohybem: POHODA jím přeúčtovává základ mezi analytikami 314 a čerpá jen DPH.
+            $settledAmount = "CASE WHEN chd.document_kind = 'tax_document'
+                                  THEN (CASE WHEN l.side = 'credit' THEN l.signed_amount ELSE -l.signed_amount END)"
+                . " WHEN l.side = 'credit' THEN l.signed_amount ELSE 0 END";
+            $settledSide = '';
             $kindFilter = "(p.document_kind = 'advance'
                     OR (p.document_kind = 'tax_document' AND p.parent_purchase_invoice_id IS NULL))";
             // Čerpání zálohy má TŘI vazební cesty a všechny musí do součtu:
@@ -877,6 +1114,7 @@ final class SaldoRepository
                       {$links}
                   ) link
                   CROSS JOIN params x
+                  JOIN purchase_invoices chd ON chd.id = link.child_id
                   JOIN journal_entries e
                     ON e.supplier_id = link.supplier_id
                    AND e.source_type = 'purchase_invoice' AND e.source_id = link.child_id
@@ -889,13 +1127,45 @@ final class SaldoRepository
                    {$settledSide}
                    AND (ca.id = x.account_id OR ca.parent_id = x.account_id)
                  GROUP BY link.advance_id
+            ), deducted AS (
+                -- Čerpání po dvojicích záloha × konečná faktura (purchase_advance_deductions):
+                -- faktura, která odečítá víc záloh, nebo záloha čerpaná víc fakturami.
+                -- Platí od zaúčtování konečné faktury, stejně jako vazba výše.
+                SELECT pad.advance_invoice_id AS advance_id, SUM(pad.amount) AS amount
+                  FROM purchase_advance_deductions pad
+                  CROSS JOIN params x
+                 WHERE pad.supplier_id = x.supplier_id
+                   AND EXISTS (SELECT 1 FROM journal_entries fe
+                                 LEFT JOIN journal_entries frev ON frev.id = fe.reversed_by
+                                WHERE fe.supplier_id = pad.supplier_id AND fe.source_type = 'purchase_invoice'
+                                  AND fe.source_id = pad.final_invoice_id AND fe.posted_at IS NOT NULL
+                                  AND fe.entry_date <= x.as_of AND (fe.reversed_by IS NULL OR frev.entry_date > x.as_of))
+                 GROUP BY pad.advance_invoice_id
+                UNION ALL
+                -- Vrácení zálohy: příchozí platba spárovaná se zálohou, zaúčtovaná na zálohový účet.
+                SELECT pm.purchase_invoice_id, SUM(pm.amount)
+                  FROM payment_matches pm
+                  CROSS JOIN params x
+                  JOIN bank_transactions bt ON bt.id = pm.bank_transaction_id AND bt.amount > 0
+                 WHERE pm.supplier_id = x.supplier_id AND pm.purchase_invoice_id IS NOT NULL
+                   AND EXISTS (SELECT 1 FROM journal_entries re
+                                 JOIN journal_entry_lines rl ON rl.entry_id = re.id AND rl.supplier_id = re.supplier_id
+                                 JOIN chart_of_accounts rca ON rca.id = rl.account_id
+                                 LEFT JOIN journal_entries rrev ON rrev.id = re.reversed_by
+                                WHERE re.supplier_id = pm.supplier_id AND re.source_type = 'bank' AND re.source_id = bt.id
+                                  AND re.posted_at IS NOT NULL AND re.entry_date <= x.as_of
+                                  AND (re.reversed_by IS NULL OR rrev.entry_date > x.as_of)
+                                  AND rl.side = 'credit' AND (rca.id = x.account_id OR rca.parent_id = x.account_id))
+                 GROUP BY pm.purchase_invoice_id
+            ), deducted_sum AS (
+                SELECT advance_id, SUM(amount) AS amount FROM deducted GROUP BY advance_id
             )
             SELECT p.id AS doc_id,
                    COALESCE(NULLIF(p.vendor_invoice_number, ''), NULLIF(p.varsymbol, ''), CONCAT('#', p.id)) AS doc_no,
                    p.issue_date, p.due_date, p.status,
                    cl.id AS partner_id, cl.company_name AS partner_name,
                    cur.code AS currency_code,
-                   paid.paid_czk, COALESCE(s.settled_czk, 0) AS settled_czk,
+                   paid.paid_czk, COALESCE(s.settled_czk, 0) + COALESCE(dd.amount, 0) AS settled_czk,
                    (SELECT td.id FROM purchase_invoices td
                      WHERE td.supplier_id = p.supplier_id AND td.parent_purchase_invoice_id = p.id
                        AND td.document_kind = 'tax_document' AND td.status NOT IN ('draft', 'cancelled')
@@ -906,8 +1176,9 @@ final class SaldoRepository
               JOIN clients cl ON cl.id = p.vendor_id
               JOIN currencies cur ON cur.id = p.currency_id
               LEFT JOIN settled s ON s.advance_id = p.id
+              LEFT JOIN deducted_sum dd ON dd.advance_id = p.id
              WHERE {$kindFilter}
-               AND " . self::advanceOpenFilterSql('paid.paid_czk', 'COALESCE(s.settled_czk, 0)')
+               AND " . self::advanceOpenFilterSql('paid.paid_czk', 'COALESCE(s.settled_czk, 0) + COALESCE(dd.amount, 0)')
                . self::partnerSql($partnerId)
                . self::dueBeforeSql('p', $dueBefore)
                . self::orderSql('p', $orderByDue);
