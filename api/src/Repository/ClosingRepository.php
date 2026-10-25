@@ -6,6 +6,7 @@ namespace MyInvoice\Repository;
 
 use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Service\Accounting\Activation\OpeningBalanceDocuments;
+use MyInvoice\Service\Accounting\TakenOverRecord;
 use MyInvoice\Service\Accounting\Closing\ClosingSourceId;
 use MyInvoice\Service\Accounting\DocumentPostingGroup;
 use MyInvoice\Service\Accounting\ForeignCurrencyAccountPolicy;
@@ -2043,6 +2044,11 @@ final class ClosingRepository
               WHERE p.supplier_id = ? AND p.document_kind = 'advance' AND p.status = 'paid'
                 AND (p.paid_at IS NULL OR p.paid_at <= ?)
                 AND " . OpeningBalanceDocuments::notInOpeningSql('purchase_invoice', 'p') . "
+                -- Záloha převzatá z jiného programu, uhrazená před počátečním stavem: platbu
+                -- i vyúčtování zaúčtoval zdroj v letech, které MyÚčto nevede.
+                AND NOT (" . TakenOverRecord::documentSql('purchase_invoice', 'p') . "
+                         AND COALESCE(p.paid_at, p.issue_date) < (SELECT MIN(oe.entry_date) FROM journal_entries oe
+                                                                   WHERE oe.supplier_id = p.supplier_id AND oe.source_type = 'opening'))
                 AND NOT EXISTS (
                     SELECT 1 FROM payment_matches pm
                       JOIN journal_entries e ON e.supplier_id = p.supplier_id

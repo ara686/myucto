@@ -67,6 +67,7 @@ final class DocumentLinker
             }
         }
         $orphans = [];
+        $openingAdvances = [];
         foreach ([
             [PohodaJournal::RECEIVED, 'purchase_invoice', 'purchase_invoice', $ctx->purchaseInvoices, null],
             [PohodaJournal::COMMITMENT, 'manual', 'purchase_invoice', $ctx->commitments, 'purchase_invoice'],
@@ -88,7 +89,11 @@ final class DocumentLinker
                 if ($entryIds === []) {
                     if (isset($ctx->previousPeriod[$docType . '|' . $docId])) {
                         $p->count(self::STEP_LINK, 'previous_period');
-                        $this->linkOpening($ctx, $docType, (int) $docId);
+                        if ($docType === 'purchase_invoice' && $this->isAdvance((int) $docId)) {
+                            $openingAdvances[(int) $docId] = true;
+                        } else {
+                            $this->linkOpening($ctx, $docType, (int) $docId);
+                        }
                     } elseif ($docType === 'cash' && isset($ctx->openingCash[(int) $docId])) {
                         // Pokladní doklad počátečního stavu: zápis nemá, naváže se na otevírací zápis níže.
                     } elseif (isset($unbooked[$docType][$docId])) {
@@ -108,6 +113,7 @@ final class DocumentLinker
                 $p->count(self::STEP_LINK, $new ? 'linked' : 'existing');
             }
         }
+        $this->linkOpeningAdvances($ctx, array_keys($openingAdvances));
         foreach (array_keys($ctx->openingCash) as $cashId) {
             if ($this->linkOpening($ctx, 'cash', (int) $cashId)) {
                 $p->count(self::STEP_LINK, 'opening_cash');
@@ -990,6 +996,61 @@ final class DocumentLinker
      * doklad počátečního stavu) dostane vazbu na otevírací zápis období. Zápis vlastní mít
      * nesmí a Doúčtování dokladů ho podle té vazby vynechá ({@see OpeningBalanceDocuments}).
      */
+    private function isAdvance(int $purchaseInvoiceId): bool
+    {
+        $stmt = $this->db->pdo()->prepare("SELECT document_kind = 'advance' FROM purchase_invoices WHERE id = ?");
+        $stmt->execute([$purchaseInvoiceId]);
+        return (bool) $stmt->fetchColumn();
+    }
+
+    /**
+     * Poskytnuté zálohy minulých let do počátečního stavu 314. POHODA nese zálohu v agendě
+     * dál, dokud ji nečerpá vazbou z konečné faktury; zálohu vyúčtovanou fakturou bez vazby
+     * (předplatné, pravidelné platby) tak převádí rok co rok, ačkoli na 314 už není. Zálohy
+     * se proto navážou na otevírací zápis jen tehdy, když se celé vejdou do počátečního
+     * zůstatku 314 (předpis zálohy bez DDKP je základ). Jinak zůstanou vyrovnané a zůstatek
+     * 314 v saldokontu ukáže rozdíl bez dokladů; vazba z dřívějšího převodu se zruší.
+     *
+     * @param list<int> $advanceIds
+     */
+    private function linkOpeningAdvances(PohodaContext $ctx, array $advanceIds): void
+    {
+        if ($advanceIds === [] || $ctx->period === null) {
+            return;
+        }
+        $pdo = $this->db->pdo();
+        $s = $ctx->supplierId;
+        $periodId = (int) $ctx->period['id'];
+        $balance = (float) $pdo->query(
+            "SELECT COALESCE(SUM(CASE WHEN l.side = 'debit' THEN l.amount ELSE -l.amount END), 0)
+               FROM journal_entries e JOIN journal_entry_lines l ON l.entry_id = e.id AND l.supplier_id = e.supplier_id
+               JOIN chart_of_accounts ca ON ca.id = l.account_id LEFT JOIN chart_of_accounts pa ON pa.id = ca.parent_id
+              WHERE e.supplier_id = {$s} AND e.period_id = {$periodId} AND e.source_type = 'opening' AND e.reversed_by IS NULL
+                AND (ca.account_code LIKE '314%' OR COALESCE(pa.account_code, '') LIKE '314%')"
+        )->fetchColumn();
+        $ids = implode(',', array_map('intval', $advanceIds));
+        $total = (float) $pdo->query(
+            "SELECT COALESCE(SUM(CASE WHEN EXISTS (SELECT 1 FROM purchase_invoices t WHERE t.parent_purchase_invoice_id = a.id)
+                                      THEN a.total_with_vat ELSE a.total_with_vat - a.total_vat END), 0)
+               FROM purchase_invoices a WHERE a.supplier_id = {$s} AND a.id IN ({$ids})"
+        )->fetchColumn();
+        if ($total <= $balance + 0.005) {
+            foreach ($advanceIds as $id) {
+                $this->linkOpening($ctx, 'purchase_invoice', $id);
+            }
+            return;
+        }
+        $unlinked = $pdo->exec(
+            "DELETE dl FROM journal_entry_document_links dl JOIN journal_entries e ON e.id = dl.entry_id
+              WHERE dl.supplier_id = {$s} AND e.source_type = 'opening' AND e.period_id = {$periodId}
+                AND dl.doc_type = 'purchase_invoice' AND dl.doc_id IN ({$ids})"
+        );
+        $ctx->protocol->info(self::STEP_LINK, 'opening_advances_settled', sprintf(
+            '%d poskytnutých záloh z minulých let (%s Kč) se do počátečního stavu 314 (%s Kč) nevejde; POHODA je nese bez vazby na konečnou fakturu. V saldokontu se berou jako vyúčtované.',
+            count($advanceIds), number_format($total, 2, ',', ' '), number_format($balance, 2, ',', ' '),
+        ), ['unlinked' => (int) $unlinked]);
+    }
+
     private function linkOpening(PohodaContext $ctx, string $docType, int $docId): bool
     {
         return $this->entries->linkOpening($ctx->supplierId, $ctx->userOrNull(), $ctx->period !== null ? (int) $ctx->period['id'] : null, $docType, $docId);
