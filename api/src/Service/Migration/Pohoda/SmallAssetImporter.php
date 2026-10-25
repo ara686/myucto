@@ -55,6 +55,9 @@ final class SmallAssetImporter
                 $p->count(self::STEP, 'existing');
                 continue;
             }
+            if ($ctx->skipsNew(self::STEP)) {
+                continue;
+            }
             $date = PohodaXml::date($row, 'Datum');
             $name = PohodaXml::text($row, 'SText') ?: $number;
             if ($date === null || $name === '') {

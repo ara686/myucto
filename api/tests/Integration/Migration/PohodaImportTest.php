@@ -164,6 +164,45 @@ final class PohodaImportTest extends TestCase
         self::assertSame($before, $this->snapshot($supplierId));
     }
 
+    /**
+     * Opravný převod vazeb: firma se po převodu účtuje v MyÚčtu, takže řádný opakovaný převod
+     * odmítne rozjetý deník. Opravný převod projde novější export, nový doklad (26PF0002) ani
+     * zápis nezaloží, vlastní zápis uživatele nechá být a chybějící úhrady převzatých faktur
+     * dopočítá znovu.
+     */
+    public function testRelinkRestoresPaymentsWithoutCreatingNewRecords(): void
+    {
+        $supplierId = $this->supplier();
+        $first = $this->importer->run($supplierId, $this->userId, PohodaExport::open(SyntheticPohodaExport::write($this->tmp . '/a')), false);
+        self::assertFalse($first->hasErrors(), $this->explain($first));
+        $payments = $this->rows('invoice_payments', $supplierId);
+        self::assertGreaterThan(0, $payments);
+        $purchases = $this->rows('purchase_invoices', $supplierId);
+
+        $periodId = (int) $this->db->pdo()->query("SELECT id FROM accounting_periods WHERE supplier_id = {$supplierId} ORDER BY starts_on DESC LIMIT 1")->fetchColumn();
+        $account = static fn (\PDO $pdo, string $code): int => (int) $pdo->query("SELECT id FROM chart_of_accounts WHERE supplier_id = {$supplierId} AND account_code = '{$code}'")->fetchColumn();
+        $pdo = $this->db->pdo();
+        $pdo->prepare("INSERT INTO journal_entries (supplier_id, period_id, entry_date, description, source_type, posted_at) VALUES (?, ?, ?, 'Vlastní zápis v MyÚčtu', 'manual', NOW())")
+            ->execute([$supplierId, $periodId, SyntheticPohodaExport::YEAR . '-11-30']);
+        $entryId = (int) $pdo->lastInsertId();
+        $pdo->prepare("INSERT INTO journal_entry_lines (entry_id, supplier_id, account_id, side, amount, line_no) VALUES (?, ?, ?, 'debit', 100, 1), (?, ?, ?, 'credit', 100, 2)")
+            ->execute([$entryId, $supplierId, $account($pdo, '518000') ?: $account($pdo, '518'), $entryId, $supplierId, $account($pdo, '321001') ?: $account($pdo, '321')]);
+        $entries = $this->rows('journal_entries', $supplierId);
+        $pdo->prepare('DELETE FROM invoice_payments WHERE supplier_id = ?')->execute([$supplierId]);
+
+        $newer = PohodaExport::open(SyntheticPohodaExport::write($this->tmp . '/b', true));
+        $refused = $this->importer->run($supplierId, $this->userId, $newer, false);
+        self::assertTrue($refused->hasErrors(), 'Řádný převod do rozjetého deníku nesmí projít.');
+
+        $relink = $this->importer->run($supplierId, $this->userId, $newer, false, relinkOnly: true);
+        self::assertFalse($relink->hasErrors(), $this->explain($relink));
+        self::assertSame($entries, $this->rows('journal_entries', $supplierId), 'Opravný převod nezakládá zápisy.');
+        self::assertSame($purchases, $this->rows('purchase_invoices', $supplierId), 'Novější doklad z POHODY se nepřidá.');
+        self::assertGreaterThan(0, self::stepCounts($relink, 'purchase_invoices')['relink_skipped'] ?? 0, $this->explain($relink));
+        self::assertSame(1, $this->rows('journal_entries', $supplierId, "id = {$entryId}"), 'Vlastní zápis uživatele zůstává.');
+        self::assertSame($payments, $this->rows('invoice_payments', $supplierId), 'Úhrady převzatých faktur se dopočítají znovu.');
+    }
+
     public function testUnknownDocumentTypesWarnAndKeepImportingKnownDocuments(): void
     {
         $supplierId = $this->supplier();

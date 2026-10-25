@@ -11,6 +11,7 @@ use MyInvoice\Service\Accounting\Activation\OpeningBalanceDocuments;
 use MyInvoice\Service\Accounting\FiscalCalendar;
 use MyInvoice\Service\Accounting\OtherItemException;
 use MyInvoice\Service\Accounting\OtherItemService;
+use MyInvoice\Service\Accounting\TakenOverRecord;
 use MyInvoice\Service\Migration\MoneyS3\ImportProtocol;
 use MyInvoice\Service\Migration\Shared\JournalEntryLinker;
 use PDO;
@@ -699,7 +700,7 @@ final class DocumentLinker
                 AND EXISTS (SELECT 1 FROM journal_entries e JOIN journal_entry_lines l ON l.entry_id = e.id
                               JOIN chart_of_accounts ca ON ca.id = l.account_id LEFT JOIN chart_of_accounts pa ON pa.id = ca.parent_id
                              WHERE e.supplier_id = {$s} AND e.source_type = 'bank' AND e.source_id = bt.id AND e.reversed_by IS NULL
-                               AND l.side = 'credit' AND {$advanceAccount})"
+                               AND l.side = 'credit' AND {$advanceAccount} AND " . TakenOverRecord::journalEntrySql('e') . ')'
         )->fetchAll(PDO::FETCH_ASSOC);
         $match = $pdo->prepare('INSERT INTO payment_matches (supplier_id, bank_transaction_id, invoice_id, purchase_invoice_id, amount, match_type, matched_by_user_id) VALUES (?, ?, NULL, ?, ?, "manual", ?)');
         foreach ($refunds as $t) {
@@ -767,7 +768,7 @@ final class DocumentLinker
                JOIN bank_transactions bt ON bt.id = pm.bank_transaction_id
                JOIN journal_entries e ON e.supplier_id = pm.supplier_id AND e.source_type = 'bank' AND e.source_id = pm.bank_transaction_id
                                      AND e.reversed_by IS NULL AND e.posted_at IS NOT NULL
-              WHERE pm.supplier_id = {$s}
+              WHERE pm.supplier_id = {$s} AND " . TakenOverRecord::journalEntrySql('e') . "
               GROUP BY pm.bank_transaction_id
              HAVING COUNT(DISTINCT COALESCE(pm.invoice_id, 0), COALESCE(pm.purchase_invoice_id, 0)) = 1"
         )->fetchAll(PDO::FETCH_ASSOC);

@@ -72,6 +72,9 @@ final class PartnerImporter
                 $p->count(self::STEP_PARTNERS, 'existing');
                 continue;
             }
+            if ($ctx->skipsNew(self::STEP_PARTNERS)) {
+                continue;
+            }
             $s['email'] = PohodaXml::text($h, 'email');
             $s['phone'] = PohodaXml::text($h, 'mobil') ?: PohodaXml::text($h, 'phone');
             $s['note'] = 'Převzato z Pohody (adresář č. ' . $id . ')';
