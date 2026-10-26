@@ -6819,6 +6819,7 @@
                 "journal_entry_id": "bigint(20) unsigned NULL DEFAULT NULL",
                 "kind": "varchar(32) NOT NULL DEFAULT 'other'",
                 "note": "text NULL DEFAULT NULL",
+                "origin": "enum('draft','journal') NOT NULL DEFAULT 'draft'",
                 "partner_id": "bigint(20) unsigned NULL DEFAULT NULL",
                 "partner_name": "varchar(190) NULL DEFAULT NULL",
                 "posted_at": "datetime NULL DEFAULT NULL",
@@ -6836,10 +6837,8 @@
             "indexes": {
                 "PRIMARY": "UNIQUE BTREE (id)",
                 "fk_internal_document_created_by": "BTREE (created_by)",
-                "fk_internal_document_entry": "BTREE (journal_entry_id)",
                 "fk_internal_document_partner": "BTREE (partner_id)",
                 "fk_internal_document_posted_by": "BTREE (posted_by)",
-                "fk_internal_document_reversal": "BTREE (reversal_entry_id)",
                 "fk_internal_document_updated_by": "BTREE (updated_by)",
                 "idx_internal_document_date": "BTREE (supplier_id, document_date, id)",
                 "idx_internal_document_partner": "BTREE (supplier_id, partner_id, document_date)",
@@ -6851,10 +6850,10 @@
             },
             "foreign_keys": {
                 "fk_internal_document_created_by": "(created_by) -> users (id) ON UPDATE RESTRICT ON DELETE SET NULL",
-                "fk_internal_document_entry": "(journal_entry_id) -> journal_entries (id) ON UPDATE RESTRICT ON DELETE SET NULL",
+                "fk_internal_document_entry": "(supplier_id, journal_entry_id) -> journal_entries (supplier_id, id) ON UPDATE RESTRICT ON DELETE RESTRICT",
                 "fk_internal_document_partner": "(partner_id) -> clients (id) ON UPDATE RESTRICT ON DELETE SET NULL",
                 "fk_internal_document_posted_by": "(posted_by) -> users (id) ON UPDATE RESTRICT ON DELETE SET NULL",
-                "fk_internal_document_reversal": "(reversal_entry_id) -> journal_entries (id) ON UPDATE RESTRICT ON DELETE SET NULL",
+                "fk_internal_document_reversal": "(supplier_id, reversal_entry_id) -> journal_entries (supplier_id, id) ON UPDATE RESTRICT ON DELETE RESTRICT",
                 "fk_internal_document_supplier": "(supplier_id) -> supplier (id) ON UPDATE RESTRICT ON DELETE CASCADE",
                 "fk_internal_document_updated_by": "(updated_by) -> users (id) ON UPDATE RESTRICT ON DELETE SET NULL"
             },

@@ -378,7 +378,7 @@ final class InternalDocumentTest extends TestCase
         ], ['entry_date' => self::YEAR . '-02-01', 'description' => 'Odpis nedobytné pohledávky', 'document_no' => null, 'posted' => true]);
         self::assertNull($this->entry($entryId)['document_no']);
 
-        $result = $this->service->createFromEntry($this->supplierId, $entryId, ['kind' => 'write_off'], null);
+        $result = $this->service->createFromEntry($this->supplierId, $entryId, ['kind' => 'write_off'], $this->audit());
         $doc = $result['document'];
         self::assertTrue($result['numbered']);
         self::assertSame('posted', $doc['status']);
@@ -391,13 +391,13 @@ final class InternalDocumentTest extends TestCase
             array_map(static fn (array $l): string => $l['account_code'] . ':' . $l['side'] . ':' . number_format($l['amount'], 2, '.', ''), $doc['lines']));
 
         try {
-            $this->service->createFromEntry($this->supplierId, $entryId, [], null);
+            $this->service->createFromEntry($this->supplierId, $entryId, [], $this->audit());
             self::fail('Druhá hlavička nad týmž zápisem musí být odmítnuta.');
         } catch (InternalDocumentException $e) {
             self::assertSame('entry_has_document', $e->errorCode);
         }
         try {
-            $this->service->createFromEntry($this->otherSupplierId, $entryId, [], null);
+            $this->service->createFromEntry($this->otherSupplierId, $entryId, [], $this->audit());
             self::fail('Zápis cizí firmy nesmí být dostupný.');
         } catch (InternalDocumentException $e) {
             self::assertSame(404, $e->httpStatus);
@@ -448,6 +448,158 @@ final class InternalDocumentTest extends TestCase
         $left = $this->pdo->prepare("SELECT COUNT(*) FROM document_links WHERE supplier_id = ? AND entity_type = 'internal_document'");
         $left->execute([$this->supplierId]);
         self::assertSame(0, (int) $left->fetchColumn());
+    }
+
+    public function testFromEntryRejectsEntryOwnedByDocumentPosting(): void
+    {
+        $entryId = $this->manualEntry(['document_no' => 'SYN-1']);
+        $invoiceId = (int) $this->pdo->query('SELECT MAX(id) FROM invoices')->fetchColumn() + 1000000;
+        $this->pdo->exec('SET FOREIGN_KEY_CHECKS = 1');
+        $this->pdo->prepare("INSERT INTO journal_document_postings (supplier_id, doc_type, doc_id, entry_id) VALUES (?, 'invoice', ?, ?)")
+            ->execute([$this->supplierId, $invoiceId, $entryId]);
+        try {
+            $this->service->createFromEntry($this->supplierId, $entryId, [], $this->audit());
+            self::fail('Zápis převzatý dokladem nesmí dostat interní doklad.');
+        } catch (InternalDocumentException $e) {
+            self::assertSame('entry_owned_by_document', $e->errorCode);
+        }
+        self::assertSame(0, $this->service->list($this->supplierId, [], 1, 50)['total']);
+    }
+
+    public function testDatabaseRefusesDeletingEntryBehindTheHeader(): void
+    {
+        $posted = $this->service->post($this->supplierId,
+            (int) $this->service->create($this->supplierId, $this->input(), null)['id'], $this->audit());
+        try {
+            $this->pdo->prepare('DELETE FROM journal_entries WHERE id = ? AND supplier_id = ?')
+                ->execute([(int) $posted['journal_entry_id'], $this->supplierId]);
+            self::fail('Smazání zápisu mimo deník musí cizí klíč odmítnout.');
+        } catch (\PDOException $e) {
+            self::assertSame('23000', $e->errorInfo[0] ?? null);
+        }
+        self::assertSame('posted', $this->service->get($this->supplierId, (int) $posted['id'])['status']);
+    }
+
+    public function testJournalDeleteRefusesEntryUnderHeaderCreatedFromEntry(): void
+    {
+        $entryId = $this->manualEntry(['document_no' => 'SYN-2']);
+        $doc = $this->service->createFromEntry($this->supplierId, $entryId, [], $this->audit())['document'];
+        self::assertSame('journal', $doc['origin']);
+        $response = $this->container->get(JournalAction::class)->delete(
+            $this->request('DELETE', ['accounting' => 2, 'accounting.journal.write' => 2, 'accounting.journal.post' => 2]),
+            new Response(), ['id' => (string) $entryId]);
+        self::assertSame(409, $response->getStatusCode());
+        self::assertSame('internal_document_use_detail', $this->error($response));
+        self::assertSame('posted', $this->service->get($this->supplierId, (int) $doc['id'])['status']);
+        self::assertSame(1, $this->manualEntryCount());
+    }
+
+    public function testAssignedEntryNumberIsAuditedAndRespectsClosedPeriod(): void
+    {
+        $entryId = $this->manualEntry();
+        $this->service->createFromEntry($this->supplierId, $entryId, [], $this->audit());
+        $log = $this->pdo->prepare("SELECT payload FROM activity_log
+            WHERE entity_type = 'journal_entry' AND entity_id = ? AND action = 'accounting.document_no_assigned'");
+        $log->execute([$entryId]);
+        $payload = json_decode((string) $log->fetchColumn(), true);
+        self::assertSame('ID-' . self::YEAR . '-0001', $payload['after'] ?? null);
+
+        $second = $this->manualEntry();
+        $this->container->get(AccountingPeriodRepository::class)->setStatus($this->periodId, $this->supplierId, 'closed');
+        try {
+            $this->service->createFromEntry($this->supplierId, $second, [], $this->audit());
+            self::fail('Zápisu v uzavřeném období číslo přidělit nelze.');
+        } catch (PostingException $e) {
+            self::assertSame('period_not_open', $e->errorCode);
+        }
+        self::assertNull($this->entry($second)['document_no']);
+    }
+
+    public function testSeriesCollisionIsSkippedAndTakenEntryNumberIsConflict(): void
+    {
+        // Doklad převzal číslo, které řada ID vydá jako první.
+        $this->service->createFromEntry($this->supplierId,
+            $this->manualEntry(['document_no' => 'ID-' . self::YEAR . '-0001']), [], $this->audit());
+        $posted = $this->service->post($this->supplierId,
+            (int) $this->service->create($this->supplierId, $this->input(), null)['id'], $this->audit());
+        self::assertSame('ID-' . self::YEAR . '-0002', $posted['document_no']);
+
+        try {
+            $this->service->createFromEntry($this->supplierId,
+                $this->manualEntry(['document_no' => 'ID-' . self::YEAR . '-0002']), [], $this->audit());
+            self::fail('Číslo, které nese jiný interní doklad, musí skončit konfliktem.');
+        } catch (InternalDocumentException $e) {
+            self::assertSame('document_no_taken', $e->errorCode);
+            self::assertSame(409, $e->httpStatus);
+        }
+    }
+
+    public function testJournalReversalCheckRunsUnderLockInsideTransaction(): void
+    {
+        $posted = $this->service->post($this->supplierId,
+            (int) $this->service->create($this->supplierId, $this->input(), null)['id'], $this->audit());
+        try {
+            $this->service->assertJournalReversible($this->supplierId, (int) $posted['journal_entry_id']);
+            self::fail('Zápis interního dokladu nesmí jít stornovat z deníku.');
+        } catch (PostingException $e) {
+            self::assertSame('internal_document_use_detail', $e->errorCode);
+            self::assertSame(409, $e->httpStatus);
+        }
+        $this->service->assertJournalReversible($this->supplierId, $this->manualEntry());
+        self::assertTrue(true);
+    }
+
+    public function testNumberIsDroppedWhenDraftMovesToAnotherFiscalYear(): void
+    {
+        $posted = $this->service->post($this->supplierId,
+            (int) $this->service->create($this->supplierId, $this->input(), null)['id'], $this->audit());
+        $this->container->get(JournalAction::class)->delete(
+            $this->request('DELETE', ['accounting' => 2, 'accounting.journal.write' => 2, 'accounting.journal.post' => 2]),
+            new Response(), ['id' => (string) $posted['journal_entry_id']]);
+        $sameYear = $this->service->update($this->supplierId, (int) $posted['id'], ['entry_date' => self::YEAR . '-05-01'], null);
+        self::assertSame($posted['document_no'], $sameYear['document_no']);
+        $nextYear = $this->service->update($this->supplierId, (int) $posted['id'],
+            ['document_date' => (self::YEAR + 1) . '-01-05', 'entry_date' => (self::YEAR + 1) . '-01-05'], null);
+        self::assertNull($nextYear['document_no']);
+    }
+
+    public function testPartialUpdateKeepsClosedDimensionAndParsesRedStornoFlag(): void
+    {
+        $this->pdo->prepare("UPDATE supplier SET dimensions_enabled = 1 WHERE id = ?")->execute([$this->supplierId]);
+        $this->pdo->prepare("INSERT INTO dimension_types (supplier_id, code, name) VALUES (?, 'ZAK', 'Syntetická zakázka')")
+            ->execute([$this->supplierId]);
+        $typeId = (int) $this->pdo->lastInsertId();
+        $this->pdo->prepare("INSERT INTO dimension_values (type_id, supplier_id, code, name) VALUES (?, ?, 'Z1', 'Syntetická hodnota')")
+            ->execute([$typeId, $this->supplierId]);
+        $valueId = (int) $this->pdo->lastInsertId();
+        $draft = $this->service->create($this->supplierId, $this->input(['lines' => [
+            ['account_code' => '321', 'side' => 'debit', 'amount' => 1500, 'is_red_storno' => 'false', 'dimensions' => [$typeId => $valueId]],
+            ['account_code' => '311', 'side' => 'credit', 'amount' => 1500, 'is_red_storno' => '0'],
+        ]]), null);
+        self::assertFalse($draft['lines'][0]['is_red_storno']);
+        self::assertSame(1500.0, $draft['amount']);
+
+        $this->pdo->prepare('UPDATE dimension_values SET is_active = 0 WHERE id = ?')->execute([$valueId]);
+        $updated = $this->service->update($this->supplierId, (int) $draft['id'], ['title' => 'Přejmenovaný koncept'], null);
+        self::assertSame('Přejmenovaný koncept', $updated['title']);
+        self::assertSame([$typeId => $valueId], array_map('intval', $updated['lines'][0]['dimensions']));
+
+        try {
+            $this->service->create($this->supplierId, $this->input(['lines' => [
+                ['account_code' => '321', 'side' => 'debit', 'amount' => 1, 'is_red_storno' => 'nevím'],
+            ]]), null);
+            self::fail('Nečitelný příznak červeného storna musí být validační chyba.');
+        } catch (InternalDocumentException $e) {
+            self::assertSame('invalid_lines', $e->errorCode);
+        }
+    }
+
+    private function manualEntry(array $meta = []): int
+    {
+        return $this->container->get(ManualJournalEntryService::class)->post($this->supplierId, [
+            ['account_code' => '546', 'side' => 'debit', 'amount' => 800.0],
+            ['account_code' => '311', 'side' => 'credit', 'amount' => 800.0],
+        ], $meta + ['entry_date' => self::YEAR . '-02-01', 'description' => 'Syntetický ruční zápis', 'document_no' => null, 'posted' => true]);
     }
 
     private function doubleEntrySupplier(int $source): int

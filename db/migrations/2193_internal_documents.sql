@@ -13,6 +13,11 @@
 --
 -- Koncept drží řádky kontace (`internal_document_lines`) a vazby na doklady
 -- (`document_links_json`, přenesou se do `journal_entry_document_links` při zaúčtování).
+--
+-- Zápis dokladu nejde smazat mimo JournalAction::delete (ten hlavičku předem vrátí do
+-- konceptu), proto ON DELETE RESTRICT: jinak by doklad zůstal zaúčtovaný bez zápisu.
+-- `origin = journal` = hlavička vzniklá nad existujícím ručním zápisem; její řádky jsou jen
+-- náhled (bez dimenzí, měny a vazeb), takže se takový zápis v deníku smazat nedá.
 -- Přílohy jdou přes Dokumenty (`document_links`, typ entity `internal_document`).
 SET NAMES utf8mb4;
 
@@ -29,6 +34,7 @@ CREATE TABLE IF NOT EXISTS internal_documents (
   note                TEXT NULL,
   document_links_json LONGTEXT NULL,
   status              ENUM('draft','posted','reversed') NOT NULL DEFAULT 'draft',
+  origin              ENUM('draft','journal') NOT NULL DEFAULT 'draft',
   document_no         VARCHAR(50) NULL,
   journal_entry_id    BIGINT UNSIGNED NULL,
   reversal_entry_id   BIGINT UNSIGNED NULL,
@@ -50,8 +56,8 @@ CREATE TABLE IF NOT EXISTS internal_documents (
   KEY idx_internal_document_partner (supplier_id, partner_id, document_date),
   CONSTRAINT fk_internal_document_supplier FOREIGN KEY (supplier_id) REFERENCES supplier(id) ON DELETE CASCADE,
   CONSTRAINT fk_internal_document_partner FOREIGN KEY (partner_id) REFERENCES clients(id) ON DELETE SET NULL,
-  CONSTRAINT fk_internal_document_entry FOREIGN KEY (journal_entry_id) REFERENCES journal_entries(id) ON DELETE SET NULL,
-  CONSTRAINT fk_internal_document_reversal FOREIGN KEY (reversal_entry_id) REFERENCES journal_entries(id) ON DELETE SET NULL,
+  CONSTRAINT fk_internal_document_entry FOREIGN KEY (supplier_id, journal_entry_id) REFERENCES journal_entries(supplier_id, id) ON DELETE RESTRICT,
+  CONSTRAINT fk_internal_document_reversal FOREIGN KEY (supplier_id, reversal_entry_id) REFERENCES journal_entries(supplier_id, id) ON DELETE RESTRICT,
   CONSTRAINT fk_internal_document_posted_by FOREIGN KEY (posted_by) REFERENCES users(id) ON DELETE SET NULL,
   CONSTRAINT fk_internal_document_created_by FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
   CONSTRAINT fk_internal_document_updated_by FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL,

@@ -35,6 +35,8 @@ export interface InternalDocument {
   amount: number
   note: string | null
   status: InternalDocumentStatus
+  /** journal = hlavička nad existujícím ručním zápisem (zápis v deníku nejde smazat). */
+  origin?: 'draft' | 'journal'
   document_no: string | null
   journal_entry_id: number | null
   reversal_entry_id: number | null

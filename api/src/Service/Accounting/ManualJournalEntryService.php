@@ -183,9 +183,14 @@ final class ManualJournalEntryService
     /** Další číslo řady ID pro účetní rok data zápisu. Vyžaduje transakci volajícího. */
     public function nextNumber(int $supplierId, string $entryDate): string
     {
+        return $this->series->next($supplierId, 'manual', $this->fiscalYear($supplierId, $entryDate));
+    }
+
+    /** Účetní rok data zápisu (řada ID se čísluje po účetních letech, ne kalendářních). */
+    public function fiscalYear(int $supplierId, string $entryDate): int
+    {
         $period = $this->periods->findForDate($supplierId, $entryDate);
-        $fiscalYear = (int) ($period['fiscal_year'] ?? substr($entryDate, 0, 4));
-        return $this->series->next($supplierId, 'manual', $fiscalYear);
+        return (int) ($period['fiscal_year'] ?? substr($entryDate, 0, 4));
     }
 
     /** Varování pravidel dimenzí z posledního zaúčtování (zápis proběhl, uživatel je jen uvidí). */

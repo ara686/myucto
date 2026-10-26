@@ -128,7 +128,7 @@ final class InternalDocumentAction
         return $this->run($request, $response, function () use ($request, $args) {
             $entryId = (int) $args['id'];
             $result = $this->service->createFromEntry($this->currentSupplierId($request), $entryId,
-                $this->body($request), $this->userId($request));
+                $this->body($request), $this->auditMeta($request));
             $doc = $result['document'];
             $this->log($request, 'internal_document.from_entry', (int) $doc['id'],
                 ['journal_entry_id' => $entryId, 'document_no' => $doc['document_no'], 'entry_numbered' => $result['numbered']]);

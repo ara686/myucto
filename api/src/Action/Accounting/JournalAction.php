@@ -1183,12 +1183,6 @@ final class JournalAction
             return Json::error($response, 'other_item_use_detail',
                 'Účetní zápis ostatní položky stornujte v jejím detailu, aby se aktualizoval i stav položky.', 409);
         }
-        // Zápis interního dokladu se stornuje v detailu dokladu, aby doklad přešel do stavu stornováno.
-        if ($original !== null && $this->internalDocuments->forEntry($supplierId, $id) !== null) {
-            return Json::error($response, 'internal_document_use_detail',
-                'Účetní zápis interního dokladu stornujte v jeho detailu, aby se aktualizoval i stav dokladu.', 409);
-        }
-
         $body = (array) ($request->getParsedBody() ?? []);
         $entryDate = $this->nullableString($body['entry_date'] ?? null);
         if ($entryDate !== null && !$this->isDate($entryDate)) {
@@ -1204,6 +1198,8 @@ final class JournalAction
             $reversalId = TransactionFailure::retrying($this->db->pdo(), fn (): int =>
                 (new DimensionPeriodGuard($this->db))->transaction(function () use ($request, $supplierId, $id, $meta): int {
                     (new DimensionPeriodGuard($this->db))->lockPeriods($supplierId);
+                    // Zápis interního dokladu se stornuje v detailu dokladu (kontrola pod zámkem zápisu).
+                    $this->internalDocuments->assertJournalReversible($supplierId, $id);
                     $owner = (new DocumentPostingGroup($this->db))->owner($supplierId, $id, true);
                     $reversalId = $this->posting->reverse($supplierId, $id, $meta);
                     // I poslední ruční člen převzatého předpisu odemyká svůj doklad.

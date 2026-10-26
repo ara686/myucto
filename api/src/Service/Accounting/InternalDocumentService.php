@@ -11,6 +11,7 @@ use MyInvoice\Repository\ChartOfAccountsRepository;
 use MyInvoice\Repository\InternalDocumentRepository;
 use MyInvoice\Repository\JournalEntryRepository;
 use MyInvoice\Service\Accounting\Dimension\DimensionException;
+use MyInvoice\Service\Accounting\Dimension\DimensionPeriodGuard;
 use MyInvoice\Service\Accounting\Dimension\DimensionService;
 use PDO;
 
@@ -84,8 +85,18 @@ final class InternalDocumentService
                 'lines', 'document_links'] as $key) {
                 if (!array_key_exists($key, $input)) $input[$key] = $existing[$key] ?? null;
             }
-            $data = $this->normalize($supplierId, $input);
-            $this->documents->updateDraft($supplierId, $id, $data, $userId);
+            // Uzavřenou hodnotu dimenze, kterou koncept už nese, smí úprava ponechat.
+            $current = [];
+            foreach ($existing['lines'] as $line) {
+                foreach ($line['dimensions'] ?? [] as $valueId) $current[] = (int) $valueId;
+            }
+            $data = $this->normalize($supplierId, $input, array_values(array_unique($current)));
+            // Číslo z dřívějšího zaúčtování patří řadě jeho účetního roku; po změně roku
+            // dostane doklad při zaúčtování nové číslo z řady nového roku.
+            $clearNumber = $existing['document_no'] !== null
+                && $this->manualEntries->fiscalYear($supplierId, (string) $existing['entry_date'])
+                    !== $this->manualEntries->fiscalYear($supplierId, $data['entry_date']);
+            $this->documents->updateDraft($supplierId, $id, $data, $userId, $clearNumber);
             $this->documents->replaceLines($supplierId, $id, $data['lines']);
         });
         return $this->get($supplierId, $id);
@@ -133,7 +144,7 @@ final class InternalDocumentService
                 }
                 $entryDate = (string) $doc['entry_date'];
                 // Číslo z dřívějšího zaúčtování (zápis smazaný v deníku) se použije znovu.
-                $number = $doc['document_no'] ?? $this->manualEntries->nextNumber($supplierId, $entryDate);
+                $number = $doc['document_no'] ?? $this->freeNumber($supplierId, $entryDate, $id);
                 $userId = isset($audit['user_id']) ? (int) $audit['user_id'] : null;
                 $entryId = $this->manualEntries->post($supplierId, $lines, array_merge($audit, [
                     'entry_date' => $entryDate,
@@ -170,7 +181,11 @@ final class InternalDocumentService
         if ($entryDate !== null && !IsoDate::isValid($entryDate)) {
             throw new InternalDocumentException('invalid_date', 'Neplatné datum storna.');
         }
-        $this->inTransaction(function () use ($supplierId, $id, $reason, $entryDate, $audit): void {
+        // Pořadí zámků jako JournalAction::reverse (období firmy, pak hlavička a zápis),
+        // jinak se storno dokladu a souběžné účtování zablokují navzájem. Odvolanou
+        // transakci zopakuje celou.
+        TransactionFailure::retrying($this->db->pdo(), fn () => $this->inTransaction(function () use ($supplierId, $id, $reason, $entryDate, $audit): void {
+            (new DimensionPeriodGuard($this->db))->lockPeriods($supplierId);
             $doc = $this->documents->find($supplierId, $id, true)
                 ?? throw new InternalDocumentException('not_found', 'Interní doklad nebyl nalezen.', 404);
             if ($doc['status'] !== 'posted' || $doc['journal_entry_id'] === null) {
@@ -182,8 +197,24 @@ final class InternalDocumentService
             ], static fn ($v): bool => $v !== null) + $audit);
             $this->documents->setReversed($supplierId, $id, $reversalId, $reason,
                 isset($audit['user_id']) ? (int) $audit['user_id'] : null);
-        });
+        }));
         return $this->get($supplierId, $id);
+    }
+
+    /**
+     * Číslo z řady ID, které ještě nenese jiný interní doklad. Kolize vzniká, když
+     * někdo čítač řady ručně snížil, nebo když stejné číslo doklad převzal ze zápisu;
+     * kolidující číslo se přeskočí, jinak by koncept nešel zaúčtovat nikdy (rollback
+     * vrací čítač zpět na totéž číslo).
+     */
+    private function freeNumber(int $supplierId, string $entryDate, ?int $exceptId): string
+    {
+        for ($attempt = 0; $attempt < 1000; $attempt++) {
+            $number = $this->manualEntries->nextNumber($supplierId, $entryDate);
+            if (!$this->documents->documentNoTaken($supplierId, $number, $exceptId)) return $number;
+        }
+        throw new InternalDocumentException('series_exhausted',
+            'Číselná řada ID nevydala volné číslo. Zkontrolujte další číslo řady v Nástrojích.', 409);
     }
 
     /**
@@ -193,22 +224,27 @@ final class InternalDocumentService
      *
      * @return array{document: array<string,mixed>, numbered: bool}
      */
-    public function createFromEntry(int $supplierId, int $entryId, array $input, ?int $userId): array
+    public function createFromEntry(int $supplierId, int $entryId, array $input, array $audit): array
     {
         $kind = (string) ($input['kind'] ?? 'other');
         if (!in_array($kind, self::KINDS, true)) {
             throw new InternalDocumentException('invalid_kind', 'Neplatný druh interního dokladu.');
         }
+        $userId = isset($audit['user_id']) ? (int) $audit['user_id'] : null;
         $numbered = false;
-        $id = $this->inTransaction(function () use ($supplierId, $entryId, $input, $kind, $userId, &$numbered): int {
+        // Obyčejný closure (ne arrow fn): arrow fn by $numbered zachytil hodnotou a příznak by se ztratil.
+        $id = TransactionFailure::retrying($this->db->pdo(), function () use ($supplierId, $entryId, $input, $kind, $userId, $audit, &$numbered): int {
+            $numbered = false;
+            return $this->inTransaction(function () use ($supplierId, $entryId, $input, $kind, $userId, $audit, &$numbered): int {
             $pdo = $this->db->pdo();
+            // Pořadí zámků jako mazání a storno v deníku: období firmy, pak zápis.
+            (new DimensionPeriodGuard($this->db))->lockPeriods($supplierId);
             $stmt = $pdo->prepare(
                 'SELECT je.id, je.entry_date, je.document_date, je.document_no, je.description, je.source_type,
-                        je.source_id, je.posted_at, je.reversed_by, p.status AS period_status,
+                        je.source_id, je.posted_at, je.reversed_by,
                         EXISTS(SELECT 1 FROM journal_entries r
                                 WHERE r.supplier_id = je.supplier_id AND r.reversed_by = je.id) AS is_reversal
                    FROM journal_entries je
-              LEFT JOIN accounting_periods p ON p.id = je.period_id AND p.supplier_id = je.supplier_id
                   WHERE je.id = ? AND je.supplier_id = ?
                   FOR UPDATE'
             );
@@ -224,21 +260,31 @@ final class InternalDocumentService
                 throw new InternalDocumentException('entry_not_active',
                     'Interní doklad lze vytvořit jen ze zaúčtovaného zápisu, který není stornovaný ani stornem.', 409);
             }
+            // Ruční zápis převzatý dokladem (skupina zaúčtování faktury) je část jeho předpisu
+            // a řídí ho doklad, ne interní doklad.
+            if ((new DocumentPostingGroup($this->db))->owner($supplierId, $entryId, true) !== null) {
+                throw new InternalDocumentException('entry_owned_by_document',
+                    'Zápis patří k zaúčtování dokladu, interní doklad nad ním vytvořit nelze.', 409);
+            }
+            // Stejné pojistky navazujících agend jako mazání zápisu v deníku.
+            (new \MyInvoice\Service\Property\Charges\Issuance\IssuanceUseGuard($this->db))->assertPostingEntriesMutable($supplierId, [$entryId]);
+            (new \MyInvoice\Service\Property\Payments\Workflow\PaymentMutationContext($this->db))->assertEntriesMutable($supplierId, [$entryId]);
+            (new \MyInvoice\Service\Accounting\Allocation\JointAllocationUseGuard($this->db))->assertEntriesMutable($supplierId, [$entryId]);
             if ($this->documents->findByEntry($supplierId, $entryId, true) !== null) {
                 throw new InternalDocumentException('entry_has_document', 'Zápis už má interní doklad.', 409);
             }
             $number = $entry['document_no'] !== null && trim((string) $entry['document_no']) !== ''
                 ? (string) $entry['document_no'] : null;
+            if ($number !== null && $this->documents->documentNoTaken($supplierId, $number)) {
+                throw new InternalDocumentException('document_no_taken',
+                    'Číslo zápisu ' . $number . ' už nese jiný interní doklad.', 409);
+            }
             if ($number === null) {
-                if ($entry['period_status'] !== null && $entry['period_status'] !== 'open') {
-                    throw new InternalDocumentException('entry_number_locked',
-                        'Zápis nemá číslo dokladu a leží v uzavřeném období, číslo mu už přidělit nelze.', 409);
-                }
-                $number = $this->manualEntries->nextNumber($supplierId, (string) $entry['entry_date']);
-                $pdo->prepare(
-                    'UPDATE journal_entries SET document_no = ?, row_version = row_version + 1
-                      WHERE id = ? AND supplier_id = ? AND document_no IS NULL'
-                )->execute([$number, $entryId, $supplierId]);
+                // Číslo doplní repozitář deníku s pojistkami a §35 auditem (jako úprava popisu).
+                $number = $this->freeNumber($supplierId, (string) $entry['entry_date'], null);
+                $this->journal->assignDocumentNo($entryId, $supplierId, $number, $userId,
+                    isset($audit['ip']) ? (string) $audit['ip'] : null,
+                    isset($audit['user_agent']) ? (string) $audit['user_agent'] : null);
                 $numbered = true;
             }
             $accMap = $this->accounts->idToAccountMap($supplierId);
@@ -249,6 +295,8 @@ final class InternalDocumentService
                 if ($amount <= 0) continue;
                 $red = (bool) $line['is_red_storno'];
                 if ($line['side'] === 'debit') $total += (int) round($amount * 100) * ($red ? -1 : 1);
+                // Jen náhled kontace v Kč: dimenze, měna a vazby zůstávají na zápisu, proto
+                // se zápis takového dokladu v deníku smazat nedá (prepareEntryDeletion).
                 $lines[] = [
                     'account_code' => (string) ($accMap[(int) $line['account_id']]['code'] ?? ''),
                     'side' => (string) $line['side'],
@@ -273,6 +321,7 @@ final class InternalDocumentService
             $id = $this->documents->insertPosted($supplierId, $data, $number, $entryId, (string) $entry['posted_at'], $userId);
             $this->documents->replaceLines($supplierId, $id, $lines);
             return $id;
+            });
         });
         return ['document' => $this->get($supplierId, $id), 'numbered' => $numbered];
     }
@@ -293,8 +342,33 @@ final class InternalDocumentService
             throw new InternalDocumentException('internal_document_use_detail',
                 'Zápis patří ke stornovanému internímu dokladu, smazat ho nelze.', 409);
         }
+        // Hlavička nad převzatým zápisem drží jen náhled kontace (bez dimenzí, měny a vazeb);
+        // po smazání zápisu by z ní nešlo zaúčtovat totéž. Oprava jde stornem.
+        if (($doc['origin'] ?? 'draft') === 'journal') {
+            throw new InternalDocumentException('internal_document_use_detail',
+                'Zápis nese interní doklad vytvořený nad ručním zápisem. Smazat ho nelze, stornujte doklad v jeho detailu.', 409);
+        }
         $this->documents->setUnposted($supplierId, (int) $doc['id'], $userId);
         return $doc;
+    }
+
+    /**
+     * Storno zápisu z deníku: zápis interního dokladu se stornuje v detailu dokladu.
+     * Kontrola běží v transakci storna po zamčení zápisu a čte hlavičku zamykacím čtením,
+     * takže ji nepředběhne souběžné vytvoření dokladu nad týmž zápisem.
+     */
+    public function assertJournalReversible(int $supplierId, int $entryId): void
+    {
+        $pdo = $this->db->pdo();
+        if (!$pdo->inTransaction()) {
+            throw new \LogicException('InternalDocumentService::assertJournalReversible vyžaduje transakci.');
+        }
+        $pdo->prepare('SELECT id FROM journal_entries WHERE id = ? AND supplier_id = ? FOR UPDATE')
+            ->execute([$entryId, $supplierId]);
+        if ($this->documents->findByEntry($supplierId, $entryId, true) !== null) {
+            throw new PostingException('internal_document_use_detail',
+                'Účetní zápis interního dokladu stornujte v jeho detailu, aby se aktualizoval i stav dokladu.', 409);
+        }
     }
 
     /** Doklad, ke kterému zápis deníku patří (zaúčtování i storno). */
@@ -309,7 +383,8 @@ final class InternalDocumentService
         return $this->documents->forJournalEntries($supplierId, $entryIds);
     }
 
-    private function normalize(int $supplierId, array $input): array
+    /** @param list<int> $currentDimensions hodnoty dimenzí, které koncept už nese */
+    private function normalize(int $supplierId, array $input, array $currentDimensions = []): array
     {
         $kind = (string) ($input['kind'] ?? 'other');
         if (!in_array($kind, self::KINDS, true)) {
@@ -330,7 +405,7 @@ final class InternalDocumentService
             throw new InternalDocumentException('invalid_date', 'Neplatné datum účetního případu.');
         }
         [$partnerId, $partnerName] = $this->partner($supplierId, $input['partner_id'] ?? null, $input['partner_name'] ?? null);
-        $lines = $this->normalizeLines($supplierId, $input['lines'] ?? []);
+        $lines = $this->normalizeLines($supplierId, $input['lines'] ?? [], $currentDimensions);
         $total = 0;
         foreach ($lines as $line) {
             if ($line['side'] === 'debit') $total += (int) round($line['amount'] * 100) * ($line['is_red_storno'] ? -1 : 1);
@@ -361,7 +436,7 @@ final class InternalDocumentService
      *
      * @return list<array<string,mixed>>
      */
-    private function normalizeLines(int $supplierId, mixed $raw): array
+    private function normalizeLines(int $supplierId, mixed $raw, array $currentDimensions = []): array
     {
         if ($raw === null || $raw === []) return [];
         if (!is_array($raw) || !array_is_list($raw) || count($raw) > self::MAX_LINES) {
@@ -393,7 +468,7 @@ final class InternalDocumentService
             $dims = [];
             if (!empty($row['dimensions']) && is_array($row['dimensions'])) {
                 try {
-                    $dims = $this->dimensions->normalize($supplierId, $row['dimensions']);
+                    $dims = $this->dimensions->normalize($supplierId, $row['dimensions'], $currentDimensions);
                 } catch (DimensionException $e) {
                     throw new InternalDocumentException($e->errorCode, "Řádek {$n}: " . $e->getMessage(), $e->httpStatus);
                 }
@@ -402,12 +477,23 @@ final class InternalDocumentService
                 'account_code' => $code,
                 'side' => $side,
                 'amount' => round((float) $amount, 2),
-                'is_red_storno' => !empty($row['is_red_storno']),
+                'is_red_storno' => self::flag($row['is_red_storno'] ?? false, $n),
                 'cost_center' => $costCenter !== '' ? $costCenter : null,
                 'dimensions' => $dims,
             ];
         }
         return $lines;
+    }
+
+    /** Příznak z JSON i formuláře: řetězec "false" nebo "0" nesmí znamenat červené storno. */
+    private static function flag(mixed $value, int $n): bool
+    {
+        if (is_bool($value)) return $value;
+        $parsed = filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+        if ($parsed === null) {
+            throw new InternalDocumentException('invalid_lines', "Řádek {$n}: červené storno musí být ano, nebo ne.");
+        }
+        return $parsed;
     }
 
     /** @param list<array<string,mixed>> $lines */

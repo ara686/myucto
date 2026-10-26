@@ -955,6 +955,85 @@ final class JournalEntryRepository
     }
 
     /**
+     * Doplní číslo dokladu ručnímu zápisu, který žádné nemá (hlavička interního dokladu
+     * nad existujícím zápisem). Stejné pojistky jako {@see updateDescription()}: jen ruční,
+     * nestornovaný zápis v otevřeném období, guardy navazujících agend. §35 audit
+     * `accounting.document_no_assigned` se zapisuje v téže transakci před commitem.
+     *
+     * @throws PostingException 404 not_found | 409 entry_not_manual|entry_reversed|period_not_open|document_no_present
+     */
+    public function assignDocumentNo(
+        int $id,
+        int $supplierId,
+        string $documentNo,
+        ?int $userId = null,
+        ?string $ip = null,
+        ?string $userAgent = null,
+    ): void {
+        $pdo = $this->db->pdo();
+        $ownTx = !$pdo->inTransaction();
+        if ($ownTx) {
+            $pdo->beginTransaction();
+        }
+        try {
+            (new \MyInvoice\Service\Accounting\Closing\SecuritiesDebt504UseGuard($this->db))->assertEntriesMutable($supplierId, [$id]);
+            (new \MyInvoice\Service\Property\Opening\OpeningUseGuard($this->db))->assertDescriptionMutable($supplierId, $id);
+            (new \MyInvoice\Service\Property\Services\Settlement\SettlementUseGuard($this->db))->assertDescriptionMutable($supplierId, $id);
+            try { \MyInvoice\Service\Property\Funds\FundingUseGuard::assertEntriesMutable($this->db, $supplierId, [$id]); }
+            catch (\MyInvoice\Service\Property\Funds\FundingException $e) { throw new PostingException($e->errorCode, $e->getMessage(), $e->httpStatus, $e->details); }
+            $stmt = $pdo->prepare(
+                'SELECT je.document_no, je.source_type, je.source_id, je.reversed_by, p.status AS period_status
+                   FROM journal_entries je
+              LEFT JOIN accounting_periods p ON p.id = je.period_id AND p.supplier_id = je.supplier_id
+                  WHERE je.id = ? AND je.supplier_id = ?
+                  FOR UPDATE'
+            );
+            $stmt->execute([$id, $supplierId]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($row === false) {
+                throw new PostingException('not_found', 'Účetní zápis nenalezen.', 404);
+            }
+            if ((string) $row['source_type'] !== 'manual' || $row['source_id'] !== null) {
+                throw new PostingException('entry_not_manual', 'Číslo dokladu lze doplnit jen ručnímu zápisu.', 409);
+            }
+            if ($row['reversed_by'] !== null) {
+                throw new PostingException('entry_reversed', 'Zápis #' . $id . ' je stornovaný, číslo dokladu nelze měnit (§35).', 409);
+            }
+            if ($row['period_status'] !== null && (string) $row['period_status'] !== 'open') {
+                throw new PostingException('period_not_open', 'Zápis #' . $id . ' je v období "' . $row['period_status']
+                    . '", do uzavřeného období nelze zasahovat (§35 ZoÚ).', 409);
+            }
+            if ($row['document_no'] !== null && trim((string) $row['document_no']) !== '') {
+                throw new PostingException('document_no_present', 'Zápis už číslo dokladu má.', 409);
+            }
+            (new \MyInvoice\Service\Tax\Nonprofit\NonprofitTaxSavingUseGuard($this->db, $this))->assertEntriesMutable($supplierId, [$id]);
+            (new \MyInvoice\Service\Nonprofit\Capital\CapitalUseGuard($this->db, $this))->assertEntriesMutable($supplierId, [$id]);
+            $pdo->prepare(
+                'UPDATE journal_entries SET document_no = ?, row_version = row_version + 1
+                  WHERE id = ? AND supplier_id = ?'
+            )->execute([$documentNo, $id, $supplierId]);
+            $this->activity->log(
+                'accounting.document_no_assigned',
+                $userId,
+                'journal_entry',
+                $id,
+                ['before' => $row['document_no'], 'after' => $documentNo],
+                $ip,
+                $userAgent,
+                $supplierId,
+            );
+            if ($ownTx) {
+                $pdo->commit();
+            }
+        } catch (\Throwable $e) {
+            if ($ownTx && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    /**
      * Označí zápis za zaúčtovaný (koncept → zaúčtováno, §12 průkaznost).
      */
     public function markPosted(int $id, int $supplierId, ?int $postedBy): bool

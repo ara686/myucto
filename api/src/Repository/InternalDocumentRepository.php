@@ -43,17 +43,18 @@ final class InternalDocumentRepository
     /** Doklad, jehož zaúčtováním nebo stornem je daný zápis deníku. */
     public function findByEntry(int $supplierId, int $entryId, bool $lock = false): ?array
     {
-        $stmt = $this->db->pdo()->prepare(
-            'SELECT id FROM internal_documents
-              WHERE supplier_id = ? AND journal_entry_id = ?
-             UNION ALL
-             SELECT id FROM internal_documents
-              WHERE supplier_id = ? AND reversal_entry_id = ?
-             LIMIT 1'
-        );
-        $stmt->execute([$supplierId, $entryId, $supplierId, $entryId]);
-        $id = $stmt->fetchColumn();
-        return $id === false ? null : $this->find($supplierId, (int) $id, $lock);
+        // Zamykací čtení po jednotlivých indexech: souběžná hlavička nad týmž zápisem
+        // (from-entry) a storno nebo smazání zápisu v deníku se tak serializují.
+        $suffix = $lock ? ' FOR UPDATE' : '';
+        foreach (['journal_entry_id', 'reversal_entry_id'] as $column) {
+            $stmt = $this->db->pdo()->prepare(
+                "SELECT id FROM internal_documents WHERE supplier_id = ? AND {$column} = ? LIMIT 1" . $suffix
+            );
+            $stmt->execute([$supplierId, $entryId]);
+            $id = $stmt->fetchColumn();
+            if ($id !== false) return $this->find($supplierId, (int) $id, $lock);
+        }
+        return null;
     }
 
     /**
@@ -213,12 +214,14 @@ final class InternalDocumentRepository
         return (int) $this->db->pdo()->lastInsertId();
     }
 
-    public function updateDraft(int $supplierId, int $id, array $data, ?int $userId): void
+    /** @param bool $clearNumber číslo z dřívějšího zaúčtování patří jinému účetnímu roku */
+    public function updateDraft(int $supplierId, int $id, array $data, ?int $userId, bool $clearNumber = false): void
     {
         $stmt = $this->db->pdo()->prepare(
             "UPDATE internal_documents
                 SET kind = ?, title = ?, document_date = ?, entry_date = ?, partner_id = ?, partner_name = ?,
-                    amount = ?, note = ?, document_links_json = ?, updated_by = ?, row_version = row_version + 1
+                    amount = ?, note = ?, document_links_json = ?, updated_by = ?, row_version = row_version + 1"
+            . ($clearNumber ? ', document_no = NULL' : '') . "
               WHERE id = ? AND supplier_id = ? AND status = 'draft'"
         );
         $stmt->execute([
@@ -226,6 +229,16 @@ final class InternalDocumentRepository
             $data['partner_name'], $data['amount'], $data['note'], self::encodeLinks($data['document_links']),
             $userId, $id, $supplierId,
         ]);
+    }
+
+    /** Číslo už nese jiný interní doklad firmy (unikát uq_internal_document_no). */
+    public function documentNoTaken(int $supplierId, string $documentNo, ?int $exceptId = null): bool
+    {
+        $stmt = $this->db->pdo()->prepare(
+            'SELECT id FROM internal_documents WHERE supplier_id = ? AND document_no = ? AND id <> ? LIMIT 1'
+        );
+        $stmt->execute([$supplierId, $documentNo, $exceptId ?? 0]);
+        return $stmt->fetchColumn() !== false;
     }
 
     public function deleteDraft(int $supplierId, int $id): bool
@@ -274,8 +287,8 @@ final class InternalDocumentRepository
         $stmt = $this->db->pdo()->prepare(
             "INSERT INTO internal_documents
                (supplier_id, kind, title, document_date, entry_date, partner_id, partner_name, amount, note,
-                document_links_json, status, document_no, journal_entry_id, posted_at, posted_by, created_by, updated_by)
-             VALUES (?,?,?,?,?,?,?,?,?,NULL,'posted',?,?,COALESCE(?, NOW()),?,?,?)"
+                document_links_json, status, origin, document_no, journal_entry_id, posted_at, posted_by, created_by, updated_by)
+             VALUES (?,?,?,?,?,?,?,?,?,NULL,'posted','journal',?,?,COALESCE(?, NOW()),?,?,?)"
         );
         $stmt->execute([
             $supplierId, $data['kind'], $data['title'], $data['document_date'], $data['entry_date'],

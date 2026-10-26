@@ -1615,7 +1615,9 @@ Tlačítko **Export CSV** stáhne doklady podle aktuálních filtrů.
 
 Interní doklad jde vytvořit i nad existujícím ručním zápisem: v rozbaleném zápisu
 deníku klikněte na **Vytvořit interní doklad**. Zápis se nezmění, jen dostane číslo
-z řady ID, pokud žádné nemá (to jde jen u zápisu v otevřeném období).
+z řady ID, pokud žádné nemá (to jde jen u zápisu v otevřeném období). Zápis patřící
+k zaúčtování faktury (převzatý předpis) interní doklad dostat nemůže. Zápis takového
+dokladu nejde v deníku smazat, opravuje se stornem dokladu.
 
 #### 52.14.15.5 Přílohy a oprávnění
 

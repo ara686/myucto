@@ -17785,6 +17785,8 @@ paths:
         '201': { description: Zaúčtovaný interní doklad, content: { application/json: { schema: { $ref: '#/components/schemas/InternalDocument' } } } }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Zápis není aktivní ruční zápis, patří k zaúčtování dokladu, už má interní doklad, jeho číslo nese jiný doklad nebo mu číslo nejde přidělit (`internal_documents.error.entry_not_manual|entry_not_active|entry_owned_by_document|entry_has_document|document_no_taken`, `period_not_open`)', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
 
   /api/v1/accounting/internal-documents/{id}:
     parameters:
@@ -17815,6 +17817,8 @@ paths:
       responses:
         '200': { description: Smazáno }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Doklad není koncept (`internal_documents.error.not_draft`)', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
   /api/v1/accounting/internal-documents/{id}/post:
     post:
@@ -17822,16 +17826,17 @@ paths:
       summary: Zaúčtuje koncept ručním zápisem deníku
       description: |
         Vydá číslo z řady ID (sdílené s ručními zápisy) a zapíše ruční zápis (`source_type = manual`) se stejnou validací
-        jako `POST /accounting/journal`: MD = D, účty z účtové osnovy, otevřené období a zámek k datu (`period_not_open`,
-        `date_locked`, `unbalanced_entry`). Vazby na doklady se přenesou do vazeb zápisu. Přes API token nedostupné
-        (403 token_write_forbidden). Právo `accounting.journal.post`.
+        jako `POST /accounting/journal`: MD = D (nevyrovnaný koncept 422 `internal_documents.error.unbalanced`), účty
+        z účtové osnovy, otevřené období a zámek k datu (`period_not_open`, `date_locked`). Vazby na doklady se přenesou
+        do vazeb zápisu. Přes API token nedostupné (403 token_write_forbidden). Právo `accounting.journal.post`.
       parameters:
         - { $ref: '#/components/parameters/SupplierIdHeader' }
         - { in: path, name: id, required: true, schema: { type: integer } }
       responses:
         '200': { description: Zaúčtovaný doklad, content: { application/json: { schema: { $ref: '#/components/schemas/InternalDocument' } } } }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '409': { description: 'Doklad není koncept (`internal_documents.error.not_draft`)', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { description: 'Nevyrovnaný doklad (`internal_documents.error.unbalanced`), neplatný účet, uzavřené období (`period_not_open`) nebo zamčené datum (`date_locked`)', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
   /api/v1/accounting/internal-documents/{id}/reverse:
     post:
@@ -17847,6 +17852,8 @@ paths:
       responses:
         '200': { description: Stornovaný doklad, content: { application/json: { schema: { $ref: '#/components/schemas/InternalDocument' } } } }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: 'Doklad není zaúčtovaný (`internal_documents.error.not_posted`)', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { description: 'Chybí důvod (`internal_documents.error.reason_required`), neplatné datum nebo storno do uzavřeného či zamčeného období (`period_not_open`, `date_locked`)', content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
   /api/v1/accounting/cash-documents:
     get:
@@ -39698,6 +39705,7 @@ components:
         amount: { type: number, description: Součet strany MD (červené storno odečítá) }
         note: { type: [string, 'null'] }
         status: { type: string, enum: [draft, posted, reversed] }
+        origin: { type: string, enum: [draft, journal], description: journal = hlavička nad existujícím ručním zápisem; jeho zápis v deníku nejde smazat }
         document_no: { type: [string, 'null'], description: Číslo z řady ID, vydané při zaúčtování }
         journal_entry_id: { type: [integer, 'null'], format: int64, description: Ruční zápis deníku (source_type manual) }
         reversal_entry_id: { type: [integer, 'null'], format: int64 }
