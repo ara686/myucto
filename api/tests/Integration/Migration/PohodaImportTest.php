@@ -610,9 +610,16 @@ final class PohodaImportTest extends TestCase
         self::assertSame(['DM0002', 'disposed', '2026-02-01', '2.000', '3000.00', null],
             [$chairs['inventory_number'], $chairs['status'], $chairs['disposed_at'], (string) $chairs['quantity'], (string) $chairs['price'], $chairs['document_ref']]);
 
+        // Karta, kterou dřívější převod na doklad nenavázal, se při opakovaném převodu dohledá.
+        $this->db->pdo()->prepare("UPDATE small_assets SET purchase_invoice_id = NULL, purchase_invoice_item_id = NULL WHERE supplier_id = ? AND inventory_number = 'DM0004'")
+            ->execute([$supplierId]);
+
         $again = $this->importer->run($supplierId, $this->userId, $export, false);
         self::assertSame(1, self::stepCounts($again, 'assets')['existing'] ?? 0, $this->explain($again));
         self::assertSame(4, self::stepCounts($again, 'small_assets')['existing'] ?? 0, $this->explain($again));
+        $relinked = $this->db->pdo()->prepare("SELECT purchase_invoice_item_id FROM small_assets WHERE supplier_id = ? AND inventory_number = 'DM0004'");
+        $relinked->execute([$supplierId]);
+        self::assertSame((string) $monitor['purchase_invoice_item_id'], (string) $relinked->fetchColumn());
         self::assertSame(1, $this->rows('assets', $supplierId));
         self::assertSame(4, $this->rows('small_assets', $supplierId));
     }

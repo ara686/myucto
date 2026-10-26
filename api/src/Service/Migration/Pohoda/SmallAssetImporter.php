@@ -53,6 +53,7 @@ final class SmallAssetImporter
             $key = 'small_asset|' . ($number !== '' ? $number : '#' . PohodaXml::text($row, 'ID'));
             if (isset($existing[$key])) {
                 $p->count(self::STEP, 'existing');
+                $this->attachExisting($ctx, (int) $existing[$key], $row);
                 continue;
             }
             if ($ctx->skipsNew(self::STEP)) {
@@ -107,6 +108,32 @@ final class SmallAssetImporter
             $p->count(self::STEP, isset($data['purchase_invoice_id']) || isset($data['cash_document_id']) ? 'linked' : 'no_document');
         }
         $this->markSmallAssetItems($ctx->supplierId);
+    }
+
+    /**
+     * Karta z dřívějšího převodu bez dokladu: opakovaný převod zkusí položku dohledat stejně
+     * jako u nové karty (datum a částka, u více kusů cena za kus).
+     *
+     * @param array<string,mixed> $row
+     */
+    private function attachExisting(PohodaContext $ctx, int $cardId, array $row): void
+    {
+        if (PohodaXml::text($row, 'SrcAgenda') !== '') {
+            return;
+        }
+        $stmt = $this->db->pdo()->prepare(
+            'SELECT price, name, acquisition_date FROM small_assets
+              WHERE id = ? AND supplier_id = ? AND purchase_invoice_id IS NULL AND cash_document_id IS NULL'
+        );
+        $stmt->execute([$cardId, $ctx->supplierId]);
+        $card = $stmt->fetch(\PDO::FETCH_ASSOC);
+        if ($card === false) {
+            return;
+        }
+        $match = $this->matchByDateAndAmount($ctx->supplierId, (string) $card['acquisition_date'], (float) $card['price'], (string) $card['name']);
+        if ($match !== null && $this->cards->attachPurchaseSource($ctx->supplierId, $cardId, $match['purchase_invoice_id'], $match['purchase_invoice_item_id'], $match['document_ref'] ?: null)) {
+            $ctx->protocol->count(self::STEP, 'matched_by_amount');
+        }
     }
 
     /**
