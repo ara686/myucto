@@ -1096,7 +1096,8 @@
         "2192_journal_settlement_allocations.sql",
         "2193_internal_documents.sql",
         "2194_eet_delegation.sql",
-        "2195_advance_deduction_settlement.sql"
+        "2195_advance_deduction_settlement.sql",
+        "2198_supplier_invoice_pdf_bank_in_footer.sql"
     ],
     "tables": {
         "abra_flexi_connections": {
@@ -25637,6 +25638,7 @@
                 "integration_sample_seeded_at": "datetime NULL DEFAULT NULL",
                 "invoice_number_format": "varchar(60) NULL DEFAULT NULL",
                 "invoice_number_period": "enum('year','month','none') NOT NULL DEFAULT 'month'",
+                "invoice_pdf_bank_in_footer": "tinyint(1) NOT NULL DEFAULT 0",
                 "invoice_pdf_monochrome": "tinyint(1) NOT NULL DEFAULT 0",
                 "invoice_pdf_show_base_qty": "tinyint(1) NOT NULL DEFAULT 1",
                 "invoice_pdf_show_issued_by": "tinyint(1) NOT NULL DEFAULT 0",

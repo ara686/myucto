@@ -361,6 +361,9 @@ table.czk-recap tr.grand td {
 .bank-value.paid-mark {
     color: #2E7D32;
 }
+/* Účet v patičce (volba firmy invoice_pdf_bank_in_footer): platební panel nese
+   jen QR s popiskem, zúží se na jeho šířku. */
+.pay-panel.pay-panel-qr { width: 48mm; }
 /* QR uvnitř panelu — bez vlastního rámečku/paddingu, splývá s podbarvením. */
 .pay-panel td.pay-qr {
     width: 40mm;
@@ -492,6 +495,14 @@ table.czk-recap tr.grand td {
     /* Bez letter-spacingu mPDF na 7.5pt přebíjí kern pár „Pl" tak, že „l" zmizí
        (např. „v Plzni" → „v P zni"). Drobné rozpáčení glyfy vrátí a zlepší čitelnost. */
     letter-spacing: 0.15pt;
+}
+/* Číslo účtu, IBAN, BIC a banka na patě každé stránky (volba invoice_pdf_bank_in_footer). */
+.page-bank {
+    text-align: center;
+    font-size: 8pt;
+    color: #5A5470;
+    font-family: 'montserrat', 'DejaVu Sans', sans-serif;
+    margin-bottom: 1mm;
 }
 /* mPDF htmlpagefooter — attribution na patě KAŽDÉ stránky */
 .page-attribution {

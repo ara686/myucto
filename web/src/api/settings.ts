@@ -353,6 +353,8 @@ export interface Supplier {
   invoice_pdf_show_issued_by?: boolean
   /** Na PDF faktury rozepsat slevu z ceníkové ceny (Cena/j před slevou, Sleva, Cena/j po slevě). Výchozí vypnuto. */
   invoice_pdf_show_line_discount?: boolean
+  /** Bankovní spojení v patičce PDF faktury, u součtu jen QR (migrace 2195). Výchozí vypnuto. */
+  invoice_pdf_bank_in_footer?: boolean
   // Auto-post hook (A2, migrace 1035) — auto-zaúčtování FV po vystavení / PF po přijetí;
   // účinek jen v režimu double_entry.
   auto_post_invoices?: boolean

@@ -24907,6 +24907,8 @@
     "invoice_pdf_show_issued_by_hint": "Na PDF přibude řádek „Vystavil“ se jménem uživatele, který doklad vystavil. Starší doklady bez tohoto údaje ukážou autora dokladu. U už vystavených dokladů se řádek objeví až po přegenerování PDF.",
     "invoice_pdf_line_discount": "Na PDF faktury rozepsat slevu z ceníkové ceny",
     "invoice_pdf_line_discount_hint": "U položky se slevou vytiskne sloupce Cena/j před slevou, Sleva a Cena/j po slevě. Jen když má faktura aspoň jednu takovou položku, přirážka se nerozepisuje. Ceníkovou cenu doplní nacenění skladové karty.",
+    "invoice_pdf_bank_in_footer": "Bankovní spojení v patičce PDF faktury",
+    "invoice_pdf_bank_in_footer_hint": "Číslo účtu, IBAN, BIC a banka se vytisknou v patičce každé strany, u součtu zůstane jen QR platba v rámečku. Variabilní symbol je v údajích dokladu. Uhrazená faktura a platba hotově nebo kartou vypadají jako dosud. U už vystavených dokladů se projeví až po přegenerování PDF.",
     "default_hourly_rate": "Výchozí hodinová sazba",
     "auto_send_reminders": "Posílat automatické upomínky",
     "auto_send_reminders_hint": "Když je vypnuto, cron nebude posílat automatické upomínky pro tohoto dodavatele. Ruční odeslání (jednotlivé i hromadné) funguje vždy.",

@@ -9,8 +9,21 @@
 </head>
 <body>
 
+{# Bankovní spojení v patičce každé strany (volba firmy, migrace 2195). Jen když by ho
+   jinak tiskl platební panel (převod k úhradě), panel pak ukáže jen QR. Uhrazeno,
+   hotově, kartou a vratka zůstávají beze změny. #}
+{% set bank_in_footer = supplier.invoice_pdf_bank_in_footer|default(false) and bank and refund_amount is null
+     and not is_paid and payment_method != 'card' and payment_method != 'cash' %}
 {# ─── PAGE FOOTER (každá stránka) — attribution ─── #}
 <htmlpagefooter name="attribution">
+{% if bank_in_footer %}
+  {% set _bank_parts = [] %}
+  {% if bank.account_number %}{% set _bank_parts = _bank_parts|merge([bank.account_number ~ (bank.bank_code ? ' / ' ~ bank.bank_code : '')]) %}{% endif %}
+  {% if bank.iban %}{% set _bank_parts = _bank_parts|merge(['IBAN: ' ~ bank.iban]) %}{% endif %}
+  {% if bank.bic %}{% set _bank_parts = _bank_parts|merge(['BIC: ' ~ bank.bic]) %}{% endif %}
+  {% if bank.bank_name %}{% set _bank_parts = _bank_parts|merge([bank.bank_name]) %}{% endif %}
+  <div class="page-bank">{{ t('Bankovní spojení', 'Bank account') }}: {{ _bank_parts|join(' · ') }}</div>
+{% endif %}
   <div class="page-attribution">
     {% if locale == 'en' %}Powered by <a href="https://myucto.cz/">MyÚčto.cz</a> accounting system by <a href="https://mywebdesign.cz/">MyWebdesign.cz</a>{% else %}Používá účetní systém <a href="https://myucto.cz/">MyÚčto.cz</a> od <a href="https://mywebdesign.cz/">MyWebdesign.cz</a>{% endif %}
   </div>
@@ -372,15 +385,19 @@
     <td class="left">
       {# QR + bankovní spojení sloučené do jednoho podbarveného „platebního" panelu —
          vizuální kotva dokladu. Renderuje se jen když je co platit/ukázat. #}
-      {% set _has_pay = qr_data_uri or is_paid or payment_method == 'card' or payment_method == 'cash' or bank or refund_amount is not null %}
+      {% set _has_pay = qr_data_uri or is_paid or payment_method == 'card' or payment_method == 'cash' or (bank and not bank_in_footer) or refund_amount is not null %}
       {% if _has_pay %}
-      <table class="pay-panel{% if is_paid %} pay-panel-paid{% endif %}">
+      <table class="pay-panel{% if is_paid %} pay-panel-paid{% endif %}{% if bank_in_footer %} pay-panel-qr{% endif %}">
         <tr>
           {% if qr_data_uri and refund_amount is null %}
           <td class="pay-qr">
             <img src="{{ qr_data_uri }}" alt="QR" width="105" height="105">
+{% if bank_in_footer %}
+            <br><span class="bank-label">{{ t('QR platba', 'QR payment') }}</span>
+{% endif %}
           </td>
           {% endif %}
+{% if not bank_in_footer %}
           <td class="pay-info">
             {% if refund_amount is not null %}
               {# Vyúčtování s výsledkem k vyplacení: peníze posíláme my, takže žádné
@@ -449,6 +466,7 @@
               {% endif %}
             {% endif %}
           </td>
+{% endif %}
         </tr>
       </table>
       {% endif %}

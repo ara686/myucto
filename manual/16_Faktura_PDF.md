@@ -334,6 +334,12 @@ Vygenerované PDF obsahuje:
    jejich PDF (například po úpravě dokladu nebo aktualizaci aplikace), dříve vytvořené
    PDF se samo nemění.
 5. **Bankovní spojení** - číslo účtu nebo IBAN, BIC, banka, variabilní symbol.
+   Se zapnutou volbou **Bankovní spojení v patičce PDF faktury** (`Nastavení → Doklady`,
+   výchozí vypnuto) se číslo účtu, IBAN, BIC a banka tisknou v patičce každé strany
+   a platební panel u součtu ukáže jen QR platbu v rámečku s popiskem. Variabilní symbol
+   zůstává v údajích dokladu nad položkami. Uhrazená faktura, platba hotově nebo kartou
+   a vyúčtování k vrácení vypadají stejně jako bez volby. Projeví se na konceptech a na PDF
+   vytvořených po zapnutí, už vygenerovaná PDF vystavených dokladů se nemění.
 6. **Položky** - tabulka (Popis, Množství, Cena, DPH, Celkem). U položky s vybranými
    kusy skladové karty se pod popisem vypíšou sériová čísla („Výr. č.: …“, například VIN)
    nebo šarže s expirací a množstvím („Šarže: …“), viz [§ 37.5.1](37_Sklad.md#3751-vydej-fakturou).
