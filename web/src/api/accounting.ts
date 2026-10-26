@@ -1768,6 +1768,98 @@ export interface SaldoReport {
   accounts: SaldoAccountBlock[]
 }
 
+// ── Vyrovnání saldokonta zápisem v deníku ─────────────────────────────────
+export type SaldoSettleDocType = 'invoice' | 'purchase_invoice'
+
+/** Řádek ručního zápisu s volnou (nerozepsanou) částkou v Kč. */
+export interface SaldoSettlementLine {
+  line_id: number
+  entry_id: number
+  line_no: number
+  account_id: number
+  account_code: string
+  side: 'debit' | 'credit'
+  entry_date: string
+  document_no: string | null
+  description: string | null
+  line_amount: number
+  free_amount: number
+  links: { doc_type: SaldoSettleDocType; doc_id: number }[]
+  amount_match: boolean
+  doc_match: boolean
+  partner_match: boolean
+}
+
+export interface SaldoSettlementAllocation {
+  id: number
+  entry_id: number
+  line_no: number
+  line_id: number | null
+  account_id: number
+  account_code: string
+  kind: 'settlement' | 'origin'
+  doc_type: SaldoSettleDocType | 'other_item'
+  doc_id: number
+  amount: number
+  entry_date: string
+  document_no: string | null
+  description: string | null
+}
+
+export interface SaldoSettlementCandidates {
+  document: {
+    doc_type: SaldoSettleDocType
+    doc_id: number
+    doc_no: string
+    partner_id: number
+    partner_name: string
+    currency_code: string
+    remaining: number
+    account: { id: number; code: string; name: string }
+    side: 'debit' | 'credit'
+    /** false = doklad v cizí měně, rozpad zápisu ho nevyrovná. */
+    supported: boolean
+  }
+  allocations: SaldoSettlementAllocation[]
+  items: SaldoSettlementLine[]
+}
+
+export interface SaldoSettlementSuggestion {
+  key: string
+  reason: 'doc_no_amount' | 'doc_no_sum' | 'partner_amount' | 'partner_sum'
+  account: { id: number; code: string }
+  partner_name: string
+  line: {
+    line_id: number
+    entry_id: number
+    entry_date: string
+    document_no: string | null
+    description: string | null
+    account_code: string
+    free_amount: number
+  }
+  allocations: { doc_type: SaldoSettleDocType; doc_id: number; doc_no: string; remaining: number; amount: number }[]
+}
+
+export interface SaldoSettlementSuggestions {
+  as_of: string
+  truncated: boolean
+  items: SaldoSettlementSuggestion[]
+}
+
+export interface SaldoAllocationInput {
+  line_id: number
+  doc_type: SaldoSettleDocType
+  doc_id: number
+  amount: number
+}
+
+export interface SaldoAllocationResult {
+  created: (SaldoAllocationInput & { id: number; entry_id: number })[]
+  /** Jen u hromadného potvrzení (`groups`): skupiny, které server odmítl. */
+  failed: { index: number; code: string; message: string }[]
+}
+
 export type EntityCategoryCode = 'micro' | 'small' | 'medium' | 'large'
 
 export interface EntityCategory {
@@ -2418,6 +2510,21 @@ export const accountingApi = {
   },
   getSaldo: (params: SaldoParams) =>
     api.get<SaldoReport>('/accounting/reports/saldo', { params }).then(r => r.data),
+  // Vyrovnání položky saldokonta zápisem v deníku (rozpad řádku na doklady).
+  getSaldoSettlementCandidates: (params: { doc_type: SaldoSettleDocType; doc_id: number; account: string; as_of?: string }) =>
+    api.get<SaldoSettlementCandidates>('/accounting/saldo-settlements/candidates', { params }).then(r => r.data),
+  getSaldoResidualLines: (params: { account: string; as_of?: string; q?: string }) =>
+    api.get<{ items: SaldoSettlementLine[] }>('/accounting/saldo-settlements/residual-lines', { params }).then(r => r.data.items),
+  getSaldoSettlementSuggestions: (params: { period_id: number; as_of?: string; account?: string }) =>
+    api.get<SaldoSettlementSuggestions>('/accounting/saldo-settlements/suggestions', { params }).then(r => r.data),
+  /** `force` = správce potvrdil zápis v uzavřeném období (server jinak vrací 409 period_closed). */
+  createSaldoAllocations: (payload: { allocations: SaldoAllocationInput[] } | { groups: { allocations: SaldoAllocationInput[] }[] }, force = false) =>
+    api.post<SaldoAllocationResult>('/accounting/saldo-settlements', payload, { params: force ? { force: 1 } : {} }).then(r => r.data),
+  deleteSaldoAllocation: (id: number, force = false) =>
+    api.delete<{ deleted: number }>(`/accounting/saldo-settlements/${id}`, { params: force ? { force: 1 } : {} }).then(r => r.data),
+  createSaldoOtherItem: (payload: { line_id: number; amount: number; title?: string; partner_id?: number | null; due_on?: string }, force = false) =>
+    api.post<{ item: { id: number; document_no: string | null }; allocation_id: number }>(
+      '/accounting/saldo-settlements/other-item', payload, { params: force ? { force: 1 } : {} }).then(r => r.data),
   getEntityCategory: (periodId: number) =>
     api.get<EntityCategory>('/accounting/reports/entity-category', { params: { period_id: periodId } }).then(r => r.data),
   // Pozn.: reporting-settings klient žije v closing.ts (closingSettingsApi) —

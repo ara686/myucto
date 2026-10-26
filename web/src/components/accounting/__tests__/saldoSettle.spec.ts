@@ -1,0 +1,35 @@
+import { describe, it, expect, vi } from 'vitest'
+import { distribute, isSettleable, withPeriodForce, isPeriodClosedError } from '@/components/accounting/saldoSettle'
+
+const periodClosed = { response: { status: 409, data: { error: { code: 'period_closed', message: 'Uzavřené období' } } } }
+
+describe('saldoSettle', () => {
+  it('rozdělí volnou částku zápisu na doklady v pořadí, každému nejvýš jeho zbytek', () => {
+    expect(distribute(1000, [700, 500])).toEqual([700, 300])
+    expect(distribute(1500, [700, 500])).toEqual([700, 500])
+    expect(distribute(0.3, [0.1, 0.1, 0.1])).toEqual([0.1, 0.1, 0.1])
+  })
+
+  it('rozpadem zápisu vyrovná jen korunový doklad s kladným zbytkem na účtu dokladů', () => {
+    const invoice = { doc_type: 'invoice', currency_code: 'CZK', remaining_czk: 10 }
+    expect(isSettleable(invoice, '311')).toBe(true)
+    expect(isSettleable(invoice, '314')).toBe(false)
+    expect(isSettleable({ ...invoice, currency_code: 'EUR' }, '311')).toBe(false)
+    expect(isSettleable({ ...invoice, remaining_czk: -10 }, '311')).toBe(false)
+    expect(isSettleable({ ...invoice, kind: 'advance_pending' }, '311')).toBe(false)
+    expect(isSettleable({ ...invoice, doc_type: 'other_item' }, '311')).toBe(false)
+  })
+
+  it('uzavřené období přebije jen správce po potvrzení', async () => {
+    const run = vi.fn(async (force: boolean) => {
+      if (!force) throw periodClosed
+      return 'ok'
+    })
+    expect(isPeriodClosedError(periodClosed)).toBe(true)
+
+    await expect(withPeriodForce(run, false, () => true)).rejects.toBe(periodClosed)
+    expect(await withPeriodForce(run, true, () => false)).toBeNull()
+    expect(await withPeriodForce(run, true, () => true)).toBe('ok')
+    expect(run).toHaveBeenLastCalledWith(true)
+  })
+})

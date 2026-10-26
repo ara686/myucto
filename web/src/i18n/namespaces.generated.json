@@ -722,6 +722,10 @@
     "accounting-statement-mapping": [
       "settings"
     ],
+    "accounting-saldo": [
+      "cash",
+      "purchase_invoice"
+    ],
     "accounting-document-completeness": [
       "documentCompleteness"
     ],

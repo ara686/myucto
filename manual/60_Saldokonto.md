@@ -57,6 +57,34 @@ Aplikace si volbu i hranice zapamatuje a nabídne je i příště.
 
 Nenulový rozdíl může ukazovat na ruční zápis bez vazby na doklad, chybějící či špatně datovanou úhradu, storno, kurzový pohyb nebo nezúčtovanou zálohu.
 
+### Vyrovnání položky zápisem v deníku
+
+Doklad zůstává otevřený, přestože ho hlavní kniha má vyrovnaný interním dokladem: zápočet přes 395, interní doklad vyrovnávající víc faktur, odpis. Typicky po převodu z jiného programu. Zápis v deníku už existuje, jen ho přiřadíte dokladům:
+
+1. U otevřené položky klikněte na **Vyrovnat**. Víc položek jednoho partnera na jednom účtu označte zaškrtávátky a klikněte na **Vyrovnat označené**.
+2. Na kartě **Spárovat se zápisem v deníku** jsou volné ruční zápisy na stejném účtu (včetně analytik) do rozvahového dne. Nahoře jsou zápisy se stejnou částkou, s číslem dokladu v textu a se stejným partnerem. Jistá shoda je předvyplněná.
+3. U jednoho dokladu můžete vybrat víc zápisů a upravit částky. U víc dokladů vyberete jeden zápis a jeho částku rozdělíte mezi doklady.
+4. Klikněte na **Vyrovnat**. Doklad je vyrovnaný ke dni zápisu a **Rozdíl** klesne o přiřazenou částku. Hlavní kniha ani předvaha se nemění.
+
+Na kartě **Zápočet / odpis** založíte zápočet dokladu proti zvolenému účtu, který zápis v deníku teprve vytvoří (viz [Zápočty](67_Zapocty.md)). Přiřazení zrušíte v dialogu **Vyrovnat** u seznamu **Už přiřazené zápisy**.
+
+### Položka ze zůstatku bez dokladu
+
+Zůstatek účtu bez dokladu (přijatá nebo poskytnutá záloha, přeplatek zaúčtovaný interním dokladem) převedete na ostatní pohledávku nebo závazek:
+
+1. U účtu s nenulovým **Rozdílem** klikněte na **Založit položku ze zůstatku**.
+2. Vyberte zápis, ze kterého zůstatek vznikl. Hledat můžete podle textu nebo čísla zápisu.
+3. Upravte popis, částku, splatnost a případně partnera a klikněte na **Založit položku**.
+
+Vznikne potvrzená [ostatní pohledávka nebo závazek](52_Ucetni_denik.md#521414-ostatni-pohledavky-a-zavazky) s číslem z řady. Zápis na straně MD založí pohledávku, zápis na straně Dal závazek. Položka se znovu neúčtuje, předpis zůstává v původním zápisu, takže saldokonto položku vidí a zůstatek hlavní knihy nezdvojí. Omyl napravíte stornem položky, protizápis nevznikne.
+
+### Návrh párování
+
+Tlačítko **Navrhnout párování** projde otevřené doklady k rozvahovému dni a nabídne jen jisté shody: číslo dokladu je v textu zápisu (nebo je zápis na doklad navázaný) a volná částka zápisu se rovná zbytku dokladu, případně zápis jmenuje víc dokladů jednoho partnera přesně za jejich součet. Bez čísla dokladu se navrhne jen jistý partner (vazba zápisu nebo jeho název v textu) s jediným dokladem této částky. Zápis i doklad jsou nejvýš v jednom návrhu. Označené návrhy potvrdíte tlačítkem **Potvrdit označené**; návrh, který mezitím přestal platit (doklad uhrazený), zůstane v seznamu s důvodem.
+
+> [!NOTE]
+> Přiřadit lze jen ruční (interní) zápis v Kč na účtech 311, 321, 315 a 325, ne zaúčtování dokladu, storno ani zápis, který doklad vyrovnává už vazbou na doklad. Doklad v cizí měně vyrovnejte kurzovým zápisem nebo zápočtem. Zápis v uzavřeném období přiřadí jen správce po potvrzení; přiřazení změní saldokonto k jeho konci, hlavní kniha zůstane beze změny. Kontrola uzávěrky počítá přiřazení stejně jako saldokonto.
+
 ## 60.5 Když něco nejde
 
 <!-- cols: 30 34 36 -->

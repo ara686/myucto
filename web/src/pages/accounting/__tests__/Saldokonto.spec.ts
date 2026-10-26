@@ -28,9 +28,33 @@ vi.mock('@/composables/useFormat', () => ({
 }))
 
 vi.mock('@/components/ui/buttonStyles', () => ({
-  ICONS: { download: 'M0 0', doc: 'M0 0', user: 'M0 0' },
+  ICONS: { download: 'M0 0', doc: 'M0 0', user: 'M0 0', link: 'M0 0', check: 'M0 0', plus: 'M0 0' },
   btnOutline: () => 'btn-outline',
   btnFilled: () => 'btn-filled',
+  btnOutlineSm: () => 'btn-outline-sm',
+}))
+
+// Práva uživatele: bez zápisu do deníku stránka akce vyrovnání nenabízí.
+const authState = vi.hoisted(() => ({ write: [] as string[] }))
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({
+    canWrite: (key: string) => authState.write.includes(key),
+    isCompanyAdminRole: false,
+  }),
+}))
+
+// Dialogy vyrovnání mají vlastní testy; tady jen to, s čím je stránka otevře.
+vi.mock('@/components/accounting/SaldoSettleDialog.vue', () => ({
+  __esModule: true,
+  default: { name: 'SaldoSettleDialog', props: ['items', 'asOf'], template: '<div data-testid="settle-stub" />' },
+}))
+vi.mock('@/components/accounting/SaldoResidualDialog.vue', () => ({
+  __esModule: true,
+  default: { name: 'SaldoResidualDialog', props: ['accountCode', 'accountName', 'asOf'], template: '<div data-testid="residual-stub" />' },
+}))
+vi.mock('@/components/accounting/SaldoSuggestionsDialog.vue', () => ({
+  __esModule: true,
+  default: { name: 'SaldoSuggestionsDialog', props: ['periodId', 'asOf', 'account'], template: '<div data-testid="suggest-stub" />' },
 }))
 
 vi.mock('vue-i18n', () => ({
@@ -122,6 +146,7 @@ describe('Saldokonto.vue', () => {
     m.toastError.mockReset()
     prefOptions.value = {}
     prefOptions.set.mockReset()
+    authState.write = []
     m.listPeriods.mockResolvedValue([
       { id: 6, supplier_id: 1, fiscal_year: 2099, starts_on: '2099-01-01', ends_on: '2099-12-31', status: 'open', closed_at: null, created_at: '' },
     ])
@@ -349,5 +374,109 @@ describe('Saldokonto.vue', () => {
     expect(m.getSaldo.mock.calls.map(c => c[0].account)).toEqual(['311', '321', '314', '324', '315', '325'])
     expect(wrapper.findAll('tbody tr')).toHaveLength(2)
     expect(wrapper.text()).not.toContain('314 - Zálohy')
+  })
+
+  it('(k) bez práva zápisu do deníku stránka vyrovnání nenabízí', async () => {
+    serveSaldo(makeReport())
+    const wrapper = mount(Saldokonto)
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="saldo-suggest"]').exists()).toBe(false)
+    expect(wrapper.findAll('button').some(b => b.text().includes('accounting.saldo_settle.settle'))).toBe(false)
+    expect(wrapper.findAll('tbody input[type="checkbox"]')).toHaveLength(0)
+  })
+
+  it('(l) Vyrovnat otevře dialog s položkou, účtem a partnerem', async () => {
+    authState.write = ['accounting.journal.write']
+    serveSaldo(makeReport())
+    const wrapper = mount(Saldokonto)
+    await flushPromises()
+
+    const settle = wrapper.findAll('tbody button').filter(b => b.text().includes('accounting.saldo_settle.settle'))
+    expect(settle).toHaveLength(2)
+    await settle[0].trigger('click')
+    await flushPromises()
+
+    const dialog = wrapper.findComponent({ name: 'SaldoSettleDialog' })
+    expect(dialog.exists()).toBe(true)
+    expect(dialog.props('asOf')).toBe('2099-06-30')
+    expect(dialog.props('items')).toEqual([{
+      doc_type: 'invoice', doc_id: 101, doc_no: 'F-101', partner_id: 10, partner_name: 'Alfa s.r.o.',
+      account_code: '311', currency_code: 'CZK', remaining_czk: 1000,
+    }])
+  })
+
+  it('(m) hromadné vyrovnání jen pro doklady jednoho partnera a účtu', async () => {
+    authState.write = ['accounting.journal.write']
+    const report = makeReport()
+    report.accounts[0].partners[0].items.push({
+      doc_type: 'invoice', doc_id: 103, doc_no: 'F-103', issue_date: '2099-02-01', due_date: '2099-02-15',
+      currency_code: 'CZK', amount_foreign: 0, booked_czk: 200, paid_czk: 0, remaining_czk: 200, days_overdue: 0,
+    })
+    serveSaldo(report)
+    const wrapper = mount(Saldokonto)
+    await flushPromises()
+
+    const boxes = wrapper.findAll('tbody input[type="checkbox"]')
+    expect(boxes).toHaveLength(3)
+    // Řazení podle splatnosti: F-101 (Alfa), F-103 (Alfa), F-102 (Beta).
+    await boxes[0].setValue(true)
+    await boxes[2].setValue(true)
+    const bulk = () => wrapper.findAll('button').find(b => b.text().includes('accounting.saldo_settle.settle_selected'))!
+    expect(bulk().attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('accounting.saldo_settle.selected_mixed')
+
+    await boxes[2].setValue(false)
+    await boxes[1].setValue(true)
+    expect(bulk().attributes('disabled')).toBeUndefined()
+    await bulk().trigger('click')
+    await flushPromises()
+    expect(wrapper.findComponent({ name: 'SaldoSettleDialog' }).props('items').map((i: { doc_id: number }) => i.doc_id)).toEqual([101, 103])
+  })
+
+  it('(n) cizoměnový doklad a ostatní položku rozpadem zápisu vyrovnat nelze', async () => {
+    authState.write = ['accounting.journal.write']
+    const report = makeReport()
+    report.accounts[0].partners[0].items[0].currency_code = 'EUR'
+    report.accounts[0].partners[1].items[0] = {
+      doc_type: 'other_item', doc_id: 301, doc_no: 'OP-301', issue_date: '2099-01-10', due_date: '2099-01-24',
+      currency_code: 'CZK', amount_foreign: 0, booked_czk: 500, paid_czk: 0, remaining_czk: 500, days_overdue: 0,
+    }
+    serveSaldo(report)
+    const wrapper = mount(Saldokonto)
+    await flushPromises()
+
+    expect(wrapper.findAll('tbody button').some(b => b.text().includes('accounting.saldo_settle.settle'))).toBe(false)
+  })
+
+  it('(o) rozdíl k hlavní knize nabídne položku ze zůstatku jen s právem k ostatním položkám', async () => {
+    authState.write = ['accounting.journal.write']
+    const report = makeReport()
+    report.accounts[0].gl_balance = 2200
+    report.accounts[0].difference = 700
+    report.accounts[0].matches = false
+    serveSaldo(report)
+    const wrapper = mount(Saldokonto)
+    await flushPromises()
+    expect(wrapper.findAll('button').some(b => b.text().includes('accounting.saldo_settle.residual_open'))).toBe(false)
+
+    authState.write = ['accounting.journal.write', 'other_items']
+    const allowed = mount(Saldokonto)
+    await flushPromises()
+    await allowed.findAll('button').find(b => b.text().includes('accounting.saldo_settle.residual_open'))!.trigger('click')
+    await flushPromises()
+    const dialog = allowed.findComponent({ name: 'SaldoResidualDialog' })
+    expect(dialog.props()).toMatchObject({ accountCode: '311', accountName: 'Odběratelé', asOf: '2099-06-30' })
+  })
+
+  it('(p) Navrhnout párování otevře návrh pro období a účet sestavy', async () => {
+    authState.write = ['accounting.journal.write']
+    serveSaldo(makeReport())
+    const wrapper = mount(Saldokonto)
+    await flushPromises()
+
+    await wrapper.find('[data-testid="saldo-suggest"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.findComponent({ name: 'SaldoSuggestionsDialog' }).props()).toMatchObject({ periodId: 6, asOf: '2099-06-30', account: 'all' })
   })
 })
