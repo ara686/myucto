@@ -49,6 +49,7 @@ type Vm = {
   clients: { id: number; price_level_id: number | null }[]
   priceLevels: { id: number; name: string; is_active: boolean }[]
   priceLevelsLoaded: boolean
+  rememberLoadedStockPrices: () => void
 }
 
 // Zprávy s parametry, ať test vidí, co dialog a hlášky říkají.
@@ -260,6 +261,20 @@ describe('InvoiceEditor: přecenění uloženého dokladu po změně hladiny', (
     vm.form.price_level_id = 3
     await flush()
     expect(confirm.mock.calls.map(call => call[0])).toEqual(['confirm Urgent 2', 'confirm Dealer 1'])
+    wrapper.unmount()
+  })
+
+  it('ruční přepis uložené ceny v této relaci dialog zmíní', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const { wrapper, vm } = await mountEditor('/invoices/42')
+    // Ceny načtené s dokladem (hydratace), pak uživatel jednu přepíše.
+    vm.rememberLoadedStockPrices()
+    vm.form.price_level_id = 3
+    await flush()
+    vm.form.items[0].unit_price_without_vat = 77
+    vm.form.price_level_id = 5
+    await flush()
+    expect(confirm.mock.calls.map(call => call[0])).toEqual(['confirm Dealer 2', 'confirm-manual Urgent 2'])
     wrapper.unmount()
   })
 })

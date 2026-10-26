@@ -1358,6 +1358,14 @@ watch(
   },
 )
 
+// Ceny skladových řádků načtené s dokladem, ať dotaz na přecenění pozná jejich ruční přepis.
+const loadedStockPrices = new WeakMap<InvoiceItem, number>()
+function rememberLoadedStockPrices(): void {
+  for (const row of form.value.items) {
+    if (row.stock_item_id != null) loadedStockPrices.set(row, Number(row.unit_price_without_vat))
+  }
+}
+
 // Uložený doklad (koncept nebo úprava vystaveného) ceny řádků sám nemění. Po změně hladiny,
 // podle které se doklad naceňuje (hladina dokladu, jinak odběratele), se editor zeptá, jestli
 // přecenit i ostatní skladové řádky, včetně ručně přepsaných. Nový doklad se neptá.
@@ -1376,8 +1384,10 @@ watch(
       storedDocument: isEdit.value && (editedStatus.value === 'draft' || isForce.value),
     })
     if (rows.length === 0) return
-    // Ručně přepsaná cena má stav z této relace, uložená cena dokladu žádný.
-    const hasManual = rows.some(row => stockQuoteStates.get(row) != null)
+    // Ruční cena: přepis automatické ceny (řádek má stav z této relace) nebo přepis ceny
+    // načtené s dokladem. Nezměněná uložená cena ruční není.
+    const hasManual = rows.some(row => stockQuoteStates.get(row) != null
+      || (loadedStockPrices.has(row) && Number(row.unit_price_without_vat) !== loadedStockPrices.get(row)))
     const levelName = priceLevelOptions.value.find(l => l.id === level)?.name ?? t('invoice.price_level.no_level')
     const question = hasManual ? 'invoice.price_level.reprice_confirm_manual' : 'invoice.price_level.reprice_confirm'
     if (!confirm(t(question, { level: levelName, count: rows.length }))) return
@@ -1504,6 +1514,7 @@ onMounted(async () => {
       revenue_category_id: (inv as any).revenue_category_id ?? null,
       payment_schedule: (inv.payment_schedule ?? []).map(r => ({ ...r })),
     })
+    rememberLoadedStockPrices()
     // Pořadí položek bez slevových řádků = pořadí na serveru (sleva se generuje na konec).
     void docDims.load(inv.id, form.value.items)
     loadedRate.value = (inv.exchange_rate && inv.currency !== 'CZK')
