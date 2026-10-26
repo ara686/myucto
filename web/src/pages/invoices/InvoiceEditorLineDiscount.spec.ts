@@ -137,4 +137,41 @@ describe('InvoiceEditor: sleva v % zadaná u řádku', () => {
     for (const field of inputs) expect(field.attributes('aria-label')).toBe('invoice.line_discount.column')
     wrapper.unmount()
   })
+
+  it('rozepsaná sleva přežije překreslení řádku a Tab ji použije', async () => {
+    const { wrapper, vm } = await mountEditor(true)
+    vm.loaded = true
+    await wrapper.vm.$nextTick()
+    const row = vm.form.items[0]
+    const field = wrapper.find('[data-test="line-discount-input"]')
+
+    await field.trigger('focus')
+    await field.setValue('1')
+    // Překreslení během psaní (odpověď hledání karty, nacenění jiného řádku).
+    row.quantity = 3
+    await wrapper.vm.$nextTick()
+    expect((field.element as HTMLInputElement).value).toBe('1')
+    ;(field.element as HTMLInputElement).value = '15'
+    await field.trigger('input')
+    row.quantity = 4
+    await wrapper.vm.$nextTick()
+    expect((field.element as HTMLInputElement).value).toBe('15')
+
+    await field.trigger('change')
+    await field.trigger('blur')
+    expect(row.unit_price_without_vat).toBe(850)
+    expect((field.element as HTMLInputElement).value).toBe('15')
+    wrapper.unmount()
+  })
+
+  it('u skladového řádku nápověda říká, že se sleva počítá z ceníku karty', async () => {
+    const { wrapper, vm } = await mountEditor(true)
+    const row = vm.form.items[0]
+    row.list_unit_price = 1000
+    row.unit_price_without_vat = 950
+    expect(vm.lineDiscountHint(row)).toBe('invoice.line_discount.hint_discount_card')
+    row.stock_item_id = null
+    expect(vm.lineDiscountHint(row)).toBe('invoice.line_discount.hint_discount')
+    wrapper.unmount()
+  })
 })

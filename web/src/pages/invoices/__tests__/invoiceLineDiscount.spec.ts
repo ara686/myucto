@@ -34,7 +34,14 @@ describe('sleva v % zadaná u řádku', () => {
     expect(applyLineDiscount({ list_unit_price: '999.00', unit_price_without_vat: 999 }, 12.5)).toEqual({ list_unit_price: 999, unit_price_without_vat: 874.13 })
     expect(applyLineDiscount({ list_unit_price: 1000, unit_price_without_vat: 900 }, 0)).toEqual({ list_unit_price: 1000, unit_price_without_vat: 1000 })
     expect(applyLineDiscount({ list_unit_price: 1000, unit_price_without_vat: 900 }, 100)).toEqual({ list_unit_price: 1000, unit_price_without_vat: 0 })
-    expect(applyLineDiscount({ list_unit_price: 1, unit_price_without_vat: 1 }, 33.33, 6)).toEqual({ list_unit_price: 1, unit_price_without_vat: 0.6667 })
+    // Cena po slevě má vždy dvě místa, i u časové položky.
+    expect(applyLineDiscount({ list_unit_price: 333.33, unit_price_without_vat: 333.33 }, 33.33)).toEqual({ list_unit_price: 333.33, unit_price_without_vat: 222.23 })
+  })
+
+  it('zaokrouhlí přesně půl nahoru na haléře', () => {
+    expect(applyLineDiscount({ list_unit_price: 4.35, unit_price_without_vat: 4.35 }, 50)?.unit_price_without_vat).toBe(2.18)
+    expect(applyLineDiscount({ list_unit_price: 8.2, unit_price_without_vat: 8.2 }, 2.5)?.unit_price_without_vat).toBe(8)
+    expect(applyLineDiscount({ list_unit_price: 1.05, unit_price_without_vat: 1.05 }, 50)?.unit_price_without_vat).toBe(0.53)
   })
 
   it('bez ceníkové ceny se jí stane aktuální cena řádku', () => {

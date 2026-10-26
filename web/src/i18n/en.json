@@ -22383,8 +22383,11 @@
     "line_discount": {
       "hint_discount": "List {price} · discount {pct} %",
       "hint_markup": "List {price} · markup {pct} %",
+      "hint_discount_card": "Card list {price} · discount {pct} %",
+      "hint_markup_card": "Card list {price} · markup {pct} %",
+      "table_hint": "A discount from the list price can also be entered as a percentage in the Disc. % column of each item.",
       "column": "Disc. %",
-      "input_hint": "Discount from the list price of the line, 0 to 100 %. Recalculates the unit price. A line without a list price takes it from the current price.",
+      "input_hint": "Discount from the list price of the line, 0 to 100 %. Recalculates the unit price. A line without a list price takes it from the current price. On a stock line it is calculated from the card list price and replaces the price level discount or markup.",
       "title": "List price before discount. A manual price change keeps it and the discount is recalculated. The PDF itemises it when the option in Settings is on."
     },
     "price_list_requires_context": "Select a customer and document currency before inserting a price list item.",

@@ -491,14 +491,18 @@ se nesčítá.
 (`Nastavení → Doklady`) má tabulka položek za cenou sloupec **Sleva %**, a to u skladového
 i ručně zadaného řádku. Zadejte slevu 0 až 100 % (nejvýš dvě desetinná místa, víc se
 zaokrouhlí, znak % můžete připsat). Cena za jednotku se přepočte z ceníkové ceny
-a zaokrouhlí na dvě desetinná místa, u časové položky na šest míst. U nízkých cen se proto
+a zaokrouhlí půl nahoru na dvě desetinná místa, i u časové položky. U nízkých cen se proto
 procento spočtené ze zaokrouhlené ceny může od zadaného lišit o setiny. Řádek bez ceníkové
 ceny ji převezme z aktuální ceny, takže „1 000,00 a sleva 10 %“ dá cenu 900,00. Ruční změna
 ceny slevu v poli přepočte. Opravíte-li u řádku bez skladové karty cenu nad ceníkovou (pole
-slevy je pak prázdné), další zadaná sleva se počítá z nové ceny. U skladového řádku zůstává
-ceníkovou cenou cena karty, i když je cena řádku kvůli přirážce hladiny vyšší. Sleva nad 100 % nebo text se nepřijme
-a pole se vrátí. Bez volby se editor nemění. Sleva z celé faktury funguje dál stejně
-a počítá se z cen řádků po slevě.
+slevy je pak prázdné), další zadaná sleva se počítá z nové ceny.
+
+U skladového řádku se sleva počítá vždy z ceníkové ceny karty a **nahrazuje slevu
+i přirážku cenové hladiny**: karta za 1 000,00 v hladině s přirážkou 10 % (cena 1 100,00)
+a sleva 5 % dá 950,00, sleva 0 vrátí cenu karty 1 000,00. Pod cenou řádku je pak
+„Ceník karty 1 000,00 · sleva 5 %“. Sleva nad 100 % nebo text se nepřijme a pole se vrátí.
+Bez volby se editor nemění. Sleva z celé faktury funguje dál stejně a počítá se z cen
+řádků po slevě.
 
 **Pořadí.** Levým úchytem (☰) přetáhněte položky pro změnu pořadí. Pořadí se zachová v PDF.
 

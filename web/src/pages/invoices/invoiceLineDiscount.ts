@@ -34,9 +34,10 @@ export function legacyListPrice(si: { sale_price_without_vat: string | null }): 
   return quotedListPrice({ list_unit_price: si.sale_price_without_vat })
 }
 
+/** Kladné číslo půl nahoru na `decimals` míst. Mezivýsledek se nejdřív ořízne na šest míst, ať 4,35 × 50 % dá 2,18, ne 2,17. */
 function roundTo(value: number, decimals: number): number {
   const factor = 10 ** decimals
-  return Math.round((value + Number.EPSILON * Math.sign(value)) * factor) / factor
+  return Math.round(Number((value * factor).toFixed(6))) / factor
 }
 
 /** Hodnota pole „Sleva %" u řádku: kladná sleva z ceníku na dvě místa, jinak null (bez ceníku, shoda, přirážka). */
@@ -55,8 +56,8 @@ export function parseLineDiscountInput(raw: string): number | null {
 }
 
 /**
- * Sleva v % zadaná u řádku: cena = ceníková × (1 − sleva / 100), zaokrouhlená na
- * `decimals` míst jako ruční cena řádku. Bez ceníkové ceny, nebo když je cena ručního
+ * Sleva v % zadaná u řádku: cena = ceníková × (1 − sleva / 100), zaokrouhlená půl
+ * nahoru na dvě desetinná místa (i u časové položky, ať PDF netiskne šest míst). Bez ceníkové ceny, nebo když je cena ručního
  * řádku nad ceníkovou (pole slevy je prázdné, uživatel cenu opravil), se ceníkovou
  * stane aktuální cena řádku. U skladového řádku je ceníková cena z karty závazná,
  * přirážka hladiny ji nepřepíše. null = nic se nemění (bez kladné ceny, nebo nulová sleva
@@ -65,7 +66,6 @@ export function parseLineDiscountInput(raw: string): number | null {
 export function applyLineDiscount(
   row: { stock_item_id?: number | null; list_unit_price?: number | string | null; unit_price_without_vat: number | string | null | undefined },
   pct: number,
-  decimals = 2,
 ): { list_unit_price: number; unit_price_without_vat: number } | null {
   let list = toNumber(row.list_unit_price)
   const current = toNumber(row.unit_price_without_vat)
@@ -73,5 +73,5 @@ export function applyLineDiscount(
     if (current === null || current <= 0 || pct === 0) return null
     list = current
   }
-  return { list_unit_price: list, unit_price_without_vat: roundTo(list * (100 - pct) / 100, decimals) }
+  return { list_unit_price: list, unit_price_without_vat: roundTo(list * (100 - pct) / 100, 2) }
 }

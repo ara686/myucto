@@ -766,7 +766,9 @@ function lineDiscountHint(item: InvoiceItem): string | null {
     price: formatNumber(Number(item.list_unit_price), { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
     pct: formatNumber(Math.abs(pct), { maximumFractionDigits: 2 }),
   }
-  return pct > 0 ? t('invoice.line_discount.hint_discount', params) : t('invoice.line_discount.hint_markup', params)
+  // Se slevou zadávanou u řádku je vidět, že se skladový řádek počítá z ceníku karty (ne z ceny hladiny).
+  const card = showLineDiscountInput.value && item.stock_item_id != null ? '_card' : ''
+  return pct > 0 ? t(`invoice.line_discount.hint_discount${card}`, params) : t(`invoice.line_discount.hint_markup${card}`, params)
 }
 
 // Sleva v % zadávaná u řádku. Jen s volbou firmy „rozepsat slevu na PDF", bez ní se editor nemění.
@@ -781,16 +783,33 @@ function lineDiscountInput(item: InvoiceItem): string {
 /** Zadaná sleva přecení řádek z ceníkové ceny; neplatný vstup řádek nemění. */
 function setLineDiscount(item: InvoiceItem, raw: string): void {
   const pct = parseLineDiscountInput(raw)
-  const next = pct === null ? null : applyLineDiscount(item, pct, isTimeItem(item) ? 6 : 2)
+  const next = pct === null ? null : applyLineDiscount(item, pct)
   if (!next) return
   item.list_unit_price = next.list_unit_price
   item.unit_price_without_vat = next.unit_price_without_vat
 }
 
+// Rozepsaná sleva: každé překreslení řádku (odpověď hledání karty, nacenění) by jinak
+// přepsalo text v poli hodnotou spočtenou z ceny, než ho Tab stihne použít.
+const lineDiscountDrafts = reactive(new WeakMap<InvoiceItem, string>())
+
+function lineDiscountFieldValue(item: InvoiceItem): string {
+  return lineDiscountDrafts.get(item) ?? lineDiscountInput(item)
+}
+
+function onLineDiscountInput(item: InvoiceItem, event: Event): void {
+  lineDiscountDrafts.set(item, (event.target as HTMLInputElement).value)
+}
+
 function onLineDiscountChange(item: InvoiceItem, event: Event): void {
   const input = event.target as HTMLInputElement
   setLineDiscount(item, input.value)
+  lineDiscountDrafts.delete(item)
   input.value = lineDiscountInput(item)
+}
+
+function onLineDiscountBlur(item: InvoiceItem): void {
+  lineDiscountDrafts.delete(item)
 }
 
 /** Badge zdroje ceny, jen dokud je v řádku automaticky doplněná cena. */
@@ -3109,6 +3128,7 @@ useWindowTitle(
         </div>
         <div v-if="requiresPositiveAmountToPay" class="px-5 py-3 border-b border-neutral-100 text-xs text-neutral-500">
           {{ t(refundInvoiceAllowed ? 'refundInvoice.negative_item_hint' : 'invoice.negative_item_hint') }}
+          <template v-if="showLineDiscountInput">{{ t('invoice.line_discount.table_hint') }}</template>
         </div>
         <!-- Desktop: tabulka -->
         <div class="hidden md:block overflow-x-auto">
@@ -3244,7 +3264,8 @@ useWindowTitle(
                   class="mt-1 text-xs text-neutral-500 text-right">{{ lineDiscountHint(item) }}</p>
               </td>
               <td v-if="showLineDiscountInput" class="px-3 py-2">
-                <input :value="lineDiscountInput(item)" @change="onLineDiscountChange(item, $event)" type="text" inputmode="decimal"
+                <input :value="lineDiscountFieldValue(item)" @input="onLineDiscountInput(item, $event)" @change="onLineDiscountChange(item, $event)"
+                  @blur="onLineDiscountBlur(item)" type="text" inputmode="decimal"
                   placeholder="0" data-test="line-discount-input" :aria-label="t('invoice.line_discount.column')" :title="t('invoice.line_discount.input_hint')"
                   class="w-full h-9 px-2 border border-neutral-300 rounded text-right font-mono text-sm" />
               </td>
@@ -3560,7 +3581,8 @@ useWindowTitle(
               </div>
               <div v-if="showLineDiscountInput">
                 <label class="block text-xs font-medium text-neutral-600 mb-1">{{ t('invoice.line_discount.column') }}</label>
-                <input :value="lineDiscountInput(item)" @change="onLineDiscountChange(item, $event)" type="text" inputmode="decimal"
+                <input :value="lineDiscountFieldValue(item)" @input="onLineDiscountInput(item, $event)" @change="onLineDiscountChange(item, $event)"
+                  @blur="onLineDiscountBlur(item)" type="text" inputmode="decimal"
                   placeholder="0" data-test="line-discount-input" :aria-label="t('invoice.line_discount.column')" :title="t('invoice.line_discount.input_hint')"
                   class="w-full h-10 px-3 border border-neutral-300 rounded text-right font-mono text-sm" />
               </div>

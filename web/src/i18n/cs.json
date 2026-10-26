@@ -22383,8 +22383,11 @@
     "line_discount": {
       "hint_discount": "Ceník {price} · sleva {pct} %",
       "hint_markup": "Ceník {price} · přirážka {pct} %",
+      "hint_discount_card": "Ceník karty {price} · sleva {pct} %",
+      "hint_markup_card": "Ceník karty {price} · přirážka {pct} %",
+      "table_hint": "Slevu z ceníkové ceny zadáte i v procentech ve sloupci Sleva % u položky.",
       "column": "Sleva %",
-      "input_hint": "Sleva z ceníkové ceny řádku, 0 až 100 %. Přepočte cenu za jednotku. Řádek bez ceníkové ceny ji převezme z aktuální ceny.",
+      "input_hint": "Sleva z ceníkové ceny řádku, 0 až 100 %. Přepočte cenu za jednotku. Řádek bez ceníkové ceny ji převezme z aktuální ceny. U skladového řádku se počítá z ceníku karty a nahrazuje slevu i přirážku cenové hladiny.",
       "title": "Ceníková cena před slevou. Ruční změna ceny ji zachová a sleva se přepočítá. Na PDF ji rozepíše volba v Nastavení."
     },
     "price_list_requires_context": "Před vložením z ceníku vyberte zákazníka a měnu dokladu.",
