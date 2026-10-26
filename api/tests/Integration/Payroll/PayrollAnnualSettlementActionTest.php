@@ -300,6 +300,54 @@ final class PayrollAnnualSettlementActionTest extends TestCase
         self::assertCount(1, $warnings);
     }
 
+    /**
+     * Regrese: náhled osoby bez založené žádosti vracel `row_version` 1. Klient
+     * ji poslal zpět a první uložení skončilo 409 „mezitím zanikla", takže
+     * stav žádosti nešel u nikoho poprvé zapsat a JMHZ zůstalo zablokované.
+     */
+    public function testFirstSaveWithVersionFromPreviewSucceeds(): void
+    {
+        $previewRequest = $this->saveRequestFor([])
+            ->withMethod('GET')
+            ->withAttribute('auth.effective_role', new EffectiveRole(
+                1,
+                'Syntetická mzdová role',
+                'staff',
+                true,
+                ['payroll.documents' => AccessLevel::WRITE->value, 'payroll' => AccessLevel::WRITE->value],
+            ));
+        $preview = $this->action->preview(
+            $previewRequest,
+            new Response(),
+            ['year' => '2025', 'employeeId' => (string) $this->employeeId],
+        );
+        self::assertSame(200, $preview->getStatusCode());
+        $loaded = $this->body($preview)['request'] ?? null;
+        self::assertIsArray($loaded);
+        self::assertSame('unknown', $loaded['request_status'] ?? null);
+
+        $body = [
+            'request_status' => 'not_requested',
+            'prior_employers' => 'unknown',
+            'filing_obligation' => 'unknown',
+            'annual_claims' => 'unknown',
+        ];
+        // Klient posílá verzi stejně jako PayrollAnnualSettlement.vue: jen kladnou.
+        if ((int) ($loaded['row_version'] ?? 0) > 0) {
+            $body['row_version'] = $loaded['row_version'];
+        }
+        $response = $this->action->saveRequest(
+            $this->saveRequestFor($body),
+            new Response(),
+            ['year' => '2025', 'employeeId' => (string) $this->employeeId],
+        );
+
+        self::assertSame(200, $response->getStatusCode());
+        $saved = $this->body($response)['request'] ?? null;
+        self::assertIsArray($saved);
+        self::assertSame('not_requested', $saved['request_status'] ?? null);
+    }
+
     /** @param array<string,mixed> $body */
     private function saveRequestFor(array $body): \Psr\Http\Message\ServerRequestInterface
     {

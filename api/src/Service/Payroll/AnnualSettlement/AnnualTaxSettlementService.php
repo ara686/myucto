@@ -353,6 +353,9 @@ final class AnnualTaxSettlementService implements AnnualSettlementPerformer
         [$request, $requestRow] = $this->loadRequest($supplierId, $employeeId, $taxYear);
         $requestPayload = [
             ...$request->toArray(),
+            // Formulář i ukládací endpoint pracují s `request_status`; samotné
+            // `status` z domény nechávalo výběr stavu po načtení prázdný.
+            'request_status' => $request->status->value,
             'other_household_caregiver_status' =>
                 (string) ($requestRow['other_household_caregiver_status'] ?? 'unknown'),
             'other_household_caregivers' => is_array(
