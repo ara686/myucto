@@ -126,6 +126,12 @@ final class DocumentBranchParityGuardsTest extends TestCase
         'Service/Migration/Pohoda/DocumentLinker.php' => [
             'inferAdvanceSettlements' => 'dopočet čerpání se týká jen poskytnutých záloh na 314',
         ],
+
+        // ZDD (daňový doklad k přijaté platbě zálohy) a čerpání zálohy vede ABRA Flexi jen
+        // u přijatých faktur; vydané zálohy převod z ABRA Flexi nepřebírá.
+        'Service/Migration/Abra/AbraDocumentRelationLinker.php' => [
+            'linkAdvanceDeductions' => 'čerpání přijatých záloh a ZDD z ABRA Flexi, vydaná větev v převodu není',
+        ],
     ];
 
     public function testTaxDocumentExceptionIsMirroredOnBothBranches(): void
