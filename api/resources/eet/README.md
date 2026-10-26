@@ -11,6 +11,32 @@ aktualizujte otisky níže.
 | `trust/ica-root-ca-rsa-05-2022.pem` | https://www.ica.cz/sites/default/files/download/2025/rca22_rsa.pem | `f72dc3232df2c9598f60c1bbc82f4bcc5acc80af73a60ed6eb3f6bd67ab473e2` |
 | `trust/ica-public-ca-rsa-06-2022.pem` | https://www.ica.cz/sites/default/files/download/2025/pca22_rsa.pem | `db03fb10906d8cc357ef2d68f2f130d6a5381de3ca9a8cbf45216350ca695116` |
 
+## Dokumentace Finanční správy
+
+Dokumenty, podle kterých je implementace psaná. V repozitáři nejsou, jen se na
+ně odkazuje; otisk patří ke stažené kopii, aby šlo poznat tichou změnu obsahu.
+
+| Dokument | Verze a datum | URL | SHA-256 PDF |
+| --- | --- | --- | --- |
+| Popis položek datové zprávy s příklady jejich vyplnění | 1.0, 5. 10. 2026 | https://eet.gov.cz/assets/cs/cmsmedia/pro-vyvojare/EET_popis_polozek_datove_zpravy.pdf | `de09d084688e871c639b2813ed30ba77e838667f16ec94604b6a3f4df2c3576f` |
+| Formát a struktura údajů o evidované tržbě a popis datového rozhraní | 1.2, 25. 8. 2026 | https://eet.gov.cz/assets/cs/cmsmedia/pro-vyvojare/EET_popis_rozhrani_v1.2.pdf | `c986e85686927e1e153aee0f33090fd6fda80d09b44e564d8b344dde729b1a1e` |
+| Neprodukční prostředí (playground), přístupové a provozní informace | 1.1, 30. 6. 2026 | https://eet.gov.cz/assets/cs/cmsmedia/pro-vyvojare/EET_pristupove_provozni_informace_playgr-3.pdf | `f29c73d3bc84be8d073344dc7053466e9fa143792cbee2bc997f289d67329880` |
+| Produkční prostředí, přístupové a provozní informace | 1.1, 10. 7. 2026 | https://eet.gov.cz/assets/cs/cmsmedia/pro-vyvojare/EET_pristupove_provozni_informace_produk-2.pdf | `377770fd2511c2406bfbd2f647b4863883243860048818d24956c3de57bbfc88` |
+
+V komentářích kódu se „metodikou“ myslí první dokument (popis položek), „popisem
+rozhraní“ druhý. Z metodiky vychází hlavně pravidla vzdálených a kontaktních
+plateb, kreditu (`urceno_cerp_zuct`, `cerp_zuct`), storna a opravy a evidence
+v pověření (situace 4 a 5, `EetDelegation`).
+
+Ověřeno 26. 10. 2026 proti stránce https://eet.gov.cz/cs/pro-vyvojare/dokumenty-ke-stazeni:
+nejnovější je popis rozhraní 1.2, XSD a WSDL 4.1 (otisky shodné s tabulkou výše),
+přístupové a provozní informace 1.1, certifikáty autorit `ca/` beze změny
+a vzorové zprávy `CZ*.eet.v4.req.xml` shodné s `api/tests/Fixtures/eet/`. Proti
+verzi 1.0 přinesl popis rozhraní jen upřesnění hlavičky `Content-Type`
+(MyÚčto posílá `text/xml; charset=utf-8`) a podporu CORS pro prohlížečové klienty
+(serverového odesílání se netýká). Kódy chyb a varování, URL prostředí, limit
+12 kB a formáty položek odpovídají kódu.
+
 ## Důvěra v podpis potvrzení
 
 Potvrzovací zprávy produkce i playgroundu podepisuje správce daně certifikátem

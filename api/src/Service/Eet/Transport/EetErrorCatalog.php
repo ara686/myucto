@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace MyInvoice\Service\Eet\Transport;
 
 /**
- * Číselníky chyb a varování z popisu datového rozhraní EET 2.0 v1.2
+ * Číselníky chyb a varování z popisu datového rozhraní EET 2.0 v1.2 z 25. 8. 2026
  * (kap. 3.5.4 a 3.4.4). Texty správce daně jsou bez diakritiky; tady je k nim
  * český popis pro obsluhu a klasifikace výsledku.
  *

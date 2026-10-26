@@ -36,8 +36,8 @@ use Psr\Clock\ClockInterface;
  * vytvoří záporné opravy evidovaných tržeb opravované faktury
  * ({@see afterRefundPost()}, {@see EetCorrectionService::refundInvoiceSales()}).
  * Storno takového dokladu znamená, že se peníze vrátily do pokladny (nebo vrácení
- * neproběhlo). Zápornou opravu nejde vzít zpět (EET opravu opravy nezná, metodika
- * opravuje vždy novou datovou zprávou), proto storno zaeviduje novou kladnou tržbu
+ * neproběhlo). Zápornou opravu nejde vzít zpět (EET opravu opravy nezná, metodika FS
+ * „Popis položek datové zprávy“ v1.0, kap. 4, opravuje vždy novou datovou zprávou), proto storno zaeviduje novou kladnou tržbu
  * ve výši oprav dokladu, navázanou na doklad i na opravy ({@see reverseCashRefund()}).
  */
 final class EetCashDocumentRecorder
