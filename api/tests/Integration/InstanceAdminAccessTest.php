@@ -49,7 +49,7 @@ final class InstanceAdminAccessTest extends TestCase
         $pdo->exec("SET SESSION sql_mode = 'STRICT_ALL_TABLES,NO_ENGINE_SUBSTITUTION'");
         $pdo->beginTransaction();
         $this->technicalRole = $this->roleId('instance_admin');
-        self::assertGreaterThan(0, $this->technicalRole, 'Migrace 2135 musí být aplikovaná.');
+        self::assertGreaterThan(0, $this->technicalRole, 'Migrace správce instance musí být aplikovaná.');
         $this->technician = $this->user($this->technicalRole);
         $this->administrator = $this->user($this->roleId('superadmin'));
         $this->supplierA = $this->supplier('Synthetic technical A');
@@ -110,24 +110,28 @@ final class InstanceAdminAccessTest extends TestCase
         self::assertSame($ids, [...array_column(array_slice($first, 0, 100), 'supplier_id'), ...array_column($next, 'supplier_id')]);
     }
 
-    public function testTechnicalUsersNeverOccupyBusinessOrPayrollSeatsEvenWithCorruptGrants(): void
+    public function testTechnicalRoleUsesPublishedLicenseRulesWithoutSpecialExemptions(): void
     {
         $pdo = $this->db->pdo();
         $seats = new SeatPolicy($this->db);
         $payroll = new PayrollUsagePolicy($this->db);
+        self::assertFalse($seats->roleGrantsWrite($this->technicalRole));
+        self::assertFalse($seats->occupiesSeat($this->technicalRole));
+        $pdo->prepare('UPDATE supplier SET payroll_enabled = 1 WHERE id = ?')->execute([$this->supplierA]);
         $before = $seats->countActiveSeats();
         $payrollBefore = $payroll->countActiveUsers();
         $pdo->prepare("INSERT INTO role_permissions (role_id, permission_key, access_level) VALUES (?, 'invoices', 2), (?, 'payroll', 2)")
             ->execute([$this->technicalRole, $this->technicalRole]);
-        $pdo->prepare('INSERT INTO user_suppliers (user_id, supplier_id, role_id) VALUES (?, ?, ?)')
-            ->execute([$this->technician, $this->supplierA, $this->roleId('accountant')]);
-        self::assertFalse($seats->roleGrantsWrite($this->technicalRole));
-        self::assertFalse($seats->occupiesSeat($this->technicalRole, [$this->roleId('accountant')]));
-        self::assertSame($before, $seats->countActiveSeats());
-        self::assertSame($payrollBefore, $payroll->countActiveUsers());
+        $pdo->prepare('INSERT INTO user_suppliers (user_id, supplier_id) VALUES (?, ?)')
+            ->execute([$this->technician, $this->supplierA]);
+        // Poškozená matice práv nesmí vytvořit výjimku z publikovaných licenčních pravidel.
+        self::assertTrue($seats->roleGrantsWrite($this->technicalRole));
+        self::assertTrue($seats->occupiesSeat($this->technicalRole, [$this->roleId('accountant')]));
+        self::assertSame($before + 1, $seats->countActiveSeats());
+        self::assertSame($payrollBefore + 1, $payroll->countActiveUsers());
         self::assertTrue($seats->roleGrantsWrite($this->roleId('accountant')));
         $this->user($this->roleId('accountant'));
-        self::assertSame($before + 1, $seats->countActiveSeats());
+        self::assertSame($before + 2, $seats->countActiveSeats());
     }
 
     public function testConversionRevokesOldAccessAtomicallyAndKeepsMfa(): void

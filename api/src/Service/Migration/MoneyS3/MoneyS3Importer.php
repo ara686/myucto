@@ -186,6 +186,9 @@ final class MoneyS3Importer
             return $out;
         }
 
+        if ($options->relinkOnly && !$this->map->hasAny($supplierId, MoneyS3ImportRepository::KIND_JOURNAL_ENTRY)) {
+            $add('error', 'relink_without_conversion', 'Opravný převod vazeb předpokládá firmu převedenou z Money S3; deník převodu tu chybí.');
+        }
         $supplierIco = CodebookImporter::ico((string) ($supplier['ic'] ?? ''));
         $agendaIco = CodebookImporter::ico($agenda->ico);
         if ($agendaIco === '') {
@@ -251,7 +254,9 @@ final class MoneyS3Importer
             }
             $mapped = $this->map->get($supplierId, MoneyS3ImportRepository::KIND_PERIOD, (string) $item['year']) !== null;
             $foreign = $this->journal->foreignEntryCount($supplierId, (int) $period['id']);
-            if ($foreign > 0) {
+            if ($foreign > 0 && $options->relinkOnly) {
+                $add('info', 'relink_keeps_own_journal', "Účetní období {$item['year']} obsahuje {$foreign} zápisů zadaných v MyÚčtu. Opravný převod je nechá beze změny a nové doklady z Money nepřidá.", ['year' => $item['year'], 'entries' => $foreign]);
+            } elseif ($foreign > 0) {
                 $add('error', 'journal_not_empty', "Účetní období {$item['year']} už obsahuje {$foreign} zápisů, které nevznikly převodem z Money. Deník z Money se do rozjetého účetnictví nepřimíchává.", ['year' => $item['year'], 'entries' => $foreign]);
             }
             if ((string) $period['status'] !== 'open' && !$mapped) {
@@ -406,8 +411,27 @@ final class MoneyS3Importer
         return $protocol;
     }
 
+    /**
+     * Kroky, které v opravném převodu vazeb neběží: přepnutí účetnictví a předkontace firmu
+     * nastavují, dimenze přepisují řádky deníku, opakované fakturace, majetek, koeficienty,
+     * uzávěrka a mzdy zakládají nebo účtují nové záznamy a rekonciliace srovnává celou
+     * zálohu, jejíž novější doklady opravný převod záměrně nepřidá.
+     */
+    private const RELINK_SKIPPED_STEPS = [
+        self::STEP_ACCOUNTING_MODE, CodebookImporter::STEP_POSTING_RULES, DimensionImporter::STEP, RecurringSeriesTakeover::STEP,
+        AssetImporter::STEP, AssetImporter::STEP_SMALL, VatCoefficientSeeder::STEP, HistoricalYearCloser::STEP,
+        PayrollImporter::STEP, MoneyS3Reconciler::STEP,
+    ];
+
     /** @return array<string,callable():void> */
     private function steps(ImportContext $ctx): array
+    {
+        $steps = $this->allSteps($ctx);
+        return $ctx->options->relinkOnly ? array_diff_key($steps, array_flip(self::RELINK_SKIPPED_STEPS)) : $steps;
+    }
+
+    /** @return array<string,callable():void> */
+    private function allSteps(ImportContext $ctx): array
     {
         $plan = $this->journal->plan($ctx->backup, $ctx->options, $ctx->calendar);
         $first = $plan[0];

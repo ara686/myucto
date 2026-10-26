@@ -44,6 +44,22 @@ final class SmallAssetService
     }
 
     /**
+     * Dodatečně naváže kartu BEZ zdroje na položku přijaté faktury (opakovaný převod z jiného
+     * programu dohledá doklad, který dřívější převod nenašel). Karta se zdrojem zůstává,
+     * jak je - vazbu nikdy nepřepisuje.
+     */
+    public function attachPurchaseSource(int $supplierId, int $id, int $purchaseInvoiceId, int $purchaseInvoiceItemId, ?string $documentRef): bool
+    {
+        $this->assertSourceBelongsToTenant($supplierId, ['purchase_invoice_id' => $purchaseInvoiceId, 'purchase_invoice_item_id' => $purchaseInvoiceItemId]);
+        $stmt = $this->db->pdo()->prepare(
+            'UPDATE small_assets SET purchase_invoice_id = ?, purchase_invoice_item_id = ?, document_ref = COALESCE(document_ref, ?)
+              WHERE id = ? AND supplier_id = ? AND purchase_invoice_id IS NULL AND purchase_invoice_item_id IS NULL AND cash_document_id IS NULL'
+        );
+        $stmt->execute([$purchaseInvoiceId, $purchaseInvoiceItemId, $documentRef, $id, $supplierId]);
+        return $stmt->rowCount() > 0;
+    }
+
+    /**
      * Vyřazení karty. §28/5 ZoÚ chce, aby evidence prokazovala existenci majetku — proto
      * se karta NEMAŽE, jen mění stav; vyřazený drobný majetek musí jít doložit i zpětně
      * (soupis k datu v minulosti ho pořád ukáže).

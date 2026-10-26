@@ -75,6 +75,9 @@ final class OtherItemImporter
                     $p->count(self::STEP, 'existing');
                     continue;
                 }
+                if ($ctx->skipsNew(self::STEP)) {
+                    continue;
+                }
                 $class = $agenda === 'receivable'
                     ? $ctx->vat->sale(PohodaXml::text($header, 'classificationVAT/ids'), 0.0)
                     : $ctx->vat->purchase(PohodaXml::text($header, 'classificationVAT/ids'));

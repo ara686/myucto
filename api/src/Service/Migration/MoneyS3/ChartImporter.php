@@ -77,7 +77,13 @@ final class ChartImporter
             }
             if (isset($ctx->accountIds[$target])) {
                 $p->count(self::STEP, 'existing');
-                $this->alignDeductibility($ctx, $target, $deductibility[$moneyCode] ?? null);
+                // Opravný převod nastavení účtů, které mohla účetní mezitím změnit, nepřepisuje.
+                if (!$ctx->options->relinkOnly) {
+                    $this->alignDeductibility($ctx, $target, $deductibility[$moneyCode] ?? null);
+                }
+                continue;
+            }
+            if ($ctx->skipsNew(self::STEP)) {
                 continue;
             }
             $synthetic = substr($target, 0, 3);

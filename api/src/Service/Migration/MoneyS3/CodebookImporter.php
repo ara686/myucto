@@ -61,6 +61,9 @@ final class CodebookImporter
                     $p->count(self::STEP_PARTNERS, 'existing');
                     continue;
                 }
+                if ($ctx->skipsNew(self::STEP_PARTNERS)) {
+                    continue;
+                }
                 $data = [
                     'name' => $name,
                     'ico' => $ico,
@@ -87,6 +90,11 @@ final class CodebookImporter
                     $ctx->clientsByIco[$ico] = $clientId;
                 }
             }
+        }
+        if ($ctx->options->relinkOnly) {
+            // Opravný převod karty partnerů ani jejich bankovní spojení nemění.
+            $p->finish(self::STEP_PARTNERS);
+            return;
         }
         $this->markExistingRelatedParties($ctx);
 

@@ -11,6 +11,7 @@ use MyInvoice\Service\Accounting\Activation\OpeningBalanceDocuments;
 use MyInvoice\Service\Accounting\FiscalCalendar;
 use MyInvoice\Service\Accounting\OtherItemException;
 use MyInvoice\Service\Accounting\OtherItemService;
+use MyInvoice\Service\Accounting\TakenOverRecord;
 use MyInvoice\Service\Migration\MoneyS3\ImportProtocol;
 use MyInvoice\Service\Migration\Shared\JournalEntryLinker;
 use PDO;
@@ -66,6 +67,7 @@ final class DocumentLinker
             }
         }
         $orphans = [];
+        $openingAdvances = [];
         foreach ([
             [PohodaJournal::RECEIVED, 'purchase_invoice', 'purchase_invoice', $ctx->purchaseInvoices, null],
             [PohodaJournal::COMMITMENT, 'manual', 'purchase_invoice', $ctx->commitments, 'purchase_invoice'],
@@ -87,7 +89,11 @@ final class DocumentLinker
                 if ($entryIds === []) {
                     if (isset($ctx->previousPeriod[$docType . '|' . $docId])) {
                         $p->count(self::STEP_LINK, 'previous_period');
-                        $this->linkOpening($ctx, $docType, (int) $docId);
+                        if ($docType === 'purchase_invoice' && $this->isAdvance((int) $docId)) {
+                            $openingAdvances[(int) $docId] = true;
+                        } else {
+                            $this->linkOpening($ctx, $docType, (int) $docId);
+                        }
                     } elseif ($docType === 'cash' && isset($ctx->openingCash[(int) $docId])) {
                         // Pokladní doklad počátečního stavu: zápis nemá, naváže se na otevírací zápis níže.
                     } elseif (isset($unbooked[$docType][$docId])) {
@@ -107,6 +113,7 @@ final class DocumentLinker
                 $p->count(self::STEP_LINK, $new ? 'linked' : 'existing');
             }
         }
+        $this->linkOpeningAdvances($ctx, array_keys($openingAdvances));
         foreach (array_keys($ctx->openingCash) as $cashId) {
             if ($this->linkOpening($ctx, 'cash', (int) $cashId)) {
                 $p->count(self::STEP_LINK, 'opening_cash');
@@ -117,8 +124,172 @@ final class DocumentLinker
             $p->warn(self::STEP_LINK, 'orphan_documents', count($orphans) . ' dokladů nemá v deníku Pohody zápis se stejným číslem. '
                 . 'Nejsou zaúčtované; zaúčtujte je ručně nebo v Účetnictví → Doúčtovat doklady.', ['documents' => array_slice($orphans, 0, 50)]);
         }
+        $this->linkAdvances($ctx);
+        $this->linkTaxDocumentsToAdvances($ctx);
         $this->entries->refreshDescriptions($ctx->supplierId, $p, self::STEP_LINK);
         $p->finish(self::STEP_LINK);
+    }
+
+    /**
+     * Čerpání zálohy konečnou fakturou: POHODA odečítá zálohu položkou konečné faktury
+     * s odkazem na zálohový doklad (`invoiceAdvancePaymentItem/sourceDocument`). Bez vazby
+     * v MyÚčtu (`advance_purchase_invoice_id`, u vydaných `parent_invoice_id`) saldokonto
+     * 314/324 nepozná, že je záloha vyúčtovaná, a drží ji otevřenou v plné výši.
+     *
+     * Faktura, která odečítá právě jednu dosud nevázanou zálohu, dostane vazbu na
+     * dokladu. Ostatní čerpání přijatých záloh (vyúčtování více záloh jednou fakturou,
+     * záloha čerpaná postupně víc fakturami) jde do `purchase_advance_deductions`
+     * s částkou čerpanou ze zálohového účtu (u plátce základ, DPH čerpá DDKP).
+     * U vydaných faktur takové čerpání zůstává v protokolu k ruční kontrole.
+     * Existující vazbu převod nepřepisuje a opakovaný převod nic nezdvojí.
+     */
+    private function linkAdvances(PohodaContext $ctx): void
+    {
+        $p = $ctx->protocol;
+        $pdo = $this->db->pdo();
+        foreach ([
+            [PohodaImportRepository::KIND_PURCHASE_INVOICE, ['received', 'commitment'], ['received_advance', 'received_proforma'], 'purchase_invoices', 'advance_purchase_invoice_id'],
+            [PohodaImportRepository::KIND_INVOICE, ['issued', 'receivable'], ['issued_advance', 'issued_proforma'], 'invoices', 'parent_invoice_id'],
+        ] as [$kind, $finalAgendas, $advanceAgendas, $table, $column]) {
+            $byNumber = [];
+            $finals = [];
+            foreach ($this->map->all($ctx->supplierId, $kind) as $key => $id) {
+                [$agenda, $number] = array_pad(explode('|', (string) $key, 3), 2, '');
+                if (in_array($agenda, $advanceAgendas, true)) {
+                    $byNumber[$number][] = (int) $id;
+                } elseif (in_array($agenda, $finalAgendas, true)) {
+                    $finals[$agenda . '|' . $number][] = (int) $id;
+                }
+            }
+            if ($byNumber === []) {
+                continue;
+            }
+            $purchase = $table === 'purchase_invoices';
+            $taken = $pdo->prepare("SELECT 1 FROM {$table} WHERE supplier_id = ? AND {$column} = ? LIMIT 1");
+            $set = $pdo->prepare("UPDATE {$table} SET {$column} = ? WHERE id = ? AND supplier_id = ? AND {$column} IS NULL");
+            $current = $pdo->prepare("SELECT {$column} FROM {$table} WHERE id = ? AND supplier_id = ?");
+            $deduct = $pdo->prepare(
+                'INSERT IGNORE INTO purchase_advance_deductions (supplier_id, final_invoice_id, advance_invoice_id, amount, created_by) VALUES (?, ?, ?, ?, ?)'
+            );
+            foreach ($finalAgendas as $agenda) {
+                foreach ($ctx->export->records($agenda, 'invoice') as $record) {
+                    $number = PohodaXml::text(PohodaXml::get($record, 'invoiceHeader'), 'number/numberRequested');
+                    $finalIds = $finals[$agenda . '|' . $number] ?? [];
+                    $advances = [];
+                    foreach (PohodaXml::all($record, 'invoiceDetail/invoiceAdvancePaymentItem') as $item) {
+                        $ref = PohodaXml::text($item, 'sourceDocument/number');
+                        if ($ref === '' || count($byNumber[$ref] ?? []) !== 1) {
+                            continue;
+                        }
+                        $vat = PohodaXml::num($item, 'homeCurrency/priceVAT');
+                        $amount = abs(abs($vat) >= 0.005 ? PohodaXml::num($item, 'homeCurrency/price') : PohodaXml::num($item, 'homeCurrency/priceSum'));
+                        $advances[$ref] = ['id' => $byNumber[$ref][0], 'amount' => round(($advances[$ref]['amount'] ?? 0.0) + $amount, 2)];
+                    }
+                    if ($advances === [] || count($finalIds) !== 1) {
+                        continue;
+                    }
+                    $finalId = $finalIds[0];
+                    $current->execute([$finalId, $ctx->supplierId]);
+                    $linked = $current->fetchColumn();
+                    if (count($advances) === 1) {
+                        $advance = reset($advances);
+                        if ($linked !== false && $linked !== null && (int) $linked === $advance['id']) {
+                            continue;
+                        }
+                        $taken->execute([$ctx->supplierId, $advance['id']]);
+                        if (($linked === null || $linked === false) && $taken->fetchColumn() === false) {
+                            $set->execute([$advance['id'], $finalId, $ctx->supplierId]);
+                            if ($set->rowCount() > 0) {
+                                $p->count(self::STEP_LINK, 'advance_linked');
+                            }
+                            continue;
+                        }
+                    }
+                    if (!$purchase) {
+                        $p->count(self::STEP_LINK, 'advance_multiple');
+                        $p->warn(self::STEP_LINK, 'advance_multiple', "Doklad {$number} čerpá zálohy " . implode(', ', array_keys($advances)) . ', které MyÚčto u vydané faktury neumí navázat; čerpání zkontrolujte ručně.', ['document_no' => $number]);
+                        continue;
+                    }
+                    foreach ($advances as $advance) {
+                        if ((int) $linked === $advance['id'] || $advance['amount'] < 0.01) {
+                            continue;
+                        }
+                        $deduct->execute([$ctx->supplierId, $finalId, $advance['id'], number_format($advance['amount'], 2, '.', ''), $ctx->userOrNull()]);
+                        if ($deduct->rowCount() > 0) {
+                            $p->count(self::STEP_LINK, 'advance_deductions');
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Daňový doklad k přijaté platbě (DDKP, v POHODĚ interní doklad) s vazbou na zálohový
+     * doklad: dostane rodiče (`parent_purchase_invoice_id`, u vydaných `parent_invoice_id`).
+     * DDKP čerpá DPH zálohy ze zálohového účtu; bez vazby ho saldokonto bere jako
+     * samostatný a záloha zůstává otevřená o daň.
+     */
+    private function linkTaxDocumentsToAdvances(PohodaContext $ctx): void
+    {
+        $p = $ctx->protocol;
+        $pdo = $this->db->pdo();
+        foreach ([
+            [PohodaImportRepository::KIND_PURCHASE_INVOICE, 'receivedAdvanceInvoice', ['received_advance', 'received_proforma'], 'purchase_invoices', 'parent_purchase_invoice_id', 'document_kind'],
+            [PohodaImportRepository::KIND_INVOICE, 'issuedAdvanceInvoice', ['issued_advance', 'issued_proforma'], 'invoices', 'parent_invoice_id', 'invoice_type'],
+        ] as [$kind, $linkAgenda, $advanceAgendas, $table, $column, $kindColumn]) {
+            $advances = [];
+            $taxDocuments = [];
+            foreach ($this->map->all($ctx->supplierId, $kind) as $key => $id) {
+                [$agenda, $number] = array_pad(explode('|', (string) $key, 3), 2, '');
+                if (in_array($agenda, $advanceAgendas, true)) {
+                    $advances[$number][] = (int) $id;
+                } elseif ($agenda === 'internal') {
+                    $taxDocuments[$number][] = (int) $id;
+                }
+            }
+            if ($advances === [] || $taxDocuments === []) {
+                continue;
+            }
+            $set = $pdo->prepare("UPDATE {$table} SET {$column} = ? WHERE id = ? AND supplier_id = ? AND {$column} IS NULL AND {$kindColumn} = 'tax_document'");
+            $partner = $table === 'purchase_invoices' ? 'vendor_id' : 'client_id';
+            $same = $pdo->prepare(
+                "SELECT 1 FROM {$table} t JOIN {$table} a ON a.supplier_id = t.supplier_id AND a.id = ?
+                  WHERE t.id = ? AND t.supplier_id = ? AND t.{$partner} = a.{$partner} AND ABS(t.total_with_vat - a.total_with_vat) < 0.01"
+            );
+            foreach ($ctx->export->records('internal', 'intDoc') as $record) {
+                $header = PohodaXml::get($record, 'intDocHeader');
+                $number = PohodaXml::text($header, 'number/numberRequested');
+                if (count($taxDocuments[$number] ?? []) !== 1) {
+                    continue;
+                }
+                $refs = [];
+                foreach (PohodaXml::all($record, 'linkedDocuments/link') as $link) {
+                    $ref = PohodaXml::text($link, 'sourceDocument/number');
+                    if (PohodaXml::text($link, 'sourceAgenda') === $linkAgenda && count($advances[$ref] ?? []) === 1) {
+                        $refs[$ref] = $advances[$ref][0];
+                    }
+                }
+                // Export z datového souboru vazbu DDKP na zálohu nenese; POHODA ale DDKP
+                // pojmenuje vždy „Daňový doklad k uhrazené zálohové faktuře č. …". Takovou
+                // vazbu převod přijme jen u téhož partnera a téže částky jako záloha.
+                if ($refs === [] && preg_match('/zálohov\w*\s+faktu\w*\s+č\.?\s*(\S+)/u', PohodaXml::text($header, 'text'), $m) === 1
+                    && count($advances[rtrim($m[1], '.,;')] ?? []) === 1) {
+                    $candidate = $advances[rtrim($m[1], '.,;')][0];
+                    $same->execute([$candidate, $taxDocuments[$number][0], $ctx->supplierId]);
+                    if ($same->fetchColumn() !== false) {
+                        $refs[$m[1]] = $candidate;
+                    }
+                }
+                if (count($refs) !== 1) {
+                    continue;
+                }
+                $set->execute([reset($refs), $taxDocuments[$number][0], $ctx->supplierId]);
+                if ($set->rowCount() > 0) {
+                    $p->count(self::STEP_LINK, 'tax_document_advance_linked');
+                }
+            }
+        }
     }
 
     public function matchPayments(PohodaContext $ctx): void
@@ -145,13 +316,31 @@ final class DocumentLinker
         $cashLink = $pdo->prepare('SELECT invoice_id, purchase_invoice_id FROM cash_documents WHERE id = ? AND supplier_id = ?');
         $cashMulti = [];
 
+        $internal = [];
         foreach ($ctx->liquidations as $l) {
             $mapKey = $l['doc'] . '|' . $l['id'] . '|' . $l['liq'];
+            $isIssued = $l['doc'] === 'invoice';
+            if ($l['agenda'] === 'internalDocuments' && in_array($l['doc'], ['invoice', 'purchase_invoice'], true)
+                && !$ctx->skipsDate($l['date']) && ($l['date'] === null || $l['date'] >= $start)) {
+                // Zápočet interním dokladem: vyřeší se po dokladech celého interního dokladu níže.
+                $internal[(string) $l['source']][] = $l;
+                continue;
+            }
             if (isset($existing[$mapKey])) {
+                // Dřívější běh úhradu spároval, ale evidovanou platbu vydané faktury nezaložil.
+                if ($isIssued && $l['agenda'] === 'bank') {
+                    $txOf = $pdo->prepare('SELECT bank_transaction_id FROM payment_matches WHERE id = ? AND supplier_id = ? AND invoice_id = ?');
+                    $txOf->execute([(int) $existing[$mapKey], $ctx->supplierId, $l['id']]);
+                    $txId = $txOf->fetchColumn();
+                    if ($txId !== false) {
+                        $this->recordIssuedPayment($ctx, $l, 'bank', (int) $txId, null);
+                    }
+                } elseif ($isIssued && $l['agenda'] === 'voucher') {
+                    $this->recordIssuedPayment($ctx, $l, 'cash', null, (int) $existing[$mapKey]);
+                }
                 $p->count(self::STEP_PAYMENTS, 'existing');
                 continue;
             }
-            $isIssued = $l['doc'] === 'invoice';
             if ($ctx->skipsDate($l['date'])) {
                 // Úhrada v roce, který se nepřevádí - pohyb v převodu není, doklad zůstává neuhrazený.
                 $p->count(self::STEP_PAYMENTS, 'later_year_skipped');
@@ -181,6 +370,9 @@ final class DocumentLinker
                 $already = $sameMatch->fetchColumn();
                 if ($already !== false) {
                     $this->map->put($ctx->supplierId, PohodaImportRepository::KIND_PAYMENT, $mapKey, (int) $already, $ctx->runId);
+                    if ($isIssued) {
+                        $this->recordIssuedPayment($ctx, $l, 'bank', $txId, null);
+                    }
                     $p->count(self::STEP_PAYMENTS, 'already_matched');
                     continue;
                 }
@@ -199,6 +391,9 @@ final class DocumentLinker
                 $fromPohoda[$matchId] = true;
                 $markTx->execute([$ctx->userOrNull(), $isIssued ? $l['id'] : null, $txId, $ctx->supplierId]);
                 $this->map->put($ctx->supplierId, PohodaImportRepository::KIND_PAYMENT, $mapKey, $matchId, $ctx->runId);
+                if ($isIssued) {
+                    $this->recordIssuedPayment($ctx, $l, 'bank', $txId, null);
+                }
                 $p->count(self::STEP_PAYMENTS, 'bank');
                 continue;
             }
@@ -220,6 +415,9 @@ final class DocumentLinker
                         $p->count(self::STEP_PAYMENTS, 'cash_multi_invoice');
                     }
                     $this->map->put($ctx->supplierId, PohodaImportRepository::KIND_PAYMENT, $mapKey, $cashId, $ctx->runId);
+                    if ($isIssued) {
+                        $this->recordIssuedPayment($ctx, $l, 'cash', null, (int) $cashId);
+                    }
                     $p->count(self::STEP_PAYMENTS, 'cash');
                     continue;
                 }
@@ -227,12 +425,18 @@ final class DocumentLinker
                     'UPDATE cash_documents SET ' . ($isIssued ? 'invoice_id' : 'purchase_invoice_id') . ' = ?, purpose = ? WHERE id = ? AND supplier_id = ?'
                 )->execute([$l['id'], $isIssued ? 'invoice_payment' : 'purchase_payment', $cashId, $ctx->supplierId]);
                 $this->map->put($ctx->supplierId, PohodaImportRepository::KIND_PAYMENT, $mapKey, $cashId, $ctx->runId);
+                if ($isIssued) {
+                    $this->recordIssuedPayment($ctx, $l, 'cash', null, (int) $cashId);
+                }
                 $p->count(self::STEP_PAYMENTS, 'cash');
                 continue;
             }
             // Zápočet interním dokladem, odpočet zálohy apod. - úhrada bez pohybu peněz.
             $p->count(self::STEP_PAYMENTS, $l['agenda'] !== '' ? 'other_' . $l['agenda'] : 'without_document');
         }
+        $this->settleByInternalDocuments($ctx, $internal);
+        $this->inferAdvanceSettlements($ctx);
+        $this->recordBankFxSettlements($ctx);
         $this->markBookedWithoutDocument($ctx);
         if ($cashMulti !== []) {
             $p->info(self::STEP_PAYMENTS, 'cash_multi_invoice', count($cashMulti) . ' pokladních dokladů hradí víc faktur; pokladní doklad ukazuje vazbu jen na první, faktury jsou uhrazené podle Pohody.',
@@ -265,6 +469,429 @@ final class DocumentLinker
             return null;
         }
         return (int) $candidates[0]['id'];
+    }
+
+    /**
+     * Evidovaná platba vydané faktury (`invoice_payments`) k úhradě z banky či pokladny.
+     * Z ní čte uhrazenou část faktury saldokonto, kontrola úplnosti i uvolnění pohybu;
+     * samotné párování (`payment_matches`, vazba pokladního dokladu) ji nenahradí.
+     *
+     * Uhrazenou částku a stav faktury vede převod podle POHODY, platba je jen nedoplňuje:
+     * součet plateb nepřesáhne `paid_total`. Částka úhrady je v POHODĚ v korunách
+     * (`Uhrady.KcU`), faktura v cizí měně ji dostane přepočtenou kurzem dokladu.
+     * Opakovaný převod platbu nezdvojí (banka: pohyb + faktura, pokladna: doklad + faktura).
+     *
+     * @param array<string,mixed> $l
+     */
+    private function recordIssuedPayment(PohodaContext $ctx, array $l, string $kind, ?int $txId, ?int $cashId): void
+    {
+        $pdo = $this->db->pdo();
+        $invoice = $pdo->prepare(
+            "SELECT i.id, i.status, i.paid_total, i.exchange_rate, cur.code AS currency,
+                    (SELECT COALESCE(SUM(ip.amount), 0) FROM invoice_payments ip WHERE ip.invoice_id = i.id) AS recorded
+               FROM invoices i JOIN currencies cur ON cur.id = i.currency_id
+              WHERE i.id = ? AND i.supplier_id = ?"
+        );
+        $invoice->execute([$l['id'], $ctx->supplierId]);
+        $row = $invoice->fetch(PDO::FETCH_ASSOC);
+        if ($row === false || in_array((string) $row['status'], ['draft', 'cancelled'], true)) {
+            return;
+        }
+        $note = 'Převzato z POHODY, úhrada ' . $l['source'];
+        if ($kind === 'bank') {
+            $dup = $pdo->prepare('SELECT 1 FROM invoice_payments WHERE bank_transaction_id = ? AND invoice_id = ?');
+            $dup->execute([$txId, $l['id']]);
+        } else {
+            $dup = $pdo->prepare("SELECT 1 FROM invoice_payments WHERE invoice_id = ? AND source = 'cash' AND note = ?");
+            $dup->execute([$l['id'], $note]);
+        }
+        if ($dup->fetchColumn() !== false) {
+            return;
+        }
+        $rate = $row['exchange_rate'] !== null && (float) $row['exchange_rate'] > 0 ? (float) $row['exchange_rate'] : null;
+        $amount = abs((float) $l['amount']);
+        if ((string) $row['currency'] !== 'CZK' && $rate !== null) {
+            $amount = $amount / $rate;
+        }
+        $amount = round(min($amount, (float) $row['paid_total'] - (float) $row['recorded']), 2);
+        if ($amount < 0.01) {
+            return;
+        }
+        $date = $l['date'] ?? null;
+        if ($date === null) {
+            $date = $kind === 'bank'
+                ? $pdo->query('SELECT DATE(posted_at) FROM bank_transactions WHERE id = ' . (int) $txId)->fetchColumn()
+                : $pdo->query('SELECT issue_date FROM cash_documents WHERE id = ' . (int) $cashId)->fetchColumn();
+            if (!is_string($date)) {
+                return;
+            }
+        }
+        $pdo->prepare(
+            'INSERT INTO invoice_payments (supplier_id, invoice_id, paid_on, amount, currency, note, source, bank_transaction_id, created_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        )->execute([
+            $ctx->supplierId, $l['id'], $date, number_format($amount, 2, '.', ''), (string) $row['currency'],
+            $note, $kind, $kind === 'bank' ? $txId : null, $ctx->userOrNull(),
+        ]);
+        if ($kind === 'cash') {
+            $pdo->prepare('UPDATE cash_documents SET invoice_payment_id = ? WHERE id = ? AND supplier_id = ? AND invoice_id = ? AND invoice_payment_id IS NULL')
+                ->execute([(int) $pdo->lastInsertId(), $cashId, $ctx->supplierId, $l['id']]);
+        }
+        $ctx->protocol->count(self::STEP_PAYMENTS, 'issued_payments_recorded');
+    }
+
+    /**
+     * Úhrady interním dokladem (zápočet `ZAP…`): peníze netečou, POHODA doklady vyrovná
+     * zápisem přes 395 nebo přímo mezi saldokontními účty. Zápis převzal deník, chybí jen
+     * vazba, podle které saldokonto a kontrola úhrad (K3) poznají, co zápis vyrovnává:
+     *
+     *  - faktura a její dobropis v jednom interním dokladu: dobropis dostane vazbu na
+     *    opravovanou fakturu a zápočet dobropisu (`credit_note_offsets`) jako po zápočtu
+     *    v MyÚčtu, u vydané faktury i evidovanou platbu se zdrojem `credit_note`;
+     *  - ostatní doklady (křížový zápočet vydané a přijaté faktury, odpis): zápis
+     *    interního dokladu se na doklad naváže jako ruční vyrovnání
+     *    ({@see \MyInvoice\Support\Sql\LinkedManualSettlementSql}). Vazba platí jen pro
+     *    jediný doklad téhož typu v zápisu; víc dokladů téhož typu bez dvojice
+     *    faktura-dobropis zůstane k ruční kontrole.
+     *
+     * Stav a uhrazenou částku dokladů vede převod podle POHODY, tady se nic nepřepisuje.
+     * Opakovaný převod nic nezdvojí.
+     *
+     * @param array<string,list<array<string,mixed>>> $internal číslo interního dokladu => úhrady
+     */
+    private function settleByInternalDocuments(PohodaContext $ctx, array $internal): void
+    {
+        if ($internal === []) {
+            return;
+        }
+        $p = $ctx->protocol;
+        $pdo = $this->db->pdo();
+        $index = $this->journalIndex($ctx->supplierId);
+        $kindOf = [
+            'invoice' => $pdo->prepare('SELECT invoice_type AS kind, parent_invoice_id AS parent, varsymbol AS number FROM invoices WHERE id = ? AND supplier_id = ?'),
+            'purchase_invoice' => $pdo->prepare('SELECT document_kind AS kind, parent_purchase_invoice_id AS parent, varsymbol AS number FROM purchase_invoices WHERE id = ? AND supplier_id = ?'),
+        ];
+        $link = $pdo->prepare('INSERT IGNORE INTO journal_entry_document_links (supplier_id, entry_id, doc_type, doc_id, note, created_by) VALUES (?, ?, ?, ?, ?, ?)');
+        foreach ($internal as $number => $liquidations) {
+            $entries = $index[PohodaJournal::INTERNAL][$number] ?? [];
+            if (count($entries) > 1) {
+                $date = $liquidations[0]['date'];
+                $entries = array_values(array_filter($entries, static fn (array $e): bool => $e['date'] === $date));
+            }
+            if (count($entries) !== 1) {
+                $p->count(self::STEP_PAYMENTS, 'internal_settlement_unresolved');
+                $p->warn(self::STEP_PAYMENTS, 'internal_settlement_unresolved', "Zápočet interním dokladem {$number}: zápis v deníku nejde jednoznačně určit, doklady zůstávají k ruční kontrole.", ['document_no' => $number]);
+                continue;
+            }
+            $entryId = (int) $entries[0]['id'];
+            $docs = [];
+            foreach ($liquidations as $l) {
+                $kindOf[$l['doc']]->execute([$l['id'], $ctx->supplierId]);
+                $row = $kindOf[$l['doc']]->fetch(PDO::FETCH_ASSOC);
+                if ($row === false) {
+                    continue;
+                }
+                $docs[] = ['type' => $l['doc'], 'id' => (int) $l['id'], 'kind' => (string) $row['kind'], 'parent' => $row['parent'],
+                    'number' => (string) $row['number'], 'amount' => round(abs((float) $l['amount']), 2), 'date' => $l['date'] ?? $entries[0]['date'], 'liq' => $l];
+            }
+            $handled = [];
+            foreach (['invoice', 'purchase_invoice'] as $type) {
+                $invoices = array_values(array_filter($docs, static fn (array $d): bool => $d['type'] === $type && $d['kind'] === 'invoice'));
+                $notes = array_values(array_filter($docs, static fn (array $d): bool => $d['type'] === $type && $d['kind'] === 'credit_note'));
+                if (count($invoices) !== 1 || $notes === []) {
+                    continue;
+                }
+                foreach ($notes as $note) {
+                    if ($this->offsetCreditNote($ctx, $type, $invoices[0], $note)) {
+                        $p->count(self::STEP_PAYMENTS, 'internal_credit_note_offset');
+                    }
+                    $handled[$type . '|' . $note['id']] = true;
+                }
+                $handled[$type . '|' . $invoices[0]['id']] = true;
+            }
+            $rest = array_values(array_filter($docs, static fn (array $d): bool => !isset($handled[$d['type'] . '|' . $d['id']])));
+            foreach (['invoice', 'purchase_invoice'] as $type) {
+                $ofType = array_values(array_filter($rest, static fn (array $d): bool => $d['type'] === $type));
+                if ($ofType === []) {
+                    continue;
+                }
+                if (count($ofType) > 1) {
+                    $p->count(self::STEP_PAYMENTS, 'internal_settlement_unresolved');
+                    $p->warn(self::STEP_PAYMENTS, 'internal_settlement_unresolved', "Zápočet interním dokladem {$number} vyrovnává víc dokladů téhož druhu; vazbu na deník doplňte ručně.", ['document_no' => $number]);
+                    continue;
+                }
+                $link->execute([$ctx->supplierId, $entryId, $type, $ofType[0]['id'], "Úhrada interním dokladem {$number} (převzato z Pohody)", $ctx->userOrNull()]);
+                if ($link->rowCount() > 0) {
+                    $p->count(self::STEP_PAYMENTS, 'internal_settlement_linked');
+                }
+            }
+        }
+    }
+
+    /**
+     * Čerpání a vrácení přijatých záloh, které POHODA nevede vazbou, jen zaúčtováním na
+     * zálohový účet (314):
+     *
+     *  - vrácení zálohy: příchozí platba se symbolem zálohy (číslo dodavatele nebo
+     *    variabilní symbol), zaúčtovaná na zálohový účet a nespárovaná, se spáruje se
+     *    zálohou, je-li taková záloha právě jedna a vrácená částka ji nepřesahuje;
+     *  - odpočet obyčejnou položkou (např. „Odečet zálohy" u měsíční faktury nájmu):
+     *    kredit zálohového účtu v zápisu konečné faktury bez vazby na zálohu čerpá
+     *    zálohy téhož dodavatele od nejstarší, nejvýš do jejich zůstatku
+     *    (`purchase_advance_deductions`).
+     *
+     * Zůstatek zálohy = zaplaceno na zálohový účet (u zálohy počátečních stavů částka
+     * bez DPH, které čerpal DDKP minulého roku) − DPH čerpané DDKP − dosavadní čerpání
+     * a vrácení. Opakovaný převod nic nezdvojí.
+     */
+    private function inferAdvanceSettlements(PohodaContext $ctx): void
+    {
+        $p = $ctx->protocol;
+        $pdo = $this->db->pdo();
+        $s = $ctx->supplierId;
+        $advanceAccount = "(ca.account_code LIKE '314%' OR COALESCE(pa.account_code, '') LIKE '314%')";
+        $rows = $pdo->query(
+            "SELECT a.id, a.vendor_id, a.vendor_invoice_number, a.varsymbol, a.payment_variable_symbol, a.issue_date, a.total_with_vat, a.total_vat,
+                    (SELECT COALESCE(SUM(pm.amount), 0) FROM payment_matches pm
+                      WHERE pm.supplier_id = a.supplier_id AND pm.purchase_invoice_id = a.id
+                        AND EXISTS (SELECT 1 FROM journal_entries e JOIN journal_entry_lines l ON l.entry_id = e.id
+                                      JOIN chart_of_accounts ca ON ca.id = l.account_id LEFT JOIN chart_of_accounts pa ON pa.id = ca.parent_id
+                                     WHERE e.supplier_id = a.supplier_id AND e.source_type = 'bank' AND e.source_id = pm.bank_transaction_id
+                                       AND e.reversed_by IS NULL AND l.side = 'debit' AND {$advanceAccount})) AS paid,
+                    (SELECT COALESCE(SUM(pm.amount), 0) FROM payment_matches pm JOIN bank_transactions bt ON bt.id = pm.bank_transaction_id AND bt.amount > 0
+                      WHERE pm.supplier_id = a.supplier_id AND pm.purchase_invoice_id = a.id) AS refunded,
+                    EXISTS (SELECT 1 FROM journal_entry_document_links ol JOIN journal_entries oe ON oe.id = ol.entry_id
+                             WHERE ol.supplier_id = a.supplier_id AND ol.doc_type = 'purchase_invoice' AND ol.doc_id = a.id
+                               AND oe.source_type = 'opening' AND oe.reversed_by IS NULL) AS opening,
+                    (SELECT COALESCE(SUM(CASE WHEN ch.document_kind = 'tax_document'
+                                              THEN (CASE WHEN l.side = 'credit' THEN l.signed_amount ELSE -l.signed_amount END)
+                                              WHEN l.side = 'credit' THEN l.signed_amount ELSE 0 END), 0)
+                       FROM purchase_invoices ch JOIN journal_entries e ON e.supplier_id = ch.supplier_id AND e.source_type = 'purchase_invoice' AND e.source_id = ch.id
+                       JOIN journal_entry_lines l ON l.entry_id = e.id JOIN chart_of_accounts ca ON ca.id = l.account_id LEFT JOIN chart_of_accounts pa ON pa.id = ca.parent_id
+                      WHERE ch.supplier_id = a.supplier_id AND e.reversed_by IS NULL AND {$advanceAccount}
+                        AND (ch.advance_purchase_invoice_id = a.id
+                             OR (ch.document_kind = 'tax_document' AND ch.parent_purchase_invoice_id = a.id AND ch.advance_purchase_invoice_id IS NULL))) AS linked_settled,
+                    (SELECT COALESCE(SUM(pad.amount), 0) FROM purchase_advance_deductions pad WHERE pad.advance_invoice_id = a.id) AS deducted
+               FROM purchase_invoices a
+              WHERE a.supplier_id = {$s} AND a.document_kind = 'advance' AND a.status NOT IN ('draft', 'cancelled')
+              ORDER BY a.issue_date, a.id"
+        )->fetchAll(PDO::FETCH_ASSOC);
+        if ($rows === []) {
+            return;
+        }
+        $advances = [];
+        $bySymbol = [];
+        foreach ($rows as $r) {
+            $paid = (int) $r['opening'] === 1 && (float) $r['paid'] < 0.005
+                ? (float) $r['total_with_vat'] - (float) $r['total_vat']
+                : (float) $r['paid'];
+            $advances[(int) $r['id']] = [
+                'vendor' => (int) $r['vendor_id'],
+                'left' => round($paid - (float) $r['refunded'] - (float) $r['linked_settled'] - (float) $r['deducted'], 2),
+            ];
+            foreach ([(string) $r['vendor_invoice_number'], (string) $r['varsymbol'], (string) $r['payment_variable_symbol']] as $symbol) {
+                $digits = preg_replace('/\D+/', '', $symbol) ?? '';
+                if ($digits !== '') {
+                    $bySymbol[$digits][(int) $r['id']] = true;
+                }
+            }
+        }
+
+        // Vrácení zálohy.
+        $refunds = $pdo->query(
+            "SELECT bt.id, bt.amount, bt.variable_symbol, DATE(bt.posted_at) AS posted
+               FROM bank_transactions bt JOIN bank_statements bs ON bs.id = bt.statement_id
+              WHERE bs.supplier_id = {$s} AND bt.amount > 0
+                AND NOT EXISTS (SELECT 1 FROM payment_matches pm WHERE pm.bank_transaction_id = bt.id)
+                AND EXISTS (SELECT 1 FROM journal_entries e JOIN journal_entry_lines l ON l.entry_id = e.id
+                              JOIN chart_of_accounts ca ON ca.id = l.account_id LEFT JOIN chart_of_accounts pa ON pa.id = ca.parent_id
+                             WHERE e.supplier_id = {$s} AND e.source_type = 'bank' AND e.source_id = bt.id AND e.reversed_by IS NULL
+                               AND l.side = 'credit' AND {$advanceAccount} AND " . TakenOverRecord::journalEntrySql('e') . ')'
+        )->fetchAll(PDO::FETCH_ASSOC);
+        $match = $pdo->prepare('INSERT INTO payment_matches (supplier_id, bank_transaction_id, invoice_id, purchase_invoice_id, amount, match_type, matched_by_user_id) VALUES (?, ?, NULL, ?, ?, "manual", ?)');
+        foreach ($refunds as $t) {
+            $candidates = array_keys($bySymbol[preg_replace('/\D+/', '', (string) $t['variable_symbol']) ?? ''] ?? []);
+            if (count($candidates) !== 1 || $advances[$candidates[0]]['left'] + 0.005 < (float) $t['amount']) {
+                continue;
+            }
+            $match->execute([$s, (int) $t['id'], $candidates[0], number_format((float) $t['amount'], 2, '.', ''), $ctx->userOrNull()]);
+            $advances[$candidates[0]]['left'] = round($advances[$candidates[0]]['left'] - (float) $t['amount'], 2);
+            $p->count(self::STEP_PAYMENTS, 'advance_refund_matched');
+        }
+
+        // Odpočet zálohy obyčejnou položkou konečné faktury.
+        $finals = $pdo->query(
+            "SELECT f.id, f.vendor_id, MIN(e.entry_date) AS entry_date,
+                    SUM(CASE WHEN l.side = 'credit' THEN l.signed_amount ELSE 0 END) AS credit
+               FROM purchase_invoices f
+               JOIN journal_entries e ON e.supplier_id = f.supplier_id AND e.source_type = 'purchase_invoice' AND e.source_id = f.id AND e.reversed_by IS NULL
+               JOIN journal_entry_lines l ON l.entry_id = e.id
+               JOIN chart_of_accounts ca ON ca.id = l.account_id LEFT JOIN chart_of_accounts pa ON pa.id = ca.parent_id
+              WHERE f.supplier_id = {$s} AND f.document_kind = 'invoice' AND f.advance_purchase_invoice_id IS NULL
+                AND f.status NOT IN ('draft', 'cancelled') AND {$advanceAccount}
+                AND NOT EXISTS (SELECT 1 FROM purchase_advance_deductions pad WHERE pad.final_invoice_id = f.id)
+              GROUP BY f.id, f.vendor_id
+             HAVING credit > 0.005
+              ORDER BY entry_date, f.id"
+        )->fetchAll(PDO::FETCH_ASSOC);
+        $deduct = $pdo->prepare('INSERT IGNORE INTO purchase_advance_deductions (supplier_id, final_invoice_id, advance_invoice_id, amount, created_by) VALUES (?, ?, ?, ?, ?)');
+        foreach ($finals as $f) {
+            $credit = round((float) $f['credit'], 2);
+            foreach ($advances as $advanceId => &$advance) {
+                if ($credit < 0.01) {
+                    break;
+                }
+                if ($advance['vendor'] !== (int) $f['vendor_id'] || $advance['left'] < 0.01) {
+                    continue;
+                }
+                $take = round(min($credit, $advance['left']), 2);
+                $deduct->execute([$s, (int) $f['id'], $advanceId, number_format($take, 2, '.', ''), $ctx->userOrNull()]);
+                $advance['left'] = round($advance['left'] - $take, 2);
+                $credit = round($credit - $take, 2);
+                $p->count(self::STEP_PAYMENTS, 'advance_deduction_inferred');
+            }
+            unset($advance);
+        }
+    }
+
+    /**
+     * Kurzový rozdíl nebo poplatek, který POHODA zaúčtovala přímo v zápisu úhrady
+     * (např. 321 MD / 663 D vedle 321 MD / 221 D): dorovnává doklad na saldokontním účtu,
+     * ale spárovaná částka pohybu ho nenese. Zapíše se jako zápočet proti protiúčtu
+     * (`invoice_settlements`, vazba na zápis úhrady), u vydané faktury i s evidovanou
+     * platbou se zdrojem `settlement` - stejně jako zápočet v MyÚčtu. Jen u pohybu, který
+     * hradí jediný doklad uhrazený podle POHODY; opakovaný převod nic nezdvojí.
+     */
+    private function recordBankFxSettlements(PohodaContext $ctx): void
+    {
+        $p = $ctx->protocol;
+        $pdo = $this->db->pdo();
+        $s = $ctx->supplierId;
+        $rows = $pdo->query(
+            "SELECT pm.bank_transaction_id AS tx, MIN(pm.invoice_id) AS invoice_id, MIN(pm.purchase_invoice_id) AS purchase_id,
+                    ABS(MIN(bt.amount)) AS tx_amount, MIN(e.id) AS entry_id, MIN(e.entry_date) AS entry_date
+               FROM payment_matches pm
+               JOIN bank_transactions bt ON bt.id = pm.bank_transaction_id
+               JOIN journal_entries e ON e.supplier_id = pm.supplier_id AND e.source_type = 'bank' AND e.source_id = pm.bank_transaction_id
+                                     AND e.reversed_by IS NULL AND e.posted_at IS NOT NULL
+              WHERE pm.supplier_id = {$s} AND " . TakenOverRecord::journalEntrySql('e') . "
+              GROUP BY pm.bank_transaction_id
+             HAVING COUNT(DISTINCT COALESCE(pm.invoice_id, 0), COALESCE(pm.purchase_invoice_id, 0)) = 1"
+        )->fetchAll(PDO::FETCH_ASSOC);
+        $lines = $pdo->prepare(
+            "SELECT l.id, l.side, l.signed_amount, ca.account_code, COALESCE(pa.account_code, ca.account_code) AS synthetic, l.account_id
+               FROM journal_entry_lines l JOIN chart_of_accounts ca ON ca.id = l.account_id LEFT JOIN chart_of_accounts pa ON pa.id = ca.parent_id
+              WHERE l.entry_id = ? ORDER BY l.id"
+        );
+        $exists = $pdo->prepare('SELECT 1 FROM invoice_settlements WHERE supplier_id = ? AND doc_type = ? AND doc_id = ? AND journal_entry_id = ?');
+        $insert = $pdo->prepare(
+            "INSERT INTO invoice_settlements (supplier_id, doc_type, doc_id, settled_on, amount, account_id, note, status, journal_entry_id, invoice_payment_id, created_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?, 'confirmed', ?, ?, ?)"
+        );
+        foreach ($rows as $r) {
+            $issued = $r['invoice_id'] !== null;
+            $docType = $issued ? 'invoice' : 'purchase_invoice';
+            $docId = (int) ($issued ? $r['invoice_id'] : $r['purchase_id']);
+            $table = $issued ? 'invoices' : 'purchase_invoices';
+            $status = $pdo->query("SELECT status FROM {$table} WHERE id = {$docId} AND supplier_id = {$s}")->fetchColumn();
+            if ($status !== 'paid') {
+                continue;
+            }
+            $lines->execute([(int) $r['entry_id']]);
+            $entryLines = $lines->fetchAll(PDO::FETCH_ASSOC);
+            // Saldokontní strana dokladu: přijatý doklad snižuje debet 321/325, vydaný kredit 311/315.
+            $settleSide = $issued ? 'credit' : 'debit';
+            $prefixes = $issued ? ['311', '315'] : ['321', '325'];
+            $onAccount = array_values(array_filter($entryLines, static fn (array $l): bool =>
+                $l['side'] === $settleSide && in_array(substr((string) $l['synthetic'], 0, 3), $prefixes, true)));
+            $surplus = round(array_sum(array_map(static fn (array $l): float => (float) $l['signed_amount'], $onAccount)) - (float) $r['tx_amount'], 2);
+            if ($surplus < 0.01) {
+                continue;
+            }
+            // Protiúčet rozdílu: řádek opačné strany se stejnou částkou mimo finanční a saldokontní účty.
+            $counter = null;
+            foreach ($entryLines as $l) {
+                $code = substr((string) $l['synthetic'], 0, 3);
+                if ($l['side'] !== $settleSide && abs((float) $l['signed_amount'] - $surplus) < 0.01
+                    && !in_array($code, ['211', '213', '221', '261'], true) && !in_array($code, $prefixes, true)) {
+                    $counter = (int) $l['account_id'];
+                    break;
+                }
+            }
+            if ($counter === null) {
+                continue;
+            }
+            $exists->execute([$s, $docType, $docId, (int) $r['entry_id']]);
+            if ($exists->fetchColumn() !== false) {
+                continue;
+            }
+            $paymentId = null;
+            if ($issued) {
+                $inv = $pdo->query("SELECT cur.code, i.paid_total, (SELECT COALESCE(SUM(ip.amount), 0) FROM invoice_payments ip WHERE ip.invoice_id = i.id) AS recorded
+                                      FROM invoices i JOIN currencies cur ON cur.id = i.currency_id WHERE i.id = {$docId}")->fetch(PDO::FETCH_ASSOC);
+                $pay = round(min($surplus, (float) $inv['paid_total'] - (float) $inv['recorded']), 2);
+                if ($pay < 0.01) {
+                    continue;
+                }
+                $pdo->prepare("INSERT INTO invoice_payments (supplier_id, invoice_id, paid_on, amount, currency, note, source, created_by)
+                               VALUES (?, ?, ?, ?, ?, 'Kurzový rozdíl v úhradě (převzato z Pohody)', 'settlement', ?)")
+                    ->execute([$s, $docId, $r['entry_date'], number_format($pay, 2, '.', ''), (string) $inv['code'], $ctx->userOrNull()]);
+                $paymentId = (int) $pdo->lastInsertId();
+            }
+            $insert->execute([$s, $docType, $docId, $r['entry_date'], number_format($surplus, 2, '.', ''), $counter,
+                'Kurzový rozdíl nebo poplatek v úhradě (převzato z Pohody)', (int) $r['entry_id'], $paymentId, $ctx->userOrNull()]);
+            $p->count(self::STEP_PAYMENTS, 'bank_fx_settlement');
+        }
+    }
+
+    /**
+     * Zápočet dobropisu proti opravované faktuře, kterou POHODA vyrovnala interním dokladem.
+     * Stejné zápisy jako {@see \MyInvoice\Service\Invoice\CreditNoteOffsetService}, bez
+     * jeho podmínek na zbývající částku: obě strany jsou podle POHODY už uhrazené.
+     *
+     * @param array<string,mixed> $invoice
+     * @param array<string,mixed> $note
+     */
+    private function offsetCreditNote(PohodaContext $ctx, string $type, array $invoice, array $note): bool
+    {
+        $pdo = $this->db->pdo();
+        $exists = $pdo->prepare('SELECT 1 FROM credit_note_offsets WHERE doc_type = ? AND credit_note_id = ?');
+        $exists->execute([$type, $note['id']]);
+        if ($exists->fetchColumn() !== false) {
+            return false;
+        }
+        $table = $type === 'invoice' ? 'invoices' : 'purchase_invoices';
+        $parent = $type === 'invoice' ? 'parent_invoice_id' : 'parent_purchase_invoice_id';
+        $pdo->prepare("UPDATE {$table} SET {$parent} = ? WHERE id = ? AND supplier_id = ? AND {$parent} IS NULL")
+            ->execute([$invoice['id'], $note['id'], $ctx->supplierId]);
+        $amount = $note['amount'];
+        if ($amount < 0.01) {
+            return false;
+        }
+        $paymentId = null;
+        if ($type === 'invoice') {
+            $row = $pdo->prepare(
+                "SELECT cur.code AS currency, i.paid_total,
+                        (SELECT COALESCE(SUM(ip.amount), 0) FROM invoice_payments ip WHERE ip.invoice_id = i.id) AS recorded
+                   FROM invoices i JOIN currencies cur ON cur.id = i.currency_id WHERE i.id = ? AND i.supplier_id = ?"
+            );
+            $row->execute([$invoice['id'], $ctx->supplierId]);
+            $inv = $row->fetch(PDO::FETCH_ASSOC);
+            $pay = $inv === false ? 0.0 : round(min($amount, (float) $inv['paid_total'] - (float) $inv['recorded']), 2);
+            if ($inv !== false && $pay >= 0.01) {
+                $pdo->prepare(
+                    "INSERT INTO invoice_payments (supplier_id, invoice_id, paid_on, amount, currency, note, source, created_by)
+                     VALUES (?, ?, ?, ?, ?, ?, 'credit_note', ?)"
+                )->execute([$ctx->supplierId, $invoice['id'], $note['date'], number_format($pay, 2, '.', ''), (string) $inv['currency'],
+                    'Zápočet dobropisu ' . $note['number'] . ' (převzato z Pohody)', $ctx->userOrNull()]);
+                $paymentId = (int) $pdo->lastInsertId();
+            }
+        }
+        $pdo->prepare(
+            'INSERT INTO credit_note_offsets (supplier_id, doc_type, invoice_id, credit_note_id, amount, offset_on, invoice_payment_id, created_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        )->execute([$ctx->supplierId, $type, $invoice['id'], $note['id'], number_format($amount, 2, '.', ''), $note['date'], $paymentId, $ctx->userOrNull()]);
+        return true;
     }
 
     /**
@@ -369,6 +996,61 @@ final class DocumentLinker
      * doklad počátečního stavu) dostane vazbu na otevírací zápis období. Zápis vlastní mít
      * nesmí a Doúčtování dokladů ho podle té vazby vynechá ({@see OpeningBalanceDocuments}).
      */
+    private function isAdvance(int $purchaseInvoiceId): bool
+    {
+        $stmt = $this->db->pdo()->prepare("SELECT document_kind = 'advance' FROM purchase_invoices WHERE id = ?");
+        $stmt->execute([$purchaseInvoiceId]);
+        return (bool) $stmt->fetchColumn();
+    }
+
+    /**
+     * Poskytnuté zálohy minulých let do počátečního stavu 314. POHODA nese zálohu v agendě
+     * dál, dokud ji nečerpá vazbou z konečné faktury; zálohu vyúčtovanou fakturou bez vazby
+     * (předplatné, pravidelné platby) tak převádí rok co rok, ačkoli na 314 už není. Zálohy
+     * se proto navážou na otevírací zápis jen tehdy, když se celé vejdou do počátečního
+     * zůstatku 314 (předpis zálohy bez DDKP je základ). Jinak zůstanou vyrovnané a zůstatek
+     * 314 v saldokontu ukáže rozdíl bez dokladů; vazba z dřívějšího převodu se zruší.
+     *
+     * @param list<int> $advanceIds
+     */
+    private function linkOpeningAdvances(PohodaContext $ctx, array $advanceIds): void
+    {
+        if ($advanceIds === [] || $ctx->period === null) {
+            return;
+        }
+        $pdo = $this->db->pdo();
+        $s = $ctx->supplierId;
+        $periodId = (int) $ctx->period['id'];
+        $balance = (float) $pdo->query(
+            "SELECT COALESCE(SUM(CASE WHEN l.side = 'debit' THEN l.signed_amount ELSE -l.signed_amount END), 0)
+               FROM journal_entries e JOIN journal_entry_lines l ON l.entry_id = e.id AND l.supplier_id = e.supplier_id
+               JOIN chart_of_accounts ca ON ca.id = l.account_id LEFT JOIN chart_of_accounts pa ON pa.id = ca.parent_id
+              WHERE e.supplier_id = {$s} AND e.period_id = {$periodId} AND e.source_type = 'opening' AND e.reversed_by IS NULL
+                AND (ca.account_code LIKE '314%' OR COALESCE(pa.account_code, '') LIKE '314%')"
+        )->fetchColumn();
+        $ids = implode(',', array_map('intval', $advanceIds));
+        $total = (float) $pdo->query(
+            "SELECT COALESCE(SUM(CASE WHEN EXISTS (SELECT 1 FROM purchase_invoices t WHERE t.parent_purchase_invoice_id = a.id)
+                                      THEN a.total_with_vat ELSE a.total_with_vat - a.total_vat END), 0)
+               FROM purchase_invoices a WHERE a.supplier_id = {$s} AND a.id IN ({$ids})"
+        )->fetchColumn();
+        if ($total <= $balance + 0.005) {
+            foreach ($advanceIds as $id) {
+                $this->linkOpening($ctx, 'purchase_invoice', $id);
+            }
+            return;
+        }
+        $unlinked = $pdo->exec(
+            "DELETE dl FROM journal_entry_document_links dl JOIN journal_entries e ON e.id = dl.entry_id
+              WHERE dl.supplier_id = {$s} AND e.source_type = 'opening' AND e.period_id = {$periodId}
+                AND dl.doc_type = 'purchase_invoice' AND dl.doc_id IN ({$ids})"
+        );
+        $ctx->protocol->info(self::STEP_LINK, 'opening_advances_settled', sprintf(
+            '%d poskytnutých záloh z minulých let (%s Kč) se do počátečního stavu 314 (%s Kč) nevejde; POHODA je nese bez vazby na konečnou fakturu. V saldokontu se berou jako vyúčtované.',
+            count($advanceIds), number_format($total, 2, ',', ' '), number_format($balance, 2, ',', ' '),
+        ), ['unlinked' => (int) $unlinked]);
+    }
+
     private function linkOpening(PohodaContext $ctx, string $docType, int $docId): bool
     {
         return $this->entries->linkOpening($ctx->supplierId, $ctx->userOrNull(), $ctx->period !== null ? (int) $ctx->period['id'] : null, $docType, $docId);

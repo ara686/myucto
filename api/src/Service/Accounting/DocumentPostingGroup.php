@@ -92,6 +92,35 @@ final class DocumentPostingGroup
                  WHERE e.posted_at IS NOT NULL AND e.reversed_by IS NULL";
     }
 
+    /**
+     * Všechny zápisy, kterými firma zaúčtovala doklady daného typu: `entry_id`, `doc_id`.
+     * Přímý zápis se zdrojem dokladu a k němu zápisy, které doklad vlastní ve skupině
+     * zaúčtování (převod z programu, který účtuje doklad po řádcích). Vlastněný zápis
+     * zdroj nemá ({@see attach()}), takže se větve nepřekrývají a přímý člen skupiny se
+     * nezapočte dvakrát. Zda zápis platí k datu, rozhoduje volající nad `journal_entries`.
+     *
+     * Saldokonto i uzávěrková kontrola zaplacených dokladů z něj berou předpis dokladu:
+     * doklad účtovaný po řádcích jinak vypadal otevřený o všechny řádky mimo první zápis.
+     * Obě větve jdou po indexu (idx_je_supplier_source, uq_jdp_doc_entry).
+     *
+     * @param 'invoice'|'purchase_invoice' $docType
+     */
+    public static function entriesSql(string $docType, int $supplierId, bool $currentRead = false): string
+    {
+        if (!in_array($docType, ['invoice', 'purchase_invoice'], true)) {
+            throw new \InvalidArgumentException('Nepodporovaný doklad skupiny zaúčtování.');
+        }
+        $lock = $currentRead ? ' FOR UPDATE' : '';
+        return "(SELECT dpe.id AS entry_id, dpe.source_id AS doc_id
+                  FROM journal_entries dpe FORCE INDEX (idx_je_supplier_source)
+                 WHERE dpe.supplier_id = {$supplierId} AND dpe.source_type = '{$docType}' AND dpe.source_id IS NOT NULL{$lock})
+                UNION ALL
+                (SELECT dpo.entry_id, dpo.doc_id
+                  FROM journal_document_postings dpo FORCE INDEX (uq_jdp_doc_entry)
+                  JOIN journal_entries dpm ON dpm.supplier_id = dpo.supplier_id AND dpm.id = dpo.entry_id
+                 WHERE dpo.supplier_id = {$supplierId} AND dpo.doc_type = '{$docType}' AND dpm.source_id IS NULL{$lock})";
+    }
+
     private static function directDocumentKeySql(string $alias): string
     {
         // Historické vlastnictví přežívá smazání dokladu. Smír pak musí nabídnout
