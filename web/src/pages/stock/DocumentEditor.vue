@@ -123,6 +123,8 @@ const itemsCache = new Map<number, StockItemSearchResult>()
 
 const isPosted = computed(() => doc.value?.status === 'posted')
 const isReversed = computed(() => doc.value?.status === 'reversed')
+/** Převzatý doklad (import historie skladu): storno backend odmítne, opravuje se vrácením importu. */
+const isImported = computed(() => !!doc.value?.history_import_job_id)
 const readOnly = computed(() => isPosted.value || isReversed.value)
 const isTransfer = computed(() => form.doc_type === 'transfer')
 const isReceipt = computed(() => form.doc_type === 'receipt')
@@ -407,7 +409,7 @@ const actions = computed<ActionItem[]>(() => [
   },
   {
     key: 'reverse', label: t('stock.documents.cancel'), icon: 'uturn', tier: 'overflow', variant: 'danger',
-    show: auth.canWrite('stock.documents.write') && isPosted.value, run: () => { reverseOpen.value = true },
+    show: auth.canWrite('stock.documents.write') && isPosted.value && !isImported.value, run: () => { reverseOpen.value = true },
   },
 ])
 
@@ -449,6 +451,9 @@ onMounted(async () => {
             </span>
             <span v-if="isPosted" class="text-xs px-2 py-0.5 rounded font-medium bg-primary-50 text-primary-700">
               {{ t('stock.documents.posted_badge') }}
+            </span>
+            <span v-if="isImported" data-test="imported-badge" class="text-xs px-2 py-0.5 rounded font-medium bg-neutral-100 text-neutral-600" :title="t('stock.history_import.imported_hint')">
+              {{ t('stock.history_import.imported_badge') }}
             </span>
           </p>
         </div>

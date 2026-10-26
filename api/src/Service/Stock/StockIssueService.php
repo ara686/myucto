@@ -166,7 +166,7 @@ final class StockIssueService
         $hasPostedIssue = false;
         $hasPostedReturn = false;
         foreach ($this->docsRepo->listByInvoice($supplierId, $invoiceId) as $existing) {
-            if ((string) $existing['status'] !== 'posted' || (string) $existing['origin'] !== 'invoice') {
+            if (!self::coversInvoice($existing, 'invoice')) {
                 continue;
             }
             $hasPostedIssue = $hasPostedIssue || (string) $existing['doc_type'] === 'issue';
@@ -273,10 +273,7 @@ final class StockIssueService
 
         $creditNoteId = (int) $creditNote['id'];
         foreach ($this->docsRepo->listByInvoice($supplierId, $creditNoteId) as $doc) {
-            if ((string) $doc['doc_type'] === 'receipt'
-                && (string) $doc['origin'] === 'credit_note'
-                && (string) $doc['status'] === 'posted'
-            ) {
+            if ((string) $doc['doc_type'] === 'receipt' && self::coversInvoice($doc, 'credit_note')) {
                 return; // idempotence — vratka už proběhla
             }
         }
@@ -384,6 +381,19 @@ final class StockIssueService
     }
 
     // ── interní ──────────────────────────────────────────────────────────────────
+
+    /**
+     * Zaúčtovaný doklad, který už pokrývá výdej faktury (vratku dobropisu): automatický,
+     * nebo převzatý z historie skladu (import z jiného programu, původ 'manual'). Bez
+     * převzatého by obnovení stornované faktury či dobropisu hýbalo zbožím podruhé.
+     *
+     * @param array<string,mixed> $doc
+     */
+    private static function coversInvoice(array $doc, string $origin): bool
+    {
+        return (string) $doc['status'] === 'posted'
+            && ((string) $doc['origin'] === $origin || $doc['history_import_job_id'] !== null);
+    }
 
     /** @return array{enabled:bool, autoIssue:bool} */
     private function supplierFlags(int $supplierId): array

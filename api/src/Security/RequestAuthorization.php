@@ -283,6 +283,16 @@ final class RequestAuthorization
     }
 
     /**
+     * Vrácení importu historie skladu smaže tisíce zaúčtovaných skladových dokladů
+     * (a bez data přechodu vynuluje sklad). Rozhoduje o něm správce firmy, ne role
+     * s právem zapisovat skladové doklady.
+     */
+    public static function canRollbackStockHistoryImport(Request $request): bool
+    {
+        return self::isCompanyAdmin($request);
+    }
+
+    /**
      * Správa automatického stavu tachometru (připojení účtu u zdroje, přiřazení aut, načtení):
      * patří k práci s knihou jízd, ne k administraci integrací.
      */

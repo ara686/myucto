@@ -852,6 +852,11 @@
       "imports",
       "stock"
     ],
+    "stock-history-import": [
+      "eshop",
+      "imports",
+      "stock"
+    ],
     "stock-document-new": [
       "stock"
     ],

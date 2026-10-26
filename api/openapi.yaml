@@ -21142,7 +21142,8 @@ paths:
         `purchase_invoice_id`, `purchase_invoice_number` a dodavatele. `partner` je
         `{kind: client | vendor | text, id, name}`; jméno je ze snapshotu dokladu,
         u ručního dokladu volný text bez `id`. Token bez práva ke čtení vydaných,
-        resp. přijatých faktur dostane tyto údaje jako null.
+        resp. přijatých faktur dostane tyto údaje jako null. Pohyb z převzaté historie
+        skladu (import historických dokladů) má `imported: true`.
       parameters:
         - in: query
           name: warehouse_id
@@ -22220,6 +22221,235 @@ paths:
       summary: Pokračuje v importu nebo zastaví další dávky
       responses:
         '200': { description: Aktualizovaný stav, content: { application/json: { schema: { $ref: '#/components/schemas/CatalogJob' } } } }
+        '409': { description: Operace není dostupná v aktuálním stavu }
+
+  /api/v1/stock/history-import:
+    parameters:
+    - $ref: '#/components/parameters/SupplierIdHeader'
+    get:
+      tags: [Stock]
+      summary: Stav převzaté historie skladových dokladů
+      description: |
+        Datum, do kterého je převzatá historie uzamčená (9999-12-31 během převzetí nebo vrácení bez data přechodu),
+        poslední aktivní import, osiřelá historie bez úlohy a nejvyšší počet řádků souboru.
+      responses:
+        '200':
+          description: Stav importu historie
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  locked_until: { type: [string, 'null'], format: date }
+                  first_document_date: { type: [string, 'null'], format: date, description: První vlastní skladový doklad firmy (navržené datum přechodu). }
+                  active: { oneOf: [{ $ref: '#/components/schemas/CatalogJob' }, { type: 'null' }] }
+                  orphan_job_id:
+                    type: [integer, 'null']
+                    description: Převzatá historie bez aktivní úlohy (např. po obnově firmy z archivu). Id pro vrácení, 0 = jen zámek bez dokladů.
+                  max_rows: { type: integer }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v1/stock/history-import/sources:
+    parameters:
+    - $ref: '#/components/parameters/SupplierIdHeader'
+    post:
+      tags: [Stock]
+      summary: Nahraje CSV nebo XLSX s historickými skladovými doklady
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties: { file: { type: string, format: binary } }
+      responses:
+        '201': { description: Uložený zdroj importu, content: { application/json: { schema: { type: object } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { description: Neplatný soubor }
+
+  /api/v1/stock/history-import/sources/{id}/sample:
+    parameters:
+    - $ref: '#/components/parameters/SupplierIdHeader'
+    - { in: path, name: id, required: true, schema: { type: integer, minimum: 1 } }
+    get:
+      tags: [Stock]
+      summary: Vrátí hlavičku a prvních pět řádků importu historie
+      parameters:
+      - { in: query, name: encoding, schema: { type: string, enum: [UTF-8, Windows-1250, ISO-8859-2] } }
+      - { in: query, name: delimiter, schema: { type: string } }
+      - { in: query, name: sheet, schema: { type: integer, minimum: 0 } }
+      responses:
+        '200': { description: Vzorek, povinná a volitelná mapovací pole, content: { application/json: { schema: { type: object } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/stock/history-import/preview:
+    parameters:
+    - $ref: '#/components/parameters/SupplierIdHeader'
+    post:
+      tags: [Stock]
+      summary: Zařadí úplnou validaci historických dokladů na pozadí
+      description: |
+        Bez `cutover_date` jde o režim „historie je živý stav“ (jen pro firmu bez skladových dokladů).
+        S `cutover_date` historie končí den před ním a uzavře ji vyrovnávací výdejka; doklady od data přechodu se nemění.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source_id, config]
+              properties:
+                source_id: { type: integer, minimum: 1 }
+                config:
+                  type: object
+                  required: [source_key, mapping]
+                  properties:
+                    source_key: { type: string, pattern: '^[a-z0-9][a-z0-9_.-]{0,99}$' }
+                    cutover_date: { type: [string, 'null'], format: date, description: Nejpozději dnešní den. }
+                    mapping:
+                      type: object
+                      required: [doc_number, doc_type, doc_date, warehouse, sku, quantity]
+                      additionalProperties: { type: [string, 'null'] }
+                    number_prefixes:
+                      type: object
+                      description: Předpona čísla dokladu podle typu (receipt, issue, transfer, surplus, shortage), nejvýš 10 znaků.
+                      additionalProperties: { type: string, maxLength: 10 }
+                    fill_negative: { type: boolean, default: false, description: Doplnit technické příjemky v okamžiku záporného stavu. }
+                    reader: { type: object }
+      responses:
+        '202': { description: Trvalá validační úloha, content: { application/json: { schema: { $ref: '#/components/schemas/CatalogJob' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Firma už má aktivní nebo osiřelý import historie, nebo v ní běží inventura }
+        '422': { description: Neplatný profil (např. budoucí datum přechodu) nebo režim neodpovídá skladovým dokladům firmy }
+
+  /api/v1/stock/history-import/{id}/apply:
+    parameters:
+    - $ref: '#/components/parameters/SupplierIdHeader'
+    - { in: path, name: id, required: true, schema: { type: integer, minimum: 1 }, description: ID dokončeného náhledu }
+    post:
+      tags: [Stock]
+      summary: Zařadí převzetí historických dokladů na pozadí
+      description: Stav účetních období se ověřuje při spuštění převzetí i před každou dávkou úlohy. Bez confirm_closed_periods vrátí nově uzavřené období 409 history_import_closed_periods_unconfirmed nebo stejný error_code úlohy. Takto zastavený import je třeba vrátit a spustit znovu s potvrzením; retry potvrzení nedoplňuje.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                confirm_closed_periods: { type: boolean, description: Vědomé potvrzení dokladů v uzavřeném účetním období. }
+      responses:
+        '202': { description: Trvalá aplikační úloha, content: { application/json: { schema: { $ref: '#/components/schemas/CatalogJob' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Náhled není dokončený, obsahuje chybu nebo zápor, chybí potvrzení uzavřeného období, firma už má aktivní import, běží inventura nebo číslo vyrovnávací výdejky už existuje }
+
+  /api/v1/stock/history-import/{id}/rollback:
+    parameters:
+    - $ref: '#/components/parameters/SupplierIdHeader'
+    - { in: path, name: id, required: true, schema: { type: integer, minimum: 0 }, description: ID aplikační úlohy aktivního importu nebo orphan_job_id ze stavu }
+    post:
+      tags: [Stock]
+      summary: Zařadí vrácení importu historie skladu (jen správce firmy)
+      description: |
+        Smaže všechny převzaté doklady včetně vyrovnávací výdejky a technických příjemek a odemkne historii.
+        Import bez data přechodu navíc vynuluje stav skladu; po prvním vlastním skladovém dokladu firmy ho vrátit nejde
+        a do dokončení vrácení nejde zaúčtovat žádný skladový doklad.
+        Uzavřená období se ověřují i před každou dávkou. Pokud se období mezitím uzavře a úloha nemá
+        confirm_closed_periods, skončí s history_import_closed_periods_unconfirmed; nové vrácení vyžaduje potvrzení.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                confirm_closed_periods: { type: boolean, description: Vědomé potvrzení mazání dokladů v uzavřeném účetním období. }
+      responses:
+        '202': { description: Trvalá úloha vrácení, content: { application/json: { schema: { $ref: '#/components/schemas/CatalogJob' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Import nebo jeho vrácení ještě běží, běží inventura, chybí potvrzení uzavřeného období, nebo firma po importu bez data přechodu zaúčtovala vlastní doklad }
+
+  /api/v1/stock/history-import/jobs/{id}:
+    parameters:
+    - $ref: '#/components/parameters/SupplierIdHeader'
+    - { in: path, name: id, required: true, schema: { type: integer, minimum: 1 } }
+    get:
+      tags: [Stock]
+      summary: Stav importu historie skladu
+      responses:
+        '200': { description: Stav a progress, content: { application/json: { schema: { $ref: '#/components/schemas/CatalogJob' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/stock/history-import/jobs/{id}/items:
+    parameters:
+    - $ref: '#/components/parameters/SupplierIdHeader'
+    - { in: path, name: id, required: true, schema: { type: integer, minimum: 1 } }
+    get:
+      tags: [Stock]
+      summary: Položkový report importu historie skladu
+      parameters:
+      - { in: query, name: page, schema: { type: integer, minimum: 1 } }
+      - { in: query, name: limit, schema: { type: integer, minimum: 1, maximum: 500 } }
+      responses:
+        '200': { description: Položky a stránkování, content: { application/json: { schema: { type: object } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/stock/history-import/jobs/{id}/end-state:
+    parameters:
+    - $ref: '#/components/parameters/SupplierIdHeader'
+    - { in: path, name: id, required: true, schema: { type: integer, minimum: 1 }, description: ID dokončeného náhledu }
+    get:
+      tags: [Stock]
+      summary: Koncový stav historie po skladech a kartách
+      description: |
+        Stav, na kterém převzatá historie skončí (s technickými příjemkami, když jsou zapnuté), proti počátečnímu
+        stavu v MyÚčtu k datu přechodu (příjemky s datem přechodu; prodeje toho dne se nepočítají). Bez data
+        přechodu jsou stock_qty a difference null. `format=xlsx` vrátí soubor.
+      parameters:
+      - { in: query, name: format, schema: { type: string, enum: [json, xlsx], default: json } }
+      responses:
+        '200':
+          description: Koncový stav
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cutover_date: { type: [string, 'null'], format: date }
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        warehouse_code: { type: string }
+                        sku: { type: string }
+                        name: { type: string }
+                        unit: { type: string }
+                        history_qty: { type: string }
+                        stock_qty: { type: [string, 'null'] }
+                        difference: { type: [string, 'null'] }
+                  totals:
+                    type: object
+                    properties:
+                      count: { type: integer }
+                      differences: { type: integer }
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Náhled ještě není dokončen }
+
+  /api/v1/stock/history-import/jobs/{id}/{operation}:
+    parameters:
+    - $ref: '#/components/parameters/SupplierIdHeader'
+    - { in: path, name: id, required: true, schema: { type: integer, minimum: 1 } }
+    - { in: path, name: operation, required: true, schema: { type: string, enum: [retry, cancel] } }
+    post:
+      tags: [Stock]
+      summary: Pokračuje v importu historie nebo zastaví další dávky
+      description: Opakovat jde jen poslední převzetí nebo vrácení (jinak history_import_retry_unsupported). Převzetí zastaví jen správce firmy.
+      responses:
+        '200': { description: Aktualizovaný stav, content: { application/json: { schema: { $ref: '#/components/schemas/CatalogJob' } } } }
+        '403': { description: Převzetí historie může zastavit jen správce firmy }
         '409': { description: Operace není dostupná v aktuálním stavu }
 
   /api/v1/stock/documents:
@@ -41490,6 +41720,7 @@ components:
         purchase_invoice_id: { type: [integer, 'null'], format: int64 }
         purchase_order_id: { type: [integer, 'null'], format: int64 }
         stock_take_id: { type: [integer, 'null'], format: int64 }
+        history_import_job_id: { type: [integer, 'null'], format: int64, readOnly: true, description: Úloha importu historie, která doklad převzala. }
         journal_entry_id: { type: [integer, 'null'], format: int64 }
         reversal_document_id: { type: [integer, 'null'], format: int64 }
         status: { type: string, enum: [draft, posted, reversed] }
