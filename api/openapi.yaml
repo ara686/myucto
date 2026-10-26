@@ -22230,7 +22230,7 @@ paths:
                   required: [source_key, mapping]
                   properties:
                     source_key: { type: string, pattern: '^[a-z0-9][a-z0-9_.-]{0,99}$' }
-                    cutover_date: { type: [string, 'null'], format: date }
+                    cutover_date: { type: [string, 'null'], format: date, description: Nejpozději dnešní den. }
                     mapping:
                       type: object
                       required: [doc_number, doc_type, doc_date, warehouse, sku, quantity]
@@ -22244,8 +22244,8 @@ paths:
       responses:
         '202': { description: Trvalá validační úloha, content: { application/json: { schema: { $ref: '#/components/schemas/CatalogJob' } } } }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '409': { description: Firma už má aktivní import historie }
-        '422': { description: Neplatný profil nebo režim neodpovídá skladovým dokladům firmy }
+        '409': { description: Firma už má aktivní nebo osiřelý import historie, nebo v ní běží inventura }
+        '422': { description: Neplatný profil (např. budoucí datum přechodu) nebo režim neodpovídá skladovým dokladům firmy }
 
   /api/v1/stock/history-import/{id}/apply:
     parameters:
@@ -22264,7 +22264,7 @@ paths:
       responses:
         '202': { description: Trvalá aplikační úloha, content: { application/json: { schema: { $ref: '#/components/schemas/CatalogJob' } } } }
         '404': { $ref: '#/components/responses/NotFound' }
-        '409': { description: Náhled není dokončený, obsahuje chybu nebo zápor, chybí potvrzení uzavřeného období nebo firma už má aktivní import }
+        '409': { description: Náhled není dokončený, obsahuje chybu nebo zápor, chybí potvrzení uzavřeného období, firma už má aktivní import, běží inventura nebo číslo vyrovnávací výdejky už existuje }
 
   /api/v1/stock/history-import/{id}/rollback:
     parameters:
@@ -22288,7 +22288,7 @@ paths:
         '202': { description: Trvalá úloha vrácení, content: { application/json: { schema: { $ref: '#/components/schemas/CatalogJob' } } } }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
-        '409': { description: Import nebo jeho vrácení ještě běží, chybí potvrzení uzavřeného období, nebo firma po importu bez data přechodu zaúčtovala vlastní doklad }
+        '409': { description: Import nebo jeho vrácení ještě běží, běží inventura, chybí potvrzení uzavřeného období, nebo firma po importu bez data přechodu zaúčtovala vlastní doklad }
 
   /api/v1/stock/history-import/jobs/{id}:
     parameters:

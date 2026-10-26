@@ -161,6 +161,7 @@ final class StockHistoryImportService
             if (in_array($active['status'] ?? null, ['queued', 'running'], true) || $stmt->fetchColumn() !== false) {
                 throw new EshopException('job_state_conflict', 'Import nebo jeho vrácení ještě běží.', 409);
             }
+            $this->assertNoOpenStockTake($supplierId);
             if ($this->closedPeriodHistoryDocuments($supplierId) > 0 && !$confirmClosedPeriods) {
                 throw new EshopException('history_import_closed_periods_unconfirmed', 'Část převzatých dokladů spadá do uzavřeného účetního období. Potvrďte, že je chcete smazat.', 409);
             }
@@ -316,11 +317,23 @@ final class StockHistoryImportService
      * Režim musí sedět se skladem firmy: bez D jen firma bez skladových dokladů, s D jen
      * tak, aby historie skončila před prvním dokladem vzniklým v MyÚčtu.
      */
+    /** Rozpracovaná inventura porovnává počty se stavem, který by import nebo vrácení změnily. */
+    private function assertNoOpenStockTake(int $supplierId): void
+    {
+        $stmt = $this->db->pdo()->prepare("SELECT 1 FROM stock_takes WHERE supplier_id = ? AND status IN ('preparing','counting')
+            UNION ALL SELECT 1 FROM stock_cycle_counts WHERE supplier_id = ? AND status IN ('queued','running','counting') LIMIT 1");
+        $stmt->execute([$supplierId, $supplierId]);
+        if ($stmt->fetchColumn() !== false) {
+            throw new EshopException('history_import_stock_take_open', 'Ve firmě běží inventura. Import historie skladu spusťte až po jejím uzavření.', 409);
+        }
+    }
+
     private function assertMode(int $supplierId, array $profile): void
     {
         if ($this->active($supplierId) !== null || $this->orphan($supplierId) !== null) {
             throw new EshopException('history_import_active', 'Firma už má převzatou historii skladu. Další import je možný až po jejím vrácení.', 409);
         }
+        $this->assertNoOpenStockTake($supplierId);
         $stmt = $this->db->pdo()->prepare("SELECT MIN(doc_date) FROM stock_documents
             WHERE supplier_id = ? AND status IN ('posted','reversed') AND history_import_job_id IS NULL");
         $stmt->execute([$supplierId]);

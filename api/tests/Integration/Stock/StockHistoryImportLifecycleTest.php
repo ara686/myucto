@@ -296,6 +296,28 @@ final class StockHistoryImportLifecycleTest extends StockTestCase
         self::assertNull($this->lockedUntil($sid));
     }
 
+    /** Rozpracovaná inventura (i cyklická) zastaví náhled, převzetí i vrácení importu. */
+    public function testOpenStockTakeBlocksImportAndRollback(): void
+    {
+        $service = $this->container->get(StockHistoryImportService::class);
+        $sid = $this->createSupplier();
+        $main = $this->warehouse($sid, 'HL');
+        $this->item($sid, 'ZB-100');
+        $csv = self::csv(['P1;prijemka;2020-01-05;HL;;ZB-100;2;10;;;;']);
+        $preview = $this->stage($sid, $csv, $this->config(null));
+        foreach (['stock_takes' => 'counting', 'stock_cycle_counts' => 'running'] as $table => $status) {
+            $this->db->pdo()->prepare("INSERT INTO {$table} (supplier_id, warehouse_id, take_date, status) VALUES (?, ?, '2021-01-01', ?)")
+                ->execute([$sid, $main, $status]);
+            $this->expectOpenStockTake(fn () => $this->stage($sid, $csv, $this->config(null)));
+            $this->expectOpenStockTake(fn () => $service->apply($sid, $preview['id'], $this->userId));
+            $this->db->pdo()->prepare("UPDATE {$table} SET status = 'closed' WHERE supplier_id = ?")->execute([$sid]);
+        }
+        $applied = $this->applyAll($sid, $preview['id']);
+        $this->db->pdo()->prepare("INSERT INTO stock_takes (supplier_id, warehouse_id, take_date, status) VALUES (?, ?, '2021-02-01', 'preparing')")
+            ->execute([$sid, $main]);
+        $this->expectOpenStockTake(fn () => $service->rollback($sid, $applied['id'], $this->userId));
+    }
+
     // ── pomocníci ────────────────────────────────────────────────────────────
 
     private function expectStale(callable $run): void
@@ -305,6 +327,16 @@ final class StockHistoryImportLifecycleTest extends StockTestCase
             self::fail('Zastaralá úloha musí selhat.');
         } catch (StockException $e) {
             self::assertSame('history_import_job_stale', $e->errorCode);
+        }
+    }
+
+    private function expectOpenStockTake(callable $run): void
+    {
+        try {
+            $run();
+            self::fail('Import historie během inventury musí selhat.');
+        } catch (EshopException $e) {
+            self::assertSame('history_import_stock_take_open', $e->errorCode);
         }
     }
 
