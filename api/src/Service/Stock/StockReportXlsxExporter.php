@@ -146,7 +146,7 @@ final class StockReportXlsxExporter
             }
             $r++;
         }
-        $sheet->setCellValue([1, $r], 'CELKEM (' . (int) $data['totals']['count'] . ' položek, rozdílů ' . (int) $data['totals']['differences'] . ')');
+        $sheet->setCellValue([1, $r], 'CELKEM (' . (int) $data['totals']['count'] . ' položek, s rozdílem ' . (int) $data['totals']['differences'] . ')');
         $this->boldRow($sheet, $r, $cols);
         $this->finishTable($sheet, $head, $r, $cols, 5);
 

@@ -361,6 +361,7 @@ final class StockHistoryImportLifecycleTest extends StockTestCase
             $sheet->getCell('A6')->getValue(), $sheet->getCell('B6')->getValue(),
             $sheet->getCell('E6')->getValue(), $sheet->getCell('F6')->getValue(), $sheet->getCell('G6')->getValue(),
         ]);
+        self::assertSame('CELKEM (3 položek, s rozdílem 2)', $sheet->getCell('A7')->getValue());
     }
 
     // ── pomocníci ────────────────────────────────────────────────────────────
