@@ -189,7 +189,9 @@ onMounted(load)
 </script>
 
 <template>
-  <Modal :title="single ? t('accounting.saldo_settle.title_single', { doc: first.doc_no }) : t('accounting.saldo_settle.title_bulk', { count: items.length })"
+  <!-- Modal se teleportuje na konec stránky a překryl by okno zápočtu, proto se
+       po dobu zápočtu schová; po zavření zápočtu se vrátí se stejným stavem. -->
+  <Modal v-if="!offsetOpen" :title="single ? t('accounting.saldo_settle.title_single', { doc: first.doc_no }) : t('accounting.saldo_settle.title_bulk', { count: items.length })"
     width-class="max-w-4xl" @close="emit('close')">
     <div class="space-y-4" data-testid="saldo-settle-dialog">
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">

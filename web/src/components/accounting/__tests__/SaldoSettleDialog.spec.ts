@@ -88,6 +88,22 @@ describe('SaldoSettleDialog', () => {
     expect(denied.find('[data-testid="saldo-settle-mutual-offset"]').exists()).toBe(false)
   })
 
+  it('zápočet proti účtu schová dialog vyrovnání, aby okno zápočtu nebylo pod ním', async () => {
+    m.candidates.mockResolvedValue(candidates([]))
+    const wrapper = mount(SaldoSettleDialog, { props: { items: [target(7, 640)], asOf: '2099-12-31' } })
+    await flushPromises()
+    await wrapper.findAll('[role="tab"]')[1].trigger('click')
+    await wrapper.findAll('button').find(b => b.text().includes('accounting.saldo_settle.offset_open'))!.trigger('click')
+    await flushPromises()
+    expect(wrapper.findComponent({ name: 'PaymentMethodModal' }).exists()).toBe(true)
+    expect(wrapper.findComponent({ name: 'Modal' }).exists()).toBe(false)
+
+    wrapper.findComponent({ name: 'PaymentMethodModal' }).vm.$emit('close')
+    await flushPromises()
+    expect(wrapper.findComponent({ name: 'PaymentMethodModal' }).exists()).toBe(false)
+    expect(wrapper.find('[data-testid="saldo-settle-dialog"]').exists()).toBe(true)
+  })
+
   it('jistou shodu předvyplní a potvrzení pošle rozpad jednoho zápisu', async () => {
     m.candidates.mockResolvedValue(candidates([line(1, 1000, { amount_match: true, doc_match: true }), line(2, 50)]))
     const wrapper = mount(SaldoSettleDialog, { props: { items: [target(7, 1000)], asOf: '2099-12-31' } })
