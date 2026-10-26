@@ -208,9 +208,16 @@ final class PairingSymbolMatcher
         $rate = null;
         if ($isBank) {
             $m = $this->movements[$movementId] ?? null;
+            if ($m === null || !$m['taken']) {
+                // Platba zaúčtovaná v MyÚčtu - ani evidence úhrady se k ní nedoplňuje.
+                $p->count(DocumentLinker::STEP_PAYMENTS, 'paired_movement_kept');
+                return 0;
+            }
+            // Pohyb už spárovaný s dokladem skupiny dostane jen chybějící evidovanou úhradu.
+            $this->recordExistingMatches($pay, $docs, $movementId, $m);
             if (!DocumentLinker::movementEditable($m, $ctx->options->relinkOnly)) {
-                // Pohyb bez převzatého bankovního zápisu, ignorovaný uživatelem, nebo v opravném
-                // převodu už spárovaný - jeho párování je rozhodnutí v MyÚčtu.
+                // Pohyb ignorovaný uživatelem, nebo v opravném převodu spárovaný uživatelem -
+                // jeho párování je rozhodnutí v MyÚčtu.
                 $p->count(DocumentLinker::STEP_PAYMENTS, 'paired_movement_kept');
                 return 0;
             }
@@ -261,6 +268,9 @@ final class PairingSymbolMatcher
                      VALUES (?, ?, ?, ?, ?, "manual", ?)'
                 )->execute([$ctx->supplierId, $movementId, $isIssued ? $d['id'] : null, $isIssued ? null : $d['id'],
                     number_format($txAmount, 2, '.', ''), $userId]);
+                // Párování převodu se pozná podle mapy úhrad (opravný převod tak odliší párování uživatele).
+                $this->map->put($ctx->supplierId, MoneyS3ImportRepository::KIND_PAYMENT, DocumentLinker::paymentMapKey($movementId, $d['type'], $d['id']),
+                    (int) $pdo->lastInsertId(), $ctx->runId);
                 // Pohyb, který krok dřív označil jako zaúčtovaný bez dokladu, je teď úhradou faktury.
                 $pdo->prepare(
                     "UPDATE bank_transactions t JOIN bank_statements s ON s.id = t.statement_id
@@ -307,6 +317,40 @@ final class PairingSymbolMatcher
             $made++;
         }
         return $made;
+    }
+
+    /**
+     * Pohyb spárovaný s vydanou fakturou skupiny (převodem i uživatelem), které chybí
+     * evidovaná úhrada: doplní se v částce párování, nejvýš do uhrazené částky faktury.
+     * Párování ani pohyb se nemění.
+     *
+     * @param array<string,mixed> $pay
+     * @param array<string,array<string,mixed>> $docs
+     * @param array<string,mixed> $m
+     */
+    private function recordExistingMatches(array $pay, array $docs, int $movementId, array $m): void
+    {
+        foreach ($docs as $ref => $d) {
+            $matched = $this->state['pmAmount'][$ref][$movementId] ?? null;
+            if ($d['type'] !== 'invoice' || $matched === null) {
+                continue;
+            }
+            // Kurz pohybu v cizí měně: z Money (částka pohybu v Kč), jinak z řádku úhrady v deníku.
+            $rate = 1.0;
+            if ($m['currency'] !== 'CZK') {
+                $rate = isset($this->ctx->bankTransactionCzk[$movementId]) && abs($m['amount']) >= 0.01
+                    ? abs($this->ctx->bankTransactionCzk[$movementId]) / abs($m['amount'])
+                    : ($pay['mena'] === $m['currency'] && abs($pay['fnet']) >= 0.01 ? abs($pay['net']) / abs($pay['fnet']) : null);
+                if ($rate === null) {
+                    continue;
+                }
+            }
+            $czk = $matched * $rate;
+            $amount = $this->issuedPayments->toInvoiceCurrency($this->ctx->supplierId, $d['id'], $czk, $m['currency'], $matched);
+            if ($amount !== null) {
+                $this->issuedPayments->record($this->ctx, $d['id'], 'bank', $movementId, null, $amount, $m['date'], $pay['doc']);
+            }
+        }
     }
 
     /**
@@ -707,7 +751,7 @@ final class PairingSymbolMatcher
     {
         $pdo = $this->db->pdo();
         $sid = $ctx->supplierId;
-        $state = ['allocated' => [], 'allocatedF' => [], 'linked' => [], 'txUsed' => [], 'cash' => [], 'info' => [], 'entries' => [], 'accounts' => [],
+        $state = ['allocated' => [], 'allocatedF' => [], 'linked' => [], 'pmAmount' => [], 'txUsed' => [], 'cash' => [], 'info' => [], 'entries' => [], 'accounts' => [],
             'booked' => [], 'manualLinks' => [], 'settledEntries' => []];
 
         foreach ([
@@ -749,6 +793,7 @@ final class PairingSymbolMatcher
             if ($ref !== null) {
                 $state['allocated'][$ref] = ($state['allocated'][$ref] ?? 0.0) + $czk;
                 $state['linked'][$ref]['b' . $tx] = true;
+                $state['pmAmount'][$ref][$tx] = ($state['pmAmount'][$ref][$tx] ?? 0.0) + abs((float) $r['amount']);
                 if ($m !== null && $m['currency'] !== 'CZK') {
                     $state['allocatedF'][$ref][$m['currency']] = ($state['allocatedF'][$ref][$m['currency']] ?? 0.0) + abs((float) $r['amount']);
                 }

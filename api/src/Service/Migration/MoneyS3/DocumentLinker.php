@@ -310,7 +310,7 @@ final class DocumentLinker
         }
         $this->repairForeignMatchAmounts($ctx, $movements);
         (new PairingSymbolMatcher($this->db, $this->map, $issuedPayments))->match($ctx, $movements);
-        (new AdvanceLinker($this->db))->link($ctx);
+        (new AdvanceLinker($this->db, $this->map))->link($ctx);
         $this->markBookedWithoutInvoice($ctx);
         if ($cashMulti !== []) {
             $p->info(self::STEP_PAYMENTS, 'cash_multi_invoice', count($cashMulti) . ' pokladních dokladů hradí víc faktur; pokladní doklad ukazuje vazbu jen na první, faktury jsou uhrazené podle Money.',
@@ -328,11 +328,27 @@ final class DocumentLinker
      */
     private function bankMovements(int $supplierId): array
     {
+        // Párování vzniklé převodem je v mapě úhrad: podle `UDoklad` pod klíčem dokladu
+        // (`v|rok|číslo`, `p|rok|číslo` - cíl musí patřit dokladu z klíče, cílem bývá i id
+        // pokladního dokladu), podle párovacího symbolu a vrácení zálohy pod klíčem pohybu
+        // a dokladu ({@see paymentMapKey()}). Ostatní párování zadal uživatel.
+        $own = "EXISTS (SELECT 1 FROM money_s3_import_map m
+                          JOIN money_s3_import_map dm ON dm.supplier_id = m.supplier_id
+                           AND dm.kind = IF(p.invoice_id IS NOT NULL, 'invoice', 'purchase_invoice')
+                           AND dm.target_id = COALESCE(p.invoice_id, p.purchase_invoice_id)
+                         WHERE m.supplier_id = p.supplier_id AND m.kind = 'payment' AND m.target_id = p.id
+                           AND m.money_key = CONCAT(IF(p.invoice_id IS NOT NULL, 'v|', 'p|'), dm.money_key))
+                 OR EXISTS (SELECT 1 FROM money_s3_import_map m
+                         WHERE m.supplier_id = p.supplier_id AND m.kind = 'payment' AND m.target_id = p.id
+                           AND m.money_key = CONCAT('ps|', p.bank_transaction_id, '|', IF(p.invoice_id IS NOT NULL, 'invoice|', 'purchase_invoice|'),
+                                                    COALESCE(p.invoice_id, p.purchase_invoice_id)))";
         $stmt = $this->db->pdo()->prepare(
             'SELECT t.id, t.amount, t.currency, DATE(t.posted_at) AS posted_on, t.match_status, t.match_reason,
-                    COALESCE(pm.matched, 0) AS matched, ' . TakenOverRecord::liveBankEntrySql('s.supplier_id', 't.id') . ' AS taken
+                    COALESCE(pm.matched, 0) AS matched, COALESCE(pm.foreign_matches, 0) AS foreign_matches,
+                    ' . TakenOverRecord::liveBankEntrySql('s.supplier_id', 't.id') . ' AS taken
                FROM bank_transactions t JOIN bank_statements s ON s.id = t.statement_id
-               LEFT JOIN (SELECT bank_transaction_id, SUM(amount) AS matched FROM payment_matches WHERE supplier_id = ? GROUP BY bank_transaction_id) pm
+               LEFT JOIN (SELECT p.bank_transaction_id, SUM(p.amount) AS matched, SUM(CASE WHEN ' . $own . ' THEN 0 ELSE 1 END) AS foreign_matches
+                            FROM payment_matches p WHERE p.supplier_id = ? GROUP BY p.bank_transaction_id) pm
                       ON pm.bank_transaction_id = t.id
               WHERE s.supplier_id = ?'
         );
@@ -342,9 +358,15 @@ final class DocumentLinker
             $amount = (float) $r['amount'];
             $out[(int) $r['id']] = ['amount' => $amount, 'currency' => (string) $r['currency'], 'date' => (string) $r['posted_on'], 'czk' => $amount,
                 'status' => (string) $r['match_status'], 'reason' => (string) ($r['match_reason'] ?? ''), 'matched' => (float) $r['matched'],
-                'taken' => (int) $r['taken'] === 1];
+                'taken' => (int) $r['taken'] === 1, 'user_matches' => (int) $r['foreign_matches']];
         }
         return $out;
+    }
+
+    /** Klíč mapy úhrad pro párování vzniklé jinak než podle `UDoklad` (pohyb × doklad). */
+    public static function paymentMapKey(int $txId, string $docType, int $docId): string
+    {
+        return 'ps|' . $txId . '|' . $docType . '|' . $docId;
     }
 
     /**
@@ -429,7 +451,8 @@ final class DocumentLinker
      * zaúčtovanou v MyÚčtu převod nechá být) a jen nespárovaný, nebo převodem označený jako
      * zaúčtovaný bez dokladu; pohyb, který uživatel ignoroval, ne. Řádný převod smí přidat
      * párování i k pohybu, který převod spároval s jiným dokladem (hradí víc faktur), opravný
-     * převod jen k pohybu bez párování - spárovaný mohl mít v rukou uživatel.
+     * převod jen k pohybu, jehož všechna párování vytvořil převod - párování zadané
+     * uživatelem je jeho rozhodnutí. Volnou částku pohybu hlídá volající.
      *
      * @param array<string,mixed>|null $m
      */
@@ -439,10 +462,11 @@ final class DocumentLinker
             return false;
         }
         $free = $m['status'] === 'unmatched' || ($m['status'] === 'ignored' && $m['reason'] === 'money_s3_booked');
+        $matched = in_array($m['status'], ['manual', 'auto_exact', 'auto_partial'], true);
         if ($relinkOnly) {
-            return $free && $m['matched'] < 0.005;
+            return ($free && $m['matched'] < 0.005) || ($matched && ($m['user_matches'] ?? 1) === 0);
         }
-        return $free || in_array($m['status'], ['manual', 'auto_exact', 'auto_partial'], true);
+        return $free || $matched;
     }
 
     /**

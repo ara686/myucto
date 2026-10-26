@@ -391,4 +391,51 @@ final class MoneyS3ImportWorkflowTest extends MoneyS3ImportTestCase
         }
         self::assertGreaterThan(0, $skipped, $this->explain($relink));
     }
+
+    /**
+     * Opravný převod doplní evidované úhrady k pohybům, které převod spároval dřív, a smí
+     * doplnit párování pohybu, jehož všechna párování vytvořil převod. Pohyb, který spároval
+     * uživatel, nechá být.
+     */
+    public function testRelinkRestoresPaymentsOfMatchedMovementsAndKeepsUserMatches(): void
+    {
+        SyntheticAgenda::writeLzFiles($this->tmp . '/agenda.lz', SyntheticAgenda::filesWithPartialPayments());
+        $supplierId = $this->supplier();
+        self::assertFalse($this->import($supplierId)->hasErrors());
+        $pdo = $this->db->pdo();
+        $txOf = static function (string $ref) use ($pdo, $supplierId): int {
+            $stmt = $pdo->prepare('SELECT t.id FROM bank_transactions t JOIN bank_statements s ON s.id = t.statement_id WHERE s.supplier_id = ? AND t.bank_ref = ?');
+            $stmt->execute([$supplierId, $ref]);
+            return (int) $stmt->fetchColumn();
+        };
+        $fp25007 = (int) $pdo->query("SELECT id FROM purchase_invoices WHERE supplier_id = {$supplierId} AND vendor_invoice_number = 'DF-2025-070'")->fetchColumn();
+        $bv25004 = $txOf('BV25004');
+
+        // Uživatel splátku BV25004 přepáruje sám (jen část), dřívější převod nezaložil evidované
+        // úhrady vydaných faktur a firma se dál účtuje v MyÚčtu.
+        $pdo->prepare('DELETE FROM payment_matches WHERE supplier_id = ? AND bank_transaction_id = ?')->execute([$supplierId, $bv25004]);
+        $pdo->prepare('INSERT INTO payment_matches (supplier_id, bank_transaction_id, purchase_invoice_id, amount, match_type, matched_by_user_id) VALUES (?, ?, ?, 500.00, "manual", ?)')
+            ->execute([$supplierId, $bv25004, $fp25007, $this->userId]);
+        $pdo->prepare('DELETE FROM invoice_payments WHERE supplier_id = ?')->execute([$supplierId]);
+        $period = $this->container(AccountingPeriodRepository::class)->findByYear($supplierId, 2025);
+        $stmt = $pdo->prepare("SELECT id FROM chart_of_accounts WHERE supplier_id = ? AND account_code IN ('518.000', '211.000') ORDER BY account_code");
+        $stmt->execute([$supplierId]);
+        [$cash, $expense] = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+        $this->container(JournalEntryRepository::class)->insert(
+            ['supplier_id' => $supplierId, 'period_id' => (int) $period['id'], 'entry_date' => '2025-12-20', 'source_type' => 'manual', 'posted_at' => '2025-12-20 10:00:00'],
+            [['account_id' => $expense, 'side' => 'debit', 'amount' => '75.00'], ['account_id' => $cash, 'side' => 'credit', 'amount' => '75.00']],
+        );
+
+        $relink = $this->importer->run($supplierId, $this->userId, $this->backup(),
+            new ImportOptions(ImportOptions::MODE_IMPORT, true, null, [], [], false, null, ImportOptions::DISPOSAL_YEAR_TAX_HALF, false, true));
+
+        self::assertFalse($relink->hasErrors(), $this->explain($relink));
+        // FV25002: splátku BP25004 spároval převod podle symbolu, doplatek BP25005 podle `UDoklad`.
+        self::assertSame(2, $this->rowCount('invoice_payments', $supplierId,
+            "source = 'bank' AND amount IN (5000.00, 7100.00) AND invoice_id = (SELECT id FROM invoices WHERE supplier_id = {$supplierId} AND varsymbol = 'FV25002')"),
+            $this->explain($relink));
+        // Pohyb spárovaný uživatelem zůstává, jak ho nechal.
+        self::assertSame(1, $this->rowCount('payment_matches', $supplierId, "bank_transaction_id = {$bv25004} AND amount = 500.00"));
+        self::assertSame(1, $this->rowCount('payment_matches', $supplierId, "bank_transaction_id = {$bv25004}"));
+    }
 }

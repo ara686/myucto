@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MyInvoice\Service\Migration\MoneyS3;
 
 use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Repository\MoneyS3ImportRepository;
 use MyInvoice\Service\Accounting\TakenOverRecord;
 use PDO;
 
@@ -37,7 +38,10 @@ final class AdvanceLinker
 {
     private const ADVANCE_KINDS = ['L', 'Z', 'F'];
 
-    public function __construct(private readonly Connection $db) {}
+    public function __construct(
+        private readonly Connection $db,
+        private readonly ?MoneyS3ImportRepository $map = null,
+    ) {}
 
     public function link(ImportContext $ctx): void
     {
@@ -206,6 +210,8 @@ final class AdvanceLinker
                 continue;
             }
             $match->execute([$ctx->supplierId, (int) $t['id'], $candidates[0], number_format((float) $t['amount'], 2, '.', ''), $userId]);
+            $this->map?->put($ctx->supplierId, MoneyS3ImportRepository::KIND_PAYMENT, DocumentLinker::paymentMapKey((int) $t['id'], 'purchase_invoice', $candidates[0]),
+                (int) $pdo->lastInsertId(), $ctx->runId);
             $markTx->execute([$userId, (int) $t['id'], $ctx->supplierId]);
             $left[$candidates[0]] -= (float) $t['amount'];
             $ctx->protocol->count(DocumentLinker::STEP_PAYMENTS, 'advance_refund_matched');

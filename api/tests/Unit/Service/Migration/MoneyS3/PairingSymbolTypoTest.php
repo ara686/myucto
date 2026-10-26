@@ -46,10 +46,13 @@ final class PairingSymbolTypoTest extends TestCase
         // Převodem označený jako zaúčtovaný bez dokladu smí, ignorovaný uživatelem ne.
         self::assertTrue(DocumentLinker::movementEditable(['status' => 'ignored', 'reason' => 'money_s3_booked'] + $m, true));
         self::assertFalse(DocumentLinker::movementEditable(['status' => 'ignored', 'reason' => 'user'] + $m, false));
-        // Spárovaný pohyb (hradí víc faktur) jen řádný převod, opravný ne.
+        // Spárovaný pohyb (hradí víc faktur): řádný převod ano, opravný jen když všechna jeho
+        // párování vytvořil převod (párování uživatele je jeho rozhodnutí).
         $matched = ['status' => 'manual', 'matched' => 100.0] + $m;
         self::assertTrue(DocumentLinker::movementEditable($matched, false));
         self::assertFalse(DocumentLinker::movementEditable($matched, true));
+        self::assertTrue(DocumentLinker::movementEditable(['user_matches' => 0] + $matched, true));
+        self::assertFalse(DocumentLinker::movementEditable(['user_matches' => 1] + $matched, true));
         self::assertFalse(DocumentLinker::movementEditable(null, false));
     }
 }
