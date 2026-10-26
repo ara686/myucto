@@ -1,0 +1,150 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises, shallowMount } from '@vue/test-utils'
+import StockHistoryImport from '../StockHistoryImport.vue'
+
+const mocks = vi.hoisted(() => ({
+  status: vi.fn(), upload: vi.fn(), sample: vi.fn(), preview: vi.fn(), job: vi.fn(), items: vi.fn(),
+  apply: vi.fn(), rollback: vi.fn(), retry: vi.fn(), cancel: vi.fn(), replace: vi.fn(),
+  route: { query: {} as Record<string, string> },
+  auth: { canWrite: () => true, isCompanyAdminRole: true },
+  supplierStore: undefined as any,
+}))
+vi.mock('@/api/stockHistoryImport', () => ({ stockHistoryImportApi: {
+  status: mocks.status, upload: mocks.upload, sample: mocks.sample, preview: mocks.preview, job: mocks.job,
+  items: mocks.items, apply: mocks.apply, rollback: mocks.rollback, retry: mocks.retry, cancel: mocks.cancel,
+} }))
+vi.mock('@/stores/auth', () => ({ useAuthStore: () => mocks.auth }))
+vi.mock('@/stores/supplier', async () => {
+  const { reactive } = await import('vue')
+  mocks.supplierStore = reactive({ currentSupplierId: 1 })
+  return { useSupplierStore: () => mocks.supplierStore }
+})
+vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
+vi.mock('vue-router', () => ({ useRoute: () => mocks.route, useRouter: () => ({ replace: mocks.replace }) }))
+
+const header = ['doklad', 'typ', 'datum', 'sklad', 'sklad_cil', 'sku', 'mnozstvi', 'cena']
+const sample = { source: { id: 7, original_name: 'historie.csv', format: 'csv', size_bytes: 10, sha256: 'x', created_at: '' },
+  header, rows: [['P1', 'prijemka', '2020-01-02', 'HL', '', 'ZB-1', '2', '10']],
+  fields: ['doc_number', 'doc_type', 'doc_date', 'warehouse', 'sku', 'quantity'],
+  optional_fields: ['warehouse_to', 'unit_cost', 'partner', 'description', 'invoice_number', 'purchase_invoice_number', 'note'] }
+const stage = { id: 41, supplier_id: 1, kind: 'stock_history_import_stage', input_version: 1, status: 'completed',
+  checkpoint: 3, total: 3, error_code: null, cancel_requested: false, created_at: '', updated_at: '', finished_at: null, attempts: 1,
+  report: { counts: { ready: 3 }, cutover_date: '2021-01-01', fill_negative: false, documents: { receipt: 1, issue: 1, transfer: 0, surplus: 0, shortage: 0 },
+    lines: 3, date_from: '2020-01-02', date_to: '2020-02-01', negative_count: 0, negatives: [], closed_period_documents: 0 } }
+const emptyItems = { items: [], pagination: { page: 1, limit: 50, total: 0, pages: 0 } }
+
+function mountPage() {
+  return shallowMount(StockHistoryImport, { global: { stubs: {
+    RouterLink: true,
+    CatalogJobProgress: { name: 'CatalogJobProgress', props: ['job'], emits: ['cancel'], template: '<div data-test="progress">{{ job.kind }}</div>' },
+  } } })
+}
+
+async function uploadFile(wrapper: ReturnType<typeof mountPage>) {
+  const input = wrapper.get('input[type="file"]')
+  Object.defineProperty(input.element, 'files', { configurable: true, value: [new File(['x'], 'historie.csv')] })
+  await input.trigger('change')
+  await flushPromises()
+}
+
+beforeEach(() => {
+  mocks.route.query = {}
+  mocks.auth.isCompanyAdminRole = true
+  mocks.supplierStore.currentSupplierId = 1
+  mocks.status.mockResolvedValue({ locked_until: null, first_document_date: '2021-01-01', active: null, max_rows: 300000 })
+  mocks.upload.mockResolvedValue(sample.source)
+  mocks.sample.mockResolvedValue(sample)
+  mocks.items.mockResolvedValue(emptyItems)
+  mocks.replace.mockImplementation(async ({ query }: { query: Record<string, string> }) => { mocks.route.query = query })
+})
+
+afterEach(() => vi.clearAllMocks())
+
+describe('StockHistoryImport', () => {
+  it('proposes the first stock document as cut-over and blocks the live mode for a company with documents', async () => {
+    mocks.preview.mockResolvedValue({ ...stage, status: 'queued' })
+    mocks.job.mockResolvedValue({ ...stage, status: 'queued' })
+    const wrapper = mountPage()
+    await flushPromises()
+    expect((wrapper.get('[data-test="cutover-date"]').element as HTMLInputElement).value).toBe('2021-01-01')
+    expect(wrapper.get('[data-test="mode-live"]').attributes('disabled')).toBeDefined()
+
+    await uploadFile(wrapper)
+    expect((wrapper.get('[data-test="map-doc_number"]').element as HTMLSelectElement).value).toBe('doklad')
+    expect((wrapper.get('[data-test="map-warehouse_to"]').element as HTMLSelectElement).value).toBe('sklad_cil')
+    await wrapper.get('[data-test="source-key"]').setValue('stary-sklad')
+    await wrapper.get('[data-test="fill-negative"]').setValue(true)
+    await wrapper.get('[data-test="create-preview"]').trigger('click')
+    await flushPromises()
+    expect(mocks.preview).toHaveBeenCalledWith(7, expect.objectContaining({
+      source_key: 'stary-sklad', cutover_date: '2021-01-01', fill_negative: true,
+      mapping: expect.objectContaining({ doc_number: 'doklad', unit_cost: 'cena', partner: '' }),
+    }))
+    expect(mocks.replace).toHaveBeenCalledWith({ query: { history_job: '41' } })
+    wrapper.unmount()
+  })
+
+  it('sends no cut-over date in the live mode of a company without stock documents', async () => {
+    mocks.status.mockResolvedValue({ locked_until: null, first_document_date: null, active: null, max_rows: 300000 })
+    mocks.preview.mockResolvedValue(stage)
+    mocks.job.mockResolvedValue(stage)
+    const wrapper = mountPage()
+    await flushPromises()
+    expect((wrapper.get('[data-test="mode-live"]').element as HTMLInputElement).checked).toBe(true)
+    await uploadFile(wrapper)
+    await wrapper.get('[data-test="source-key"]').setValue('stary-sklad')
+    await wrapper.get('[data-test="create-preview"]').trigger('click')
+    await flushPromises()
+    expect(mocks.preview).toHaveBeenCalledWith(7, expect.objectContaining({ cutover_date: null }))
+    wrapper.unmount()
+  })
+
+  it('blocks apply on negative stock without filling and asks to confirm closed periods', async () => {
+    mocks.route.query = { history_job: '41' }
+    const negative = { ...stage, report: { ...stage.report, negative_count: 1,
+      negatives: [{ source_row: 3, doc_number: 'V1', doc_date: '2020-02-01', warehouse: 'HL', sku: 'ZB-1', missing_quantity: '1.000', unit_cost: '10.000000' }] } }
+    mocks.job.mockResolvedValue(negative)
+    let wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.get('[data-test="negatives"]').text()).toContain('ZB-1')
+    expect(wrapper.get('[data-test="apply-import"]').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+
+    const closed = { ...stage, report: { ...stage.report, closed_period_documents: 2 } }
+    mocks.job.mockResolvedValue(closed)
+    mocks.apply.mockResolvedValue({ ...stage, id: 42, kind: 'stock_history_import_apply', status: 'queued', report: {} })
+    wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.get('[data-test="apply-import"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-test="confirm-closed"]').setValue(true)
+    await wrapper.get('[data-test="apply-import"]').trigger('click')
+    await flushPromises()
+    expect(mocks.apply).toHaveBeenCalledWith(41, true)
+    wrapper.unmount()
+  })
+
+  it('lets only a company administrator roll back the active import', async () => {
+    const active = { ...stage, id: 50, kind: 'stock_history_import_apply', report: { documents_created: 2 },
+      input: { profile: { cutover_date: '2021-01-01' }, date_from: '2020-01-02', date_to: '2020-02-01' } }
+    mocks.status.mockResolvedValue({ locked_until: '2020-12-31', first_document_date: '2021-01-01', active, max_rows: 300000 })
+    mocks.auth.isCompanyAdminRole = false
+    let wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.find('[data-test="create-preview"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="rollback-open"]').exists()).toBe(false)
+    wrapper.unmount()
+
+    mocks.auth.isCompanyAdminRole = true
+    mocks.rollback.mockResolvedValue({ ...stage, id: 51, kind: 'stock_history_import_rollback', status: 'queued', report: {} })
+    mocks.job.mockResolvedValue({ ...stage, id: 51, kind: 'stock_history_import_rollback', status: 'completed', report: { documents_deleted: 2 } })
+    wrapper = mountPage()
+    await flushPromises()
+    await wrapper.get('[data-test="rollback-open"]').trigger('click')
+    expect(wrapper.text()).toContain('stock.history_import.rollback_text_cutover')
+    await wrapper.get('[data-test="rollback-confirm"]').trigger('click')
+    await flushPromises()
+    expect(mocks.rollback).toHaveBeenCalledWith(50)
+    expect(wrapper.find('[data-test="rollback-summary"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+})
