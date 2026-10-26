@@ -496,6 +496,50 @@ final class MoneyS3ImportTest extends MoneyS3ImportTestCase
     }
 
     /**
+     * Rozhodnutí uživatele po převodu opakovaný převod nepřepíše: pohyb, který uživatel
+     * ignoroval, nespáruje; vazbu konečné faktury na jinou zálohu nechá a čerpání z Money
+     * k ní nepřidá; doklad smazaný v MyÚčtu přeskočí (běh nespadne na cizím klíči).
+     */
+    public function testRerunRespectsUserDecisionsAndDeletedRecords(): void
+    {
+        SyntheticAgenda::writeLzFiles($this->tmp . '/agenda.lz', SyntheticAgenda::filesWithPartialPayments());
+        $supplierId = $this->supplier();
+        self::assertFalse($this->import($supplierId)->hasErrors());
+        $pdo = $this->db->pdo();
+        $purchase = static function (string $vendorNo) use ($pdo, $supplierId): int {
+            $stmt = $pdo->prepare('SELECT id FROM purchase_invoices WHERE supplier_id = ? AND vendor_invoice_number = ?');
+            $stmt->execute([$supplierId, $vendorNo]);
+            return (int) $stmt->fetchColumn();
+        };
+        $tx = $pdo->prepare("SELECT t.id FROM bank_transactions t JOIN bank_statements s ON s.id = t.statement_id WHERE s.supplier_id = ? AND t.bank_ref = 'BV25004'");
+        $tx->execute([$supplierId]);
+        $bv25004 = (int) $tx->fetchColumn();
+
+        // Uživatel splátku BV25004 odpáruje a ignoruje, FP25008 přepojí na jinou zálohu a DDKP DZ25003 smaže.
+        $pdo->prepare('DELETE FROM payment_matches WHERE supplier_id = ? AND bank_transaction_id = ?')->execute([$supplierId, $bv25004]);
+        $pdo->prepare("UPDATE bank_transactions SET match_status = 'ignored', match_reason = 'user_ignored', ignore_note = 'Rozhodnutí uživatele' WHERE id = ?")->execute([$bv25004]);
+        $final = $purchase('DF-2025-091');
+        $pdo->prepare('UPDATE purchase_invoices SET advance_purchase_invoice_id = NULL WHERE id = ?')->execute([$final]);
+        $pdo->prepare('UPDATE purchase_invoices SET advance_purchase_invoice_id = ? WHERE id = ?')->execute([$purchase('ZF-2025-003'), $final]);
+        $pdo->prepare('DELETE FROM purchase_invoices WHERE id = ?')->execute([$purchase('DZ-2025-003')]);
+
+        $again = $this->import($supplierId);
+
+        self::assertFalse($again->hasErrors(), $this->explain($again));
+        self::assertSame(0, $this->rowCount('payment_matches', $supplierId, "bank_transaction_id = {$bv25004}"));
+        $status = $pdo->prepare('SELECT match_status, match_reason, ignore_note FROM bank_transactions WHERE id = ?');
+        $status->execute([$bv25004]);
+        self::assertSame(['match_status' => 'ignored', 'match_reason' => 'user_ignored', 'ignore_note' => 'Rozhodnutí uživatele'], $status->fetch(PDO::FETCH_ASSOC));
+        self::assertSame(1, $this->rowCount('purchase_invoices', $supplierId, "id = {$final} AND advance_purchase_invoice_id = " . $purchase('ZF-2025-003')));
+        self::assertSame(0, $this->rowCount('purchase_advance_deductions', $supplierId, "final_invoice_id = {$final}"));
+        $missing = 0;
+        foreach ($again->toArray()['steps'] as $step) {
+            $missing += (int) ($step['counts']['missing_target'] ?? 0);
+        }
+        self::assertGreaterThan(0, $missing, $this->explain($again));
+    }
+
+    /**
      * Opravu převedených firem přinese opakovaný převod. Co uživatel mezitím zadal
      * v MyÚčtu (platba faktury, zápočet), převod nesmaže ani nepřepíše a platby nezdvojí:
      * zadaná úhrada snižuje, co zbývá spárovat, a součet plateb faktury nepřesáhne její

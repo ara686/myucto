@@ -159,7 +159,8 @@ final class AdvanceLinker
                        FROM payment_matches pm JOIN bank_transactions bt ON bt.id = pm.bank_transaction_id
                       WHERE pm.supplier_id = a.supplier_id AND pm.purchase_invoice_id = a.id) AS net_paid
                FROM purchase_invoices a
-              WHERE a.supplier_id = ? AND a.document_kind = 'advance' AND a.status NOT IN ('draft', 'cancelled')"
+              WHERE a.supplier_id = ? AND a.document_kind = 'advance' AND a.status NOT IN ('draft', 'cancelled')
+                AND " . TakenOverRecord::documentSql('purchase_invoice', 'a')
         );
         $advances->execute([$ctx->supplierId]);
         $left = [];
@@ -180,6 +181,7 @@ final class AdvanceLinker
             "SELECT bt.id, bt.amount, bt.variable_symbol
                FROM bank_transactions bt JOIN bank_statements bs ON bs.id = bt.statement_id
               WHERE bs.supplier_id = ? AND bt.amount > 0 AND bt.variable_symbol IS NOT NULL AND bt.variable_symbol <> ''
+                AND (bt.match_status = 'unmatched' OR (bt.match_status = 'ignored' AND bt.match_reason = 'money_s3_booked'))
                 AND NOT EXISTS (SELECT 1 FROM payment_matches pm WHERE pm.bank_transaction_id = bt.id)
                 AND NOT EXISTS (SELECT 1 FROM other_item_allocations oia WHERE oia.bank_transaction_id = bt.id)
                 AND EXISTS (SELECT 1 FROM journal_entries e JOIN journal_entry_lines l ON l.entry_id = e.id AND l.supplier_id = e.supplier_id
@@ -195,7 +197,7 @@ final class AdvanceLinker
                 SET t.ignore_note = IF(t.match_status = 'ignored' AND t.match_reason = 'money_s3_booked', NULL, t.ignore_note),
                     t.match_reason = IF(t.match_status = 'ignored' AND t.match_reason = 'money_s3_booked', NULL, t.match_reason),
                     t.match_status = 'manual', t.matched_at = COALESCE(t.matched_at, NOW()), t.matched_by = COALESCE(t.matched_by, ?)
-              WHERE t.id = ? AND s.supplier_id = ? AND t.match_status IN ('unmatched', 'ignored')"
+              WHERE t.id = ? AND s.supplier_id = ? AND (t.match_status = 'unmatched' OR (t.match_status = 'ignored' AND t.match_reason = 'money_s3_booked'))"
         );
         $userId = $ctx->userId > 0 ? $ctx->userId : null;
         foreach ($refunds->fetchAll(PDO::FETCH_ASSOC) as $t) {
@@ -229,13 +231,26 @@ final class AdvanceLinker
         $set = $pdo->prepare('UPDATE purchase_invoices SET advance_purchase_invoice_id = ? WHERE id = ? AND supplier_id = ? AND advance_purchase_invoice_id IS NULL');
         $deduct = $pdo->prepare('INSERT IGNORE INTO purchase_advance_deductions (supplier_id, final_invoice_id, advance_invoice_id, amount, created_by) VALUES (?, ?, ?, ?, ?)');
         $userId = $ctx->userId > 0 ? $ctx->userId : null;
+        $live = $pdo->prepare("SELECT id FROM purchase_invoices WHERE supplier_id = ? AND document_kind = 'advance'");
+        $live->execute([$ctx->supplierId]);
+        $liveAdvances = array_fill_keys(array_map('intval', $live->fetchAll(PDO::FETCH_COLUMN)), true);
         foreach ($deductions as $finalId => $advances) {
             $current->execute([$finalId, $ctx->supplierId]);
             $linked = $current->fetchColumn();
             if ($linked === false) {
-                continue; // konečná faktura převedená jinak než jako běžná faktura
+                continue; // konečná faktura převedená jinak než jako běžná faktura (nebo smazaná)
             }
             $linked = $linked !== null ? (int) $linked : null;
+            // Zálohy smazané v MyÚčtu se vynechají.
+            $advances = array_intersect_key($advances, $liveAdvances);
+            if ($advances === []) {
+                continue;
+            }
+            if ($linked !== null && !isset($advances[$linked])) {
+                // Vazbu na jinou zálohu nastavil uživatel; čerpání z Money se k ní nepřidává.
+                $p->count(DocumentLinker::STEP_PAYMENTS, 'advance_user_kept');
+                continue;
+            }
             if (count($advances) === 1 && count($finalsOf[(int) array_key_first($advances)]) === 1) {
                 $advanceId = (int) array_key_first($advances);
                 if ($linked === $advanceId) {

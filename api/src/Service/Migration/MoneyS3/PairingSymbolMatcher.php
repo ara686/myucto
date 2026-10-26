@@ -104,7 +104,13 @@ final class PairingSymbolMatcher
         // nemá, je v MyÚčtu v Kč, i když ho deník Money vede ve valutách.
         foreach ($groups as $gk => $g) {
             foreach ($g['docs'] as $ref => $d) {
-                if (($this->state['info'][$d['type']][$d['id']]['currency'] ?? 'CZK') === 'CZK') {
+                if (!isset($this->state['info'][$d['type']][$d['id']])) {
+                    // Doklad z mapy převodu v MyÚčtu mezitím smazali.
+                    unset($groups[$gk]['docs'][$ref], $best[$ref]);
+                    $p->count(DocumentLinker::STEP_PAYMENTS, 'missing_target');
+                    continue;
+                }
+                if ($this->state['info'][$d['type']][$d['id']]['currency'] === 'CZK') {
                     $groups[$gk]['docs'][$ref]['mena'] = 'CZK';
                 }
             }
@@ -147,7 +153,8 @@ final class PairingSymbolMatcher
         }
 
         // Úhrady se symbolem, ke kterému převod doklad nemá: překlep v symbolu u téhož partnera.
-        foreach ($groups as $gk => $g) {
+        // Opravný převod tohle odhadovat nesmí - pohyb mohl uživatel mezitím spárovat sám.
+        foreach ($ctx->options->relinkOnly ? [] : $groups as $gk => $g) {
             if ($g['docs'] !== []) {
                 continue;
             }
@@ -157,9 +164,14 @@ final class PairingSymbolMatcher
                 if ($pay['ico'] === '' || strlen($sym) < 6 || ($pay['net'] < 0) !== $issued || abs($pay['net']) < 0.01) {
                     continue;
                 }
-                $candidates = array_filter($open[$account . '|' . $pay['ico']] ?? [], fn (array $o, string $ref): bool =>
-                    $this->capacity[$ref] >= abs($pay['net']) - 0.005 && levenshtein($o['sym'], $sym) === 1, ARRAY_FILTER_USE_BOTH);
-                if (count($candidates) !== 1) {
+                $partnerOpen = $open[$account . '|' . $pay['ico']] ?? [];
+                $candidates = array_filter($partnerOpen, fn (array $o, string $ref): bool =>
+                    $this->capacity[$ref] >= abs($pay['net']) - 0.005 && self::typo($o['sym'], $sym), ARRAY_FILTER_USE_BOTH);
+                // Měsíční faktury téhož partnera mívají stejnou částku i podobný symbol: víc
+                // otevřených dokladů se stejným zůstatkem znamená, že úhradu odhadnout nejde.
+                $sameAmount = array_filter($partnerOpen, fn (array $o, string $ref): bool =>
+                    abs($this->capacity[$ref] - abs($pay['net'])) < 0.01, ARRAY_FILTER_USE_BOTH);
+                if (count($candidates) !== 1 || count($sameAmount) > 1) {
                     continue;
                 }
                 $ref = (string) array_key_first($candidates);
@@ -196,7 +208,10 @@ final class PairingSymbolMatcher
         $rate = null;
         if ($isBank) {
             $m = $this->movements[$movementId] ?? null;
-            if ($m === null) {
+            if (!DocumentLinker::movementEditable($m, $ctx->options->relinkOnly)) {
+                // Pohyb bez převzatého bankovního zápisu, ignorovaný uživatelem, nebo v opravném
+                // převodu už spárovaný - jeho párování je rozhodnutí v MyÚčtu.
+                $p->count(DocumentLinker::STEP_PAYMENTS, 'paired_movement_kept');
                 return 0;
             }
             $foreign = $m['currency'] !== 'CZK';
@@ -208,7 +223,9 @@ final class PairingSymbolMatcher
                 $rate = abs($pay['net']) / abs($pay['fnet']);
             }
             $txCzk = $foreign ? abs($ctx->bankTransactionCzk[$movementId] ?? $m['amount'] * $rate) : abs($m['amount']);
-            $available = min($available, $txCzk - ($this->state['txUsed'][$movementId] ?? 0.0));
+            // Nespárovaná část pohybu: v Kč podle evidence párování i podle jeho součtu v měně pohybu.
+            $available = min($available, $txCzk - ($this->state['txUsed'][$movementId] ?? 0.0),
+                (abs($m['amount']) - $m['matched']) * ($rate ?? 1.0));
         } elseif (!isset($this->state['cash'][$movementId])) {
             return 0;
         }
@@ -247,13 +264,16 @@ final class PairingSymbolMatcher
                 // Pohyb, který krok dřív označil jako zaúčtovaný bez dokladu, je teď úhradou faktury.
                 $pdo->prepare(
                     "UPDATE bank_transactions t JOIN bank_statements s ON s.id = t.statement_id
-                        SET t.ignore_note = IF(t.match_status = 'ignored' AND t.match_reason = 'money_s3_booked', NULL, t.ignore_note),
-                            t.match_reason = IF(t.match_status = 'ignored' AND t.match_reason = 'money_s3_booked', NULL, t.match_reason),
+                        SET t.ignore_note = IF(t.match_status = 'ignored', NULL, t.ignore_note),
+                            t.match_reason = IF(t.match_status = 'ignored', NULL, t.match_reason),
                             t.match_status = 'manual', t.matched_at = COALESCE(t.matched_at, NOW()), t.matched_by = COALESCE(t.matched_by, ?),
                             t.matched_invoice_id = COALESCE(t.matched_invoice_id, ?)
-                      WHERE t.id = ? AND s.supplier_id = ?"
+                      WHERE t.id = ? AND s.supplier_id = ? AND (t.match_status <> 'ignored' OR t.match_reason = 'money_s3_booked')"
                 )->execute([$userId, $isIssued ? $d['id'] : null, $movementId, $ctx->supplierId]);
                 $this->state['txUsed'][$movementId] = ($this->state['txUsed'][$movementId] ?? 0.0) + $part;
+                $this->movements[$movementId]['matched'] += $txAmount;
+                $this->movements[$movementId]['status'] = 'manual';
+                $m['matched'] += $txAmount;
                 if ($isIssued) {
                     $amount = $this->issuedPayments->toInvoiceCurrency($ctx->supplierId, $d['id'], $part, $m['currency'], $txAmount);
                     if ($amount !== null) {
@@ -362,6 +382,19 @@ final class PairingSymbolMatcher
         if ($amount < 0.01) {
             return false;
         }
+        // Vydaná faktura: zápočet nese evidovaná platba, ze které čte saldokonto. Kde platba
+        // nevznikne (faktura už má platby do uhrazené částky), nevznikne ani zápočet - jinak by
+        // zápočet a saldo nesouhlasily. Zápočet má částku platby.
+        $paymentId = null;
+        if ($type === 'invoice') {
+            $paymentId = $this->issuedPayments->record($ctx, $invoice['id'], 'credit_note', null, null, $amount, $note['date'], $noteInfo['number']);
+            if ($paymentId === null) {
+                return false;
+            }
+            $paid = $pdo->prepare('SELECT amount FROM invoice_payments WHERE id = ?');
+            $paid->execute([$paymentId]);
+            $amount = (float) $paid->fetchColumn();
+        }
         // Vazbu na opravovanou fakturu dostane jen dobropis; záporná faktura (storno) s rodičem
         // by přestala být dokladem k vyplacení, který vyrovnává jeho stav.
         if ($noteInfo['kind'] === 'credit_note') {
@@ -370,9 +403,6 @@ final class PairingSymbolMatcher
             $pdo->prepare("UPDATE {$table} SET {$parent} = ? WHERE id = ? AND supplier_id = ? AND {$parent} IS NULL")
                 ->execute([$invoice['id'], $note['id'], $ctx->supplierId]);
         }
-        $paymentId = $type === 'invoice'
-            ? $this->issuedPayments->record($ctx, $invoice['id'], 'credit_note', null, null, $amount, $note['date'], $noteInfo['number'])
-            : null;
         $pdo->prepare(
             'INSERT INTO credit_note_offsets (supplier_id, doc_type, invoice_id, credit_note_id, amount, offset_on, invoice_payment_id, created_by)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
@@ -538,6 +568,36 @@ final class PairingSymbolMatcher
         )->execute([$ctx->supplierId, $d['type'], $d['id'], $e['date'], number_format($amount, 2, '.', ''), $accountId,
             'Převzato z Money S3, interní doklad ' . $e['doc'], $entryId, $paymentId, $ctx->userId > 0 ? $ctx->userId : null]);
         return true;
+    }
+
+    /**
+     * Překlep v symbolu: prohozené dva sousední znaky (stejná délka), nebo jedna vypuštěná či
+     * přidaná číslice. Záměna jedné číslice překlepem není - `…0123` a `…0124` jsou sousední
+     * faktury téže řady.
+     */
+    public static function typo(string $a, string $b): bool
+    {
+        $la = strlen($a);
+        $lb = strlen($b);
+        if ($la === $lb) {
+            $diff = [];
+            for ($i = 0; $i < $la; $i++) {
+                if ($a[$i] !== $b[$i]) {
+                    $diff[] = $i;
+                }
+            }
+            return count($diff) === 2 && $diff[1] === $diff[0] + 1 && $a[$diff[0]] === $b[$diff[1]] && $a[$diff[1]] === $b[$diff[0]];
+        }
+        if (abs($la - $lb) !== 1) {
+            return false;
+        }
+        [$long, $short] = $la > $lb ? [$a, $b] : [$b, $a];
+        for ($i = 0, $n = strlen($long); $i < $n; $i++) {
+            if (ctype_digit($long[$i]) && substr($long, 0, $i) . substr($long, $i + 1) === $short) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Pohyb úhrady podle čísla dokladu a roku; stejné číslo na dvou účtech rozliší datum. */
@@ -753,10 +813,14 @@ final class PairingSymbolMatcher
             $add($state, $r['doc_type'] . ':' . $r['doc_id'], (string) $r['doc_type'], (int) $r['doc_id'], (float) $r['amount']);
         }
 
-        // Zápisy interních dokladů z mapy převodu (klíč `rok|zdroj|číslo|datum`).
+        // Zápisy interních dokladů z mapy převodu (klíč `rok|zdroj|číslo|datum`), jen živé
+        // ruční zápisy firmy - zápis mohl uživatel smazat nebo stornovat.
+        $liveManual = $pdo->prepare("SELECT id FROM journal_entries WHERE supplier_id = ? AND source_type = 'manual' AND reversed_by IS NULL");
+        $liveManual->execute([$sid]);
+        $live = array_fill_keys(array_map('intval', $liveManual->fetchAll(PDO::FETCH_COLUMN)), true);
         foreach ($this->map->all($sid, MoneyS3ImportRepository::KIND_JOURNAL_ENTRY) as $key => $entryId) {
             $parts = explode('|', (string) $key);
-            if (count($parts) >= 4 && Ms3Journal::sourceType($parts[1]) === 'manual') {
+            if (count($parts) >= 4 && Ms3Journal::sourceType($parts[1]) === 'manual' && isset($live[(int) $entryId])) {
                 $state['entries'][$parts[0] . '|' . $parts[1] . '|' . $parts[2] . '|' . $parts[3]][] = (int) $entryId;
             }
         }
