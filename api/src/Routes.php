@@ -2870,6 +2870,9 @@ final class Routes
             $g->post  ('/saldo-settlements',                     [\MyInvoice\Action\Accounting\JournalSettlementAction::class, 'create']);
             $g->post  ('/saldo-settlements/other-item',          [\MyInvoice\Action\Accounting\JournalSettlementAction::class, 'createOtherItem']);
             $g->delete('/saldo-settlements/{id:[0-9]+}',         [\MyInvoice\Action\Accounting\JournalSettlementAction::class, 'delete']);
+            $g->get   ('/saldo-settlements/advance-candidates',  [\MyInvoice\Action\Accounting\JournalSettlementAction::class, 'advanceCandidates']);
+            $g->post  ('/saldo-settlements/advance-deductions',  [\MyInvoice\Action\Accounting\JournalSettlementAction::class, 'createAdvanceDeductions']);
+            $g->delete('/saldo-settlements/advance-deductions/{doc_type:invoice|purchase_invoice}/{id:[0-9]+}', [\MyInvoice\Action\Accounting\JournalSettlementAction::class, 'deleteAdvanceDeduction']);
             // Kontrola souběhu se starým účetním programem (měsíční rekonciliace K1, K5–K13).
             $g->get   ('/parallel-run/sources',                            [\MyInvoice\Action\Accounting\ParallelRunAction::class, 'sources']);
             $g->get   ('/parallel-run/backups',                            [\MyInvoice\Action\Accounting\ParallelRunAction::class, 'backups']);

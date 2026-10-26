@@ -20,9 +20,10 @@ import SortableTh from '@/components/ui/SortableTh.vue'
 import DateInput from '@/components/ui/DateInput.vue'
 import SaldoAdvanceInfo from '@/components/accounting/SaldoAdvanceInfo.vue'
 import { useAuthStore } from '@/stores/auth'
-import { SETTLE_ACCOUNTS, isSettleable, type SaldoSettleTarget } from '@/components/accounting/saldoSettle'
+import { SUGGEST_ACCOUNTS, isAdvanceAccount, isSettleable, type SaldoSettleTarget } from '@/components/accounting/saldoSettle'
 
 const SaldoSettleDialog = defineAsyncComponent(() => import('@/components/accounting/SaldoSettleDialog.vue'))
+const SaldoAdvanceSettleDialog = defineAsyncComponent(() => import('@/components/accounting/SaldoAdvanceSettleDialog.vue'))
 const SaldoResidualDialog = defineAsyncComponent(() => import('@/components/accounting/SaldoResidualDialog.vue'))
 const SaldoSuggestionsDialog = defineAsyncComponent(() => import('@/components/accounting/SaldoSuggestionsDialog.vue'))
 
@@ -329,8 +330,11 @@ function onSettleDone() {
   load()
 }
 
-const suggestAccount = computed(() => SETTLE_ACCOUNTS.includes(filters.account) ? filters.account : 'all')
-const showSuggest = computed(() => canSettle.value && (filters.account === 'all' || SETTLE_ACCOUNTS.includes(filters.account)))
+/** Záloha na 314/324 se vyrovnává čerpáním konečnou fakturou, ne rozpadem zápisu. */
+const settleAdvance = computed(() => !!settleTargets.value?.length && isAdvanceAccount(settleTargets.value[0].account_code))
+
+const suggestAccount = computed(() => SUGGEST_ACCOUNTS.includes(filters.account) ? filters.account : 'all')
+const showSuggest = computed(() => canSettle.value && (filters.account === 'all' || SUGGEST_ACCOUNTS.includes(filters.account)))
 
 // ── Podklad pro banky: PDF s členěním podle doby po splatnosti ───────────────
 // Volba i hranice se pamatují per uživatel (každá banka chce jiné rozmezí, ale účetní
@@ -808,7 +812,9 @@ onMounted(async () => {
       </div>
     </div>
 
-    <SaldoSettleDialog v-if="settleTargets && report" :items="settleTargets" :as-of="report.as_of"
+    <SaldoAdvanceSettleDialog v-if="settleTargets && report && settleAdvance" :items="settleTargets" :as-of="report.as_of"
+      @close="settleTargets = null" @done="onSettleDone" />
+    <SaldoSettleDialog v-else-if="settleTargets && report" :items="settleTargets" :as-of="report.as_of"
       @close="settleTargets = null" @done="onSettleDone" />
     <SaldoResidualDialog v-if="residualFor && report" :account-code="residualFor.code" :account-name="residualFor.name" :as-of="report.as_of"
       @close="residualFor = null" @done="onSettleDone" />

@@ -11,6 +11,7 @@ use MyInvoice\Http\Json;
 use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Repository\AccountingPeriodRepository;
 use MyInvoice\Security\AccessLevel;
+use MyInvoice\Service\Accounting\AdvanceDeductionService;
 use MyInvoice\Service\Accounting\DocumentLock;
 use MyInvoice\Service\Accounting\JournalSettlementException;
 use MyInvoice\Service\Accounting\JournalSettlementService;
@@ -30,6 +31,13 @@ use Psr\Log\LoggerInterface;
  *   POST   /api/accounting/saldo-settlements            : {allocations:[…]} nebo {groups:[{allocations:[…]}]}
  *   DELETE /api/accounting/saldo-settlements/{id}
  *   POST   /api/accounting/saldo-settlements/other-item : ostatní položka ze zůstatku bez dokladu
+ *   GET    /api/accounting/saldo-settlements/advance-candidates?doc_type=&doc_id=&account=&as_of=
+ *   POST   /api/accounting/saldo-settlements/advance-deductions : {deductions:[…]} nebo {groups:[{deductions:[…]}]}
+ *   DELETE /api/accounting/saldo-settlements/advance-deductions/{doc_type}/{id}
+ *
+ * Zálohu na 314/324 vyrovná čerpání konečnou fakturou ({@see AdvanceDeductionService}),
+ * ne zápis v deníku. Čerpání platí od zaúčtování konečné faktury, proto zápis faktury
+ * v uzavřeném období hlídá stejné přebití správcem jako rozpad.
  *
  * Práva řeší RoutePermissionMap: čtení 'accounting' READ, zápis 'accounting.journal.write'
  * (rozpad je rozpis zápisu v deníku, stejně jako jeho vazba na doklad). Založení ostatní
@@ -52,6 +60,7 @@ final class JournalSettlementAction
         private readonly IpMatcher $ipMatcher,
         private readonly LoggerInterface $log,
         private readonly Connection $db,
+        private readonly AdvanceDeductionService $advances,
     ) {}
 
     public function candidates(Request $request, Response $response): Response
@@ -208,6 +217,106 @@ final class JournalSettlementAction
             'amount'        => (float) $result['item']['amount'],
         ], $supplierId);
         return Json::ok($response, ['item' => $result['item'], 'allocation_id' => $result['allocation_id']], 201);
+    }
+
+    public function advanceCandidates(Request $request, Response $response): Response
+    {
+        $supplierId = $this->currentSupplierId($request);
+        if (!$this->requireDoubleEntry($this->db, $supplierId, $response, $err)) return $err;
+        $q = $request->getQueryParams();
+        $asOf = $this->asOf($q, $response, $err);
+        if ($asOf === null) return $err;
+        try {
+            return Json::ok($response, $this->advances->candidates(
+                $supplierId,
+                (string) ($q['doc_type'] ?? ''),
+                (int) ($q['doc_id'] ?? 0),
+                (string) ($q['account'] ?? ''),
+                $asOf,
+            ));
+        } catch (\Throwable $e) {
+            return $this->mapError($response, $e);
+        }
+    }
+
+    /**
+     * Čerpání záloh konečnými fakturami: {deductions:[{doc_type, advance_id, final_id, amount}]}
+     * nebo hromadně {groups:[{deductions:[…]}]} (návrh párování, každá skupina zvlášť).
+     */
+    public function createAdvanceDeductions(Request $request, Response $response): Response
+    {
+        if (!$this->requirePermission($request, $response, 'accounting.journal.write', AccessLevel::WRITE, $err)) return $err;
+        $supplierId = $this->currentSupplierId($request);
+        if (!$this->requireDoubleEntry($this->db, $supplierId, $response, $err)) return $err;
+        $body = (array) ($request->getParsedBody() ?? []);
+        $batch = array_key_exists('groups', $body);
+        $groups = $batch ? $body['groups'] : [['deductions' => $body['deductions'] ?? null]];
+        if (!is_array($groups) || $groups === [] || !array_is_list($groups) || count($groups) > JournalSettlementService::MAX_GROUPS) {
+            return Json::error($response, 'invalid_deductions', 'Zadejte 1 až ' . JournalSettlementService::MAX_GROUPS . ' skupin čerpání.', 422);
+        }
+        $finals = [];
+        foreach ($groups as $group) {
+            foreach ((array) (is_array($group) ? ($group['deductions'] ?? []) : []) as $row) {
+                if (is_array($row) && isset(array_flip(AdvanceDeductionService::ACCOUNTS)[(string) ($row['doc_type'] ?? '')])) {
+                    $finals[(string) $row['doc_type']][] = (int) ($row['final_id'] ?? 0);
+                }
+            }
+        }
+        foreach ($finals as $docType => $ids) {
+            $closed = $this->advances->closedPeriodEntries($supplierId, $docType, $ids);
+            if ($closed !== []) {
+                $lock = new DocumentLock(false, null, false, null, true, false, $closed[0]['period_status']);
+                if ($deny = $this->denyIfLocked($request, $response, $lock, 'journal_entry', $closed[0]['entry_id'])) return $deny;
+            }
+        }
+
+        $userId = $this->userId($request);
+        $created = [];
+        $failed = [];
+        foreach ($groups as $index => $group) {
+            try {
+                $rows = is_array($group) ? ($group['deductions'] ?? null) : null;
+                $created = [...$created, ...$this->advances->deduct($supplierId, is_array($rows) ? $rows : [], $userId)];
+            } catch (JournalSettlementException $e) {
+                if (!$batch) return Json::error($response, $e->errorCode, $e->getMessage(), $e->httpStatus);
+                $failed[] = ['index' => $index, 'code' => $e->errorCode, 'message' => $e->getMessage()];
+            } catch (\Throwable $e) {
+                return $this->mapError($response, $e);
+            }
+        }
+        if ($created !== []) {
+            $this->audit($request, 'accounting.saldo_advance_deduction_created', null, [
+                'deductions' => array_map(static fn (array $d): array => [
+                    'id' => $d['id'], 'doc_type' => $d['doc_type'], 'advance_id' => $d['advance_id'],
+                    'final_id' => $d['final_id'], 'amount' => $d['amount'],
+                ], $created),
+            ], $supplierId);
+        }
+        return Json::ok($response, ['created' => $created, 'failed' => $failed], $created === [] ? 200 : 201);
+    }
+
+    public function deleteAdvanceDeduction(Request $request, Response $response, array $args): Response
+    {
+        if (!$this->requirePermission($request, $response, 'accounting.journal.write', AccessLevel::WRITE, $err)) return $err;
+        $supplierId = $this->currentSupplierId($request);
+        if (!$this->requireDoubleEntry($this->db, $supplierId, $response, $err)) return $err;
+        $docType = (string) ($args['doc_type'] ?? '');
+        $id = (int) ($args['id'] ?? 0);
+        try {
+            $closed = $this->advances->closedPeriodOfDeduction($supplierId, $docType, $id);
+            if ($closed !== null) {
+                $lock = new DocumentLock(false, null, false, null, true, false, $closed['period_status']);
+                if ($deny = $this->denyIfLocked($request, $response, $lock, 'journal_entry', $closed['entry_id'])) return $deny;
+            }
+            $deleted = $this->advances->delete($supplierId, $docType, $id);
+        } catch (\Throwable $e) {
+            return $this->mapError($response, $e);
+        }
+        $this->audit($request, 'accounting.saldo_advance_deduction_deleted', null, [
+            'deduction_id' => $deleted['id'], 'doc_type' => $deleted['doc_type'], 'advance_id' => $deleted['advance_id'],
+            'final_id' => $deleted['final_id'], 'amount' => $deleted['amount'],
+        ], $supplierId);
+        return Json::ok($response, ['deleted' => $deleted['id']]);
     }
 
     /** @param list<int> $lineIds */

@@ -1095,7 +1095,8 @@
         "2191_cash_document_invoice_payment_index.sql",
         "2192_journal_settlement_allocations.sql",
         "2193_internal_documents.sql",
-        "2194_eet_delegation.sql"
+        "2194_eet_delegation.sql",
+        "2195_advance_deduction_settlement.sql"
     ],
     "tables": {
         "abra_flexi_connections": {
@@ -6869,6 +6870,38 @@
             },
             "checks": {
                 "chk_internal_document_links": "`document_links_json` is null or json_valid(`document_links_json`)"
+            }
+        },
+        "invoice_advance_deductions": {
+            "type": "BASE TABLE",
+            "engine": "InnoDB",
+            "collation": "utf8mb4_unicode_ci",
+            "columns": {
+                "advance_invoice_id": "bigint(20) unsigned NOT NULL",
+                "amount": "decimal(15,2) NOT NULL",
+                "created_at": "timestamp NOT NULL DEFAULT current_timestamp()",
+                "created_by": "bigint(20) unsigned NULL DEFAULT NULL",
+                "final_invoice_id": "bigint(20) unsigned NOT NULL",
+                "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
+                "source": "enum('import','saldo') NOT NULL DEFAULT 'import'",
+                "supplier_id": "int(10) unsigned NOT NULL"
+            },
+            "indexes": {
+                "PRIMARY": "UNIQUE BTREE (id)",
+                "fk_iad_advance": "BTREE (advance_invoice_id)",
+                "fk_iad_user": "BTREE (created_by)",
+                "ix_iad_advance": "BTREE (supplier_id, advance_invoice_id)",
+                "ix_iad_final": "BTREE (supplier_id, final_invoice_id)",
+                "uq_iad_pair": "UNIQUE BTREE (final_invoice_id, advance_invoice_id)"
+            },
+            "foreign_keys": {
+                "fk_iad_advance": "(advance_invoice_id) -> invoices (id) ON UPDATE RESTRICT ON DELETE CASCADE",
+                "fk_iad_final": "(final_invoice_id) -> invoices (id) ON UPDATE RESTRICT ON DELETE CASCADE",
+                "fk_iad_supplier": "(supplier_id) -> supplier (id) ON UPDATE RESTRICT ON DELETE CASCADE",
+                "fk_iad_user": "(created_by) -> users (id) ON UPDATE RESTRICT ON DELETE SET NULL"
+            },
+            "checks": {
+                "chk_iad_amount": "`amount` > 0"
             }
         },
         "invoice_attachments": {
@@ -21902,6 +21935,7 @@
                 "created_by": "bigint(20) unsigned NULL DEFAULT NULL",
                 "final_invoice_id": "bigint(20) unsigned NOT NULL",
                 "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
+                "source": "enum('import','saldo') NOT NULL DEFAULT 'import'",
                 "supplier_id": "int(10) unsigned NOT NULL"
             },
             "indexes": {

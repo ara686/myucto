@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { distribute, isSettleable, withPeriodForce, isPeriodClosedError } from '@/components/accounting/saldoSettle'
+import { SUGGEST_ACCOUNTS, distribute, isAdvanceAccount, isSettleable, withPeriodForce, isPeriodClosedError } from '@/components/accounting/saldoSettle'
 
 const periodClosed = { response: { status: 409, data: { error: { code: 'period_closed', message: 'Uzavřené období' } } } }
 
@@ -21,6 +21,22 @@ describe('saldoSettle', () => {
     expect(isSettleable({ ...invoice, remaining_czk: -10 }, '311')).toBe(false)
     expect(isSettleable({ ...invoice, kind: 'advance_pending' }, '311')).toBe(false)
     expect(isSettleable({ ...invoice, doc_type: 'other_item' }, '311')).toBe(false)
+  })
+
+  it('na zálohovém účtu vyrovná čerpáním jen zálohu toho druhu, který účet nese', () => {
+    const purchaseAdvance = { doc_type: 'purchase_invoice', settleable: true, currency_code: 'CZK', remaining_czk: 10 }
+    const proforma = { doc_type: 'invoice', settleable: true, currency_code: 'CZK', remaining_czk: 10 }
+    expect(isAdvanceAccount('314')).toBe(true)
+    expect(isAdvanceAccount('311')).toBe(false)
+    expect(isSettleable(purchaseAdvance, '314')).toBe(true)
+    expect(isSettleable(proforma, '324')).toBe(true)
+    expect(isSettleable(proforma, '314')).toBe(false)
+    expect(isSettleable(purchaseAdvance, '324')).toBe(false)
+    // Záloha zaplacená přímo na saldokontní účet a cizí měna se čerpáním nevyrovnávají.
+    expect(isSettleable({ ...purchaseAdvance, kind: 'advance_pending' }, '314')).toBe(false)
+    expect(isSettleable({ ...purchaseAdvance, currency_code: 'EUR' }, '314')).toBe(false)
+    expect(isSettleable({ ...purchaseAdvance, settleable: false }, '314')).toBe(false)
+    expect(SUGGEST_ACCOUNTS).toEqual(['311', '321', '315', '325', '314', '324'])
   })
 
   it('uzavřené období přebije jen správce po potvrzení', async () => {

@@ -323,9 +323,10 @@ final class SaldoService
                 'advance_payment_czk' => $advancePending ? abs($bookedNative) : null,
                 'advance_vat_czk'     => $advancePending ? abs($paidNative) : null,
                 'tax_document_id'     => $advancePending ? ($it['tax_document_id'] ?? null) : null,
-                // Doklad s vlastním předpisem na účtu, který jde vyrovnat rozpadem zápisu v deníku
-                // (JournalSettlementService). Doklady jen z počátečních stavů a úhrady před
-                // zaúčtováním ho nemají: jejich zbytek rozpad nesnižuje.
+                // Položka, kterou jde vyrovnat: na 311/321/315/325 doklad s vlastním předpisem
+                // na účtu (rozpad zápisu v deníku, JournalSettlementService), na 314/324 záloha
+                // (čerpání konečnou fakturou, AdvanceDeductionService). Doklady jen z počátečních
+                // stavů 311/321 a úhrady před zaúčtováním ho nemají: jejich zbytek rozpad nesnižuje.
                 'settleable'          => !empty($it['settleable']),
             ];
             $byPartner[$pid]['total_remaining'] = round($byPartner[$pid]['total_remaining'] + $remaining, 2);

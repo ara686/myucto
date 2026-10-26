@@ -48,6 +48,10 @@ vi.mock('@/components/accounting/SaldoSettleDialog.vue', () => ({
   __esModule: true,
   default: { name: 'SaldoSettleDialog', props: ['items', 'asOf'], template: '<div data-testid="settle-stub" />' },
 }))
+vi.mock('@/components/accounting/SaldoAdvanceSettleDialog.vue', () => ({
+  __esModule: true,
+  default: { name: 'SaldoAdvanceSettleDialog', props: ['items', 'asOf'], template: '<div data-testid="advance-settle-stub" />' },
+}))
 vi.mock('@/components/accounting/SaldoResidualDialog.vue', () => ({
   __esModule: true,
   default: { name: 'SaldoResidualDialog', props: ['accountCode', 'accountName', 'asOf'], template: '<div data-testid="residual-stub" />' },
@@ -478,5 +482,44 @@ describe('Saldokonto.vue', () => {
     await wrapper.find('[data-testid="saldo-suggest"]').trigger('click')
     await flushPromises()
     expect(wrapper.findComponent({ name: 'SaldoSuggestionsDialog' }).props()).toMatchObject({ periodId: 6, asOf: '2099-06-30', account: 'all' })
+  })
+
+  it('(q) záloha na 314 se vyrovná čerpáním konečnou fakturou, ne rozpadem zápisu', async () => {
+    authState.write = ['accounting.journal.write']
+    const report = makeReport({
+      accounts: [{
+        account: { id: 3, code: '314', name: 'Poskytnuté zálohy', normal_side: 'debit' as any },
+        gl_balance: 0,
+        open_items_total: 1000,
+        open_items_count: 2,
+        difference: -1000,
+        matches: false,
+        partners_pagination: { page: 1, per_page: 2, total: 1, pages: 1 },
+        partners: [{
+          partner_id: 20,
+          partner_name: 'Gama s.r.o.',
+          total_remaining: 1000,
+          items: [
+            { doc_type: 'purchase_invoice', doc_id: 201, doc_no: 'ZF-201', issue_date: '2099-01-10', due_date: '2099-01-24',
+              currency_code: 'CZK', amount_foreign: 0, booked_czk: 1000, paid_czk: 0, remaining_czk: 1000, days_overdue: 0, settleable: true },
+            { doc_type: 'purchase_invoice', doc_id: 202, doc_no: 'ZF-202', issue_date: '2099-02-10', due_date: '2099-02-24',
+              currency_code: 'EUR', amount_foreign: 40, booked_czk: 1000, paid_czk: 0, remaining_czk: 1000, days_overdue: 0, settleable: true },
+          ],
+        }],
+      }],
+    })
+    serveSaldo(report)
+    const wrapper = mount(Saldokonto)
+    await flushPromises()
+
+    const settle = wrapper.findAll('tbody button').filter(b => b.text().includes('accounting.saldo_settle.settle'))
+    expect(settle).toHaveLength(1)
+    await settle[0].trigger('click')
+    await flushPromises()
+    expect(wrapper.findComponent({ name: 'SaldoSettleDialog' }).exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'SaldoAdvanceSettleDialog' }).props('items')).toEqual([{
+      doc_type: 'purchase_invoice', doc_id: 201, doc_no: 'ZF-201', partner_id: 20, partner_name: 'Gama s.r.o.',
+      account_code: '314', currency_code: 'CZK', remaining_czk: 1000,
+    }])
   })
 })

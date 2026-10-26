@@ -14750,6 +14750,8 @@ paths:
         `settleable` = vydaný nebo přijatý doklad s vlastním předpisem na účtu, který lze
         vyrovnat přiřazením zápisu v deníku (`/api/v1/accounting/saldo-settlements/*`).
         Doklady zastoupené jen v počátečních stavech a úhrady před zaúčtováním ho nemají.
+        Na zálohových účtech 314 a 324 označuje zálohu, kterou lze vyrovnat čerpáním
+        konečnou fakturou (`/api/v1/accounting/saldo-settlements/advance-candidates`).
       parameters:
         - $ref: '#/components/parameters/SupplierIdHeader'
         - { in: query, name: period_id, required: true, schema: { type: integer } }
@@ -14865,11 +14867,18 @@ paths:
         s touto částkou (`partner_amount`), případně součet všech jeho otevřených dokladů
         (`partner_sum`). Řádek i doklad jsou nejvýš v jednom návrhu. Nejvýš 500 návrhů
         (`truncated`).
+
+        Na zálohových účtech 314 a 324 navrhuje čerpání zálohy konečnou fakturou téhož
+        partnera (`type = advance`): číslo zálohy v popisu řádku nebo v textu zápisu
+        konečné faktury (`advance_doc_no`), právě jedna faktura, jejíž nepřiřazený odpočet
+        se rovná zbytku zálohy (`advance_amount`), nebo jediná faktura mezi touto a další
+        zálohou partnera se stejným odpočtem (`advance_sequence`). Faktura, kterou by návrhy
+        přečerpaly, se nenavrhne. Návrhy rozpadu zápisu mají `type = journal`.
       parameters:
         - $ref: '#/components/parameters/SupplierIdHeader'
         - { in: query, name: period_id, required: true, schema: { type: integer } }
         - { in: query, name: as_of, schema: { type: string, format: date } }
-        - { in: query, name: account, schema: { type: string, enum: [all, '311', '321', '315', '325'], default: all } }
+        - { in: query, name: account, schema: { type: string, enum: [all, '311', '321', '315', '325', '314', '324'], default: all } }
       responses:
         '200':
           description: OK
@@ -14881,6 +14890,59 @@ paths:
                   as_of: { type: string, format: date }
                   truncated: { type: boolean }
                   items: { type: array, items: { $ref: '#/components/schemas/SaldoSettlementSuggestion' } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
+  /api/v1/accounting/saldo-settlements/advance-candidates:
+    get:
+      tags: [Accounting]
+      summary: Konečné faktury pro vyrovnání zálohy na 314/324 čerpáním
+      description: |
+        Zálohu na 314 (zálohová přijatá faktura, samostatný daňový doklad k platbě, záloha
+        placená v konečné faktuře) a na 324 (zaplacená proforma) vyrovná konečná faktura
+        téhož partnera, která ji odečítá na zálohovém účtu (přijatá dal 314, vydaná má dáti
+        324, vč. analytik). Kandidáti jsou faktury zaúčtované k rozvahovému dni s odpočtem,
+        který ještě nečerpá jiná záloha (`unassigned`): vazba konečné faktury na zálohu
+        (`advance_purchase_invoice_id`, `parent_invoice_id` na proformu) přiřazuje celý
+        odpočet, každé čerpání svou částku. Přeúčtování mezi analytikami zálohového účtu
+        čerpáním není. Řazení: shoda nepřiřazeného odpočtu se zbytkem zálohy, číslo zálohy
+        v textu faktury, faktura vystavená po záloze, blízkost data. Nejvýš 50 kandidátů.
+
+        `deductions` = zapsaná čerpání zálohy; `source = import` jsou převzatá z převodu
+        a v saldokontu se neruší. Záloha v cizí měně nebo bez otevřené položky na účtu
+        (`document.supported = false`) kandidáty nemá. Čerpání platí od zaúčtování konečné
+        faktury (`posted_on`).
+      parameters:
+        - $ref: '#/components/parameters/SupplierIdHeader'
+        - { in: query, name: doc_type, required: true, description: "purchase_invoice na 314, invoice na 324", schema: { type: string, enum: [invoice, purchase_invoice] } }
+        - { in: query, name: doc_id, required: true, schema: { type: integer } }
+        - { in: query, name: account, required: true, schema: { type: string, enum: ['314', '324'] } }
+        - { in: query, name: as_of, description: "Rozvahový den (default dnešek)", schema: { type: string, format: date } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mode: { type: string, enum: [advance] }
+                  document:
+                    type: object
+                    properties:
+                      doc_type: { type: string, enum: [invoice, purchase_invoice] }
+                      doc_id: { type: integer }
+                      doc_no: { type: string }
+                      partner_id: { type: integer }
+                      partner_name: { type: string }
+                      currency_code: { type: string }
+                      issue_date: { type: string, format: date }
+                      remaining: { type: number, description: "Zbývá vyúčtovat v Kč podle saldokonta k as_of" }
+                      account: { type: object, properties: { id: { type: integer }, code: { type: string }, name: { type: string } } }
+                      supported: { type: boolean }
+                  deductions: { type: array, items: { $ref: '#/components/schemas/SaldoAdvanceDeduction' } }
+                  items: { type: array, items: { $ref: '#/components/schemas/SaldoAdvanceFinal' } }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
@@ -33793,13 +33855,63 @@ components:
         description: { type: string, nullable: true }
         created_by: { type: integer, nullable: true }
         created_at: { type: string }
-    SaldoSettlementSuggestion:
+    SaldoAdvanceFinal:
       type: object
       properties:
+        doc_type: { type: string, enum: [invoice, purchase_invoice] }
+        doc_id: { type: integer }
+        doc_no: { type: string }
+        issue_date: { type: string, format: date }
+        posted_on: { type: string, format: date, description: "Den zaúčtování konečné faktury, od kterého čerpání platí" }
+        deductible: { type: number, description: "Odpočet záloh na zálohovém účtu v Kč" }
+        deducted: { type: number, description: "Už zapsaná čerpání této faktury" }
+        linked: { type: boolean, description: "Faktura je navázaná na zálohu a celý odpočet patří jí" }
+        unassigned: { type: number, description: "Odpočet, který ještě nečerpá žádná záloha" }
+        amount_match: { type: boolean }
+        doc_match: { type: boolean, description: "Číslo zálohy je v popisu řádku nebo v textu zápisu faktury" }
+        after_advance: { type: boolean }
+    SaldoAdvanceDeduction:
+      type: object
+      properties:
+        id: { type: integer }
+        doc_type: { type: string, enum: [invoice, purchase_invoice] }
+        final_id: { type: integer }
+        final_no: { type: string }
+        advance_id: { type: integer }
+        advance_no: { type: string }
+        amount: { type: number }
+        source: { type: string, enum: [import, saldo] }
+        posted_on: { type: string, format: date, nullable: true }
+        deletable: { type: boolean }
+        created_by: { type: integer, nullable: true }
+        created_at: { type: string }
+    SaldoSettlementSuggestion:
+      type: object
+      description: |
+        `type = journal`: rozpad řádku zápisu (`line`, `allocations`). `type = advance`:
+        čerpání zálohy konečnou fakturou (`advance`, `final`, `amount`).
+      properties:
+        type: { type: string, enum: [journal, advance] }
         key: { type: string }
-        reason: { type: string, enum: [doc_no_amount, doc_no_sum, partner_amount, partner_sum] }
+        reason: { type: string, enum: [doc_no_amount, doc_no_sum, partner_amount, partner_sum, advance_doc_no, advance_amount, advance_sequence] }
         account: { type: object, properties: { id: { type: integer }, code: { type: string } } }
         partner_name: { type: string }
+        advance:
+          type: object
+          properties:
+            doc_type: { type: string, enum: [invoice, purchase_invoice] }
+            doc_id: { type: integer }
+            doc_no: { type: string }
+            remaining: { type: number }
+        final:
+          type: object
+          properties:
+            doc_type: { type: string, enum: [invoice, purchase_invoice] }
+            doc_id: { type: integer }
+            doc_no: { type: string }
+            posted_on: { type: string, format: date }
+            unassigned: { type: number }
+        amount: { type: number }
         line:
           type: object
           properties:

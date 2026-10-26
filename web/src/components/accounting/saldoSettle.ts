@@ -66,14 +66,29 @@ export function distribute(free: number, remainings: number[]): number[] {
   })
 }
 
-/** Lze položku saldokonta vyrovnat rozpadem zápisu? */
+/**
+ * Zálohové účty, jejichž zálohu vyrovná čerpání konečnou fakturou (shodně s
+ * AdvanceDeductionService::ACCOUNTS): poskytnuté zálohy 314 a přijaté zálohy 324.
+ */
+export const ADVANCE_ACCOUNTS: Record<string, 'invoice' | 'purchase_invoice'> = { '314': 'purchase_invoice', '324': 'invoice' }
+
+export function isAdvanceAccount(accountCode: string): boolean {
+  return Object.prototype.hasOwnProperty.call(ADVANCE_ACCOUNTS, accountCode)
+}
+
+/** Účty, na kterých návrh párování něco hledá (rozpad zápisu i čerpání záloh). */
+export const SUGGEST_ACCOUNTS = [...SETTLE_ACCOUNTS, ...Object.keys(ADVANCE_ACCOUNTS)]
+
+/** Lze položku saldokonta vyrovnat (rozpadem zápisu, na zálohovém účtu čerpáním konečnou fakturou)? */
 export function isSettleable(item: { doc_type: string; kind?: string; settleable?: boolean; currency_code: string; remaining_czk: number }, accountCode: string): boolean {
   // `settleable` = doklad má na účtu vlastní předpis (ne jen počáteční stav), jen ten
-  // rozpad zápisu snižuje.
+  // rozpad zápisu snižuje; na zálohovém účtu záloha, kterou snižuje čerpání.
+  const accountOk = SETTLE_ACCOUNTS.includes(accountCode)
+    || (isAdvanceAccount(accountCode) && item.doc_type === ADVANCE_ACCOUNTS[accountCode])
   return (item.doc_type === 'invoice' || item.doc_type === 'purchase_invoice')
     && item.settleable === true
     && (item.kind ?? 'document') === 'document'
     && item.currency_code === 'CZK'
-    && SETTLE_ACCOUNTS.includes(accountCode)
+    && accountOk
     && Math.round(item.remaining_czk * 100) > 0
 }

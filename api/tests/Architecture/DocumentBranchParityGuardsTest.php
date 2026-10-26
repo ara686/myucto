@@ -78,6 +78,13 @@ final class DocumentBranchParityGuardsTest extends TestCase
         // explicitním filtrem, vydaný strukturálně — vydaný DDKP je vždy status='paid'
         // (sdílí platební řádek proformy přes invoice_payments.tax_document_invoice_id),
         // takže ho InvoicePaymentService::PAYABLE_TYPES ani nenabídne.
+        // Zálohou na 314 je i samostatný přijatý DDKP (nákup kartou bez zálohové faktury,
+        // SaldoRepository::fetchPaidAdvances), na 324 jen proforma (fetchReceivedAdvances):
+        // vazba konečné faktury na zálohu proto na přijaté straně uznává i DDKP bez rodiče.
+        'Repository/AdvanceDeductionRepository.php' => [
+            'finals' => 'záloha na 314 může být samostatný přijatý DDKP, na 324 jen proforma (saldokonto)',
+        ],
+
         'Service/Bank/StatementMatcher.php' => [
             'matchPurchase'             => 'vydaný DDKP je vždy paid → nikdy platební cíl',
             'matchPurchaseFuzzy'        => 'vydaný DDKP je vždy paid → nikdy platební cíl',

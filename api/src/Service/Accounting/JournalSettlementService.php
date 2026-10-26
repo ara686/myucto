@@ -33,6 +33,8 @@ final class JournalSettlementService
 {
     /** Saldokontní účty dokladů, jejichž vyrovnání jde rozepsat (zálohové účty mají vlastní čerpání). */
     public const SETTLE_ACCOUNTS = ['311', '321', '315', '325'];
+    /** Účty návrhu párování: rozpad zápisu a čerpání záloh konečnou fakturou ({@see AdvanceDeductionService}). */
+    public const SUGGEST_ACCOUNTS = ['311', '321', '315', '325', '314', '324'];
     /** Strop řádků rozpadu v jedné skupině (jedna transakce, zámky řádků i dokladů). */
     public const MAX_ALLOCATIONS = 50;
     /** Strop skupin v jednom hromadném potvrzení návrhů; UI posílá po dávkách. */
@@ -50,6 +52,7 @@ final class JournalSettlementService
         private readonly SaldoRepository $saldo,
         private readonly SaldoService $saldoService,
         private readonly OtherItemService $otherItems,
+        private readonly AdvanceDeductionService $advances,
     ) {}
 
     /** Strana řádku, která saldo dokladu snižuje (shodně s LinkedManualSettlementSql). */
@@ -354,23 +357,27 @@ final class JournalSettlementService
      *   - partner je jistý (vazba zápisu nebo jeho název v textu) a částku má právě jeden jeho
      *     otevřený doklad, případně je řádek přesně součtem všech jeho otevřených dokladů.
      * Řádek i doklad smí být nejvýš v jednom návrhu; dvojznačná shoda se nenavrhne.
+     * Na zálohových účtech 314/324 navrhuje čerpání zálohy konečnou fakturou
+     * ({@see AdvanceDeductionService::suggestForAccount()}, položky `type = advance`).
      *
      * @return array{as_of:string, items:list<array<string,mixed>>, truncated:bool}
      */
     public function suggestions(int $supplierId, int $periodId, ?string $asOf, ?string $accountCode): array
     {
-        $codes = $accountCode !== null && $accountCode !== 'all' ? [$accountCode] : self::SETTLE_ACCOUNTS;
+        $codes = $accountCode !== null && $accountCode !== 'all' ? [$accountCode] : self::SUGGEST_ACCOUNTS;
         $out = [];
         $truncated = false;
         $resolvedAsOf = $asOf;
         foreach ($codes as $code) {
-            if (!in_array($code, self::SETTLE_ACCOUNTS, true)) {
-                throw new JournalSettlementException('account_not_saldo', 'Návrh párování umí účty ' . implode(', ', self::SETTLE_ACCOUNTS) . '.');
+            if (!in_array($code, self::SUGGEST_ACCOUNTS, true)) {
+                throw new JournalSettlementException('account_not_saldo', 'Návrh párování umí účty ' . implode(', ', self::SUGGEST_ACCOUNTS) . '.');
             }
             $report = $this->saldoService->buildCached($supplierId, $periodId, $asOf, $code);
             $resolvedAsOf = (string) $report['as_of'];
             foreach ($report['accounts'] as $block) {
-                [$items, $cut] = $this->suggestForAccount($supplierId, $block, $resolvedAsOf);
+                [$items, $cut] = isset(AdvanceDeductionService::ACCOUNTS[$code])
+                    ? [$this->advances->suggestForAccount($supplierId, $block, $resolvedAsOf), false]
+                    : $this->suggestForAccount($supplierId, $block, $resolvedAsOf);
                 $truncated = $truncated || $cut;
                 foreach ($items as $item) {
                     if (count($out) >= self::MAX_SUGGESTIONS) {
@@ -539,6 +546,7 @@ final class JournalSettlementService
     private static function proposal(array $line, string $reason, array $docs): array
     {
         return [
+            'type' => 'journal',
             'reason' => $reason,
             'line' => [
                 'line_id'      => $line['line_id'],

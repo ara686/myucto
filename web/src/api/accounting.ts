@@ -1826,7 +1826,10 @@ export interface SaldoSettlementCandidates {
   items: SaldoSettlementLine[]
 }
 
-export interface SaldoSettlementSuggestion {
+export type SaldoSettlementSuggestion = SaldoJournalSuggestion | SaldoAdvanceSuggestion
+
+export interface SaldoJournalSuggestion {
+  type?: 'journal'
   key: string
   reason: 'doc_no_amount' | 'doc_no_sum' | 'partner_amount' | 'partner_sum'
   account: { id: number; code: string }
@@ -1841,6 +1844,81 @@ export interface SaldoSettlementSuggestion {
     free_amount: number
   }
   allocations: { doc_type: SaldoSettleDocType; doc_id: number; doc_no: string; remaining: number; amount: number }[]
+}
+
+/** Návrh čerpání zálohy (314/324) konečnou fakturou téhož partnera. */
+export interface SaldoAdvanceSuggestion {
+  type: 'advance'
+  key: string
+  reason: 'advance_doc_no' | 'advance_amount' | 'advance_sequence'
+  account: { id: number; code: string }
+  partner_name: string
+  advance: { doc_type: SaldoSettleDocType; doc_id: number; doc_no: string; remaining: number }
+  final: { doc_type: SaldoSettleDocType; doc_id: number; doc_no: string; posted_on: string; unassigned: number }
+  amount: number
+}
+
+// ── Vyrovnání zálohy (314/324) čerpáním konečnou fakturou ─────────────────
+/** Konečná faktura partnera s odpočtem zálohy, který zatím nečerpá žádná záloha. */
+export interface SaldoAdvanceFinal {
+  doc_type: SaldoSettleDocType
+  doc_id: number
+  doc_no: string
+  issue_date: string
+  /** Den zaúčtování faktury: od něj čerpání snižuje zálohu v saldokontu. */
+  posted_on: string
+  deductible: number
+  deducted: number
+  linked: boolean
+  unassigned: number
+  amount_match: boolean
+  doc_match: boolean
+  after_advance: boolean
+}
+
+export interface SaldoAdvanceDeduction {
+  id: number
+  doc_type: SaldoSettleDocType
+  final_id: number
+  final_no: string
+  advance_id: number
+  advance_no: string
+  amount: number
+  /** import = převzaté z převodu (v saldokontu se neruší), saldo = zadané v saldokontu. */
+  source: 'import' | 'saldo'
+  posted_on: string | null
+  deletable: boolean
+}
+
+export interface SaldoAdvanceCandidates {
+  mode: 'advance'
+  document: {
+    doc_type: SaldoSettleDocType
+    doc_id: number
+    doc_no: string
+    partner_id: number
+    partner_name: string
+    currency_code: string
+    issue_date: string
+    remaining: number
+    account: { id: number; code: string; name: string }
+    /** false = záloha v cizí měně, čerpání v saldokontu nese jen Kč. */
+    supported: boolean
+  }
+  deductions: SaldoAdvanceDeduction[]
+  items: SaldoAdvanceFinal[]
+}
+
+export interface SaldoAdvanceDeductionInput {
+  doc_type: SaldoSettleDocType
+  advance_id: number
+  final_id: number
+  amount: number
+}
+
+export interface SaldoAdvanceDeductionResult {
+  created: (SaldoAdvanceDeductionInput & { id: number })[]
+  failed: { index: number; code: string; message: string }[]
 }
 
 export interface SaldoSettlementSuggestions {
@@ -2524,6 +2602,13 @@ export const accountingApi = {
     api.post<SaldoAllocationResult>('/accounting/saldo-settlements', payload, { params: force ? { force: 1 } : {} }).then(r => r.data),
   deleteSaldoAllocation: (id: number, force = false) =>
     api.delete<{ deleted: number }>(`/accounting/saldo-settlements/${id}`, { params: force ? { force: 1 } : {} }).then(r => r.data),
+  // Vyrovnání zálohy (314/324) čerpáním konečnou fakturou.
+  getSaldoAdvanceCandidates: (params: { doc_type: SaldoSettleDocType; doc_id: number; account: string; as_of?: string }) =>
+    api.get<SaldoAdvanceCandidates>('/accounting/saldo-settlements/advance-candidates', { params }).then(r => r.data),
+  createSaldoAdvanceDeductions: (payload: { deductions: SaldoAdvanceDeductionInput[] } | { groups: { deductions: SaldoAdvanceDeductionInput[] }[] }, force = false) =>
+    api.post<SaldoAdvanceDeductionResult>('/accounting/saldo-settlements/advance-deductions', payload, { params: force ? { force: 1 } : {} }).then(r => r.data),
+  deleteSaldoAdvanceDeduction: (docType: SaldoSettleDocType, id: number, force = false) =>
+    api.delete<{ deleted: number }>(`/accounting/saldo-settlements/advance-deductions/${docType}/${id}`, { params: force ? { force: 1 } : {} }).then(r => r.data),
   createSaldoOtherItem: (payload: { line_id: number; amount: number; title?: string; partner_id?: number | null; due_on?: string }, force = false) =>
     api.post<{ item: { id: number; document_no: string | null }; allocation_id: number }>(
       '/accounting/saldo-settlements/other-item', payload, { params: force ? { force: 1 } : {} }).then(r => r.data),

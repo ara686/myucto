@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { accountingApi, type SaldoSettlementSuggestion } from '@/api/accounting'
+import {
+  accountingApi,
+  type SaldoAdvanceSuggestion,
+  type SaldoJournalSuggestion,
+  type SaldoSettlementSuggestion,
+} from '@/api/accounting'
 import { useAuthStore } from '@/stores/auth'
 import { useToast } from '@/composables/useToast'
 import { formatDate, formatMoney } from '@/composables/useFormat'
@@ -12,8 +17,8 @@ import { MAX_GROUPS_PER_REQUEST, apiErrorMessage, withPeriodForce, type SaldoAll
 
 /**
  * Návrh párování: jisté shody otevřených dokladů saldokonta se zápisy v deníku
- * k hromadnému potvrzení. Každý potvrzený návrh je samostatná skupina: když jednu
- * server odmítne (doklad mezitím uhrazený), ostatní projdou.
+ * a záloh 314/324 s konečnými fakturami k hromadnému potvrzení. Každý potvrzený návrh
+ * je samostatná skupina: když jednu server odmítne (doklad mezitím uhrazený), ostatní projdou.
  */
 const props = defineProps<{
   periodId: number
@@ -40,7 +45,11 @@ const failures = ref<{ key: string; message: string }[]>([])
 const allChecked = computed(() => items.value.length > 0 && checked.value.size === items.value.length)
 const selectedTotal = computed(() => Math.round(items.value
   .filter(i => checked.value.has(i.key))
-  .reduce((s, i) => s + i.allocations.reduce((a, x) => a + x.amount, 0), 0) * 100) / 100)
+  .reduce((s, i) => s + amountOf(i), 0) * 100) / 100)
+
+function amountOf(s: SaldoSettlementSuggestion): number {
+  return s.type === 'advance' ? s.amount : s.allocations.reduce((a, x) => a + x.amount, 0)
+}
 
 async function load() {
   loading.value = true
@@ -68,39 +77,63 @@ function toggleAll() {
   checked.value = allChecked.value ? new Set() : new Set(items.value.map(i => i.key))
 }
 
+/**
+ * Pošle skupiny po dávkách (server přijme nejvýš MAX_GROUPS_PER_REQUEST); index odmítnuté
+ * skupiny se přepočte na pořadí v `groups`. Null = správce odmítl přebít uzavřené období.
+ */
+async function sendBatched<G>(
+  groups: G[],
+  send: (part: G[], force: boolean) => Promise<SaldoAllocationResultLike>,
+): Promise<SaldoAllocationResultLike | null> {
+  if (groups.length === 0) return { created: [], failed: [] }
+  const run = async (force: boolean): Promise<SaldoAllocationResultLike> => {
+    const merged: SaldoAllocationResultLike = { created: [], failed: [] }
+    for (let start = 0; start < groups.length; start += MAX_GROUPS_PER_REQUEST) {
+      const part = await send(groups.slice(start, start + MAX_GROUPS_PER_REQUEST), force)
+      merged.created.push(...part.created)
+      merged.failed.push(...part.failed.map(f => ({ ...f, index: f.index + start })))
+    }
+    return merged
+  }
+  return withPeriodForce(run, auth.isCompanyAdminRole, () => window.confirm(t('accounting.saldo_settle.period_closed_confirm')))
+}
+
 async function confirmSelected() {
   const chosen = items.value.filter(i => checked.value.has(i.key))
   if (chosen.length === 0 || saving.value) return
   saving.value = true
   failures.value = []
   try {
-    const groups = chosen.map(i => ({
-      allocations: i.allocations.map(a => ({ line_id: i.line.line_id, doc_type: a.doc_type, doc_id: a.doc_id, amount: a.amount })),
-    }))
-    // Server přijme nejvýš MAX_GROUPS_PER_REQUEST skupin; každá dávka je samostatná,
-    // index odmítnuté skupiny se přepočte na pořadí v celém výběru.
-    const run = async (force: boolean): Promise<SaldoAllocationResultLike> => {
-      const merged: SaldoAllocationResultLike = { created: [], failed: [] }
-      for (let start = 0; start < groups.length; start += MAX_GROUPS_PER_REQUEST) {
-        const part = await accountingApi.createSaldoAllocations({ groups: groups.slice(start, start + MAX_GROUPS_PER_REQUEST) }, force)
-        merged.created.push(...part.created)
-        merged.failed.push(...part.failed.map(f => ({ ...f, index: f.index + start })))
-      }
-      return merged
-    }
-    const result = await withPeriodForce(
-      run,
-      auth.isCompanyAdminRole,
-      () => window.confirm(t('accounting.saldo_settle.period_closed_confirm')),
+    // Rozpad zápisu a čerpání zálohy mají každé svůj endpoint; každý druh se potvrzuje zvlášť.
+    const journal = chosen.filter((i): i is SaldoJournalSuggestion => i.type !== 'advance')
+    const advance = chosen.filter((i): i is SaldoAdvanceSuggestion => i.type === 'advance')
+    const journalResult = await sendBatched(
+      journal.map(i => ({
+        allocations: i.allocations.map(a => ({ line_id: i.line.line_id, doc_type: a.doc_type, doc_id: a.doc_id, amount: a.amount })),
+      })),
+      (part, force) => accountingApi.createSaldoAllocations({ groups: part }, force),
     )
-    if (result === null) return
-    failures.value = result.failed.map(f => ({ key: chosen[f.index]?.key ?? String(f.index), message: f.message }))
-    const confirmed = chosen.length - result.failed.length
+    const advanceResult = await sendBatched(
+      advance.map(i => ({
+        deductions: [{ doc_type: i.advance.doc_type, advance_id: i.advance.doc_id, final_id: i.final.doc_id, amount: i.amount }],
+      })),
+      (part, force) => accountingApi.createSaldoAdvanceDeductions({ groups: part }, force),
+    )
+    if (journalResult === null && advanceResult === null) return
+    failures.value = [
+      ...(journalResult?.failed ?? []).map(f => ({ key: journal[f.index]?.key ?? String(f.index), message: f.message })),
+      ...(advanceResult?.failed ?? []).map(f => ({ key: advance[f.index]?.key ?? String(f.index), message: f.message })),
+    ]
+    const skipped = new Set([
+      ...(journalResult === null ? journal.map(i => i.key) : []),
+      ...(advanceResult === null ? advance.map(i => i.key) : []),
+    ])
+    const confirmed = chosen.length - failures.value.length - skipped.size
     if (confirmed > 0) toast.success(t('accounting.saldo_settle.suggestions_saved', { count: confirmed }))
-    if (result.failed.length > 0) {
-      toast.error(t('accounting.saldo_settle.suggestions_failed', { count: result.failed.length }))
-      const failedKeys = new Set(failures.value.map(f => f.key))
-      items.value = items.value.filter(i => !checked.value.has(i.key) || failedKeys.has(i.key))
+    if (failures.value.length > 0 || skipped.size > 0) {
+      if (failures.value.length > 0) toast.error(t('accounting.saldo_settle.suggestions_failed', { count: failures.value.length }))
+      const keep = new Set([...failures.value.map(f => f.key), ...skipped])
+      items.value = items.value.filter(i => !checked.value.has(i.key) || keep.has(i.key))
       checked.value = new Set()
       if (confirmed > 0) emit('done')
       return
@@ -136,7 +169,7 @@ onMounted(load)
                 <input type="checkbox" class="rounded border-neutral-300" :checked="allChecked" :aria-label="t('accounting.saldo_settle.suggestions_all')" @change="toggleAll" />
               </th>
               <th class="px-3 py-2 text-left font-medium">{{ t('accounting.saldo.col_account') }}</th>
-              <th class="px-3 py-2 text-left font-medium">{{ t('accounting.saldo_settle.col_entry') }}</th>
+              <th class="px-3 py-2 text-left font-medium">{{ t('accounting.saldo_settle.col_source') }}</th>
               <th class="px-3 py-2 text-left font-medium">{{ t('accounting.saldo.col_doc') }}</th>
               <th class="px-3 py-2 text-left font-medium">{{ t('accounting.saldo.col_partner') }}</th>
               <th class="px-3 py-2 text-right font-medium">{{ t('accounting.saldo_settle.col_amount') }}</th>
@@ -146,19 +179,31 @@ onMounted(load)
             <tr v-for="s in items" :key="s.key" class="hover:bg-neutral-50 align-top">
               <td class="px-3 py-2">
                 <input type="checkbox" class="rounded border-neutral-300" :checked="checked.has(s.key)"
-                  :aria-label="t('accounting.saldo_settle.pick_aria', { entry: s.line.document_no || s.line.entry_id })" @change="toggle(s.key)" />
+                  :aria-label="s.type === 'advance'
+                    ? t('accounting.saldo_settle.advance_pick_aria', { doc: s.final.doc_no })
+                    : t('accounting.saldo_settle.pick_aria', { entry: s.line.document_no || s.line.entry_id })"
+                  @change="toggle(s.key)" />
               </td>
-              <td class="px-3 py-2 font-mono text-xs whitespace-nowrap">{{ s.line.account_code }}</td>
+              <td class="px-3 py-2 font-mono text-xs whitespace-nowrap">{{ s.type === 'advance' ? s.account.code : s.line.account_code }}</td>
               <td class="px-3 py-2 min-w-[14rem]">
-                <span class="block"><span class="whitespace-nowrap">{{ formatDate(s.line.entry_date) }}</span> · {{ [s.line.document_no, s.line.description].filter(Boolean).join(' - ') }}</span>
+                <template v-if="s.type === 'advance'">
+                  <span class="block">
+                    <span class="whitespace-nowrap">{{ formatDate(s.final.posted_on) }}</span> ·
+                    {{ t('accounting.saldo_settle.advance_final_label', { doc: s.final.doc_no }) }}
+                  </span>
+                </template>
+                <span v-else class="block"><span class="whitespace-nowrap">{{ formatDate(s.line.entry_date) }}</span> · {{ [s.line.document_no, s.line.description].filter(Boolean).join(' - ') }}</span>
                 <span class="text-[11px] text-neutral-500">{{ t(`accounting.saldo_settle.reason_${s.reason}`) }}</span>
                 <span v-if="failureOf(s.key)" class="block text-xs text-danger-600">{{ failureOf(s.key) }}</span>
               </td>
               <td class="px-3 py-2">
-                <span v-for="a in s.allocations" :key="`${a.doc_type}-${a.doc_id}`" class="block font-mono whitespace-nowrap">{{ a.doc_no }}</span>
+                <span v-if="s.type === 'advance'" class="block font-mono whitespace-nowrap">{{ s.advance.doc_no }}</span>
+                <template v-else>
+                  <span v-for="a in s.allocations" :key="`${a.doc_type}-${a.doc_id}`" class="block font-mono whitespace-nowrap">{{ a.doc_no }}</span>
+                </template>
               </td>
               <td class="px-3 py-2">{{ s.partner_name }}</td>
-              <td class="px-3 py-2 text-right font-mono whitespace-nowrap">{{ formatMoney(s.line.free_amount) }}</td>
+              <td class="px-3 py-2 text-right font-mono whitespace-nowrap">{{ formatMoney(s.type === 'advance' ? s.amount : s.line.free_amount) }}</td>
             </tr>
           </tbody>
         </table>

@@ -5,12 +5,13 @@ import type { SaldoSettlementSuggestion } from '@/api/accounting'
 const m = vi.hoisted(() => ({
   suggestions: vi.fn(),
   create: vi.fn(),
+  createAdvance: vi.fn(),
   toastError: vi.fn(),
   toastSuccess: vi.fn(),
 }))
 
 vi.mock('@/api/accounting', () => ({
-  accountingApi: { getSaldoSettlementSuggestions: m.suggestions, createSaldoAllocations: m.create },
+  accountingApi: { getSaldoSettlementSuggestions: m.suggestions, createSaldoAllocations: m.create, createSaldoAdvanceDeductions: m.createAdvance },
 }))
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ isCompanyAdminRole: false }) }))
 vi.mock('@/composables/useToast', () => ({ useToast: () => ({ error: m.toastError, success: m.toastSuccess }) }))
@@ -40,6 +41,7 @@ describe('SaldoSuggestionsDialog', () => {
   beforeEach(() => {
     m.suggestions.mockReset()
     m.create.mockReset()
+    m.createAdvance.mockReset()
     m.toastError.mockReset()
   })
 
@@ -86,6 +88,31 @@ describe('SaldoSuggestionsDialog', () => {
     expect(wrapper.findAll('tbody tr')).toHaveLength(1)
     expect(wrapper.text()).toContain('Poslední neprošel.')
     expect(wrapper.text()).toContain('PF-1100')
+  })
+
+  it('návrh čerpání zálohy potvrdí přes čerpání, rozpad zápisu zvlášť', async () => {
+    const advance: SaldoSettlementSuggestion = {
+      type: 'advance', key: 'adv:purchase_invoice:41:51', reason: 'advance_sequence', account: { id: 2, code: '314' }, partner_name: 'Dodavatel energie',
+      advance: { doc_type: 'purchase_invoice', doc_id: 41, doc_no: 'ZF-41', remaining: 250 },
+      final: { doc_type: 'purchase_invoice', doc_id: 51, doc_no: 'FA-51', posted_on: '2099-02-10', unassigned: 250 },
+      amount: 250,
+    }
+    m.suggestions.mockResolvedValue({ as_of: '2099-12-31', truncated: false, items: [suggestion(1, [11]), advance] })
+    m.create.mockResolvedValue({ created: [{ id: 1 }], failed: [] })
+    m.createAdvance.mockResolvedValue({ created: [{ id: 9 }], failed: [] })
+    const wrapper = mount(SaldoSuggestionsDialog, { props: { periodId: 6, asOf: '2099-12-31', account: 'all' } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('ZF-41')
+    expect(wrapper.text()).toContain('accounting.saldo_settle.reason_advance_sequence')
+    await wrapper.find('[data-testid="saldo-suggestions-submit"]').trigger('click')
+    await flushPromises()
+
+    expect(m.create).toHaveBeenCalledWith({ groups: [{ allocations: [{ line_id: 1, doc_type: 'purchase_invoice', doc_id: 11, amount: 100 }] }] }, false)
+    expect(m.createAdvance).toHaveBeenCalledWith({
+      groups: [{ deductions: [{ doc_type: 'purchase_invoice', advance_id: 41, final_id: 51, amount: 250 }] }],
+    }, false)
+    expect(wrapper.emitted('done')).toHaveLength(1)
   })
 
   it('odmítnutý návrh nechá v seznamu s důvodem', async () => {
