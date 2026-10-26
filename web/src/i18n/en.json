@@ -39170,7 +39170,22 @@
       "col_register": "Cash register",
       "register": "Accounting cash register",
       "register_none": "Not linked to a cash register",
-      "register_hint": "Incoming cash documents (sale, invoice payment) from this register are recorded on this device when posted."
+      "register_hint": "Incoming cash documents (sale, invoice payment) from this register are recorded on this device when posted.",
+      "delegation": "Recording on authorisation",
+      "delegation_modes": {
+        "none": "No authorisation (own sales or representation)",
+        "single": "Authorised by one taxpayer",
+        "multiple": "Authorised by several taxpayers"
+      },
+      "delegation_hints": {
+        "none": "Sales of the company itself, including direct or indirect representation. No authorising EIČ is sent.",
+        "single": "The company records sales of another taxpayer who authorised it (Section 10 of the Sales Registration Act). The authorising EIČ is sent with the message.",
+        "multiple": "The sale belongs to several taxpayers (partners, co-owners) who authorised the company. The message carries the multiple authorisation flag."
+      },
+      "delegating_eic": "Authorising taxpayer EIČ",
+      "delegating_eic_optional": "Authorising taxpayer EIČ (optional)",
+      "delegating_eic_hint": "CZ followed by 8 to 10 digits, must differ from the company EIČ. With several taxpayers the Financial Administration recommends it when the sale is not the company income.",
+      "delegation_badge_single": "Authorised by {eic}"
     },
     "certificates": {
       "title": "Cash certificates",
@@ -39335,7 +39350,9 @@
       "foreign_hint": "A payment in {currency} is recorded in EET in CZK, converted at the rate used to post the payment on the day it was received. In-person QR payment is available only for CZK invoices.",
       "stored_value_hint": "The customer pays with a previously bought stored-value voucher or credit. EET records it as credit use. The invoice payment is booked as an offset; the accountant settles the advance received for the voucher manually.",
       "credit_topup": "Of which intended for later use (credit, voucher): {amount}.",
-      "credit_draw": "Of which credit use: {amount}."
+      "credit_draw": "Of which credit use: {amount}.",
+      "delegation_single": "This device records the sale on authorisation of taxpayer {eic}.",
+      "delegation_multiple": "This device records the sale on authorisation of several taxpayers."
     },
     "qr": {
       "action": "QR payment on site (EET)",
@@ -39507,7 +39524,8 @@
         "stored_value_contact": "Voucher or credit redeemed in person",
         "remote_stored_value": "Credit used remotely",
         "stored_value_purpose_conflict": "Payment method does not match credit use",
-        "external_system": "Sale recorded by an external system"
+        "external_system": "Sale recorded by an external system",
+        "delegation_invalid": "Invalid device authorisation"
       },
       "att_duration": "Duration",
       "verification": "Verification",
@@ -39526,7 +39544,9 @@
       "original_payment_value": "{amount}, rate {rate} CZK/{currency}",
       "external_note": "This sale was recorded by another system (e.g. an e-shop). MyÚčto only keeps a record of it and never sends it to EET. A refund made through MyÚčto is recorded by MyÚčto as a negative sale.",
       "credit_topup": "Intended for later use",
-      "credit_draw": "Credit use"
+      "credit_draw": "Credit use",
+      "delegation": "Authorisation",
+      "delegating_eic": "authorising EIČ"
     },
     "correction": {
       "title": "Correct / refund a sale",

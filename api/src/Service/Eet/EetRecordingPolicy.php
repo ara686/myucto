@@ -15,10 +15,18 @@ namespace MyInvoice\Service\Eet;
  *  4. kanál a kontakt: hotovost vždy, terminál / QR / převod / úhrada poukazem či
  *     kreditem při osobním kontaktu, vzdálená bezhotovostní platba a poštovní dobírka
  *     ne, neznámý kontext → unknown;
- *  5. povinná tržba mimo podporu (kauce, pověření) → unsupported. Cizí měna
+ *  5. povinná tržba mimo podporu (kauce) → unsupported; pověření zařízení, které
+ *     porušuje pravidla vyplnění ({@see EetDelegation}), → unknown. Cizí měna
  *     povinnost nemění, tržba se eviduje v CZK přepočtená kurzem úhrady.
  *
- * Kredit (metodika ZoET k § 17 odst. 2): dobití kreditu nebo prodej hodnotového
+ * Pověření (situace 4 a 5 metodiky) povinnost evidovat nemění: pověřený poplatník
+ * eviduje tržbu stejně jako vlastní, jen se zprávou pošle EIČ pověřujícího nebo
+ * příznak více poplatníků.
+ *
+ * Metodikou se tu i dál myslí dokument FS „Popis položek datové zprávy s příklady
+ * jejich vyplnění“ v1.0 z 5. 10. 2026 (zdroj a otisk v api/resources/eet/README.md).
+ *
+ * Kredit (metodika, kap. 1 bod 13 a 14, k § 17 odst. 2 ZoET): dobití kreditu nebo prodej hodnotového
  * poukazu je tržba (`credit_topup`, podíl ve `urceno_cerp_zuct`), uplatnění poukazu
  * či čerpání kreditu kontaktním způsobem je také tržba (`credit_draw`, `cerp_zuct`).
  * Čerpání jde jen kanálem `stored_value` a kanál `stored_value` jen jako čerpání.
@@ -31,7 +39,7 @@ namespace MyInvoice\Service\Eet;
  */
 final class EetRecordingPolicy
 {
-    public const VERSION = '2026.10-3';
+    public const VERSION = '2026.10-4';
 
     private const CONTACT = ['in_person', 'on_premises', 'in_vehicle'];
     private const UNSUPPORTED_PURPOSES = [
@@ -72,9 +80,10 @@ final class EetRecordingPolicy
             return new EetPolicyDecision(EetPolicyDecision::UNSUPPORTED, $in->businessPurpose,
                 self::UNSUPPORTED_PURPOSES[$in->businessPurpose]);
         }
-        if ($in->delegatingEic !== null && $in->delegatingEic !== '') {
-            return new EetPolicyDecision(EetPolicyDecision::UNSUPPORTED, 'delegation',
-                'Evidence tržby na základě pověření jiného poplatníka zatím není podporovaná.');
+        $violation = $in->delegation()->violation(isset($in->settings['eic']) ? (string) $in->settings['eic'] : null);
+        if ($violation !== null) {
+            return new EetPolicyDecision(EetPolicyDecision::UNKNOWN, 'delegation_invalid',
+                $violation['message'] . ' Opravte pověření v nastavení pokladního zařízení EET.');
         }
         if (!in_array($in->businessPurpose, self::SUPPORTED_PURPOSES, true)) {
             return new EetPolicyDecision(EetPolicyDecision::UNKNOWN, 'purpose_unclassified',
@@ -88,7 +97,7 @@ final class EetRecordingPolicy
      * Vrácení peněz k evidované tržbě (dobropis, reklamace): eviduje se jako záporná
      * tržba, když je vrácení kontaktní platbou (hotovost vždy, terminál, QR či převod
      * zadaný při osobním kontaktu). Vrácení převodem na účet bez osobního kontaktu
-     * evidovat nemusí (metodika ZoET k § 8), proto `not_subject`. Zda vůbec existuje
+     * evidovat nemusí (metodika, kap. 4, k § 8 ZoET), proto `not_subject`. Zda vůbec existuje
      * evidovaná tržba k opravě, posuzuje volající. Neúplný kontext → unknown.
      *
      * @param array<string,mixed> $settings

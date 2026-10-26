@@ -13,6 +13,7 @@ import {
   eetApi,
   type EetActivationObstacle,
   type EetCertificate,
+  type EetDelegationMode,
   type EetDevice,
   type EetDiagnosticsResult,
   type EetEnvironment,
@@ -257,14 +258,24 @@ function endUnit(u: EetUnit) {
 function unitEnded(u: EetUnit): boolean { return !!u.valid_to && u.valid_to < today() }
 
 // ---- Zařízení ----
-interface DeviceForm { id: number | null; unit_id: number | null; code: string; name: string; cash_register_id: number | null; active: boolean }
+interface DeviceForm {
+  id: number | null; unit_id: number | null; code: string; name: string; cash_register_id: number | null
+  delegation: EetDelegationMode; delegating_eic: string; active: boolean
+}
 const deviceForm = ref<DeviceForm | null>(null)
 const deviceBusy = ref(false)
+const DELEGATION_MODES: EetDelegationMode[] = ['none', 'single', 'multiple']
 function openDevice(d?: EetDevice) {
   deviceForm.value = d
-    ? { id: d.id, unit_id: d.unit_id, code: d.code, name: d.name ?? '', cash_register_id: d.cash_register_id, active: d.active }
-    : { id: null, unit_id: validUnits.value[0]?.id ?? null, code: '', name: '', cash_register_id: null, active: true }
+    ? {
+        id: d.id, unit_id: d.unit_id, code: d.code, name: d.name ?? '', cash_register_id: d.cash_register_id,
+        delegation: d.delegation ?? 'none', delegating_eic: d.delegating_eic ?? '', active: d.active,
+      }
+    : { id: null, unit_id: validUnits.value[0]?.id ?? null, code: '', name: '', cash_register_id: null, delegation: 'none', delegating_eic: '', active: true }
 }
+// Situace 4 vyžaduje EIČ pověřujícího, situace 5 ho má nepovinně, bez pověření se neuvádí.
+const deviceDelegationIncomplete = computed(() =>
+  deviceForm.value?.delegation === 'single' && deviceForm.value.delegating_eic.trim() === '')
 function registerLabel(id: number | null): string {
   if (id === null) return ''
   const r = registers.value.find(x => x.id === id)
@@ -281,6 +292,8 @@ async function saveDevice() {
     const payload = {
       unit_id: f.unit_id, code: f.code.trim(), name: f.name.trim() === '' ? null : f.name.trim(),
       cash_register_id: f.cash_register_id, active: f.active,
+      delegation: f.delegation,
+      delegating_eic: f.delegation === 'none' || f.delegating_eic.trim() === '' ? null : f.delegating_eic.trim().toUpperCase(),
     }
     if (f.id === null) await eetApi.createDevice(payload)
     else await eetApi.updateDevice(f.id, payload)
@@ -451,6 +464,12 @@ const BADGE_CLASS = {
   warn: 'bg-warning-50 text-warning-700 ring-warning-600/20',
   bad: 'bg-danger-50 text-danger-700 ring-danger-600/20',
   off: 'bg-neutral-100 text-neutral-600 ring-neutral-500/20',
+  info: 'bg-primary-50 text-primary-700 ring-primary-600/20',
+}
+function delegationBadge(d: EetDevice): string {
+  return d.delegation === 'single' && d.delegating_eic
+    ? t('eet.devices.delegation_badge_single', { eic: d.delegating_eic })
+    : t(`eet.devices.delegation_modes.${d.delegation}`)
 }
 function expiryClass(w: 'expired' | 'critical' | 'warning'): string {
   return w === 'warning' ? BADGE_CLASS.warn : BADGE_CLASS.bad
@@ -722,7 +741,10 @@ const th = 'px-3 py-2 text-left font-medium'
               <tbody :class="divider">
                 <tr v-for="d in devices" :key="d.id">
                   <td class="px-3 py-2 font-mono whitespace-nowrap">{{ d.code }}</td>
-                  <td class="px-3 py-2">{{ d.name || '-' }}</td>
+                  <td class="px-3 py-2">
+                    {{ d.name || '-' }}
+                    <span v-if="d.delegation !== 'none'" :class="[BADGE, BADGE_CLASS.info, 'ml-1']" data-test="eet-device-delegation-badge">{{ delegationBadge(d) }}</span>
+                  </td>
                   <td class="px-3 py-2 whitespace-nowrap">{{ d.unit_number }} - {{ d.unit_name }}</td>
                   <td class="px-3 py-2 whitespace-nowrap">{{ registerLabel(d.cash_register_id) || '-' }}</td>
                   <td class="px-3 py-2">
@@ -760,6 +782,7 @@ const th = 'px-3 py-2 text-left font-medium'
               </div>
               <div class="text-xs text-neutral-600">{{ d.name || '-' }} · {{ d.unit_number }} - {{ d.unit_name }}</div>
               <div v-if="d.cash_register_id !== null" class="text-xs text-neutral-600">{{ t('eet.devices.register') }}: {{ registerLabel(d.cash_register_id) }}</div>
+              <div v-if="d.delegation !== 'none'"><span :class="[BADGE, BADGE_CLASS.info]">{{ delegationBadge(d) }}</span></div>
               <div v-if="canWrite" class="flex flex-wrap gap-1">
                 <button v-if="d.active && settings.default_device_id !== d.id" type="button" :class="btnOutlineSm('success')" @click="setDefaultDevice(d)">
                   <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" :d="ICONS.check" /></svg>
@@ -1003,6 +1026,18 @@ const th = 'px-3 py-2 text-left font-medium'
           </select>
           <span class="text-xs text-neutral-500">{{ t('eet.devices.register_hint') }}</span>
         </label>
+        <label :class="[formLabel, 'sm:col-span-2']">
+          <span>{{ t('eet.devices.delegation') }}</span>
+          <select v-model="deviceForm.delegation" :class="formInput" data-test="eet-device-delegation">
+            <option v-for="mode in DELEGATION_MODES" :key="mode" :value="mode">{{ t(`eet.devices.delegation_modes.${mode}`) }}</option>
+          </select>
+          <span class="text-xs text-neutral-500">{{ t(`eet.devices.delegation_hints.${deviceForm.delegation}`) }}</span>
+        </label>
+        <label v-if="deviceForm.delegation !== 'none'" :class="[formLabel, 'sm:col-span-2']">
+          <span>{{ t(deviceForm.delegation === 'single' ? 'eet.devices.delegating_eic' : 'eet.devices.delegating_eic_optional') }}</span>
+          <input v-model="deviceForm.delegating_eic" type="text" maxlength="12" placeholder="CZ00000019" :class="formInput" data-test="eet-device-delegating-eic" />
+          <span class="text-xs text-neutral-500">{{ t('eet.devices.delegating_eic_hint') }}</span>
+        </label>
         <label class="flex items-center gap-2 text-sm sm:col-span-2">
           <ToggleSwitch v-model="deviceForm.active" :label="t('eet.devices.active')" />
           {{ t('eet.devices.active') }}
@@ -1011,7 +1046,7 @@ const th = 'px-3 py-2 text-left font-medium'
       <template #footer>
         <div class="flex flex-wrap justify-end gap-2 px-5 py-3">
           <button type="button" :class="btnOutline('neutral')" @click="deviceForm = null">{{ t('common.cancel') }}</button>
-          <button type="button" :class="btnFilled('primary')" :disabled="deviceBusy || !deviceForm.code.trim() || deviceForm.unit_id === null" @click="saveDevice">
+          <button type="button" :class="btnFilled('primary')" :disabled="deviceBusy || !deviceForm.code.trim() || deviceForm.unit_id === null || deviceDelegationIncomplete" @click="saveDevice">
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" :d="ICONS.check" /></svg>
             {{ t('common.save') }}
           </button>

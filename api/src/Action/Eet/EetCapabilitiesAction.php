@@ -21,10 +21,10 @@ use Psr\Http\Message\ServerRequestInterface as Request;
  */
 final class EetCapabilitiesAction
 {
-    public const CONTRACT_VERSION = '2026-10.3';
+    public const CONTRACT_VERSION = '2026-10.4';
     public const SUPPORTED_SCENARIOS = ['cash', 'card_terminal_confirmed', 'qr_in_person', 'refund', 'correction', 'foreign_currency', 'credit_note_refund',
-        'credit', 'external_recording'];
-    public const UNSUPPORTED_SCENARIOS = ['security_deposit', 'delegation'];
+        'credit', 'external_recording', 'delegation'];
+    public const UNSUPPORTED_SCENARIOS = ['security_deposit'];
 
     public function __construct(
         private readonly EetSettingsService $settings,
@@ -63,6 +63,7 @@ final class EetCapabilitiesAction
                     'id' => $d['id'], 'code' => $d['code'], 'name' => $d['name'],
                     'unit_id' => $d['unit_id'], 'unit_number' => $d['unit_number'], 'unit_name' => $d['unit_name'],
                     'cash_register_id' => $d['cash_register_id'],
+                    'delegation' => $d['delegation'], 'delegating_eic' => $d['delegating_eic'],
                 ],
                 array_filter($this->devices->listFor($supplierId), static fn (array $d): bool => $d['active']),
             )),

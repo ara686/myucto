@@ -107,7 +107,7 @@ final class EetDevicesAction
             EetActionSupport::userId($request),
             'eet_device',
             (int) $device['id'],
-            ['code' => $device['code'], 'unit_id' => $device['unit_id'], 'active' => $device['active']],
+            ['code' => $device['code'], 'unit_id' => $device['unit_id'], 'active' => $device['active'], 'delegation' => $device['delegation']],
             null,
             null,
             $supplierId,

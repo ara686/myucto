@@ -356,7 +356,7 @@ final class AnonymizationPolicy
         'email_templates' => ['body_html' => 'text', 'body_text' => 'text', 'code' => 'keep', 'locale' => 'keep', 'subject' => 'text'],
         'supplier_email_templates' => ['body_html' => 'text', 'body_text' => 'text', 'code' => 'keep', 'locale' => 'keep', 'subject' => 'text'],
         'eet_certificates' => ['eic' => 'dic', 'fingerprint_sha256' => 'keep', 'issuer' => 'keep', 'label' => 'text', 'p12_enc' => 'wipe', 'password_enc' => 'wipe', 'serial_number' => 'keep', 'subject_cn' => 'dic'],
-        'eet_devices' => ['code' => 'keep', 'name' => 'text'],
+        'eet_devices' => ['code' => 'keep', 'delegating_eic' => 'dic', 'name' => 'text'],
         'eet_settings' => ['eic' => 'dic', 'exemption_reason' => 'text'],
         'eet_settings_history' => ['snapshot_json' => 'json'],
         'eet_units' => ['name' => 'text'],

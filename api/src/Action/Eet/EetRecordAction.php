@@ -156,7 +156,7 @@ final class EetRecordAction
             fwrite($fp, "\xEF\xBB\xBF");
             fputcsv($fp, ['ID', 'Druh', 'Opravuje ID', 'Důvod opravy', 'Prostředí', 'EIČ', 'Provozovna', 'Pokladní zařízení',
                 'Pořadové číslo', 'Čas tržby', 'Celková tržba', 'Určeno k čerpání', 'Čerpání', 'Stav', 'POK', 'Potvrzeno',
-                'Po lhůtě', 'Lhůta'], ';', '"', '');
+                'Po lhůtě', 'Lhůta', 'EIČ pověřujícího', 'Pověření více poplatníky'], ';', '"', '');
             foreach ($this->query->exportRows($supplierId, $q) as $row) {
                 fputcsv($fp, [
                     (int) $row['id'],
@@ -178,6 +178,8 @@ final class EetRecordAction
                     (string) ($row['confirmed_at'] ?? ''),
                     (int) $row['overdue'] === 1 ? 'ano' : 'ne',
                     (string) $row['deadline_at'],
+                    CsvWriter::safe($row['delegating_eic'] ?? ''),
+                    (int) ($row['multiple_delegators'] ?? 0) === 1 ? 'ano' : 'ne',
                 ], ';', '"', '');
             }
         } catch (EetCommandException $e) {

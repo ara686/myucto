@@ -297,6 +297,8 @@ final class EetDispatchService
             EetValues::toCents((string) $record['total_amount']),
             $record['credit_topup_amount'] !== null ? EetValues::toCents((string) $record['credit_topup_amount']) : null,
             $record['credit_draw_amount'] !== null ? EetValues::toCents((string) $record['credit_draw_amount']) : null,
+            $record['delegating_eic'] !== null ? (string) $record['delegating_eic'] : null,
+            (int) $record['multiple_delegators'] === 1 ? true : null,
         );
         $totalMs = max(2000, (int) ($settings['response_timeout_ms'] ?? 3000));
         $timeouts = new EetTimeouts(min(2000, $totalMs), $totalMs);

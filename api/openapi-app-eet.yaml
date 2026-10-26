@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: MyÚčto – aplikační API EET 2.0
-  version: 2026-10.3
+  version: 2026-10.4
   description: 'Aplikační API evidence tržeb EET 2.0 pro webové rozhraní a budoucí mobilní
 
     aplikaci. Není součástí veřejného read-only subsetu `/api/v1` (viz `openapi.yaml`).
@@ -1142,7 +1142,7 @@ components:
         contract_version:
           type: string
           examples:
-          - 2026-10.3
+          - 2026-10.4
         enabled:
           type: boolean
         environment:
@@ -1176,13 +1176,13 @@ components:
             - credit_note_refund
             - credit
             - external_recording
+            - delegation
         unsupported_scenarios:
           type: array
           items:
             type: string
             enum:
             - security_deposit
-            - delegation
         permissions:
           type: object
           required:
@@ -1214,7 +1214,7 @@ components:
           description: Aktivní pokladní zařízení pro výběr při přijetí platby (bez čítače řady).
           items:
             type: object
-            required: [id, code, name, unit_id, unit_number, unit_name, cash_register_id]
+            required: [id, code, name, unit_id, unit_number, unit_name, cash_register_id, delegation, delegating_eic]
             properties:
               id:
                 type: integer
@@ -1233,6 +1233,12 @@ components:
                 - integer
                 - 'null'
                 description: Účetní pokladna namapovaná na zařízení (tržba z jejích příjmových dokladů se eviduje na toto zařízení).
+              delegation:
+                $ref: '#/components/schemas/EetDelegationMode'
+              delegating_eic:
+                type:
+                - string
+                - 'null'
         has_active_certificate:
           type: boolean
         certificate_expires_at:
@@ -1476,6 +1482,18 @@ components:
         notified_to_fs:
           type: boolean
           default: true
+    EetDelegationMode:
+      type: string
+      enum:
+      - none
+      - single
+      - multiple
+      description: |
+        Evidence tržeb v pověření (§ 10 odst. 1 ZoET) podle dokumentu FS „Popis položek datové zprávy
+        s příklady jejich vyplnění“ v1.0, kap. 3: `none` = poplatník eviduje sám nebo v zastoupení
+        (situace 1 až 3), `single` = pověření jedním poplatníkem (situace 4, povinné `eic_poverujiciho`),
+        `multiple` = pověření více poplatníky (situace 5, `povereni_vice_popl="true"`, `eic_poverujiciho`
+        nepovinně). Tržby v pověření se zadávají přes zařízení s tímto nastavením.
     EetDevice:
       type: object
       required:
@@ -1488,6 +1506,8 @@ components:
       - code
       - name
       - cash_register_id
+      - delegation
+      - delegating_eic
       - active
       - sequence_year
       - next_sequence
@@ -1521,6 +1541,14 @@ components:
           type:
           - integer
           - 'null'
+        delegation:
+          $ref: '#/components/schemas/EetDelegationMode'
+        delegating_eic:
+          type:
+          - string
+          - 'null'
+          pattern: ^CZ[0-9]{8,10}$
+          description: EIČ pověřujícího poplatníka (`eic_poverujiciho`). Povinné u `single`, nepovinné u `multiple`, u `none` se neuvádí.
         active:
           type: boolean
         sequence_year:
@@ -1560,6 +1588,16 @@ components:
           type:
           - integer
           - 'null'
+        delegation:
+          allOf:
+          - $ref: '#/components/schemas/EetDelegationMode'
+          default: none
+        delegating_eic:
+          type:
+          - string
+          - 'null'
+          pattern: ^CZ[0-9]{8,10}$
+          description: EIČ pověřujícího poplatníka (`eic_poverujiciho`). Povinné u `single`, nepovinné u `multiple`, u `none` se neuvádí.
         active:
           type: boolean
           default: true
@@ -2224,6 +2262,13 @@ components:
             - other
           eic:
             type: string
+          delegating_eic:
+            type: string
+            nullable: true
+            description: EIČ pověřujícího poplatníka (`eic_poverujiciho`), jak odešlo ve zprávě
+          multiple_delegators:
+            type: boolean
+            description: Pověření více poplatníky (`povereni_vice_popl="true"`)
           unit_id:
             type: integer
             nullable: true

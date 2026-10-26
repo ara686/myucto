@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MyInvoice\Service\Eet\Transport;
 
+use MyInvoice\Service\Eet\EetDelegation;
+
 /**
  * Sestaví element `Trzba` (XSD 4.1) z údajů tržby a hlavičky pokusu.
  *
@@ -47,8 +49,9 @@ final class EetMessageBuilder
         if ($data->delegatingEic !== null) {
             $polozky->setAttribute('eic_poverujiciho', $data->delegatingEic);
         }
-        if ($data->multipleDelegators !== null) {
-            $polozky->setAttribute('povereni_vice_popl', $data->multipleDelegators ? 'true' : 'false');
+        // Situace 4 (pověření jedním poplatníkem) příznak neuvádí, „false“ by byla nerelevantní položka.
+        if ($data->multipleDelegators === true) {
+            $polozky->setAttribute('povereni_vice_popl', 'true');
         }
         $polozky->setAttribute('id_jednotky', (string) $data->unitId);
         $polozky->setAttribute('id_pokl', $data->deviceCode);
@@ -93,6 +96,11 @@ final class EetMessageBuilder
         }
         if ($data->delegatingEic !== null && preg_match(self::EIC_PATTERN, $data->delegatingEic) !== 1) {
             throw new EetValidationException('eic_poverujiciho', 'EIČ pověřujícího poplatníka musí mít tvar CZ a 8 až 10 číslic.');
+        }
+        // Pravidla situací 1 až 5 metodiky (shoda s eic_popl, povinnost u pověření jedním poplatníkem).
+        $delegation = EetDelegation::fromItems($data->delegatingEic, $data->multipleDelegators === true);
+        if (($violation = $delegation->violation($data->eic)) !== null) {
+            throw new EetValidationException('eic_poverujiciho', $violation['message']);
         }
         if ($data->unitId < self::MIN_UNIT_ID || $data->unitId > self::MAX_UNIT_ID) {
             throw new EetValidationException('id_jednotky', 'Označení evidenční jednotky musí být celé číslo 1 až 999 999 999.');

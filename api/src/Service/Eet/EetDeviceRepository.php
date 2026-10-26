@@ -15,7 +15,7 @@ use MyInvoice\Infrastructure\Database\Connection;
  */
 final class EetDeviceRepository
 {
-    private const COLUMNS = 'd.id, d.unit_id, d.code, d.name, d.cash_register_id, d.active, d.sequence_year, d.next_sequence,
+    private const COLUMNS = 'd.id, d.unit_id, d.code, d.name, d.cash_register_id, d.delegation, d.delegating_eic, d.active, d.sequence_year, d.next_sequence,
         d.created_at, d.updated_at, u.unit_number, u.name AS unit_name, u.valid_from AS unit_valid_from, u.valid_to AS unit_valid_to';
 
     public function __construct(private readonly Connection $db) {}
@@ -68,10 +68,11 @@ final class EetDeviceRepository
         $data = $this->validate($supplierId, $input, null);
         $this->assertUniqueCode($supplierId, $data['code'], null);
         $this->db->pdo()->prepare(
-            'INSERT INTO eet_devices (supplier_id, unit_id, code, name, cash_register_id, active)
-             VALUES (?, ?, ?, ?, ?, ?)'
+            'INSERT INTO eet_devices (supplier_id, unit_id, code, name, cash_register_id, delegation, delegating_eic, active)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
         )->execute([
-            $supplierId, $data['unit_id'], $data['code'], $data['name'], $data['cash_register_id'], $data['active'] ? 1 : 0,
+            $supplierId, $data['unit_id'], $data['code'], $data['name'], $data['cash_register_id'],
+            $data['delegation']->mode, $data['delegation']->delegatingEic, $data['active'] ? 1 : 0,
         ]);
         return $this->find($supplierId, (int) $this->db->pdo()->lastInsertId())
             ?? throw new \RuntimeException('Uložené zařízení se nepodařilo načíst.');
@@ -90,10 +91,11 @@ final class EetDeviceRepository
         }
         $this->assertUniqueCode($supplierId, $data['code'], $id);
         $this->db->pdo()->prepare(
-            'UPDATE eet_devices SET unit_id = ?, code = ?, name = ?, cash_register_id = ?, active = ?
+            'UPDATE eet_devices SET unit_id = ?, code = ?, name = ?, cash_register_id = ?, delegation = ?, delegating_eic = ?, active = ?
               WHERE supplier_id = ? AND id = ?'
         )->execute([
-            $data['unit_id'], $data['code'], $data['name'], $data['cash_register_id'], $data['active'] ? 1 : 0, $supplierId, $id,
+            $data['unit_id'], $data['code'], $data['name'], $data['cash_register_id'],
+            $data['delegation']->mode, $data['delegation']->delegatingEic, $data['active'] ? 1 : 0, $supplierId, $id,
         ]);
         if (!$data['active']) {
             $this->clearDefault($supplierId, $id);
@@ -122,7 +124,7 @@ final class EetDeviceRepository
     /**
      * @param array<string,mixed> $input
      * @param array<string,mixed>|null $current
-     * @return array{unit_id:int,code:string,name:string,cash_register_id:?int,active:bool}
+     * @return array{unit_id:int,code:string,name:string,cash_register_id:?int,delegation:EetDelegation,active:bool}
      */
     private function validate(int $supplierId, array $input, ?array $current): array
     {
@@ -174,8 +176,37 @@ final class EetDeviceRepository
             'code' => $code,
             'name' => $name,
             'cash_register_id' => $cashRegisterId,
+            'delegation' => $this->delegation($supplierId, $pick),
             'active' => $active,
         ];
+    }
+
+    /**
+     * Pověření zařízení (situace 4 a 5 metodiky). Při druhu `none` se EIČ pověřujícího
+     * zahodí, aby přepnutí zpět na vlastní evidenci nenechalo v zařízení starou hodnotu.
+     *
+     * @param \Closure(string):mixed $pick
+     */
+    private function delegation(int $supplierId, \Closure $pick): EetDelegation
+    {
+        $mode = $pick('delegation') ?? EetDelegation::NONE;
+        if (!is_string($mode) || !in_array($mode, EetDelegation::MODES, true)) {
+            throw EetException::validation('Druh pověření musí být none, single nebo multiple.', ['field' => 'delegation']);
+        }
+        $rawEic = $mode === EetDelegation::NONE ? null : $pick('delegating_eic');
+        $eic = is_string($rawEic) && trim($rawEic) !== '' ? EetIdentifiers::normalizeEic($rawEic) : null;
+        if ($rawEic !== null && !is_string($rawEic)) {
+            throw EetException::validation('EIČ pověřujícího poplatníka musí být text.', ['field' => 'delegating_eic']);
+        }
+        $delegation = new EetDelegation($mode, $eic);
+        $stmt = $this->db->pdo()->prepare('SELECT eic FROM eet_settings WHERE supplier_id = ?');
+        $stmt->execute([$supplierId]);
+        $taxpayer = $stmt->fetchColumn();
+        $violation = $delegation->violation(is_string($taxpayer) ? $taxpayer : null);
+        if ($violation !== null) {
+            throw EetException::validation($violation['message'], ['field' => $violation['field']]);
+        }
+        return $delegation;
     }
 
     private function assertUniqueCode(int $supplierId, string $code, ?int $exceptId): void
@@ -212,6 +243,8 @@ final class EetDeviceRepository
             'code' => (string) $row['code'],
             'name' => (string) $row['name'],
             'cash_register_id' => $row['cash_register_id'] === null ? null : (int) $row['cash_register_id'],
+            'delegation' => (string) $row['delegation'],
+            'delegating_eic' => $row['delegating_eic'] === null ? null : (string) $row['delegating_eic'],
             'active' => (int) $row['active'] === 1,
             'sequence_year' => $row['sequence_year'] === null ? null : (int) $row['sequence_year'],
             'next_sequence' => (int) $row['next_sequence'],

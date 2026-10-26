@@ -1094,7 +1094,8 @@
         "2190_purchase_advance_deductions.sql",
         "2191_cash_document_invoice_payment_index.sql",
         "2192_journal_settlement_allocations.sql",
-        "2193_internal_documents.sql"
+        "2193_internal_documents.sql",
+        "2194_eet_delegation.sql"
     ],
     "tables": {
         "abra_flexi_connections": {
@@ -5407,6 +5408,8 @@
                 "cash_register_id": "bigint(20) unsigned NULL DEFAULT NULL",
                 "code": "varchar(20) NOT NULL COLLATE ascii_bin",
                 "created_at": "timestamp NOT NULL DEFAULT current_timestamp()",
+                "delegating_eic": "varchar(12) NULL DEFAULT NULL COLLATE ascii_bin",
+                "delegation": "enum('none','single','multiple') NOT NULL DEFAULT 'none'",
                 "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
                 "name": "varchar(120) NOT NULL",
                 "next_sequence": "int(10) unsigned NOT NULL DEFAULT 1",
@@ -5427,7 +5430,9 @@
                 "fk_eet_device_supplier": "(supplier_id) -> supplier (id) ON UPDATE RESTRICT ON DELETE CASCADE",
                 "fk_eet_device_unit": "(supplier_id, unit_id) -> eet_units (supplier_id, id) ON UPDATE RESTRICT ON DELETE CASCADE"
             },
-            "checks": []
+            "checks": {
+                "chk_eet_device_delegation": "`delegation` = 'none' and `delegating_eic` is null or `delegation` = 'single' and `delegating_eic` is not null or `delegation` = 'multiple'"
+            }
         },
         "eet_records": {
             "type": "BASE TABLE",
@@ -5456,6 +5461,7 @@
                 "last_error_message": "varchar(500) NULL DEFAULT NULL",
                 "lease_token": "char(64) NULL DEFAULT NULL COLLATE ascii_bin",
                 "lease_until": "datetime(6) NULL DEFAULT NULL",
+                "multiple_delegators": "tinyint(1) NOT NULL DEFAULT 0",
                 "next_attempt_at": "datetime(6) NULL DEFAULT NULL",
                 "overdue": "tinyint(1) NOT NULL DEFAULT 0",
                 "payment_event_id": "bigint(20) unsigned NULL DEFAULT NULL",

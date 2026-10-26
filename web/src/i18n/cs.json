@@ -39170,7 +39170,22 @@
       "col_register": "Pokladna",
       "register": "Účetní pokladna",
       "register_none": "Bez vazby na pokladnu",
-      "register_hint": "Příjmové pokladní doklady (prodej, úhrada faktury) z této pokladny se při zaúčtování eviduje na toto zařízení."
+      "register_hint": "Příjmové pokladní doklady (prodej, úhrada faktury) z této pokladny se při zaúčtování eviduje na toto zařízení.",
+      "delegation": "Evidence v pověření",
+      "delegation_modes": {
+        "none": "Bez pověření (vlastní tržby nebo zastoupení)",
+        "single": "Pověření jedním poplatníkem",
+        "multiple": "Pověření více poplatníky"
+      },
+      "delegation_hints": {
+        "none": "Tržby firmy samotné, i v přímém či nepřímém zastoupení. EIČ pověřujícího se neuvádí.",
+        "single": "Firma eviduje tržby jiného poplatníka, který ji evidencí pověřil (§ 10 ZoET). Do zprávy jde EIČ pověřujícího.",
+        "multiple": "Tržba plyne více poplatníkům (společníci, spoluvlastníci), kteří firmu evidencí pověřili. Zpráva nese příznak pověření více poplatníky."
+      },
+      "delegating_eic": "EIČ pověřujícího poplatníka",
+      "delegating_eic_optional": "EIČ pověřujícího poplatníka (nepovinné)",
+      "delegating_eic_hint": "CZ a 8 až 10 číslic, nesmí být shodné s EIČ firmy. U více poplatníků ho Finanční správa doporučuje uvést, když firmě tržba neplyne.",
+      "delegation_badge_single": "Pověření: {eic}"
     },
     "certificates": {
       "title": "Pokladní certifikáty",
@@ -39335,7 +39350,9 @@
       "foreign_hint": "Platba v {currency} se do EET zaeviduje v Kč, přepočtená kurzem, jakým se úhrada zaúčtuje ke dni přijetí. QR platba na místě je jen pro faktury v Kč.",
       "stored_value_hint": "Zákazník platí dříve zakoupeným hodnotovým poukazem nebo kreditem. Do EET se zaeviduje jako čerpání kreditu. Úhrada faktury se zapíše jako zápočet; zúčtování přijaté zálohy na poukaz řeší účetní ručně.",
       "credit_topup": "Z toho určeno k čerpání (kredit, poukaz): {amount}.",
-      "credit_draw": "Z toho čerpání kreditu: {amount}."
+      "credit_draw": "Z toho čerpání kreditu: {amount}.",
+      "delegation_single": "Zařízení eviduje tržbu v pověření poplatníka {eic}.",
+      "delegation_multiple": "Zařízení eviduje tržbu v pověření více poplatníky."
     },
     "qr": {
       "action": "Platba QR na místě (EET)",
@@ -39507,7 +39524,8 @@
         "stored_value_contact": "Uplatnění poukazu nebo kreditu při osobním kontaktu",
         "remote_stored_value": "Čerpání kreditu na dálku",
         "stored_value_purpose_conflict": "Rozpor mezi způsobem platby a čerpáním kreditu",
-        "external_system": "Tržbu evidoval externí systém"
+        "external_system": "Tržbu evidoval externí systém",
+        "delegation_invalid": "Chybné pověření zařízení"
       },
       "att_duration": "Doba",
       "verification": "Ověřovací",
@@ -39526,7 +39544,9 @@
       "original_payment_value": "{amount}, kurz {rate} Kč/{currency}",
       "external_note": "Tuto tržbu evidoval jiný systém (např. e-shop). MyÚčto ji jen zaznamenalo a do EET ji neodesílá. Vratku přes MyÚčto zaeviduje MyÚčto jako zápornou tržbu.",
       "credit_topup": "Určeno k čerpání",
-      "credit_draw": "Čerpání kreditu"
+      "credit_draw": "Čerpání kreditu",
+      "delegation": "Pověření",
+      "delegating_eic": "EIČ pověřujícího"
     },
     "correction": {
       "title": "Opravit / vrátit tržbu",

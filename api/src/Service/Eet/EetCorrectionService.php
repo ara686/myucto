@@ -35,7 +35,8 @@ use Psr\Clock\ClockInterface;
  * Kredit ({@see creditParts()}): oprava tržby s `urceno_cerp_zuct` (vrácení peněz za
  * nevyčerpaný kredit) snižuje i tuto část úměrně opravené částce. Oprava tržby
  * uhrazené kreditem (`cerp_zuct`) s volbou `refund_to_stored_value` vrací peníze zpět
- * na kartu / kredit, takže nese záporné `cerp_zuct` (metodika, kap. 1.14, příklad 3);
+ * na kartu / kredit, takže nese záporné `cerp_zuct` (metodika FS „Popis položek datové zprávy“ v1.0, kap. 1 bod 14, příklad 3;
+ * zdroj v api/resources/eet/README.md);
  * vratka v hotovosti kreditová pole nemá. Ostatní důvody (chybná data, duplicita…)
  * ruší původní zprávu, proto čerpání snižují úměrně.
  *
@@ -505,6 +506,8 @@ final class EetCorrectionService
             'kind' => 'correction',
             'corrects_record_id' => (int) $original['id'],
             'correction_reason' => $reason,
+            // Záporná tržba patří stejnému pověření jako opravovaná tržba.
+            'delegation' => EetDelegation::fromRecord($original),
             'policy_decision' => EetPolicyDecision::REQUIRED,
             'policy_reason' => 'correction_' . $reason,
             'created_by' => $userId > 0 ? $userId : null,

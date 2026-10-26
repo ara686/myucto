@@ -313,6 +313,11 @@ const selectedDevice = computed(() => devices.value.find(d => d.id === form.devi
           </label>
         </div>
         <p v-if="selectedDevice && selectedDevice.id !== defaultDeviceId" class="text-xs text-neutral-500">{{ t('eet.pay.device_remembered') }}</p>
+        <p v-if="selectedDevice?.delegation === 'single' || selectedDevice?.delegation === 'multiple'" class="text-xs text-primary-700" data-test="eet-pay-delegation">
+          {{ selectedDevice.delegation === 'single'
+            ? t('eet.pay.delegation_single', { eic: selectedDevice.delegating_eic ?? '' })
+            : t('eet.pay.delegation_multiple') }}
+        </p>
 
         <div class="grid gap-3 sm:grid-cols-2">
           <label :class="formLabel">

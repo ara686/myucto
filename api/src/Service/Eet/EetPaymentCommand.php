@@ -522,9 +522,11 @@ final class EetPaymentCommand
                     $credit = $this->creditAmounts($supplierId, [
                         'amount' => EetValues::amount((string) $intent['amount']), 'channel' => 'qr_in_person', 'business_purpose' => 'sale',
                     ], EetValues::amount((string) $intent['amount']), $invoice);
+                    $delegation = $this->deviceDelegation($supplierId, $intent['device_id'] !== null ? (int) $intent['device_id'] : null, $settings);
                     $decision = $this->policy->evaluate(new EetPolicyInput(
                         $settings, $orderedAt, 'qr_in_person', (string) $intent['contact_context'], 'sale',
                         (string) $intent['currency'], (string) $intent['amount'], 'payment_intent', 'payment',
+                        $delegation->delegatingEic, $delegation->multipleDelegators(),
                     ));
                     self::assertAcceptable($decision);
 
@@ -1087,8 +1089,10 @@ final class EetPaymentCommand
      */
     private function evaluate(int $supplierId, array $in, \DateTimeImmutable $at, string $kind, ?array $settings = null): EetPolicyDecision
     {
+        $settings ??= $this->settings->get($supplierId);
+        $delegation = $this->deviceDelegation($supplierId, $in['device_id'] ?? null, $settings);
         return $this->policy->evaluate(new EetPolicyInput(
-            $settings ?? $this->settings->get($supplierId),
+            $settings,
             $at,
             $in['channel'],
             $in['contact_context'],
@@ -1097,8 +1101,27 @@ final class EetPaymentCommand
             $in['amount'],
             $in['invoice_id'] !== null ? 'invoice_payment' : 'quick_sale',
             $kind,
-            isset($in['delegating_eic']) ? (string) $in['delegating_eic'] : null,
+            $delegation->delegatingEic,
+            $delegation->multipleDelegators(),
         ));
+    }
+
+    /**
+     * Pověření zařízení, přes které tržba půjde (zvolené, jinak výchozí). Neexistující
+     * zařízení = bez pověření; chybu zařízení ohlásí až vznik záznamu.
+     *
+     * @param array<string,mixed> $settings
+     */
+    private function deviceDelegation(int $supplierId, ?int $deviceId, array $settings): EetDelegation
+    {
+        $deviceId = ($deviceId ?? 0) ?: (int) ($settings['default_device_id'] ?? 0);
+        if ($deviceId <= 0) {
+            return EetDelegation::none();
+        }
+        $stmt = $this->db->pdo()->prepare('SELECT delegation, delegating_eic FROM eet_devices WHERE id = ? AND supplier_id = ?');
+        $stmt->execute([$deviceId, $supplierId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return is_array($row) ? EetDelegation::fromDevice($row) : EetDelegation::none();
     }
 
     /** @throws EetCommandException */
@@ -1150,7 +1173,14 @@ final class EetPaymentCommand
         } else {
             $method = $channel !== null ? self::DEFAULT_METHOD_BY_CHANNEL[$channel] : null;
         }
+        // Pověření nese pokladní zařízení (situace 4 a 5 metodiky), ne jednotlivá platba.
         $delegating = $input['delegating_eic'] ?? null;
+        if ($delegating !== null && $delegating !== '') {
+            throw EetCommandException::validation(
+                'Pověření jiného poplatníka se nastavuje u pokladního zařízení EET. Zvolte zařízení s pověřením (device_id).',
+                'delegating_eic',
+            );
+        }
         $invoiceId = self::positiveInt($input['invoice_id'] ?? null, 'invoice_id', false);
         $purpose = self::enumValue($input['business_purpose'] ?? 'sale', EetPolicyInput::BUSINESS_PURPOSES, 'business_purpose');
         // Úhrada poukazem / kreditem je vždy čerpání kreditu a čerpání jde jen tímto kanálem.
@@ -1178,7 +1208,8 @@ final class EetPaymentCommand
             'invoice_id' => $invoiceId,
             'device_id' => self::positiveInt($input['device_id'] ?? null, 'device_id', false),
             'note' => self::note($input['note'] ?? null),
-            'delegating_eic' => is_string($delegating) && trim($delegating) !== '' ? trim($delegating) : null,
+            // Klíč zůstává kvůli stabilnímu otisku idempotence dřívějších požadavků.
+            'delegating_eic' => null,
         ];
     }
 

@@ -33853,7 +33853,7 @@ components:
         device_id:
           type: integer
           format: int64
-          description: Pokladní zařízení EET (default = výchozí zařízení firmy).
+          description: Pokladní zařízení EET (default = výchozí zařízení firmy). Zařízení nastavené pro evidenci v pověření pošle tržbu s `eic_poverujiciho`, případně `povereni_vice_popl`; pověření se v platbě samotné nezadává.
         received_at:
           type: string
           format: date-time
@@ -33952,7 +33952,7 @@ components:
       properties:
         channel: { type: string, enum: [cash, card_terminal, stored_value] }
         contact_context: { type: string, enum: [in_person, on_premises, in_vehicle, remote, unknown], default: in_person }
-        device_id: { type: [integer, "null"], format: int64, description: "Pokladní zařízení EET; výchozí zařízení firmy" }
+        device_id: { type: [integer, "null"], format: int64, description: "Pokladní zařízení EET; výchozí zařízení firmy. Zařízení s pověřením eviduje tržbu v pověření jiného poplatníka." }
         cash_register_id: { type: [integer, "null"], format: int64, description: "Pokladna pro hotovost; výchozí pokladna zařízení" }
         client_id: { type: [integer, "null"], format: int64, description: "Odběratel; bez něj zjednodušený doklad na koncového zákazníka" }
         currency: { type: string, enum: [CZK], default: CZK }

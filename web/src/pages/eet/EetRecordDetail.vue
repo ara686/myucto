@@ -172,6 +172,13 @@ function outcomeLabel(o: string): string {
             <dt :class="label">{{ t('eet.records.col_number') }}</dt><dd class="font-mono">{{ record.sequence_number ?? t('eet.records.none') }}</dd>
             <dt :class="label">{{ t('eet.detail.sale_at') }}</dt><dd>{{ formatDateTime(record.sale_at) }}</dd>
             <dt :class="label">EIČ</dt><dd class="font-mono break-all">{{ record.eic }}</dd>
+            <template v-if="record.delegating_eic || record.multiple_delegators">
+              <dt :class="label">{{ t('eet.detail.delegation') }}</dt>
+              <dd data-test="eet-detail-delegation">
+                {{ t(record.multiple_delegators ? 'eet.devices.delegation_modes.multiple' : 'eet.devices.delegation_modes.single') }}
+                <span v-if="record.delegating_eic" class="font-mono">({{ t('eet.detail.delegating_eic') }} {{ record.delegating_eic }})</span>
+              </dd>
+            </template>
             <dt :class="label">{{ t('eet.detail.unit_device') }}</dt><dd>{{ record.unit_number ?? '-' }} / {{ record.device_code ?? '-' }}</dd>
             <dt :class="label">{{ t('eet.records.col_deadline') }}</dt><dd>{{ record.deadline_at ? formatDateTime(record.deadline_at) : '' }}</dd>
             <dt :class="label">{{ t('eet.detail.confirmed_at') }}</dt><dd>{{ record.confirmed_at ? formatDateTime(record.confirmed_at) : t('eet.records.none') }}</dd>

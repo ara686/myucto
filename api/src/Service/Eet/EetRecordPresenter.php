@@ -39,6 +39,9 @@ final class EetRecordPresenter
             'corrects_record_id' => $row['corrects_record_id'] !== null ? (int) $row['corrects_record_id'] : null,
             'correction_reason' => $row['correction_reason'],
             'eic' => (string) $row['eic'],
+            // Pověření (eic_poverujiciho, povereni_vice_popl), jak odešlo ve zprávě.
+            'delegating_eic' => isset($row['delegating_eic']) ? (string) $row['delegating_eic'] : null,
+            'multiple_delegators' => (int) ($row['multiple_delegators'] ?? 0) === 1,
             // Tržba evidovaná externím systémem nemusí mít jednotku ani zařízení v MyÚčtu.
             'unit_id' => $row['unit_id'] !== null ? (int) $row['unit_id'] : null,
             'unit_number' => $row['unit_number'] !== null ? (int) $row['unit_number'] : null,

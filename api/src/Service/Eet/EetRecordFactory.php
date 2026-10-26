@@ -20,6 +20,10 @@ use PDO;
  * nového roku (jinak by se opakovalo už použité číslo). Použité číslo se nevrací
  * ani při rollbacku jiné části příkazu — rollback vrátí i čítač, takže číslo
  * nevznikne vůbec.
+ *
+ * Pověření (`eic_poverujiciho`, `povereni_vice_popl`) se přebírá ze zařízení, oprava
+ * ho dostává z původní tržby (`delegation`): záporná tržba patří stejnému pověření
+ * jako tržba, kterou opravuje, i když jde přes jiné zařízení.
  */
 final class EetRecordFactory
 {
@@ -36,7 +40,7 @@ final class EetRecordFactory
      *              credit_topup_amount?:?string, credit_draw_amount?:?string,
      *              corrects_record_id?:?int, correction_reason?:?string,
      *              policy_decision?:?string, policy_reason?:?string, created_by?:?int,
-     *              now?:?\DateTimeImmutable} $input
+     *              delegation?:?EetDelegation, now?:?\DateTimeImmutable} $input
      * @return array{id:int, public_id:string, sequence_number:string, unit_id:int, device_id:int}
      * @throws EetCommandException
      */
@@ -70,6 +74,12 @@ final class EetRecordFactory
             throw EetCommandException::validation('Provozovna (evidenční jednotka) zařízení není k času tržby platná.', 'device_id');
         }
 
+        $delegation = ($input['delegation'] ?? null) instanceof EetDelegation ? $input['delegation'] : EetDelegation::fromDevice($device);
+        $violation = $delegation->violation($eic);
+        if ($violation !== null) {
+            throw EetCommandException::validation($violation['message'] . ' Opravte pověření v nastavení pokladního zařízení EET.', 'device_id');
+        }
+
         $saleYear = (int) $saleAt->format('Y');
         $counterYear = $device['sequence_year'] !== null ? (int) $device['sequence_year'] : null;
         $year = $counterYear !== null ? max($saleYear, $counterYear) : $saleYear;
@@ -93,17 +103,18 @@ final class EetRecordFactory
         $pdo->prepare(
             'INSERT INTO eet_records
                (public_id, supplier_id, payment_event_id, kind, corrects_record_id, correction_reason, environment,
-                eic, unit_id, unit_number, device_id, device_code, sequence_number, sale_at, sale_at_offset,
-                total_amount, credit_topup_amount, credit_draw_amount,
+                eic, delegating_eic, multiple_delegators, unit_id, unit_number, device_id, device_code, sequence_number,
+                sale_at, sale_at_offset, total_amount, credit_topup_amount, credit_draw_amount,
                 policy_decision, policy_reason, policy_version, status, deadline_at, overdue, next_attempt_at,
                 created_by)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, \'pending\', ?, ?, ?, ?)'
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, \'pending\', ?, ?, ?, ?)'
         )->execute([
             $publicId, $supplierId, $paymentEventId,
             (string) ($input['kind'] ?? 'sale'),
             $input['corrects_record_id'] ?? null,
             $input['correction_reason'] ?? null,
             $environment, $eic,
+            $delegation->delegatingEic, $delegation->multipleDelegators() ? 1 : 0,
             (int) $device['unit_id'], (int) $device['unit_number'],
             $deviceId, (string) $device['code'],
             $sequenceNumber,
@@ -208,7 +219,7 @@ final class EetRecordFactory
     private function lockDevice(int $supplierId, int $deviceId): array
     {
         $stmt = $this->db->pdo()->prepare(
-            'SELECT d.id, d.unit_id, d.code, d.active, d.sequence_year, d.next_sequence,
+            'SELECT d.id, d.unit_id, d.code, d.active, d.sequence_year, d.next_sequence, d.delegation, d.delegating_eic,
                     u.unit_number, u.valid_from, u.valid_to
                FROM eet_devices d
                JOIN eet_units u ON u.id = d.unit_id AND u.supplier_id = d.supplier_id

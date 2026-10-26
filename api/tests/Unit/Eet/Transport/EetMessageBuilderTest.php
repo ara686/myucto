@@ -84,6 +84,54 @@ final class EetMessageBuilderTest extends TestCase
         self::assertStringContainsString('povereni_vice_popl="true"', $xml);
     }
 
+    /**
+     * Vzory datové oblasti <Data> ze situací 4 a 5 dokumentu FS „Popis položek datové
+     * zprávy s příklady jejich vyplnění“ v1.0 (str. 21 až 23). Výčet atributů v dokumentu
+     * je kompletní, proto se porovnává celá množina atributů.
+     *
+     * @return iterable<string, array{EetSaleData, array<string,string>}>
+     */
+    public static function delegationExamples(): iterable
+    {
+        yield 'situace 4: čerpací stanice v pověření' => [
+            new EetSaleData('CZ683555118', 31, 'Sto3', '1234-812/9', new \DateTimeImmutable('2027-03-22T15:39:01+01:00'), 86000, null, null, 'CZ00000019', null),
+            ['eic_popl' => 'CZ683555118', 'eic_poverujiciho' => 'CZ00000019', 'id_jednotky' => '31', 'id_pokl' => 'Sto3',
+                'porad_cis' => '1234-812/9', 'dat_trzby' => '2027-03-22T15:39:01+01:00', 'celk_trzba' => '860.00'],
+        ];
+        yield 'situace 4 s příznakem false: příznak se neuvádí' => [
+            new EetSaleData('CZ683555118', 31, 'Sto3', '1234-812/9', new \DateTimeImmutable('2027-03-22T15:39:01+01:00'), 86000, null, null, 'CZ00000019', false),
+            ['eic_popl' => 'CZ683555118', 'eic_poverujiciho' => 'CZ00000019', 'id_jednotky' => '31', 'id_pokl' => 'Sto3',
+                'porad_cis' => '1234-812/9', 'dat_trzby' => '2027-03-22T15:39:01+01:00', 'celk_trzba' => '860.00'],
+        ];
+        yield 'situace 5, příklad 1: společník bez EIČ pověřujícího' => [
+            new EetSaleData('CZ8551015704', 35871, '3', '12252/22', new \DateTimeImmutable('2027-03-22T15:39:01+01:00'), 2500000, null, null, null, true),
+            ['eic_popl' => 'CZ8551015704', 'povereni_vice_popl' => 'true', 'id_jednotky' => '35871', 'id_pokl' => '3',
+                'porad_cis' => '12252/22', 'dat_trzby' => '2027-03-22T15:39:01+01:00', 'celk_trzba' => '25000.00'],
+        ];
+        yield 'situace 5, příklad 2: třetí osoba s EIČ pověřujícího' => [
+            new EetSaleData('CZ00000019', 555002, '5/5583', '22', new \DateTimeImmutable('2027-05-15T10:32:01+02:00'), 20000, null, null, 'CZ8551015704', true),
+            ['eic_popl' => 'CZ00000019', 'eic_poverujiciho' => 'CZ8551015704', 'povereni_vice_popl' => 'true', 'id_jednotky' => '555002',
+                'id_pokl' => '5/5583', 'porad_cis' => '22', 'dat_trzby' => '2027-05-15T10:32:01+02:00', 'celk_trzba' => '200.00'],
+        ];
+    }
+
+    /** @param array<string,string> $expected */
+    #[DataProvider('delegationExamples')]
+    public function testDelegationExamplesFromMethodology(EetSaleData $data, array $expected): void
+    {
+        $document = (new EetMessageBuilder())->build($data, EetMessageHeader::create(true));
+        (new EetXmlValidator())->validate($document);
+        $element = $document->getElementsByTagNameNS(EetMessageBuilder::NAMESPACE, 'Data')->item(0);
+        self::assertInstanceOf(\DOMElement::class, $element);
+        $actual = [];
+        foreach ($element->attributes as $attribute) {
+            $actual[$attribute->name] = $attribute->value;
+        }
+        ksort($actual);
+        ksort($expected);
+        self::assertSame($expected, $actual);
+    }
+
     public function testGeneratedUuidIsVersionFour(): void
     {
         for ($i = 0; $i < 20; $i++) {
@@ -102,6 +150,9 @@ final class EetMessageBuilderTest extends TestCase
         yield 'dlouhé porad_cis' => [new EetSaleData('CZ00000019', 11, 'P1', str_repeat('1', 26), $at, 100), self::UUID, 'porad_cis'];
         yield 'nepovolený znak v porad_cis' => [new EetSaleData('CZ00000019', 11, 'P1', 'A+1', $at, 100), self::UUID, 'porad_cis'];
         yield 'jednotka nula' => [new EetSaleData('CZ00000019', 0, 'P1', 'A1', $at, 100), self::UUID, 'id_jednotky'];
+        yield 'pověřující shodný s poplatníkem' => [new EetSaleData('CZ00000019', 11, 'P1', 'A1', $at, 100, null, null, 'CZ00000019'), self::UUID, 'eic_poverujiciho'];
+        yield 'shodné EIČ i u více poplatníků' => [new EetSaleData('CZ00000019', 11, 'P1', 'A1', $at, 100, null, null, 'CZ00000019', true), self::UUID, 'eic_poverujiciho'];
+        yield 'EIČ pověřujícího s mezerou' => [new EetSaleData('CZ00000019', 11, 'P1', 'A1', $at, 100, null, null, 'CZ 8551015704'), self::UUID, 'eic_poverujiciho'];
         yield 'částka nad limit' => [new EetSaleData('CZ00000019', 11, 'P1', 'A1', $at, 10_000_000_000), self::UUID, 'celk_trzba'];
     }
 

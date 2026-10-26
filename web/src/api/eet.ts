@@ -5,6 +5,8 @@ export type EetEnvironment = 'playground' | 'production'
 export type EetRegime = 'standard' | 'exempt' | 'eet_off'
 export type EetUnitKind = 'premises' | 'online' | 'vehicle' | 'mobile' | 'other'
 export type EetPermissionLevel = 'none' | 'read' | 'write'
+/** Evidence v pověření: none = sám nebo v zastoupení, single = situace 4, multiple = situace 5. */
+export type EetDelegationMode = 'none' | 'single' | 'multiple'
 
 /** Aktivní zařízení z capabilities (výběr v dialogu i bez práva eet.settings). */
 export interface EetCapabilityDevice {
@@ -16,6 +18,8 @@ export interface EetCapabilityDevice {
   unit_name: string
   /** Účetní pokladna namapovaná na zařízení (tržby z jejích příjmových dokladů jdou na něj). */
   cash_register_id: number | null
+  delegation?: EetDelegationMode
+  delegating_eic?: string | null
 }
 
 export interface EetCapabilities {
@@ -100,6 +104,8 @@ export interface EetDevice {
   code: string
   name: string | null
   cash_register_id: number | null
+  delegation: EetDelegationMode
+  delegating_eic: string | null
   active: boolean
   sequence_year: number | null
   next_sequence: number
@@ -116,6 +122,8 @@ export interface EetDeviceInput {
   code: string
   name?: string | null
   cash_register_id?: number | null
+  delegation?: EetDelegationMode
+  delegating_eic?: string | null
   active?: boolean
 }
 
@@ -300,6 +308,10 @@ export interface EetRecord extends EetRecordState {
   corrects_record_id?: number | null
   correction_reason?: EetCorrectionReason | null
   eic?: string
+  /** EIČ pověřujícího poplatníka (eic_poverujiciho), jak odešlo ve zprávě. */
+  delegating_eic?: string | null
+  /** Pověření více poplatníky (povereni_vice_popl). */
+  multiple_delegators?: boolean
   /** U tržby evidované externím systémem může chybět jednotka i zařízení. */
   unit_id?: number | null
   unit_number?: number | null

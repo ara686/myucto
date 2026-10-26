@@ -16,7 +16,7 @@ use PHPUnit\Framework\TestCase;
  */
 final class EetRecordingPolicyTest extends TestCase
 {
-    private const ACTIVE = ['enabled' => 1, 'regime' => 'standard', 'active_from' => '2026-01-01', 'active_to' => null];
+    private const ACTIVE = ['enabled' => 1, 'regime' => 'standard', 'active_from' => '2026-01-01', 'active_to' => null, 'eic' => 'CZ8551015704'];
 
     /** @return iterable<string, array{0:array<string,mixed>, 1:string, 2:string}> */
     public static function matrix(): iterable
@@ -61,7 +61,13 @@ final class EetRecordingPolicyTest extends TestCase
         yield 'čerpání kreditu hotovostí' => [['channel' => 'cash', 'context' => 'in_person', 'purpose' => 'credit_draw'], 'unknown', 'stored_value_purpose_conflict'];
         yield 'poukaz jako prodej' => [['channel' => 'stored_value', 'context' => 'in_person'], 'unknown', 'stored_value_purpose_conflict'];
         yield 'kauce' => [['channel' => 'cash', 'context' => 'in_person', 'purpose' => 'security_deposit'], 'unsupported', 'security_deposit'];
-        yield 'pověření' => [['channel' => 'cash', 'context' => 'in_person', 'delegating' => 'CZ1234567890'], 'unsupported', 'delegation'];
+        // Pověření (situace 4 a 5 metodiky FS) povinnost nemění, jen hlídá pravidla vyplnění.
+        yield 'pověření jedním poplatníkem' => [['channel' => 'cash', 'context' => 'in_person', 'delegating' => 'CZ00000019'], 'required', 'cash'];
+        yield 'pověření více poplatníky bez EIČ' => [['channel' => 'cash', 'context' => 'in_person', 'multiple' => true], 'required', 'cash'];
+        yield 'pověření více poplatníky s EIČ' => [['channel' => 'cash', 'context' => 'in_person', 'delegating' => 'CZ00000019', 'multiple' => true], 'required', 'cash'];
+        yield 'pověření, vzdálený převod' => [['channel' => 'bank_transfer', 'context' => 'remote', 'delegating' => 'CZ00000019'], 'not_subject', 'remote_payment'];
+        yield 'pověřující shodný s poplatníkem' => [['channel' => 'cash', 'context' => 'in_person', 'delegating' => 'CZ8551015704'], 'unknown', 'delegation_invalid'];
+        yield 'pověřující se špatným EIČ' => [['channel' => 'cash', 'context' => 'in_person', 'delegating' => 'CZ12'], 'unknown', 'delegation_invalid'];
         yield 'jiný účel' => [['channel' => 'cash', 'context' => 'in_person', 'purpose' => 'other'], 'unknown', 'purpose_unclassified'];
         yield 'záloha na zakázku hotově' => [['channel' => 'cash', 'context' => 'in_person', 'purpose' => 'order_deposit'], 'required', 'cash'];
         yield 'vratka přes politiku' => [['channel' => 'cash', 'context' => 'in_person', 'kind' => 'refund'], 'unsupported', 'refund_requires_correction'];
@@ -90,6 +96,7 @@ final class EetRecordingPolicyTest extends TestCase
             $case['origin'] ?? 'invoice_payment',
             $case['kind'] ?? 'payment',
             $case['delegating'] ?? null,
+            $case['multiple'] ?? false,
         ));
 
         self::assertSame([$decision, $reason], [$result->decision, $result->reasonCode]);
