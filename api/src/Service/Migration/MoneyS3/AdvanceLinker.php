@@ -25,8 +25,10 @@ use PDO;
  * (`parent_invoice_id`), víc záloh zůstane v protokolu k ruční kontrole.
  *
  * DDKP Money s zálohou svazuje jen textem, který samo generuje: položka odpočtu
- * („… (daň. dokl. DPP001)") a popis DDKP („Doklad k přijaté platbě (záloha ZF190001)").
- * Vazba se přijme jen k záloze téhož partnera.
+ * („… (daň. dokl. DPP001)") a popis DDKP („Doklad k přijaté platbě (záloha ZF190001)",
+ * případně s bankovním dokladem úhrady zálohy „(záloha BV190038)"). Vazba se přijme jen
+ * k záloze téhož partnera. Vrácení zálohy příchozí platbou se spáruje se zálohou
+ * ({@see matchAdvanceRefunds()}).
  *
  * Existující vazby převod nepřepisuje a opakovaný převod nic nezdvojí.
  */
@@ -46,6 +48,11 @@ final class AdvanceLinker
         }
         if ($dirs === []) {
             return;
+        }
+        $bankByDoc = [];
+        foreach ($ctx->bankTransactions as $key => $id) {
+            $parts = explode('|', (string) $key, 3);
+            $bankByDoc[$parts[0] . '|' . ($parts[1] ?? '')][] = (int) $id;
         }
         foreach ([
             ['VFaktury', 'VFaktPol', $ctx->issuedInvoices, true],
@@ -100,13 +107,103 @@ final class AdvanceLinker
                     $ddkp[$h['id']][$advanceId] = true;
                 }
                 if (preg_match('/\(z[aá]loha\s+([^\s)]+)\)/u', $h['text'], $m) === 1) {
-                    $advanceId = $advanceByNo[$h['year'] . '|' . $m[1]] ?? $advanceByNo[($h['year'] - 1) . '|' . $m[1]] ?? null;
+                    // Odkaz na zálohovou fakturu, nebo na bankovní doklad, kterým byla záloha zaplacena.
+                    $advanceId = $advanceByNo[$h['year'] . '|' . $m[1]] ?? $advanceByNo[($h['year'] - 1) . '|' . $m[1]]
+                        ?? $this->advancePaidBy($ctx, $issued, $bankByDoc[$h['year'] . '|' . $m[1]] ?? $bankByDoc[($h['year'] - 1) . '|' . $m[1]] ?? []);
                     if ($advanceId !== null) {
                         $ddkp[$h['id']][$advanceId] = true;
                     }
                 }
             }
             $issued ? $this->linkIssued($ctx, $deductions, $ddkp) : $this->linkPurchase($ctx, $deductions, $ddkp);
+        }
+        $this->matchAdvanceRefunds($ctx);
+    }
+
+    /**
+     * Zálohová faktura, kterou uhradil jediný bankovní pohyb z dokladu Money (DDKP Money
+     * odkazuje i na bankovní doklad úhrady, „záloha BV190038").
+     *
+     * @param list<int> $txIds
+     */
+    private function advancePaidBy(ImportContext $ctx, bool $issued, array $txIds): ?int
+    {
+        if (count($txIds) !== 1) {
+            return null;
+        }
+        $stmt = $this->db->pdo()->prepare($issued
+            ? "SELECT DISTINCT d.id FROM payment_matches pm JOIN invoices d ON d.id = pm.invoice_id AND d.supplier_id = pm.supplier_id AND d.invoice_type = 'proforma'
+                WHERE pm.supplier_id = ? AND pm.bank_transaction_id = ?"
+            : "SELECT DISTINCT d.id FROM payment_matches pm JOIN purchase_invoices d ON d.id = pm.purchase_invoice_id AND d.supplier_id = pm.supplier_id AND d.document_kind = 'advance'
+                WHERE pm.supplier_id = ? AND pm.bank_transaction_id = ?");
+        $stmt->execute([$ctx->supplierId, $txIds[0]]);
+        $ids = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        return count($ids) === 1 ? (int) $ids[0] : null;
+    }
+
+    /**
+     * Vrácení poskytnuté zálohy: příchozí platba zaúčtovaná v Money na zálohový účet (314),
+     * nespárovaná, s variabilním symbolem zálohy (číslo dodavatele nebo VS), se spáruje se
+     * zálohou - je-li taková záloha právě jedna a vrácená částka nepřesahuje, co na ni bylo
+     * zaplaceno a ještě nevráceno. Saldokonto pak zálohu vrácením uzavře. Opakovaný převod
+     * pohyb spárovaný jinde (i ručně v MyÚčtu) nemění.
+     */
+    private function matchAdvanceRefunds(ImportContext $ctx): void
+    {
+        $pdo = $this->db->pdo();
+        $advances = $pdo->prepare(
+            "SELECT a.id, a.vendor_invoice_number, a.payment_variable_symbol,
+                    (SELECT COALESCE(SUM(CASE WHEN bt.amount < 0 THEN pm.amount ELSE -pm.amount END), 0)
+                       FROM payment_matches pm JOIN bank_transactions bt ON bt.id = pm.bank_transaction_id
+                      WHERE pm.supplier_id = a.supplier_id AND pm.purchase_invoice_id = a.id) AS net_paid
+               FROM purchase_invoices a
+              WHERE a.supplier_id = ? AND a.document_kind = 'advance' AND a.status NOT IN ('draft', 'cancelled')"
+        );
+        $advances->execute([$ctx->supplierId]);
+        $left = [];
+        $bySymbol = [];
+        while ($r = $advances->fetch(PDO::FETCH_ASSOC)) {
+            $left[(int) $r['id']] = (float) $r['net_paid'];
+            foreach (array_unique([(string) $r['vendor_invoice_number'], (string) $r['payment_variable_symbol']]) as $symbol) {
+                $digits = ltrim(preg_replace('/\D+/', '', $symbol) ?? '', '0');
+                if ($digits !== '') {
+                    $bySymbol[$digits][(int) $r['id']] = true;
+                }
+            }
+        }
+        if ($left === []) {
+            return;
+        }
+        $refunds = $pdo->prepare(
+            "SELECT bt.id, bt.amount, bt.variable_symbol
+               FROM bank_transactions bt JOIN bank_statements bs ON bs.id = bt.statement_id
+              WHERE bs.supplier_id = ? AND bt.amount > 0 AND bt.variable_symbol IS NOT NULL AND bt.variable_symbol <> ''
+                AND NOT EXISTS (SELECT 1 FROM payment_matches pm WHERE pm.bank_transaction_id = bt.id)
+                AND NOT EXISTS (SELECT 1 FROM other_item_allocations oia WHERE oia.bank_transaction_id = bt.id)
+                AND EXISTS (SELECT 1 FROM journal_entries e JOIN journal_entry_lines l ON l.entry_id = e.id AND l.supplier_id = e.supplier_id
+                              JOIN chart_of_accounts ca ON ca.id = l.account_id LEFT JOIN chart_of_accounts pa ON pa.id = ca.parent_id
+                             WHERE e.supplier_id = bs.supplier_id AND e.source_type = 'bank' AND e.source_id = bt.id AND e.reversed_by IS NULL
+                               AND l.side = 'credit' AND (ca.account_code LIKE '314%' OR COALESCE(pa.account_code, '') LIKE '314%'))"
+        );
+        $refunds->execute([$ctx->supplierId]);
+        $match = $pdo->prepare('INSERT INTO payment_matches (supplier_id, bank_transaction_id, invoice_id, purchase_invoice_id, amount, match_type, matched_by_user_id) VALUES (?, ?, NULL, ?, ?, "manual", ?)');
+        $markTx = $pdo->prepare(
+            "UPDATE bank_transactions t JOIN bank_statements s ON s.id = t.statement_id
+                SET t.ignore_note = IF(t.match_status = 'ignored' AND t.match_reason = 'money_s3_booked', NULL, t.ignore_note),
+                    t.match_reason = IF(t.match_status = 'ignored' AND t.match_reason = 'money_s3_booked', NULL, t.match_reason),
+                    t.match_status = 'manual', t.matched_at = COALESCE(t.matched_at, NOW()), t.matched_by = COALESCE(t.matched_by, ?)
+              WHERE t.id = ? AND s.supplier_id = ? AND t.match_status IN ('unmatched', 'ignored')"
+        );
+        $userId = $ctx->userId > 0 ? $ctx->userId : null;
+        foreach ($refunds->fetchAll(PDO::FETCH_ASSOC) as $t) {
+            $candidates = array_keys($bySymbol[ltrim(preg_replace('/\D+/', '', (string) $t['variable_symbol']) ?? '', '0')] ?? []);
+            if (count($candidates) !== 1 || $left[$candidates[0]] + 0.005 < (float) $t['amount']) {
+                continue;
+            }
+            $match->execute([$ctx->supplierId, (int) $t['id'], $candidates[0], number_format((float) $t['amount'], 2, '.', ''), $userId]);
+            $markTx->execute([$userId, (int) $t['id'], $ctx->supplierId]);
+            $left[$candidates[0]] -= (float) $t['amount'];
+            $ctx->protocol->count(DocumentLinker::STEP_PAYMENTS, 'advance_refund_matched');
         }
     }
 

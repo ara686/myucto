@@ -231,10 +231,15 @@ final class CashBankImporter
             $year = (int) $yearText;
             if ($ctx->isLocked($year)) {
                 $p->info(self::STEP_BANK, 'year_locked', "Bankovní pohyby účtu {$code} za rok {$year}: rok je uzavřený, nepřebírají se.");
-                foreach (array_keys($rows) as $i) {
+                $lockedCurrency = ($accounts[$code] ?? ['currency' => 'CZK'])['currency'];
+                foreach ($rows as $i => $r) {
                     $txKey = $txKeys[$statementKey][$i];
                     if (isset($existingTx[$txKey])) {
                         $ctx->bankTransactions[$txKey] = $existingTx[$txKey];
+                        // Párování úhrad porovnává částky v Kč i u pohybů uzavřených let.
+                        if ($lockedCurrency !== 'CZK') {
+                            $ctx->bankTransactionCzk[$existingTx[$txKey]] = self::transactionAmount($r, $lockedCurrency)[1];
+                        }
                     }
                 }
                 continue;

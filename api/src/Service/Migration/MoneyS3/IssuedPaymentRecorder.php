@@ -58,7 +58,7 @@ final class IssuedPaymentRecorder
     }
 
     /**
-     * @param 'bank'|'cash'|'credit_note' $kind
+     * @param 'bank'|'cash'|'credit_note'|'settlement' $kind
      * @return int|null id založené platby
      */
     public function record(ImportContext $ctx, int $invoiceId, string $kind, ?int $txId, ?int $cashId, float $amount, string $date, string $paymentNo): ?int
@@ -68,7 +68,11 @@ final class IssuedPaymentRecorder
             return null;
         }
         $pdo = $this->db->pdo();
-        $note = ($kind === 'credit_note' ? 'Převzato z Money S3, zápočet dobropisu ' : 'Převzato z Money S3, úhrada ') . $paymentNo;
+        $note = match ($kind) {
+            'credit_note' => 'Převzato z Money S3, zápočet dobropisu ',
+            'settlement' => 'Převzato z Money S3, zápočet interním dokladem ',
+            default => 'Převzato z Money S3, úhrada ',
+        } . $paymentNo;
         if ($kind === 'bank') {
             $dup = $pdo->prepare('SELECT 1 FROM invoice_payments WHERE bank_transaction_id = ? AND invoice_id = ?');
             $dup->execute([$txId, $invoiceId]);

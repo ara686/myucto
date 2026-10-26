@@ -258,6 +258,7 @@ final class DocumentLinker
                 $p->warn(self::STEP_PAYMENTS, 'payment_not_found', "Úhrada {$settledBy} faktury {$docNo} v převedené bance ani pokladně není.", ['document_no' => $docNo]);
             }
         }
+        $this->repairForeignMatchAmounts($ctx, $movements);
         (new PairingSymbolMatcher($this->db, $this->map, $issuedPayments))->match($ctx, $movements);
         (new AdvanceLinker($this->db))->link($ctx);
         $this->markBookedWithoutInvoice($ctx);
@@ -288,6 +289,42 @@ final class DocumentLinker
             $out[(int) $r['id']] = ['amount' => $amount, 'currency' => (string) $r['currency'], 'date' => (string) $r['posted_on'], 'czk' => $amount];
         }
         return $out;
+    }
+
+    /**
+     * Párování úhrady z účtu v cizí měně, které dřívější verze převodu zapsala s částkou
+     * v Kč (částka párování je v měně pohybu): částka vyšší než celý pohyb se přepočte
+     * kurzem pohybu z Money. Jen párování vzniklá převodem (mapa úhrad), párování zadané
+     * v MyÚčtu se nemění.
+     *
+     * @param array<int,array{amount:float,currency:string,date:string,czk:float}> $movements
+     */
+    private function repairForeignMatchAmounts(ImportContext $ctx, array $movements): void
+    {
+        $pdo = $this->db->pdo();
+        $stmt = $pdo->prepare(
+            "SELECT pm.id, pm.bank_transaction_id, pm.amount
+               FROM payment_matches pm
+               JOIN money_s3_import_map m ON m.supplier_id = pm.supplier_id AND m.kind = ? AND m.target_id = pm.id
+              WHERE pm.supplier_id = ?"
+        );
+        $stmt->execute([MoneyS3ImportRepository::KIND_PAYMENT, $ctx->supplierId]);
+        $update = $pdo->prepare('UPDATE payment_matches SET amount = ? WHERE id = ? AND supplier_id = ? AND amount = ?');
+        $fixed = 0;
+        while ($r = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $tx = (int) $r['bank_transaction_id'];
+            $m = $movements[$tx] ?? null;
+            $czk = abs($ctx->bankTransactionCzk[$tx] ?? 0.0);
+            $amount = (float) $r['amount'];
+            if ($m === null || $m['currency'] === 'CZK' || $czk < 0.01 || $amount <= abs($m['amount']) + 0.01) {
+                continue;
+            }
+            $update->execute([number_format(abs($m['amount']) * min(1.0, $amount / $czk), 2, '.', ''), (int) $r['id'], $ctx->supplierId, $r['amount']]);
+            $fixed += $update->rowCount();
+        }
+        if ($fixed > 0) {
+            $ctx->protocol->count(self::STEP_PAYMENTS, 'foreign_match_amount_fixed', $fixed);
+        }
     }
 
     /** @param array<int,array{amount:float,currency:string,date:string,czk:float}> $movements */

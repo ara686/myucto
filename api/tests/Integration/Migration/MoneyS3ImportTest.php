@@ -427,11 +427,36 @@ final class MoneyS3ImportTest extends MoneyS3ImportTestCase
         self::assertSame(2, $this->rowCount('invoice_payments', $supplierId, $issued('FV25002') . " AND source = 'bank' AND amount IN (5000.00, 7100.00)"), $this->explain($protocol));
         self::assertSame(2, $this->rowCount('payment_matches', $supplierId, $purchase . ' AND amount IN (2000.00, 4050.00)'), $this->explain($protocol));
         // FV25003 má v `UDoklad` interní doklad s odpisem; bankovní úhradu najde jen párovací symbol
-        // a odpis nedoplatku (interní doklad vyrovnávající jedinou fakturu) je na ni navázaný.
+        // a odpis nedoplatku (zápis vyrovnává jedinou fakturu) je na ni navázaný jako ruční zápis.
         self::assertSame(1, $this->rowCount('invoice_payments', $supplierId, $issued('FV25003') . " AND source = 'bank' AND amount = 1200.00"), $this->explain($protocol));
+        $invoiceId = static fn (string $no): string => "(SELECT id FROM invoices WHERE supplier_id = {$supplierId} AND varsymbol = '{$no}')";
+        $purchaseId = static fn (string $no): string => "(SELECT id FROM purchase_invoices WHERE supplier_id = {$supplierId} AND vendor_invoice_number = '{$no}')";
+        $entry = static fn (string $no): string => "(SELECT id FROM journal_entries WHERE supplier_id = {$supplierId} AND source_type = 'manual' AND document_no = '{$no}')";
         self::assertSame(1, $this->rowCount('journal_entry_document_links', $supplierId,
-            "doc_type = 'invoice' AND " . str_replace('invoice_id', 'doc_id', $issued('FV25003'))
-            . " AND entry_id IN (SELECT id FROM journal_entries WHERE supplier_id = {$supplierId} AND source_type = 'manual' AND document_no = 'ID25005')"));
+            "doc_type = 'invoice' AND doc_id = {$invoiceId('FV25003')} AND entry_id = {$entry('ID25005')}"));
+        // Vzájemný zápočet přes 395 jedním interním dokladem: dvě vydané faktury rozpadem po
+        // řádcích deníku jako zápočty proti 395, jediná přijatá faktura vazbou na zápis.
+        $settlement = fn (string $docExpr, string $amount): int => $this->rowCount('invoice_settlements', $supplierId,
+            "doc_type = 'invoice' AND doc_id = {$docExpr} AND amount = {$amount} AND status = 'confirmed'
+             AND account_id = (SELECT id FROM chart_of_accounts WHERE supplier_id = {$supplierId} AND account_code = '395.000')
+             AND journal_entry_id = {$entry('ID25010')}");
+        self::assertSame(1, $settlement($invoiceId('FV25005'), '605.00'), $this->explain($protocol));
+        self::assertSame(1, $settlement($invoiceId('FV25006'), '363.00'));
+        self::assertSame(2, $this->rowCount('invoice_payments', $supplierId, "source = 'settlement' AND amount IN (605.00, 363.00)"));
+        self::assertSame(0, $this->rowCount('journal_entry_document_links', $supplierId, "doc_type = 'invoice' AND entry_id = {$entry('ID25010')}"));
+        self::assertSame(1, $this->rowCount('journal_entry_document_links', $supplierId,
+            "doc_type = 'purchase_invoice' AND doc_id = {$purchaseId('DF-2025-112')} AND entry_id = {$entry('ID25010')}"));
+        // Úhrada se symbolem s překlepem patří jediné otevřené faktuře téhož dodavatele.
+        self::assertSame(1, $this->rowCount('payment_matches', $supplierId,
+            "purchase_invoice_id = (SELECT id FROM purchase_invoices WHERE supplier_id = {$supplierId} AND vendor_invoice_number = 'DF-2025-200') AND amount = 1210.00"), $this->explain($protocol));
+        // Storno zápornou fakturou se započte jako dobropis, storno ale vazbu na fakturu nedostane
+        // (zůstává dokladem k vyplacení, který vyrovnává jeho stav).
+        self::assertSame(1, $this->rowCount('invoice_payments', $supplierId, $issued('FV25007') . " AND source = 'credit_note' AND amount = 605.00"), $this->explain($protocol));
+        self::assertSame(1, $this->rowCount('invoices', $supplierId, "varsymbol = 'FV25008' AND parent_invoice_id IS NULL"));
+        // Vrácená záloha a DDKP s odkazem na bankovní doklad úhrady zálohy.
+        $refunded = "(SELECT id FROM purchase_invoices WHERE supplier_id = {$supplierId} AND vendor_invoice_number = 'ZF-2025-003')";
+        self::assertSame(2, $this->rowCount('payment_matches', $supplierId, "purchase_invoice_id = {$refunded} AND amount = 1000.00"), $this->explain($protocol));
+        self::assertSame(1, $this->rowCount('purchase_invoices', $supplierId, "vendor_invoice_number = 'DZ-2025-003' AND parent_purchase_invoice_id = {$refunded}"));
         // Dobropis se stejným symbolem se započetl proti faktuře.
         self::assertSame(1, $this->rowCount('invoice_payments', $supplierId, $issued('FV25004') . " AND source = 'credit_note' AND amount = 484.00"), $this->explain($protocol));
         self::assertSame(1, $this->rowCount('credit_note_offsets', $supplierId, "doc_type = 'invoice' AND amount = 484.00 AND " . $issued('FV25004')
@@ -453,18 +478,67 @@ final class MoneyS3ImportTest extends MoneyS3ImportTestCase
                 }
             }
         }
-        foreach (['FV25002', 'FV25003', 'FV25004', 'DV25002', 'DF-2025-070', 'DF-2025-091', 'ZF-2025-002'] as $docNo) {
+        foreach (['FV25002', 'FV25003', 'FV25004', 'DV25002', 'FV25005', 'FV25006', 'FV25007', 'FV25008', 'DF-2025-070', 'DF-2025-091', 'DF-2025-112',
+            'DF-2025-200', 'ZF-2025-002', 'ZF-2025-003'] as $docNo) {
             self::assertNotContains($docNo, $open, 'Uhrazená faktura nesmí být v saldokontu otevřená: ' . json_encode($open));
         }
 
         $counts = fn (): array => $this->snapshotCounts($supplierId) + [
             'invoice_payments' => $this->rowCount('invoice_payments', $supplierId),
             'credit_note_offsets' => $this->rowCount('credit_note_offsets', $supplierId),
+            'invoice_settlements' => $this->rowCount('invoice_settlements', $supplierId),
             'purchase_advance_deductions' => $this->rowCount('purchase_advance_deductions', $supplierId),
         ];
         $before = $counts();
         $again = $this->import($supplierId);
         self::assertFalse($again->hasErrors(), $this->explain($again));
         self::assertSame($before, $counts());
+    }
+
+    /**
+     * Opravu převedených firem přinese opakovaný převod. Co uživatel mezitím zadal
+     * v MyÚčtu (platba faktury, zápočet), převod nesmaže ani nepřepíše a platby nezdvojí:
+     * zadaná úhrada snižuje, co zbývá spárovat, a součet plateb faktury nepřesáhne její
+     * uhrazenou částku.
+     */
+    public function testRerunKeepsDataEnteredAfterImportAndDoesNotDoublePayments(): void
+    {
+        SyntheticAgenda::writeLzFiles($this->tmp . '/agenda.lz', SyntheticAgenda::filesWithPartialPayments());
+        $supplierId = $this->supplier();
+        self::assertFalse($this->import($supplierId)->hasErrors());
+        $pdo = $this->db->pdo();
+        $invoiceId = static function (string $no) use ($pdo, $supplierId): int {
+            $stmt = $pdo->prepare('SELECT id FROM invoices WHERE supplier_id = ? AND varsymbol = ?');
+            $stmt->execute([$supplierId, $no]);
+            return (int) $stmt->fetchColumn();
+        };
+
+        // Uživatel po převodu: zaplatí neuhrazenou FV25001 a z FV25005 smaže převzatý zápočet
+        // i jeho platbu a zaeviduje vlastní platbu v hotovosti (jinak než v Money).
+        $payments = $this->container(\MyInvoice\Service\Invoice\InvoicePaymentService::class);
+        $payments->recordPayment($invoiceId('FV25001'), 1210.0, '2025-12-15', ['source' => 'manual', 'note' => 'Zadáno v MyÚčtu', 'created_by' => $this->userId]);
+        $fv25005 = $invoiceId('FV25005');
+        $pdo->prepare('DELETE FROM invoice_settlements WHERE supplier_id = ? AND doc_id = ? AND doc_type = ?')->execute([$supplierId, $fv25005, 'invoice']);
+        $pdo->prepare("DELETE FROM invoice_payments WHERE supplier_id = ? AND invoice_id = ? AND source = 'settlement'")->execute([$supplierId, $fv25005]);
+        $payments->recordPayment($fv25005, 605.0, '2025-10-02', ['source' => 'manual', 'note' => 'Zadáno v MyÚčtu', 'created_by' => $this->userId]);
+        $manual = $pdo->prepare("SELECT id, invoice_id, amount, paid_on, note FROM invoice_payments WHERE supplier_id = ? AND source = 'manual' ORDER BY id");
+        $manual->execute([$supplierId]);
+        $entered = $manual->fetchAll(PDO::FETCH_ASSOC);
+        self::assertCount(2, $entered);
+
+        $again = $this->import($supplierId);
+
+        self::assertFalse($again->hasErrors(), $this->explain($again));
+        $manual->execute([$supplierId]);
+        self::assertSame($entered, $manual->fetchAll(PDO::FETCH_ASSOC), 'Platby zadané v MyÚčtu zůstávají beze změny.');
+        // Ručně zaplacená FV25005 už zápočet nedostane - platby by převýšily fakturu.
+        self::assertSame(0, $this->rowCount('invoice_settlements', $supplierId, "doc_type = 'invoice' AND doc_id = {$fv25005}"));
+        self::assertSame(0, $this->rowCount('invoices', $supplierId,
+            '(SELECT COALESCE(SUM(ip.amount), 0) FROM invoice_payments ip WHERE ip.invoice_id = invoices.id) > ABS(total_with_vat) + 0.01'),
+            'Součet plateb nesmí převýšit fakturu.');
+        self::assertSame(0, (int) $pdo->query(
+            "SELECT COUNT(*) FROM (SELECT bank_transaction_id, invoice_id, purchase_invoice_id FROM payment_matches WHERE supplier_id = {$supplierId}
+              GROUP BY bank_transaction_id, invoice_id, purchase_invoice_id HAVING COUNT(*) > 1) d"
+        )->fetchColumn(), 'Pohyb se k témuž dokladu nespáruje dvakrát.');
     }
 }
