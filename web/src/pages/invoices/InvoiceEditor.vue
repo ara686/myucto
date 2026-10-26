@@ -1375,9 +1375,22 @@ watch(
       loaded: loaded.value,
       storedDocument: isEdit.value && (editedStatus.value === 'draft' || isForce.value),
     })
-    if (rows.length > 0 && confirm(t('invoice.price_level.reprice_confirm', { count: rows.length }))) {
-      void quoteStockRows(rows, 'context')
+    if (rows.length === 0 || !confirm(t('invoice.price_level.reprice_confirm', { count: rows.length }))) return
+    // Potvrzené řádky jsou odteď automatické: další změna odběratele, měny nebo hladiny
+    // je přecení novým požadavkem a starší odpověď zahodí canApplyQuote.
+    for (const row of rows) {
+      const state = stockQuoteStates.get(row)
+      stockQuoteStates.set(row, {
+        seq: state?.seq ?? 0,
+        autoPrice: Number(row.unit_price_without_vat),
+        source: state?.source ?? null,
+        discountPct: state?.discountPct ?? null,
+        priceLevel: state?.priceLevel ?? null,
+      })
     }
+    void quoteStockRows(rows, 'context').then((ok) => {
+      if (!ok) toast.error(t('invoice.price_level.reprice_failed'))
+    })
   },
 )
 

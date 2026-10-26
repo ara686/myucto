@@ -22562,7 +22562,8 @@
       "from_client": "From customer ({name})",
       "from_client_none": "From customer (no level)",
       "hint": "Reprices stock lines with an automatically filled price, manually edited prices stay. On a saved document the editor asks whether to reprice all stock lines.",
-      "reprice_confirm": "The document price level has changed. Reprice stock items by the new level? Stock lines to reprice: {count}, including manually edited prices. Cancel keeps the prices unchanged.",
+      "reprice_confirm": "The price level used to price this document has changed. Reprice stock items by the new level? Stock lines to reprice: {count}, including manually edited prices. Cancel keeps the saved and manually edited prices.",
+      "reprice_failed": "Repricing stock items by the new level failed, the prices stay unchanged.",
       "stale": "The document price level is no longer active. The document is priced by the customer's level; saving removes the level from the document."
     },
     "simplified_document": "Simplified tax document (§ 30 VAT Act)",

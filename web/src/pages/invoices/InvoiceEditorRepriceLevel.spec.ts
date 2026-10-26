@@ -6,15 +6,26 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SupplierBrief } from '@/api/auth'
 import type { StockQuoteRequest } from '@/api/stock'
 import { useSupplierStore } from '@/stores/supplier'
+import { useToast } from '@/composables/useToast'
 
 const pending = () => new Promise(() => {})
-const quoteItems = vi.fn((payload: StockQuoteRequest) => Promise.resolve({
+const quoted = (payload: StockQuoteRequest, price: string) => ({
   lines: payload.lines.map(line => ({
     key: line.key, stock_item_id: line.stock_item_id, unit: 'ks', base_unit: 'ks', numerator: 1, denominator: 1,
-    base_quantity: '1.000', unit_price: '80.00', base_unit_price: '80.00', list_unit_price: '100.00',
-    price_source: 'price_level_discount', customer_price_id: null, discount_pct: '20.000', promo: null,
+    base_quantity: '1.000', unit_price: price, base_unit_price: price, list_unit_price: '100.00',
+    price_source: 'price_level_discount' as const, customer_price_id: null, discount_pct: '20.000', promo: null,
   })),
-}))
+})
+const quoteItems = vi.fn((payload: StockQuoteRequest) => Promise.resolve(quoted(payload, '80.00')))
+
+/** Nacenění, které odpoví až na pokyn testu (souběh dvou požadavků). */
+function deferredQuote() {
+  let answer: (price: string) => void = () => {}
+  quoteItems.mockImplementationOnce((payload: StockQuoteRequest) => new Promise((resolve) => {
+    answer = price => resolve(quoted(payload, price))
+  }))
+  return (price: string) => answer(price)
+}
 
 vi.mock('@/api/codebooks', () => ({
   codebooksApi: { vatRates: () => new Promise(() => {}), currencies: vi.fn(), units: vi.fn() },
@@ -31,7 +42,8 @@ import InvoiceEditor from './InvoiceEditor.vue'
 
 type Row = { stock_item_id: number | null; unit: string; quantity: number; unit_price_without_vat: number; description?: string }
 type Vm = {
-  form: { currency: string; client_id: number | null; price_level_id: number | null; items: Row[] }
+  form: { currency: string; currency_id: number; client_id: number | null; price_level_id: number | null; items: Row[] }
+  currencies: { id: number; code: string }[]
   loaded: boolean
   editedStatus: string
   clients: { id: number; price_level_id: number | null }[]
@@ -60,11 +72,13 @@ async function mountEditor(path: string) {
   })
   const vm = wrapper.vm as unknown as Vm
   vm.form.currency = 'CZK'
-  vm.clients = [{ id: 1, price_level_id: null }, { id: 2, price_level_id: 3 }, { id: 4, price_level_id: 3 }]
+  vm.currencies = [{ id: 1, code: 'CZK' }, { id: 2, code: 'EUR' }]
+  vm.form.currency_id = 1
+  vm.clients = [{ id: 1, price_level_id: null }, { id: 2, price_level_id: 3 }, { id: 4, price_level_id: 3 }, { id: 6, price_level_id: 5 }]
   vm.form.client_id = 1
   vm.form.items = [
-    { stock_item_id: 7, unit: 'ks', quantity: 1, unit_price_without_vat: 100 },
-    { stock_item_id: 8, unit: 'ks', quantity: 1, unit_price_without_vat: 95 },
+    { stock_item_id: 7, unit: 'ks', quantity: 1, unit_price_without_vat: 100, description: 'Helma' },
+    { stock_item_id: 8, unit: 'ks', quantity: 1, unit_price_without_vat: 95, description: 'Rukavice' },
     { stock_item_id: null, unit: 'h', quantity: 1, unit_price_without_vat: 500, description: 'Montáž' },
   ]
   vm.priceLevels = [{ id: 3, name: 'Dealer', is_active: true }, { id: 5, name: 'Urgent', is_active: true }]
@@ -138,5 +152,63 @@ describe('InvoiceEditor: přecenění uloženého dokladu po změně hladiny', (
 
     expect(confirm).not.toHaveBeenCalled()
     expect(quoteItems).not.toHaveBeenCalled()
+  })
+
+  it('odběratel s jinou hladinou i měnou: přecenění v nové měně, stará odpověď se zahodí', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const { wrapper, vm } = await mountEditor('/invoices/42')
+    const answerOld = deferredQuote()
+    const answerNew = deferredQuote()
+
+    // Výběr odběratele: hladina se změní hned, výchozí měna až po načtení zakázek.
+    vm.form.client_id = 2
+    await flush()
+    vm.form.currency_id = 2
+    await flush()
+
+    expect(quoteItems).toHaveBeenCalledTimes(2)
+    expect(quoteItems.mock.calls.map(call => call[0].currency)).toEqual(['CZK', 'EUR'])
+    answerNew('70.00')
+    await flush()
+    answerOld('80.00')
+    await flush()
+    expect(vm.form.items.map(row => row.unit_price_without_vat)).toEqual([70, 70, 500])
+    wrapper.unmount()
+  })
+
+  it('rychlé A → B (potvrdit) → C: přecení podle C bez druhého dotazu', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const { wrapper, vm } = await mountEditor('/invoices/42')
+    const answerB = deferredQuote()
+    const answerC = deferredQuote()
+
+    vm.form.client_id = 2
+    await flush()
+    vm.form.client_id = 6
+    await flush()
+
+    expect(confirm).toHaveBeenCalledTimes(1)
+    expect(quoteItems.mock.calls.map(call => call[0].client_id)).toEqual([2, 6])
+    answerC('60.00')
+    await flush()
+    answerB('80.00')
+    await flush()
+    expect(vm.form.items.map(row => row.unit_price_without_vat)).toEqual([60, 60, 500])
+    wrapper.unmount()
+  })
+
+  it('selhání nacenění po potvrzení ohlásí chybou', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    quoteItems.mockImplementationOnce(() => Promise.reject(new Error('offline')))
+    const { wrapper, vm } = await mountEditor('/invoices/42')
+    const { toasts } = useToast()
+    toasts.value = []
+
+    vm.form.price_level_id = 5
+    await flush()
+
+    expect(toasts.value.map(toast => [toast.type, toast.text])).toEqual([['error', 'invoice.price_level.reprice_failed']])
+    expect(vm.form.items.map(row => row.unit_price_without_vat)).toEqual([100, 95, 500])
+    wrapper.unmount()
   })
 })
