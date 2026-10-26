@@ -339,7 +339,7 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="max-w-5xl">
+  <div class="w-full">
     <div class="flex items-start justify-between mb-4">
       <div>
         <h1 class="text-2xl font-semibold">{{ t('api_tokens.title') }}</h1>
@@ -365,7 +365,7 @@ onMounted(load)
       {{ error }}
     </div>
 
-    <div class="bg-surface border border-neutral-200 rounded-lg shadow-sm overflow-hidden">
+    <div class="bg-surface border border-neutral-200 rounded-lg shadow-sm overflow-x-auto">
       <table class="w-full text-sm">
         <thead class="bg-neutral-50 text-neutral-600 text-xs uppercase">
           <tr>
