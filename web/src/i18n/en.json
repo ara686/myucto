@@ -13870,7 +13870,8 @@
       "invoice_unlinked_reason": {
         "own_stock": "The invoice has its own stock issue or return in MyÚčto.",
         "draft": "The invoice is a draft.",
-        "type": "The document is neither an invoice nor a credit note (for example a proforma invoice)."
+        "type": "The document is neither an invoice nor a credit note (for example a proforma invoice).",
+        "missing": "The invoice is no longer in MyÚčto."
       },
       "invoice_unlinked_more": "More documents: {count}.",
       "invoice_unlinked_on_apply": "Documents not linked to an invoice because the invoice changed after the check: {count}.",

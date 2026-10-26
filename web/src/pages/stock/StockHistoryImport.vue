@@ -75,6 +75,16 @@ const reportPages = computed(() => Math.max(1, report.value?.pagination.pages ??
 const activeImport = computed(() => status.value?.active ?? null)
 const hasDocuments = computed(() => !!status.value?.first_document_date)
 const negatives = computed(() => Number(summary.value.negative_count ?? 0))
+// Doklady bez vazby na fakturu: v náhledu předem, ve výsledku převzetí ty, u kterých se faktura mezitím změnila.
+const unlinked = computed(() => {
+  if (job.value?.kind === STAGE_KIND) {
+    return { test: 'invoice-unlinked', title: 'stock.history_import.invoice_unlinked_title', count: Number(summary.value.invoice_unlinked_count ?? 0), items: summary.value.invoice_unlinked ?? [] }
+  }
+  if (job.value?.kind === APPLY_KIND) {
+    return { test: 'invoice-unlinked-on-apply', title: 'stock.history_import.invoice_unlinked_on_apply', count: Number(summary.value.invoice_unlinked_on_apply ?? 0), items: summary.value.invoice_unlinked_on_apply_list ?? [] }
+  }
+  return null
+})
 const closedPeriods = computed(() => Number(summary.value.closed_period_documents ?? 0))
 const previewReady = computed(() => job.value?.kind === STAGE_KIND && job.value.status === 'completed' && !job.value.apply_job_id
   && (counts.value.ready ?? 0) > 0 && (counts.value.failed ?? 0) === 0 && (counts.value.conflict ?? 0) === 0)
@@ -469,7 +479,6 @@ onBeforeUnmount(() => { generation++; stopPolling() })
         <div class="rounded-lg bg-neutral-50 p-3"><p class="text-xs text-neutral-500">{{ t('stock.history_import.cutover_date') }}</p><p class="font-semibold">{{ summary.cutover_date ? formatDate(summary.cutover_date) : t('stock.history_import.mode_live') }}</p></div>
       </div>
       <p v-if="job.kind === APPLY_KIND" data-test="apply-summary" class="text-sm">{{ t('stock.history_import.documents_created', { count: summary.documents_created ?? 0, fills: summary.fill_documents ?? 0 }) }}</p>
-      <p v-if="job.kind === APPLY_KIND && summary.invoice_unlinked_on_apply" data-test="invoice-unlinked-on-apply" class="text-sm text-warning-700">{{ t('stock.history_import.invoice_unlinked_on_apply', { count: summary.invoice_unlinked_on_apply }) }}</p>
       <p v-if="job.kind === ROLLBACK_KIND" data-test="rollback-summary" class="text-sm">{{ t('stock.history_import.documents_deleted', { count: summary.documents_deleted ?? 0 }) }}</p>
 
       <div v-if="job.kind === STAGE_KIND && negatives > 0" data-test="negatives" class="space-y-2 rounded-lg border p-4 text-sm" :class="summary.fill_negative ? 'border-warning-200 bg-warning-50' : 'border-danger-200 bg-danger-50'">
@@ -477,10 +486,10 @@ onBeforeUnmount(() => { generation++; stopPolling() })
         <div class="overflow-x-auto"><table class="min-w-full whitespace-nowrap text-xs"><thead><tr><th class="px-2 py-1 text-left">{{ t('stock.opening_import.row') }}</th><th class="px-2 py-1 text-left">{{ t('stock.history_import.fields.doc_number') }}</th><th class="px-2 py-1 text-left">{{ t('stock.history_import.fields.doc_date') }}</th><th class="px-2 py-1 text-left">{{ t('stock.history_import.fields.warehouse') }}</th><th class="px-2 py-1 text-left">SKU</th><th class="px-2 py-1 text-right">{{ t('stock.history_import.missing_quantity') }}</th><th class="px-2 py-1 text-right">{{ t('stock.history_import.fill_cost') }}</th></tr></thead><tbody><tr v-for="item in summary.negatives ?? []" :key="item.source_row" class="border-t border-neutral-200"><td class="px-2 py-1">{{ item.source_row }}</td><td class="px-2 py-1">{{ item.doc_number }}</td><td class="px-2 py-1">{{ formatDate(item.doc_date) }}</td><td class="px-2 py-1">{{ item.warehouse }}</td><td class="px-2 py-1">{{ item.sku }}</td><td class="px-2 py-1 text-right">{{ qty(item.missing_quantity) }}</td><td class="px-2 py-1 text-right">{{ cost(item.unit_cost) }}</td></tr></tbody></table></div>
         <p v-if="negatives > (summary.negatives?.length ?? 0)" class="text-xs">{{ t('stock.history_import.negatives_more', { count: negatives - (summary.negatives?.length ?? 0) }) }}</p>
       </div>
-      <div v-if="job.kind === STAGE_KIND && summary.invoice_unlinked_count" data-test="invoice-unlinked" class="space-y-2 rounded-lg border border-warning-200 bg-warning-50 p-4 text-sm">
-        <p class="font-medium">{{ t('stock.history_import.invoice_unlinked_title', { count: summary.invoice_unlinked_count }) }}</p>
-        <div class="overflow-x-auto"><table class="min-w-full whitespace-nowrap text-xs"><thead><tr><th class="px-2 py-1 text-left">{{ t('stock.opening_import.row') }}</th><th class="px-2 py-1 text-left">{{ t('stock.history_import.fields.doc_number') }}</th><th class="px-2 py-1 text-left">{{ t('stock.history_import.fields.invoice_number') }}</th><th class="px-2 py-1 text-left">{{ t('stock.history_import.invoice_unlinked_reason_label') }}</th></tr></thead><tbody><tr v-for="item in summary.invoice_unlinked ?? []" :key="item.source_row" class="border-t border-warning-200"><td class="px-2 py-1">{{ item.source_row }}</td><td class="px-2 py-1">{{ item.doc_number }}</td><td class="px-2 py-1">{{ item.invoice_number }}</td><td class="whitespace-normal px-2 py-1">{{ t(`stock.history_import.invoice_unlinked_reason.${item.reason}`) }}</td></tr></tbody></table></div>
-        <p v-if="summary.invoice_unlinked_count > (summary.invoice_unlinked?.length ?? 0)" class="text-xs">{{ t('stock.history_import.invoice_unlinked_more', { count: summary.invoice_unlinked_count - (summary.invoice_unlinked?.length ?? 0) }) }}</p>
+      <div v-if="unlinked?.count" :data-test="unlinked.test" class="space-y-2 rounded-lg border border-warning-200 bg-warning-50 p-4 text-sm">
+        <p class="font-medium">{{ t(unlinked.title, { count: unlinked.count }) }}</p>
+        <div class="overflow-x-auto"><table class="min-w-full whitespace-nowrap text-xs"><thead><tr><th class="px-2 py-1 text-left">{{ t('stock.opening_import.row') }}</th><th class="px-2 py-1 text-left">{{ t('stock.history_import.fields.doc_number') }}</th><th class="px-2 py-1 text-left">{{ t('stock.history_import.fields.invoice_number') }}</th><th class="px-2 py-1 text-left">{{ t('stock.history_import.invoice_unlinked_reason_label') }}</th></tr></thead><tbody><tr v-for="item in unlinked.items" :key="item.source_row" class="border-t border-warning-200"><td class="px-2 py-1">{{ item.source_row }}</td><td class="px-2 py-1">{{ item.doc_number }}</td><td class="px-2 py-1">{{ item.invoice_number }}</td><td class="whitespace-normal px-2 py-1">{{ t(`stock.history_import.invoice_unlinked_reason.${item.reason}`) }}</td></tr></tbody></table></div>
+        <p v-if="unlinked.count > unlinked.items.length" class="text-xs">{{ t('stock.history_import.invoice_unlinked_more', { count: unlinked.count - unlinked.items.length }) }}</p>
       </div>
       <div v-if="job.kind === STAGE_KIND && endState" data-test="end-state" class="min-w-0 space-y-2 rounded-lg border border-neutral-200 p-4 text-sm">
         <div class="flex flex-wrap items-center justify-between gap-2">

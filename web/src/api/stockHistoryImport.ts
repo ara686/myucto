@@ -42,7 +42,8 @@ export interface HistoryImportUnlinked {
   source_row: number
   doc_number: string
   invoice_number: string
-  reason: 'draft' | 'type' | 'own_stock'
+  /** missing: faktura od náhledu zmizela (jen při převzetí). */
+  reason: 'draft' | 'type' | 'own_stock' | 'missing'
 }
 
 export interface HistoryImportReport {
@@ -60,6 +61,7 @@ export interface HistoryImportReport {
   invoice_unlinked?: HistoryImportUnlinked[]
   /** Vazby vynechané až při převzetí (faktura se od náhledu změnila). */
   invoice_unlinked_on_apply?: number
+  invoice_unlinked_on_apply_list?: HistoryImportUnlinked[]
   documents_created?: number
   fill_documents?: number
   documents_deleted?: number

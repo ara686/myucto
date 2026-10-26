@@ -269,10 +269,15 @@ describe('StockHistoryImport', () => {
     wrapper.unmount()
 
     mocks.route.query = { history_job: '42' }
-    mocks.job.mockResolvedValue({ ...stage, id: 42, kind: 'stock_history_import_apply', report: { documents_created: 5, invoice_unlinked_on_apply: 1 } })
+    mocks.job.mockResolvedValue({ ...stage, id: 42, kind: 'stock_history_import_apply', report: { documents_created: 5, invoice_unlinked_on_apply: 1, invoice_unlinked_on_apply_list: [
+      { source_row: 6, doc_number: 'V4', invoice_number: '2025004', reason: 'own_stock' },
+    ] } })
     wrapper = mountPage()
     await flushPromises()
-    expect(wrapper.get('[data-test="invoice-unlinked-on-apply"]').text()).toBe('stock.history_import.invoice_unlinked_on_apply')
+    const applied = wrapper.get('[data-test="invoice-unlinked-on-apply"]')
+    expect(applied.text()).toContain('stock.history_import.invoice_unlinked_on_apply')
+    expect(applied.findAll('tbody tr').map(row => row.text())).toEqual(['6V42025004stock.history_import.invoice_unlinked_reason.own_stock'])
+    expect(applied.text()).not.toContain('stock.history_import.invoice_unlinked_more')
     wrapper.unmount()
   })
 

@@ -13870,7 +13870,8 @@
       "invoice_unlinked_reason": {
         "own_stock": "Faktura má vlastní výdejku nebo vratku v MyÚčtu.",
         "draft": "Faktura je koncept.",
-        "type": "Doklad není faktura ani dobropis (například zálohová faktura)."
+        "type": "Doklad není faktura ani dobropis (například zálohová faktura).",
+        "missing": "Faktura už v MyÚčtu není."
       },
       "invoice_unlinked_more": "Další doklady: {count}.",
       "invoice_unlinked_on_apply": "Dokladů, které se při převzetí nenavázaly na fakturu, protože se faktura od kontroly změnila: {count}.",
