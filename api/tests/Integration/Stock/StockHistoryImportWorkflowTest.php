@@ -109,6 +109,8 @@ final class StockHistoryImportWorkflowTest extends StockTestCase
         // Stav skladu z knihy k D−1 je nulový, kniha karty ukazuje celou historii.
         $ledger = $this->levelsRepo->ledgerForItem($sid, $a, ['to' => '2020-12-31', 'limit' => 500]);
         self::assertCount(7, $ledger);
+        self::assertSame([true], array_values(array_unique(array_column($ledger, 'imported'))));
+        self::assertFalse($this->levelsRepo->ledgerForItem($sid, $a, ['from' => '2099-01-01', 'limit' => 500])[0]['imported']);
         self::assertSame('0.000', array_reduce($ledger, static fn (string $sum, array $row): string => bcadd($sum, $row['qty_signed'], 3), '0'));
 
         // Převzatou historii nejde stornovat ani do ní zaúčtovat nový doklad.

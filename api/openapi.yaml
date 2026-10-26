@@ -21068,7 +21068,8 @@ paths:
         `purchase_invoice_id`, `purchase_invoice_number` a dodavatele. `partner` je
         `{kind: client | vendor | text, id, name}`; jméno je ze snapshotu dokladu,
         u ručního dokladu volný text bez `id`. Token bez práva ke čtení vydaných,
-        resp. přijatých faktur dostane tyto údaje jako null.
+        resp. přijatých faktur dostane tyto údaje jako null. Pohyb z převzaté historie
+        skladu (import historických dokladů) má `imported: true`.
       parameters:
         - in: query
           name: warehouse_id
@@ -22166,6 +22167,7 @@ paths:
                 type: object
                 properties:
                   locked_until: { type: [string, 'null'], format: date }
+                  first_document_date: { type: [string, 'null'], format: date, description: První vlastní skladový doklad firmy (navržené datum přechodu). }
                   active: { oneOf: [{ $ref: '#/components/schemas/CatalogJob' }, { type: 'null' }] }
                   orphan_job_id:
                     type: [integer, 'null']

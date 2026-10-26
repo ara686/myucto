@@ -465,6 +465,8 @@ final class StockHistoryImportWorker
         }
 
         return [
+            'cutover_date' => $profile['cutover_date'],
+            'fill_negative' => $profile['fill_negative'],
             'documents' => $documents,
             'lines' => $lines,
             'date_from' => $from,

@@ -42,12 +42,18 @@ final class StockHistoryImportAction
     public function status(Request $request, Response $response): Response
     {
         return $this->run($request, $response, function (int $supplierId): array {
-            $stmt = $this->db->pdo()->prepare('SELECT stock_history_locked_until FROM supplier WHERE id = ?');
+            $stmt = $this->db->pdo()->prepare("SELECT s.stock_history_locked_until,
+                    (SELECT MIN(d.doc_date) FROM stock_documents d WHERE d.supplier_id = s.id
+                        AND d.status IN ('posted','reversed') AND d.history_import_job_id IS NULL) AS first_document_date
+                FROM supplier s WHERE s.id = ?");
             $stmt->execute([$supplierId]);
+            $row = $stmt->fetch(\PDO::FETCH_ASSOC) ?: [];
             $active = $this->imports->active($supplierId);
             unset($active['input']['source_sha256']);
             return [
-                'locked_until' => ($date = $stmt->fetchColumn()) === false ? null : $date,
+                'locked_until' => $row['stock_history_locked_until'] ?? null,
+                // Navržené datum přechodu: první skladový doklad vzniklý v MyÚčtu.
+                'first_document_date' => $row['first_document_date'] ?? null,
                 'active' => $active,
                 'orphan_job_id' => $this->imports->orphan($supplierId),
                 'max_rows' => StockHistoryImportProfile::MAX_ROWS,
