@@ -21,6 +21,10 @@ vi.mock('@/stores/supplier', async () => {
   return { useSupplierStore: () => mocks.supplierStore }
 })
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
+vi.mock('@/composables/useFormat', () => ({
+  formatDate: (value: string | null | undefined) => value ?? '—',
+  formatNumber: (value: number) => String(value),
+}))
 vi.mock('vue-router', () => ({ useRoute: () => mocks.route, useRouter: () => ({ replace: mocks.replace }) }))
 
 const header = ['doklad', 'typ', 'datum', 'sklad', 'sklad_cil', 'sku', 'mnozstvi', 'cena']
@@ -219,6 +223,21 @@ describe('StockHistoryImport', () => {
     wrapper = mountPage()
     await flushPromises()
     expect(wrapper.find('[data-test="retry"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('shows the file content of a row without recognised values and labels taken-over rows', async () => {
+    mocks.route.query = { history_job: '41' }
+    mocks.job.mockResolvedValue({ ...stage, report: { ...stage.report, counts: { applied: 1, failed: 1 } } })
+    mocks.items.mockResolvedValue({ items: [
+      { ordinal: 1, source_row: 2, status: 'applied', error_code: null, input: { values: { doc_number: 'P1', sku: 'ZB-1' } }, before: null, after: null },
+      { ordinal: 2, source_row: 3, status: 'failed', error_code: 'history_import_doc_date_future', input: { values: [], raw: ['P2', 'prijemka', '2099-01-01', ''] }, before: null, after: null },
+    ], pagination: { page: 1, limit: 50, total: 2, pages: 1 } })
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.text()).toContain('P2; prijemka; 2099-01-01')
+    expect(wrapper.text()).toContain('stock.history_import.status_applied')
+    expect(wrapper.text()).not.toContain('stock.opening_import.status.applied')
     wrapper.unmount()
   })
 })

@@ -12,6 +12,7 @@ import CatalogJobProgress from '@/components/stock/CatalogJobProgress.vue'
 import { btnFilled, btnOutline, ICONS } from '@/components/ui/buttonStyles'
 import { useAuthStore } from '@/stores/auth'
 import { useSupplierStore } from '@/stores/supplier'
+import { formatDate, formatNumber } from '@/composables/useFormat'
 
 const STAGE_KIND = 'stock_history_import_stage'
 const APPLY_KIND = 'stock_history_import_apply'
@@ -88,7 +89,10 @@ const rollbackTarget = computed(() => activeImport.value?.id ?? orphanId.value)
 const canRollback = computed(() => auth.isCompanyAdminRole && rollbackTarget.value !== null
   && !['queued', 'running'].includes(activeImport.value?.status ?? '') && !running.value)
 const lockedLabel = computed(() => status.value?.locked_until === LOCK_RUNNING
-  ? t('stock.history_import.locked_running') : status.value?.locked_until ?? '-')
+  ? t('stock.history_import.locked_running') : formatDate(status.value?.locked_until))
+const today = new Date().toLocaleDateString('sv')
+/** Datum přechodu je nejpozději první skladový doklad firmy a nejpozději dnes. */
+const cutoverMax = computed(() => [status.value?.first_document_date, today].filter((d): d is string => !!d).sort()[0])
 /** Převzetí a vrácení znovu spustit nejde; import se vrátí a spustí znovu z kontroly souboru. */
 const canRetry = computed(() => !!job.value && job.value.kind === STAGE_KIND && ['failed', 'cancelled'].includes(job.value.status))
 const endStateDifferences = computed(() => (endState.value?.items ?? [])
@@ -98,6 +102,24 @@ const formValid = computed(() => !!source.value
   && (liveMode.value ? !hasDocuments.value : /^\d{4}-\d{2}-\d{2}$/.test(config.value.cutover_date ?? ''))
   && /^[a-z0-9][a-z0-9_.-]{0,99}$/.test(config.value.source_key)
   && (sample.value?.fields ?? []).every(field => !!config.value.mapping[field]))
+
+/** Množství a ceny z API přicházejí jako desetinný řetězec („1.000“), uživatel je čte česky. */
+function qty(value: string | null | undefined): string {
+  return value === null || value === undefined ? '' : formatNumber(Number(value), { maximumFractionDigits: 3 })
+}
+function cost(value: string | null | undefined): string {
+  return value === null || value === undefined ? '' : formatNumber(Number(value), { minimumFractionDigits: 2, maximumFractionDigits: 6 })
+}
+
+/** Převzatý řádek není „zaúčtovaný“ (historie se neúčtuje), ostatní stavy jako import zásob. */
+function statusLabel(state: string): string {
+  return state === 'applied' ? t('stock.history_import.status_applied') : t(`stock.opening_import.status.${state}`)
+}
+/** Chybný řádek nemá rozpoznané hodnoty, ukáže se aspoň jeho obsah ze souboru. */
+function rawRow(item: { input: object }): string {
+  const raw = (item.input as { raw?: unknown }).raw
+  return Array.isArray(raw) ? raw.filter(cell => cell !== '' && cell !== null).join('; ') : ''
+}
 
 function errorCode(e: any): string | undefined {
   return e?.response?.data?.error?.code
@@ -366,7 +388,7 @@ onBeforeUnmount(() => { generation++; stopPolling() })
 <template>
   <div class="space-y-5">
     <header class="flex flex-wrap items-start justify-between gap-3">
-      <div><h1 class="text-2xl font-semibold">{{ t('stock.history_import.title') }}</h1><p class="mt-1 text-sm text-neutral-500">{{ t('stock.history_import.subtitle', { rows: (status?.max_rows ?? 300000).toLocaleString() }) }}</p></div>
+      <div><h1 class="text-2xl font-semibold">{{ t('stock.history_import.title') }}</h1><p class="mt-1 text-sm text-neutral-500">{{ t('stock.history_import.subtitle', { rows: formatNumber(status?.max_rows ?? 300000) }) }}</p></div>
       <RouterLink to="/stock/documents" :class="btnOutline('neutral')"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6" /></svg>{{ t('stock.history_import.back') }}</RouterLink>
     </header>
     <p v-if="error" class="rounded-lg border border-danger-200 bg-danger-50 p-3 text-sm text-danger-700">{{ error }}</p>
@@ -374,7 +396,7 @@ onBeforeUnmount(() => { generation++; stopPolling() })
     <section v-if="activeImport" data-test="active-import" class="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-xl border border-primary-200 bg-primary-50 p-4 text-sm">
       <div class="min-w-0">
         <p class="font-medium">{{ t('stock.history_import.active_title') }}</p>
-        <p class="text-neutral-600">{{ t('stock.history_import.active_text', { id: activeImport.id, from: activeInput?.date_from ?? '-', to: activeInput?.date_to ?? '-', locked: lockedLabel }) }}</p>
+        <p class="text-neutral-600">{{ t('stock.history_import.active_text', { id: activeImport.id, from: formatDate(activeInput?.date_from), to: formatDate(activeInput?.date_to), locked: lockedLabel }) }}</p>
       </div>
       <div class="flex flex-wrap gap-2">
         <button v-if="job?.id !== activeImport.id" type="button" data-test="show-active" :class="btnOutline('neutral')" @click="openActive"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path :d="ICONS.eye" /></svg>{{ t('stock.history_import.show_import') }}</button>
@@ -396,10 +418,10 @@ onBeforeUnmount(() => { generation++; stopPolling() })
       <fieldset class="space-y-2 text-sm">
         <legend class="font-medium">{{ t('stock.history_import.mode') }}</legend>
         <label class="flex items-start gap-2"><input v-model="liveMode" type="radio" :value="false" data-test="mode-cutover" class="mt-1" /><span><span class="font-medium">{{ t('stock.history_import.mode_cutover') }}</span><span class="block text-neutral-500">{{ t('stock.history_import.mode_cutover_hint') }}</span></span></label>
-        <label class="flex items-start gap-2" :class="{ 'opacity-50': hasDocuments }"><input v-model="liveMode" type="radio" :value="true" data-test="mode-live" :disabled="hasDocuments" class="mt-1" /><span><span class="font-medium">{{ t('stock.history_import.mode_live') }}</span><span class="block text-neutral-500">{{ hasDocuments ? t('stock.history_import.mode_live_blocked', { date: status.first_document_date }) : t('stock.history_import.mode_live_hint') }}</span></span></label>
+        <label class="flex items-start gap-2" :class="{ 'opacity-50': hasDocuments }"><input v-model="liveMode" type="radio" :value="true" data-test="mode-live" :disabled="hasDocuments" class="mt-1" /><span><span class="font-medium">{{ t('stock.history_import.mode_live') }}</span><span class="block text-neutral-500">{{ hasDocuments ? t('stock.history_import.mode_live_blocked', { date: formatDate(status.first_document_date) }) : t('stock.history_import.mode_live_hint') }}</span></span></label>
       </fieldset>
       <div class="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2">
-        <label v-if="!liveMode" class="block text-sm"><span class="font-medium">{{ t('stock.history_import.cutover_date') }}</span><input v-model="config.cutover_date" data-test="cutover-date" type="date" :max="status.first_document_date ?? undefined" class="input mt-1 w-full" /><span class="mt-1 block text-xs text-neutral-500">{{ t('stock.history_import.cutover_hint') }}</span></label>
+        <label v-if="!liveMode" class="block text-sm"><span class="font-medium">{{ t('stock.history_import.cutover_date') }}</span><input v-model="config.cutover_date" data-test="cutover-date" type="date" :max="cutoverMax" class="input mt-1 w-full" /><span class="mt-1 block text-xs text-neutral-500">{{ t('stock.history_import.cutover_hint') }}</span></label>
         <label class="block text-sm"><span class="font-medium">{{ t('stock.history_import.source_key') }}</span><input v-model.trim="config.source_key" data-test="source-key" class="input mt-1 w-full" placeholder="stary-sklad" /></label>
       </div>
       <label class="block rounded-lg border-2 border-dashed border-neutral-300 p-6 text-center cursor-pointer">
@@ -440,15 +462,15 @@ onBeforeUnmount(() => { generation++; stopPolling() })
       <div v-if="summary.documents" data-test="summary" class="grid min-w-0 grid-cols-2 gap-3 text-sm sm:grid-cols-4">
         <div v-for="type in TYPES" :key="type" class="rounded-lg bg-neutral-50 p-3"><p class="text-xs text-neutral-500">{{ t(`stock.history_import.types.${type}`) }}</p><p class="font-semibold">{{ summary.documents[type] ?? 0 }}</p></div>
         <div class="rounded-lg bg-neutral-50 p-3"><p class="text-xs text-neutral-500">{{ t('stock.history_import.lines') }}</p><p class="font-semibold">{{ summary.lines ?? 0 }}</p></div>
-        <div class="rounded-lg bg-neutral-50 p-3"><p class="text-xs text-neutral-500">{{ t('stock.history_import.period') }}</p><p class="font-semibold">{{ summary.date_from ?? '-' }} – {{ summary.date_to ?? '-' }}</p></div>
-        <div class="rounded-lg bg-neutral-50 p-3"><p class="text-xs text-neutral-500">{{ t('stock.history_import.cutover_date') }}</p><p class="font-semibold">{{ summary.cutover_date ?? t('stock.history_import.mode_live') }}</p></div>
+        <div class="rounded-lg bg-neutral-50 p-3"><p class="text-xs text-neutral-500">{{ t('stock.history_import.period') }}</p><p class="font-semibold">{{ formatDate(summary.date_from) }} – {{ formatDate(summary.date_to) }}</p></div>
+        <div class="rounded-lg bg-neutral-50 p-3"><p class="text-xs text-neutral-500">{{ t('stock.history_import.cutover_date') }}</p><p class="font-semibold">{{ summary.cutover_date ? formatDate(summary.cutover_date) : t('stock.history_import.mode_live') }}</p></div>
       </div>
       <p v-if="job.kind === APPLY_KIND" data-test="apply-summary" class="text-sm">{{ t('stock.history_import.documents_created', { count: summary.documents_created ?? 0, fills: summary.fill_documents ?? 0 }) }}</p>
       <p v-if="job.kind === ROLLBACK_KIND" data-test="rollback-summary" class="text-sm">{{ t('stock.history_import.documents_deleted', { count: summary.documents_deleted ?? 0 }) }}</p>
 
       <div v-if="job.kind === STAGE_KIND && negatives > 0" data-test="negatives" class="space-y-2 rounded-lg border p-4 text-sm" :class="summary.fill_negative ? 'border-warning-200 bg-warning-50' : 'border-danger-200 bg-danger-50'">
         <p class="font-medium">{{ t(summary.fill_negative ? 'stock.history_import.negatives_filled' : 'stock.history_import.negatives_blocking', { count: negatives }) }}</p>
-        <div class="overflow-x-auto"><table class="min-w-full text-xs"><thead><tr><th class="px-2 py-1 text-left">{{ t('stock.opening_import.row') }}</th><th class="px-2 py-1 text-left">{{ t('stock.history_import.fields.doc_number') }}</th><th class="px-2 py-1 text-left">{{ t('stock.history_import.fields.doc_date') }}</th><th class="px-2 py-1 text-left">{{ t('stock.history_import.fields.warehouse') }}</th><th class="px-2 py-1 text-left">SKU</th><th class="px-2 py-1 text-right">{{ t('stock.history_import.missing_quantity') }}</th><th class="px-2 py-1 text-right">{{ t('stock.history_import.fill_cost') }}</th></tr></thead><tbody><tr v-for="item in summary.negatives ?? []" :key="item.source_row" class="border-t border-neutral-200"><td class="px-2 py-1">{{ item.source_row }}</td><td class="px-2 py-1">{{ item.doc_number }}</td><td class="px-2 py-1">{{ item.doc_date }}</td><td class="px-2 py-1">{{ item.warehouse }}</td><td class="px-2 py-1">{{ item.sku }}</td><td class="px-2 py-1 text-right">{{ item.missing_quantity }}</td><td class="px-2 py-1 text-right">{{ item.unit_cost }}</td></tr></tbody></table></div>
+        <div class="overflow-x-auto"><table class="min-w-full text-xs"><thead><tr><th class="px-2 py-1 text-left">{{ t('stock.opening_import.row') }}</th><th class="px-2 py-1 text-left">{{ t('stock.history_import.fields.doc_number') }}</th><th class="px-2 py-1 text-left">{{ t('stock.history_import.fields.doc_date') }}</th><th class="px-2 py-1 text-left">{{ t('stock.history_import.fields.warehouse') }}</th><th class="px-2 py-1 text-left">SKU</th><th class="px-2 py-1 text-right">{{ t('stock.history_import.missing_quantity') }}</th><th class="px-2 py-1 text-right">{{ t('stock.history_import.fill_cost') }}</th></tr></thead><tbody><tr v-for="item in summary.negatives ?? []" :key="item.source_row" class="border-t border-neutral-200"><td class="px-2 py-1">{{ item.source_row }}</td><td class="px-2 py-1">{{ item.doc_number }}</td><td class="px-2 py-1">{{ formatDate(item.doc_date) }}</td><td class="px-2 py-1">{{ item.warehouse }}</td><td class="px-2 py-1">{{ item.sku }}</td><td class="px-2 py-1 text-right">{{ qty(item.missing_quantity) }}</td><td class="px-2 py-1 text-right">{{ cost(item.unit_cost) }}</td></tr></tbody></table></div>
         <p v-if="negatives > (summary.negatives?.length ?? 0)" class="text-xs">{{ t('stock.history_import.negatives_more', { count: negatives - (summary.negatives?.length ?? 0) }) }}</p>
       </div>
       <div v-if="job.kind === STAGE_KIND && endState" data-test="end-state" class="min-w-0 space-y-2 rounded-lg border border-neutral-200 p-4 text-sm">
@@ -456,14 +478,14 @@ onBeforeUnmount(() => { generation++; stopPolling() })
           <p class="font-medium">{{ t('stock.history_import.end_state_title') }}</p>
           <button type="button" data-test="end-state-download" :class="btnOutline('neutral')" @click="downloadEndState"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path :d="ICONS.download" /></svg>{{ t('stock.history_import.end_state_download') }}</button>
         </div>
-        <p>{{ endState.cutover_date ? t('stock.history_import.end_state_summary', { count: endState.totals.count, differences: endState.totals.differences, date: endState.cutover_date }) : t('stock.history_import.end_state_summary_live', { count: endState.totals.count }) }}</p>
-        <div v-if="endStateDifferences.length" class="overflow-x-auto"><table class="min-w-full text-xs"><thead><tr><th class="px-2 py-1 text-left">{{ t('stock.history_import.fields.warehouse') }}</th><th class="px-2 py-1 text-left">SKU</th><th class="px-2 py-1 text-left">{{ t('stock.history_import.end_state_name') }}</th><th class="px-2 py-1 text-right">{{ t('stock.history_import.end_state_history') }}</th><th class="px-2 py-1 text-right">{{ t('stock.history_import.end_state_stock') }}</th><th class="px-2 py-1 text-right">{{ t('stock.history_import.end_state_difference') }}</th></tr></thead><tbody><tr v-for="row in endStateDifferences.slice(0, END_STATE_ROWS)" :key="`${row.warehouse_code}/${row.sku}`" class="border-t border-neutral-200"><td class="px-2 py-1">{{ row.warehouse_code }}</td><td class="px-2 py-1">{{ row.sku }}</td><td class="px-2 py-1">{{ row.name }}</td><td class="px-2 py-1 text-right">{{ row.history_qty }}</td><td class="px-2 py-1 text-right">{{ row.stock_qty }}</td><td class="px-2 py-1 text-right font-medium">{{ row.difference }}</td></tr></tbody></table></div>
+        <p>{{ endState.cutover_date ? t('stock.history_import.end_state_summary', { count: endState.totals.count, differences: endState.totals.differences, date: formatDate(endState.cutover_date) }) : t('stock.history_import.end_state_summary_live', { count: endState.totals.count }) }}</p>
+        <div v-if="endStateDifferences.length" class="overflow-x-auto"><table class="min-w-full text-xs"><thead><tr><th class="px-2 py-1 text-left">{{ t('stock.history_import.fields.warehouse') }}</th><th class="px-2 py-1 text-left">SKU</th><th class="px-2 py-1 text-left">{{ t('stock.history_import.end_state_name') }}</th><th class="px-2 py-1 text-right">{{ t('stock.history_import.end_state_history') }}</th><th class="px-2 py-1 text-right">{{ t('stock.history_import.end_state_stock') }}</th><th class="px-2 py-1 text-right">{{ t('stock.history_import.end_state_difference') }}</th></tr></thead><tbody><tr v-for="row in endStateDifferences.slice(0, END_STATE_ROWS)" :key="`${row.warehouse_code}/${row.sku}`" class="border-t border-neutral-200"><td class="px-2 py-1">{{ row.warehouse_code }}</td><td class="px-2 py-1">{{ row.sku }}</td><td class="px-2 py-1">{{ row.name }}</td><td class="px-2 py-1 text-right">{{ qty(row.history_qty) }}</td><td class="px-2 py-1 text-right">{{ qty(row.stock_qty) }}</td><td class="px-2 py-1 text-right font-medium">{{ qty(row.difference) }}</td></tr></tbody></table></div>
         <p v-if="endStateDifferences.length > END_STATE_ROWS" class="text-xs">{{ t('stock.history_import.end_state_more', { count: endStateDifferences.length - END_STATE_ROWS }) }}</p>
       </div>
       <label v-if="job.kind === STAGE_KIND && closedPeriods > 0 && previewReady" class="flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 p-4 text-sm"><input v-model="confirmClosed" type="checkbox" data-test="confirm-closed" class="mt-1" /><span>{{ t('stock.history_import.closed_periods', { count: closedPeriods }) }}</span></label>
 
-      <div class="flex flex-wrap gap-3 text-sm"><span v-for="state in ['ready','applied','failed','skipped']" :key="state" class="rounded-full bg-neutral-100 px-3 py-1">{{ t(`stock.opening_import.status.${state}`) }}: {{ counts[state] || 0 }}</span></div>
-      <div v-if="report?.items.length" class="overflow-x-auto rounded-lg border border-neutral-200"><table class="min-w-full text-sm"><thead class="bg-neutral-50"><tr><th class="px-3 py-2 text-left">{{ t('stock.opening_import.row') }}</th><th class="px-3 py-2 text-left">{{ t('stock.history_import.fields.doc_number') }}</th><th class="px-3 py-2 text-left">SKU</th><th class="px-3 py-2 text-left">{{ t('stock.opening_import.status_label') }}</th><th class="px-3 py-2 text-left">{{ t('stock.opening_import.result') }}</th></tr></thead><tbody><tr v-for="item in report.items" :key="item.ordinal" class="border-t border-neutral-200"><td class="px-3 py-2">{{ item.source_row }}</td><td class="px-3 py-2">{{ item.input.values?.doc_number }}</td><td class="px-3 py-2">{{ item.input.values?.sku }}</td><td class="px-3 py-2">{{ t(`stock.opening_import.status.${item.status}`) }}</td><td class="px-3 py-2 text-danger-700">{{ item.error_code ? t(`stock.history_import.errors.${item.error_code}`, item.error_code) : '' }}</td></tr></tbody></table></div>
+      <div class="flex flex-wrap gap-3 text-sm"><span v-for="state in ['ready','applied','failed','skipped']" :key="state" class="rounded-full bg-neutral-100 px-3 py-1">{{ statusLabel(state) }}: {{ counts[state] || 0 }}</span></div>
+      <div v-if="report?.items.length" class="overflow-x-auto rounded-lg border border-neutral-200"><table class="min-w-full text-sm"><thead class="bg-neutral-50"><tr><th class="px-3 py-2 text-left">{{ t('stock.opening_import.row') }}</th><th class="px-3 py-2 text-left">{{ t('stock.history_import.fields.doc_number') }}</th><th class="px-3 py-2 text-left">SKU</th><th class="px-3 py-2 text-left">{{ t('stock.opening_import.status_label') }}</th><th class="px-3 py-2 text-left">{{ t('stock.opening_import.result') }}</th></tr></thead><tbody><tr v-for="item in report.items" :key="item.ordinal" class="border-t border-neutral-200"><td class="px-3 py-2">{{ item.source_row }}</td><td class="max-w-xs truncate px-3 py-2" :title="item.input.values?.doc_number ? undefined : rawRow(item)">{{ item.input.values?.doc_number ?? rawRow(item) }}</td><td class="px-3 py-2">{{ item.input.values?.sku }}</td><td class="px-3 py-2">{{ statusLabel(item.status) }}</td><td class="px-3 py-2 text-danger-700">{{ item.error_code ? t(`stock.history_import.errors.${item.error_code}`, item.error_code) : '' }}</td></tr></tbody></table></div>
       <div v-if="report && reportPages > 1" class="flex flex-wrap items-center justify-between gap-3 border-t border-neutral-200 pt-3">
         <button type="button" :disabled="reportLoading || reportPage <= 1" :class="btnOutline('neutral')" @click="loadReport(reportPage - 1)"><svg class="h-4 w-4 rotate-90" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path :d="ICONS.chevron" /></svg>{{ t('common.previous') }}</button>
         <span class="text-sm text-neutral-500">{{ t('eshop.import2.page', { page: reportPage, pages: reportPages }) }}</span>
@@ -471,7 +493,7 @@ onBeforeUnmount(() => { generation++; stopPolling() })
       </div>
       <p v-if="job.kind !== STAGE_KIND && ['failed', 'cancelled'].includes(job.status)" data-test="retry-unsupported" class="text-sm text-neutral-600">{{ t(job.kind === APPLY_KIND ? 'stock.history_import.apply_stopped' : 'stock.history_import.rollback_stopped') }}</p>
       <div class="flex flex-wrap justify-end gap-2">
-        <button type="button" :class="btnOutline('neutral')" @click="reset"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path :d="ICONS.plus" /></svg>{{ t('stock.history_import.close') }}</button>
+        <button type="button" :class="btnOutline('neutral')" @click="reset"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path :d="ICONS.x" /></svg>{{ t('stock.history_import.close') }}</button>
         <button v-if="canRetry" type="button" data-test="retry" :class="btnOutline('primary')" @click="changeJob('retry')"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path :d="ICONS.cycle" /></svg>{{ t('common.retry') }}</button>
         <button v-if="previewReady" type="button" data-test="apply-import" :disabled="!canApply || loading" :class="btnFilled('success')" @click="apply"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path :d="ICONS.check" /></svg>{{ t('stock.history_import.apply') }}</button>
         <RouterLink v-if="job.kind === APPLY_KIND && job.status === 'completed'" to="/stock/documents" :class="btnFilled('primary')"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path :d="ICONS.doc" /></svg>{{ t('stock.history_import.open_documents') }}</RouterLink>

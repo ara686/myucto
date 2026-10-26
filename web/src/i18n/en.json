@@ -13861,12 +13861,12 @@
       "period": "Period",
       "documents_created": "Documents imported: {count}, of which technical receipts: {fills}.",
       "documents_deleted": "Documents deleted: {count}.",
-      "negatives_blocking": "The history leads to negative stock in {count} places. Add the missing receipts to the file or run the check again with technical receipts.",
-      "negatives_filled": "A technical receipt of the missing quantity will be added in {count} places.",
-      "negatives_more": "And {count} more places.",
+      "negatives_blocking": "Places where the history leads to negative stock: {count}. Add the missing receipt to the file, or run the check again with technical receipts.",
+      "negatives_filled": "Places with negative stock covered by a technical receipt: {count}.",
+      "negatives_more": "More places: {count}.",
       "missing_quantity": "Missing",
       "fill_cost": "Fill price",
-      "closed_periods": "{count} documents fall into a closed accounting period. Imported documents are not posted and existing valuations do not change. I confirm I want to import them.",
+      "closed_periods": "Documents in a closed accounting period: {count}. Imported documents are not posted and the valuation of existing documents does not change. I confirm I want to import them.",
       "imported_badge": "Imported",
       "imported_hint": "Document taken over by the stock history import. It cannot be reversed; roll back the import to correct it.",
       "locked_running": "import or rollback in progress (the whole stock is locked)",
@@ -13878,13 +13878,13 @@
       "rollback_stopped": "The rollback did not finish. Start it again with Roll back import.",
       "end_state_title": "History end state by item",
       "end_state_download": "Download XLSX",
-      "end_state_summary": "Items in warehouses: {count}. {differences} differ from stock in MyÚčto on {date}.",
+      "end_state_summary": "Items in warehouses: {count}, of which differ from stock in MyÚčto on {date}: {differences}.",
       "end_state_summary_live": "Items in warehouses: {count}. Stock after the import will equal the end of the history; compare it with the previous software in the XLSX.",
       "end_state_name": "Name",
       "end_state_history": "History",
       "end_state_stock": "MyÚčto",
       "end_state_difference": "Difference",
-      "end_state_more": "And {count} more items with a difference, the full list is in the XLSX.",
+      "end_state_more": "More items with a difference ({count}) are in the XLSX.",
       "fields": {
         "doc_number": "Document number",
         "doc_type": "Document type",
@@ -13968,7 +13968,8 @@
         "history_import_stock_take_open": "A stock take is in progress. Run the history import after it is closed.",
         "history_import_job_stale": "The job no longer matches the latest history import and wrote nothing.",
         "history_import_retry_unsupported": "Neither the import nor the rollback can be restarted. Roll the import back and run it again from the file check."
-      }
+      },
+      "status_applied": "Imported"
     },
     "intrastat": {
       "title": "Intrastat export",
