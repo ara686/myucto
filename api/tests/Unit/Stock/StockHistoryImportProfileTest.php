@@ -61,6 +61,23 @@ final class StockHistoryImportProfileTest extends TestCase
         yield 'dlouhé číslo' => [[str_repeat('9', 31), 'vydejka', '2025-01-01', 'HL', '', 'A', '1', ''], 'history_import_doc_number_too_long'];
     }
 
+    public function testRejectsFutureDocumentAndCutoverDates(): void
+    {
+        $tomorrow = (new \DateTimeImmutable('tomorrow'))->format('Y-m-d');
+        $profile = self::profile(['cutover_date' => null]);
+        $indexes = StockHistoryImportProfile::headerIndexes($profile, self::HEADER);
+        self::assertSame(date('Y-m-d'), StockHistoryImportProfile::map($profile, $indexes, ['1', 'prijemka', date('Y-m-d'), 'HL', '', 'A', '1', '1'])['doc_date']);
+        try {
+            StockHistoryImportProfile::map($profile, $indexes, ['1', 'prijemka', $tomorrow, 'HL', '', 'A', '1', '1']);
+            self::fail('Doklad s budoucím datem musí selhat.');
+        } catch (\InvalidArgumentException $e) {
+            self::assertSame('history_import_doc_date_future', $e->getMessage());
+        }
+        self::assertSame(date('Y-m-d'), self::profile(['cutover_date' => date('Y-m-d')])['cutover_date']);
+        $this->expectExceptionMessage('history_import_cutover_future');
+        self::profile(['cutover_date' => $tomorrow]);
+    }
+
     public function testRejectsIncompleteMappingAndUnknownFields(): void
     {
         $this->expectExceptionMessage('history_import_mapping_invalid');

@@ -43,6 +43,9 @@ final class StockHistoryImportProfile
             || !is_bool($input['fill_negative'] ?? false)) {
             throw new \InvalidArgumentException('history_import_profile_invalid');
         }
+        if ($cutover !== null && $cutover > date('Y-m-d')) {
+            throw new \InvalidArgumentException('history_import_cutover_future');
+        }
         $mapping = $input['mapping'] ?? null;
         if (!is_array($mapping) || array_diff(array_keys($mapping), [...self::REQUIRED, ...self::OPTIONAL]) !== []
             || array_diff(self::REQUIRED, array_keys($mapping)) !== []) {
@@ -138,6 +141,9 @@ final class StockHistoryImportProfile
         $date = self::date($raw['doc_date']);
         if ($profile['cutover_date'] !== null && $date >= $profile['cutover_date']) {
             throw new \InvalidArgumentException('history_import_doc_date_after_cutover');
+        }
+        if ($date > date('Y-m-d')) {
+            throw new \InvalidArgumentException('history_import_doc_date_future');
         }
         if (mb_strlen($raw['warehouse']) > 20 || mb_strlen($raw['warehouse_to']) > 20 || mb_strlen($raw['sku']) > 50) {
             throw new \InvalidArgumentException('history_import_reference_too_long');
