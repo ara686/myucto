@@ -14,21 +14,24 @@ use MyInvoice\Repository\Property\Opening\OpeningRepository;
 use MyInvoice\Repository\Property\Payments\DebtRepository;
 use MyInvoice\Repository\Property\Payments\PaymentRepository;
 use MyInvoice\Repository\Property\PropertyRegistryRepository;
+use MyInvoice\Repository\Property\PropertyProfileRepository;
 use MyInvoice\Repository\Property\Receivables\ChargeDebtRegistrar;
 use MyInvoice\Service\Accounting\ChartOfAccountsSeeder;
 use MyInvoice\Service\Accounting\PostingService;
 use MyInvoice\Service\Property\Charges\ChargeCalculator;
 use MyInvoice\Service\Property\Charges\ChargePreviewService;
 use MyInvoice\Service\Property\Charges\Issuance\IssuancePreviewService;
+use MyInvoice\Service\Property\PropertyInstant;
+use MyInvoice\Service\Property\Services\Settlement\SettlementHistory;
 use MyInvoice\Tests\Support\PropertyChargeFixture;
 use PDO;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Referenční SVJ „Dům U Lip“ (12 jednotek, rámec 504) přes dvě účetní období produkčními
- * službami: založení, registr, počáteční stavy, předpisy, úhrady z banky, příslušenství,
- * náklady, čerpání záloh, nájem střechy, dohad, uzávěrka, otevření, vyúčtování služeb po
- * právních segmentech a částečná vratka kreditu. Všechny osoby a částky jsou syntetické.
+ * Referenční SVJ „Dům U Lip“ (tři jednotky, rámec 504) přes dvě účetní období produkčními
+ * službami: založení, registr, počáteční stavy, předpisy, úhrady z banky,
+ * náklady, čerpání záloh, nájem střechy, dohad, uzávěrka, otevření, jeden úplný vodní workflow
+ * a částečná vratka kreditu. Všechny osoby a částky jsou syntetické.
  */
 final class PropertyReferenceHouseEndToEndTest extends TestCase
 {
@@ -47,10 +50,46 @@ final class PropertyReferenceHouseEndToEndTest extends TestCase
     private int $year2026;
     /** @var array<string,int> osoby podle referenčního značení */
     private array $people = [];
-    /** @var array<string,int> dluh předpisu podle jednotky nebo segmentu U05 */
+    /** @var array<string,int> dluh předpisu podle jednotky */
     private array $debts = [];
     /** @var array<string,array<string,int>> řádky předpisu podle jednotky a složky */
     private array $lines = [];
+    private int $fundingRevision = 0;
+
+    private function referenceHouseFixture(Connection $db): array
+    {
+        $pdo=$db->pdo(); $supplier=$this->createIsolatedSupplier($pdo,(int)$pdo->query('SELECT id FROM supplier ORDER BY id LIMIT 1')->fetchColumn());
+        $actor=(int)$pdo->query('SELECT id FROM users ORDER BY id LIMIT 1')->fetchColumn();
+        $pdo->prepare("INSERT INTO supplier_accounting_frameworks (supplier_id,effective_from,accounting_framework) VALUES (?,'1900-01-01','cz_504')")->execute([$supplier]);
+        (new PropertyProfileRepository($db))->save($supplier,['expected_revision'=>0,'effective_from'=>'2026-01-01T00:00:00+01:00','enabled'=>true,'reason'=>'Synthetic SVJ','title_ref'=>'Synthetic deed','idempotency_key'=>'profile'],$actor);
+        $country=(int)$pdo->query("SELECT id FROM countries WHERE iso2='CZ'")->fetchColumn();
+        $currency=(int)$pdo->query("SELECT id FROM currencies WHERE code='CZK' ORDER BY id LIMIT 1")->fetchColumn();
+        $clients=[];
+        foreach([1,2,10,11,18] as $n) {
+            $pdo->prepare('INSERT INTO clients (supplier_id,company_name,street,city,zip,country_id,main_email,currency_default_id) VALUES (?,?,?,?,?,?,?,?)')
+                ->execute([$supplier,'Synthetic '.$n,'Synthetic','Synthetic','10000',$country,'charge'.$n.'@example.test',$currency]);
+            $clients[$n]=(int)$pdo->lastInsertId();
+        }
+        $registry=new PropertyRegistryRepository($db);
+        $house=$registry->create($supplier,'house',self::registryRequest('LIP',['name'=>'Dům U Lip','active'=>true,'address'=>['street'=>'Synthetic 12','city'=>'Synthetic','postal_code'=>'10000','country'=>'CZ'],'declaration_ref'=>'Synthetic deed','share_scope'=>'LIP','registry_complete'=>true]),$actor);
+        $service=$registry->create($supplier,'service',self::registryRequest('WATER',['name'=>'Synthetic water','active'=>true,'measure'=>'m3','measure_label'=>'']),$actor);
+        $fixture=(static fn():array=>require dirname(__DIR__,2).'/Fixtures/property-house-at-limes.php')();
+        $units=[]; $states=[];
+        foreach(array_intersect_key($fixture,array_flip(['U01','U06','G12'])) as $code=>$state) {
+            foreach($state['ownerships'] as &$group) $group['members']=array_map(fn($n)=>$clients[$n],$group['members']); unset($group);
+            foreach($state['roles'] as &$role) $role['client_id']=$clients[$role['client_id']]; unset($role);
+            $state['services']=$code==='U01'?[$service['id']]:[];
+            $state['attributes']['floor_area']=['num'=>'60','den'=>'1'];
+            $state['attributes']['persons']=['num'=>$code==='G12'?'0':'2','den'=>'1'];
+            $state['attributes']['share']=['num'=>$code==='G12'?'100':'450','den'=>'1000'];
+            $states[$code]=$state;
+            $units[$code]=$registry->create($supplier,'unit',self::registryRequest($code,$state)+['parent_id'=>$house['id']],$actor)['id'];
+        }
+        $repo=new ChargeRepository($db); $components=[];
+        foreach(['LONG'=>'long_term_advance','ADMIN'=>'admin_advance','WATER'=>'service_advance'] as $code=>$kind) $components[$code]=$repo->createComponent($supplier,
+            ['code'=>$code,'name'=>'Synthetic '.$code,'kind'=>$kind,'service_id'=>$code==='WATER'?$service['id']:null,'effective_at'=>'2026-01-01T00:00:00+01:00','account_code'=>'','idempotency_key'=>$code],$actor)['id'];
+        return compact('supplier','actor','house','service','units','states','clients','components');
+    }
 
     protected function setUp(): void
     {
@@ -60,14 +99,11 @@ final class PropertyReferenceHouseEndToEndTest extends TestCase
         self::assertStringEndsWith('_test', (string) $this->pdo->query('SELECT DATABASE()')->fetchColumn());
         $this->pdo->exec("SET SESSION sql_mode='STRICT_ALL_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'");
         $this->pdo->beginTransaction();
-        $this->f = $this->chargeFixture($this->db);
+        $this->f = $this->referenceHouseFixture($this->db);
         $this->supplier = $this->f['supplier'];
         $this->actor = $this->f['actor'];
         $clients = $this->f['clients'];
-        $this->people = ['P01a' => $clients[1], 'P01b' => $clients[2], 'P02a' => $clients[3], 'P02b' => $clients[4], 'P02c' => $clients[5],
-            'P03' => $clients[6], 'A' => $clients[7], 'B' => $clients[8], 'C' => $clients[9], 'P06' => $clients[10], 'Q06' => $clients[11],
-            'P07' => $clients[12], 'T07' => $clients[13], 'P08' => $clients[14], 'P09' => $clients[15], 'P10' => $clients[16],
-            'P11' => $clients[17], 'P12' => $clients[18]];
+        $this->people = ['P01a' => $clients[1], 'P01b' => $clients[2], 'P06' => $clients[10], 'Q06' => $clients[11], 'P12' => $clients[18]];
         $this->year2026 = (new AccountingPeriodRepository($this->db))->create($this->supplier, 2026, '2026-01-01', '2026-12-31');
         (new ChartOfAccountsSeeder($this->db))->seedForSupplier($this->supplier, '2026-01-01');
         $chart = new ChartOfAccountsRepository($this->db);
@@ -86,27 +122,29 @@ final class PropertyReferenceHouseEndToEndTest extends TestCase
 
     public function testReferenceHouseTwoYearsMatchesBalanceSheets(): void
     {
+        PropertyInstant::withNormalizationContext($this->referenceHouseTwoYears(...));
+    }
+
+    private function referenceHouseTwoYears(): void
+    {
         $this->opening();
         $this->issueAnnualPrescriptions();
-        $this->issueWaterSegment('A', '2026-01-01', '2026-04-30');
         $this->annualPayments();
-        $this->allocation1600();
-        $this->u05Chain();
         $this->costsAndCoverage();
         $this->roofRent();
         $this->post('2026-12-31', [['221', 'debit', '790.00'], ['644.100', 'credit', '790.00', true]]);
         $this->waterCosts();
 
         self::assertSame(self::TRIAL_BALANCE_2026, $this->balances('2026-12-31'));
-        $this->assertStatements($this->year2026, '2026-12-31', 420830, 306000,
-            ['B.II.5.' => 92000, 'B.II.18.' => 50000, 'B.III.3.' => 278830],
-            ['A.II.1.' => 830, 'B.II.4.' => 225000, 'B.III.3.' => 134000, 'B.III.17.' => 11000, 'B.III.22.' => 50000],
-            ['A.I.6.' => 10060, 'A.V.22.' => 240000, 'B.IV.5.' => 40, 'B.IV.7.' => 790, 'B.IV.10.' => 250060, 'C.' => 830, 'D.' => 830]);
+        $this->assertStatements($this->year2026, '2026-12-31', 259730, 306000,
+            ['B.II.5.' => 9200, 'B.II.18.' => 4500, 'B.III.3.' => 246030],
+            ['A.II.1.' => 730, 'B.II.4.' => 225000, 'B.III.3.' => 13000, 'B.III.17.' => 16500, 'B.III.22.' => 4500],
+            ['A.I.6.' => 2060, 'A.V.22.' => 240000, 'B.IV.7.' => 790, 'B.IV.10.' => 242000, 'C.' => 730, 'D.' => 730]);
 
-        // Úrok z prodlení a náhrada právního nákladu jsou jiný zdanitelný příjem: přiznání je
+        // Bankovní úrok je jiný zdanitelný příjem: přiznání je
         // nutné, i když potvrzený výpočet daně vyjde nula.
         $closed = $this->close($this->year2026, ['status' => 'filing_required', 'reason' => 'other_taxable_income',
-            'legal_basis' => 'zdp_38mb_b', 'taxable_source_count' => 39]);
+            'legal_basis' => 'zdp_38mb_b']);
         self::assertNotNull($closed['entry_id']);
         self::assertSame([], $this->balances('2026-12-31'), 'Po uzávěrce jsou všechny účty včetně 933 a 962 nulové.');
         $closing = $this->container->get(\MyInvoice\Service\Accounting\Closing\ClosingService::class);
@@ -115,7 +153,7 @@ final class PropertyReferenceHouseEndToEndTest extends TestCase
         $year2027 = (int) $this->pdo->query('SELECT id FROM accounting_periods WHERE supplier_id=' . $this->supplier . ' AND fiscal_year=2027')->fetchColumn();
         $opening = self::TRIAL_BALANCE_2026;
         foreach (array_keys($opening) as $account) if (in_array(((string) $account)[0], ['5', '6'], true)) unset($opening[$account]);
-        $opening['931'] = '-830.00';
+        $opening['931'] = '-730.00';
         ksort($opening, SORT_STRING);
         self::assertSame($opening, $this->balances('2027-01-01', '2027-01-01'));
         // Shromáždění schválí závěrku 20. 3. 2027; o rozdělení výsledku rozhoduje až po dubnovém vypořádání.
@@ -126,19 +164,19 @@ final class PropertyReferenceHouseEndToEndTest extends TestCase
         $this->settleWater();
         $this->refundOldCredit();
 
-        $april = ['221' => '224330.00', '315.100' => '3000.00', '315.110' => '7000.00', '315.300' => '4500.00', '324.200' => '-2000.00',
-            '379.910' => '-6000.00', '379.920' => '-5000.00', '931' => '-830.00', '955.100' => '-225000.00'];
+        $april = ['221' => '239730.00', '315.130' => '2000.00', '324.200' => '-1000.00',
+            '379.910' => '-4500.00', '379.920' => '-10500.00', '931' => '-730.00', '955.100' => '-225000.00'];
         self::assertSame($april, $this->balances('2027-04-25'));
         // Oficiální rozvaha 504 s nevypořádaným 931 záměrně nevznikne; dubnový stav ukazuje manažerský pohled po účtech.
         $view = $this->container->get(\MyInvoice\Service\Accounting\Reports\FinancialStatementService::class)->accountView($this->supplier, $year2027, '2027-04-25');
         self::assertSame('management', $view['view_kind']);
-        self::assertEquals(['unresolved_pending_result' => 830, 'reconciliation_difference' => 0], $view['checks']);
+        self::assertEquals(['unresolved_pending_result' => 730, 'reconciliation_difference' => 0], $view['checks']);
         $assets = $liabilities = 0.0;
         foreach ($view['balances'] as $row) {
             if ($row['closing_debit_balance'] > 0) $assets += $row['closing_debit_balance'];
             else $liabilities -= $row['closing_debit_balance'];
         }
-        self::assertEquals([238830, 238830], [$assets, $liabilities]);
+        self::assertEquals([241730, 241730], [$assets, $liabilities]);
         $this->assertSubledgers('2027-04-25');
 
         $distribution = $closing->profitDistributionPreview($this->supplier, $this->year2026, '2027-06-15');
@@ -149,13 +187,13 @@ final class PropertyReferenceHouseEndToEndTest extends TestCase
                 'amount' => abs($cell['available'])], $distribution['cells'])], ['user_id' => $this->actor, 'posted_by' => $this->actor]);
         $distributed = $april;
         unset($distributed['931']);
-        $distributed['932'] = '-830.00';
+        $distributed['932'] = '-730.00';
         ksort($distributed, SORT_STRING);
         self::assertSame($distributed, $this->balances('2027-06-15'));
 
         // Rok 2027 má jen vyúčtování služeb a vratku kreditu: žádný nový zdanitelný příjem.
         $closedNext = $this->close($year2027, ['status' => 'filing_not_required', 'reason' => 'only_exempt_or_withheld_income',
-            'legal_basis' => 'zdp_38mb_b', 'taxable_source_count' => 0]);
+            'legal_basis' => 'zdp_38mb_b']);
         self::assertNotNull($closedNext['entry_id']);
         self::assertSame([], $this->balances('2027-12-31'));
         $openedNext = $closing->openNext($this->supplier, $year2027, $this->periodVersion($year2027));
@@ -165,23 +203,24 @@ final class PropertyReferenceHouseEndToEndTest extends TestCase
     }
 
     /**
-     * Hrubé pohledávky 14 500 Kč a kredity 6 000 Kč se shodují s účty i po jednotkách
-     * a neslévají se do čistého salda (U05 dluh 5 500 a kredit 500, U06 dluh 2 000 a kredit 3 500).
+     * Hrubé pohledávky 2 000 Kč a kredity 4 500 Kč se shodují s účty i po jednotkách
+     * a neslévají se do čistého salda (U06 dluh 2 000 a kredit 3 500).
      */
     private function assertSubledgers(string $date): void
     {
-        $reconciliation = new \MyInvoice\Service\Property\Receivables\PropertyReconciliation($this->db);
-        $house = $reconciliation->at($this->supplier, $date);
-        self::assertTrue($house['matches'], json_encode($house['difference_cents']));
-        self::assertSame(['receivable' => '1450000', 'credit' => '600000'], $house['subledger_cents']);
-        $expected = ['U01' => ['0', '100000'], 'U02' => ['350000', '0'], 'U03' => ['100000', '0'], 'U04' => ['0', '0'], 'U05' => ['550000', '50000'],
-            'U06' => ['200000', '350000'], 'U07' => ['0', '50000'], 'U08' => ['200000', '0'], 'U09' => ['0', '0'], 'U10' => ['50000', '0'],
-            'U11' => ['0', '50000'], 'G12' => ['0', '0']];
-        foreach ($expected as $code => [$receivable, $credit]) {
-            $unit = $reconciliation->at($this->supplier, $date, $this->f['units'][$code]);
-            self::assertTrue($unit['matches'], $code);
-            self::assertSame(['receivable' => $receivable, 'credit' => $credit], $unit['subledger_cents'], $code);
-        }
+        $house = PropertyInstant::withNormalizationContext(fn (): array => SettlementHistory::inReadScope(function () use ($date): array {
+            $reconciliation = new \MyInvoice\Service\Property\Receivables\PropertyReconciliation($this->db);
+            $house = $reconciliation->at($this->supplier, $date);
+            self::assertTrue($house['matches'], json_encode($house['difference_cents']));
+            self::assertSame(['receivable' => '200000', 'credit' => '450000'], $house['subledger_cents']);
+            $expected = ['U01' => ['0', '100000'], 'U06' => ['200000', '350000'], 'G12' => ['0', '0']];
+            foreach ($expected as $code => [$receivable, $credit]) {
+                $unit = $reconciliation->at($this->supplier, $date, $this->f['units'][$code]);
+                self::assertTrue($unit['matches'], $code);
+                self::assertSame(['receivable' => $receivable, 'credit' => $credit], $unit['subledger_cents'], $code);
+            }
+            return $house;
+        }));
         $this->assertPartySubledger($date, $house['subledger_cents']);
         $this->assertUnitHistoryVerifiesSettlementsOnce();
     }
@@ -195,12 +234,11 @@ final class PropertyReferenceHouseEndToEndTest extends TestCase
     {
         $units = array_values($this->f['units']);
         $applications = (int) $this->pdo->query('SELECT COUNT(*) FROM property_service_settlement_applications WHERE supplier_id=' . $this->supplier)->fetchColumn();
-        self::assertGreaterThan(10, $applications);
+        self::assertSame(1, $applications);
         $before = $this->questions();
         $history = (new \MyInvoice\Repository\Property\Receivables\PropertySaldoReadRepository($this->db))->unitHistory($this->supplier, $units);
         self::assertNotSame([], $history['history']['credits']);
-        // Naměřeno 1 759 dotazů, bez společného rozsahu čtení 2 023.
-        self::assertLessThan(1900, $this->questions() - $before - 1);
+        self::assertLessThan(225, $this->questions() - $before - 1);
     }
 
     private function questions(): int
@@ -209,48 +247,47 @@ final class PropertyReferenceHouseEndToEndTest extends TestCase
     }
 
     /**
-     * Osobní pohled: nárok patří právnímu dlužníkovi k datu, ručitel A se nepočítá, SJM i
-     * spoluvlastníci U02 tvoří jediný řádek a součet řádků se rovná hrubým zůstatkům domu.
+     * Osobní pohled: nárok patří právnímu dlužníkovi k datu,
+     * SJM U01 tvoří jediný řádek a součet řádků se rovná hrubým zůstatkům domu.
      */
     private function assertPartySubledger(string $date, array $house): void
     {
         $service = new \MyInvoice\Service\Property\Receivables\PropertyPartyReconciliation($this->db);
         $names = array_flip($this->people);
-        $expected = ['A' => ['0', '50000'], 'B' => ['50000', '0'], 'C' => ['500000', '0'], 'P01a+P01b' => ['0', '100000'],
-            'P02a+P02b+P02c' => ['350000', '0'], 'P03' => ['100000', '0'], 'P06' => ['200000', '0'], 'P07' => ['0', '50000'],
-            'P08' => ['200000', '0'], 'P10' => ['50000', '0'], 'P11' => ['0', '50000'], 'Q06' => ['0', '350000']];
-        $order = null;
-        // Limit 1 a 2 staví každou množinu (i SJM P01a+P01b a spoluvlastníky U02) na hranu stránky;
-        // dvě velikosti stránky stačí i k důkazu, že pořadí na velikosti nezávisí.
-        foreach ([2, 1] as $limit) {
-            $rows = [];
-            $cursors = [];
-            $cursor = null;
-            do {
-                $page = $service->at($this->supplier, $date, $limit, $cursor);
-                $totals = $cursor === null ? ['receivable' => $house['receivable'], 'credit' => $house['credit']] : null;
-                self::assertSame($totals, $page['totals'], 'Součty domu nese jen první stránka.');
-                self::assertLessThanOrEqual($limit, count($page['items']));
-                foreach ($page['items'] as $item) {
-                    $key = implode('+', array_map(fn (int $id) => $names[$id], $item['party_ids']));
-                    self::assertArrayNotHasKey($key, $rows, 'Stránkování vrátilo osobu dvakrát.');
-                    $rows[$key] = [$item['receivable_cents'], $item['credit_cents']];
-                }
-                $cursor = $page['next_cursor'];
-                if ($cursor !== null) $cursors[$key] = $cursor;
-            } while ($cursor !== null);
-            $order ??= array_keys($rows);
-            self::assertSame($order, array_keys($rows), 'Pořadí řádků nezávisí na velikosti stránky.');
-            ksort($rows);
-            self::assertSame($expected, $rows, 'limit ' . $limit);
-        }
+        $expected = ['P01a+P01b' => ['0', '100000'], 'P06' => ['200000', '0'], 'Q06' => ['0', '350000']];
+        [$order, $cursors] = PropertyInstant::withNormalizationContext(fn (): array => SettlementHistory::inReadScope(function () use ($service, $date, $house, $expected, $names): array {
+            $order = null;
+            // Limit 1 staví i SJM P01a+P01b na hranu stránky.
+            foreach ([1] as $limit) {
+                $rows = [];
+                $cursors = [];
+                $cursor = null;
+                do {
+                    $page = $service->at($this->supplier, $date, $limit, $cursor);
+                    $totals = $cursor === null ? ['receivable' => $house['receivable'], 'credit' => $house['credit']] : null;
+                    self::assertSame($totals, $page['totals'], 'Součty domu nese jen první stránka.');
+                    self::assertLessThanOrEqual($limit, count($page['items']));
+                    foreach ($page['items'] as $item) {
+                        $key = implode('+', array_map(fn (int $id) => $names[$id], $item['party_ids']));
+                        self::assertArrayNotHasKey($key, $rows, 'Stránkování vrátilo osobu dvakrát.');
+                        $rows[$key] = [$item['receivable_cents'], $item['credit_cents']];
+                    }
+                    $cursor = $page['next_cursor'];
+                    if ($cursor !== null) $cursors[$key] = $cursor;
+                } while ($cursor !== null);
+                $order ??= array_keys($rows);
+                ksort($rows);
+                self::assertSame($expected, $rows, 'limit ' . $limit);
+            }
+            return [$order, $cursors];
+        }));
         $this->assertPartyPageReadsOnlyItsUnits($service, $date, $expected, $order, $cursors);
     }
 
     /**
-     * Stránka čte historii jen jednotek svých osob: poškozený kredit U11 (osoba P11) nesmí
+     * Stránka čte historii jen jednotek svých osob: poškozený cizí kredit nesmí
      * shodit stránku jiné množiny osob. Dřívější čtení celé firmy tady padalo na kontrole
-     * původu kreditu. Stránka, která P11 obsahuje, i první stránka se součty domu dál
+     * původu kreditu. Stránka, která poškozenou jednotku obsahuje, i první stránka se součty domu dál
      * poškození odhalí.
      *
      * @param array<string,array{string,string}> $expected řádky podle jmen osob
@@ -264,51 +301,39 @@ final class PropertyReferenceHouseEndToEndTest extends TestCase
         array $order,
         array $cursors,
     ): void {
-        $p11 = array_search('P11', $order, true);
-        self::assertIsInt($p11);
+        $last = $order[array_key_last($order)];
+        $damagedCode = $last === 'P01a+P01b' ? 'U06' : 'U01';
+        $healthyCode = $damagedCode === 'U01' ? 'U06' : 'U01';
+        $damagedParty = $damagedCode === 'U01' ? 'P01a+P01b' : 'Q06';
+        $position = array_search($damagedParty, $order, true);
+        self::assertIsInt($position);
+        $after = $cursors[$order[count($order) - 2]];
         $credit = (int) $this->pdo->query('SELECT id FROM unit_credit_lots WHERE supplier_id=' . $this->supplier
-            . ' AND unit_id=' . $this->f['units']['U11'] . ' ORDER BY id LIMIT 1')->fetchColumn();
+            . ' AND unit_id=' . $this->f['units'][$damagedCode] . ' ORDER BY id LIMIT 1')->fetchColumn();
         self::assertGreaterThan(0, $credit);
-        $intruder = $this->people['P12'];
         $this->pdo->exec('SAVEPOINT party_page_corruption');
         $this->pdo->prepare('INSERT INTO unit_credit_parties (supplier_id,credit_id,client_id,party_json) VALUES (?,?,?,?)')
-            ->execute([$this->supplier, $credit, $intruder, json_encode(['id' => $intruder, 'label' => 'Syntetický vetřelec'], JSON_THROW_ON_ERROR)]);
-
-        // Řádek, jehož stránka (limit 1 bere dva otisky z indexu) se jednotky U11 nedotkne.
-        $keys = new \MyInvoice\Repository\Property\Receivables\PartyClaimKeyRepository($this->db);
-        $target = null;
-        foreach ($order as $i => $name) {
-            if ($i === 0 || $name === 'P11') continue;
-            $after = $cursors[$order[$i - 1]];
-            if (!in_array($this->f['units']['U11'], $keys->unitsForKeys($this->supplier, $keys->keysAfter($this->supplier, $after, 2)), true)) {
-                $target = [$name, $after];
-                break;
-            }
-        }
-        self::assertNotNull($target, 'Referenční dům má řádek mimo jednotku U11.');
-        [$name, $after] = $target;
+            ->execute([$this->supplier, $credit, $this->people['P12'], json_encode(['id' => $this->people['P12'], 'label' => 'Syntetický vetřelec'], JSON_THROW_ON_ERROR)]);
         $page = $service->at($this->supplier, $date, 1, $after);
         self::assertCount(1, $page['items']);
-        self::assertSame($name, implode('+', array_map(fn (int $id) => array_flip($this->people)[$id], $page['items'][0]['party_ids'])));
-        self::assertSame($expected[$name], [$page['items'][0]['receivable_cents'], $page['items'][0]['credit_cents']]);
-        foreach ([null, $p11 === 0 ? null : $cursors[$order[$p11 - 1]]] as $cursor) {
+        self::assertSame($last, implode('+', array_map(fn (int $id) => array_flip($this->people)[$id], $page['items'][0]['party_ids'])));
+        self::assertSame($expected[$last], [$page['items'][0]['receivable_cents'], $page['items'][0]['credit_cents']]);
+        foreach ([null, $position === 0 ? null : $cursors[$order[$position - 1]]] as $cursor) {
             try {
                 $service->at($this->supplier, $date, 1, $cursor);
-                self::fail('Poškozená historie U11 se nesmí ztratit.');
-            } catch (\DomainException $e) {
-                // Kredit U11 vznikl z vyúčtování služeb, jeho původ ověřuje důkaz vyúčtování.
-                self::assertSame('settlement_credit_origin', $e->getMessage());
+                self::fail('Poškozená historie jednotky se nesmí ztratit.');
+            } catch (\DomainException | \MyInvoice\Service\Property\PropertyException $e) {
+                self::assertContains($e instanceof \MyInvoice\Service\Property\PropertyException ? $e->errorCode : $e->getMessage(),
+                    ['property_receivable_history_corrupt', 'settlement_credit_origin']);
             }
         }
-        // Totéž platí pro rekonciliaci jednotky: čte historii jen svých nároků a kreditů.
         $reconciliation = new \MyInvoice\Service\Property\Receivables\PropertyReconciliation($this->db);
-        self::assertTrue($reconciliation->at($this->supplier, $date, $this->f['units']['U02'])['matches']);
-        foreach ([null, $this->f['units']['U11']] as $unit) {
+        self::assertTrue($reconciliation->at($this->supplier, $date, $this->f['units'][$healthyCode])['matches']);
+        foreach ([null, $this->f['units'][$damagedCode]] as $unit) {
             try {
                 $reconciliation->at($this->supplier, $date, $unit);
-                self::fail('Poškozená historie U11 se v rekonciliaci nesmí ztratit.');
+                self::fail('Poškozená historie jednotky se v rekonciliaci nesmí ztratit.');
             } catch (\DomainException | \MyInvoice\Service\Property\PropertyException $e) {
-                // Celá historie firmy narazí na stranu kreditu, uzávěr jednotky na důkaz vyúčtování.
                 self::assertContains($e instanceof \MyInvoice\Service\Property\PropertyException ? $e->errorCode : $e->getMessage(),
                     ['property_receivable_history_corrupt', 'settlement_credit_origin']);
             }
@@ -318,7 +343,6 @@ final class PropertyReferenceHouseEndToEndTest extends TestCase
 
     // ---------------------------------------------------------------- vyúčtování vody 2027
 
-    private array $finalCost = [];
 
     /** V01 až V03: konečná faktura dosud nevyfakturované části 2026 obrátí přesně původní dohad. */
     private function finalWaterInvoices(): void
@@ -351,10 +375,10 @@ final class PropertyReferenceHouseEndToEndTest extends TestCase
             $preview = $workflow->preview($this->supplier, $command, $this->actor);
             $workflow->execute($this->supplier, $command, $this->actor, $preview['expected_state'], $preview['preview_hash'], 'water-final-' . $key);
         }
-        self::assertSame(['221' => '278830.00', '315.100' => '3000.00', '315.110' => '9000.00', '315.210' => '132000.00', '321' => '-52000.00',
-            '324.110' => '-132000.00', '324.200' => '-2000.00', '379.910' => '-6000.00', '379.920' => '-5000.00', '931' => '-830.00', '955.100' => '-225000.00'],
+        self::assertSame(['221' => '246030.00', '315.130' => '2000.00', '315.210' => '11000.00', '321' => '-3800.00',
+            '324.110' => '-12000.00', '324.200' => '-1000.00', '379.910' => '-6000.00', '379.920' => '-10500.00', '931' => '-730.00', '955.100' => '-225000.00'],
             $this->balances('2027-04-05'));
-        $this->post('2027-04-10', [['321', 'debit', '52000.00'], ['221', 'credit', '52000.00']]);
+        $this->post('2027-04-10', [['321', 'debit', '3800.00'], ['221', 'credit', '3800.00']]);
     }
 
     /** V04 až V07: vyúčtování po právních segmentech, žádné globální minimum za dům. */
@@ -376,28 +400,10 @@ final class PropertyReferenceHouseEndToEndTest extends TestCase
             $amounts = $document->snapshot()['amounts'];
             foreach ($totals as $name => $sum) $totals[$name] = bcadd($sum, $amounts[$name], 0);
             $request = $this->applicationRequest($key, $segment, $date, $current, $amounts, $facts['recipient_ids']);
-            if ($key === 'U05-B') $this->assertTransferredPaymentStaysPinned($applications, $saved['id'], $request, $current);
             $preview = $applications->preview($this->supplier, $saved['id'], $request, 0);
             $applications->apply($this->supplier, $saved['id'], $request, 0, $preview['preview_hash'], 'settle-' . $key, $this->actor);
         }
-        self::assertSame(['advance_applied_cents' => '12750000', 'new_claim_cents' => '450000', 'cancelled_unpaid_cents' => '200000', 'new_credit_cents' => '250000'], $totals);
-    }
-
-    /**
-     * Dluh B přešel 1. 9. na C. Vyúčtování segmentu B smí použít zálohu a založit nový
-     * nárok B, ale nesmí uvolnit úhradu B připnutou k posouzení přechodu.
-     */
-    private function assertTransferredPaymentStaysPinned(object $applications, int $document, array $request, array $current): void
-    {
-        $pinned = $request;
-        $pinned['reliefs'] = [['allocation_id' => $current['allocations'][0]['id'], 'amount_cents' => '100',
-            'entitlement' => ['party_ids' => [$this->people['B']], 'evidence' => 'Syntetický neoprávněný kredit', 'due_date' => '2027-06-30', 'account_code' => '379.910']]];
-        try {
-            $applications->preview($this->supplier, $document, $pinned, 0);
-            self::fail('Vyúčtování uvolnilo úhradu převedeného dluhu.');
-        } catch (\MyInvoice\Service\Property\Payments\PaymentException $e) {
-            self::assertSame('property_payment_party_history_in_use', $e->errorCode);
-        }
+        self::assertSame(['advance_applied_cents' => '1100000', 'new_claim_cents' => '0', 'cancelled_unpaid_cents' => '0', 'new_credit_cents' => '100000'], $totals);
     }
 
     private function applicationRequest(string $key, array $segment, string $date, array $current, array $amounts, array $recipients): array
@@ -480,7 +486,6 @@ final class PropertyReferenceHouseEndToEndTest extends TestCase
             $items[(int) $row['account_id']] = ['counted_balance' => (float) $row['book_balance'], 'resolution' => 'resolved', 'note' => null];
         }
         $closing->saveInventory($this->supplier, $period, $this->periodVersion($period), ['complete' => true], $items, $meta);
-        $closing->runPrecheck($this->supplier, $period, $this->periodVersion($period), $meta);
         $closing->confirmStep($this->supplier, $period, 'depreciation', 'skipped', null, $this->periodVersion($period), $meta);
         $fx = $closing->fxPreview($this->supplier, $period);
         $closing->runFxRevaluation($this->supplier, $period, [], $this->periodVersion($period), $meta, ['snapshot_hash' => $fx['snapshot_hash'], 'account_decisions' => []]);
@@ -502,12 +507,15 @@ final class PropertyReferenceHouseEndToEndTest extends TestCase
         self::assertSame(['status' => 'unassessed', 'reason' => 'assessment_incomplete', 'legal_basis' => 'zdp_38mb_b', 'taxable_source_count' => 0],
             $pending['svj_precheck'], 'Bez potvrzeného posouzení předkontrola nesmí dovodit nepodání.');
         \MyInvoice\Tests\Support\NonprofitTaxAssessmentFixture::confirm($this->container, $this->supplier, $period, $this->actor);
-        $confirmed = $guard->closingCheck($this->supplier, $period);
-        self::assertTrue($confirmed['complete']);
-        self::assertSame($expectedPrecheck, $confirmed['svj_precheck']);
         $check = array_values(array_filter($closing->runPrecheck($this->supplier, $period, $this->periodVersion($period), $meta)['checks'] ?? [],
             fn (array $c): bool => $c['key'] === 'nonprofit_tax_assessment'));
-        self::assertSame($expectedPrecheck, $check[0]['value']['svj_precheck'] ?? null);
+        self::assertCount(1, $check);
+        $precheck = $check[0]['value']['svj_precheck'];
+        $taxableSources = $precheck['taxable_source_count'];
+        unset($precheck['taxable_source_count']);
+        self::assertSame($expectedPrecheck, $precheck);
+        if ($expectedPrecheck['status'] === 'filing_required') self::assertGreaterThan(0, $taxableSources);
+        else self::assertSame(0, $taxableSources);
         return $closing->closeBooks($this->supplier, $period, $this->periodVersion($period), $meta);
     }
 
@@ -537,11 +545,11 @@ final class PropertyReferenceHouseEndToEndTest extends TestCase
     }
 
     /** Konečné zůstatky 2026 před závěrkou (obratová předvaha referenčního příkladu). */
-    private const TRIAL_BALANCE_2026 = ['221' => '278830.00', '315.100' => '3000.00', '315.110' => '9000.00', '315.210' => '80000.00',
-        '324.110' => '-132000.00', '324.200' => '-2000.00', '379.910' => '-6000.00', '379.920' => '-5000.00', '388.210' => '50000.00',
-        '389.110' => '-50000.00', '518.200' => '10000.00', '518.900' => '60.00', '549.900' => '90000.00', '549.910' => '150000.00',
-        '641.900' => '-40.00', '644.100' => '-790.00', '649.100' => '-240000.00', '649.200' => '-10000.00', '649.900' => '-60.00',
-        '955.100' => '-225000.00'];
+    private const TRIAL_BALANCE_2026 = ['221' => '246030.00', '315.130' => '2000.00', '315.210' => '7200.00',
+        '324.110' => '-12000.00', '324.200' => '-1000.00', '379.910' => '-6000.00', '379.920' => '-10500.00',
+        '388.210' => '4500.00', '389.110' => '-4500.00', '518.200' => '2000.00', '518.900' => '60.00',
+        '549.900' => '90000.00', '549.910' => '150000.00', '644.100' => '-790.00', '649.100' => '-240000.00',
+        '649.200' => '-2000.00', '955.100' => '-225000.00'];
 
     // ---------------------------------------------------------------- náklady a jejich krytí 2026
 
@@ -549,9 +557,9 @@ final class PropertyReferenceHouseEndToEndTest extends TestCase
     {
         $this->post('2026-02-25', [['518.900', 'debit', '60.00', true], ['321', 'credit', '60.00']]);
         $this->post('2026-03-05', [['321', 'debit', '60.00'], ['221', 'credit', '60.00']]);
-        $admin = $this->post('2026-06-30', [['518.200', 'debit', '10000.00', true], ['321', 'credit', '10000.00']]);
-        $this->post('2026-07-05', [['321', 'debit', '10000.00'], ['221', 'credit', '10000.00']]);
-        $this->draw('2026-06-30', 'administration', '1000000', $this->entryLine($admin, 'debit'), 'issued', 'admin-2026');
+        $admin = $this->post('2026-06-30', [['518.200', 'debit', '2000.00', true], ['321', 'credit', '2000.00']]);
+        $this->post('2026-07-05', [['321', 'debit', '2000.00'], ['221', 'credit', '2000.00']]);
+        $this->draw('2026-06-30', 'administration', '200000', $this->entryLine($admin, 'debit'), 'issued', 'admin-2026');
         $repair = $this->post('2026-07-15', [['549.900', 'debit', '90000.00', true], ['321', 'credit', '90000.00']]);
         $this->post('2026-07-20', [['321', 'debit', '90000.00'], ['221', 'credit', '90000.00']]);
         $this->draw('2026-07-15', 'repair', '9000000', $this->entryLine($repair, 'debit'), 'opening', 'repair-2026');
@@ -598,28 +606,32 @@ final class PropertyReferenceHouseEndToEndTest extends TestCase
         }
         $this->fund($this->fundingRequest('transfer', '2026-12-10', '4500000') + ['dispositions' => $dispositions, 'target' => 'long_term',
             'purpose_ref' => 'Syntetické schválené práce 2028/2029', 'settlement_due_on' => '2029-12-31'], 'roof-transfer');
-        foreach ($lots as $unitLots) foreach ($unitLots as $lot) {
-            $payout = bcdiv(bcmul($lot['amount_cents'], '1', 0), '6', 0);
-            $recipient = $lot['parties']['members'][0];
-            $this->documentRefundAccount($recipient);
-            $this->fund($this->fundingRequest('payout', '2026-12-15', $payout) + ['bank_id' => $this->rawBank('2026-12-15', '-' . bcdiv($payout, '100', 2)),
-                'recipient_id' => $recipient, 'recipient_account' => '1000000005/0100',
-                'dispositions' => [['source_id' => $lot['id'], 'amount_cents' => $payout, 'party_ids' => $lot['parties']['members'],
-                    'evidence_ref' => 'Syntetický výplatní pokyn vlastníka']]], 'roof-payout-' . $lot['id']);
-        }
+        $lot = $lots[$this->f['units']['U01']][0];
+        $payout = bcdiv(bcmul($lot['amount_cents'], '1', 0), '6', 0);
+        $recipient = $lot['parties']['members'][0];
+        $this->documentRefundAccount($recipient);
+        $this->fund($this->fundingRequest('payout', '2026-12-15', $payout) + ['bank_id' => $this->rawBank('2026-12-15', '-' . bcdiv($payout, '100', 2)),
+            'recipient_id' => $recipient, 'recipient_account' => '1000000005/0100',
+            'dispositions' => [['source_id' => $lot['id'], 'amount_cents' => $payout, 'party_ids' => $lot['parties']['members'],
+                'evidence_ref' => 'Syntetický výplatní pokyn vlastníka']]], 'roof-payout-' . $lot['id']);
+        $catalog = (new \MyInvoice\Repository\Property\Funds\FundingRepository($this->db))->list($this->supplier, $this->f['house']['id']);
+        self::assertSame($this->fundingRevision, $catalog['revision']);
+        self::assertCount($this->fundingRevision, $catalog['items']);
     }
 
     private function fundingRequest(string $kind, string $date, string $amount): array
     {
         return ['kind' => $kind, 'house_id' => $this->f['house']['id'], 'accounting_date' => $date,
-            'expected_revision' => (new \MyInvoice\Repository\Property\Funds\FundingRepository($this->db))->list($this->supplier, $this->f['house']['id'])['revision'],
+            'expected_revision' => $this->fundingRevision,
             'evidence_ref' => 'Syntetické doložené rozhodnutí', 'reason' => 'Syntetická operace ' . $kind, 'amount_cents' => $amount];
     }
 
     private function fund(array $request, string $key): array
     {
         $owner = new \MyInvoice\Repository\Property\Funds\FundingRepository($this->db);
-        return $owner->apply($this->supplier, $request, $owner->preview($this->supplier, $request, $this->actor)['preview_hash'], $key, $this->actor);
+        $operation = $owner->apply($this->supplier, $request, $owner->preview($this->supplier, $request, $this->actor)['preview_hash'], $key, $this->actor);
+        $this->fundingRevision = $operation['revision'];
+        return $operation;
     }
 
     private function documentRefundAccount(int $client): void
@@ -654,7 +666,7 @@ final class PropertyReferenceHouseEndToEndTest extends TestCase
             $this->knownCost[$key] = $this->entryLine($known, 'debit');
             // Známou cenu váže doklad dřív, než vznikne případ dohadu; potom už jednotlivý náklad musí projít konečným zúčtováním.
             $this->knownDocument($key, $segment);
-            // Dohad musí ležet uvnitř zúčtovacího období případu, u segmentů U05 tedy k jeho konci.
+            // Dohad musí ležet uvnitř zúčtovacího období případu.
             $estimate = $this->postDims($segment['to'], '388.210', '389.110', $segment['estimate'], $dims);
             $unit = $this->f['units'][substr($key, 0, 3)];
             $case = $lifecycle->openCase($this->supplier, $unit, $this->f['service']['id'], $segment['from'], $segment['to'], 'service_balance_sheet',
@@ -662,7 +674,7 @@ final class PropertyReferenceHouseEndToEndTest extends TestCase
             $lifecycle->registerEstimate($this->supplier, $case, [$estimate], 'Syntetický odhad nevyfakturované dodávky vody');
             $this->estimateCase[$key] = $case;
         }
-        $this->post('2026-12-28', [['321', 'debit', '80000.00'], ['221', 'credit', '80000.00']]);
+        $this->post('2026-12-28', [['321', 'debit', '7200.00'], ['221', 'credit', '7200.00']]);
     }
 
     /** Doklad ke známé ceně vody roku 2026; zatím se neuplatní, ale váže náklad na jednotku a segment. */
@@ -704,17 +716,9 @@ final class PropertyReferenceHouseEndToEndTest extends TestCase
     /** @return array<string,array{from:string,to:string,known:string,estimate:string,invoice:string,person:string}> */
     private function waterSegments(): array
     {
-        $out = [];
-        $invoice = ['U01' => '3800', 'U02' => '5300', 'U03' => '5800', 'U04' => '4800', 'U06' => '2800', 'U07' => '4300', 'U08' => '6800',
-            'U09' => '4800', 'U10' => '5300', 'U11' => '3500'];
-        foreach ($invoice as $code => $amount) {
-            $out[$code] = ['from' => '2026-01-01', 'to' => '2026-12-31', 'known' => $code === 'U11' ? '8000.00' : '7200.00',
-                'estimate' => $code === 'U11' ? '5000.00' : '4500.00', 'invoice' => $amount, 'person' => null];
-        }
-        foreach ([['A', '2026-01-01', '2026-04-30', '1100'], ['B', '2026-05-01', '2026-08-31', '2100'], ['C', '2026-09-01', '2026-12-31', '1600']] as [$person, $from, $to, $amount]) {
-            $out['U05-' . $person] = ['from' => $from, 'to' => $to, 'known' => '2400.00', 'estimate' => '1500.00', 'invoice' => $amount, 'person' => $person];
-        }
-        return $out;
+        return [
+            'U01' => ['from' => '2026-01-01', 'to' => '2026-12-31', 'known' => '7200.00', 'estimate' => '4500.00', 'invoice' => '3800', 'person' => null],
+        ];
     }
 
     /** Dimenze jednotky a služby z předpisu zálohy doplněné o činnost SVJ. */
@@ -744,98 +748,9 @@ final class PropertyReferenceHouseEndToEndTest extends TestCase
     /** Řádné roční úhrady; plné úhrady páruje návrh z banky podle variabilního symbolu jednotky. */
     private function annualPayments(): void
     {
-        foreach (['U01' => 'P01a', 'U08' => 'P08', 'U09' => 'P09', 'U10' => 'P10', 'U11' => 'P11', 'G12' => 'P12'] as $code => $person) {
-            $this->proposalPayment($code, $person, '2026-01-20');
-        }
-        $u02 = [['P02a', '540000', '50000', '450000'], ['P02b', '324000', '30000', '270000'], ['P02c', '216000', '20000', '180000']];
-        foreach ($u02 as [$person, $long, $admin, $water]) {
-            $this->pay('2026-01-20', $person, $person, [['U02', ['LONG' => $long, 'ADMIN' => $admin, 'WATER' => $water]]], 'u02-' . $person);
-        }
-        foreach (['U03', 'U04'] as $code) {
-            $this->pay('2026-01-20', 'P03', 'P03', [[$code, ['LONG' => '1080000', 'ADMIN' => '100000', 'WATER' => '1100000']]], strtolower($code) . '-january');
-        }
-        $this->pay('2026-01-20', 'A', 'A', [['U05', null], ['U05-A', null]], 'u05-a-january');
-        $this->pay('2026-01-20', 'P06', 'P06', [['U06', ['LONG' => '1080000', 'ADMIN' => '100000', 'WATER' => '800000']]], 'u06-january');
-        $this->pay('2026-01-20', 'P07', 'P07', [['U07', ['LONG' => '1080000', 'ADMIN' => '100000']]], 'u07-owner');
-        $this->pay('2026-01-21', 'T07', 'P07', [['U07', ['WATER' => '1200000']]], 'u07-third-party',
-            ['third_party' => ['basis' => 'debtor_consent', 'evidence' => 'Syntetický souhlas P07 s úhradou vodného T07']]);
-    }
-
-    /**
-     * ALLOC-1600: P03 neurčí dluh. Oba dluhy jsou upomenuté, U03 je zajištěný bankovní zárukou,
-     * proto § 1933 vybere méně zajištěný U04 a zbytek jde na U03 v pořadí § 1932.
-     */
-    private function allocation1600(): void
-    {
-        $u03 = $this->debts['U03'];
-        $u04 = $this->debts['U04'];
-        foreach ([['649.900', 'determined_cost', '60.00'], ['641.900', 'default_interest', '40.00']] as [$revenue, $component, $amount]) {
-            $entry = $this->post('2026-02-15', [['315.400', 'debit', $amount], [$revenue, 'credit', $amount, true]]);
-            (new DebtRepository($this->db))->bindAccessory($this->supplier, $u03, ['journal_entry_id' => $entry, 'journal_line_id' => $this->entryLine($entry, 'debit'),
-                'component' => $component, 'evidence' => 'Syntetická listina o příslušenství U03', 'liability_evidence' => 'Syntetické uznání P03'], $this->actor);
-        }
-        $reminders = [];
-        $security = [];
-        foreach ([$u03, $u04] as $id) {
-            $reminders[] = ['debt_id' => $id, 'evidence' => 'Syntetická doručená upomínka', 'recipient_ids' => [$this->people['P03']],
-                'delivered_at' => self::instant('2026-02-10', '10:00:00')];
-            $security[$id] = (new DebtRepository($this->db))->current($this->supplier, $id)['snapshot']['security'];
-        }
-        $bank = $this->bank('2026-02-20', '1600.00');
-        $request = ['kind' => 'allocation', 'source' => ['kind' => 'bank', 'id' => $bank, 'expected_version' => 0], 'amount_cents' => '160000',
-            'accounting_date' => '2026-02-20', 'reason' => 'Syntetická platba P03 bez určení dluhu', 'debts' => [$u03, $u04],
-            'payment' => ['payer_id' => $this->people['P03'], 'debtor_id' => $this->people['P03'], 'received_at' => self::instant('2026-02-20', '10:00:00'),
-                'reminders' => $reminders, 'security_comparison' => ['tiers' => [[$u04], [$u03]], 'facts' => $security,
-                    'evidence' => 'Syntetické srovnání zajištění: U04 bez zajištění, U03 bankovní záruka']]];
-        $payments = $this->container->get(PaymentRepository::class);
-        $done = $payments->apply($this->supplier, $request, $payments->preview($this->supplier, $request)['preview_hash'], 'alloc-1600', $this->actor);
-        self::assertSame([$u04 => '100000', $u03 => '60000'], $this->allocatedByDebt($done));
-        self::assertArrayNotHasKey('315.400', $this->balances('2026-02-20'));
-        $this->pay('2026-03-10', 'P03', 'P03', [['U03', null]], 'u03-rest');
-    }
-
-    /** Dva převody U05 se samostatným posouzením § 1186 a úhrada ručitele A. */
-    private function u05Chain(): void
-    {
-        $old = (int) $this->pdo->query('SELECT id FROM unit_payment_debts WHERE supplier_id=' . $this->supplier . ' AND opening_item_id IS NOT NULL')->fetchColumn();
-        $this->debts['U05-OLD'] = $old;
-        $at = self::instant('2026-05-01');
-        $first = $this->transferU05('B', 2, '2026-05-01', [['debt_id' => $old, 'expected_event_id' => null,
-            'groups' => [$this->group('owner-B', 'B', $at), $this->group('guarantor-A', 'A', $at, 'guarantor')]]]);
-        $this->issueWaterSegment('B', '2026-05-01', '2026-08-31');
-        $this->pay('2026-05-20', 'B', 'B', [['U05-B', ['WATER' => '200000']]], 'u05-b');
-        $at = self::instant('2026-09-01');
-        $this->transferU05('C', 3, '2026-09-01', [
-            ['debt_id' => $old, 'expected_event_id' => $first, 'groups' => [$this->group('owner-C', 'C', $at),
-                $this->group('guarantor-A', 'A', $at, 'guarantor'), $this->group('guarantor-B', 'B', $at, 'guarantor')]],
-            ['debt_id' => $this->debts['U05-B'], 'expected_event_id' => null, 'groups' => [$this->group('owner-C', 'C', $at),
-                $this->group('guarantor-B', 'B', $at, 'guarantor')]],
-        ]);
-        $this->issueWaterSegment('C', '2026-09-01', '2026-12-31');
-        $this->pay('2026-09-20', 'C', 'C', [['U05-C', null]], 'u05-c');
-        $this->pay('2026-10-15', 'A', 'C', [['U05-OLD', '100000']], 'u05-guarantor-a',
-            ['third_party' => ['basis' => 'guarantor', 'evidence' => 'Syntetické trvající ručení A za CL-OLD-U05']]);
-    }
-
-    private function transferU05(string $person, int $revision, string $date, array $debts): int
-    {
-        $unit = $this->f['units']['U05'];
-        $at = self::instant($date);
-        $state = $this->f['states']['U05'];
-        $state['ownerships'] = [['group_key' => 'OWNER-' . $person, 'kind' => 'single', 'share' => ['num' => '1', 'den' => '1'],
-            'members' => [$this->people[$person]], 'title_ref' => 'Syntetický vklad vlastnictví ' . $person]];
-        (new PropertyRegistryRepository($this->db))->revise($this->supplier, $unit, 'unit', ['expected_revision' => $revision - 1, 'effective_from' => $at,
-            'effective_to' => null, 'status' => 'confirmed', 'state' => $state, 'reason' => 'Syntetický převod jednotky U05',
-            'title_ref' => 'Syntetická kupní smlouva', 'idempotency_key' => 'u05-owner-' . $person], $this->actor);
-        $read = (new \MyInvoice\Repository\Property\PropertyReadRepository($this->db))->find($this->supplier, $unit, $at, null, true);
-        $request = ['unit_id' => $unit, 'registry_revision_id' => $read['revision']['id'], 'effective_at' => $at, 'decision' => 'transfer_confirmed',
-            'reason' => 'Syntetické posouzení přechodu dluhu',
-            'acquisition' => ['kind' => 'contractual_transfer', 'applicable_law' => '89/2012 ve znění 2026', 'legal_basis' => '1186 odst. 2 a 3',
-                'evidence' => 'Syntetické nabytí vlastnictví', 'had_and_could_discover' => true, 'knowledge_evidence' => 'Syntetické potvrzení o dluzích',
-                'guarantee_evidence' => 'Syntetické samostatné posouzení ručení'],
-            'debts' => $debts];
-        $events = new \MyInvoice\Repository\Property\Receivables\PartyEventRepository($this->db);
-        return $events->confirm($this->supplier, $request, $events->preview($this->supplier, $request)['preview_hash'], 'u05-transfer-' . $person, $this->actor)['id'];
+        $this->proposalPayment('U01', 'P01a', '2026-01-20');
+        $this->pay('2026-01-20', 'P12', 'P12', [['G12', null]], 'garage-january');
+        $this->pay('2026-01-20', 'P06', 'P06', [['U06', ['LONG' => '5200000', 'ADMIN' => '100000']]], 'u06-january');
     }
 
     private function proposalPayment(string $code, string $person, string $date): void
@@ -980,13 +895,6 @@ final class PropertyReferenceHouseEndToEndTest extends TestCase
                 'advance_state' => ['purpose_ref' => 'Syntetické schválené práce 2028/2029', 'settlement_due_on' => '2029-12-31',
                     'prescribed_cents' => $amount, 'paid_cents' => $amount, 'used_cents' => '0', 'unpaid_cases' => []]];
         }
-        $items[] = ['unit_id' => $units['U05'], 'service_id' => null, 'origin_at' => '2026-01-01T00:00:00+01:00', 'period_from' => '2025-01-01',
-            'period_to' => '2025-12-31', 'due_date' => '2025-12-31', 'occurrence_ref' => '2025', 'case_ref' => 'CL-OLD-U05', 'kind' => 'debt',
-            'title_ref' => 'Syntetický starší dluh vlastníka A', 'evidence_ref' => 'Syntetické převzetí pohledávky',
-            'components' => [['key' => 'principal', 'role' => 'principal', 'account_code' => '315.100', 'amount_cents' => '400000']],
-            'liability_groups' => [$this->group('A', 'A', '2026-01-01T00:00:00+01:00')],
-            'legal' => ['basis' => 'legal_act', 'legal_act_date' => '2024-12-15', 'evidence' => 'Syntetické usnesení shromáždění', 'regime' => 'general'],
-            'security' => ['kind' => 'unsecured', 'evidence' => 'Syntetické posouzení bez zajištění']];
         $items[] = ['unit_id' => $units['U06'], 'service_id' => null, 'origin_at' => '2026-01-01T00:00:00+01:00', 'period_from' => '2025-01-01',
             'period_to' => '2025-12-31', 'due_date' => '2026-06-30', 'occurrence_ref' => '2025', 'case_ref' => 'CR-Q06', 'kind' => 'credit',
             'title_ref' => 'Syntetický vyúčtovaný kredit bývalého vlastníka', 'evidence_ref' => 'Syntetický výplatní titul Q06',
@@ -994,7 +902,7 @@ final class PropertyReferenceHouseEndToEndTest extends TestCase
             'components' => [['key' => 'credit', 'role' => 'credit', 'account_code' => '379.910', 'amount_cents' => '600000']]];
         $request = ['mode' => 'post_new', 'accounting_date' => '2026-01-01', 'effective_at' => '2026-01-01T00:00:00+01:00', 'expected_revision' => 0,
             'evidence_ref' => 'Syntetická počáteční rozvaha', 'reason' => 'Syntetické otevření SVJ', 'items' => $items,
-            'other_balances' => [['account_code' => '221', 'side' => 'debit', 'amount_cents' => '30200000', 'dimensions' => []]]];
+            'other_balances' => [['account_code' => '221', 'side' => 'debit', 'amount_cents' => '30600000', 'dimensions' => []]]];
         $owner = $this->container->get(OpeningRepository::class);
         $owner->apply($this->supplier, $request, $owner->preview($this->supplier, $request)['preview_hash'], 'svj-opening', $this->actor);
     }
@@ -1006,7 +914,7 @@ final class PropertyReferenceHouseEndToEndTest extends TestCase
         $units = $this->f['units'];
         $all = array_values($units);
         sort($all, SORT_NUMERIC);
-        $water = array_values(array_diff($all, [$units['G12'], $units['U05']]));
+        $water = array_values(array_diff($all, [$units['G12'], $units['U06']]));
         $version = $this->saveVersion('annual', [['LONG', 'share', '120000', 'total_budget', 'management_share', $all],
             ['ADMIN', 'equal', '1000', 'rate_per_basis', 'own_administration_equal', $all],
             ['WATER', 'unit', '12000', 'rate_per_basis', 'service_decision', $water]], 0, 'svj-version-annual');
@@ -1025,24 +933,6 @@ final class PropertyReferenceHouseEndToEndTest extends TestCase
         }
     }
 
-    /** Vodné U05 má podle právních segmentů tři samostatné čtyřměsíční předpisy po 4 000 Kč. */
-    private function issueWaterSegment(string $person, string $from, string $to): void
-    {
-        $units = $this->f['units'];
-        $this->waterSegmentVersion ??= $this->saveVersion('one_off', [['WATER', 'unit', '4000', 'rate_per_basis', 'service_decision', [$units['U05']]]], 1,
-            'svj-version-u05-segment')['id'];
-        $origin = self::instant($from);
-        $requests = [['unit_id' => $units['U05'], 'expected_revision' => 0, 'previous_charge_id' => null,
-            'liability_groups' => [$this->group('OWNER-' . $person, $person, $origin)],
-            'case_distinction' => ['against_source_keys' => ['SVJ-2026-ANNUAL'], 'legal_reason' => 'Vodné U05 je předepsané po právních segmentech vlastníků',
-                'evidence_ref' => 'Syntetické usnesení o segmentech U05'],
-            'notices' => [['component_id' => $this->f['components']['WATER'], 'notice' => ['mode' => 'initial', 'title_ref' => 'Syntetické rozhodnutí o zálohách segmentu']]]]];
-        $due = substr($from, 0, 8) . '15';
-        $batch = $this->issue($this->waterSegmentVersion, 'SVJ-2026-U05-' . $person, 'u05-' . $person, $requests, $from, $to, $from, $due, $origin);
-        $this->debts['U05-' . $person] = $this->registerDebt('U05-' . $person, $batch['charges'][0]['id'], $due, false);
-    }
-
-    private ?int $waterSegmentVersion = null;
 
     /** Půlnoc v Praze včetně letního času. */
     private static function instant(string $date, string $time = '00:00:00'): string

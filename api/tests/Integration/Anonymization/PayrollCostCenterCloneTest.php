@@ -178,6 +178,7 @@ final class PayrollCostCenterCloneTest extends TestCase
         } finally {
             if($connection->pdo()->inTransaction())$connection->pdo()->rollBack();
             $connection->close();
+            CloneSandbox::release($server,$proof);
         }
     }
 

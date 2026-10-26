@@ -78,6 +78,23 @@ final class SettlementFinancialOwnerTest extends TestCase {
   extract($this->shared('appliedFixture'));$this->expectException(\MyInvoice\Service\Accounting\PostingException::class);
   Bootstrap::buildContainer()->get(\MyInvoice\Service\Accounting\PostingService::class)->reverse($f['supplier'],$result['journal_entry_id'],['entry_date'=>'2026-12-31','posted_by'=>$f['actor']]);
  }
+ public function testSettlementPreviewCannotReleasePaymentPinnedByNativeLiabilityTransfer():void {
+  extract($this->shared('appliedFixture',false));
+  $at='2026-03-01T00:00:00+01:00';$unit=$f['units']['U02'];$successor=$f['clients'][2];$old=$f['clients'][1];
+  $state=$f['states']['U02'];$state['ownerships']=[['group_key'=>'successor','kind'=>'single','share'=>['num'=>'1','den'=>'1'],'members'=>[$successor],'title_ref'=>'Synthetic acquired title']];
+  (new \MyInvoice\Repository\Property\PropertyRegistryRepository($this->db))->revise($f['supplier'],$unit,'unit',['expected_revision'=>1,'effective_from'=>$at,'status'=>'confirmed','state'=>$state,'reason'=>'Synthetic sale','title_ref'=>'Synthetic title','idempotency_key'=>'settlement-successor'],$f['actor']);
+  $current=(new \MyInvoice\Repository\Property\PropertyReadRepository($this->db))->find($f['supplier'],$unit,$at,null,true);$groups=[];
+  foreach([$successor,$old] as $i=>$party)$groups[]=['group_key'=>'party-'.$party,'role'=>$i===0?'debtor':'guarantor','mode'=>'individual','basis'=>'documented_title','members'=>[$party],'extent'=>['num'=>'1','den'=>'1'],'evidence_ref'=>'Synthetic separately assessed succession','legal_reason'=>'Synthetic continuing guarantee','valid_from'=>$at,'valid_to'=>null];
+  $transfer=['unit_id'=>$unit,'registry_revision_id'=>$current['revision']['id'],'effective_at'=>$at,'decision'=>'transfer_confirmed','reason'=>'Synthetic liability succession',
+   'acquisition'=>['kind'=>'contractual_transfer','applicable_law'=>'89/2012 effective 2026','legal_basis'=>'1186(2),(3)','evidence'=>'Synthetic acquisition','had_and_could_discover'=>true,'knowledge_evidence'=>'Synthetic delivered certificate','guarantee_evidence'=>'Synthetic continuing guarantee'],
+   'debts'=>[['debt_id'=>$debt,'expected_event_id'=>null,'groups'=>$groups]]];
+  $parties=new \MyInvoice\Repository\Property\Receivables\PartyEventRepository($this->db);$parties->confirm($f['supplier'],$transfer,$parties->preview($f['supplier'],$transfer)['preview_hash'],'settlement-transfer',$f['actor']);
+  $request['reliefs'][0]['entitlement']['party_ids']=[$successor];
+  $before=(int)$this->db->pdo()->query('SELECT COUNT(*) FROM property_service_settlement_applications WHERE supplier_id='.$f['supplier'])->fetchColumn();
+  try{$owner->preview($f['supplier'],$saved['id'],$request,0);self::fail('Vyúčtování uvolnilo úhradu připnutou k převodu dluhu.');}
+  catch(\MyInvoice\Service\Property\Payments\PaymentException $e){self::assertSame('property_payment_party_history_in_use',$e->errorCode);}
+  self::assertSame($before,(int)$this->db->pdo()->query('SELECT COUNT(*) FROM property_service_settlement_applications WHERE supplier_id='.$f['supplier'])->fetchColumn());
+ }
  public function testOriginalPaidAllocationCannotBeReversedWhileRelieved():void {
   extract($this->shared('appliedFixture'));try{$payments->reverse($f['supplier'],$op['id'],$op['row_version'],'2026-12-31','Synthetic attempted bypass','bypass-reverse',$f['actor']);self::fail('Used allocation reversed');}catch(\MyInvoice\Service\Property\Payments\PaymentException $e){self::assertSame('property_payment_allocation_has_service_settlement',$e->errorCode);}
  }
