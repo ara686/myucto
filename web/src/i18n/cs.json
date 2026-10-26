@@ -13864,6 +13864,15 @@
       "negatives_blocking": "Míst, kde historie vede k zápornému stavu: {count}. Doplňte chybějící příjem do souboru, nebo spusťte kontrolu znovu s doplněním technických příjemek.",
       "negatives_filled": "Míst se záporným stavem, která doplní technická příjemka: {count}.",
       "negatives_more": "Další místa: {count}.",
+      "invoice_unlinked_title": "Dokladů, které se nenavážou na fakturu: {count}. Převezmou se bez vazby na fakturu.",
+      "invoice_unlinked_reason_label": "Důvod",
+      "invoice_unlinked_reason": {
+        "own_stock": "Faktura má vlastní výdejku nebo vratku v MyÚčtu.",
+        "draft": "Faktura je koncept.",
+        "type": "Doklad není faktura ani dobropis (například zálohová faktura)."
+      },
+      "invoice_unlinked_more": "Další doklady: {count}.",
+      "invoice_unlinked_on_apply": "Dokladů, které se při převzetí nenavázaly na fakturu, protože se faktura od kontroly změnila: {count}.",
       "missing_quantity": "Chybí",
       "fill_cost": "Cena doplnění",
       "closed_periods": "Dokladů v uzavřeném účetním období: {count}. Převzaté doklady se neúčtují a ocenění existujících dokladů se nezmění. Potvrzuji, že je chci převzít.",

@@ -251,6 +251,31 @@ describe('StockHistoryImport', () => {
     wrapper.unmount()
   })
 
+  it('lists documents that will not link to an invoice and reports links dropped on apply', async () => {
+    mocks.route.query = { history_job: '41' }
+    mocks.job.mockResolvedValue({ ...stage, report: { ...stage.report, invoice_unlinked_count: 3, invoice_unlinked: [
+      { source_row: 3, doc_number: 'V1', invoice_number: '2025001', reason: 'own_stock' },
+      { source_row: 4, doc_number: 'V2', invoice_number: '2025002', reason: 'draft' },
+    ] } })
+    let wrapper = mountPage()
+    await flushPromises()
+    const section = wrapper.get('[data-test="invoice-unlinked"]')
+    expect(section.text()).toContain('stock.history_import.invoice_unlinked_title')
+    expect(section.findAll('tbody tr').map(row => row.text())).toEqual([
+      '3V12025001stock.history_import.invoice_unlinked_reason.own_stock',
+      '4V22025002stock.history_import.invoice_unlinked_reason.draft',
+    ])
+    expect(section.text()).toContain('stock.history_import.invoice_unlinked_more')
+    wrapper.unmount()
+
+    mocks.route.query = { history_job: '42' }
+    mocks.job.mockResolvedValue({ ...stage, id: 42, kind: 'stock_history_import_apply', report: { documents_created: 5, invoice_unlinked_on_apply: 1 } })
+    wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.get('[data-test="invoice-unlinked-on-apply"]').text()).toBe('stock.history_import.invoice_unlinked_on_apply')
+    wrapper.unmount()
+  })
+
   it('shows the file content of a row without recognised values and labels taken-over rows', async () => {
     mocks.route.query = { history_job: '41' }
     mocks.job.mockResolvedValue({ ...stage, report: { ...stage.report, counts: { applied: 1, failed: 1 } } })

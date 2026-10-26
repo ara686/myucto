@@ -13864,6 +13864,15 @@
       "negatives_blocking": "Places where the history leads to negative stock: {count}. Add the missing receipt to the file, or run the check again with technical receipts.",
       "negatives_filled": "Places with negative stock covered by a technical receipt: {count}.",
       "negatives_more": "More places: {count}.",
+      "invoice_unlinked_title": "Documents that will not link to an invoice: {count}. They will be taken over without the invoice link.",
+      "invoice_unlinked_reason_label": "Reason",
+      "invoice_unlinked_reason": {
+        "own_stock": "The invoice has its own stock issue or return in MyÚčto.",
+        "draft": "The invoice is a draft.",
+        "type": "The document is neither an invoice nor a credit note (for example a proforma invoice)."
+      },
+      "invoice_unlinked_more": "More documents: {count}.",
+      "invoice_unlinked_on_apply": "Documents not linked to an invoice because the invoice changed after the check: {count}.",
       "missing_quantity": "Missing",
       "fill_cost": "Fill price",
       "closed_periods": "Documents in a closed accounting period: {count}. Imported documents are not posted and the valuation of existing documents does not change. I confirm I want to import them.",

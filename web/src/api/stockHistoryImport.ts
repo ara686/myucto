@@ -38,6 +38,13 @@ export interface HistoryImportNegative {
 }
 
 /** Souhrn náhledu (report úlohy stock_history_import_stage). */
+export interface HistoryImportUnlinked {
+  source_row: number
+  doc_number: string
+  invoice_number: string
+  reason: 'draft' | 'type' | 'own_stock'
+}
+
 export interface HistoryImportReport {
   cutover_date?: string | null
   fill_negative?: boolean
@@ -48,6 +55,11 @@ export interface HistoryImportReport {
   negative_count?: number
   negatives?: HistoryImportNegative[]
   closed_period_documents?: number
+  /** Doklady s číslem faktury, které se na ni nenavážou (převezmou se bez vazby). */
+  invoice_unlinked_count?: number
+  invoice_unlinked?: HistoryImportUnlinked[]
+  /** Vazby vynechané až při převzetí (faktura se od náhledu změnila). */
+  invoice_unlinked_on_apply?: number
   documents_created?: number
   fill_documents?: number
   documents_deleted?: number

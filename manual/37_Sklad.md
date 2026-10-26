@@ -238,11 +238,13 @@ proto mohou lišit od starého programu, který oceňoval jinak.
    dokladů podle typu, období a chybné řádky. Chyba v jednom řádku vyřadí celý
    doklad. Číslo, které už ve firmě existuje nebo má tvar číselné řady MyÚčta
    (například `PRI-2026-0001`), kontrola odmítne. Stejně tak číslo, které si vezme
-   vyrovnávací výdejka nebo technická příjemka.
+   vyrovnávací výdejka nebo technická příjemka. Zvlášť vypíše doklady, které se
+   nenavážou na fakturu (viz **Vazba na fakturu** níže).
 6. Projděte **Koncový stav historie po kartách**: kolik zůstane z historie na každém
    skladu a kartě. U historie před přechodem ho kontrola porovná s počátečním stavem
-   v MyÚčtu k datu přechodu, tedy s příjemkami s tímto datem (typicky počáteční
-   zásoby), a vypíše karty s rozdílem. Prodeje a jiné pohyby toho dne se nepočítají. Tlačítko **Stáhnout XLSX** dá celý
+   v MyÚčtu k datu přechodu a vypíše karty s rozdílem. Počátečním stavem je import
+   počátečních zásob s tímto datem, když jste ho použili, jinak všechny příjemky
+   s tímto datem. Prodeje a jiné pohyby toho dne se nepočítají. Tlačítko **Stáhnout XLSX** dá celý
    přehled k porovnání se stavem ve starém programu.
 7. Klikněte na **Převzít historii**.
 
@@ -271,9 +273,19 @@ import historie. U způsobu „historie je současný stav“ je během převzet
 i vrácení zamčený celý sklad: do jejich dokončení nezaúčtujete žádný skladový
 doklad a nespustíte ani nepřipravíte inventuru.
 
-Storno vydané nebo přijaté faktury převzatou výdejku či příjemku nestornuje,
-historie zůstane, jak byla. Obnovení stornované faktury novou výdejku nevytvoří,
-protože k faktuře už převzatá výdejka existuje.
+**Vazba na fakturu:** převzatý doklad se naváže na vydanou fakturu podle
+variabilního symbolu jen tehdy, když je faktura vystavená (ne koncept), jde
+o fakturu nebo dobropis a nemá vlastní výdejku či vratku z MyÚčta. Jinak se doklad
+převezme bez vazby na fakturu a kontrola ho vypíše i s důvodem. Převzetí podmínku
+ověří znovu, protože se faktura mezi kontrolou a převzetím mohla změnit.
+
+Navázaná převzatá výdejka platí jako výdej celé faktury, stejně jako výdejka, kterou
+k faktuře vytvořilo MyÚčto. Když pokrývá jen část položek faktury, zbytek MyÚčto
+samo nevydá, ani po obnovení stornované faktury. Dorovnejte ho ruční výdejkou.
+
+Storno vydané nebo přijaté faktury či dobropisu převzatou výdejku nebo příjemku
+nestornuje, historie zůstane, jak byla. Obnovení stornované faktury nebo dobropisu
+nový skladový doklad nevytvoří, protože k nim už převzatý doklad existuje.
 
 **Vrácení importu:** chybný import vrátí správce firmy tlačítkem **Vrátit import**
 na stránce importu. Smažou se všechny převzaté doklady včetně vyrovnávací výdejky
