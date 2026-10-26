@@ -340,7 +340,7 @@ describe('sdílená klientská plocha vlastní domény', () => {
     }
     expect(Object.fromEntries(kindCounts)).toEqual({
       client_redirect: 4,
-      permission: 43,
+      permission: 44,
       router_redirect: 8,
       self_service: 4,
     })
@@ -417,7 +417,11 @@ describe('sdílená klientská plocha vlastní domény', () => {
         continue
       }
       if (!definition.permission) continue
-      expect(route?.meta.permission, definition.name).toBe(definition.permission)
+      if (route?.meta.permissionAny) {
+        expect(route.meta.permissionAny.filter(isClientPermission), definition.name).toEqual([definition.permission])
+      } else {
+        expect(route?.meta.permission, definition.name).toBe(definition.permission)
+      }
       expect(route?.meta.access, definition.name).toBe(definition.access)
       expect(isClientPermission(definition.permission), definition.name).toBe(true)
     }
@@ -495,6 +499,7 @@ describe('sdílená klientská plocha vlastní domény', () => {
       'purchase-invoices',
       'recurring',
       'recurring-new',
+      'reports-submissions',
       'stock-fulfillment',
       'stock-item-new',
       'stock-items',

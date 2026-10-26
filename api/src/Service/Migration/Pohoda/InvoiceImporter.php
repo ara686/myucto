@@ -249,6 +249,9 @@ final class InvoiceImporter
             $this->refreshSettlement($ctx, $step, 'invoices', $existing[$key], $doc);
             return;
         }
+        if ($ctx->skipsNew($step)) {
+            return;
+        }
         if ($ctx->skipsDate($doc['accounting'])) {
             $p->count($step, 'later_year_skipped');
             return;
@@ -395,6 +398,9 @@ final class InvoiceImporter
             $p->count($step, 'existing');
             $this->reportChanged($ctx, $step, 'purchase_invoices', $existing[$key], $doc['number'], $r, $prefix);
             $this->refreshSettlement($ctx, $step, 'purchase_invoices', $existing[$key], $doc);
+            return;
+        }
+        if ($ctx->skipsNew($step)) {
             return;
         }
         if ($ctx->skipsDate($doc['accounting'])) {

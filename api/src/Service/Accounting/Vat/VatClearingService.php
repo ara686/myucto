@@ -667,6 +667,13 @@ final class VatClearingService
      * kvartálu — rozsah je jeden měsíc, ale zdaňovací období celé čtvrtletí, které ještě
      * neskončilo. Trvale svítící nález se přestane číst a zabije i ty pravé.
      *
+     * OBDOBÍ PŘEVZATÉ Z JINÉHO PROGRAMU SE NEHLÁSÍ. Deník do konce převodu zaúčtoval zdroj
+     * (POHODA, Money S3, PREMIER …) i se svým vypořádáním DPH, které zúčtovací doklad
+     * MyÚčta nezná: POHODA převádí daň na 343 jen dvěma doklady za rok, jiný program
+     * jinak. Zúčtovací doklad MyÚčta by do převzatého deníku přidal zápis, který zdroj
+     * nemá, a rozbil by rekonciliaci převodu. Převzaté je každé období, ve kterém leží
+     * převzatý zápis, i to, ve kterém převod skončil (převádí se celé období).
+     *
      * @return list<array<string,mixed>>
      */
     public function staleForRange(int $supplierId, string $from, string $to, ?\DateTimeImmutable $today = null): array
@@ -674,6 +681,7 @@ final class VatClearingService
         $today ??= new \DateTimeImmutable('today');
         $periodType = $this->vatPeriodFor($supplierId);
         $step = $periodType === 'quarterly' ? 3 : 1;
+        $takenOverUntil = $this->takenOverUntil($supplierId);
 
         $cursor = (new \DateTimeImmutable($from))->modify('first day of this month');
         $limit = new \DateTimeImmutable($to);
@@ -683,6 +691,10 @@ final class VatClearingService
             $year = (int) $cursor->format('Y');
             $month = (int) $cursor->format('n');
             $sourceId = self::sourceIdFor($year, $month, $periodType);
+            if ($takenOverUntil !== null && $cursor->format('Y-m-d') <= $takenOverUntil) {
+                $cursor = $cursor->modify('+' . $step . ' month');
+                continue;
+            }
             if (!isset($seen[$sourceId]) && self::isPeriodClosed($year, $month, $periodType, $today)) {
                 $seen[$sourceId] = true;
                 $status = $this->status($supplierId, $year, $month);
@@ -694,6 +706,30 @@ final class VatClearingService
         }
 
         return $out;
+    }
+
+    /** Datum posledního zápisu deníku převzatého z jiného programu; null = firma nic nepřevzala. */
+    private function takenOverUntil(int $supplierId): ?string
+    {
+        $until = null;
+        foreach (TakenOverRecord::MAPS as $map => $kinds) {
+            if (!$this->db->hasTable($map)) {
+                continue;
+            }
+            $kindList = (array) $kinds[TakenOverRecord::JOURNAL_ENTRY];
+            $placeholders = implode(', ', array_fill(0, count($kindList), '?'));
+            $stmt = $this->db->pdo()->prepare(
+                "SELECT MAX(je.entry_date) FROM {$map} m
+                   JOIN journal_entries je ON je.id = m.target_id AND je.supplier_id = m.supplier_id
+                  WHERE m.supplier_id = ? AND m.kind IN ({$placeholders})"
+            );
+            $stmt->execute([$supplierId, ...$kindList]);
+            $date = $stmt->fetchColumn();
+            if (is_string($date) && ($until === null || $date > $until)) {
+                $until = substr($date, 0, 10);
+            }
+        }
+        return $until;
     }
 
     /**

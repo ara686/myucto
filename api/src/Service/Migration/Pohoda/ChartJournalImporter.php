@@ -89,6 +89,9 @@ final class ChartJournalImporter
                 $p->count(self::STEP_CHART, 'existing');
                 continue;
             }
+            if ($ctx->skipsNew(self::STEP_CHART)) {
+                continue;
+            }
             $synthetic = substr($target, 0, 3);
             $parent = $this->accounts->findByCode($ctx->supplierId, $synthetic) ?? $this->createSynthetic($ctx, $synthetic, $names);
             if ($parent === null) {
@@ -176,6 +179,9 @@ final class ChartJournalImporter
                         $stats['relocated']++;
                     }
                 }
+                continue;
+            }
+            if ($ctx->skipsNew(self::STEP_JOURNAL)) {
                 continue;
             }
             $isOpening = $groupKey === PohodaJournal::OPENING_KEY;

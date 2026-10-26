@@ -1220,7 +1220,8 @@
                     "status": "ignored"
                 },
                 "KcNahrNem": {
-                    "status": "ignored"
+                    "status": "mapped",
+                    "target": "PohodaPayrollConverter"
                 },
                 "KcNahrNemNad": {
                     "status": "ignored"
