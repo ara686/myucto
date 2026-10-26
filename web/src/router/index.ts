@@ -7,7 +7,7 @@ import {
 } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { getWindowManager } from '@/workspace/windowRegistry'
-import { hasPendingCanonicalDomainLoginCleanup, pendingCanonicalDomainLoginQuery } from '@/security/domainLogin'
+import { captureCanonicalDomainLogin, hasPendingCanonicalDomainLogin, hasPendingCanonicalDomainLoginCleanup, pendingCanonicalDomainLoginQuery } from '@/security/domainLogin'
 import type { DomainContext } from '@/api/auth'
 import { useSupplierStore } from '@/stores/supplier'
 import { useSessionSecurityStore } from '@/stores/sessionSecurity'
@@ -18,8 +18,10 @@ import { useToast } from '@/composables/useToast'
 import { createWorkspaceRoutes } from './workspaceRoutes'
 import { workspaceShellRoutes } from './workspaceShellRoutes'
 import { switchSupplierForDeepLink } from './supplierDeepLink'
+import { isInstanceAdminRouteName } from '@/security/instanceAdminRoutePolicy'
 import { payrollStartPeriodGuard } from './payrollStartPeriodGuard'
 import {
+  canonicalDomainLoginHandoffPath,
   clientDomainCanonicalHandoffPath,
   clientDomainRedirect,
   isClientDomainAuthenticatedPath,
@@ -34,6 +36,7 @@ declare module 'vue-router' {
     access?: AccessLevel
     staffOnly?: boolean
     superadminOnly?: boolean
+    instanceAdminOnly?: boolean
     adminPlusOnly?: boolean
     companyAdminOnly?: boolean
     requiresSupplier?: boolean
@@ -56,13 +59,22 @@ declare module 'vue-router' {
 
 const routes: RouteRecordRaw[] = [
   {
+    path: '/instance-admin',
+    component: () => import('@/components/layout/InstanceAdminLayout.vue'),
+    meta: { requiresAuth: true, instanceAdminOnly: true },
+    children: [
+      { path: '', name: 'instance-admin', component: () => import('@/pages/admin/InstanceAdmin.vue') },
+      { path: 'profile', name: 'instance-admin-profile', component: () => import('@/pages/PasswordChange.vue') },
+    ],
+  },
+  {
     path: '/',
     component: () => import('@/components/layout/AppLayout.vue'),
     meta: { requiresAuth: true },
     children: workspaceShellRoutes(createWorkspaceRoutes()),
   },
   { path: '/login',  name: 'login',  component: () => import('@/pages/Login.vue'),          meta: { public: true } },
-  { path: '/oauth/continue', name: 'mcp-oauth-continue', component: () => import('@/pages/McpOAuthContinue.vue'), meta: { requiresAuth: true } },
+  { path: '/oauth/continue', name: 'mcp-oauth-continue', component: () => import('@/pages/McpOAuthContinue.vue'), meta: { requiresAuth: true, canonicalOnly: true } },
   { path: '/domain-login/callback', name: 'domain-login-callback', component: () => import('@/pages/DomainLoginCallback.vue'), meta: { public: true } },
   { path: '/setup',  name: 'setup',  component: () => import('@/pages/Setup.vue'),          meta: { public: true } },
   { path: '/setup-mfa', name: 'setup-mfa', component: () => import('@/pages/ForcedMfaSetup.vue'), meta: { requiresAuth: true, mfaSetupOnly: true } },
@@ -196,6 +208,7 @@ const routePermissions: Record<string, [PermissionKey | readonly PermissionKey[]
   'stock-items': ['stock'], 'stock-item-new': ['stock.items.write', 'write'], 'stock-item-detail': ['stock'], 'stock-item-edit': ['stock.items.write', 'write'],
   'stock-documents': ['stock'], 'stock-document-new': ['stock.documents.write', 'write'], 'stock-document-detail': ['stock'],
   'stock-opening-import': ['stock.documents.write', 'write'],
+  'stock-history-import': ['stock.documents.write', 'write'],
   'stock-sales-orders': ['stock'], 'stock-sales-order-new': ['stock.orders.write', 'write'], 'stock-sales-order-detail': ['stock'],
   'stock-fulfillment': ['stock'],
   'stock-purchase-orders': ['stock'], 'stock-purchase-order-new': ['stock.orders.write', 'write'], 'stock-purchase-order-detail': ['stock'],
@@ -215,8 +228,8 @@ const routePermissions: Record<string, [PermissionKey | readonly PermissionKey[]
   // Kreditní karty čte RoutePermissionMap jako bankovní data (`bank`).
   'credit-cards': ['bank'], 'credit-card-detail': ['bank'],
   'reports-dph': ['reports'], 'reports-kh': ['reports'], 'reports-dph-book': ['reports'], 'reports-s74b': ['reports'], 'reports-related-parties': ['reports'], 'reports-vat-coefficient': ['reports'], 'reports-s46': ['reports'], 'reports-vat-corrections': ['reports'], 'reports-shv': ['reports'], 'reports-oss': ['reports'],
-  'reports-income-tax': ['reports'], 'reports-cnb-rate-audit': ['reports'], 'reports-invoice-series-completeness': ['reports'], 'reports-foreign-income': ['reports'], 'reports-submissions': ['reports'], 'reports-submissions-kh-evidence': ['reports'],'reports-monthly-export': ['reports.export'], 'tax-optimizer': ['reports'], recurring: ['recurring'], 'recurring-new': ['recurring.create', 'write'],
-  'recurring-detail': ['recurring'], 'recurring-edit': ['recurring', 'write'], 'profile-api-tokens': ['profile.tokens'], 'profile-mcp-server': ['profile.tokens'], 'mcp-oauth-continue': ['profile.tokens'], 'profile-shortcuts': ['profile', 'write'],
+  'reports-income-tax': ['reports'], 'reports-cnb-rate-audit': ['reports'], 'reports-invoice-series-completeness': ['reports'], 'reports-foreign-income': ['reports'], 'reports-submissions': [['reports', 'reports.submissions']], 'reports-submissions-kh-evidence': ['reports'],'reports-monthly-export': ['reports.export'], 'tax-optimizer': ['reports'], recurring: ['recurring'], 'recurring-new': ['recurring.create', 'write'],
+  'recurring-detail': ['recurring'], 'recurring-edit': ['recurring', 'write'], 'profile-api-tokens': ['profile.tokens'], 'profile-mcp-server': ['profile.tokens'], 'mcp-oauth-continue': ['profile'], 'profile-shortcuts': ['profile', 'write'],
 }
 
 const superadminRouteNames = new Set([
@@ -244,7 +257,7 @@ const companyAdminRouteNames = new Set([] as string[])
 // home → setup-mfa → home (#5). Deny-by-default to neoslabuje — routa je pořád za
 // `requiresAuth` a `mfaSetupOnly` je sama gate: koho MFA nečeká, toho guard níž
 // pošle z té stránky pryč.
-const selfServiceRouteNames = new Set(['profile-password', 'setup-totp', 'isds-gateway-callback'])
+const selfServiceRouteNames = new Set(['profile-password', 'setup-totp', 'isds-gateway-callback', 'portal-mcp'])
 const commercialOnlyRouteNames = new Set([
   'accounting-activation',
   // GoPay vede podvojné účetnictví i daňová evidence (requiresAccountingMode), licence platí stejně.
@@ -290,7 +303,7 @@ export function applyAuthorizationMeta(records: RouteRecordRaw[], inheritedRequi
     // bez logu. Upozorni na to hned při startu, ne až po hodině hledání v produkci.
     if (import.meta.env.DEV && name && requiresAuth && !rule
       && !superadminRouteNames.has(name) && !selfServiceRouteNames.has(name)
-      && !adminPlusRouteNames.has(name)
+      && !adminPlusRouteNames.has(name) && !isInstanceAdminRouteName(name)
       && !companyAdminRouteNames.has(name)
       && !record.meta?.mfaSetupOnly
       && !record.meta?.public && !record.redirect) {
@@ -340,7 +353,7 @@ export const router = createRouter({
  * stránku zobrazit prázdný stav / chybu z API než točit prohlížeč donekonečna.
  */
 function denyFallback(toName: unknown, auth: ReturnType<typeof useAuthStore>) {
-  const target = auth.isClientRole ? 'portal' : 'home'
+  const target = auth.isInstanceAdmin ? 'instance-admin' : auth.isClientRole ? 'portal' : 'home'
   return toName === target ? true : { name: target }
 }
 
@@ -416,6 +429,11 @@ export async function authorizationGuard(
     }
   }
 
+  if (to.name === 'login' && auth.domainContext?.mode === 'canonical') {
+    captureCanonicalDomainLogin(to.query.domain_login_request, to.query.state, to.query.domain_login_handoff)
+  }
+  if (auth.prepareDomainLogin()) useSessionSecurityStore().clear()
+
   if (auth.needsSetup && to.name !== 'setup') {
     return { name: 'setup' }
   }
@@ -424,7 +442,9 @@ export async function authorizationGuard(
   }
 
   const requiresAuth = to.matched.some((r) => r.meta.requiresAuth)
-  if (requiresAuth && auth.domainContext?.mode === 'canonical' && hasPendingCanonicalDomainLoginCleanup()) {
+  if (requiresAuth && auth.domainContext?.mode === 'canonical' && hasPendingCanonicalDomainLogin()
+      && (hasPendingCanonicalDomainLoginCleanup()
+        || (to.name !== 'setup-mfa' && canonicalDomainLoginHandoffPath(to.fullPath) === null))) {
     // Obnovení stránky po MFA nesmí pustit dočasnou relaci do hlavní aplikace.
     return { name: 'login', query: pendingCanonicalDomainLoginQuery() ?? {} }
   }
@@ -459,6 +479,9 @@ export async function authorizationGuard(
     // vrací false, ale známou identitu si záměrně drží.
     await auth.refresh()
     if (!auth.isAuthenticated) {
+      if (auth.domainContext?.mode === 'canonical' && hasPendingCanonicalDomainLogin()) {
+        return { name: 'login', query: pendingCanonicalDomainLoginQuery() ?? {} }
+      }
       recordLoginBounce()
       if (auth.domainContext?.locked && isClientDomainAuthenticatedPath(to.fullPath)) {
         return { name: 'login', query: { return_to: to.fullPath } }
@@ -486,6 +509,13 @@ export async function authorizationGuard(
   if (auth.isClientRole && to.name === 'home') {
     return { name: 'portal' }
   }
+  // Technický účet nesmí namontovat obchodní shell ani při zamčené relaci.
+  if (auth.isInstanceAdmin && to.name === 'profile-password') return { name: 'instance-admin-profile', query: to.query }
+  if (auth.isInstanceAdmin && !isInstanceAdminRouteName(to.name)) {
+    return { name: 'instance-admin' }
+  }
+  const instanceAdminOnly = to.matched.some(r => r.meta.instanceAdminOnly)
+  if (instanceAdminOnly && !auth.isInstanceAdmin && !auth.isSuperadmin) return denyFallback(to.name, auth)
   if (requiresAuth && auth.lockedSession) {
     useSessionSecurityStore().apply(auth.lockedSession)
     return true
@@ -514,8 +544,11 @@ export async function authorizationGuard(
   if (auth.isAuthenticated && !mustSetupMfa && !auth.shouldOfferMfa && mfaSetupRoute) {
     const domainLoginQuery = auth.domainContext?.mode === 'canonical' ? pendingCanonicalDomainLoginQuery() : null
     if (domainLoginQuery) return { name: 'login', query: domainLoginQuery }
-    return { name: 'home' }
+    return { name: auth.isInstanceAdmin ? 'instance-admin' : 'home' }
   }
+
+  if (instanceAdminOnly) return true
+  if (auth.isInstanceAdmin && mfaSetupRoute) return true
 
   // Odkaz na doklad jiné firmy, do které uživatel smí: přepnout firmu dřív, než
   // kontroly níž (režim účetnictví, sklad…) posoudí cíl podle špatné firmy.
@@ -645,7 +678,7 @@ export function canonicalInternalUrl(
   to: RouteLocationNormalized,
   context: DomainContext | null,
 ): string | null {
-  if (!context?.locked || isClientDomainRouteName(to.name)) return null
+  if (!context?.locked || (!to.meta.canonicalOnly && isClientDomainRouteName(to.name))) return null
   if (!context.canonical_base_url || !to.fullPath.startsWith('/') || to.fullPath.startsWith('//')) return null
   try {
     const origin = new URL(context.canonical_base_url).origin

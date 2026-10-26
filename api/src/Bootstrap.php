@@ -14,6 +14,7 @@ use MyInvoice\Middleware\ApiRequestLogMiddleware;
 use MyInvoice\Middleware\ApiScopeMiddleware;
 use MyInvoice\Middleware\ApiVersionRewriteMiddleware;
 use MyInvoice\Middleware\AuthMiddleware;
+use MyInvoice\Middleware\DomainLoginSessionMiddleware;
 use MyInvoice\Middleware\CsrfMiddleware;
 use MyInvoice\Middleware\DemoReadOnlyMiddleware;
 use MyInvoice\Middleware\FirstRunLockMiddleware;
@@ -871,6 +872,15 @@ final class Bootstrap
                 $c->get(\MyInvoice\Service\Vat\VatStatusService::class),
                 $c->get(\MyInvoice\Service\Tenant\TenantUrlResolver::class),
             ),
+            \MyInvoice\Action\Mcp\HostedMcpSettingsAction::class => \DI\autowire()->constructorParameter(
+                'resources', \DI\get(\MyInvoice\Service\Mcp\McpResourcePolicy::class),
+            ),
+            \MyInvoice\Action\Mcp\HostedMcpEndpointAction::class => \DI\autowire()->constructorParameter(
+                'clientTools', \DI\get(\MyInvoice\Service\Mcp\ClientMcpToolPolicy::class),
+            ),
+            AuthMiddleware::class => \DI\autowire()->constructorParameter(
+                'mcpResources', \DI\get(\MyInvoice\Service\Mcp\McpResourcePolicy::class),
+            ),
             \MyInvoice\Security\UserRoleProfile::class => fn (ContainerInterface $c) => new \MyInvoice\Security\UserRoleProfile(
                 $c->get(Connection::class),
                 $c->get(\MyInvoice\Infrastructure\Cache\EntityCache::class),
@@ -1297,6 +1307,7 @@ final class Bootstrap
         $app->add(SessionLockMiddleware::class);                     // autoritativní idle/manual lock browser session
         $app->add(ApiRequestLogMiddleware::class);                   // bearer-only: per-request log do api_request_log (nad scope/právy, ať jsou vidět i zamítnutá volání)
         $app->add(AuthMiddleware::class);                            // načte session nebo bearer token
+        $app->add(DomainLoginSessionMiddleware::class);             // oddělená session klientského přihlášení
         $app->add(TenantDomainMiddleware::class);                   // Host autoritativně určí tenant před autentizací
         $app->add(FirstRunLockMiddleware::class);                    // 423 pokud users prázdná
         $app->add(IpAllowlistMiddleware::class);                     // outermost user mw

@@ -32,6 +32,7 @@ přílohy k produktu).
 |---|---|---|
 | jednou při zavádění | Zapnout skladovou evidenci a založit sklady | `Firma → Nastavení`, záložka **Daně a účetnictví**; `Sklad → E-shop`, záložka **Sklady**; postup v [§ 37.3](#373-krok-za-krokem-zapnout-sklad-a-zalozit-karty) |
 | jednou při zavádění | Založit karty a naskladnit počáteční stav | `Sklad → Skladové karty`; `Sklad → Příjemky a výdejky`, **Import počátečních zásob**; [§ 37.4.3](#3743-pocatecni-stav-zasob) |
+| jednou při přechodu z jiného programu | Převzít historii skladových dokladů | `Sklad → Příjemky a výdejky`, **Import historie skladu**; [§ 37.4.4](#3744-prevzeti-historie-skladu-z-jineho-programu) |
 | při každém dodání zboží | Naskladnit příjemkou nebo z přijaté faktury | `Sklad → Příjemky a výdejky`, nebo detail přijaté faktury; [§ 37.4](#374-krok-za-krokem-naskladnit-zbozi) |
 | při každém prodeji | Vydat zboží fakturou nebo ruční výdejkou | editor faktury, nebo `Sklad → Příjemky a výdejky`; [§ 37.5](#375-krok-za-krokem-vydat-zbozi) |
 | průběžně | Zkontrolovat, co doobjednat, a objednat | `Sklad → Objednávky`, tlačítko **Doplnění zásob**; [§ 37.7](#377-krok-za-krokem-objednat-u-dodavatele) |
@@ -176,6 +177,149 @@ Průběh můžete bezpečně zavřít a znovu otevřít, dokončené dávky se n
 > Karty se sledováním šarží nebo sériových čísel naskladněte ruční příjemkou,
 > kde lze vyplnit úplné alokace. Prodat je pak jde přímo fakturou s výběrem kusů
 > ([§ 37.5.1](#3751-vydej-fakturou)).
+
+### 37.4.4 Převzetí historie skladu z jiného programu
+
+Když přecházíte z jiného skladového programu, můžete převzít i jeho skladové
+doklady. Kniha karty pak ukáže pohyby od začátku, ne jen počáteční stav.
+Převzaté doklady se neúčtují do deníku, nečerpají číselnou řadu MyÚčta a nemění
+faktury, jen se na ně odkazují.
+
+**Soubor:** CSV nebo XLSX, jeden řádek souboru je jeden řádek dokladu. Údaje
+hlavičky (typ, datum, sklad, partner, popis, faktura) se opakují na každém řádku
+dokladu a doklad drží pohromadě jeho číslo. Velký export ukládejte raději jako CSV,
+čte se rychleji. Soubor smí mít nejvýš 300 000 řádků.
+
+<!-- cols: 26 14 60 -->
+| Sloupec | Povinný | Poznámka |
+|---|---|---|
+| Číslo dokladu | ano | původní číslo ze starého programu, i s předponou nejvýš 30 znaků |
+| Typ dokladu | ano | příjemka, výdejka, převodka, přebytek, manko (i receipt, issue, transfer, surplus, shortage) |
+| Datum | ano | RRRR-MM-DD nebo D.M.RRRR, nejpozději včerejší den |
+| Sklad | ano | kód skladu v MyÚčtu |
+| SKU | ano | skladová karta musí existovat a být skladová, bez šarží a sériových čísel |
+| Množství | ano | kladné číslo v základní jednotce karty |
+| Cílový sklad | u převodky | kód skladu, kam převodka zboží přesouvá |
+| Nákupní cena za jednotku | u příjemky a přebytku | bez DPH v Kč; výdeje a převodky ocení MyÚčto samo |
+| Partner, popis, poznámka řádku | ne | volný text |
+| Vydaná faktura (VS) | ne | variabilní symbol vydané faktury v MyÚčtu |
+| Přijatá faktura | ne | číslo dokladu dodavatele, jinak variabilní symbol |
+
+Přebytek se převezme jako příjemka a manko jako výdejka, obojí s původem
+**Inventura**. Výdej ocení klouzavý průměr skladu, ze kterého zboží odchází, a převodka
+přenese hodnotu výdeje na cílový sklad ([§ 37.12.3](#37123-ocenovani-zasob)). Hodnoty se
+proto mohou lišit od starého programu, který oceňoval jinak.
+
+**Dva způsoby navázání:**
+
+- **Historie před datem přechodu.** Firma už sklad v MyÚčtu vede, typicky od
+  příjemky počátečních zásob ([§ 37.4.3](#3743-pocatecni-stav-zasob)). Datum přechodu
+  je nejpozději den prvního skladového dokladu v MyÚčtu (a nejpozději dnes) a všechny
+  převzaté doklady musí být starší. Den před datem přechodu historii uzavře
+  **vyrovnávací výdejka** každého skladu (číslo `UH-<id skladu>-<datum>`), která vydá
+  celý zůstatek. Stav skladu a ocenění
+  dokladů od data přechodu se tak nezmění.
+- **Historie je současný stav.** Jen pro firmu, která zatím žádný skladový doklad
+  nemá. Stav skladu po importu odpovídá konci historie a na historii navážete
+  běžnými doklady. Historie musí skončit nejpozději včera, dnešní den už patří
+  vlastním dokladům.
+
+**Postup:**
+
+1. Otevřete `Sklad → Příjemky a výdejky` a klikněte na **Import historie skladu**.
+2. Zvolte způsob navázání a u historie před přechodem zkontrolujte datum přechodu.
+   MyÚčto ho předvyplní datem prvního skladového dokladu.
+3. Vyplňte identifikátor importu (například `stary-sklad`) a nahrajte soubor.
+   U CSV nastavte kódování a oddělovač, u XLSX list.
+4. Zkontrolujte mapování sloupců. Hvězdička označuje povinná pole. Když starý
+   program používá stejná čísla pro různé typy dokladů, nastavte v části
+   **Předpony čísel dokladů** předponu pro každý typ.
+5. Klikněte na **Zkontrolovat celý soubor**. Kontrola běží na pozadí a ukáže počty
+   dokladů podle typu, období a chybné řádky. Chyba v jednom řádku vyřadí celý
+   doklad. Číslo, které už ve firmě existuje nebo má tvar číselné řady MyÚčta
+   (například `PRI-2026-0001`), kontrola odmítne. Stejně tak číslo, které si vezme
+   vyrovnávací výdejka nebo technická příjemka. Zvlášť vypíše doklady, které se
+   nenavážou na fakturu (viz **Vazba na fakturu** níže).
+6. Projděte **Koncový stav historie po kartách**: kolik zůstane z historie na každém
+   skladu a kartě. U historie před přechodem ho kontrola porovná s počátečním stavem
+   v MyÚčtu k datu přechodu a vypíše karty s rozdílem. Počátečním stavem skladu je
+   import počátečních zásob do tohoto skladu s tímto datem, když jste ho použili,
+   jinak všechny příjemky do skladu s tímto datem. Prodeje a jiné pohyby toho dne se nepočítají. Tlačítko **Stáhnout XLSX** dá celý
+   přehled k porovnání se stavem ve starém programu.
+7. Klikněte na **Převzít historii**. Pokud bylo účetní období uzavřeno až po
+   kontrole souboru, aplikace před převzetím vyžádá jeho výslovné potvrzení.
+   Období ověřuje také během úlohy na pozadí. Pokud bylo mezitím uzavřeno a
+   převzetí nemělo potvrzení, správce firmy import vrátí a spustí nové převzetí
+   s potvrzením. Při přerušeném vrácení ze stejného důvodu zvolí znovu
+   **Vrátit import** a potvrdí mazání dokladů v uzavřeném období.
+
+Během rozpracované inventury (i cyklické) kontrolu, převzetí ani vrácení
+nespustíte. Inventuru nejdřív uzavřete.
+
+**Záporný stav:** když by podle historie šel stav karty na některém skladu do
+minusu, kontrola vypíše místa (řádek, doklad, karta, kolik chybí) a převzetí
+nepustí. Chybějící příjem doplňte do souboru, nebo spusťte kontrolu znovu se
+zaškrtnutou volbou **Doplnit technické příjemky při záporném stavu**. Potom těsně
+před dokladem vznikne příjemka `<číslo>-TP<řádek souboru>` chybějícího množství za poslední známou
+nákupní cenu karty (bez ceny za 0 Kč) s popisem „Technická příjemka: doplnění
+záporného stavu…“. Počet technických příjemek uvidíte v souhrnu.
+
+**Uzavřené účetní období:** doklady v uzavřeném období převezmete jen po
+zaškrtnutí potvrzení v náhledu. Převzaté doklady se neúčtují a ocenění
+existujících dokladů se nezmění. Stejné potvrzení chce i jejich vrácení.
+
+**Jak poznáte, že je hotovo:** úloha doběhla, převzaté doklady mají u čísla štítek
+**Převzato** v seznamu dokladů, na detailu i ve skladové knize karty.
+
+Převzatá historie je uzamčená: převzatý doklad nejde stornovat a do období
+historie nejde zaúčtovat nový doklad. Převzaté doklady se nepromítají do Intrastatu
+a do přehledu nevyfakturovaných příjemek v uzávěrce. Firma má najednou jen jeden
+import historie. U způsobu „historie je současný stav“ je během převzetí
+i vrácení zamčený celý sklad: do jejich dokončení nezaúčtujete žádný skladový
+doklad a nespustíte ani nepřipravíte inventuru.
+
+**Vazba na fakturu:** převzatý doklad se naváže na vydanou fakturu podle
+variabilního symbolu jen tehdy, když je faktura vystavená (ne koncept), jde
+o fakturu nebo dobropis a nemá vlastní výdejku či vratku z MyÚčta. Jinak se doklad
+převezme bez vazby na fakturu a kontrola ho vypíše i s důvodem. Převzetí podmínku
+ověří znovu, protože se faktura mezi kontrolou a převzetím mohla změnit. Doklady,
+u kterých převzetí vazbu vynechalo, vypíše výsledek převzetí stejně jako kontrola.
+
+Navázaná převzatá výdejka platí jako výdej celé faktury, stejně jako výdejka, kterou
+k faktuře vytvořilo MyÚčto. Faktura proto nic nerezervuje. Když výdejka pokrývá jen
+část položek faktury, zbytek MyÚčto samo nevydá, ani po obnovení stornované faktury.
+Dorovnejte ho ruční výdejkou.
+
+Faktura založená v MyÚčtu se skladovými řádky s datem před koncem historie, kterou
+žádný převzatý doklad nekryje, drží rezervaci trvale. Vydat ji nejde, protože datum
+leží v zamčené historii. Takovou fakturu proto navažte v importu sloupcem
+**Vydaná faktura (VS)**.
+
+Storno vydané nebo přijaté faktury či dobropisu převzatou výdejku nebo příjemku
+nestornuje, historie zůstane, jak byla. Obnovení stornované faktury nový skladový
+doklad nevytvoří, protože k ní už převzatá výdejka existuje. U dobropisu storno
+převzatou příjemku nestornuje a opakované vystavení dobropisu zboží podruhé nepřijme.
+
+**Vrácení importu:** chybný import vrátí správce firmy tlačítkem **Vrátit import**
+na stránce importu. Smažou se všechny převzaté doklady včetně vyrovnávací výdejky
+a technických příjemek a historie se odemkne; vrácení se zapíše do auditního logu.
+U způsobu „historie je současný stav“ se navíc vynuluje stav skladu, proto ho
+vrátíte jen do prvního vlastního skladového dokladu firmy. Pak můžete import
+spustit znovu s opraveným souborem.
+
+Zastavené nebo chybou přerušené převzetí dokončíte tlačítkem **Zkusit znovu**, když
+jde o poslední import firmy; starší úlohu znovu spustit nejde. Zastavit převzetí smí
+jen správce firmy, protože u způsobu „historie je současný stav“ zůstane do jeho
+dokončení nebo vrácení zamčený celý sklad. Nedoběhlé vrácení spustíte znovu
+tlačítkem **Vrátit import**.
+
+Když se firma obnoví z archivu, který úlohy importu nepřenáší, zůstanou převzaté
+doklady bez záznamu o importu. Stránka importu to ukáže a správce firmy je vrátí stejně
+tlačítkem **Vrátit import**; do té doby nový import nespustíte.
+
+> [!NOTE]
+> Sestava **Prodeje** vychází z řádků faktur, ne ze skladových dokladů. Převzatá
+> historie se v ní proto neobjeví.
 
 ## 37.5 Krok za krokem: vydat zboží
 
@@ -419,6 +563,10 @@ a InstatEvo soubor přijalo.
 | Upravovat lze jen rozpracovanou (draft) objednávku. Odeslanou objednávku uprav přes potvrzení nebo uzavření zbytku. | Odeslaná objednávka je uzamčená | Použijte **Potvrdit** nebo **Zavřít zbytek** |
 | Cena je odhad z objednávky - po doručení faktury přeceňte. | Příjemka má cenu z objednávky | Cenu před zaúčtováním přepište, nebo zaúčtovanou příjemku stornujte a přijměte znovu |
 | Náhled Intrastatu hlásí chybu a CSV nejde stáhnout | Chybí KN8, země původu, hmotnost, kurz, DIČ, nebo faktura obsahuje nenavázanou položku | Doplňte údaje podle [§ 37.12.15](#371215-intrastat-export-pro-instatevo) a vytvořte nový náhled |
+| Doklad spadá do převzaté historie skladu, kterou nejde měnit. | Datum dokladu je v období převzaté historie, nebo jde o převzatý doklad | Doklad dejte až za konec historie. Chybu v převzaté historii opravte vrácením importu a novým importem ([§ 37.4.4](#3744-prevzeti-historie-skladu-z-jineho-programu)) |
+| Probíhá převzetí nebo vrácení historie skladu. | Import historie bez data přechodu právě převádí nebo vrací doklady a zamyká celý sklad | Počkejte na dokončení úlohy na stránce importu, pak doklad zaúčtujte ([§ 37.4.4](#3744-prevzeti-historie-skladu-z-jineho-programu)) |
+| Ve firmě běží inventura. Import historie spusťte až po jejím uzavření. | Rozpracovaná inventura nebo cyklická inventura | Inventuru uzavřete, pak import spusťte znovu |
+| Historie vede k zápornému stavu zásob. | Ve starém programu chybí příjem | Doplňte příjem do souboru, nebo zapněte doplnění technických příjemek ([§ 37.4.4](#3744-prevzeti-historie-skladu-z-jineho-programu)) |
 
 ## 37.12 Podrobnosti a pravidla
 

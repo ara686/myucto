@@ -18,6 +18,7 @@ use MyInvoice\Middleware\TenantDomainMiddleware;
 use MyInvoice\Repository\PasskeyCredentialRepository;
 use MyInvoice\Security\PermissionCatalog;
 use MyInvoice\Security\PermissionResolver;
+use MyInvoice\Security\InstanceAdminRoutePolicy;
 use MyInvoice\Service\Auth\MfaOfferService;
 use MyInvoice\Service\Invoice\DefaultInvoiceNote;
 use MyInvoice\Service\Invoice\InvoiceRounding;
@@ -66,11 +67,13 @@ final class MeAction
         // VŽDY jen membership (0 řádků → prázdný seznam, fail-closed). Bez filtru
         // by klient viděl názvy/IČO cizích firem instance.
         $isSuperadmin = (bool) ($user['is_superadmin'] ?? false);
-        $allowed = $isSuperadmin
+        $isInstanceAdmin = InstanceAdminRoutePolicy::isTechnicalUser($user);
+        $allowed = $isSuperadmin || $isInstanceAdmin
             ? []
             : $this->userSuppliers->allowedSupplierIds((int) ($user['id'] ?? 0));
-        if (!$isSuperadmin && $allowed === []) {
+        if ($isInstanceAdmin || (!$isSuperadmin && $allowed === [])) {
             $suppliers = [];
+            if ($isInstanceAdmin) $currentSupplierId = 0;
         } else {
             $ossSelect = $this->db->hasColumn('supplier', 'oss_enabled')
                 ? 'oss_enabled'
@@ -79,6 +82,10 @@ final class MeAction
             $simplifiedSelect = $this->db->hasColumn('supplier', 'simplified_hide_customer_default')
                 ? 'simplified_hide_customer_default'
                 : '0 AS simplified_hide_customer_default';
+            // Rozpis slevy z ceníku na PDF (migrace 2035), stejná pojistka pro instalaci pozadu s migrací.
+            $lineDiscountSelect = $this->db->hasColumn('supplier', 'invoice_pdf_show_line_discount')
+                ? 'invoice_pdf_show_line_discount'
+                : '0 AS invoice_pdf_show_line_discount';
             $where  = '';
             $params = [];
             if ($allowed !== []) {
@@ -93,11 +100,12 @@ final class MeAction
             $cacheKey = 'me:suppliers:' . ($allowed === [] ? 'all' : implode(',', $allowed))
                 . ':' . ($ossSelect === 'oss_enabled' ? '1' : '0') . ':client-ai'
                 . ':' . ($simplifiedSelect === 'simplified_hide_customer_default' ? '1' : '0')
-                . ':legal-form';
+                . ':legal-form'
+                . ':' . ($lineDiscountSelect === 'invoice_pdf_show_line_discount' ? '1' : '0');
             $suppliers = (array) $this->cache->remember(
                 EntityCache::GROUP_SUPPLIER,
                 $cacheKey,
-                function () use ($where, $params, $ossSelect, $simplifiedSelect): array {
+                function () use ($where, $params, $ossSelect, $simplifiedSelect, $lineDiscountSelect): array {
                     $stmt = $this->db->pdo()->prepare(
                         // dic + adresa: dashboard pod názvem firmy vypisuje identifikaci
                         // (IČ · DIČ · adresa) na jeden řádek — bez nich by musel dělat
@@ -106,6 +114,7 @@ final class MeAction
                                 is_vat_payer, is_identified, taxpayer_type,
                                 default_payment_due_days, default_payment_due_unit, default_prices_include_vat, default_rounding_mode,
                                 allow_refund_invoices, auto_send_reminders, payment_thanks_enabled, payment_thanks_default_checked,
+                                ' . $lineDiscountSelect . ',
                                 ' . $simplifiedSelect . ',
                                 accounting_mode, accounting_enabled, payroll_enabled, stock_enabled, dimensions_enabled, fiscal_year_start_month, ' . $ossSelect . ',
                                 ai_provider, ai_data_region, ai_eu_residency_required, client_ai_extraction_enabled, '
@@ -182,6 +191,8 @@ final class MeAction
             // Zjednodušený doklad (migrace 2037), editor podle ní předvyplní „netisknout
             // odběratele" při zaškrtnutí zjednodušeného dokladu.
             $s['simplified_hide_customer_default'] = (bool) ($s['simplified_hide_customer_default'] ?? false);
+            // Rozpis slevy z ceníku na PDF (migrace 2035), editor podle ní ukáže u řádku pole „Sleva %".
+            $s['invoice_pdf_show_line_discount'] = (bool) ($s['invoice_pdf_show_line_discount'] ?? false);
             // Per-faktura přepínač upomínek v editoru se skryje, když dodavatel auto-upomínky nemá.
             $s['auto_send_reminders']      = (bool) ($s['auto_send_reminders'] ?? true);
             // Děkovný e-mail (issue #57) — UI v mark-paid modalu podle nich zobrazí checkbox.
@@ -252,7 +263,8 @@ final class MeAction
                 : null;
         }
 
-        $licenseSummary = (LicenseMiddleware::state($request) ?? $this->license->current())->toMeSummary();
+        $licenseSummary = $isInstanceAdmin ? null
+            : (LicenseMiddleware::state($request) ?? $this->license->current())->toMeSummary();
         if ($effectiveRole->isClientType()) {
             $licenseSummary['subscription_state'] = null;
         }
@@ -264,6 +276,7 @@ final class MeAction
                 'name'            => $user['name'] ?? '',
                 'role'            => $roleSummary,
                 'is_superadmin'   => $isSuperadmin,
+                'is_instance_admin' => $isInstanceAdmin,
                 'can_create_supplier' => $defaultRole->canCreateSupplier(),
                 'locale'          => $user['locale'] ?? 'cs',
                 'totp_enabled'    => $totpEnabled,
@@ -277,7 +290,7 @@ final class MeAction
             'csrf_token'          => $session['csrf_token'] ?? '',
             'current_supplier_id' => $currentSupplierId,
             'suppliers'           => $suppliers,
-            'domain_context'      => $domainContext instanceof TenantDomainContext
+            'domain_context'      => !$isInstanceAdmin && $domainContext instanceof TenantDomainContext
                 ? $domainContext->toArray()
                 : null,
             'permissions'         => $effectiveRole->isSuperadmin() ? [] : $effectiveRole->permissions,
@@ -293,9 +306,9 @@ final class MeAction
             'license'             => $licenseSummary,
             // Výběr testovacího prostředí podání úřadům (ČSSZ, ZP, ISDS). Mimo
             // vývojovou instalaci ho UI skryje a backend test odmítne.
-            'submission_test_environment_allowed' => (new SubmissionEnvironmentPolicy($this->config))->testAllowed(),
+            'submission_test_environment_allowed' => !$isInstanceAdmin && (new SubmissionEnvironmentPolicy($this->config))->testAllowed(),
             // Web faktura (veřejný odkaz) — vypnutá instalace UI tlačítko skryje.
-            'invoice_public_links_enabled' => (new InvoicePublicLinkFeature($this->config))->isEnabled(),
+            'invoice_public_links_enabled' => !$isInstanceAdmin && (new InvoicePublicLinkFeature($this->config))->isEnabled(),
         ]);
     }
 

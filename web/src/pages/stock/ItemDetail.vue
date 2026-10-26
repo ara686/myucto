@@ -564,6 +564,7 @@ const openingBalanceNum = computed(() => Number(openingBalance.value))
                     {{ m.doc_number || `#${m.document_id}` }}
                   </RouterLink>
                   <span class="text-xs text-neutral-400 ml-1">{{ t(`stock.doc_type.${m.doc_type}`) }}</span>
+                  <span v-if="m.imported" class="ml-1 rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] text-neutral-600" :title="t('stock.history_import.imported_hint')">{{ t('stock.history_import.imported_badge') }}</span>
                 </td>
                 <!-- Faktura a protistrana, která pohyb vyvolala, s proklikem rovnou na doklad. -->
                 <td class="px-3 py-2 min-w-[10rem]">

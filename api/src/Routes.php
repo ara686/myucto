@@ -3196,6 +3196,22 @@ final class Routes
         $app->get ('/api/dashboard/purchase-summary', PurchaseSummaryAction::class);
 
         // Admin (M6)
+        // Technická správa má vlastní úzké akce; neotevírá obecnou administraci.
+        $app->get('/api/instance-admin/status', [\MyInvoice\Action\InstanceAdmin\InstanceAdminAction::class, 'status']);
+        $app->get('/api/instance-admin/suppliers', [\MyInvoice\Action\InstanceAdmin\InstanceAdminAction::class, 'suppliers']);
+        $app->get('/api/instance-admin/suppliers/{id:[0-9]+}/status', [\MyInvoice\Action\InstanceAdmin\InstanceAdminAction::class, 'supplierStatus']);
+        $app->get('/api/instance-admin/smtp', [\MyInvoice\Action\InstanceAdmin\InstanceAdminAction::class, 'smtp']);
+        $app->put('/api/instance-admin/smtp', [\MyInvoice\Action\InstanceAdmin\InstanceAdminAction::class, 'saveSmtp']);
+        $app->post('/api/instance-admin/smtp/test', [\MyInvoice\Action\InstanceAdmin\InstanceAdminAction::class, 'testSmtp']);
+        $app->get('/api/instance-admin/suppliers/{id:[0-9]+}/smtp', [\MyInvoice\Action\InstanceAdmin\InstanceAdminAction::class, 'supplierSmtp']);
+        $app->post('/api/instance-admin/suppliers/{id:[0-9]+}/smtp/test', [\MyInvoice\Action\InstanceAdmin\InstanceAdminAction::class, 'testSmtp']);
+        $app->get('/api/instance-admin/audit', [\MyInvoice\Action\InstanceAdmin\InstanceAdminAction::class, 'audit']);
+        $app->get('/api/admin/instance-smtp/targets', [\MyInvoice\Action\InstanceAdmin\InstanceAdminAction::class, 'targets']);
+        $app->post('/api/admin/instance-smtp/targets', [\MyInvoice\Action\InstanceAdmin\InstanceAdminAction::class, 'createTarget']);
+        $app->delete('/api/admin/instance-smtp/targets/{id:[0-9]+}', [\MyInvoice\Action\InstanceAdmin\InstanceAdminAction::class, 'deleteTarget']);
+        $app->delete('/api/admin/instance-smtp/override', [\MyInvoice\Action\InstanceAdmin\InstanceAdminAction::class, 'resetSmtpOverride']);
+        $app->get('/api/admin/users/{id:[0-9]+}/technical-suppliers', [\MyInvoice\Action\Admin\TechnicalSupplierAccessAction::class, 'get']);
+        $app->put('/api/admin/users/{id:[0-9]+}/technical-suppliers', [\MyInvoice\Action\Admin\TechnicalSupplierAccessAction::class, 'put']);
         $app->get    ('/api/admin/activity-log',    ListActivityLogAction::class);
         $app->get    ('/api/admin/sent-emails',     ListSentEmailsAction::class);
         $app->get    ('/api/admin/smtp-log-analysis', \MyInvoice\Action\Admin\SmtpLogAnalysisAction::class);
@@ -3273,6 +3289,8 @@ final class Routes
         $app->get    ('/api/admin/imports/stereo-nx/uploads/{token:[a-f0-9]{32}}', [\MyInvoice\Action\Admin\Import\StereoNxMigrationAction::class, 'show']);
         $app->post   ('/api/admin/imports/stereo-nx/uploads/{token:[a-f0-9]{32}}/preview', [\MyInvoice\Action\Admin\Import\StereoNxMigrationAction::class, 'preview']);
         $app->post   ('/api/admin/imports/stereo-nx/uploads/{token:[a-f0-9]{32}}/company-profile', [\MyInvoice\Action\Admin\Import\StereoNxMigrationAction::class, 'fillCompanyProfile']);
+        $app->post   ('/api/admin/imports/stereo-nx/uploads/{token:[a-f0-9]{32}}/account-mapping', [\MyInvoice\Action\Admin\Import\StereoNxMigrationAction::class, 'accountMapping']);
+        $app->post   ('/api/admin/imports/stereo-nx/uploads/{token:[a-f0-9]{32}}/partner-countries', [\MyInvoice\Action\Admin\Import\StereoNxMigrationAction::class, 'partnerCountries']);
         $app->post   ('/api/admin/imports/stereo-nx/uploads/{token:[a-f0-9]{32}}/run', [\MyInvoice\Action\Admin\Import\StereoNxMigrationAction::class, 'run']);
         $app->get    ('/api/admin/imports/stereo-nx/uploads/{token:[a-f0-9]{32}}/runs/{id:[0-9]+}', [\MyInvoice\Action\Admin\Import\StereoNxMigrationAction::class, 'result']);
         $app->get    ('/api/admin/imports/stereo-nx/uploads/{token:[a-f0-9]{32}}/runs/{id:[0-9]+}/pdf', [\MyInvoice\Action\Admin\Import\StereoNxMigrationAction::class, 'resultPdf']);
@@ -4283,6 +4301,17 @@ final class Routes
             $g->get   ('/opening-import/jobs/{id:[0-9]+}/items', [\MyInvoice\Action\Eshop\CatalogJobAction::class, 'items']);
             $g->post  ('/opening-import/jobs/{id:[0-9]+}/{operation:retry|cancel}', [\MyInvoice\Action\Eshop\CatalogJobAction::class, 'change']);
 
+            $g->get   ('/history-import',               [\MyInvoice\Action\Stock\StockHistoryImportAction::class, 'status']);
+            $g->post  ('/history-import/sources',       [\MyInvoice\Action\Stock\StockHistoryImportAction::class, 'upload']);
+            $g->get   ('/history-import/sources/{id:[0-9]+}/sample', [\MyInvoice\Action\Stock\StockHistoryImportAction::class, 'sample']);
+            $g->post  ('/history-import/preview',       [\MyInvoice\Action\Stock\StockHistoryImportAction::class, 'preview']);
+            $g->post  ('/history-import/{id:[0-9]+}/apply', [\MyInvoice\Action\Stock\StockHistoryImportAction::class, 'apply']);
+            $g->post  ('/history-import/{id:[0-9]+}/rollback', [\MyInvoice\Action\Stock\StockHistoryImportAction::class, 'rollback']);
+            $g->get   ('/history-import/jobs/{id:[0-9]+}', [\MyInvoice\Action\Eshop\CatalogJobAction::class, 'get']);
+            $g->get   ('/history-import/jobs/{id:[0-9]+}/items', [\MyInvoice\Action\Eshop\CatalogJobAction::class, 'items']);
+            $g->get   ('/history-import/jobs/{id:[0-9]+}/end-state', [\MyInvoice\Action\Stock\StockHistoryImportAction::class, 'endState']);
+            $g->post  ('/history-import/jobs/{id:[0-9]+}/{operation:retry|cancel}', [\MyInvoice\Action\Eshop\CatalogJobAction::class, 'change']);
+
             $g->get   ('/fulfillment/tasks',                                      [\MyInvoice\Action\Stock\FulfillmentAction::class, 'list']);
             $g->post  ('/fulfillment/tasks',                                      [\MyInvoice\Action\Stock\FulfillmentAction::class, 'create']);
             $g->get   ('/fulfillment/tasks/{id:[0-9]+}',                          [\MyInvoice\Action\Stock\FulfillmentAction::class, 'get']);
@@ -4521,10 +4550,10 @@ final class Routes
             $g->get('/cash-journal',                 [\MyInvoice\Action\TaxEvidence\CashJournalAction::class, 'get']);
             $g->get('/cash-journal/export',          [\MyInvoice\Action\TaxEvidence\CashJournalAction::class, 'export']);
             // Poznámky k pohybům peněžního deníku (migrace 1993); přílohy přes document_links.
-            $g->get   ('/cash-journal/notes/{source:cash|bank|invoice_payment|purchase_invoice|gopay}/{id:[0-9]+}',                     [\MyInvoice\Action\TaxEvidence\CashJournalNoteAction::class, 'list']);
-            $g->post  ('/cash-journal/notes/{source:cash|bank|invoice_payment|purchase_invoice|gopay}/{id:[0-9]+}',                     [\MyInvoice\Action\TaxEvidence\CashJournalNoteAction::class, 'create']);
-            $g->patch ('/cash-journal/notes/{source:cash|bank|invoice_payment|purchase_invoice|gopay}/{id:[0-9]+}/{noteId:[0-9]+}',     [\MyInvoice\Action\TaxEvidence\CashJournalNoteAction::class, 'update']);
-            $g->delete('/cash-journal/notes/{source:cash|bank|invoice_payment|purchase_invoice|gopay}/{id:[0-9]+}/{noteId:[0-9]+}',     [\MyInvoice\Action\TaxEvidence\CashJournalNoteAction::class, 'delete']);
+            $g->get   ('/cash-journal/notes/{source:cash|bank|invoice_payment|purchase_invoice|gopay|credit_note_offset}/{id:[0-9]+}',                     [\MyInvoice\Action\TaxEvidence\CashJournalNoteAction::class, 'list']);
+            $g->post  ('/cash-journal/notes/{source:cash|bank|invoice_payment|purchase_invoice|gopay|credit_note_offset}/{id:[0-9]+}',                     [\MyInvoice\Action\TaxEvidence\CashJournalNoteAction::class, 'create']);
+            $g->patch ('/cash-journal/notes/{source:cash|bank|invoice_payment|purchase_invoice|gopay|credit_note_offset}/{id:[0-9]+}/{noteId:[0-9]+}',     [\MyInvoice\Action\TaxEvidence\CashJournalNoteAction::class, 'update']);
+            $g->delete('/cash-journal/notes/{source:cash|bank|invoice_payment|purchase_invoice|gopay|credit_note_offset}/{id:[0-9]+}/{noteId:[0-9]+}',     [\MyInvoice\Action\TaxEvidence\CashJournalNoteAction::class, 'delete']);
             $g->get('/closing/{year:[0-9]+}',        [\MyInvoice\Action\TaxEvidence\AnnualClosingAction::class, 'get']);
             $g->put('/closing/{year:[0-9]+}',        [\MyInvoice\Action\TaxEvidence\AnnualClosingAction::class, 'save']);
             $g->post('/closing/{year:[0-9]+}/finalize', [\MyInvoice\Action\TaxEvidence\AnnualClosingAction::class, 'finalize']);

@@ -995,8 +995,14 @@ Editor faktury nacení skladový řádek pro odběratele, měnu a datum dokladu:
 
 Odběratel bez individuální ceny a bez cenové hladiny se naceňuje přesně jako dosud.
 Změna odběratele, měny nebo cenové hladiny dokladu na faktuře přecení jen řádky, jejichž
-cenu doplnila aplikace, ručně přepsanou cenu nechá být. Seznam karet a našeptávač dál
+cenu doplnila aplikace, ručně přepsanou cenu nechá být. U uloženého dokladu se po změně
+hladiny editor zeptá, jestli přecenit skladové řádky s nezápornou jednotkovou cenou
+([§ 38.11.18.3](#3811183-cenova-hladina-na-dokladu)). Seznam karet a našeptávač dál
 ukazují standardní (případně akční) cenu bez ohledu na odběratele.
+
+Záporná jednotková cena vratky nebo odpočtu se cenou karty nepřepisuje. Změna balení ji
+pouze přepočte podle poměru jednotek se zachováním znaménka; stejně přepočte ceníkovou
+cenu řádku. Změna odběratele, měny nebo hladiny takový řádek nenacení.
 
 > [!TIP]
 > Ceník pro firmy **bez** skladové evidence (Faktury → Ceník) má vlastní zákaznické ceny
@@ -1539,7 +1545,19 @@ velkoobchodní ceník pro jednorázový nákup. Proto má editor faktury pod odb
 - Zvolená hladina ji pro tento doklad nahradí a platí i u odběratele bez hladiny.
   Individuální cena odběratele má dál přednost.
 - Změna výběru přecení skladové řádky s automaticky doplněnou cenou. Ručně upravené
-  ceny a ceny už uloženého dokladu zůstanou.
+  ceny zůstanou.
+- U uloženého dokladu (koncept i úprava vystavené faktury) se ceny řádků samy nemění.
+  Když po znovuotevření změníte hladinu dokladu nebo vyberete odběratele s jinou
+  hladinou, editor se zeptá, jestli přecenit skladové položky podle nové hladiny, uvede
+  její název a počet řádků. Potvrzením se nacení skladové řádky s nezápornou jednotkovou
+  cenou, i ty s ručně upravenou cenou. Záporné jednotkové ceny vratek a odpočtů se nemění;
+  dobropisy se záporným množstvím a kladnou cenou se přecení.
+  **Zrušit** ponechá uložené i ručně upravené ceny. Řádky bez skladové
+  karty, textové řádky a sleva z celé faktury se nemění. Přeceněné řádky se při další
+  změně odběratele, měny nebo hladiny přeceňují samy jako u nového dokladu. Karta, která
+  nemá cenu v měně dokladu, se nepřecení: řádek si nechá cenu, editor řekne, kolika řádků
+  se to týká, a při další změně hladiny se zeptá znovu. Když přecenění selže, editor to
+  ohlásí a ceny zůstanou beze změny.
 - Hladina se uloží s dokladem, takže při další úpravě konceptu zůstane vybraná, detail
   faktury ji ukazuje a kopie faktury ji převezme. Ceny jsou uložené na řádcích, pozdější
   změna nebo deaktivace hladiny vystavený doklad nemění.

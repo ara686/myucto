@@ -334,6 +334,12 @@ Vygenerované PDF obsahuje:
    jejich PDF (například po úpravě dokladu nebo aktualizaci aplikace), dříve vytvořené
    PDF se samo nemění.
 5. **Bankovní spojení** - číslo účtu nebo IBAN, BIC, banka, variabilní symbol.
+   Se zapnutou volbou **Bankovní spojení v patičce PDF faktury** (`Nastavení → Doklady`,
+   výchozí vypnuto) se číslo účtu, IBAN, BIC a banka tisknou v patičce každé strany
+   a platební panel u součtu ukáže jen QR platbu v rámečku s popiskem. Variabilní symbol
+   zůstává v údajích dokladu nad položkami. Uhrazená faktura, platba hotově nebo kartou
+   a vyúčtování k vrácení vypadají stejně jako bez volby. Projeví se na konceptech a na PDF
+   vytvořených po zapnutí, už vygenerovaná PDF vystavených dokladů se nemění.
 6. **Položky** - tabulka (Popis, Množství, Cena, DPH, Celkem). U položky s vybranými
    kusy skladové karty se pod popisem vypíšou sériová čísla („Výr. č.: …“, například VIN)
    nebo šarže s expirací a množstvím („Šarže: …“), viz [§ 37.5.1](37_Sklad.md#3751-vydej-fakturou).
@@ -344,7 +350,17 @@ Vygenerované PDF obsahuje:
    a **Cena/j po slevě**, pokud má faktura aspoň jednu položku se slevou z ceníkové ceny.
    Položka bez ceníkové ceny nebo s přirážkou ukáže jen výslednou cenu. U faktury s cenami
    včetně DPH jsou obě ceny bez DPH. Ceníková cena nemění částky dokladu ani export ISDOC
-   a POHODA.
+   a POHODA. Slevu lze zadat i přímo u řádku v editoru, viz
+   [§ 15.9.3](15_Faktura_editor.md#1593-polozky).
+   Faktury s mnoha položkami zhustí volba **Kompaktní řádky položek na PDF faktury**
+   (`Nastavení → Doklady`, výchozí vypnuto): tabulka položek má menší odsazení a písmo,
+   sloupec popisu je širší na úkor rezervy číselných sloupců (milionové částky se do nich
+   pořád vejdou) a rozpis balení („celkem 80 ks“) i sériová čísla a šarže se tisknou drobným
+   písmem za popisem položky na stejném řádku. Faktura s 50 položkami a dvouřádkovými názvy
+   dílů má místo čtyř stran dvě, se sloupci rozpisu slevy u řádku místo pěti tři.
+   Volba mění jen vzhled tabulky, částky ani ostatní části dokladu ne. Projeví se na
+   konceptech a na PDF vytvořených po zapnutí, už vygenerovaná PDF vystavených dokladů
+   se nemění.
 7. **Sumář** - mezisoučet, sleva, rozpis DPH, **CELKEM**.
 8. **Přepočet do CZK** (EUR a cizí měna) - u českého odběratele kurz ČNB a tabulka
    základů a DPH v CZK; u zahraničního odběratele pouze česká DPH v CZK, pokud na

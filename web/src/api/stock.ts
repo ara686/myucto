@@ -624,6 +624,8 @@ export interface StockLedgerRow {
   unit_cost: string
   value_total: string
   note: string | null
+  /** Pohyb z převzaté historie skladu (import historických dokladů). */
+  imported?: boolean
   /** Faktura/dobropis, který výdej či vratku vyvolal (null bez práva k fakturám). */
   invoice_id: number | null
   invoice_number: string | null
@@ -693,6 +695,8 @@ export interface StockDocument {
   purchase_invoice_id: number | null
   purchase_order_id: number | null
   stock_take_id: number | null
+  /** Úloha importu historie skladu, která doklad převzala (převzatý doklad nejde stornovat). */
+  history_import_job_id?: number | null
   journal_entry_id: number | null
   reversal_document_id: number | null
   status: StockDocStatus

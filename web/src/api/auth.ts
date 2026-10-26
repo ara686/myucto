@@ -8,6 +8,7 @@ export interface User {
   name: string
   role: RoleSummary
   is_superadmin: boolean
+  is_instance_admin?: boolean
   can_create_supplier?: boolean
   locale: 'cs' | 'en'
   totp_enabled?: boolean
@@ -27,7 +28,7 @@ export interface User {
 export interface RoleSummary {
   id: number
   name: string
-  type: 'superadmin' | 'staff' | 'client'
+  type: 'superadmin' | 'staff' | 'client' | 'instance_admin'
   is_active?: boolean
   system_key?: string | null
 }
@@ -59,6 +60,8 @@ export interface SupplierBrief {
   default_rounding_mode?: InvoiceRoundingMode
   /** Vyúčtování s výsledkem k vyplacení (migrace 1937): editor povolí zápornou fakturu. */
   allow_refund_invoices: boolean
+  /** Rozpis slevy z ceníkové ceny na PDF (migrace 2035); editor podle ní ukáže u řádku pole „Sleva %". */
+  invoice_pdf_show_line_discount?: boolean
   /** Výchozí „netisknout odběratele" na zjednodušeném dokladu (migrace 2037). */
   simplified_hide_customer_default?: boolean
   /**

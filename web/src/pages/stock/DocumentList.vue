@@ -206,6 +206,10 @@ watch(() => route.query.type, (v) => {
           <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v12m0 0 4-4m-4 4-4-4M5 19h14" /></svg>
           {{ t('stock.opening_import.action') }}
         </RouterLink>
+        <RouterLink v-if="auth.canWrite('stock.documents.write')" to="/stock/history-import" :class="btnOutline('neutral')">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v12m0 0 4-4m-4 4-4-4M5 19h14" /></svg>
+          {{ t('stock.history_import.action') }}
+        </RouterLink>
         <RouterLink :to="{ path: '/stock/documents/new', query: { doc_type: 'receipt' } }" :class="btnOutline('primary')">
           <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" :d="ICONS.plus" /></svg>
           {{ t('stock.documents.new_receipt') }}
@@ -334,6 +338,7 @@ watch(() => route.query.type, (v) => {
               @click="openDetail(d, $event)" @auxclick.prevent="openDetail(d, $event)">
               <td v-if="tbl.isVisible('number')" class="px-3 py-2 font-mono text-xs whitespace-nowrap">
                 <RouterLink class="row-link" :to="`/stock/documents/${d.id}`" @click.stop @auxclick.stop>{{ d.doc_number || t('stock.doc_status.draft') }}</RouterLink>
+                <span v-if="d.history_import_job_id" data-test="imported-badge" class="ml-1 rounded bg-neutral-100 px-1.5 py-0.5 font-sans text-[10px] text-neutral-600" :title="t('stock.history_import.imported_hint')">{{ t('stock.history_import.imported_badge') }}</span>
               </td>
               <td v-if="tbl.isVisible('date')" class="px-3 py-2 whitespace-nowrap">{{ formatDate(d.doc_date) }}</td>
               <td v-if="tbl.isVisible('type')" class="px-3 py-2">

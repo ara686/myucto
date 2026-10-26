@@ -43,7 +43,7 @@ import { defaultNoteFor, noteAfterLanguageChange } from '@/pages/invoices/invoic
 import StockDescriptionField from '@/components/ui/StockDescriptionField.vue'
 import InvoiceTrackingPicker from './InvoiceTrackingPicker.vue'
 import { isReturnRow, preselectFromSearch, takenByOtherRows, trackingChoices, trackingKey, type TrackingChoice, type TrackingMode, type TrackingUnit } from './invoiceTracking'
-import { legacyListPrice, lineDiscountPct, quotedListPrice } from './invoiceLineDiscount'
+import { applyLineDiscount, canDiscountUnitPrice, legacyListPrice, lineDiscountInputValue, lineDiscountPct, parseLineDiscountInput, quotedListPrice } from './invoiceLineDiscount'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import ClientFormModal from '@/components/modals/ClientFormModal.vue'
 import ProjectFormModal from '@/components/modals/ProjectFormModal.vue'
@@ -73,6 +73,8 @@ import {
   shouldRequoteOnUnitChange,
   usesStockPricingFeatures,
   canApplyQuote,
+  canRepriceStockPrice,
+  convertUnitPrice,
   priceForMissingQuote,
   initialStockUnit,
   isPriceStillAuto,
@@ -82,6 +84,7 @@ import {
   quoteQuantity,
   rowUnitOptions,
   planContextRepricing,
+  rowsToConfirmRepricing,
   clientHasPriceLevel,
   usesStockQuote,
   legacyRestorePrice,
@@ -518,13 +521,27 @@ function rowUsesQuote(item: InvoiceItem): boolean {
   })
 }
 
+/**
+ * Cena ze skladu (karta i nacenění ji vrací vždy bez DPH) v základu cen dokladu. V režimu
+ * „ceny s DPH" nese pole ceny řádku brutto, proto se přičte DPH podle sazby řádku. Bez DPH
+ * zůstává u neplátce a u přenesené daňové povinnosti, stejně jako v součtech dokladu.
+ */
+function stockPriceForRow(item: InvoiceItem, net: number): number
+function stockPriceForRow(item: InvoiceItem, net: number | null): number | null
+function stockPriceForRow(item: InvoiceItem, net: number | null): number | null {
+  if (net === null || !form.value.prices_include_vat || !supplierIsVatPayer.value || form.value.reverse_charge) return net
+  const rate = vatRates.value.find(v => v.id === item.vat_rate_id)?.rate_percent ?? 0
+  return round2(net * (100 + rate) / 100)
+}
+
 /** Odběratel bez hladiny u karty bez funkcí: řádek dostane zpět původní cenu karty, jednotka zůstává. */
 function restoreLegacyStockPrice(item: InvoiceItem) {
   const si = item.stock_item_id != null ? stockItemsCache.get(item.stock_item_id) : null
-  const price = legacyRestorePrice(si)
-  if (price === null) return
+  const net = legacyRestorePrice(si)
+  if (net === null) return
+  const price = stockPriceForRow(item, net)
   item.unit_price_without_vat = price
-  item.list_unit_price = si ? legacyListPrice(si) : null
+  item.list_unit_price = si ? stockPriceForRow(item, legacyListPrice(si)) : null
   stockQuoteStates.set(item, { seq: ++stockQuoteSeq, autoPrice: price, source: null, discountPct: null, priceLevel: null })
 }
 
@@ -556,6 +573,8 @@ function onStockSelect(rowIndex: number, itemId: number | null) {
     // Sloučené pole (popis = combobox): výběr karty popis přepíše názvem — dosavadní text byl
     // vyhledávací dotaz. Řádek jde dál libovolně přepsat ručně (volný text zůstává první občan).
     item.description = si.name
+    // Sazba karty před cenou: v režimu „ceny s DPH" se podle ní dopočte cena řádku.
+    if (si.vat_rate_id != null && vatRates.value.some(v => v.id === si.vat_rate_id)) item.vat_rate_id = si.vat_rate_id
     if (!usesStockPricingFeatures(si) && !pricingHasLevel.value) {
       // Karta bez balení a bez individuálních cen, odběratel bez hladiny: původní chování
       // beze změny. Doplněná cena se jen zapamatuje (bez requestu), aby šla přecenit,
@@ -567,13 +586,14 @@ function onStockSelect(rowIndex: number, itemId: number | null) {
       // odpovědi bez toho pole; nikdy nesmí akci obejít.
       const price = si.effective_price ?? si.sale_price_without_vat
       if (price != null) {
-        item.unit_price_without_vat = Number(price)
-        item.list_unit_price = legacyListPrice(si)
-        stockQuoteStates.set(item, { seq: ++stockQuoteSeq, autoPrice: Number(price), source: null, discountPct: null, priceLevel: null })
+        const rowPrice = stockPriceForRow(item, Number(price))
+        item.unit_price_without_vat = rowPrice
+        item.list_unit_price = stockPriceForRow(item, legacyListPrice(si))
+        stockQuoteStates.set(item, { seq: ++stockQuoteSeq, autoPrice: rowPrice, source: null, discountPct: null, priceLevel: null })
       }
       if (si.promo_price != null) {
         toast.info(t('invoice.promo_price_applied', {
-          price: formatMoney(Number(si.promo_price)),
+          price: formatMoney(stockPriceForRow(item, Number(si.promo_price))),
           label: si.promo_label ?? t('invoice.promo_price_generic'),
         }))
       }
@@ -585,22 +605,22 @@ function onStockSelect(rowIndex: number, itemId: number | null) {
       const legacy = legacyStockSelection(si)
       item.unit = legacy.unit
       if (legacy.price != null) {
-        item.unit_price_without_vat = legacy.price
-        item.list_unit_price = legacyListPrice(si)
-        stockQuoteStates.set(item, { seq: ++stockQuoteSeq, autoPrice: legacy.price, source: null, discountPct: null, priceLevel: null })
+        const rowPrice = stockPriceForRow(item, legacy.price)
+        item.unit_price_without_vat = rowPrice
+        item.list_unit_price = stockPriceForRow(item, legacyListPrice(si))
+        stockQuoteStates.set(item, { seq: ++stockQuoteSeq, autoPrice: rowPrice, source: null, discountPct: null, priceLevel: null })
       } else {
         stockQuoteStates.delete(item)
       }
       void quoteStockRows([item], 'select', initialStockUnit(si)).then((quoted) => {
         if (!quoted && quoteFailureFallback('select', si)?.promoToast) {
           toast.info(t('invoice.promo_price_applied', {
-            price: formatMoney(Number(si.promo_price)),
+            price: formatMoney(stockPriceForRow(item, Number(si.promo_price))),
             label: si.promo_label ?? t('invoice.promo_price_generic'),
           }))
         }
       })
     }
-    if (si.vat_rate_id != null && vatRates.value.some(v => v.id === si.vat_rate_id)) item.vat_rate_id = si.vat_rate_id
   }
   if (item.warehouse_id == null) item.warehouse_id = defaultWarehouseId.value
   void prefillFromProduct(item, itemId)
@@ -621,7 +641,7 @@ function onItemUnitChange(item: InvoiceItem): void {
  */
 async function quoteStockRows(rows: InvoiceItem[], mode: QuoteMode, requestUnit?: string, priceUnit?: string): Promise<boolean> {
   if (!stockEnabled.value) return true
-  const targets = rows.filter(row => row.stock_item_id != null)
+  const targets = rows.filter(row => row.stock_item_id != null && (mode === 'select' || canRepriceStockPrice(row.unit_price_without_vat)))
   if (targets.length === 0) return true
   const currency = currencies.value.find(c => c.id === form.value.currency_id)?.code ?? form.value.currency ?? 'CZK'
   const date = (form.value.invoice_type === 'proforma' ? form.value.issue_date : form.value.tax_date) || form.value.issue_date || null
@@ -659,8 +679,8 @@ async function quoteStockRows(rows: InvoiceItem[], mode: QuoteMode, requestUnit?
       const { item, quote } = target
       if (!canApplyQuote(quote, item, stockQuoteStates.get(item))) continue
       const unit = unitAfterQuote(mode, quote.requestUnit, line)
-      const price = quotedUnitPrice(line)
-      if (price === null) {
+      const quoted = quotedUnitPrice(line)
+      if (quoted === null) {
         // Karta bez ceny v měně dokladu: jednotka (balení) se přepne i tak a dosavadní
         // cena se jen přepočte na novou jednotku. Změna zákazníka / měny řádek nemění.
         if (mode === 'context') continue
@@ -679,9 +699,10 @@ async function quoteStockRows(rows: InvoiceItem[], mode: QuoteMode, requestUnit?
         continue
       }
       if (unit !== null) item.unit = unit
+      const price = stockPriceForRow(item, quoted)
       item.unit_price_without_vat = price
       // Ceníková cena ve stejném základu jako cena řádku (migrace 2035).
-      item.list_unit_price = quotedListPrice(line)
+      item.list_unit_price = stockPriceForRow(item, quotedListPrice(line))
       stockQuoteStates.set(item, {
         seq: quote.seq,
         autoPrice: price,
@@ -713,6 +734,13 @@ function onStockUnitSelect(item: InvoiceItem, newUnit: string) {
   if (!rowHasStockFeatures(item)) return
   const pack = stockPackagingById[item.stock_item_id!]
   const baseUnit = pack?.base_unit ?? rowBaseUnit(item)
+  if (Number(item.unit_price_without_vat) < 0 && oldUnit !== newUnit) {
+    item.unit_price_without_vat = convertUnitPrice(Number(item.unit_price_without_vat), oldUnit, newUnit, baseUnit, pack?.units)
+    const listPrice = quotedListPrice(item)
+    if (listPrice !== null) item.list_unit_price = convertUnitPrice(listPrice, oldUnit, newUnit, baseUnit, pack?.units)
+    stockQuoteStates.delete(item)
+    return
+  }
   if (!shouldRequoteOnUnitChange(stockQuoteStates.get(item), item.unit_price_without_vat, oldUnit, newUnit, baseUnit, pack?.units)) return
   void quoteStockRows([item], 'unit_change', undefined, oldUnit)
 }
@@ -766,7 +794,59 @@ function lineDiscountHint(item: InvoiceItem): string | null {
     price: formatNumber(Number(item.list_unit_price), { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
     pct: formatNumber(Math.abs(pct), { maximumFractionDigits: 2 }),
   }
-  return pct > 0 ? t('invoice.line_discount.hint_discount', params) : t('invoice.line_discount.hint_markup', params)
+  // Se slevou zadávanou u řádku je vidět, že se skladový řádek počítá z ceníku karty (ne z ceny hladiny).
+  const card = showLineDiscountInput.value && item.stock_item_id != null ? '_card' : ''
+  return pct > 0 ? t(`invoice.line_discount.hint_discount${card}`, params) : t(`invoice.line_discount.hint_markup${card}`, params)
+}
+
+// Sleva v % zadávaná u řádku. Jen s volbou firmy „rozepsat slevu na PDF", bez ní se editor nemění.
+const showLineDiscountInput = computed(() => supplierStore.currentSupplier?.invoice_pdf_show_line_discount === true)
+const lineDiscountCols = computed(() => (showLineDiscountInput.value ? 1 : 0))
+
+function lineDiscountInput(item: InvoiceItem): string {
+  const pct = lineDiscountInputValue(item.list_unit_price, item.unit_price_without_vat)
+  return pct === null ? '' : formatNumber(pct, { maximumFractionDigits: 2 })
+}
+
+/** Zadaná sleva přecení řádek z ceníkové ceny; neplatný vstup řádek nemění. */
+function setLineDiscount(item: InvoiceItem, raw: string): void {
+  const pct = parseLineDiscountInput(raw)
+  const next = pct === null ? null : applyLineDiscount(item, pct)
+  if (!next) return
+  item.list_unit_price = next.list_unit_price
+  item.unit_price_without_vat = next.unit_price_without_vat
+}
+
+// Rozepsaná sleva: každé překreslení řádku (odpověď hledání karty, nacenění) by jinak
+// přepsalo text v poli hodnotou spočtenou z ceny, než ho Tab stihne použít.
+const lineDiscountDrafts = reactive(new WeakMap<InvoiceItem, string>())
+
+function lineDiscountFieldValue(item: InvoiceItem): string {
+  return lineDiscountDrafts.get(item) ?? lineDiscountInput(item)
+}
+
+function onLineDiscountInput(item: InvoiceItem, event: Event): void {
+  lineDiscountDrafts.set(item, (event.target as HTMLInputElement).value)
+}
+
+function onLineDiscountChange(item: InvoiceItem, event: Event): void {
+  const input = event.target as HTMLInputElement
+  setLineDiscount(item, input.value)
+  lineDiscountDrafts.delete(item)
+  input.value = lineDiscountInput(item)
+}
+
+function onLineDiscountBlur(item: InvoiceItem): void {
+  lineDiscountDrafts.delete(item)
+}
+
+function flushLineDiscountDrafts(): void {
+  for (const item of form.value.items) {
+    const raw = lineDiscountDrafts.get(item)
+    if (raw === undefined) continue
+    setLineDiscount(item, raw)
+    lineDiscountDrafts.delete(item)
+  }
 }
 
 /** Badge zdroje ceny, jen dokud je v řádku automaticky doplněná cena. */
@@ -1343,7 +1423,7 @@ watch(
 // Zákaznické ceny a cenové hladiny: po změně odběratele, měny nebo hladiny dokladu přeceň skladové řádky,
 // jejichž cena je pořád ta automaticky doplněná. Karta s funkcemi nebo odběratel s hladinou
 // → nacenění; karta bez funkcí u odběratele bez hladiny → zpět původní cena karty.
-// Ruční přepis ani ceny načteného dokladu se nemění.
+// Ruční přepis ani ceny načteného dokladu se tu nemění (uložený doklad se zeptá, viz níže).
 watch(
   () => [form.value.client_id, form.value.currency_id, form.value.price_level_id] as const,
   () => {
@@ -1354,6 +1434,72 @@ watch(
     }, row => row.stock_item_id != null && stockFeaturesById[row.stock_item_id] === true)
     for (const row of plan.legacy) restoreLegacyStockPrice(row)
     if (plan.quote.length > 0) void quoteStockRows(plan.quote, 'context')
+  },
+)
+
+// Ceny skladových řádků načtené s dokladem, ať dotaz na přecenění pozná jejich ruční přepis.
+const loadedStockPrices = new WeakMap<InvoiceItem, number>()
+function rememberLoadedStockPrices(): void {
+  for (const row of form.value.items) {
+    if (row.stock_item_id != null) loadedStockPrices.set(row, Number(row.unit_price_without_vat))
+  }
+}
+
+// Uložený doklad (koncept nebo úprava vystaveného) ceny řádků sám nemění. Po změně hladiny,
+// podle které se doklad naceňuje (hladina dokladu, jinak odběratele), se editor zeptá, jestli
+// přecenit i ostatní skladové řádky, včetně ručně přepsaných. Nový doklad se neptá.
+const effectivePriceLevelId = computed(() => {
+  const active = (id: number | null | undefined) => (id != null && priceLevelOptions.value.some(l => l.id === id) ? id : null)
+  return active(form.value.price_level_id) ?? active(selectedClient.value?.price_level_id)
+})
+watch(
+  () => [effectivePriceLevelId.value, priceLevelsLoaded.value] as const,
+  ([level, ready], [previous, wasReady]) => {
+    // Načtení číselníku hladin není změna hladiny.
+    if (!ready || !wasReady || level === previous) return
+    const rows = rowsToConfirmRepricing(form.value.items, row => stockQuoteStates.get(row), {
+      stockEnabled: stockEnabled.value,
+      loaded: loaded.value,
+      storedDocument: isEdit.value && (editedStatus.value === 'draft' || isForce.value),
+    })
+    if (rows.length === 0) return
+    // Ruční cena: přepis automatické ceny (řádek má stav z této relace) nebo přepis ceny
+    // načtené s dokladem. Nezměněná uložená cena ruční není.
+    const hasManual = rows.some(row => stockQuoteStates.get(row) != null
+      || (loadedStockPrices.has(row) && Number(row.unit_price_without_vat) !== loadedStockPrices.get(row)))
+    const levelName = priceLevelOptions.value.find(l => l.id === level)?.name ?? t('invoice.price_level.no_level')
+    const question = hasManual ? 'invoice.price_level.reprice_confirm_manual' : 'invoice.price_level.reprice_confirm'
+    if (!confirm(t(question, { level: levelName, count: rows.length }))) return
+    // Potvrzené řádky jsou odteď automatické: další změna odběratele, měny nebo hladiny
+    // je přecení novým požadavkem a starší odpověď zahodí canApplyQuote.
+    const before = rows.map(row => stockQuoteStates.get(row))
+    for (const row of rows) {
+      const state = stockQuoteStates.get(row)
+      stockQuoteStates.set(row, {
+        seq: state?.seq ?? 0,
+        autoPrice: Number(row.unit_price_without_vat),
+        source: state?.source ?? null,
+        discountPct: state?.discountPct ?? null,
+        priceLevel: state?.priceLevel ?? null,
+      })
+    }
+    const request = quoteStockRows(rows, 'context')
+    const sent = rows.map(row => stockQuoteStates.get(row))
+    void request.then((ok) => {
+      // Řádek, do kterého se cena nezapsala (selhání, karta bez ceny v měně dokladu),
+      // se vrátí do stavu před potvrzením: cena zůstala a příště se zase zeptá.
+      // Stav, který mezitím přepsal novější požadavek nebo zapsaná cena, zůstává.
+      let unpriced = 0
+      rows.forEach((row, i) => {
+        if (stockQuoteStates.get(row) !== sent[i]) return
+        unpriced++
+        const previous = before[i]
+        if (previous) stockQuoteStates.set(row, previous)
+        else stockQuoteStates.delete(row)
+      })
+      if (!ok) toast.error(t('invoice.price_level.reprice_failed'))
+      else if (unpriced > 0) toast.warning(t('invoice.price_level.reprice_missing_price', { count: unpriced }))
+    })
   },
 )
 
@@ -1447,6 +1593,7 @@ onMounted(async () => {
       revenue_category_id: (inv as any).revenue_category_id ?? null,
       payment_schedule: (inv.payment_schedule ?? []).map(r => ({ ...r })),
     })
+    rememberLoadedStockPrices()
     // Pořadí položek bez slevových řádků = pořadí na serveru (sleva se generuje na konec).
     void docDims.load(inv.id, form.value.items)
     loadedRate.value = (inv.exchange_rate && inv.currency !== 'CZK')
@@ -2444,6 +2591,7 @@ async function submit() {
   // submit event vyvolá i tak — bez této pojistky by druhý stisk během
   // rozběhnutého requestu založil doklad dvakrát (stejně jako v editoru přijatých).
   if (submitting.value) return
+  flushLineDiscountDrafts()
   if (!validateDurationInputs(paneDom.root())) return
   // Tiše vyhoď prázdné řádky (bez popisu i bez ceny) — uživatel přidal řádek a nezapsal ho.
   // Zároveň smaž z form.value.items, ať checkWorkReportSync vidí stejnou množinu jako payload.
@@ -3085,6 +3233,7 @@ useWindowTitle(
         </div>
         <div v-if="requiresPositiveAmountToPay" class="px-5 py-3 border-b border-neutral-100 text-xs text-neutral-500">
           {{ t(refundInvoiceAllowed ? 'refundInvoice.negative_item_hint' : 'invoice.negative_item_hint') }}
+          <template v-if="showLineDiscountInput">{{ t('invoice.line_discount.table_hint') }}</template>
         </div>
         <!-- Desktop: tabulka -->
         <div class="hidden md:block overflow-x-auto">
@@ -3098,6 +3247,7 @@ useWindowTitle(
                    vidět vybraná jednotka. -->
               <th class="px-3 py-2 text-left font-medium w-20">{{ t('invoice.items_table.unit') }}</th>
               <th class="px-3 py-2 text-right font-medium w-32">{{ unitPriceHeaderLabel }}</th>
+              <th v-if="showLineDiscountInput" class="px-3 py-2 text-right font-medium w-20">{{ t('invoice.line_discount.column') }}</th>
               <th v-if="supplierIsVatPayer" class="px-3 py-2 text-center font-medium w-24">{{ t('invoice.totals.vat') }}</th>
               <th class="px-3 py-2 text-right font-medium w-32">{{ supplierIsVatPayer ? t('invoice.items_table.total_incl_vat') : nonPayerTotalLabel }}</th>
               <th class="px-3 py-2" :class="ossAvailable ? 'w-24' : 'w-12'"></th>
@@ -3111,7 +3261,7 @@ useWindowTitle(
                 <button type="button" @click="moveUp(i)" :disabled="i === 0" class="block w-5 h-4 hover:text-neutral-700 disabled:opacity-30">▲</button>
                 <button type="button" @click="moveDown(i)" :disabled="i === form.items.length - 1" class="block w-5 h-4 hover:text-neutral-700 disabled:opacity-30">▼</button>
               </td>
-              <td :colspan="supplierIsVatPayer ? 6 : 5" class="px-3 py-2">
+              <td :colspan="(supplierIsVatPayer ? 6 : 5) + lineDiscountCols" class="px-3 py-2">
                 <textarea v-model="item.description" rows="1" data-row-input="inv-text"
                   :placeholder="t('invoice.text_row_placeholder')" :title="t('invoice.text_row_hint')" :aria-label="t('invoice.text_row')"
                   class="w-full min-h-9 px-2 py-1.5 border border-neutral-300 rounded text-sm font-medium bg-surface resize-y" />
@@ -3218,6 +3368,12 @@ useWindowTitle(
                 <p v-if="lineDiscountHint(item)" data-test="line-discount-hint" :title="t('invoice.line_discount.title')"
                   class="mt-1 text-xs text-neutral-500 text-right">{{ lineDiscountHint(item) }}</p>
               </td>
+              <td v-if="showLineDiscountInput" class="px-3 py-2">
+                <input :value="lineDiscountFieldValue(item)" @input="onLineDiscountInput(item, $event)" @change="onLineDiscountChange(item, $event)"
+                  @blur="onLineDiscountBlur(item)" :disabled="!canDiscountUnitPrice(item.unit_price_without_vat)" type="text" inputmode="decimal"
+                  placeholder="0" data-test="line-discount-input" :aria-label="t('invoice.line_discount.column')" :title="t('invoice.line_discount.input_hint')"
+                  class="w-full h-9 px-2 border border-neutral-300 rounded text-right font-mono text-sm disabled:opacity-50" />
+              </td>
               <td v-if="supplierIsVatPayer" class="px-3 py-2">
                 <select v-model.number="item.vat_rate_id" class="w-full h-9 px-1 border border-neutral-300 rounded text-sm bg-surface">
                   <option v-for="r in vatRatesForItem(item)" :key="r.id" :value="r.id">{{ vatRateLabel(r) }}</option>
@@ -3242,7 +3398,7 @@ useWindowTitle(
             </tr>
             <tr v-if="assetSaleMode && assetSaleAvailable && !isTextItem(item)" :class="['border-t-0!', itemHasBothNegative(item) ? 'bg-danger-50' : '']">
               <td></td>
-              <td :colspan="supplierIsVatPayer ? 7 : 6" class="px-3 pb-2">
+              <td :colspan="(supplierIsVatPayer ? 7 : 6) + lineDiscountCols" class="px-3 pb-2">
                 <div class="flex items-center gap-2">
                   <span class="shrink-0 text-xs text-neutral-500">{{ t('invoice.asset_sale.card') }}</span>
                   <div class="w-96 max-w-full">
@@ -3267,7 +3423,7 @@ useWindowTitle(
             </tr>
             <tr v-if="docDims.enabled.value && !isTextItem(item) && docDims.isItemOpen(item)" :class="['border-t-0!', itemHasBothNegative(item) ? 'bg-danger-50' : '']">
               <td></td>
-              <td :colspan="supplierIsVatPayer ? 7 : 6" class="px-3 pb-2">
+              <td :colspan="(supplierIsVatPayer ? 7 : 6) + lineDiscountCols" class="px-3 pb-2">
                 <div class="flex items-center gap-2">
                   <span class="shrink-0 text-xs text-neutral-500">{{ t('dimensions.items_title') }}</span>
                   <DimensionFields class="flex-1 flex-nowrap!" compact teleport
@@ -3279,7 +3435,7 @@ useWindowTitle(
             </tr>
             <tr v-if="item.oss_applicable && !isTextItem(item)" :class="['border-t-0!', itemHasBothNegative(item) ? 'bg-danger-50' : '']">
               <td></td>
-              <td :colspan="supplierIsVatPayer ? 7 : 6" class="px-3 pb-2">
+              <td :colspan="(supplierIsVatPayer ? 7 : 6) + lineDiscountCols" class="px-3 pb-2">
                 <div class="flex flex-nowrap items-center gap-1.5 overflow-x-auto text-xs">
                   <!-- teleport: nabídka by se v `overflow-x-auto` řádku ořízla (stejný důvod jako u prodeje majetku výše) -->
                   <div class="w-44 shrink-0" :title="t('invoice.oss.country')">
@@ -3332,7 +3488,7 @@ useWindowTitle(
               </td>
             </tr>
             </template>
-            <EmptyState v-if="form.items.length === 0" :colspan="supplierIsVatPayer ? 8 : 7" dense icon="doc"
+            <EmptyState v-if="form.items.length === 0" :colspan="(supplierIsVatPayer ? 8 : 7) + lineDiscountCols" dense icon="doc"
               :title="t('invoice.no_items')" :cta="t('invoice.add_first')" @action="addItem" />
           </tbody>
         </table>
@@ -3520,13 +3676,20 @@ useWindowTitle(
                 </select>
               </div>
             </div>
-            <div :class="supplierIsVatPayer ? 'grid grid-cols-2 gap-2' : ''">
+            <div :class="supplierIsVatPayer || showLineDiscountInput ? 'grid grid-cols-2 gap-2' : ''">
               <div>
                 <label class="block text-xs font-medium text-neutral-600 mb-1">{{ unitPriceHeaderLabel }}</label>
                 <input v-model="item.unit_price_without_vat" v-math="isTimeItem(item) ? 6 : 2" type="text" inputmode="decimal"
                   :class="['w-full h-10 px-3 border rounded text-right font-mono text-sm', itemHasBothNegative(item) ? 'border-danger-400' : 'border-neutral-300']" />
                 <p v-if="lineDiscountHint(item)" data-test="line-discount-hint" :title="t('invoice.line_discount.title')"
                   class="mt-1 text-xs text-neutral-500 text-right">{{ lineDiscountHint(item) }}</p>
+              </div>
+              <div v-if="showLineDiscountInput">
+                <label class="block text-xs font-medium text-neutral-600 mb-1">{{ t('invoice.line_discount.column') }}</label>
+                <input :value="lineDiscountFieldValue(item)" @input="onLineDiscountInput(item, $event)" @change="onLineDiscountChange(item, $event)"
+                  @blur="onLineDiscountBlur(item)" :disabled="!canDiscountUnitPrice(item.unit_price_without_vat)" type="text" inputmode="decimal"
+                  placeholder="0" data-test="line-discount-input" :aria-label="t('invoice.line_discount.column')" :title="t('invoice.line_discount.input_hint')"
+                  class="w-full h-10 px-3 border border-neutral-300 rounded text-right font-mono text-sm disabled:opacity-50" />
               </div>
               <div v-if="supplierIsVatPayer">
                 <label class="block text-xs font-medium text-neutral-600 mb-1">{{ t('invoice.totals.vat') }}</label>

@@ -113,6 +113,36 @@ Mobilní aplikace Claude používá konektor přidaný k účtu. Ručně přidan
 v ChatGPT je vázaný na desktopového hostitele a do běžného mobilního chatu se
 nepřenáší (viz [§ 105.8.3.5](#105835-vzdalene-pripojeni-bez-stahovani)).
 
+### 105.4.1 Připojení klienta na vlastní doméně firmy
+
+Správce může klientské roli výslovně přidělit oprávnění **Připojit AI asistenta (MCP)**.
+Úroveň **Čtení** dovolí připojení pouze pro čtení, úroveň **Zápis** umožní schválit
+čtení a zápis. Jednotlivé operace nadále vyžadují odpovídající oprávnění dané agendy.
+Výchozí klientské role toto oprávnění nemají.
+
+1. Otevřete aktivní klientskou doménu své firmy a v části **Firma → MCP server**
+   zkopírujte adresu, například `https://portal.firma.cz/mcp`.
+2. Adresu vložte do asistenta podporujícího vzdálené MCP s OAuth.
+3. Přihlaste se na hlavní doméně MyÚčta a potvrďte firmu, klientskou doménu
+   a rozsah. Při zapnutém MFA ověřte passkey nebo nový kód ověřovací aplikace.
+4. V asistentovi ověřte připojení a dostupnou firmu.
+
+Toto připojení platí pouze pro firmu a doménu uvedenou v souhlasu. Ani pozdější
+přidělení další firmy jeho rozsah nerozšíří. Seznam nástrojů je klientský výběr
+fakturace, kontaktů, zakázek, přijatých dokladů, pravidelné fakturace, knihy jízd,
+ceníku a čtení skladových položek; konkrétní nabídka závisí na právech a rozsahu.
+Účetní a mzdové nástroje se klientským připojením nezpřístupňují.
+
+Na stejné stránce v klientském portálu vidíte svá připojení pro tuto firmu
+na této doméně a můžete je odvolat i po odebrání oprávnění k novým připojením.
+Odebrání oprávnění nebo členství, vypnutí domény či její převedení na jinou
+firmu zablokuje další použití i obnovu tokenu. Přístupový token tohoto
+připojení nelze použít na jiné doméně ani přímo proti REST API.
+
+Připojení vyžaduje zapnuté vzdálené MCP, dostupný serverový most a aktivní
+ověřenou doménu s klientským rozhraním. Doména pouze pro veřejné odkazy nestačí.
+Klientské MCP nevytváří oprávnění ke správě obecných API tokenů.
+
 ## 105.5 Krok za krokem: lokální server (.mjs)
 
 Použijte, když nechcete, nebo nemůžete použít online připojení (například

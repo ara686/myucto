@@ -13,6 +13,7 @@ use MyInvoice\Repository\SigningProfileRepository;
 use MyInvoice\Service\Auth\DatabaseSecurityClock;
 use MyInvoice\Service\Auth\SessionManager;
 use MyInvoice\Service\Mail\Mailer;
+use MyInvoice\Tests\Support\OpensslConfigTrait;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -24,6 +25,8 @@ use Slim\Psr7\Factory\StreamFactory;
 #[Group('integration')]
 final class RbacHttpRoleMatrixTest extends TestCase
 {
+    use OpensslConfigTrait;
+
     private Connection $db;
     private Config $config;
     private SessionManager $sessions;
@@ -460,11 +463,12 @@ final class RbacHttpRoleMatrixTest extends TestCase
         $path = "/api/settings/client/signing/profiles/{$id}/credentials/certificate";
         self::assertSame(403, $this->request('PUT', $path, $session, ['passphrase_policy' => 'passphrase_file', 'passphrase_profile_id' => 'private'])->getStatusCode());
         $password = '__TEST_PFX_' . bin2hex(random_bytes(8));
-        $key = openssl_pkey_new(['private_key_bits' => 2048]);
+        $openssl = self::opensslConfigArgs();
+        $key = openssl_pkey_new(['private_key_bits' => 2048] + $openssl);
         self::assertNotFalse($key);
-        $csr = openssl_csr_new(['commonName' => 'Synthetic company', 'emailAddress' => 'signing@example.test'], $key);
+        $csr = openssl_csr_new(['commonName' => 'Synthetic company', 'emailAddress' => 'signing@example.test'], $key, $openssl);
         self::assertNotFalse($csr);
-        $certificate = openssl_csr_sign($csr, null, $key, 2);
+        $certificate = openssl_csr_sign($csr, null, $key, 2, $openssl);
         self::assertNotFalse($certificate);
         self::assertTrue(openssl_pkcs12_export($certificate, $pfx, $key, $password));
         $upload = new \Slim\Psr7\UploadedFile((new StreamFactory())->createStream($pfx), 'synthetic.pfx', 'application/x-pkcs12', strlen($pfx));

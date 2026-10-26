@@ -5,6 +5,7 @@ export function createWorkspaceRoutes(): RouteRecordRaw[] {
   return [
       { path: '',                       name: 'home',           component: () => import('@/pages/Dashboard.vue') },
       // Klientský portál (Epic F6) — domov role client, náhled pro všechny role.
+      { path: 'portal/mcp', name: 'portal-mcp', component: () => import('@/pages/portal/ClientMcp.vue') },
       { path: 'portal',                 name: 'portal',         component: () => import('@/pages/portal/PortalDashboard.vue'), meta: {  } },
       // Vyžádání chybějících dokladů (Fáze F, audit 2026-07) — klientský portál.
       { path: 'portal/document-requests', name: 'portal-document-requests', component: () => import('@/pages/portal/DocumentRequests.vue'), meta: {  } },
@@ -336,6 +337,7 @@ export function createWorkspaceRoutes(): RouteRecordRaw[] {
       { path: 'stock/items/:id(\\d+)/edit', name: 'stock-item-edit',   component: () => import('@/pages/stock/ItemEditor.vue'),   meta: { requiresStock: true, requiresSupplier: true } },
       { path: 'stock/documents',            name: 'stock-documents',        component: () => import('@/pages/stock/DocumentList.vue'),   meta: { requiresStock: true } },
       { path: 'stock/opening-import',        name: 'stock-opening-import',   component: () => import('@/pages/stock/OpeningStockImport.vue'), meta: { requiresStock: true, requiresSupplier: true, additionalPermissions: ['stock.documents.write'] } },
+      { path: 'stock/history-import',        name: 'stock-history-import',   component: () => import('@/pages/stock/StockHistoryImport.vue'), meta: { requiresStock: true, requiresSupplier: true, additionalPermissions: ['stock.documents.write'] } },
       { path: 'stock/documents/new',        name: 'stock-document-new',     component: () => import('@/pages/stock/DocumentEditor.vue'), meta: { requiresStock: true, requiresSupplier: true } },
       { path: 'stock/documents/:id(\\d+)',  name: 'stock-document-detail',  component: () => import('@/pages/stock/DocumentEditor.vue'), meta: { requiresStock: true } },
       { path: 'stock/sales-orders',            name: 'stock-sales-orders',        component: () => import('@/pages/stock/SalesOrderList.vue'),   meta: { requiresStock: true } },

@@ -159,7 +159,7 @@ final class InvoicePdfRenderer
 
         $rendered = $this->renderHtmlAndCss($invoice, $isdocXml !== null);
 
-        $mpdf = $this->newMpdf($tmpDir);
+        $mpdf = $this->newMpdf($tmpDir, $this->bankInFooter($invoice));
         // PDF metadata — bez Title/Author, aby Chrome viewer nezobrazoval text nad PDF.
         $mpdf->SetTitle('');
         $mpdf->SetAuthor('');
@@ -239,7 +239,7 @@ final class InvoicePdfRenderer
         }
 
         $rendered = $this->renderHtmlAndCss($invoice, false, false);
-        $mpdf = $this->newMpdf($tmpDir);
+        $mpdf = $this->newMpdf($tmpDir, $this->bankInFooter($invoice));
         $mpdf->SetTitle('');
         $mpdf->SetAuthor('');
         $mpdf->SetCreator('MyInvoice.cz');
@@ -572,7 +572,12 @@ final class InvoicePdfRenderer
         return OssInvoiceClause::build($items, $names);
     }
 
-    private function newMpdf(string $tmpDir): Mpdf
+    /**
+     * @param bool $bankInFooter bankovní spojení v patičce (migrace 2198): dlouhý název banky
+     *        nebo zahraniční IBAN patičku zalomí, spodní okraj proto roste s její výškou
+     *        (`stretch` = nejméně 18 mm). Bez volby zůstává pevný okraj.
+     */
+    private function newMpdf(string $tmpDir, bool $bankInFooter = false): Mpdf
     {
         return new Mpdf([
             'mode'              => 'utf-8',
@@ -583,8 +588,15 @@ final class InvoicePdfRenderer
             'margin_right'      => 12,
             'tempDir'           => $tmpDir,
             'autoPageBreak'     => true,
+            ...($bankInFooter ? ['setAutoBottomMargin' => 'stretch'] : []),
             ...MpdfFontConfig::options(),
         ]);
+    }
+
+    /** Volba firmy `invoice_pdf_bank_in_footer` (migrace 2198), čtená stejně jako šablonou. */
+    private function bankInFooter(array $invoice): bool
+    {
+        return !empty($this->resolveSupplier($invoice)['invoice_pdf_bank_in_footer']);
     }
 
     /**

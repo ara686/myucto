@@ -24,9 +24,12 @@ final class ClientRoutePolicyTest extends TestCase
         $names = array_column($routes, 'name');
         $patterns = array_column($routes, 'path_pattern');
 
-        self::assertCount(58, $routes);
-        self::assertCount(58, array_unique($names));
-        self::assertCount(58, array_unique($patterns));
+        // Současně zahrnuje archiv podání i samoobslužné klientské MCP.
+        self::assertCount(60, $routes);
+        self::assertCount(60, array_unique($names));
+        self::assertCount(60, array_unique($patterns));
+        self::assertContains('reports-submissions', $names);
+        self::assertContains('portal-mcp', $names);
         self::assertContains('data-exchange', $names);
         self::assertContains('admin-export', $names);
         self::assertContains('admin-import', $names);
@@ -61,6 +64,7 @@ final class ClientRoutePolicyTest extends TestCase
             '/stock/items', '/stock/items/new', '/stock/items/42', '/stock/items/42/edit', '/stock/fulfillment',
             '/bank',
             '/bank/42',
+            '/reports/submissions',
             '/portal/document-requests',
             '/portal/purchase-invoice-submissions',
             '/portal/settings',

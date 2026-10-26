@@ -1096,7 +1096,14 @@
         "2192_journal_settlement_allocations.sql",
         "2193_internal_documents.sql",
         "2194_eet_delegation.sql",
-        "2195_advance_deduction_settlement.sql"
+        "2195_advance_deduction_settlement.sql",
+        "2196_client_tax_submission_permissions.sql",
+        "2197_instance_admin.sql",
+        "2198_bank_email_mark_seen_after_import.sql",
+        "2199_supplier_invoice_pdf_compact_items.sql",
+        "2200_supplier_invoice_pdf_bank_in_footer.sql",
+        "2201_stock_history_import.sql",
+        "2202_cash_journal_offset_notes.sql"
     ],
     "tables": {
         "abra_flexi_connections": {
@@ -2930,6 +2937,7 @@
                 "last_scan_at": "timestamp NULL DEFAULT NULL",
                 "last_scan_message": "varchar(500) NULL DEFAULT NULL",
                 "last_scan_status": "enum('ok','error') NULL DEFAULT NULL",
+                "mark_seen_after_import": "tinyint(1) NOT NULL DEFAULT 0",
                 "max_attempts": "int(10) unsigned NOT NULL DEFAULT 3",
                 "max_messages_per_run": "int(10) unsigned NOT NULL DEFAULT 50",
                 "name": "varchar(190) NOT NULL DEFAULT 'IMAP účet'",
@@ -3834,7 +3842,7 @@
                 "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
                 "pinned": "tinyint(1) NOT NULL DEFAULT 0",
                 "source_id": "bigint(20) unsigned NOT NULL",
-                "source_type": "enum('cash','bank','invoice_payment','purchase_invoice','gopay') NOT NULL",
+                "source_type": "enum('cash','bank','invoice_payment','purchase_invoice','gopay','credit_note_offset') NOT NULL",
                 "supplier_id": "int(10) unsigned NOT NULL",
                 "updated_at": "timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP()",
                 "updated_by": "bigint(20) unsigned NULL DEFAULT NULL"
@@ -3944,6 +3952,7 @@
             "indexes": {
                 "PRIMARY": "UNIQUE BTREE (job_id, ordinal)",
                 "fk_catalog_job_items_job": "BTREE (job_id, supplier_id)",
+                "ix_catalog_job_items_item": "BTREE (supplier_id, job_id, stock_item_id)",
                 "ix_catalog_job_items_status": "BTREE (supplier_id, job_id, status, ordinal)"
             },
             "foreign_keys": {
@@ -6526,6 +6535,25 @@
                 "inputs": "json_valid(`inputs`)"
             }
         },
+        "instance_admin_events": {
+            "type": "BASE TABLE",
+            "engine": "InnoDB",
+            "collation": "utf8mb4_unicode_ci",
+            "columns": {
+                "action": "varchar(80) NOT NULL",
+                "created_at": "datetime NOT NULL DEFAULT current_timestamp()",
+                "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
+                "result": "varchar(30) NOT NULL",
+                "supplier_id": "int(10) unsigned NULL DEFAULT NULL",
+                "user_id": "bigint(20) unsigned NOT NULL"
+            },
+            "indexes": {
+                "PRIMARY": "UNIQUE BTREE (id)",
+                "idx_instance_admin_events_user": "BTREE (user_id, id)"
+            },
+            "foreign_keys": [],
+            "checks": []
+        },
         "instance_exports": {
             "type": "BASE TABLE",
             "engine": "InnoDB",
@@ -6572,6 +6600,64 @@
                 "manifest": "json_valid(`manifest`)",
                 "parts": "json_valid(`parts`)"
             }
+        },
+        "instance_smtp_settings": {
+            "type": "BASE TABLE",
+            "engine": "InnoDB",
+            "collation": "utf8mb4_unicode_ci",
+            "columns": {
+                "id": "tinyint(3) unsigned NOT NULL",
+                "password_ciphertext": "text NOT NULL",
+                "target_id": "int(10) unsigned NOT NULL",
+                "test_attempted_at": "datetime NULL DEFAULT NULL",
+                "updated_at": "datetime NOT NULL DEFAULT current_timestamp() ON UPDATE CURRENT_TIMESTAMP()"
+            },
+            "indexes": {
+                "PRIMARY": "UNIQUE BTREE (id)",
+                "fk_instance_smtp_settings_target": "BTREE (target_id)"
+            },
+            "foreign_keys": {
+                "fk_instance_smtp_settings_target": "(target_id) -> instance_smtp_targets (id) ON UPDATE RESTRICT ON DELETE RESTRICT"
+            },
+            "checks": []
+        },
+        "instance_smtp_targets": {
+            "type": "BASE TABLE",
+            "engine": "InnoDB",
+            "collation": "utf8mb4_unicode_ci",
+            "columns": {
+                "created_at": "datetime NOT NULL DEFAULT current_timestamp()",
+                "created_by": "bigint(20) unsigned NULL DEFAULT NULL",
+                "encryption": "enum('tls','ssl') NOT NULL",
+                "from_email": "varchar(190) NOT NULL",
+                "host": "varchar(253) NOT NULL",
+                "id": "int(10) unsigned NOT NULL AUTO_INCREMENT",
+                "name": "varchar(100) NOT NULL",
+                "port": "smallint(5) unsigned NOT NULL",
+                "test_recipient": "varchar(190) NOT NULL",
+                "username": "varchar(190) NOT NULL"
+            },
+            "indexes": {
+                "PRIMARY": "UNIQUE BTREE (id)"
+            },
+            "foreign_keys": [],
+            "checks": []
+        },
+        "instance_smtp_test_attempts": {
+            "type": "BASE TABLE",
+            "engine": "InnoDB",
+            "collation": "utf8mb4_unicode_ci",
+            "columns": {
+                "attempted_at": "datetime NOT NULL",
+                "user_id": "bigint(20) unsigned NOT NULL"
+            },
+            "indexes": {
+                "PRIMARY": "UNIQUE BTREE (user_id)"
+            },
+            "foreign_keys": {
+                "fk_instance_smtp_attempt_user": "(user_id) -> users (id) ON UPDATE RESTRICT ON DELETE CASCADE"
+            },
+            "checks": []
         },
         "instance_storage_usage": {
             "type": "BASE TABLE",
@@ -22764,7 +22850,7 @@
                 "id": "int(10) unsigned NOT NULL AUTO_INCREMENT",
                 "is_active": "tinyint(1) NOT NULL DEFAULT 1",
                 "name": "varchar(120) NOT NULL",
-                "role_type": "enum('superadmin','staff','client') NOT NULL",
+                "role_type": "enum('superadmin','staff','client','instance_admin') NOT NULL",
                 "system_key": "varchar(32) NULL DEFAULT NULL",
                 "updated_at": "timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE CURRENT_TIMESTAMP()"
             },
@@ -24029,6 +24115,7 @@
                 "doc_date": "date NOT NULL",
                 "doc_number": "varchar(30) NULL DEFAULT NULL",
                 "doc_type": "enum('receipt','issue','transfer') NOT NULL",
+                "history_import_job_id": "bigint(20) unsigned NULL DEFAULT NULL",
                 "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
                 "invoice_id": "bigint(20) unsigned NULL DEFAULT NULL",
                 "journal_entry_id": "bigint(20) unsigned NULL DEFAULT NULL",
@@ -24048,6 +24135,7 @@
                 "PRIMARY": "UNIQUE BTREE (id)",
                 "fk_sd_entry": "BTREE (journal_entry_id)",
                 "fk_sd_wh_to": "BTREE (warehouse_to_id)",
+                "idx_sd_history_import": "BTREE (supplier_id, history_import_job_id, doc_date)",
                 "idx_sd_invoice": "BTREE (invoice_id)",
                 "idx_sd_pinvoice": "BTREE (purchase_invoice_id)",
                 "idx_sd_po": "BTREE (purchase_order_id)",
@@ -25637,6 +25725,8 @@
                 "integration_sample_seeded_at": "datetime NULL DEFAULT NULL",
                 "invoice_number_format": "varchar(60) NULL DEFAULT NULL",
                 "invoice_number_period": "enum('year','month','none') NOT NULL DEFAULT 'month'",
+                "invoice_pdf_bank_in_footer": "tinyint(1) NOT NULL DEFAULT 0",
+                "invoice_pdf_compact_items": "tinyint(1) NOT NULL DEFAULT 0",
                 "invoice_pdf_monochrome": "tinyint(1) NOT NULL DEFAULT 0",
                 "invoice_pdf_show_base_qty": "tinyint(1) NOT NULL DEFAULT 1",
                 "invoice_pdf_show_issued_by": "tinyint(1) NOT NULL DEFAULT 0",
@@ -25700,6 +25790,7 @@
                 "simplified_number_format": "varchar(60) NULL DEFAULT NULL",
                 "stock_auto_issue": "tinyint(1) NOT NULL DEFAULT 1",
                 "stock_enabled": "tinyint(1) NOT NULL DEFAULT 0",
+                "stock_history_locked_until": "date NULL DEFAULT NULL",
                 "stock_in_transit_from": "enum('sent','confirmed') NOT NULL DEFAULT 'sent'",
                 "stock_method": "enum('B','A') NOT NULL DEFAULT 'B'",
                 "stock_order_price_tolerance_pct": "decimal(5,2) NOT NULL DEFAULT 5.00",
@@ -28062,6 +28153,40 @@
                 "fk_usersup_role": "(role_id) -> roles (id) ON UPDATE RESTRICT ON DELETE RESTRICT",
                 "fk_usersup_supplier": "(supplier_id) -> supplier (id) ON UPDATE RESTRICT ON DELETE CASCADE",
                 "fk_usersup_user": "(user_id) -> users (id) ON UPDATE RESTRICT ON DELETE CASCADE"
+            },
+            "checks": []
+        },
+        "user_technical_access": {
+            "type": "BASE TABLE",
+            "engine": "InnoDB",
+            "collation": "utf8mb4_unicode_ci",
+            "columns": {
+                "all_suppliers": "tinyint(1) NOT NULL DEFAULT 0",
+                "user_id": "bigint(20) unsigned NOT NULL"
+            },
+            "indexes": {
+                "PRIMARY": "UNIQUE BTREE (user_id)"
+            },
+            "foreign_keys": {
+                "fk_technical_access_user": "(user_id) -> users (id) ON UPDATE RESTRICT ON DELETE CASCADE"
+            },
+            "checks": []
+        },
+        "user_technical_suppliers": {
+            "type": "BASE TABLE",
+            "engine": "InnoDB",
+            "collation": "utf8mb4_unicode_ci",
+            "columns": {
+                "supplier_id": "int(10) unsigned NOT NULL",
+                "user_id": "bigint(20) unsigned NOT NULL"
+            },
+            "indexes": {
+                "PRIMARY": "UNIQUE BTREE (user_id, supplier_id)",
+                "idx_technical_supplier": "BTREE (supplier_id)"
+            },
+            "foreign_keys": {
+                "fk_technical_supplier_supplier": "(supplier_id) -> supplier (id) ON UPDATE RESTRICT ON DELETE CASCADE",
+                "fk_technical_supplier_user": "(user_id) -> users (id) ON UPDATE RESTRICT ON DELETE CASCADE"
             },
             "checks": []
         },

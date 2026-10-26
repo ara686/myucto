@@ -286,4 +286,30 @@ final class PermissionCatalogTest extends TestCase
         self::assertFalse(\MyInvoice\Security\RequestAuthorization::canChangeFiledVatPeriod($request($accountant)),
             'Podané období DPH mění jen správce.');
     }
+    public function testClientMcpPermissionIsOptInAndDoesNotElevateLegacyAccountant(): void
+    {
+        $catalog = new \MyInvoice\Security\PermissionCatalog();
+        self::assertArrayNotHasKey('profile.mcp', $catalog->legacyPreset('client'));
+        self::assertArrayNotHasKey('profile.mcp', $catalog->legacyPreset('accountant'));
+        self::assertSame(1, $catalog->legacyPreset('accountant')['profile.tokens']);
+        self::assertTrue($catalog->allowsRoleType('profile.mcp', 'client'));
+    }
+
+
+    /** Vrácení importu historie skladu je rozhodnutí správce, právo zapisovat skladové doklady nestačí. */
+    public function testStockHistoryRollbackIsCompanyAdminOnly(): void
+    {
+        $request = static fn (EffectiveRole $role) => (new \Slim\Psr7\Factory\ServerRequestFactory())
+            ->createServerRequest('POST', '/')
+            ->withAttribute('auth.effective_role', $role);
+        $can = static fn (EffectiveRole $role): bool
+            => \MyInvoice\Security\RequestAuthorization::canRollbackStockHistoryImport($request($role));
+
+        self::assertTrue($can(new EffectiveRole(1, 'Superadmin', 'superadmin', true, [], 'superadmin')));
+        self::assertTrue($can(new EffectiveRole(2, 'Admin', 'staff', true, [], 'admin')));
+        self::assertFalse($can(new EffectiveRole(3, 'Skladník', 'staff', true, [
+            'stock' => AccessLevel::WRITE->value,
+            'stock.documents.write' => AccessLevel::WRITE->value,
+        ])));
+    }
 }

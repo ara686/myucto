@@ -10,6 +10,8 @@ use MyInvoice\Middleware\AuthMiddleware;
 use MyInvoice\Repository\UserSupplierRepository;
 use MyInvoice\Security\{AccessLevel, EffectiveRole, PermissionCatalog, PermissionChecker, PermissionResolver};
 use MyInvoice\Service\Tenant\SupplierAccessResolver;
+use MyInvoice\Tests\Support\OwnedTestDatabaseCleanup;
+use MyInvoice\Tests\Support\OwnedTestDatabaseSessions;
 use PDO;
 use PHPUnit\Framework\TestCase;
 use Slim\Psr7\Factory\ServerRequestFactory;
@@ -27,10 +29,10 @@ final class OpeningPermissionsMigrationTest extends TestCase
     {
         $this->db?->close();
         if ($this->ownsDatabase && $this->server !== null && preg_match('/^myucto_opening_roles_[a-f0-9]{12}_test$/D', $this->database)) {
-            $sessions = $this->server->prepare('SELECT COUNT(*) FROM information_schema.PROCESSLIST WHERE DB=? AND ID<>CONNECTION_ID()');
-            $sessions->execute([$this->database]);
-            self::assertSame(0, (int) $sessions->fetchColumn(), 'Owned opening test database still has active sessions.');
-            $this->server->exec("DROP DATABASE `{$this->database}`");
+            // PDO může mít ještě dalšího vlastníka nebo server teprve dokončuje odpojení.
+            OwnedTestDatabaseSessions::close($this->server, [$this->database]);
+            OwnedTestDatabaseCleanup::drop($this->server, $this->database, [$this->database]);
+            $this->ownsDatabase = false;
         }
     }
 
@@ -80,6 +82,29 @@ final class OpeningPermissionsMigrationTest extends TestCase
         self::assertSame($untouched, $this->permissions(false));
         foreach (array_keys($roles) as $index => $key) {
             $this->assertEffectiveLevels((int) $roles[$key], $key === 'client' ? [0, 0, 0] : [$index % 3, ($index + 1) % 3, ($index + 2) % 3]);
+        }
+    }
+
+    public function testCleanupClosesRetainedOwnedConnectionAndPreservesOtherSession(): void
+    {
+        $this->createDatabase();
+        // Držené PDO reprodukuje stav, kdy spojení při úklidu ještě nezmizelo z MariaDB.
+        $retained = $this->db->pdo();
+        $config = Config::load(dirname(__DIR__, 4));
+        $other = new PDO(sprintf('mysql:host=%s;port=%d;dbname=%s;charset=utf8mb4', $config->get('db.host'), $config->get('db.port', 3306), $config->get('db.name')), $config->get('db.user'), $config->get('db.pass', ''), [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+
+        $this->tearDown();
+
+        $schemas = $other->prepare('SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME=?');
+        $schemas->execute([$this->database]);
+        self::assertSame(0, (int) $schemas->fetchColumn());
+        self::assertSame($config->get('db.name'), $other->query('SELECT DATABASE()')->fetchColumn());
+        self::assertSame(1, (int) $other->query('SELECT 1')->fetchColumn());
+        try {
+            $retained->query('SELECT 1');
+            self::fail('Spojení k odstraněné vlastní databázi musí být ukončené.');
+        } catch (\PDOException $error) {
+            self::assertContains((int) ($error->errorInfo[1] ?? 0), [2006, 2013]);
         }
     }
 
