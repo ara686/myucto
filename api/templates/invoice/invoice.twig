@@ -22,7 +22,7 @@
   {% if bank.iban %}{% set _bank_parts = _bank_parts|merge(['IBAN: ' ~ bank.iban]) %}{% endif %}
   {% if bank.bic %}{% set _bank_parts = _bank_parts|merge(['BIC: ' ~ bank.bic]) %}{% endif %}
   {% if bank.bank_name %}{% set _bank_parts = _bank_parts|merge([bank.bank_name]) %}{% endif %}
-  <div class="page-bank">{{ t('Bankovní spojení', 'Bank account') }}: {{ _bank_parts|join(' · ') }}</div>
+  {% if _bank_parts is not empty %}<div class="page-bank">{{ t('Bankovní spojení', 'Bank account') }}: {{ _bank_parts|join(' · ') }}</div>{% endif %}
 {% endif %}
   <div class="page-attribution">
     {% if locale == 'en' %}Powered by <a href="https://myucto.cz/">MyÚčto.cz</a> accounting system by <a href="https://mywebdesign.cz/">MyWebdesign.cz</a>{% else %}Používá účetní systém <a href="https://myucto.cz/">MyÚčto.cz</a> od <a href="https://mywebdesign.cz/">MyWebdesign.cz</a>{% endif %}

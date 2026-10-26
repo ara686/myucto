@@ -25,6 +25,8 @@ use Slim\Psr7\Response;
  * 3. S volbou jde číslo účtu, IBAN, BIC a banka do patičky každé strany a platební panel
  *    ukáže jen QR s popiskem. Variabilní symbol zůstává v údajích dokladu.
  * 4. Uhrazeno, hotově, kartou a vratka se volbou nemění (panel bankovní spojení neukazuje).
+ * 5. S volbou roste spodní okraj PDF s výškou patičky (zalomený dlouhý název banky
+ *    nebo IBAN nesmí vrůst do položek), bez volby zůstává pevný.
  *
  * Render běží nad syntetickým polem faktury jako InvoicePdfMonochromeTest.
  */
@@ -113,12 +115,44 @@ final class InvoicePdfBankInFooterTest extends TestCase
         self::assertStringContainsString('1000000005 / 0100', $this->pageFooter($html));
     }
 
+    /**
+     * Volba z živého řádku firmy (koncept bez snapshotu dodavatele, jak ho čte
+     * resolveSupplier) a s ní spodní okraj PDF, který roste s výškou patičky.
+     */
+    public function testLiveSupplierOptionDrivesFooterAndStretchingBottomMargin(): void
+    {
+        $container = Bootstrap::buildContainer();
+        $pdo = $container->get(Connection::class)->pdo();
+        $renderer = $container->get(InvoicePdfRenderer::class);
+        $newMpdf = new \ReflectionMethod($renderer, 'newMpdf');
+        $bankInFooter = new \ReflectionMethod($renderer, 'bankInFooter');
+        $tmpDir = sys_get_temp_dir();
+        $pdo->beginTransaction();
+        try {
+            $supplierId = $this->createIsolatedSupplier($pdo, 1);
+            $invoice = ['supplier_id' => $supplierId, 'status' => 'draft', 'supplier_snapshot' => null] + $this->invoice();
+
+            self::assertFalse($bankInFooter->invoke($renderer, $invoice));
+            self::assertStringNotContainsString('page-bank', $renderer->renderHtml($invoice, includeCss: false));
+            self::assertNotSame('stretch', $newMpdf->invoke($renderer, $tmpDir, false)->setAutoBottomMargin);
+
+            $pdo->prepare('UPDATE supplier SET invoice_pdf_bank_in_footer = 1 WHERE id = ?')->execute([$supplierId]);
+
+            self::assertTrue($bankInFooter->invoke($renderer, $invoice));
+            self::assertStringContainsString('1000000005 / 0100', $this->pageFooter($renderer->renderHtml($invoice, includeCss: false)));
+            self::assertSame('stretch', $newMpdf->invoke($renderer, $tmpDir, true)->setAutoBottomMargin);
+        } finally {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+        }
+    }
+
     /** @return iterable<string,array{array<string,mixed>}> */
     public static function statesWithoutBankDetails(): iterable
     {
         yield 'uhrazeno' => [['paid_at' => '2026-10-05', 'paid_total' => 121.0, 'status' => 'paid']];
         yield 'hotově' => [['payment_method' => 'cash']];
         yield 'kartou' => [['payment_method' => 'card']];
+        yield 'vratka' => [['amount_to_pay' => -121.0]];
     }
 
     /** @param array<string,mixed> $state */
