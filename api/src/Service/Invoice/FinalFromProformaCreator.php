@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MyInvoice\Service\Invoice;
 
 use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Repository\AdvanceDeductionRepository;
 use MyInvoice\Repository\InvoiceRepository;
 use MyInvoice\Service\Oss\OssItemCarryOver;
 use MyInvoice\Service\Stats\StatsRecomputer;
@@ -181,6 +182,9 @@ final class FinalFromProformaCreator
             $pdo->beginTransaction();
         }
         try {
+            // Konečná faktura z proformy čerpá celou zálohu vazbou parent_invoice_id; proformu
+            // už čerpanou po dvojicích v saldokontu by vyúčtovala podruhé.
+            AdvanceDeductionRepository::assertLinkAllowed($pdo, (int) $proforma['supplier_id'], 'invoice', 0, $proformaId);
             $stmt = $pdo->prepare(
                 'INSERT INTO invoices
                    (invoice_type, parent_invoice_id, client_id, project_id, supplier_id, branding_profile_id,

@@ -867,19 +867,74 @@ final class SaldoRepository
 
     /**
      * Čerpání zálohy konečnou fakturou (`purchase_advance_deductions` / `invoice_advance_deductions`,
-     * řádek `$alias`) platí od zaúčtování konečné faktury jejím zápisem a do jeho storna.
-     * Jediná definice pro saldokonto i pro výběr kandidátů vyrovnání zálohy
-     * ({@see \MyInvoice\Repository\AdvanceDeductionRepository}). `$asOfExpr` je SQL výraz
-     * (sloupec nebo `?`), zde se vyskytne dvakrát.
+     * řádek `$alias`) platí, dokud má konečná faktura k `$asOfExpr` živý zápis své skupiny
+     * zaúčtování: přímý zápis se zdrojem faktury, nebo zápis, který faktura vlastní ve skupině
+     * (`journal_document_postings`, převod účtující doklad po řádcích). Je to táž množina
+     * zápisů, ze které saldokonto i výběr kandidátů ({@see \MyInvoice\Repository\AdvanceDeductionRepository::finals()})
+     * berou stranu čerpání ({@see DocumentPostingGroup::entriesSql()}). Den, od kterého
+     * čerpání platí, dává {@see advanceDeductionEntriesSql()} nad toutéž množinou.
+     *
+     * `$asOfExpr` je SQL výraz (sloupec nebo `?`), vyskytne se čtyřikrát.
      *
      * @param 'invoice'|'purchase_invoice' $docType
      */
     public static function advanceDeductionCountsSql(string $alias, string $docType, string $asOfExpr): string
     {
-        return "EXISTS (SELECT 1 FROM journal_entries fe LEFT JOIN journal_entries frev ON frev.id = fe.reversed_by
-                         WHERE fe.supplier_id = {$alias}.supplier_id AND fe.source_type = '{$docType}'
-                           AND fe.source_id = {$alias}.final_invoice_id AND fe.posted_at IS NOT NULL
-                           AND fe.entry_date <= {$asOfExpr} AND (fe.reversed_by IS NULL OR frev.entry_date > {$asOfExpr}))";
+        [$direct, $grouped] = self::finalEntryBranches($docType, "{$alias}.supplier_id", "{$alias}.final_invoice_id");
+        $live = self::liveFinalEntrySql($asOfExpr);
+        return "(EXISTS (SELECT 1 {$direct} AND {$live}) OR EXISTS (SELECT 1 {$grouped} AND {$live}))";
+    }
+
+    /**
+     * Živé zápisy konečných faktur `$finalIdsCsv` (celá čísla oddělená čárkou) k `$asOfExpr`
+     * se stavem období, nad toutéž množinou jako {@see advanceDeductionCountsSql()}:
+     * `final_id`, `entry_id`, `entry_date`, `period_status`, `reversed_on` (den storna, nebo NULL).
+     * `$asOfExpr = null` vrátí i stornované zápisy (hlídání uzavřeného období při zrušení
+     * čerpání, které zápis storna v období mohl ovlivnit).
+     *
+     * @param 'invoice'|'purchase_invoice' $docType
+     */
+    public static function advanceDeductionEntriesSql(string $docType, int $supplierId, string $finalIdsCsv, ?string $asOfExpr): string
+    {
+        if (preg_match('/^\d+(,\d+)*$/D', $finalIdsCsv) !== 1) {
+            throw new \InvalidArgumentException('Neplatný seznam konečných faktur.');
+        }
+        $select = 'SELECT %s AS final_id, fe.id AS entry_id, fe.entry_date, ap.status AS period_status, frev.entry_date AS reversed_on';
+        [$direct, $grouped] = self::finalEntryBranches($docType, (string) $supplierId, "fe.source_id");
+        $periods = ' LEFT JOIN accounting_periods ap ON ap.id = fe.period_id AND ap.supplier_id = fe.supplier_id';
+        $live = $asOfExpr === null ? 'fe.posted_at IS NOT NULL' : self::liveFinalEntrySql($asOfExpr);
+        $directSql = sprintf($select, 'fe.source_id') . ' ' . str_replace(' WHERE ', $periods . ' WHERE ', $direct)
+            . " AND fe.source_id IN ({$finalIdsCsv}) AND {$live}";
+        [, $groupedAny] = self::finalEntryBranches($docType, (string) $supplierId, 'fjdp.doc_id');
+        $groupedSql = sprintf($select, 'fjdp.doc_id') . ' ' . str_replace(' WHERE ', $periods . ' WHERE ', $groupedAny)
+            . " AND fjdp.doc_id IN ({$finalIdsCsv}) AND {$live}";
+        return "{$directSql} UNION ALL {$groupedSql}";
+    }
+
+    /**
+     * FROM … WHERE obou větví skupiny zaúčtování konečné faktury (alias zápisu `fe`, storna
+     * `frev`): přímý zápis se zdrojem faktury a zápis vlastněný ve skupině.
+     *
+     * @return array{0:string, 1:string}
+     */
+    private static function finalEntryBranches(string $docType, string $supplierExpr, string $finalIdExpr): array
+    {
+        if (!in_array($docType, ['invoice', 'purchase_invoice'], true)) {
+            throw new \InvalidArgumentException('Neplatný druh konečné faktury.');
+        }
+        return [
+            "FROM journal_entries fe LEFT JOIN journal_entries frev ON frev.id = fe.reversed_by
+              WHERE fe.supplier_id = {$supplierExpr} AND fe.source_type = '{$docType}' AND fe.source_id = {$finalIdExpr}",
+            "FROM journal_document_postings fjdp
+              JOIN journal_entries fe ON fe.supplier_id = fjdp.supplier_id AND fe.id = fjdp.entry_id
+              LEFT JOIN journal_entries frev ON frev.id = fe.reversed_by
+              WHERE fjdp.supplier_id = {$supplierExpr} AND fjdp.doc_type = '{$docType}' AND fjdp.doc_id = {$finalIdExpr}",
+        ];
+    }
+
+    private static function liveFinalEntrySql(string $asOfExpr): string
+    {
+        return "fe.posted_at IS NOT NULL AND fe.entry_date <= {$asOfExpr} AND (fe.reversed_by IS NULL OR frev.entry_date > {$asOfExpr})";
     }
 
     /**

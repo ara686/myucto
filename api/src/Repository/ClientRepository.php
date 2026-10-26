@@ -13,6 +13,7 @@ use MyInvoice\Service\Mail\ClientIsdocPreference;
 use MyInvoice\Service\Oss\OssClientContext;
 use MyInvoice\Support\PaymentMethods;
 use PDO;
+use MyInvoice\Support\Sql\AdvanceSettledSql;
 
 final class ClientRepository
 {
@@ -201,8 +202,7 @@ final class ClientRepository
                               SUM(IF(pi.status NOT IN ('draft', 'cancelled')
                                      AND NOT (COALESCE(pi.document_kind, '') = 'advance'
                                               AND (pi.status = 'paid'
-                                                   OR EXISTS (SELECT 1 FROM purchase_invoices adv_s
-                                                               WHERE adv_s.advance_purchase_invoice_id = pi.id)))
+                                                   OR " . AdvanceSettledSql::purchase('pi') . "))
                                      -- DDKP (daňový doklad k platbě) = jen odpočet DPH ze zálohy,
                                      -- nikdy náklad → bezpodmínečně ven (shoda s CRM/dashboard).
                                      AND COALESCE(pi.document_kind, '') <> 'tax_document',

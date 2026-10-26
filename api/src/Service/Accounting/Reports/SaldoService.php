@@ -9,6 +9,7 @@ use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Repository\AccountingPeriodRepository;
 use MyInvoice\Repository\LedgerReportRepository;
 use MyInvoice\Repository\SaldoRepository;
+use MyInvoice\Service\Accounting\AdvanceDeductionService;
 use PDO;
 
 /**
@@ -70,6 +71,7 @@ final class SaldoService
         private readonly LedgerReportRepository $ledger,
         private readonly AccountingPeriodRepository $periods,
         private readonly SupplierDataCache $cache,
+        private readonly AdvanceDeductionService $advances,
     ) {}
 
     /**
@@ -113,7 +115,7 @@ final class SaldoService
             $data ??= $part;
             foreach ($part['accounts'] as $block) {
                 $count += (int) $block['open_items_count'];
-                if (!$explicit && self::cents($block['gl_balance']) === 0 && $block['partners'] === []) {
+                if (!$explicit && self::cents($block['gl_balance']) === 0 && $block['partners'] === [] && empty($block['advance_deduction_issues'])) {
                     continue;
                 }
                 $accounts[] = $block;
@@ -195,7 +197,7 @@ final class SaldoService
             $budget -= $block['open_items_count'];
             // U default sady vynech účty bez zůstatku i bez položek (nezaplevelovat 314/324);
             // u explicitně zvoleného účtu zobraz vždy.
-            if (!$explicit && self::cents($block['gl_balance']) === 0 && $block['partners'] === []) {
+            if (!$explicit && self::cents($block['gl_balance']) === 0 && $block['partners'] === [] && empty($block['advance_deduction_issues'])) {
                 continue;
             }
             $accounts[] = $block;
@@ -352,6 +354,12 @@ final class SaldoService
             'difference'       => $difference,
             'matches'          => self::cents($difference) === 0,
             'partners'         => $partners,
+            // Zálohový účet: konečné faktury, jejichž čerpání záloh přesahuje stranu čerpání
+            // živého zaúčtování (přeúčtování, převod). Saldokonto by zálohy uzavřelo o čerpání,
+            // které hlavní kniha nenese, a rozdíl by z toho nebyl poznat.
+            ...(isset(AdvanceDeductionService::ACCOUNTS[$acc['code']])
+                ? ['advance_deduction_issues' => $this->advances->deductionIssues($supplierId, $acc['code'])]
+                : []),
         ];
     }
 

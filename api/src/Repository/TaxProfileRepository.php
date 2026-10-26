@@ -9,6 +9,7 @@ use MyInvoice\Service\Payroll\Security\PayrollRevealPurpose;
 use MyInvoice\Service\Payroll\Security\PayrollSensitiveData;
 use MyInvoice\Service\Payroll\Security\PayrollSensitiveField;
 use PDO;
+use MyInvoice\Support\Sql\AdvanceSettledSql;
 
 /**
  * Daňové profily (tax_profiles) — per supplier × rok — a agregace příjmů
@@ -295,8 +296,7 @@ final class TaxProfileRepository
                 AND pi.paid_at IS NOT NULL
                 AND DATE_FORMAT(pi.paid_at, '%Y-%m') = ?
                 AND NOT (COALESCE(pi.document_kind, '') = 'advance'
-                     AND EXISTS (SELECT 1 FROM purchase_invoices adv_s
-                                 WHERE adv_s.advance_purchase_invoice_id = pi.id))
+                     AND " . AdvanceSettledSql::purchase('pi') . ")
                 AND COALESCE(pi.document_kind, '') <> 'tax_document'"
         );
         $stmt->execute([$supplierId, $ym]);

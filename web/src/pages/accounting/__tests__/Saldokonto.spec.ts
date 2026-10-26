@@ -516,10 +516,31 @@ describe('Saldokonto.vue', () => {
     expect(settle).toHaveLength(1)
     await settle[0].trigger('click')
     await flushPromises()
+    expect(wrapper.find('[data-testid="saldo-advance-issues"]').exists()).toBe(false)
     expect(wrapper.findComponent({ name: 'SaldoSettleDialog' }).exists()).toBe(false)
     expect(wrapper.findComponent({ name: 'SaldoAdvanceSettleDialog' }).props('items')).toEqual([{
       doc_type: 'purchase_invoice', doc_id: 201, doc_no: 'ZF-201', partner_id: 20, partner_name: 'Gama s.r.o.',
       account_code: '314', currency_code: 'CZK', remaining_czk: 1000,
     }])
+  })
+
+  it('(r) přečerpané konečné faktury zálohového účtu ukáže varování', async () => {
+    const report = makeReport({
+      accounts: [{
+        account: { id: 3, code: '314', name: 'Poskytnuté zálohy', normal_side: 'debit' as any },
+        gl_balance: 0, open_items_total: 0, open_items_count: 0, difference: 0, matches: true,
+        partners_pagination: { page: 1, per_page: 2, total: 0, pages: 1 },
+        partners: [],
+        advance_deduction_issues: [{ doc_id: 77, doc_no: 'FA-77', deductible: 600, deducted: 1000, linked_share: 0, excess: 400 }],
+      }],
+    })
+    serveSaldo(report)
+    const wrapper = mount(Saldokonto)
+    await flushPromises()
+
+    const banner = wrapper.find('[data-testid="saldo-advance-issues"]')
+    expect(banner.exists()).toBe(true)
+    expect(banner.text()).toContain('FA-77')
+    expect(banner.text()).toContain('accounting.saldo_settle.advance_issue_excess')
   })
 })

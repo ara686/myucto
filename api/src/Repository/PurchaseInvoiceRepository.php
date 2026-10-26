@@ -21,6 +21,7 @@ use MyInvoice\Support\PublicAuthorityFeeText;
 use MyInvoice\Support\Sql\PayablePredicate;
 use MyInvoice\Support\Sql\PurchaseSettledExpr;
 use PDO;
+use MyInvoice\Support\Sql\AdvanceSettledSql;
 
 /**
  * CRUD pro přijaté faktury (purchase invoices) — paralel k InvoiceRepository,
@@ -184,8 +185,7 @@ final class PurchaseInvoiceRepository
                                       OR (pi.document_kind = 'tax_document' AND pi.parent_purchase_invoice_id IS NULL))
                                  AND pi.status != 'cancelled'
                                  AND pi.id <> ?
-                                 AND NOT EXISTS (SELECT 1 FROM purchase_invoices s
-                                                  WHERE s.advance_purchase_invoice_id = pi.id)
+                                 AND NOT " . AdvanceSettledSql::purchase('pi') . "
                             )"
                 );
                 $q->execute([$supplierId, $vendorId, $id]);
@@ -1085,8 +1085,7 @@ final class PurchaseInvoiceRepository
                        pi.project_id, prj.name AS project_name,
                        c.company_name AS vendor_company_name, c.ic AS vendor_ic,
                        DATE_FORMAT(pi.issue_date, '%Y-%m') AS month_bucket,
-                       EXISTS (SELECT 1 FROM purchase_invoices adv_f
-                               WHERE adv_f.advance_purchase_invoice_id = pi.id) AS is_settled_advance,
+                       " . AdvanceSettledSql::purchase('pi') . " AS is_settled_advance,
                        -- §DM: doklad obsahuje drobný majetek → ikonka v seznamu. Stačí, že
                        -- ho nese JEDNA položka (faktura běžně míchá majetek se službou),
                        -- proto EXISTS, ne JOIN — ten by doklad znásobil na počet položek.
@@ -2646,6 +2645,23 @@ final class PurchaseInvoiceRepository
         if ($finalId === $advanceId) {
             throw new \RuntimeException('Nelze propojit doklad sám se sebou.');
         }
+        // Vazba přiřadí záloze celou stranu čerpání faktury na 314; nesmí se potkat
+        // s čerpáním po dvojicích (purchase_advance_deductions). Zámky dokladů jako čerpání.
+        $pdo = $this->db->pdo();
+        $ownTx = !$pdo->inTransaction();
+        if ($ownTx) $pdo->beginTransaction();
+        try {
+            AdvanceDeductionRepository::assertLinkAllowed($pdo, $supplierId, 'purchase_invoice', $finalId, $advanceId);
+            $this->linkAdvanceLocked($finalId, $advanceId, $supplierId);
+            if ($ownTx) $pdo->commit();
+        } catch (\Throwable $e) {
+            if ($ownTx && $pdo->inTransaction()) $pdo->rollBack();
+            throw $e;
+        }
+    }
+
+    private function linkAdvanceLocked(int $finalId, int $advanceId, int $supplierId): void
+    {
         $final   = $this->find($finalId, $supplierId);
         $advance = $this->find($advanceId, $supplierId);
         if ($final === null || $advance === null) {
@@ -2815,8 +2831,7 @@ final class PurchaseInvoiceRepository
                      OR (pi.document_kind = 'tax_document' AND pi.parent_purchase_invoice_id IS NULL))
                 AND pi.status != 'cancelled'
                 AND pi.id <> ?
-                AND NOT EXISTS (SELECT 1 FROM purchase_invoices s
-                                 WHERE s.advance_purchase_invoice_id = pi.id)
+                AND NOT " . AdvanceSettledSql::purchase('pi') . "
               ORDER BY (pi.currency_id = ?) DESC,
                        ABS(pi.total_with_vat - ?) ASC,
                        pi.issue_date DESC, pi.id DESC
@@ -2877,6 +2892,9 @@ final class PurchaseInvoiceRepository
                 AND pi.status != 'cancelled'
                 AND pi.advance_purchase_invoice_id IS NULL
                 AND pi.id <> ?
+                -- Faktura, která už čerpá zálohu v saldokontu, se vazbou nepáruje (linkAdvance ji odmítne).
+                AND NOT EXISTS (SELECT 1 FROM purchase_advance_deductions pad
+                                 WHERE pad.supplier_id = pi.supplier_id AND pad.final_invoice_id = pi.id)
               ORDER BY (pi.currency_id = ?) DESC,
                        ABS(pi.total_with_vat - ?) ASC,
                        pi.issue_date DESC, pi.id DESC
@@ -2953,8 +2971,7 @@ final class PurchaseInvoiceRepository
                 AND pi.status != 'cancelled'
                 AND (REPLACE(COALESCE(pi.vendor_invoice_number,''), ' ', '') = ?
                   OR REPLACE(COALESCE(pi.varsymbol,''), ' ', '') = ?)
-                AND NOT EXISTS (SELECT 1 FROM purchase_invoices s
-                                 WHERE s.advance_purchase_invoice_id = pi.id)
+                AND NOT " . AdvanceSettledSql::purchase('pi') . "
               ORDER BY pi.issue_date DESC LIMIT 1"
         );
         $stmt->execute([$supplierId, $vendorId, $norm, $norm]);

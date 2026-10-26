@@ -17828,7 +17828,9 @@
       "advance_submit": "Vyrovnat čerpáním",
       "advance_saved": "Zapsáno čerpání: {count}",
       "advance_period_closed_confirm": "Konečná faktura je zaúčtovaná v uzavřeném účetním období. Čerpání změní saldokonto ode dne jejího zaúčtování (hlavní kniha zůstane beze změny). Pokračovat jako správce?",
-      "advance_final_label": "konečná faktura {doc}"
+      "advance_final_label": "konečná faktura {doc}",
+      "advance_issues_hint": "Čerpání záloh těchto konečných faktur přesahuje jejich odpočet zálohy v deníku (faktura přeúčtovaná s menším odpočtem nebo čerpání z převodu). Saldokonto zálohy uzavírá o čerpání, které hlavní kniha nenese: čerpání v dialogu Vyrovnat u zálohy upravte, nebo opravte zaúčtování faktury.",
+      "advance_issue_excess": "přečerpáno o {amount}"
     },
     "account_statement": {
       "title": "Opis účtu",

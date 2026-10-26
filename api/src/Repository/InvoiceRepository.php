@@ -17,6 +17,7 @@ use MyInvoice\Service\Invoice\TimeBilling;
 use MyInvoice\Service\Report\VatLedgerService;
 use MyInvoice\Support\PaymentMethods;
 use PDO;
+use MyInvoice\Support\Sql\AdvanceSettledSql;
 
 /**
  * CRUD pro faktury + položky + listing s grupováním po měsících (DUZP).
@@ -353,8 +354,7 @@ final class InvoiceRepository
                            WHERE i.supplier_id = ? AND i.client_id = ?
                              AND i.invoice_type = 'proforma' AND i.status != 'cancelled'
                              AND i.id <> ?
-                             AND NOT EXISTS (SELECT 1 FROM invoices ch
-                                              WHERE ch.parent_invoice_id = i.id AND ch.invoice_type = 'invoice')
+                             AND NOT " . AdvanceSettledSql::proforma('i') . "
                              -- Záloha s vystavenými daňovými doklady k platbě (#89) se ručně
                              -- nepáruje (finál by neměl § 37a odpočty) — linkAdvance ji odmítá.
                              AND NOT EXISTS (SELECT 1 FROM invoices td
@@ -441,8 +441,7 @@ final class InvoiceRepository
                 AND i.invoice_type = 'proforma'
                 AND i.status != 'cancelled'
                 AND i.id <> ?
-                AND NOT EXISTS (SELECT 1 FROM invoices ch
-                                 WHERE ch.parent_invoice_id = i.id AND ch.invoice_type = 'invoice')
+                AND NOT " . AdvanceSettledSql::proforma('i') . "
                 -- Záloha s vystavenými daňovými doklady k platbě (#89) — viz has_advance_candidates.
                 AND NOT EXISTS (SELECT 1 FROM invoices td
                                  WHERE td.parent_invoice_id = i.id AND td.invoice_type = 'tax_document'
@@ -483,6 +482,23 @@ final class InvoiceRepository
         if ($finalId === $advanceId) {
             throw new \RuntimeException('Nelze propojit doklad sám se sebou.');
         }
+        // Vazba přiřadí proformě celou stranu čerpání faktury na 324; nesmí se potkat
+        // s čerpáním po dvojicích (invoice_advance_deductions). Zámky dokladů jako čerpání.
+        $pdo = $this->db->pdo();
+        $ownTx = !$pdo->inTransaction();
+        if ($ownTx) $pdo->beginTransaction();
+        try {
+            AdvanceDeductionRepository::assertLinkAllowed($pdo, $supplierId, 'invoice', $finalId, $advanceId);
+            $this->linkAdvanceLocked($finalId, $advanceId, $supplierId);
+            if ($ownTx) $pdo->commit();
+        } catch (\Throwable $e) {
+            if ($ownTx && $pdo->inTransaction()) $pdo->rollBack();
+            throw $e;
+        }
+    }
+
+    private function linkAdvanceLocked(int $finalId, int $advanceId, int $supplierId): void
+    {
         $final   = $this->find($finalId);
         $advance = $this->find($advanceId);
         if ($final === null || $advance === null
@@ -630,6 +646,9 @@ final class InvoiceRepository
                 AND i.status != 'cancelled'
                 AND i.parent_invoice_id IS NULL
                 AND i.id <> ?
+                -- Faktura, která už čerpá zálohu v saldokontu, se vazbou nepáruje (linkAdvance ji odmítne).
+                AND NOT EXISTS (SELECT 1 FROM invoice_advance_deductions iad
+                                 WHERE iad.supplier_id = i.supplier_id AND iad.final_invoice_id = i.id)
               ORDER BY (i.currency_id = ?) DESC,
                        ABS(i.total_with_vat - ?) ASC,
                        i.issue_date DESC, i.id DESC
@@ -923,8 +942,7 @@ final class InvoiceRepository
             // Spárovaná proforma se vynechá, dluh nese ostrý doklad. Zrcadlí dashboard
             // (receivableDocTypeSql) a InvoiceAmountPolicy.
             $where[] = "(i.invoice_type != 'proforma'"
-                . " OR NOT EXISTS (SELECT 1 FROM invoices ch"
-                . " WHERE ch.parent_invoice_id = i.id AND ch.invoice_type = 'invoice'))";
+                . ' OR NOT ' . AdvanceSettledSql::proforma('i') . ')';
             // Finální daňový doklad k zaplacené proformě má amount_to_pay = 0 by design
             // (záloha pokryla celek) — není nezaplacený, jen status zůstal 'issued'.
             // Dobropisy (záporný total) ponecháváme. Částečné úhrady (#89): dlužná
@@ -936,8 +954,7 @@ final class InvoiceRepository
             $where[] = "i.status IN ('issued','sent','reminded') AND i.due_date {$operator} CURDATE()";
             // Stejná pohledávková sémantika jako unpaid (vč. nespárovaných proforem).
             $where[] = "(i.invoice_type != 'proforma'"
-                . " OR NOT EXISTS (SELECT 1 FROM invoices ch"
-                . " WHERE ch.parent_invoice_id = i.id AND ch.invoice_type = 'invoice'))";
+                . ' OR NOT ' . AdvanceSettledSql::proforma('i') . ')';
             $where[] = "(i.invoice_type NOT IN ('invoice','proforma','tax_document') OR i.amount_to_pay - i.paid_total > 0)";
         }
         // Neuhrazené K DATU X (task #4, účetní sestava „saldo bez saldokonta") — na rozdíl
@@ -962,8 +979,7 @@ final class InvoiceRepository
             // Stejná pohledávková sémantika jako unpaid_only/overdue: spárovaná proforma dluh
             // nenese, dluh nese ostrý doklad.
             $where[] = "(i.invoice_type != 'proforma'"
-                . " OR NOT EXISTS (SELECT 1 FROM invoices ch"
-                . " WHERE ch.parent_invoice_id = i.id AND ch.invoice_type = 'invoice'))";
+                . ' OR NOT ' . AdvanceSettledSql::proforma('i') . ')';
             // Guard „amount_to_pay > 0" (viz AGENTS.md) je tu implicitní: je-li amount_to_pay
             // už dnes 0 (finál kryt zálohou), rozdíl proti Σ plateb do asOf nikdy nepřekročí
             // toleranci a doklad se nevybere sám od sebe.

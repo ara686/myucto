@@ -82,7 +82,8 @@ final class DocumentBranchParityGuardsTest extends TestCase
         // SaldoRepository::fetchPaidAdvances), na 324 jen proforma (fetchReceivedAdvances):
         // vazba konečné faktury na zálohu proto na přijaté straně uznává i DDKP bez rodiče.
         'Repository/AdvanceDeductionRepository.php' => [
-            'finals' => 'záloha na 314 může být samostatný přijatý DDKP, na 324 jen proforma (saldokonto)',
+            'finals'       => 'záloha na 314 může být samostatný přijatý DDKP, na 324 jen proforma (saldokonto)',
+            'advanceDates' => 'záloha na 314 může být samostatný přijatý DDKP, na 324 jen proforma (saldokonto)',
         ],
 
         'Service/Bank/StatementMatcher.php' => [

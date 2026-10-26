@@ -1754,6 +1754,20 @@ export interface SaldoAccountBlock {
   matches: boolean
   partners: SaldoPartner[]
   partners_pagination: SaldoPartnersPagination
+  /**
+   * Jen 314/324: konečné faktury, jejichž čerpání záloh přesahuje stranu čerpání živého
+   * zaúčtování (přeúčtování, převod) — saldokonto by zálohy uzavřelo o čerpání bez opory v deníku.
+   */
+  advance_deduction_issues?: SaldoAdvanceDeductionIssue[]
+}
+
+export interface SaldoAdvanceDeductionIssue {
+  doc_id: number
+  doc_no: string
+  deductible: number
+  deducted: number
+  linked_share: number
+  excess: number
 }
 
 /** Období vč. stavu (report ReportPeriod status nenese — saldokonto ho pro UI hint potřebuje). */

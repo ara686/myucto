@@ -325,7 +325,256 @@ final class AdvanceDeductionSettlementTest extends BankPostingTestCase
         self::assertSame(404, $missing['status']);
     }
 
+    public function testDocumentLinkCannotDoubleDeductionAndDeductedAdvanceCountsAsSettled(): void
+    {
+        $vendor = $this->client('Syntetický dodavatel vazby a čerpání');
+        $advance = $this->paidPurchaseAdvance('ZF-DBL-1', $vendor, 1000.0);
+        $final = $this->purchaseFinal('FA-DBL-1', $vendor, 1200.0, 1000.0);
+        $other = $this->purchaseFinal('FA-DBL-2', $vendor, 1200.0, 1000.0);
+        $spare = $this->paidPurchaseAdvance('ZF-DBL-2', $vendor, 1000.0);
+        $this->advances->deduct($this->supplierId, [
+            ['doc_type' => 'purchase_invoice', 'advance_id' => $advance, 'final_id' => $final, 'amount' => 1000.0],
+        ], $this->userId);
+        $purchases = $this->container->get(\MyInvoice\Repository\PurchaseInvoiceRepository::class);
+
+        self::assertNotContains($advance, array_column($purchases->advanceCandidates($other, $this->supplierId), 'id'), 'Čerpaná záloha se k vazbě nenabízí.');
+        self::assertNotContains($final, array_column($purchases->settlementCandidates($spare, $this->supplierId), 'id'), 'Čerpající faktura se k vazbě nenabízí.');
+        $this->assertLinkRejected(fn () => $purchases->linkAdvance($other, $advance, $this->supplierId));
+        $this->assertLinkRejected(fn () => $purchases->linkAdvance($final, $spare, $this->supplierId));
+        self::assertNull($this->db->pdo()->query("SELECT advance_purchase_invoice_id FROM purchase_invoices WHERE id = {$other}")->fetchColumn() ?: null);
+        // Seznam přijatých dokladů: záloha čerpaná v saldokontu je vyúčtovaná stejně jako navázaná,
+        // do nákladů měsíce se nepočítá (náklad nese konečná faktura). Nevyúčtovaná ano.
+        $this->db->pdo()->prepare("UPDATE purchase_invoices SET status = 'received' WHERE id IN (?, ?)")->execute([$advance, $spare]);
+        $months = $purchases->listGroupedByMonth(['supplier_id' => $this->supplierId, 'vendor_id' => $vendor])['data'];
+        $may = array_values(array_filter($months, static fn (array $m): bool => $m['month'] === self::YEAR . '-05'))[0];
+        self::assertEqualsWithDelta(1000.0, $may['totals_per_currency']['CZK']['with_vat'] ?? array_values($may['totals_per_currency'])[0]['with_vat'], 0.001);
+
+        $client = $this->client('Syntetický odběratel vazby a čerpání');
+        $proforma = $this->paidProforma('ZAL-DBL-1', $client, 700.0);
+        $saleFinal = $this->saleFinal('FV-DBL-1', $client, 1210.0, 700.0);
+        $saleOther = $this->saleFinal('FV-DBL-2', $client, 1210.0, 0.01);
+        $this->advances->deduct($this->supplierId, [
+            ['doc_type' => 'invoice', 'advance_id' => $proforma, 'final_id' => $saleFinal, 'amount' => 700.0],
+        ], $this->userId);
+        $invoices = $this->container->get(\MyInvoice\Repository\InvoiceRepository::class);
+        self::assertNotContains($proforma, array_column($invoices->advanceCandidates($saleOther, $this->supplierId), 'id'));
+        $this->assertLinkRejected(fn () => $invoices->linkAdvance($saleOther, $proforma, $this->supplierId));
+        $this->assertLinkRejected(fn () => $this->container->get(\MyInvoice\Service\Invoice\FinalFromProformaCreator::class)->create($proforma, $this->userId));
+        self::assertSame(0, (int) $this->db->pdo()->query("SELECT COUNT(*) FROM invoices WHERE parent_invoice_id = {$proforma} AND invoice_type = 'invoice'")->fetchColumn());
+        // Nezaplacená část proformy vyúčtované čerpáním nepatří do neuhrazených pohledávek.
+        $this->db->pdo()->prepare("UPDATE invoices SET status = 'issued' WHERE id = ?")->execute([$proforma]);
+        $unpaid = $this->listedRows($invoices->listGroupedByMonth(['supplier_id' => $this->supplierId, 'client_id' => $client, 'unpaid_only' => 1]));
+        self::assertArrayNotHasKey($proforma, $unpaid);
+    }
+
+    public function testImportedDeductionRespectsFreeDeductionAndKeepsUserDeduction(): void
+    {
+        $vendor = $this->client('Syntetický dodavatel převodu');
+        $a1 = $this->paidPurchaseAdvance('ZF-IMPR-1', $vendor, 600.0);
+        $a2 = $this->paidPurchaseAdvance('ZF-IMPR-2', $vendor, 600.0);
+        $a3 = $this->paidPurchaseAdvance('ZF-IMPR-3', $vendor, 600.0);
+        $final = $this->purchaseFinal('FA-IMPR-1', $vendor, 1500.0, 1000.0);
+        $this->advances->deduct($this->supplierId, [
+            ['doc_type' => 'purchase_invoice', 'advance_id' => $a1, 'final_id' => $final, 'amount' => 600.0],
+        ], $this->userId);
+
+        // Stejná dvojice ze saldokonta: převod nic nemění, řádek zůstává uživatelův.
+        self::assertSame(0.0, $this->advances->recordImported($this->supplierId, 'purchase_invoice', $final, $a1, 600.0, $this->userId));
+        self::assertSame([['saldo', '600.00']], $this->db->pdo()->query(
+            "SELECT source, amount FROM purchase_advance_deductions WHERE final_invoice_id = {$final} AND advance_invoice_id = {$a1}")->fetchAll(\PDO::FETCH_NUM));
+        // Jiná záloha: jen volný odpočet faktury (1000 - 600), opakovaný běh nic nepřidá.
+        self::assertSame(400.0, $this->advances->recordImported($this->supplierId, 'purchase_invoice', $final, $a2, 600.0, $this->userId));
+        self::assertSame(0.0, $this->advances->recordImported($this->supplierId, 'purchase_invoice', $final, $a2, 600.0, $this->userId));
+        self::assertSame(0.0, $this->advances->recordImported($this->supplierId, 'purchase_invoice', $final, $a3, 600.0, $this->userId));
+        $state = $this->advances->importState($this->supplierId, 'purchase_invoice', [$final])[$final];
+        self::assertEqualsWithDelta(1000.0, $state['deductible'], 0.001);
+        self::assertEqualsWithDelta(1000.0, $state['deducted'], 0.001);
+        self::assertEqualsWithDelta(0.0, $state['unassigned'], 0.001);
+        self::assertTrue($state['posted']);
+        self::assertSame([], $this->block('314')['advance_deduction_issues']);
+    }
+
+    public function testDeductionCountsFinalPostedOnlyByOwnedGroupEntry(): void
+    {
+        $vendor = $this->client('Syntetický dodavatel skupiny zaúčtování');
+        $advance = $this->paidPurchaseAdvance('ZF-GRP-1', $vendor, 500.0);
+        $final = $this->purchaseInvoice('FA-GRP-1', $vendor, 800.0);
+        $entry = $this->postEntry('manual', 0, self::YEAR . '-07-10', [
+            ['518', 'debit', 800.0], ['321', 'credit', 800.0], ['321', 'debit', 500.0], ['314', 'credit', 500.0],
+        ]);
+        $this->db->pdo()->prepare('UPDATE journal_entries SET source_id = NULL WHERE id = ?')->execute([$entry]);
+        $this->db->pdo()->prepare("INSERT INTO journal_document_postings (supplier_id, doc_type, doc_id, entry_id) VALUES (?, 'purchase_invoice', ?, ?)")
+            ->execute([$this->supplierId, $final, $entry]);
+
+        $this->advances->deduct($this->supplierId, [
+            ['doc_type' => 'purchase_invoice', 'advance_id' => $advance, 'final_id' => $final, 'amount' => 500.0],
+        ], $this->userId);
+        self::assertNull($this->remaining($this->block('314'), 'purchase_invoice', $advance));
+        self::assertEqualsWithDelta(500.0, $this->remaining($this->block('314', self::YEAR . '-07-09'), 'purchase_invoice', $advance), 0.001);
+    }
+
+    public function testAdvanceBalanceIncludesDeductionsOfFinalsPostedLater(): void
+    {
+        $vendor = $this->client('Syntetický dodavatel budoucího čerpání');
+        $advance = $this->paidPurchaseAdvance('ZF-FUT-1', $vendor, 1000.0);
+        $late = $this->purchaseFinal('FA-FUT-1', $vendor, 1200.0, 1000.0, null, self::YEAR . '-12-20');
+        $early = $this->purchaseFinal('FA-FUT-2', $vendor, 1200.0, 1000.0, null, self::YEAR . '-07-10');
+        $this->advances->deduct($this->supplierId, [
+            ['doc_type' => 'purchase_invoice', 'advance_id' => $advance, 'final_id' => $late, 'amount' => 1000.0],
+        ], $this->userId);
+        $this->assertDeductionError('advance_not_open', fn () => $this->advances->deduct($this->supplierId, [
+            ['doc_type' => 'purchase_invoice', 'advance_id' => $advance, 'final_id' => $early, 'amount' => 1.0],
+        ], $this->userId));
+    }
+
+    public function testRepostedFinalWithSmallerDeductionIsReported(): void
+    {
+        $vendor = $this->client('Syntetický dodavatel přeúčtování');
+        $advance = $this->paidPurchaseAdvance('ZF-REP-1', $vendor, 1000.0);
+        $final = $this->purchaseFinal('FA-REP-1', $vendor, 1200.0, 1000.0);
+        $this->advances->deduct($this->supplierId, [
+            ['doc_type' => 'purchase_invoice', 'advance_id' => $advance, 'final_id' => $final, 'amount' => 1000.0],
+        ], $this->userId);
+        self::assertSame([], array_values(array_filter($this->block('314')['advance_deduction_issues'], static fn (array $i): bool => $i['doc_id'] === $final)));
+
+        $this->db->pdo()->prepare(
+            "UPDATE journal_entry_lines l JOIN journal_entries e ON e.id = l.entry_id
+                SET l.amount = 600
+              WHERE e.supplier_id = ? AND e.source_type = 'purchase_invoice' AND e.source_id = ? AND l.line_no IN (3, 4)"
+        )->execute([$this->supplierId, $final]);
+        $issues = array_values(array_filter($this->block('314')['advance_deduction_issues'], static fn (array $i): bool => $i['doc_id'] === $final));
+        self::assertCount(1, $issues);
+        self::assertEqualsWithDelta(400.0, $issues[0]['excess'], 0.001);
+    }
+
+    public function testDeletingDeductionChecksPeriodOfReversedFinalEntry(): void
+    {
+        $vendor = $this->client('Syntetický dodavatel storna');
+        $advance = $this->paidPurchaseAdvance('ZF-STR-1', $vendor, 500.0);
+        $final = $this->purchaseFinal('FA-STR-1', $vendor, 600.0, 500.0);
+        $created = $this->advances->deduct($this->supplierId, [
+            ['doc_type' => 'purchase_invoice', 'advance_id' => $advance, 'final_id' => $final, 'amount' => 500.0],
+        ], $this->userId);
+        $nextPeriod = $this->periods->create($this->supplierId, self::YEAR + 1, (self::YEAR + 1) . '-01-01', (self::YEAR + 1) . '-12-31');
+        $map = $this->accounts->codeToIdMap($this->supplierId);
+        $reversal = $this->journal->insert([
+            'supplier_id' => $this->supplierId, 'period_id' => $nextPeriod, 'entry_date' => (self::YEAR + 1) . '-02-01',
+            'document_no' => 'STORNO-FA-STR-1', 'description' => 'Storno', 'source_type' => 'manual', 'source_id' => null,
+            'posted_at' => date('Y-m-d H:i:s'), 'posted_by' => $this->userId,
+        ], [
+            ['account_id' => $map['314']['id'], 'side' => 'debit', 'amount' => 500.0],
+            ['account_id' => $map['321']['id'], 'side' => 'credit', 'amount' => 500.0],
+        ]);
+        $this->db->pdo()->prepare("UPDATE journal_entries SET reversed_by = ? WHERE supplier_id = ? AND source_type = 'purchase_invoice' AND source_id = ?")
+            ->execute([$reversal, $this->supplierId, $final]);
+        $this->db->pdo()->prepare("UPDATE accounting_periods SET status = 'closed' WHERE id = ?")->execute([$this->periodId]);
+
+        $denied = $this->callAction($this->container->get(JournalSettlementAction::class), 'deleteAdvanceDeduction', 'DELETE', 'accountant', [],
+            ['doc_type' => 'purchase_invoice', 'id' => (string) $created[0]['id']]);
+        self::assertSame(409, $denied['status'], json_encode($denied['body']));
+        self::assertSame('period_closed', $denied['body']['error']['code'] ?? null);
+    }
+
+    public function testSuggestionsUseDatesOfAllAdvancesAndRequireFinalAfterAdvance(): void
+    {
+        $vendor = $this->client('Syntetický dodavatel pořadí');
+        // Jediná faktura se shodnou částkou, ale vystavená před zálohou: nejistá.
+        $early = $this->paidPurchaseAdvance('ZF-ORD-1', $vendor, 330.0, self::YEAR . '-08-01');
+        $this->purchaseFinal('FA-ORD-1', $vendor, 400.0, 330.0, null, self::YEAR . '-07-10');
+        // Mezi zálohou a fakturou je další (nezaplacená) záloha partnera: faktura patří jí.
+        $m1 = $this->paidPurchaseAdvance('ZF-ORD-2', $vendor, 250.0, self::YEAR . '-02-01');
+        $unpaid = $this->purchaseInvoice('ZF-ORD-3', $vendor, 250.0, 'advance');
+        $this->db->pdo()->prepare("UPDATE purchase_invoices SET issue_date = ? WHERE id = ?")->execute([self::YEAR . '-02-15', $unpaid]);
+        $this->paidPurchaseAdvance('ZF-ORD-4', $vendor, 250.0, self::YEAR . '-03-01');
+        $this->purchaseFinal('FA-ORD-2', $vendor, 300.0, 250.0, null, self::YEAR . '-02-20');
+        $this->purchaseFinal('FA-ORD-3', $vendor, 300.0, 250.0, null, self::YEAR . '-03-10');
+
+        $items = $this->container->get(JournalSettlementService::class)->suggestions($this->supplierId, $this->periodId, self::YEAR . '-12-31', '314')['items'];
+        $advanceIds = array_map(static fn (array $s): int => $s['advance']['doc_id'] ?? 0, $items);
+        self::assertNotContains($early, $advanceIds);
+        self::assertNotContains($m1, $advanceIds);
+
+        // Tentýž doklad víckrát v saldu: zbytky se sečtou.
+        $sum = $this->paidPurchaseAdvance('ZF-ORD-5', $vendor, 100.0, self::YEAR . '-09-01');
+        $sumFinal = $this->purchaseFinal('FA-ORD-5', $vendor, 400.0, 250.0, 'Vyúčtování ZFORD5X', self::YEAR . '-09-10');
+        $this->db->pdo()->prepare('UPDATE purchase_invoices SET vendor_invoice_number = ? WHERE id = ?')->execute(['ZFORD5X', $sum]);
+        $item = static fn (float $rem): array => ['doc_type' => 'purchase_invoice', 'doc_id' => $sum, 'doc_no' => 'ZFORD5X', 'issue_date' => self::YEAR . '-09-01',
+            'currency_code' => 'CZK', 'remaining_czk' => $rem, 'settleable' => true, 'kind' => 'document'];
+        $block = ['account' => $this->block('314')['account'], 'partners' => [['partner_id' => $vendor, 'partner_name' => 'X', 'items' => [$item(100.0), $item(150.0)]]]];
+        $proposals = $this->advances->suggestForAccount($this->supplierId, $block, self::YEAR . '-12-31');
+        self::assertCount(1, $proposals);
+        self::assertSame($sumFinal, $proposals[0]['final']['doc_id']);
+        self::assertEqualsWithDelta(250.0, $proposals[0]['amount'], 0.001);
+    }
+
+    public function testLinkedFinalOffersDeductionAboveLinkedAdvance(): void
+    {
+        $vendor = $this->client('Syntetický dodavatel přebytku');
+        $linked = $this->paidPurchaseAdvance('ZF-EXC-1', $vendor, 600.0);
+        $other = $this->paidPurchaseAdvance('ZF-EXC-2', $vendor, 400.0);
+        $final = $this->purchaseFinal('FA-EXC-1', $vendor, 1200.0, 1000.0);
+        $this->db->pdo()->prepare('UPDATE purchase_invoices SET advance_purchase_invoice_id = ? WHERE id = ?')->execute([$linked, $final]);
+
+        $items = $this->advances->candidates($this->supplierId, 'purchase_invoice', $other, '314', self::YEAR . '-12-31')['items'];
+        self::assertEqualsWithDelta(400.0, array_column($items, null, 'doc_id')[$final]['unassigned'] ?? 0.0, 0.001);
+        $this->assertDeductionError('final_overdeducted', fn () => $this->advances->deduct($this->supplierId, [
+            ['doc_type' => 'purchase_invoice', 'advance_id' => $other, 'final_id' => $final, 'amount' => 400.01],
+        ], $this->userId));
+        $this->advances->deduct($this->supplierId, [
+            ['doc_type' => 'purchase_invoice', 'advance_id' => $other, 'final_id' => $final, 'amount' => 400.0],
+        ], $this->userId);
+        $block = $this->block('314');
+        self::assertNull($this->remaining($block, 'purchase_invoice', $linked));
+        self::assertNull($this->remaining($block, 'purchase_invoice', $other));
+    }
+
+    public function testBatchAuditsEveryConfirmedGroup(): void
+    {
+        $vendor = $this->client('Syntetický dodavatel auditu');
+        $a1 = $this->paidPurchaseAdvance('ZF-AUD-1', $vendor, 100.0);
+        $a2 = $this->paidPurchaseAdvance('ZF-AUD-2', $vendor, 100.0);
+        $f = $this->purchaseFinal('FA-AUD-1', $vendor, 300.0, 200.0);
+        $row = static fn (int $a): array => ['deductions' => [['doc_type' => 'purchase_invoice', 'advance_id' => $a, 'final_id' => $f, 'amount' => 100.0]]];
+        $result = $this->callAction($this->container->get(JournalSettlementAction::class), 'createAdvanceDeductions', 'POST', 'accountant',
+            ['groups' => [$row($a1), $row($a2), $row($a1)]]);
+        self::assertSame(201, $result['status']);
+        self::assertCount(2, $result['body']['created']);
+        self::assertCount(1, $result['body']['failed']);
+        self::assertSame(2, (int) $this->db->pdo()->query(
+            "SELECT COUNT(*) FROM activity_log WHERE action = 'accounting.saldo_advance_deduction_created' AND supplier_id = {$this->supplierId}"
+        )->fetchColumn());
+    }
+
     // ── pomocníci ────────────────────────────────────────────────────────────
+
+    private function assertLinkRejected(callable $call): void
+    {
+        try {
+            $call();
+            self::fail('Vazba měla být odmítnuta.');
+        } catch (\RuntimeException $e) {
+            self::assertStringContainsString('saldokont', $e->getMessage());
+        }
+    }
+
+    /**
+     * Řádky seznamu dokladů podle id (seznam je seskupený po měsících).
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    private function listedRows(array $result): array
+    {
+        $out = [];
+        $walk = function (mixed $node) use (&$walk, &$out): void {
+            if (!is_array($node)) return;
+            if (isset($node['id'], $node['status']) && is_numeric($node['id'])) {
+                $out[(int) $node['id']] = $node;
+            }
+            foreach ($node as $child) $walk($child);
+        };
+        $walk($result);
+        return $out;
+    }
 
     /** Zálohová přijatá faktura zaplacená bankou na 314 (314 MD / 221 D). */
     private function paidPurchaseAdvance(string $number, int $vendor, float $amount, ?string $date = null): int

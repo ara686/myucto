@@ -14,6 +14,7 @@ use MyInvoice\Security\ProjectAssignmentAccess;
 use MyInvoice\Service\Invoice\OverduePolicy;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
+use MyInvoice\Support\Sql\AdvanceSettledSql;
 
 final class GetClientAction
 {
@@ -189,8 +190,7 @@ final class GetClientAction
                 AND pi.status NOT IN ('draft', 'cancelled')
                 AND NOT (COALESCE(pi.document_kind, '') = 'advance'
                          AND (pi.status = 'paid'
-                              OR EXISTS (SELECT 1 FROM purchase_invoices adv_s
-                                          WHERE adv_s.advance_purchase_invoice_id = pi.id)))
+                              OR " . AdvanceSettledSql::purchase('pi') . "))
                 AND COALESCE(pi.document_kind, '') <> 'tax_document'
                 AND pi.issue_date >= DATE_SUB(CURDATE(), INTERVAL 24 MONTH)
               GROUP BY month, cur.code
@@ -220,8 +220,7 @@ final class GetClientAction
                 AND pi.status NOT IN ('draft', 'cancelled')
                 AND NOT (COALESCE(pi.document_kind, '') = 'advance'
                          AND (pi.status = 'paid'
-                              OR EXISTS (SELECT 1 FROM purchase_invoices adv_s
-                                          WHERE adv_s.advance_purchase_invoice_id = pi.id)))
+                              OR " . AdvanceSettledSql::purchase('pi') . "))
                 AND COALESCE(pi.document_kind, '') <> 'tax_document'
               GROUP BY year, cur.code
               ORDER BY year DESC"

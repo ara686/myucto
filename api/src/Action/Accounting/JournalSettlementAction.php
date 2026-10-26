@@ -276,21 +276,23 @@ final class JournalSettlementAction
         foreach ($groups as $index => $group) {
             try {
                 $rows = is_array($group) ? ($group['deductions'] ?? null) : null;
-                $created = [...$created, ...$this->advances->deduct($supplierId, is_array($rows) ? $rows : [], $userId)];
+                $done = $this->advances->deduct($supplierId, is_array($rows) ? $rows : [], $userId);
             } catch (JournalSettlementException $e) {
                 if (!$batch) return Json::error($response, $e->errorCode, $e->getMessage(), $e->httpStatus);
                 $failed[] = ['index' => $index, 'code' => $e->errorCode, 'message' => $e->getMessage()];
+                continue;
             } catch (\Throwable $e) {
                 return $this->mapError($response, $e);
             }
-        }
-        if ($created !== []) {
+            // Každá skupina je samostatná potvrzená transakce: audit hned po ní, aby potvrzené
+            // čerpání bez záznamu nezůstalo ani při chybě některé další skupiny.
             $this->audit($request, 'accounting.saldo_advance_deduction_created', null, [
                 'deductions' => array_map(static fn (array $d): array => [
                     'id' => $d['id'], 'doc_type' => $d['doc_type'], 'advance_id' => $d['advance_id'],
                     'final_id' => $d['final_id'], 'amount' => $d['amount'],
-                ], $created),
+                ], $done),
             ], $supplierId);
+            $created = [...$created, ...$done];
         }
         return Json::ok($response, ['created' => $created, 'failed' => $failed], $created === [] ? 200 : 201);
     }

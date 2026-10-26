@@ -20,7 +20,8 @@ import SortableTh from '@/components/ui/SortableTh.vue'
 import DateInput from '@/components/ui/DateInput.vue'
 import SaldoAdvanceInfo from '@/components/accounting/SaldoAdvanceInfo.vue'
 import { useAuthStore } from '@/stores/auth'
-import { SUGGEST_ACCOUNTS, isAdvanceAccount, isSettleable, type SaldoSettleTarget } from '@/components/accounting/saldoSettle'
+import { ADVANCE_ACCOUNTS, SUGGEST_ACCOUNTS, isAdvanceAccount, isSettleable, type SaldoSettleTarget } from '@/components/accounting/saldoSettle'
+import SaldoAdvanceIssues from '@/components/accounting/SaldoAdvanceIssues.vue'
 
 const SaldoSettleDialog = defineAsyncComponent(() => import('@/components/accounting/SaldoSettleDialog.vue'))
 const SaldoAdvanceSettleDialog = defineAsyncComponent(() => import('@/components/accounting/SaldoAdvanceSettleDialog.vue'))
@@ -216,7 +217,7 @@ async function fetchReport(): Promise<SaldoReport> {
     ...parts[0],
     accounts: parts
       .flatMap(p => p.accounts)
-      .filter(b => Math.round(b.gl_balance * 100) !== 0 || b.partners.length > 0),
+      .filter(b => Math.round(b.gl_balance * 100) !== 0 || b.partners.length > 0 || (b.advance_deduction_issues?.length ?? 0) > 0),
   }
 }
 
@@ -321,7 +322,6 @@ function openSettlePartner(it: SaldoItem, b: SaldoAccountBlock, partnerId: numbe
 function canSettleItem(it: SaldoItem, accountCode: string) {
   return canSettle.value && isSettleable(it, accountCode)
 }
-
 function onSettleDone() {
   settleTargets.value = null
   residualFor.value = null
@@ -601,6 +601,8 @@ onMounted(async () => {
                 {{ t('accounting.saldo_settle.residual_open') }}
               </button>
             </div>
+            <SaldoAdvanceIssues v-if="b.advance_deduction_issues?.length && ADVANCE_ACCOUNTS[b.account.code]"
+              :issues="b.advance_deduction_issues" :doc-type="ADVANCE_ACCOUNTS[b.account.code]" />
           </div>
         </div>
 
@@ -737,6 +739,8 @@ onMounted(async () => {
             {{ t('accounting.saldo_settle.residual_open') }}
           </button>
         </div>
+        <SaldoAdvanceIssues v-if="b.advance_deduction_issues?.length && ADVANCE_ACCOUNTS[b.account.code]"
+          :issues="b.advance_deduction_issues" :doc-type="ADVANCE_ACCOUNTS[b.account.code]" />
 
         <EmptyState v-if="b.partners.length === 0" dense accent="success" icon="checkCircle" :title="t('accounting.saldo.no_open_items')" />
 

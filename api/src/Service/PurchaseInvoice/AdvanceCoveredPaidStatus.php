@@ -30,6 +30,11 @@ use PDO;
  *      storno pokladny), vrací se konečná faktura do stavu před úhradou (zaúčtovaná →
  *      `booked`, jinak `received`), stejně jako po zrušení vlastní úhrady.
  *
+ * Čerpání zálohy po dvojicích (`purchase_advance_deductions`, převod nebo Vyrovnat
+ * v saldokontu) sem záměrně nepatří: nemění `advance_paid_amount` ani `amount_to_pay`
+ * konečné faktury, takže úhradu faktury nekryje. Je to účetní přiřazení odpočtu na 314;
+ * stav „uhrazeno" konečné faktury dál nese její vlastní úhrada nebo vazba na zálohu.
+ *
  * Volá se ze stejných míst, která mění úhradu zálohy a dorovnávají zúčtování
  * ({@see \MyInvoice\Service\Accounting\AdvanceSettlementSync}): bankovní párování a jeho
  * zrušení, pokladní úhrada, její storno a smazání. Běží v transakci volajícího.

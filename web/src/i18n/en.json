@@ -17828,7 +17828,9 @@
       "advance_submit": "Settle by deduction",
       "advance_saved": "Deductions recorded: {count}",
       "advance_period_closed_confirm": "The final invoice is posted in a closed accounting period. The deduction changes the ledger from the day it was posted (the general ledger stays unchanged). Continue as administrator?",
-      "advance_final_label": "final invoice {doc}"
+      "advance_final_label": "final invoice {doc}",
+      "advance_issues_hint": "Advance deductions of these final invoices exceed their advance deduction in the journal (invoice re-posted with a smaller deduction, or a deduction from data migration). The ledger closes advances by deductions the general ledger does not carry: adjust the deduction in the Settle dialog of the advance, or correct the invoice posting.",
+      "advance_issue_excess": "overdrawn by {amount}"
     },
     "account_statement": {
       "title": "Account statement",

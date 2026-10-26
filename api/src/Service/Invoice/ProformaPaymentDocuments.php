@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MyInvoice\Service\Invoice;
 
+use MyInvoice\Repository\AdvanceDeductionRepository;
+
 /**
  * Doklad, který má vzniknout po zaúčtování platby na zálohovou fakturu.
  *
@@ -150,6 +152,12 @@ final class ProformaPaymentDocuments
         // přiznat daň na den přijetí úplaty a § 28 odst. 1 písm. d) na tentýž den
         // váže povinnost vystavit doklad. Vyúčtování s DUZP = den platby sedí jen
         // tehdy, když plnění opravdu nastalo týž den — což systém neví.
+        // Proformu už čerpanou konečnou fakturou v saldokontu (invoice_advance_deductions)
+        // automatická vyúčtovací faktura nevyúčtuje podruhé; zbytek dořeší uživatel.
+        if ($becamePaid && $mode === self::MODE_FINAL_ON_FULL_PAYMENT && $pdo !== null
+            && AdvanceDeductionRepository::advanceHasDeductions($pdo, 'invoice', $invoiceId)) {
+            return $result;
+        }
         if ($becamePaid && $mode === self::MODE_FINAL_ON_FULL_PAYMENT) {
             // DUZP finálního dokladu = den přijetí platby, ne dnešek: daň z úplaty
             // musí spadnout do období, ve kterém úplata skutečně přišla.

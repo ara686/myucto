@@ -6,7 +6,6 @@ namespace MyInvoice\Service\Accounting;
 
 use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Repository\AdvanceDeductionRepository;
-use MyInvoice\Repository\JournalSettlementRepository;
 use MyInvoice\Repository\SaldoRepository;
 
 /**
@@ -23,6 +22,10 @@ use MyInvoice\Repository\SaldoRepository;
  * ještě nečerpá jiná záloha ({@see AdvanceDeductionRepository::finals()}). Platí od
  * zaúčtování konečné faktury, takže uzavřené období hlídá zápis faktury. Doklady v cizí
  * měně se nevyrovnávají: zálohový účet nese Kč a kurzový rozdíl řeší kurzová evidence.
+ *
+ * Převody z účetních programů zapisují čerpání přes {@see importState()} a
+ * {@see recordImported()}: řídí se stejným volným odpočtem faktury a nepřepíšou čerpání,
+ * které zadal uživatel.
  */
 final class AdvanceDeductionService
 {
@@ -31,13 +34,10 @@ final class AdvanceDeductionService
     public const MAX_ROWS = 50;
     public const MAX_CANDIDATES = 50;
     private const TOLERANCE = 0.005;
-    /** Konečná faktura se pro platnost čerpání bere zaúčtovaná kdykoli (i dopředu). */
-    private const ANY_DATE = '9999-12-31';
 
     public function __construct(
         private readonly Connection $db,
         private readonly AdvanceDeductionRepository $repo,
-        private readonly JournalSettlementRepository $settlementRepo,
         private readonly SaldoRepository $saldo,
     ) {}
 
@@ -76,9 +76,9 @@ final class AdvanceDeductionService
         $supported = $advance['currency_code'] === 'CZK' && $open !== null;
         $items = [];
         if ($supported) {
-            $finals = $this->repo->finals($supplierId, $docType, $this->settlementRepo->accountFamily($supplierId, $account['id']), [$advance['partner_id']], $asOf);
+            $finals = $this->repo->finals($supplierId, $docType, $this->repo->accountFamily($supplierId, $account['id']), [$advance['partner_id']], $asOf, null, true);
             foreach ($finals as $f) {
-                if ($f['doc_id'] === $advanceId || $f['unassigned'] < self::TOLERANCE || $f['posted_on'] === null) {
+                if ($f['doc_id'] === $advanceId || $f['posted_on'] === null) {
                     continue;
                 }
                 $items[] = $this->candidate($f, $advance, $remaining);
@@ -125,7 +125,7 @@ final class AdvanceDeductionService
         $ownTx = !$pdo->inTransaction();
         // READ COMMITTED + zámky dokladů před čtením (vzor JournalSettlementService::allocate):
         // zbytek zálohy i nepřiřazená strana faktury se čtou až po zámcích, takže souběžné
-        // čerpání téže zálohy nebo faktury se seřadí a druhé vidí to první.
+        // čerpání téže zálohy nebo faktury i ruční vazba zálohy se seřadí a druhé vidí to první.
         if ($ownTx) $pdo->exec('SET TRANSACTION ISOLATION LEVEL READ COMMITTED');
         if ($ownTx) $pdo->beginTransaction();
         try {
@@ -143,13 +143,11 @@ final class AdvanceDeductionService
                 }
             }
             $account = $this->account($supplierId, self::accountForDocType($docType));
-            $family = $this->settlementRepo->accountFamily($supplierId, $account['id']);
-            $partners = array_values(array_unique(array_map(static fn (int $id): int => $docs[$id]['partner_id'], $finalIds)));
-            $finals = $this->repo->finals($supplierId, $docType, $family, $partners, self::ANY_DATE, $finalIds);
+            $family = $this->repo->accountFamily($supplierId, $account['id']);
+            $finals = $this->repo->finals($supplierId, $docType, $family, null, AdvanceDeductionRepository::ANY_DATE, $finalIds);
 
             $byFinal = [];
             $byAdvance = [];
-            $advanceDates = [];
             foreach ($rows as $r) {
                 $advance = $docs[$r['advance_id']];
                 $finalDoc = $docs[$r['final_id']];
@@ -164,18 +162,24 @@ final class AdvanceDeductionService
                 }
                 $byFinal[$r['final_id']] = ($byFinal[$r['final_id']] ?? 0.0) + $r['amount'];
                 $byAdvance[$r['advance_id']] = ($byAdvance[$r['advance_id']] ?? 0.0) + $r['amount'];
-                $advanceDates[$r['advance_id']] = max($advanceDates[$r['advance_id']] ?? '', $final['posted_on']);
             }
             foreach ($byFinal as $finalId => $total) {
-                $free = $finals[$finalId]['unassigned'];
+                $free = max(0.0, $finals[$finalId]['unassigned']);
                 if ($total > $free + self::TOLERANCE) {
                     throw new JournalSettlementException('final_overdeducted',
                         'Faktura ' . $docs[$finalId]['doc_no'] . ' má nepřiřazený odpočet zálohy jen ' . self::money($free) . ' Kč.', 409);
                 }
             }
+            // Zbytek zálohy se bere k nejpozdějšímu dni, od kterého platí kterékoli její čerpání
+            // (nové i zapsané dřív): čerpání fakturou zaúčtovanou dopředu by k dnešku ještě
+            // neplatilo a záloha by šla čerpat znovu.
+            $validFrom = $this->latestDeductionDates($supplierId, $docType, array_keys($byAdvance));
+            foreach ($rows as $r) {
+                $validFrom[$r['advance_id']] = max($validFrom[$r['advance_id']] ?? '', (string) $finals[$r['final_id']]['posted_on']);
+            }
             $today = date('Y-m-d');
             foreach ($byAdvance as $advanceId => $total) {
-                $remaining = $this->remaining($supplierId, $docs[$advanceId], $account, max($today, $advanceDates[$advanceId]));
+                $remaining = $this->remaining($supplierId, $docs[$advanceId], $account, max($today, $validFrom[$advanceId] ?? ''));
                 if ($remaining === null || $remaining < self::TOLERANCE) {
                     throw new JournalSettlementException('advance_not_open',
                         'Záloha ' . $docs[$advanceId]['doc_no'] . ' není na účtu ' . $account['code'] . ' otevřená.', 409);
@@ -200,7 +204,6 @@ final class AdvanceDeductionService
                     'advance_id' => $r['advance_id'],
                     'final_id'   => $r['final_id'],
                     'amount'     => $r['amount'],
-                    'posted_entry_id' => $finals[$r['final_id']]['posted_entry_id'],
                 ];
             }
             if ($ownTx) $pdo->commit();
@@ -238,6 +241,95 @@ final class AdvanceDeductionService
     }
 
     /**
+     * Stav konečných faktur pro převod z účetního programu: kolik strany čerpání na
+     * zálohovém účtu má faktura zaúčtováno (`deductible`), kolik z ní drží vazba na zálohu
+     * (`linked_share`) a řádky čerpání ze všech zdrojů (`deducted`), kolik zbývá
+     * (`unassigned`) a zda je faktura zaúčtovaná (`posted`). Faktura bez zaúčtované strany
+     * čerpání ve výsledku je s nulami a `posted = false`, pokud nemá živý zápis vůbec.
+     *
+     * @param list<int> $finalIds
+     * @return array<int,array{deductible:float, linked_share:float, deducted:float, unassigned:float, posted:bool}>
+     */
+    public function importState(int $supplierId, string $docType, array $finalIds): array
+    {
+        $account = $this->account($supplierId, self::accountForDocType($docType));
+        $finals = $this->repo->finals($supplierId, $docType, $this->repo->accountFamily($supplierId, $account['id']), null, AdvanceDeductionRepository::ANY_DATE, $finalIds);
+        $posted = $this->repo->postedEntries($supplierId, $docType, $finalIds);
+        $deducted = $this->repo->deductedByFinal($supplierId, $docType, $finalIds);
+        $out = [];
+        foreach (array_values(array_unique(array_map('intval', $finalIds))) as $id) {
+            $f = $finals[$id] ?? null;
+            $out[$id] = [
+                'deductible'   => $f['deductible'] ?? 0.0,
+                'linked_share' => $f['linked_share'] ?? 0.0,
+                'deducted'     => $f['deducted'] ?? ($deducted[$id] ?? 0.0),
+                'unassigned'   => $f['unassigned'] ?? round(-($deducted[$id] ?? 0.0), 2),
+                'posted'       => isset($posted[$id]),
+            ];
+        }
+        return $out;
+    }
+
+    /**
+     * Čerpání zálohy převzaté z převodu (`source = import`). Rozhoduje deterministicky:
+     *   - dvojice už existuje (ze saldokonta i z dřívějšího běhu převodu) → nic se nemění
+     *     a vrací se 0; ruční čerpání uživatele převod nepřepíše ani nenavýší,
+     *   - faktura je zaúčtovaná se stranou čerpání → zapíše se nejvýš její volný odpočet
+     *     (bez vazby na zálohu a bez čerpání ostatních záloh, všech zdrojů),
+     *   - faktura ještě zaúčtovaná není (převod deník doplní později) → zapíše se celá částka;
+     *     přečerpání po zaúčtování ukáže kontrola {@see deductionIssues()}.
+     * Zamyká zálohu i fakturu stejně jako ruční čerpání. Vrací skutečně zapsanou částku.
+     */
+    public function recordImported(int $supplierId, string $docType, int $finalId, int $advanceId, float $amount, ?int $userId): float
+    {
+        self::accountForDocType($docType);
+        $amount = round($amount, 2);
+        if ($amount < 0.01 || $finalId <= 0 || $advanceId <= 0 || $finalId === $advanceId) {
+            return 0.0;
+        }
+        $pdo = $this->db->pdo();
+        $ownTx = !$pdo->inTransaction();
+        if ($ownTx) $pdo->beginTransaction();
+        try {
+            $this->repo->lockDocuments($supplierId, $docType, [$finalId, $advanceId]);
+            if (count($this->repo->documents($supplierId, $docType, [$finalId, $advanceId])) !== 2
+                || $this->repo->pair($supplierId, $docType, $finalId, $advanceId) !== null) {
+                if ($ownTx) $pdo->commit();
+                return 0.0;
+            }
+            $state = $this->importState($supplierId, $docType, [$finalId])[$finalId];
+            $write = $state['posted'] && $state['deductible'] >= self::TOLERANCE
+                ? round(min($amount, max(0.0, $state['unassigned'])), 2)
+                : $amount;
+            if ($write >= 0.01) {
+                $this->repo->insert($supplierId, $docType, $finalId, $advanceId, $write, $userId, 'import');
+            }
+            if ($ownTx) $pdo->commit();
+            return $write >= 0.01 ? $write : 0.0;
+        } catch (\Throwable $e) {
+            if ($ownTx && $pdo->inTransaction()) $pdo->rollBack();
+            throw $e;
+        }
+    }
+
+    /**
+     * Konečné faktury, jejichž čerpání záloh přesahuje stranu čerpání živého zaúčtování
+     * (přeúčtování s menším odpočtem, odpočet na jiném účtu, převod nad rámec zápisu).
+     * Saldokonto by zálohy uzavřelo o čerpání, které hlavní kniha nenese.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function deductionIssues(int $supplierId, string $accountCode): array
+    {
+        $docType = self::docTypeForAccount($accountCode);
+        $account = $this->saldo->resolveAccount($supplierId, $accountCode);
+        if ($account === null) {
+            return [];
+        }
+        return $this->repo->overdeductedFinals($supplierId, $docType, $this->repo->accountFamily($supplierId, $account['id']));
+    }
+
+    /**
      * Zápisy konečných faktur, které leží v uzavřeném období (čerpání mění saldokonto od
      * jejich zaúčtování).
      *
@@ -256,25 +348,36 @@ final class AdvanceDeductionService
     }
 
     /**
-     * Stav uzavřeného období zápisu konečné faktury čerpání, nebo null.
+     * Uzavřené období, ve kterém čerpání saldokonto ovlivnilo, nebo null. Bere všechny
+     * zápisy skupiny zaúčtování konečné faktury včetně stornovaných: čerpání platilo od
+     * stornovaného zápisu až do dne storna, a to mohlo být až po uzavřeném období.
      *
      * @return array{entry_id:int, period_status:string}|null
      */
     public function closedPeriodOfDeduction(int $supplierId, string $docType, int $id): ?array
     {
         $row = $this->repo->find($supplierId, $docType, $id);
-        return $row === null ? null : ($this->closedPeriodEntries($supplierId, $docType, [$row['final_id']])[0] ?? null);
+        if ($row === null) {
+            return null;
+        }
+        foreach ($this->repo->finalEntries($supplierId, $docType, [$row['final_id']], null)[$row['final_id']] ?? [] as $entry) {
+            if ($entry['period_status'] !== null && AccountingPeriodStatus::isClosed($entry['period_status'])) {
+                return ['entry_id' => $entry['entry_id'], 'period_status' => $entry['period_status']];
+            }
+        }
+        return null;
     }
 
     /**
      * Návrh párování na zálohovém účtu: jisté shody záloha × konečná faktura téhož partnera.
      *   - číslo zálohy je v textu právě jedné faktury s nepřiřazeným odpočtem
      *     (`advance_doc_no`, čerpá se zbytek zálohy, nejvýš nepřiřazený odpočet),
-     *   - nepřiřazený odpočet právě jedné faktury partnera se rovná zbytku zálohy
-     *     (`advance_amount`),
-     *   - mezi touto a další zálohou partnera (podle data vystavení) leží jediná faktura
-     *     s nepřiřazeným odpočtem a ten se rovná zbytku zálohy (`advance_sequence`,
-     *     pravidelné zálohy stejné výše čerpané následující fakturou).
+     *   - nepřiřazený odpočet právě jedné faktury partnera vystavené po záloze se rovná
+     *     zbytku zálohy (`advance_amount`),
+     *   - mezi touto a další zálohou partnera (podle data vystavení, ze všech jeho záloh
+     *     včetně vyrovnaných, nezaplacených a v cizí měně) leží jediná faktura s nepřiřazeným
+     *     odpočtem a ten se rovná zbytku zálohy (`advance_sequence`, pravidelné zálohy stejné
+     *     výše čerpané následující fakturou).
      * Faktura, na kterou návrhy dohromady přesahují její nepřiřazený odpočet, se nenavrhne nikomu.
      *
      * @param array<string,mixed> $block blok účtu ze SaldoService
@@ -288,27 +391,32 @@ final class AdvanceDeductionService
         foreach ($block['partners'] as $partner) {
             foreach ($partner['items'] as $it) {
                 if ($it['doc_type'] !== $docType || empty($it['settleable']) || ($it['kind'] ?? 'document') !== 'document'
-                    || $it['currency_code'] !== 'CZK' || $it['remaining_czk'] < self::TOLERANCE) {
+                    || $it['currency_code'] !== 'CZK') {
                     continue;
                 }
-                $advances[(int) $it['doc_id']] = [
-                    'doc_id'       => (int) $it['doc_id'],
+                $id = (int) $it['doc_id'];
+                // Tentýž doklad může být v saldu víckrát (počáteční stav a pozdější úhrada):
+                // zbytek zálohy je součet jeho položek.
+                $advances[$id] ??= [
+                    'doc_id'       => $id,
                     'doc_no'       => (string) $it['doc_no'],
                     'partner_id'   => (int) $partner['partner_id'],
                     'partner_name' => (string) $partner['partner_name'],
                     'issue_date'   => (string) $it['issue_date'],
-                    'remaining'    => round((float) $it['remaining_czk'], 2),
+                    'remaining'    => 0.0,
                 ];
+                $advances[$id]['remaining'] = round($advances[$id]['remaining'] + (float) $it['remaining_czk'], 2);
             }
         }
+        $advances = array_filter($advances, static fn (array $a): bool => $a['remaining'] >= self::TOLERANCE);
         if ($advances === []) {
             return [];
         }
         $partnerIds = array_values(array_unique(array_column($advances, 'partner_id')));
-        $family = $this->settlementRepo->accountFamily($supplierId, (int) $block['account']['id']);
+        $family = $this->repo->accountFamily($supplierId, (int) $block['account']['id']);
         $finalsByPartner = [];
-        foreach ($this->repo->finals($supplierId, $docType, $family, $partnerIds, $asOf) as $f) {
-            if ($f['unassigned'] >= self::TOLERANCE && $f['posted_on'] !== null && !isset($advances[$f['doc_id']])) {
+        foreach ($this->repo->finals($supplierId, $docType, $family, $partnerIds, $asOf, null, true) as $f) {
+            if ($f['posted_on'] !== null && !isset($advances[$f['doc_id']])) {
                 $f['tokens'] = self::tokens($f['texts']);
                 $finalsByPartner[$f['partner_id']][$f['doc_id']] = $f;
             }
@@ -317,15 +425,9 @@ final class AdvanceDeductionService
         foreach ($this->repo->documents($supplierId, $docType, array_keys($advances)) as $id => $doc) {
             $numbers[$id] = array_map([self::class, 'token'], $doc['numbers']);
         }
-
-        // Den vystavení další zálohy téhož partnera (stejný den = nerozlišitelné pořadí).
+        // Den vystavení další zálohy téhož partnera ze všech jeho záloh (stejný den = nerozlišitelné pořadí).
         $nextDate = [];
-        $byPartner = [];
-        foreach ($advances as $id => $a) {
-            $byPartner[$a['partner_id']][] = $a;
-        }
-        foreach ($byPartner as $list) {
-            usort($list, static fn (array $x, array $y): int => [$x['issue_date'], $x['doc_id']] <=> [$y['issue_date'], $y['doc_id']]);
+        foreach ($this->repo->advanceDates($supplierId, $docType, $partnerIds) as $list) {
             foreach ($list as $i => $a) {
                 if (isset($list[$i + 1])) {
                     $nextDate[$a['doc_id']] = $list[$i + 1]['issue_date'];
@@ -348,9 +450,11 @@ final class AdvanceDeductionService
                 continue;
             }
             if ($named !== []) continue;
-            $exact = array_values(array_filter($finals, static fn (array $f): bool => abs($f['unassigned'] - $a['remaining']) < self::TOLERANCE));
-            if (count($exact) === 1) {
-                $proposals[] = ['reason' => 'advance_amount', 'advance' => $a, 'final' => $exact[0], 'amount' => $a['remaining']];
+            $exact = array_values(array_filter($finals, static fn (array $f): bool =>
+                abs($f['unassigned'] - $a['remaining']) < self::TOLERANCE));
+            $exactAfter = array_values(array_filter($exact, static fn (array $f): bool => $f['issue_date'] >= $a['issue_date']));
+            if (count($exact) === 1 && count($exactAfter) === 1) {
+                $proposals[] = ['reason' => 'advance_amount', 'advance' => $a, 'final' => $exactAfter[0], 'amount' => $a['remaining']];
                 continue;
             }
             // Pravidelné zálohy (energie, nájem): stejnou částku čerpá víc faktur, jistá je
@@ -399,6 +503,34 @@ final class AdvanceDeductionService
     }
 
     /**
+     * Nejpozdější den, od kterého platí zapsané čerpání záloh (podle zaúčtování jejich
+     * konečných faktur kdykoli, i dopředu).
+     *
+     * @param list<int> $advanceIds
+     * @return array<int,string>
+     */
+    private function latestDeductionDates(int $supplierId, string $docType, array $advanceIds): array
+    {
+        $rows = $this->repo->deductionsOfAdvances($supplierId, $docType, $advanceIds);
+        $finalIds = [];
+        foreach ($rows as $list) {
+            foreach ($list as $r) {
+                $finalIds[] = $r['final_id'];
+            }
+        }
+        $posted = $this->repo->postedEntries($supplierId, $docType, $finalIds);
+        $out = [];
+        foreach ($rows as $advanceId => $list) {
+            foreach ($list as $r) {
+                if (isset($posted[$r['final_id']])) {
+                    $out[$advanceId] = max($out[$advanceId] ?? '', $posted[$r['final_id']]['entry_date']);
+                }
+            }
+        }
+        return $out;
+    }
+
+    /**
      * @param array<string,mixed> $final
      * @param array<string,mixed> $advance
      * @return array<string,mixed>
@@ -407,14 +539,13 @@ final class AdvanceDeductionService
     {
         $tokens = self::tokens($final['texts']);
         $numbers = array_map([self::class, 'token'], $advance['numbers']);
-        $posted = (string) $final['posted_on'];
         $issued = (string) $final['issue_date'];
         return [
             'doc_type'      => $advance['doc_type'],
             'doc_id'        => $final['doc_id'],
             'doc_no'        => $final['doc_no'],
-            'issue_date'    => $final['issue_date'],
-            'posted_on'     => $posted,
+            'issue_date'    => $issued,
+            'posted_on'     => (string) $final['posted_on'],
             'deductible'    => $final['deductible'],
             'deducted'      => $final['deducted'],
             'linked'        => $final['linked'],
@@ -507,7 +638,7 @@ final class AdvanceDeductionService
                 $out[self::token($word)] = true;
             }
         }
-        return array_keys($out);
+        return array_map('strval', array_keys($out));
     }
 
     private static function token(string $value): string

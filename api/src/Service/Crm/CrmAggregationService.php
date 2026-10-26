@@ -23,6 +23,7 @@ use MyInvoice\Service\Tax\Return\TaxReturnService;
 use MyInvoice\Service\Tax\VatPaymentInstruction;
 use MyInvoice\Service\Vat\VatStatusService;
 use MyInvoice\Support\Sql\PayablePredicate;
+use MyInvoice\Support\Sql\AdvanceSettledSql;
 
 /**
  * CRM dashboard aggregation queries.
@@ -164,8 +165,7 @@ final class CrmAggregationService
     {
         return " AND NOT (COALESCE(pi.document_kind, '') = 'advance'"
              . " AND (pi.status <> 'paid'"
-             . " OR EXISTS (SELECT 1 FROM purchase_invoices adv_s"
-             . " WHERE adv_s.advance_purchase_invoice_id = pi.id)))"
+             . ' OR ' . AdvanceSettledSql::purchase('pi') . '))'
              // DDKP (daňový doklad k platbě) není náklad — jen odpočet DPH ze zálohy (343/314);
              // náklad vzniká až u vyúčtovací faktury. Bezpodmínečně ven z nákladů dodavatele.
              . " AND COALESCE(pi.document_kind, '') <> 'tax_document'";
@@ -340,8 +340,7 @@ final class CrmAggregationService
         // Záměrně `!= 'proforma'` (ne IN-list), aby se nezahodily případné jiné typy
         // (cancellation apod.), které sem padaly i dosud. Kombinuj se status filtrem.
         return "(i.invoice_type != 'proforma'"
-             . " OR NOT EXISTS (SELECT 1 FROM invoices ch"
-             . " WHERE ch.parent_invoice_id = i.id AND ch.invoice_type = 'invoice'))";
+             . ' OR NOT ' . AdvanceSettledSql::proforma('i') . ')';
     }
 
     /**
@@ -482,8 +481,7 @@ final class CrmAggregationService
                 AND " . self::REV_DATE . " >= ? AND " . self::REV_DATE . " < ?
                 AND i.invoice_type = 'proforma'
                 AND i.status IN ('issued', 'sent', 'reminded')
-                AND NOT EXISTS (SELECT 1 FROM invoices ch
-                                 WHERE ch.parent_invoice_id = i.id AND ch.invoice_type = 'invoice')
+                AND NOT " . AdvanceSettledSql::proforma('i') . "
            GROUP BY cur.code"
         );
         $prof->execute([$supplierId, $from, $toExcl]);
@@ -3165,8 +3163,7 @@ final class CrmAggregationService
                         AND i.status IN ('issued','sent','reminded')
                         AND i.due_date {$overdueOperator} CURDATE()
                         AND (i.invoice_type != 'proforma'
-                             OR NOT EXISTS (SELECT 1 FROM invoices ch
-                                             WHERE ch.parent_invoice_id = i.id AND ch.invoice_type = 'invoice'))
+                             OR NOT " . AdvanceSettledSql::proforma('i') . ")
                         AND (i.invoice_type NOT IN ('invoice','proforma','tax_document') OR i.amount_to_pay - i.paid_total > 0)"
                 );
                 $stmt->execute([$supplierId]);

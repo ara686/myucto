@@ -14752,6 +14752,10 @@ paths:
         Doklady zastoupené jen v počátečních stavech a úhrady před zaúčtováním ho nemají.
         Na zálohových účtech 314 a 324 označuje zálohu, kterou lze vyrovnat čerpáním
         konečnou fakturou (`/api/v1/accounting/saldo-settlements/advance-candidates`).
+        Blok účtu 314/324 nese navíc `advance_deduction_issues`: konečné faktury, jejichž
+        čerpání záloh (`deducted` a část navázané zálohy `linked_share`) přesahuje stranu
+        čerpání živého zaúčtování (`deductible`) o `excess` (přeúčtování faktury, čerpání
+        z převodu nad rámec zápisu).
       parameters:
         - $ref: '#/components/parameters/SupplierIdHeader'
         - { in: query, name: period_id, required: true, schema: { type: integer } }

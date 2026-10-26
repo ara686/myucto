@@ -77,7 +77,11 @@ Záloha na **314** nebo **324** zůstává otevřená, přestože ji konečná f
 3. U jedné zálohy můžete vybrat víc faktur a upravit částky. U víc záloh vyberete jednu fakturu a její odpočet rozdělíte mezi zálohy.
 4. Klikněte na **Vyrovnat čerpáním**. Záloha je vyrovnaná ode dne zaúčtování faktury a **Rozdíl** klesne o čerpanou částku. Hlavní kniha ani předvaha se nemění.
 
-Čerpání zadané v saldokontu zrušíte v dialogu **Vyrovnat** u seznamu **Čerpání zálohy**. Čerpání převzaté z převodu z jiného programu je označené **z převodu** a v saldokontu se neruší. Faktura navázaná na zálohu přímo na dokladu (vyúčtovací faktura k zálohové faktuře, konečná faktura z proformy) celý svůj odpočet přiřazuje té záloze a jiné záloze se nenabídne.
+Čerpání zadané v saldokontu zrušíte v dialogu **Vyrovnat** u seznamu **Čerpání zálohy**. Čerpání převzaté z převodu z jiného programu je označené **z převodu** a v saldokontu se neruší. Faktura navázaná na zálohu přímo na dokladu (vyúčtovací faktura k zálohové faktuře, konečná faktura z proformy) přiřazuje svůj odpočet té záloze do výše její částky; jiné záloze se nabídne jen přebytek odpočtu nad ní.
+
+Záloha čerpaná v saldokontu se už nedá propojit s fakturou na dokladu (ani vystavit konečnou fakturu z proformy) a faktura, která zálohu čerpá, se nedá propojit s další zálohou: vazba by čerpání zdvojila. Zbytek takové zálohy vyrovnejte v saldokontu. Mimo saldokonto se čerpaná záloha chová jako vyúčtovaná (nepočítá se do pohledávek ani nákladů).
+
+Když se konečná faktura po čerpání přeúčtuje s menším odpočtem zálohy (nebo převod zapsal čerpání nad rámec zápisu), ukáže blok účtu varování s fakturou a přečerpanou částkou. Čerpání pak upravte v dialogu **Vyrovnat**, nebo opravte zaúčtování faktury.
 
 ### Položka ze zůstatku bez dokladu
 
