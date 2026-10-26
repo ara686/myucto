@@ -647,6 +647,25 @@ final class StockHistoryImportLifecycleTest extends StockTestCase
         self::assertSame([$open['id']], array_column($reservations[0]['invoices'] ?? [], 'invoice_id'));
     }
 
+    /** Import počátečních zásob v jiném skladu nebo k jinému datu nevypne ruční počáteční příjemku skladu s datem D. */
+    public function testEndStateOpeningImportCountsOnlyForItsWarehouseAndDay(): void
+    {
+        $sid = $this->createSupplier();
+        $main = $this->warehouse($sid, 'HL');
+        $branch = $this->warehouse($sid, 'POB', false);
+        $a = $this->item($sid, 'ZB-100');
+        $opening = $this->receiveStock($sid, $branch, $a, '5', 100.0, '2021-03-01');
+        $stmt = $this->db->pdo()->prepare('SELECT id FROM stock_document_lines WHERE document_id = ?');
+        $stmt->execute([$opening['id']]);
+        $this->db->pdo()->prepare("INSERT INTO external_entity_map (supplier_id, connection_id, source_key, entity_type, external_id, internal_id)
+            VALUES (?, NULL, 'jiny-sklad', 'stock_opening_line', 'ZB-100', ?)")->execute([$sid, (int) $stmt->fetchColumn()]);
+        $this->receiveStock($sid, $main, $a, '10', 100.0, '2021-01-01');
+        $preview = $this->stage($sid, self::csv(['P1;prijemka;2020-01-05;HL;;ZB-100;10;50;;;;']), $this->config('2021-01-01'));
+        $state = $this->container->get(StockHistoryImportService::class)->endState($sid, $preview['id']);
+        self::assertSame(['count' => 1, 'differences' => 0], $state['totals']);
+        self::assertSame(['HL', '10.000', '10.000'], [$state['items'][0]['warehouse_code'], $state['items'][0]['history_qty'], $state['items'][0]['stock_qty']]);
+    }
+
     // ── pomocníci ────────────────────────────────────────────────────────────
 
     private function expectStale(callable $run): void
