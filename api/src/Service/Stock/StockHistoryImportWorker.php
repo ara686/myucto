@@ -47,7 +47,7 @@ final class StockHistoryImportWorker
 
     public function tickKind(int $supplierId, string $kind, int $maxBatches = 10): ?array
     {
-        if (!in_array($kind, [StockHistoryImportService::STAGE_KIND, StockHistoryImportService::APPLY_KIND], true)) {
+        if (!in_array($kind, [StockHistoryImportService::STAGE_KIND, StockHistoryImportService::APPLY_KIND, StockHistoryImportService::ROLLBACK_KIND], true)) {
             throw new \InvalidArgumentException('history_import_kind_invalid');
         }
         $job = $this->jobs->claim($supplierId, $kind);
@@ -85,9 +85,11 @@ final class StockHistoryImportWorker
                     $supplierId,
                     $job['id'],
                     $token,
-                    fn (array $current): array => $kind === StockHistoryImportService::STAGE_KIND
-                        ? $this->stage($supplierId, $current, $header, $rows)
-                        : $this->apply($supplierId, $current),
+                    fn (array $current): array => match ($kind) {
+                        StockHistoryImportService::STAGE_KIND => $this->stage($supplierId, $current, $header, $rows),
+                        StockHistoryImportService::APPLY_KIND => $this->apply($supplierId, $current),
+                        default => $this->rollback($supplierId, $current),
+                    },
                 );
                 if ($job['status'] !== 'running') {
                     return $job;
@@ -755,6 +757,45 @@ final class StockHistoryImportWorker
                 ->execute([$supplierId, $from, StockHistoryImportService::dayBefore((string) $profile['cutover_date'])]);
         }
         $pdo->prepare('UPDATE warehouses SET valuation_version = valuation_version + 1 WHERE supplier_id = ?')->execute([$supplierId]);
+    }
+
+    // ── vrácení ──────────────────────────────────────────────────────────────
+
+    /** Maže převzaté doklady od nejnovějšího po dávkách, nakonec uklidí stav a odemkne historii. */
+    private function rollback(int $supplierId, array $job): array
+    {
+        $pdo = $this->db->pdo();
+        $report = $job['report'] + ['documents_deleted' => 0];
+        $stmt = $pdo->prepare('SELECT id FROM stock_documents WHERE supplier_id = ? AND history_import_job_id = ?
+            ORDER BY id DESC LIMIT ' . self::APPLY_BATCH);
+        $stmt->execute([$supplierId, (int) $job['input']['apply_job_id']]);
+        $ids = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+        if ($ids !== []) {
+            $pdo->prepare('DELETE FROM stock_documents WHERE supplier_id = ? AND id IN (' . implode(',', array_fill(0, count($ids), '?')) . ')')
+                ->execute([$supplierId, ...$ids]);
+            $report['documents_deleted'] += count($ids);
+            return ['checkpoint' => min($job['total'], $report['documents_deleted']), 'done' => false, 'report' => $report];
+        }
+
+        $cutover = $job['input']['cutover_date'];
+        if ($cutover === null) {
+            // Bez data přechodu byl stav skladu konec historie: bez jejích dokladů je nulový.
+            $stmt = $pdo->prepare('SELECT warehouse_id, stock_item_id FROM stock_levels WHERE supplier_id = ?');
+            $stmt->execute([$supplierId]);
+            $pairs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            $this->levels->lockLevels($supplierId, $pairs);
+            $this->assertNoLiveDocuments($supplierId);
+            foreach ($pairs as $pair) {
+                $this->levels->setLevel($supplierId, (int) $pair['warehouse_id'], (int) $pair['stock_item_id'], 0, 0);
+            }
+            $this->priceJobs->enqueue($supplierId, array_column($pairs, 'stock_item_id'));
+            $pdo->prepare('DELETE FROM stock_valuation_snapshots WHERE supplier_id = ?')->execute([$supplierId]);
+        } else {
+            $pdo->prepare('DELETE FROM stock_valuation_snapshots WHERE supplier_id = ? AND cutoff_date < ?')->execute([$supplierId, $cutover]);
+        }
+        $pdo->prepare('UPDATE supplier SET stock_history_locked_until = NULL WHERE id = ?')->execute([$supplierId]);
+        $pdo->prepare('UPDATE warehouses SET valuation_version = valuation_version + 1 WHERE supplier_id = ?')->execute([$supplierId]);
+        return ['checkpoint' => $job['total'], 'done' => true, 'report' => $report];
     }
 
     private function assertNoLiveDocuments(int $supplierId): void

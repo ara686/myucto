@@ -21,7 +21,8 @@ use PDO;
  *  - historie je živý stav (bez D): firma žádné skladové doklady nemá a stav skladu
  *    po importu je konec historie.
  *
- * Firma má nejvýš jeden aktivní import; další jde až po vrácení předchozího.
+ * Firma má nejvýš jeden aktivní import; další jde až po vrácení předchozího. Vrácení
+ * smaže převzaté doklady a odemkne historii (v režimu živého stavu i vynuluje sklad).
  * Doklady se neúčtují (skladové doklady deník nikdy nezapisují), nečerpají číselnou
  * řadu, nevytvářejí rezervace ani nemění faktury, jen se na ně odkazují.
  */
@@ -29,6 +30,7 @@ final class StockHistoryImportService
 {
     public const STAGE_KIND = 'stock_history_import_stage';
     public const APPLY_KIND = 'stock_history_import_apply';
+    public const ROLLBACK_KIND = 'stock_history_import_rollback';
 
     public function __construct(
         private readonly Connection $db,
@@ -128,15 +130,69 @@ final class StockHistoryImportService
         }
     }
 
-    /** Poslední aplikace importu historie, jejíž doklady ve firmě zůstaly (nebo právě běží). */
+    /**
+     * Vrácení aktivního importu: smazání převzatých dokladů na pozadí. Bez data přechodu
+     * jde jen do prvního živého dokladu, potom by vynulovaný sklad neodpovídal dokladům.
+     */
+    public function rollback(int $supplierId, int $applyId, ?int $createdBy): array
+    {
+        $pdo = $this->db->pdo();
+        if ($pdo->inTransaction()) {
+            throw new \LogicException('Stock history rollback requires its own transaction.');
+        }
+        $pdo->beginTransaction();
+        try {
+            $pdo->prepare('SELECT id FROM supplier WHERE id = ? FOR UPDATE')->execute([$supplierId]);
+            $active = $this->active($supplierId);
+            if ($active === null || $active['id'] !== $applyId) {
+                throw new EshopException('not_found', 'Aktivní import historie nenalezen.', 404);
+            }
+            $stmt = $pdo->prepare("SELECT 1 FROM catalog_jobs WHERE supplier_id = ? AND kind = ? AND status IN ('queued','running') LIMIT 1");
+            $stmt->execute([$supplierId, self::ROLLBACK_KIND]);
+            if (in_array($active['status'], ['queued', 'running'], true) || $stmt->fetchColumn() !== false) {
+                throw new EshopException('job_state_conflict', 'Import nebo jeho vrácení ještě běží.', 409);
+            }
+            $cutover = $active['input']['profile']['cutover_date'];
+            if ($cutover === null) {
+                $live = $pdo->prepare("SELECT 1 FROM stock_documents
+                    WHERE supplier_id = ? AND history_import_job_id IS NULL AND status IN ('posted','reversed') LIMIT 1");
+                $live->execute([$supplierId]);
+                if ($live->fetchColumn() !== false) {
+                    throw new StockException('history_import_live_documents', 'Po převzetí historie už firma zaúčtovala vlastní skladový doklad, import bez data přechodu proto nejde vrátit.', 409);
+                }
+            }
+            $count = $pdo->prepare('SELECT COUNT(*) FROM stock_documents WHERE supplier_id = ? AND history_import_job_id = ?');
+            $count->execute([$supplierId, $applyId]);
+            $id = $this->jobs->enqueue($supplierId, self::ROLLBACK_KIND, [
+                'apply_job_id' => $applyId,
+                'cutover_date' => $cutover,
+                'date_from' => $active['input']['date_from'],
+            ], (int) $count->fetchColumn(), createdBy: $createdBy);
+            $pdo->commit();
+            return $this->jobs->find($supplierId, $id);
+        } catch (\Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * Aktivní import = poslední aplikace, která běží, nechala ve firmě doklady, nebo
+     * po ní zůstala zamčená historie (selhání před prvním dokladem). Vrácení obojí uklidí.
+     */
     public function active(int $supplierId): ?array
     {
-        $stmt = $this->db->pdo()->prepare("SELECT GREATEST(
-                COALESCE((SELECT MAX(id) FROM catalog_jobs WHERE supplier_id = ? AND kind = ? AND status IN ('queued','running')), 0),
-                COALESCE((SELECT MAX(history_import_job_id) FROM stock_documents WHERE supplier_id = ?), 0))");
-        $stmt->execute([$supplierId, self::APPLY_KIND, $supplierId]);
-        $id = (int) $stmt->fetchColumn();
-        return $id === 0 ? null : $this->jobs->find($supplierId, $id);
+        $stmt = $this->db->pdo()->prepare("SELECT j.id FROM catalog_jobs j
+            JOIN supplier s ON s.id = j.supplier_id
+            WHERE j.supplier_id = ? AND j.kind = ?
+              AND (j.status IN ('queued','running') OR s.stock_history_locked_until IS NOT NULL
+                OR EXISTS (SELECT 1 FROM stock_documents d WHERE d.supplier_id = j.supplier_id AND d.history_import_job_id = j.id))
+            ORDER BY j.id DESC LIMIT 1");
+        $stmt->execute([$supplierId, self::APPLY_KIND]);
+        $id = $stmt->fetchColumn();
+        return $id === false ? null : $this->jobs->find($supplierId, (int) $id);
     }
 
     public static function dayBefore(string $date): string

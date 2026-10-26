@@ -22261,6 +22261,22 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { description: Náhled není dokončený, obsahuje chybu nebo zápor, chybí potvrzení uzavřeného období nebo firma už má aktivní import }
 
+  /api/v1/stock/history-import/{id}/rollback:
+    parameters:
+    - $ref: '#/components/parameters/SupplierIdHeader'
+    - { in: path, name: id, required: true, schema: { type: integer, minimum: 1 }, description: ID aplikační úlohy aktivního importu }
+    post:
+      tags: [Stock]
+      summary: Zařadí vrácení importu historie skladu (jen správce firmy)
+      description: |
+        Smaže převzaté doklady včetně vyrovnávací výdejky a technických příjemek a odemkne historii.
+        Import bez data přechodu navíc vynuluje stav skladu; po prvním vlastním skladovém dokladu firmy ho vrátit nejde.
+      responses:
+        '202': { description: Trvalá úloha vrácení, content: { application/json: { schema: { $ref: '#/components/schemas/CatalogJob' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Import nebo jeho vrácení ještě běží, nebo firma po importu bez data přechodu zaúčtovala vlastní doklad }
+
   /api/v1/stock/history-import/jobs/{id}:
     parameters:
     - $ref: '#/components/parameters/SupplierIdHeader'

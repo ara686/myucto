@@ -321,6 +321,81 @@ final class StockHistoryImportWorkflowTest extends StockTestCase
         self::assertSame('completed', $this->applyAll($sid, $preview['id'], true)['status']);
     }
 
+    /**
+     * Vrácení importu s datem přechodu smaže převzaté doklady včetně vyrovnání, odemkne
+     * historii a živý stav nechá beze změny; pak jde import spustit znovu.
+     */
+    public function testRollbackBeforeCutoverRemovesHistoryAndUnlocks(): void
+    {
+        $sid = $this->createSupplier();
+        $main = $this->warehouse($sid, 'HL');
+        $a = $this->item($sid, 'ZB-100');
+        $this->receiveStock($sid, $main, $a, '10', 100.0, '2099-01-01');
+        $levelBefore = $this->level($sid, $main, $a);
+        $csv = self::csv(['P1;prijemka;2098-01-05;HL;;ZB-100;5;50;;;;', 'V1;vydejka;2098-02-01;HL;;ZB-100;2;;;;;']);
+        $applied = $this->applyAll($sid, $this->stage($sid, $csv, $this->config('2099-01-01'))['id']);
+        self::assertCount(3, $this->historyDocuments($sid));
+
+        $service = $this->container->get(StockHistoryImportService::class);
+        $rollback = $service->rollback($sid, $applied['id'], $this->userId);
+        try {
+            $service->rollback($sid, $applied['id'], $this->userId);
+            self::fail('Druhé vrácení téhož importu musí selhat.');
+        } catch (EshopException $e) {
+            self::assertSame('job_state_conflict', $e->errorCode);
+        }
+        $done = $this->drain($sid, StockHistoryImportService::ROLLBACK_KIND, $rollback['id']);
+        self::assertSame('completed', $done['status']);
+        self::assertSame(3, $done['report']['documents_deleted']);
+
+        self::assertSame([], $this->historyDocuments($sid));
+        self::assertSame($levelBefore, $this->level($sid, $main, $a));
+        self::assertNull($service->active($sid));
+        $locked = $this->db->pdo()->prepare('SELECT stock_history_locked_until FROM supplier WHERE id = ?');
+        $locked->execute([$sid]);
+        self::assertNull($locked->fetchColumn());
+        $snapshots = $this->db->pdo()->prepare("SELECT COUNT(*) FROM stock_valuation_snapshots WHERE supplier_id = ? AND cutoff_date < '2099-01-01'");
+        $snapshots->execute([$sid]);
+        self::assertSame(0, (int) $snapshots->fetchColumn());
+
+        $this->receiveStock($sid, $main, $a, '1', 1.0, '2098-12-31');
+        self::assertSame('completed', $this->applyAll($sid, $this->stage($sid, self::csv(['P2;prijemka;2098-01-05;HL;;ZB-100;5;50;;;;']), $this->config('2098-12-31'))['id'])['status']);
+    }
+
+    /**
+     * Vrácení živého stavu vynuluje sklad. Jakmile firma po importu zaúčtovala vlastní
+     * doklad, vrácení odmítne: stav skladu by přestal odpovídat dokladům.
+     */
+    public function testRollbackOfLiveStateZeroesStockAndRefusesAfterLiveDocuments(): void
+    {
+        $service = $this->container->get(StockHistoryImportService::class);
+        $csv = self::csv(['P1;receipt;2098-01-05;HL;;ZB-100;10;50;;;;', 'V1;issue;2098-03-01;HL;;ZB-100;4;;;;;']);
+
+        $sid = $this->createSupplier();
+        $main = $this->warehouse($sid, 'HL');
+        $a = $this->item($sid, 'ZB-100');
+        $applied = $this->applyAll($sid, $this->stage($sid, $csv, $this->config(null))['id']);
+        self::assertSame(['qtyT' => 6000, 'valueC' => 30000], $this->level($sid, $main, $a));
+        $done = $this->drain($sid, StockHistoryImportService::ROLLBACK_KIND, $service->rollback($sid, $applied['id'], $this->userId)['id']);
+        self::assertSame('completed', $done['status']);
+        self::assertSame(['qtyT' => 0, 'valueC' => 0], $this->level($sid, $main, $a));
+        self::assertSame([], $this->historyDocuments($sid));
+        self::assertNull($service->active($sid));
+
+        $other = $this->createSupplier();
+        $otherMain = $this->warehouse($other, 'HL');
+        $otherItem = $this->item($other, 'ZB-100');
+        $applied = $this->applyAll($other, $this->stage($other, $csv, $this->config(null))['id']);
+        $this->receiveStock($other, $otherMain, $otherItem, '1', 1.0, '2098-04-01');
+        try {
+            $service->rollback($other, $applied['id'], $this->userId);
+            self::fail('Vrácení po živém dokladu musí selhat.');
+        } catch (StockException $e) {
+            self::assertSame('history_import_live_documents', $e->errorCode);
+        }
+        self::assertCount(2, $this->historyDocuments($other));
+    }
+
     // ── pomocníci ────────────────────────────────────────────────────────────
 
     private static function csv(array $rows): string

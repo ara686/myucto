@@ -122,6 +122,24 @@ final class StockHistoryImportAction
         }, 202);
     }
 
+    /** Vrácení aktivního importu: jen správce firmy, zapíše se do auditního logu. */
+    public function rollback(Request $request, Response $response, array $args): Response
+    {
+        if (!RequestAuthorization::canRollbackStockHistoryImport($request)) {
+            return Json::error($response, 'forbidden', 'Import historie může vrátit jen správce firmy.', 403);
+        }
+        return $this->run($request, $response, function (int $supplierId) use ($request, $args): array {
+            $job = $this->imports->rollback($supplierId, (int) $args['id'], $this->userId($request));
+            $this->log($request, 'stock.history_import_rolled_back', $job['id'], [
+                'apply_job_id' => (int) $args['id'],
+                'cutover_date' => $job['input']['cutover_date'],
+                'documents' => $job['total'],
+            ]);
+            unset($job['input']);
+            return $job;
+        }, 202);
+    }
+
     private function run(Request $request, Response $response, callable $handler, int $status = 200): Response
     {
         if (!$this->requirePermission($request, $response, 'stock.documents.write', AccessLevel::WRITE, $error)) {
