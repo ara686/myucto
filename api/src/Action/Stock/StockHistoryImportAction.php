@@ -46,6 +46,7 @@ final class StockHistoryImportAction
             return [
                 'locked_until' => ($date = $stmt->fetchColumn()) === false ? null : $date,
                 'active' => $active,
+                'orphan_job_id' => $this->imports->orphan($supplierId),
                 'max_rows' => StockHistoryImportProfile::MAX_ROWS,
             ];
         });
@@ -129,11 +130,15 @@ final class StockHistoryImportAction
             return Json::error($response, 'forbidden', 'Import historie může vrátit jen správce firmy.', 403);
         }
         return $this->run($request, $response, function (int $supplierId) use ($request, $args): array {
-            $job = $this->imports->rollback($supplierId, (int) $args['id'], $this->userId($request));
+            $body = $request->getParsedBody();
+            $confirm = is_array($body) && ($body['confirm_closed_periods'] ?? false) === true;
+            $job = $this->imports->rollback($supplierId, (int) $args['id'], $this->userId($request), $confirm);
             $this->log($request, 'stock.history_import_rolled_back', $job['id'], [
                 'apply_job_id' => (int) $args['id'],
                 'cutover_date' => $job['input']['cutover_date'],
                 'documents' => $job['total'],
+                'orphan' => $job['input']['orphan'],
+                'confirm_closed_periods' => $confirm,
             ]);
             unset($job['input']);
             return $job;

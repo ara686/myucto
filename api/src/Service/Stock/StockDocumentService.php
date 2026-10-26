@@ -702,13 +702,16 @@ final class StockDocumentService
      */
     private function guardHistoryUnlocked(int $supplierId, string $docDate): void
     {
-        $stmt = $this->db->pdo()->prepare('SELECT stock_history_locked_until FROM supplier WHERE id = ?');
+        // Sdílený zámek: import historie mění hranici pod zámkem firmy, doklad ji tak nepřečte zastaralou.
+        $stmt = $this->db->pdo()->prepare('SELECT stock_history_locked_until FROM supplier WHERE id = ? LOCK IN SHARE MODE');
         $stmt->execute([$supplierId]);
         $lockedUntil = $stmt->fetchColumn();
         if (is_string($lockedUntil) && $docDate <= $lockedUntil) {
             throw new StockException(
                 'stock_history_locked',
-                'Doklad spadá do převzaté historie skladu (do ' . $lockedUntil . '). Opravu proveďte dokladem s pozdějším datem.',
+                $lockedUntil === StockHistoryImportService::LOCK_RUNNING
+                    ? 'Probíhá převzetí nebo vrácení historie skladu. Doklad zaúčtujte po jeho dokončení.'
+                    : 'Doklad spadá do převzaté historie skladu (do ' . $lockedUntil . '). Opravu proveďte dokladem s pozdějším datem.',
                 409,
                 ['doc_date' => $docDate, 'locked_until' => $lockedUntil],
             );

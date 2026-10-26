@@ -22154,7 +22154,9 @@ paths:
     get:
       tags: [Stock]
       summary: Stav převzaté historie skladových dokladů
-      description: Datum, do kterého je převzatá historie uzamčená, poslední aktivní import a nejvyšší počet řádků souboru.
+      description: |
+        Datum, do kterého je převzatá historie uzamčená (9999-12-31 během převzetí nebo vrácení bez data přechodu),
+        poslední aktivní import, osiřelá historie bez úlohy a nejvyšší počet řádků souboru.
       responses:
         '200':
           description: Stav importu historie
@@ -22165,6 +22167,9 @@ paths:
                 properties:
                   locked_until: { type: [string, 'null'], format: date }
                   active: { oneOf: [{ $ref: '#/components/schemas/CatalogJob' }, { type: 'null' }] }
+                  orphan_job_id:
+                    type: [integer, 'null']
+                    description: Převzatá historie bez aktivní úlohy (např. po obnově firmy z archivu). Id pro vrácení, 0 = jen zámek bez dokladů.
                   max_rows: { type: integer }
         '403': { $ref: '#/components/responses/Forbidden' }
 
@@ -22264,18 +22269,26 @@ paths:
   /api/v1/stock/history-import/{id}/rollback:
     parameters:
     - $ref: '#/components/parameters/SupplierIdHeader'
-    - { in: path, name: id, required: true, schema: { type: integer, minimum: 1 }, description: ID aplikační úlohy aktivního importu }
+    - { in: path, name: id, required: true, schema: { type: integer, minimum: 0 }, description: ID aplikační úlohy aktivního importu nebo orphan_job_id ze stavu }
     post:
       tags: [Stock]
       summary: Zařadí vrácení importu historie skladu (jen správce firmy)
       description: |
-        Smaže převzaté doklady včetně vyrovnávací výdejky a technických příjemek a odemkne historii.
-        Import bez data přechodu navíc vynuluje stav skladu; po prvním vlastním skladovém dokladu firmy ho vrátit nejde.
+        Smaže všechny převzaté doklady včetně vyrovnávací výdejky a technických příjemek a odemkne historii.
+        Import bez data přechodu navíc vynuluje stav skladu; po prvním vlastním skladovém dokladu firmy ho vrátit nejde
+        a do dokončení vrácení nejde zaúčtovat žádný skladový doklad.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                confirm_closed_periods: { type: boolean, description: Vědomé potvrzení mazání dokladů v uzavřeném účetním období. }
       responses:
         '202': { description: Trvalá úloha vrácení, content: { application/json: { schema: { $ref: '#/components/schemas/CatalogJob' } } } }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
-        '409': { description: Import nebo jeho vrácení ještě běží, nebo firma po importu bez data přechodu zaúčtovala vlastní doklad }
+        '409': { description: Import nebo jeho vrácení ještě běží, chybí potvrzení uzavřeného období, nebo firma po importu bez data přechodu zaúčtovala vlastní doklad }
 
   /api/v1/stock/history-import/jobs/{id}:
     parameters:
@@ -22310,6 +22323,7 @@ paths:
     post:
       tags: [Stock]
       summary: Pokračuje v importu historie nebo zastaví další dávky
+      description: Převzetí a vrácení znovu spustit nejde (history_import_retry_unsupported); import se vrátí a spustí znovu z náhledu.
       responses:
         '200': { description: Aktualizovaný stav, content: { application/json: { schema: { $ref: '#/components/schemas/CatalogJob' } } } }
         '409': { description: Operace není dostupná v aktuálním stavu }

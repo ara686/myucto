@@ -458,6 +458,7 @@ final class StockHistoryImportWorker
 
     private function apply(int $supplierId, array $job): array
     {
+        $this->assertCurrent($supplierId, $job);
         $report = $job['report'] + ['phase' => 'documents', 'documents_created' => 0, 'fill_documents' => 0, 'valuation_cursor' => 0, 'settlement' => []];
         $checkpoint = $job['checkpoint'];
         $done = false;
@@ -751,6 +752,8 @@ final class StockHistoryImportWorker
             $this->assertNoLiveDocuments($supplierId);
             $pdo->prepare('DELETE FROM stock_valuation_snapshots WHERE supplier_id = ? AND cutoff_date >= ?')
                 ->execute([$supplierId, $from]);
+            $pdo->prepare('UPDATE supplier SET stock_history_locked_until = ? WHERE id = ?')
+                ->execute([(string) $job['input']['date_to'], $supplierId]);
         } else {
             // Nulové snapshoty k D−1 zůstávají, starší mohly vzniknout z rozpracované historie.
             $pdo->prepare('DELETE FROM stock_valuation_snapshots WHERE supplier_id = ? AND cutoff_date >= ? AND cutoff_date < ?')
@@ -764,11 +767,13 @@ final class StockHistoryImportWorker
     /** Maže převzaté doklady od nejnovějšího po dávkách, nakonec uklidí stav a odemkne historii. */
     private function rollback(int $supplierId, array $job): array
     {
+        $this->assertCurrent($supplierId, $job);
         $pdo = $this->db->pdo();
         $report = $job['report'] + ['documents_deleted' => 0];
-        $stmt = $pdo->prepare('SELECT id FROM stock_documents WHERE supplier_id = ? AND history_import_job_id = ?
+        // Firma má nejvýš jednu převzatou historii; osiřelá (bez úlohy) se maže celá stejně.
+        $stmt = $pdo->prepare('SELECT id FROM stock_documents WHERE supplier_id = ? AND history_import_job_id IS NOT NULL
             ORDER BY id DESC LIMIT ' . self::APPLY_BATCH);
-        $stmt->execute([$supplierId, (int) $job['input']['apply_job_id']]);
+        $stmt->execute([$supplierId]);
         $ids = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
         if ($ids !== []) {
             $pdo->prepare('DELETE FROM stock_documents WHERE supplier_id = ? AND id IN (' . implode(',', array_fill(0, count($ids), '?')) . ')')
@@ -796,6 +801,22 @@ final class StockHistoryImportWorker
         $pdo->prepare('UPDATE supplier SET stock_history_locked_until = NULL WHERE id = ?')->execute([$supplierId]);
         $pdo->prepare('UPDATE warehouses SET valuation_version = valuation_version + 1 WHERE supplier_id = ?')->execute([$supplierId]);
         return ['checkpoint' => $job['total'], 'done' => true, 'report' => $report];
+    }
+
+    /**
+     * Úloha musí být nejnovější aplikací nebo vrácením firmy: opakovaná starší úloha
+     * (retry po vrácení nebo po novém importu) by přepsala novější stav. Sdílený zámek
+     * firmy ji řadí za právě zakládané vrácení či aplikaci.
+     */
+    private function assertCurrent(int $supplierId, array $job): void
+    {
+        $pdo = $this->db->pdo();
+        $pdo->prepare('SELECT id FROM supplier WHERE id = ? LOCK IN SHARE MODE')->execute([$supplierId]);
+        $stmt = $pdo->prepare('SELECT MAX(id) FROM catalog_jobs WHERE supplier_id = ? AND kind IN (?, ?)');
+        $stmt->execute([$supplierId, StockHistoryImportService::APPLY_KIND, StockHistoryImportService::ROLLBACK_KIND]);
+        if ((int) $stmt->fetchColumn() !== (int) $job['id']) {
+            throw new StockException('history_import_job_stale', 'Úloha patří k importu historie, který byl mezitím vrácen nebo nahrazen. Import spusťte znovu.', 409);
+        }
     }
 
     private function assertNoLiveDocuments(int $supplierId): void

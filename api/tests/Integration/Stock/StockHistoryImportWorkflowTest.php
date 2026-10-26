@@ -42,31 +42,31 @@ final class StockHistoryImportWorkflowTest extends StockTestCase
         $a = $this->item($sid, 'ZB-100');
         $b = $this->item($sid, 'ZB-200');
         $client = $this->client($sid);
-        $invoice = $this->invoiceDraft($sid, $client, 'invoice', ['varsymbol' => '2098000001', 'issue_date' => '2098-02-01']);
-        $purchase = $this->purchaseInvoice($sid, $client, ['vendor_invoice_number' => 'FP98-7', 'issue_date' => '2098-01-05']);
+        $invoice = $this->invoiceDraft($sid, $client, 'invoice', ['varsymbol' => '2020000001', 'issue_date' => '2020-02-01']);
+        $purchase = $this->purchaseInvoice($sid, $client, ['vendor_invoice_number' => 'FP98-7', 'issue_date' => '2020-01-05']);
 
-        $this->receiveStock($sid, $main, $a, '10', 100.0, '2099-01-01');
+        $this->receiveStock($sid, $main, $a, '10', 100.0, '2021-01-01');
         $liveIssue = $this->documents->post($sid, (int) $this->documents->create($sid, [
-            'doc_type' => 'issue', 'warehouse_id' => $main, 'doc_date' => '2099-02-01', 'description' => 'Živý výdej',
+            'doc_type' => 'issue', 'warehouse_id' => $main, 'doc_date' => '2021-02-01', 'description' => 'Živý výdej',
             'lines' => [['stock_item_id' => $a, 'qty' => '3']],
         ], $this->userId)['id'], $this->userId);
         $levelsBefore = [$this->level($sid, $main, $a), $this->level($sid, $branch, $a), $this->level($sid, $main, $b)];
 
         $csv = self::csv([
-            'P98-1;prijemka;2098-01-05;HL;;ZB-100;10;50;Dodavatel A;;FP98-7;',
-            'P98-1;prijemka;2098-01-05;HL;;ZB-200;4;20;Dodavatel A;;FP98-7;',
-            'V98-1;vydejka;1.2.2098;HL;;ZB-100;4;;;2098000001;;',
-            'T98-1;prevodka;2098-03-01;HL;POB;ZB-100;2;;;;;',
-            'I98-1;prebytek;2098-04-01;POB;;ZB-100;1;80;;;;inventura',
-            'M98-1;manko;2098-05-01;HL;;ZB-200;1;;;;;',
-            'P98-2;prijemka;2098-06-01;HL;;ZB-200;1;30;;;;bez faktury',
+            'P98-1;prijemka;2020-01-05;HL;;ZB-100;10;50;Dodavatel A;;FP98-7;',
+            'P98-1;prijemka;2020-01-05;HL;;ZB-200;4;20;Dodavatel A;;FP98-7;',
+            'V98-1;vydejka;1.2.2020;HL;;ZB-100;4;;;2020000001;;',
+            'T98-1;prevodka;2020-03-01;HL;POB;ZB-100;2;;;;;',
+            'I98-1;prebytek;2020-04-01;POB;;ZB-100;1;80;;;;inventura',
+            'M98-1;manko;2020-05-01;HL;;ZB-200;1;;;;;',
+            'P98-2;prijemka;2020-06-01;HL;;ZB-200;1;30;;;;bez faktury',
         ]);
-        $preview = $this->stage($sid, $csv, $this->config('2099-01-01'));
+        $preview = $this->stage($sid, $csv, $this->config('2021-01-01'));
         self::assertSame('completed', $preview['status']);
         self::assertSame(7, $preview['report']['counts']['ready']);
         self::assertSame(['receipt' => 2, 'issue' => 1, 'transfer' => 1, 'surplus' => 1, 'shortage' => 1], $preview['report']['documents']);
         self::assertSame(0, $preview['report']['negative_count']);
-        self::assertSame(['2098-01-05', '2098-06-01'], [$preview['report']['date_from'], $preview['report']['date_to']]);
+        self::assertSame(['2020-01-05', '2020-06-01'], [$preview['report']['date_from'], $preview['report']['date_to']]);
 
         $applied = $this->applyAll($sid, $preview['id']);
         self::assertSame('completed', $applied['status']);
@@ -76,11 +76,11 @@ final class StockHistoryImportWorkflowTest extends StockTestCase
         self::assertSame($liveIssue['lines'][0]['value_total'], $this->docsRepo->findWithLines($sid, (int) $liveIssue['id'])['lines'][0]['value_total']);
 
         $docs = $this->historyDocuments($sid);
-        self::assertSame(['P98-1', 'V98-1', 'T98-1', 'I98-1', 'M98-1', 'P98-2', 'UH-HL-2098-12-31', 'UH-POB-2098-12-31'], array_column($docs, 'doc_number'));
+        self::assertSame(['P98-1', 'V98-1', 'T98-1', 'I98-1', 'M98-1', 'P98-2', 'UH-HL-2020-12-31', 'UH-POB-2020-12-31'], array_column($docs, 'doc_number'));
         $byNumber = array_column($docs, null, 'doc_number');
         self::assertSame($purchase, $byNumber['P98-1']['purchase_invoice_id']);
         self::assertSame($invoice, $byNumber['V98-1']['invoice_id']);
-        self::assertSame('2098-02-01', $byNumber['V98-1']['doc_date']);
+        self::assertSame('2020-02-01', $byNumber['V98-1']['doc_date']);
         self::assertSame(['inventory', 'receipt'], [$byNumber['I98-1']['origin'], $byNumber['I98-1']['doc_type']]);
         self::assertSame(['inventory', 'issue'], [$byNumber['M98-1']['origin'], $byNumber['M98-1']['doc_type']]);
         self::assertSame('posted', $byNumber['P98-1']['status']);
@@ -98,14 +98,14 @@ final class StockHistoryImportWorkflowTest extends StockTestCase
 
         $locked = $this->db->pdo()->prepare('SELECT stock_history_locked_until FROM supplier WHERE id = ?');
         $locked->execute([$sid]);
-        self::assertSame('2098-12-31', $locked->fetchColumn());
+        self::assertSame('2020-12-31', $locked->fetchColumn());
         $snapshot = $this->db->pdo()->prepare("SELECT qty, value_total FROM stock_valuation_snapshots
-            WHERE supplier_id = ? AND warehouse_id = ? AND stock_item_id = ? AND cutoff_date = '2098-12-31'");
+            WHERE supplier_id = ? AND warehouse_id = ? AND stock_item_id = ? AND cutoff_date = '2020-12-31'");
         $snapshot->execute([$sid, $branch, $a]);
         self::assertSame(['qty' => '0.000', 'value_total' => '0.00'], $snapshot->fetch(\PDO::FETCH_ASSOC));
 
         // Stav skladu z knihy k D−1 je nulový, kniha karty ukazuje celou historii.
-        $ledger = $this->levelsRepo->ledgerForItem($sid, $a, ['to' => '2098-12-31', 'limit' => 500]);
+        $ledger = $this->levelsRepo->ledgerForItem($sid, $a, ['to' => '2020-12-31', 'limit' => 500]);
         self::assertCount(7, $ledger);
         self::assertSame('0.000', array_reduce($ledger, static fn (string $sum, array $row): string => bcadd($sum, $row['qty_signed'], 3), '0'));
 
@@ -117,24 +117,24 @@ final class StockHistoryImportWorkflowTest extends StockTestCase
             self::assertSame('stock_history_locked', $e->errorCode);
         }
         try {
-            $this->receiveStock($sid, $main, $a, '1', 1.0, '2098-12-31');
+            $this->receiveStock($sid, $main, $a, '1', 1.0, '2020-12-31');
             self::fail('Doklad do převzaté historie musí selhat.');
         } catch (StockException $e) {
             self::assertSame('stock_history_locked', $e->errorCode);
         }
-        $this->receiveStock($sid, $main, $a, '1', 1.0, '2099-01-01');
+        $this->receiveStock($sid, $main, $a, '1', 1.0, '2021-01-01');
 
-        $closing = $this->container->get(StockClosingValuation::class)->unmatchedDocuments($sid, '2099-12-31');
+        $closing = $this->container->get(StockClosingValuation::class)->unmatchedDocuments($sid, '2021-12-31');
         self::assertSame('stock_unbilled_receipts', $closing[0]['key']);
         $unbilled = array_column($closing[0]['items'], 'doc_number');
         self::assertCount(2, $unbilled);
         self::assertNotContains('P98-2', $unbilled);
         $this->db->pdo()->prepare("UPDATE invoices SET status = 'issued' WHERE id = ?")->execute([$invoice]);
-        $intrastat = $this->container->get(IntrastatRepository::class)->movementRows($sid, '2098-01-01', '2099-01-01', 'dispatch');
+        $intrastat = $this->container->get(IntrastatRepository::class)->movementRows($sid, '2020-01-01', '2021-01-01', 'dispatch');
         self::assertSame([], $intrastat);
 
         try {
-            $this->stage($sid, $csv, $this->config('2099-01-01'));
+            $this->stage($sid, $csv, $this->config('2021-01-01'));
             self::fail('Druhý aktivní import musí selhat.');
         } catch (EshopException $e) {
             self::assertSame('history_import_active', $e->errorCode);
@@ -150,18 +150,18 @@ final class StockHistoryImportWorkflowTest extends StockTestCase
         $sid = $this->createSupplier();
         $main = $this->warehouse($sid, 'HL');
         $a = $this->item($sid, 'ZB-100');
-        $this->receiveStock($sid, $main, $a, '10', 100.0, '2099-01-01');
+        $this->receiveStock($sid, $main, $a, '10', 100.0, '2021-01-01');
         $this->documents->post($sid, (int) $this->documents->create($sid, [
-            'doc_type' => 'issue', 'warehouse_id' => $main, 'doc_date' => '2099-03-01', 'description' => 'Živý výdej',
+            'doc_type' => 'issue', 'warehouse_id' => $main, 'doc_date' => '2021-03-01', 'description' => 'Živý výdej',
             'lines' => [['stock_item_id' => $a, 'qty' => '2']],
         ], $this->userId)['id'], $this->userId);
 
-        $preview = $this->stage($sid, self::csv(['P1;prijemka;2098-01-05;HL;;ZB-100;5;50;;;;']), $this->config('2099-01-01'));
+        $preview = $this->stage($sid, self::csv(['P1;prijemka;2020-01-05;HL;;ZB-100;5;50;;;;']), $this->config('2021-01-01'));
         $job = $this->container->get(StockHistoryImportService::class)->apply($sid, $preview['id'], $this->userId);
         $this->container->get(StockHistoryImportWorker::class)->tickKind($sid, StockHistoryImportService::APPLY_KIND, 1);
         self::assertCount(1, $this->historyDocuments($sid));
 
-        $this->receiveStock($sid, $main, $a, '1', 100.0, '2099-02-01');
+        $this->receiveStock($sid, $main, $a, '1', 100.0, '2021-02-01');
         self::assertSame(['qtyT' => 9000, 'valueC' => 90000], $this->level($sid, $main, $a));
         self::assertSame('completed', $this->drain($sid, StockHistoryImportService::APPLY_KIND, $job['id'])['status']);
         self::assertSame(['qtyT' => 9000, 'valueC' => 90000], $this->level($sid, $main, $a));
@@ -175,9 +175,9 @@ final class StockHistoryImportWorkflowTest extends StockTestCase
         $a = $this->item($sid, 'ZB-100');
 
         $preview = $this->stage($sid, self::csv([
-            'P1;receipt;2098-01-05;HL;;ZB-100;10;50;;;;',
-            'P2;receipt;2098-01-06;HL;;ZB-100;10;80;;;;',
-            'V1;issue;2098-03-01;HL;;ZB-100;5;;;;;',
+            'P1;receipt;2020-01-05;HL;;ZB-100;10;50;;;;',
+            'P2;receipt;2020-01-06;HL;;ZB-100;10;80;;;;',
+            'V1;issue;2020-03-01;HL;;ZB-100;5;;;;;',
         ]), $this->config(null));
         $applied = $this->applyAll($sid, $preview['id']);
         self::assertSame('completed', $applied['status']);
@@ -186,10 +186,10 @@ final class StockHistoryImportWorkflowTest extends StockTestCase
         self::assertSame(['P1', 'P2', 'V1'], array_column($this->historyDocuments($sid), 'doc_number'));
         $locked = $this->db->pdo()->prepare('SELECT stock_history_locked_until FROM supplier WHERE id = ?');
         $locked->execute([$sid]);
-        self::assertSame('2098-03-01', $locked->fetchColumn());
+        self::assertSame('2020-03-01', $locked->fetchColumn());
 
         $issue = $this->documents->post($sid, (int) $this->documents->create($sid, [
-            'doc_type' => 'issue', 'warehouse_id' => $main, 'doc_date' => '2098-03-02', 'description' => 'Pokračování',
+            'doc_type' => 'issue', 'warehouse_id' => $main, 'doc_date' => '2020-03-02', 'description' => 'Pokračování',
             'lines' => [['stock_item_id' => $a, 'qty' => '15']],
         ], $this->userId)['id'], $this->userId);
         self::assertSame('975.00', $issue['lines'][0]['value_total']);
@@ -200,10 +200,10 @@ final class StockHistoryImportWorkflowTest extends StockTestCase
         $sid = $this->createSupplier();
         $main = $this->warehouse($sid, 'HL');
         $a = $this->item($sid, 'ZB-100');
-        $this->receiveStock($sid, $main, $a, '1', 1.0, '2099-01-01');
-        foreach ([[null, 'history_import_cutover_required'], ['2099-02-01', 'history_import_cutover_after_documents']] as [$cutover, $code]) {
+        $this->receiveStock($sid, $main, $a, '1', 1.0, '2021-01-01');
+        foreach ([[null, 'history_import_cutover_required'], ['2021-02-01', 'history_import_cutover_after_documents']] as [$cutover, $code]) {
             try {
-                $this->stage($sid, self::csv(['P1;receipt;2098-01-05;HL;;ZB-100;1;1;;;;']), $this->config($cutover));
+                $this->stage($sid, self::csv(['P1;receipt;2020-01-05;HL;;ZB-100;1;1;;;;']), $this->config($cutover));
                 self::fail($code);
             } catch (EshopException $e) {
                 self::assertSame($code, $e->errorCode);
@@ -221,20 +221,20 @@ final class StockHistoryImportWorkflowTest extends StockTestCase
         $this->db->pdo()->prepare("UPDATE stock_items SET tracking_mode = 'serial' WHERE id = ?")->execute([$tracked]);
 
         $preview = $this->stage($sid, self::csv([
-            'A1;prijemka;2098-01-05;HL;;ZB-100;1;10;;;;',
-            'A1;prijemka;2098-01-05;HL;;NEZNAMA;1;10;;;;',
-            'A2;prijemka;2098-01-05;HL;;ZB-100;1;;;;;',
-            'A3;vydejka;2098-01-06;XX;;ZB-100;1;;;;;',
-            'A4;prevodka;2098-01-07;HL;;ZB-100;1;;;;;',
-            'A5;vydejka;2099-01-01;HL;;ZB-100;1;;;;;',
-            'A6;vydejka;2098-01-08;HL;;ZB-100;1;;;NEEXISTUJE;;',
-            'VYD-2098-0001;vydejka;2098-01-08;HL;;ZB-100;1;;;;;',
-            'A7;prijemka;2098-01-09;HL;;ZB-100;1;10;;;;',
-            'A7;prijemka;2098-01-10;HL;;ZB-100;1;10;;;;',
-            'A8;prijemka;2098-01-11;HL;;SN-1;1;10;;;;',
+            'A1;prijemka;2020-01-05;HL;;ZB-100;1;10;;;;',
+            'A1;prijemka;2020-01-05;HL;;NEZNAMA;1;10;;;;',
+            'A2;prijemka;2020-01-05;HL;;ZB-100;1;;;;;',
+            'A3;vydejka;2020-01-06;XX;;ZB-100;1;;;;;',
+            'A4;prevodka;2020-01-07;HL;;ZB-100;1;;;;;',
+            'A5;vydejka;2021-01-01;HL;;ZB-100;1;;;;;',
+            'A6;vydejka;2020-01-08;HL;;ZB-100;1;;;NEEXISTUJE;;',
+            'VYD-2020-0001;vydejka;2020-01-08;HL;;ZB-100;1;;;;;',
+            'A7;prijemka;2020-01-09;HL;;ZB-100;1;10;;;;',
+            'A7;prijemka;2020-01-10;HL;;ZB-100;1;10;;;;',
+            'A8;prijemka;2020-01-11;HL;;SN-1;1;10;;;;',
             ';;;;;;;;;;;',
-            'A9;neznamy;2098-01-11;HL;;ZB-100;1;10;;;;',
-        ]), $this->config('2099-01-01'));
+            'A9;neznamy;2020-01-11;HL;;ZB-100;1;10;;;;',
+        ]), $this->config('2021-01-01'));
         $errors = $this->errors($sid, $preview['id']);
         self::assertSame([
             2 => 'history_import_document_incomplete',
@@ -270,11 +270,11 @@ final class StockHistoryImportWorkflowTest extends StockTestCase
         $a = $this->item($sid, 'ZB-100');
         $b = $this->item($sid, 'ZB-200');
         $csv = self::csv([
-            'V0;vydejka;2098-01-02;HL;;ZB-200;2;;;;;',
-            'P1;prijemka;2098-01-05;HL;;ZB-100;2;40;;;;',
-            'V1;vydejka;2098-01-06;HL;;ZB-100;3;;;;;',
-            'V2;vydejka;2098-01-07;HL;;ZB-100;1;;;;;',
-            'P2;prijemka;2098-01-08;HL;;ZB-100;5;60;;;;',
+            'V0;vydejka;2020-01-02;HL;;ZB-200;2;;;;;',
+            'P1;prijemka;2020-01-05;HL;;ZB-100;2;40;;;;',
+            'V1;vydejka;2020-01-06;HL;;ZB-100;3;;;;;',
+            'V2;vydejka;2020-01-07;HL;;ZB-100;1;;;;;',
+            'P2;prijemka;2020-01-08;HL;;ZB-100;5;60;;;;',
         ]);
 
         $preview = $this->stage($sid, $csv, $this->config(null));
@@ -307,9 +307,9 @@ final class StockHistoryImportWorkflowTest extends StockTestCase
         $this->warehouse($sid, 'HL');
         $this->item($sid, 'ZB-100');
         $this->db->pdo()->prepare("INSERT INTO accounting_periods (supplier_id, fiscal_year, starts_on, ends_on, status)
-            VALUES (?, 2098, '2098-01-01', '2098-12-31', 'closed')")->execute([$sid]);
+            VALUES (?, 2020, '2020-01-01', '2020-12-31', 'closed')")->execute([$sid]);
 
-        $preview = $this->stage($sid, self::csv(['P1;receipt;2098-01-05;HL;;ZB-100;1;10;;;;']), $this->config(null));
+        $preview = $this->stage($sid, self::csv(['P1;receipt;2020-01-05;HL;;ZB-100;1;10;;;;']), $this->config(null));
         self::assertSame(1, $preview['report']['closed_period_documents']);
         $service = $this->container->get(StockHistoryImportService::class);
         try {
@@ -330,10 +330,10 @@ final class StockHistoryImportWorkflowTest extends StockTestCase
         $sid = $this->createSupplier();
         $main = $this->warehouse($sid, 'HL');
         $a = $this->item($sid, 'ZB-100');
-        $this->receiveStock($sid, $main, $a, '10', 100.0, '2099-01-01');
+        $this->receiveStock($sid, $main, $a, '10', 100.0, '2021-01-01');
         $levelBefore = $this->level($sid, $main, $a);
-        $csv = self::csv(['P1;prijemka;2098-01-05;HL;;ZB-100;5;50;;;;', 'V1;vydejka;2098-02-01;HL;;ZB-100;2;;;;;']);
-        $applied = $this->applyAll($sid, $this->stage($sid, $csv, $this->config('2099-01-01'))['id']);
+        $csv = self::csv(['P1;prijemka;2020-01-05;HL;;ZB-100;5;50;;;;', 'V1;vydejka;2020-02-01;HL;;ZB-100;2;;;;;']);
+        $applied = $this->applyAll($sid, $this->stage($sid, $csv, $this->config('2021-01-01'))['id']);
         self::assertCount(3, $this->historyDocuments($sid));
 
         $service = $this->container->get(StockHistoryImportService::class);
@@ -354,12 +354,12 @@ final class StockHistoryImportWorkflowTest extends StockTestCase
         $locked = $this->db->pdo()->prepare('SELECT stock_history_locked_until FROM supplier WHERE id = ?');
         $locked->execute([$sid]);
         self::assertNull($locked->fetchColumn());
-        $snapshots = $this->db->pdo()->prepare("SELECT COUNT(*) FROM stock_valuation_snapshots WHERE supplier_id = ? AND cutoff_date < '2099-01-01'");
+        $snapshots = $this->db->pdo()->prepare("SELECT COUNT(*) FROM stock_valuation_snapshots WHERE supplier_id = ? AND cutoff_date < '2021-01-01'");
         $snapshots->execute([$sid]);
         self::assertSame(0, (int) $snapshots->fetchColumn());
 
-        $this->receiveStock($sid, $main, $a, '1', 1.0, '2098-12-31');
-        self::assertSame('completed', $this->applyAll($sid, $this->stage($sid, self::csv(['P2;prijemka;2098-01-05;HL;;ZB-100;5;50;;;;']), $this->config('2098-12-31'))['id'])['status']);
+        $this->receiveStock($sid, $main, $a, '1', 1.0, '2020-12-31');
+        self::assertSame('completed', $this->applyAll($sid, $this->stage($sid, self::csv(['P2;prijemka;2020-01-05;HL;;ZB-100;5;50;;;;']), $this->config('2020-12-31'))['id'])['status']);
     }
 
     /**
@@ -369,7 +369,7 @@ final class StockHistoryImportWorkflowTest extends StockTestCase
     public function testRollbackOfLiveStateZeroesStockAndRefusesAfterLiveDocuments(): void
     {
         $service = $this->container->get(StockHistoryImportService::class);
-        $csv = self::csv(['P1;receipt;2098-01-05;HL;;ZB-100;10;50;;;;', 'V1;issue;2098-03-01;HL;;ZB-100;4;;;;;']);
+        $csv = self::csv(['P1;receipt;2020-01-05;HL;;ZB-100;10;50;;;;', 'V1;issue;2020-03-01;HL;;ZB-100;4;;;;;']);
 
         $sid = $this->createSupplier();
         $main = $this->warehouse($sid, 'HL');
@@ -386,7 +386,7 @@ final class StockHistoryImportWorkflowTest extends StockTestCase
         $otherMain = $this->warehouse($other, 'HL');
         $otherItem = $this->item($other, 'ZB-100');
         $applied = $this->applyAll($other, $this->stage($other, $csv, $this->config(null))['id']);
-        $this->receiveStock($other, $otherMain, $otherItem, '1', 1.0, '2098-04-01');
+        $this->receiveStock($other, $otherMain, $otherItem, '1', 1.0, '2020-04-01');
         try {
             $service->rollback($other, $applied['id'], $this->userId);
             self::fail('Vrácení po živém dokladu musí selhat.');

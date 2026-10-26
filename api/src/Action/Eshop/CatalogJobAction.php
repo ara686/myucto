@@ -117,6 +117,13 @@ final class CatalogJobAction
         if (!empty($job['input']['stock_take_id'])) {
             return Json::error($response, 'stock_take_preparation', 'Přípravu inventury ovládejte v detailu inventury.', 409);
         }
+        if ($args['operation'] === 'retry' && in_array($job['kind'], [
+            \MyInvoice\Service\Stock\StockHistoryImportService::APPLY_KIND,
+            \MyInvoice\Service\Stock\StockHistoryImportService::ROLLBACK_KIND,
+        ], true)) {
+            // Rozběhnutá historie se nedokončuje opakováním: mohla být mezitím vrácená.
+            return Json::error($response, 'history_import_retry_unsupported', 'Převzetí ani vrácení historie skladu nejde opakovat. Import vraťte a spusťte znovu.', 409);
+        }
         $changed = $args['operation'] === 'retry' ? $this->jobs->retry($supplierId, $id) : $this->jobs->cancel($supplierId, $id);
         if (!$changed) {
             return Json::error($response, 'job_state_conflict', 'Aktuální stav úlohy tuto operaci nepovoluje.', 409);
