@@ -82,6 +82,7 @@ import {
   quoteQuantity,
   rowUnitOptions,
   planContextRepricing,
+  rowsToConfirmRepricing,
   clientHasPriceLevel,
   usesStockQuote,
   legacyRestorePrice,
@@ -1343,7 +1344,7 @@ watch(
 // Zákaznické ceny a cenové hladiny: po změně odběratele, měny nebo hladiny dokladu přeceň skladové řádky,
 // jejichž cena je pořád ta automaticky doplněná. Karta s funkcemi nebo odběratel s hladinou
 // → nacenění; karta bez funkcí u odběratele bez hladiny → zpět původní cena karty.
-// Ruční přepis ani ceny načteného dokladu se nemění.
+// Ruční přepis ani ceny načteného dokladu se tu nemění (uložený doklad se zeptá, viz níže).
 watch(
   () => [form.value.client_id, form.value.currency_id, form.value.price_level_id] as const,
   () => {
@@ -1354,6 +1355,29 @@ watch(
     }, row => row.stock_item_id != null && stockFeaturesById[row.stock_item_id] === true)
     for (const row of plan.legacy) restoreLegacyStockPrice(row)
     if (plan.quote.length > 0) void quoteStockRows(plan.quote, 'context')
+  },
+)
+
+// Uložený doklad (koncept nebo úprava vystaveného) ceny řádků sám nemění. Po změně hladiny,
+// podle které se doklad naceňuje (hladina dokladu, jinak odběratele), se editor zeptá, jestli
+// přecenit i ostatní skladové řádky, včetně ručně přepsaných. Nový doklad se neptá.
+const effectivePriceLevelId = computed(() => {
+  const active = (id: number | null | undefined) => (id != null && priceLevelOptions.value.some(l => l.id === id) ? id : null)
+  return active(form.value.price_level_id) ?? active(selectedClient.value?.price_level_id)
+})
+watch(
+  () => [effectivePriceLevelId.value, priceLevelsLoaded.value] as const,
+  ([level, ready], [previous, wasReady]) => {
+    // Načtení číselníku hladin není změna hladiny.
+    if (!ready || !wasReady || level === previous) return
+    const rows = rowsToConfirmRepricing(form.value.items, row => stockQuoteStates.get(row), {
+      stockEnabled: stockEnabled.value,
+      loaded: loaded.value,
+      storedDocument: isEdit.value && (editedStatus.value === 'draft' || isForce.value),
+    })
+    if (rows.length > 0 && confirm(t('invoice.price_level.reprice_confirm', { count: rows.length }))) {
+      void quoteStockRows(rows, 'context')
+    }
   },
 )
 

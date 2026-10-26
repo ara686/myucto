@@ -171,6 +171,20 @@ export function rowsToRequote<T extends PricedRow>(
   return rows.filter(row => row.stock_item_id != null && isPriceStillAuto(stateOf(row), row.unit_price_without_vat))
 }
 
+/**
+ * Skladové řádky uloženého dokladu, které po změně cenové hladiny nepřecení automatika
+ * (rowsToRequote): cena načtená s dokladem nebo ručně přepsaná. Přecení se jen po
+ * výslovném potvrzení uživatele. Nový doklad, vypnutý sklad a hydratace nic nevrací.
+ */
+export function rowsToConfirmRepricing<T extends PricedRow>(
+  rows: T[],
+  stateOf: (row: T) => StockQuoteState | null | undefined,
+  ctx: StockPricingContext & { storedDocument: boolean },
+): T[] {
+  if (!ctx.stockEnabled || !ctx.loaded || !ctx.storedDocument) return []
+  return rows.filter(row => row.stock_item_id != null && !isPriceStillAuto(stateOf(row), row.unit_price_without_vat))
+}
+
 export interface ContextRepricing<T> {
   /** Řádky k nacenění (karta s funkcemi nebo odběratel s hladinou). */
   quote: T[]

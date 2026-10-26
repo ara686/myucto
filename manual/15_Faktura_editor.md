@@ -227,6 +227,10 @@ Dobropis vztahující se k jiné faktuře nezakládejte ručně přes **Typ dokl
   odběratele. Prázdný seznam zůstává jen pro odběratele.
 - **Zakázka** (volitelná): má-li klient zakázky, nabídne se jen jeho vlastní. Po výběru
   zakázky se předvyplní hodinová sazba a splatnost.
+- **Cenová hladina dokladu** (jen se zapnutým skladem): nahradí pro tento doklad hladinu
+  klienta. U uloženého dokladu se editor po změně hladiny nebo výběru klienta s jinou
+  hladinou zeptá, jestli přecenit skladové řádky, viz
+  [§ 38.11.18.3](38_Eshop.md#3811183-cenova-hladina-na-dokladu).
 - **Zjednodušený daňový doklad** (§ 30 ZDPH, jen plátce): klient je u něj nepovinný. S vybraným
   klientem se pod zaškrtávátkem objeví **Netisknout odběratele na dokladu**; klient na dokladu
   zůstane, jen se nevytiskne na PDF ani webové faktuře (ISDOC, i ten vložený do PDF, odběratele

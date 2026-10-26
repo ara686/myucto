@@ -19,6 +19,7 @@ import {
   quoteFailureFallback,
   quoteQuantity,
   rowUnitOptions,
+  rowsToConfirmRepricing,
   rowsToRequote,
   stockUnitChoices,
   toBaseQuantity,
@@ -281,5 +282,26 @@ describe('invoice stock pricing: cenové hladiny odběratelů', () => {
     expect(legacyRestorePrice({ unit: 'ks', sale_price_without_vat: null })).toBeNull()
     expect(legacyRestorePrice({ unit: 'ks', effective_price: null, sale_price_without_vat: 'abc' })).toBeNull()
     expect(legacyRestorePrice(undefined)).toBeNull()
+  })
+})
+
+describe('invoice stock pricing: přecenění uloženého dokladu po změně hladiny', () => {
+  const on = { stockEnabled: true, loaded: true, storedDocument: true }
+
+  it('nabídne skladové řádky s uloženou i ručně přepsanou cenou, automatické nechá automatice', () => {
+    const stored = { id: 'stored', stock_item_id: 1, unit: 'ks', unit_price_without_vat: 100 }
+    const manual = { id: 'manual', stock_item_id: 2, unit: 'ks', unit_price_without_vat: 85 }
+    const autoRow = { id: 'auto', stock_item_id: 3, unit: 'ks', unit_price_without_vat: 99 }
+    const freeText = { id: 'text', stock_item_id: null, unit: 'hod', unit_price_without_vat: 100 }
+    const states: Record<string, StockQuoteState | undefined> = { manual: auto(99), auto: auto(99) }
+    const rows = rowsToConfirmRepricing([stored, manual, autoRow, freeText], row => states[row.id], on)
+    expect(rows.map(row => row.id)).toEqual(['stored', 'manual'])
+  })
+
+  it('nový doklad, vypnutý sklad a doklad před dokončením načtení se neptají', () => {
+    const stored = { stock_item_id: 1, unit: 'ks', unit_price_without_vat: 100 }
+    expect(rowsToConfirmRepricing([stored], () => undefined, { ...on, storedDocument: false })).toEqual([])
+    expect(rowsToConfirmRepricing([stored], () => undefined, { ...on, stockEnabled: false })).toEqual([])
+    expect(rowsToConfirmRepricing([stored], () => undefined, { ...on, loaded: false })).toEqual([])
   })
 })

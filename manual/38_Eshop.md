@@ -995,7 +995,9 @@ Editor faktury nacení skladový řádek pro odběratele, měnu a datum dokladu:
 
 Odběratel bez individuální ceny a bez cenové hladiny se naceňuje přesně jako dosud.
 Změna odběratele, měny nebo cenové hladiny dokladu na faktuře přecení jen řádky, jejichž
-cenu doplnila aplikace, ručně přepsanou cenu nechá být. Seznam karet a našeptávač dál
+cenu doplnila aplikace, ručně přepsanou cenu nechá být. U uloženého dokladu se po změně
+hladiny editor zeptá, jestli přecenit všechny skladové řádky
+([§ 38.11.18.3](#3811183-cenova-hladina-na-dokladu)). Seznam karet a našeptávač dál
 ukazují standardní (případně akční) cenu bez ohledu na odběratele.
 
 > [!TIP]
@@ -1539,7 +1541,13 @@ velkoobchodní ceník pro jednorázový nákup. Proto má editor faktury pod odb
 - Zvolená hladina ji pro tento doklad nahradí a platí i u odběratele bez hladiny.
   Individuální cena odběratele má dál přednost.
 - Změna výběru přecení skladové řádky s automaticky doplněnou cenou. Ručně upravené
-  ceny a ceny už uloženého dokladu zůstanou.
+  ceny zůstanou.
+- U uloženého dokladu (koncept i úprava vystavené faktury) se ceny řádků samy nemění.
+  Když po znovuotevření změníte hladinu dokladu nebo vyberete odběratele s jinou
+  hladinou, editor se zeptá **Přecenit skladové položky podle nové hladiny?** a uvede
+  počet řádků. Potvrzením se nacení všechny skladové řádky, i ty s ručně upravenou
+  cenou. **Zrušit** ceny ponechá. Řádky bez skladové karty, textové řádky a sleva
+  z celé faktury se nemění.
 - Hladina se uloží s dokladem, takže při další úpravě konceptu zůstane vybraná, detail
   faktury ji ukazuje a kopie faktury ji převezme. Ceny jsou uložené na řádcích, pozdější
   změna nebo deaktivace hladiny vystavený doklad nemění.

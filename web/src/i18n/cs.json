@@ -22561,7 +22561,8 @@
       "label": "Cenová hladina dokladu",
       "from_client": "Podle odběratele ({name})",
       "from_client_none": "Podle odběratele (bez hladiny)",
-      "hint": "Přecení skladové řádky s automaticky doplněnou cenou. Ručně upravené ceny a ceny už uloženého dokladu zůstanou.",
+      "hint": "Přecení skladové řádky s automaticky doplněnou cenou, ručně upravené ceny zůstanou. U uloženého dokladu se editor zeptá, jestli přecenit všechny skladové řádky.",
+      "reprice_confirm": "Cenová hladina dokladu se změnila. Přecenit skladové položky podle nové hladiny? Skladových řádků k přecenění: {count}, včetně ručně upravených cen. Zrušit ponechá ceny beze změny.",
       "stale": "Hladina dokladu už není aktivní. Doklad se naceňuje podle odběratele, uložením se hladina z dokladu odebere."
     },
     "simplified_document": "Zjednodušený daňový doklad (§ 30 ZDPH)",
