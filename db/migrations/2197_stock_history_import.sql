@@ -19,3 +19,7 @@ ALTER TABLE stock_documents
 ALTER TABLE supplier
   ADD COLUMN IF NOT EXISTS stock_history_locked_until DATE NULL DEFAULT NULL
     COMMENT 'poslední den převzaté skladové historie; doklady do tohoto dne nejde zaúčtovat ani stornovat';
+
+-- Ocenění převzaté historie čte karty úlohy po dávkách (supplier_id, job_id, stock_item_id > kurzor).
+ALTER TABLE catalog_job_items
+  ADD INDEX IF NOT EXISTS ix_catalog_job_items_item (supplier_id, job_id, stock_item_id);

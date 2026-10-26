@@ -3945,6 +3945,7 @@
             "indexes": {
                 "PRIMARY": "UNIQUE BTREE (job_id, ordinal)",
                 "fk_catalog_job_items_job": "BTREE (job_id, supplier_id)",
+                "ix_catalog_job_items_item": "BTREE (supplier_id, job_id, stock_item_id)",
                 "ix_catalog_job_items_status": "BTREE (supplier_id, job_id, status, ordinal)"
             },
             "foreign_keys": {
