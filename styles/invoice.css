@@ -217,6 +217,14 @@ table.items-ld th { font-size: 7pt; letter-spacing: 0; padding-left: 1.5mm; padd
 table.items-ld td { padding-left: 1.5mm; padding-right: 1.5mm; }
 table.items-ld td.num { font-size: 8pt; }
 table.items-ld th.vat { font-size: 7pt; }
+/* Kompaktní řádky položek (volba firmy invoice_pdf_compact_items): víc řádků na stranu
+   u mnohopoložkových faktur. Jen odsazení, písmo a mezery, barvy zůstávají ze základních
+   pravidel (a černobílá varianta je tak pokrývá beze změny). */
+table.items-compact { font-size: 8pt; margin-bottom: 3mm; }
+table.items-compact th { font-size: 7pt; padding-top: 1.2mm; padding-bottom: 1.2mm; }
+table.items-compact td { padding-top: 0.6mm; padding-bottom: 0.6mm; line-height: 1.2; }
+table.items-compact .vat { font-size: 7.5pt; }
+table.items-compact th.vat { font-size: 7pt; }
 
 /* ─── SUMACE ─── */
 .totals {

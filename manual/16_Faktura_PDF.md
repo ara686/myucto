@@ -345,6 +345,13 @@ Vygenerované PDF obsahuje:
    Položka bez ceníkové ceny nebo s přirážkou ukáže jen výslednou cenu. U faktury s cenami
    včetně DPH jsou obě ceny bez DPH. Ceníková cena nemění částky dokladu ani export ISDOC
    a POHODA.
+   Faktury s mnoha položkami zhustí volba **Kompaktní řádky položek na PDF faktury**
+   (`Nastavení → Doklady`, výchozí vypnuto): tabulka položek má menší odsazení a písmo
+   a rozpis balení („celkem 80 ks“) i sériová čísla a šarže se tisknou drobným písmem za
+   popisem položky na stejném řádku. Na stranu se tak vejde zhruba dvakrát víc položek.
+   Volba mění jen vzhled tabulky, částky ani ostatní části dokladu ne. Projeví se na
+   konceptech a na PDF vytvořených po zapnutí, už vygenerovaná PDF vystavených dokladů
+   se nemění.
 7. **Sumář** - mezisoučet, sleva, rozpis DPH, **CELKEM**.
 8. **Přepočet do CZK** (EUR a cizí měna) - u českého odběratele kurz ČNB a tabulka
    základů a DPH v CZK; u zahraničního odběratele pouze česká DPH v CZK, pokud na

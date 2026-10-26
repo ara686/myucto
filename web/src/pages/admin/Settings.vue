@@ -657,6 +657,7 @@ async function saveSupplier() {
       stock_in_transit_from: supplier.value.stock_in_transit_from ?? 'sent',
       invoice_pdf_show_base_qty: supplier.value.invoice_pdf_show_base_qty ?? true,
       invoice_pdf_show_line_discount: supplier.value.invoice_pdf_show_line_discount ?? false,
+      invoice_pdf_compact_items: supplier.value.invoice_pdf_compact_items ?? false,
       // Tax settings (EPO výkazy DPH/KH)
       // Účetní režim posíláme jen když ho uživatel opravdu přepnul. Server na
       // něm má navěšenou historii režimu i kontrolu právní formy, takže
@@ -1224,6 +1225,14 @@ async function confirmTaxRepDelete() {
               <span class="font-medium">{{ t('settings.invoice_pdf_line_discount') }}</span>
             </label>
             <p class="text-xs text-neutral-500 mt-1 ml-6">{{ t('settings.invoice_pdf_line_discount_hint') }}</p>
+          </div>
+          <div class="md:col-span-2">
+            <label class="flex items-center gap-2 text-sm">
+              <input :checked="supplier.invoice_pdf_compact_items ?? false" @change="supplier.invoice_pdf_compact_items = ($event.target as HTMLInputElement).checked"
+                type="checkbox" class="rounded border-neutral-300 text-primary-600" data-test="invoice-pdf-compact-items" />
+              <span class="font-medium">{{ t('settings.invoice_pdf_compact_items') }}</span>
+            </label>
+            <p class="text-xs text-neutral-500 mt-1 ml-6">{{ t('settings.invoice_pdf_compact_items_hint') }}</p>
           </div>
           <div class="md:col-span-2 border-t border-neutral-200 pt-4 space-y-3">
             <div>

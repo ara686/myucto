@@ -203,7 +203,9 @@
 {% endif %}
 
 {# ─── POLOŽKY ─── #}
-<table class="items{% if line_discount_columns|default(false) %} items-ld{% endif %}">
+{# Kompaktní řádky (volba firmy, migrace 2194): menší odsazení a písmo, víc řádků na stranu. #}
+{% set compact_items = supplier.invoice_pdf_compact_items|default(false) %}
+<table class="items{% if line_discount_columns|default(false) %} items-ld{% endif %}{% if compact_items %} items-compact{% endif %}">
   <thead>
     <tr>
       {# Sleva z ceníkové ceny (migrace 2035, volba firmy): tři cenové sloupce místo
@@ -276,6 +278,9 @@
       {%- set _is_wr_item = work_report and not _is_mat_item and item.item_kind != 'discount'
             and (_wr_d == (work_report.title|default('')|trim|lower)
                  or 'výkaz' in _wr_d or 'work report' in _wr_d) -%}
+      {%- set _base_qty = item.base_qty is defined and item.base_qty is not null
+            ? item.base_qty|number_format(item.base_qty == item.base_qty|round(0) ? 0 : (item.base_qty == item.base_qty|round(1) ? 1 : (item.base_qty == item.base_qty|round(2) ? 2 : 3)), decimal_sep, thousand_sep)
+            : null -%}
       <td>
         {%- if _is_wr_item -%}
           <a href="#work-report" class="wr-link">{{ item.description|nl2br }}</a>
@@ -284,9 +289,13 @@
         {%- else -%}
           {{ item.description|nl2br }}
         {%- endif -%}
+        {#- Kompaktní řádky tisknou rozpis balení a sériová čísla za popisem na stejném
+            řádku: v úzkém sloupci jednotky by se rozpis lámal na několik řádků. -#}
+        {%- if compact_items and _base_qty is not null -%}<span style="font-size:85%;color:#666666"> · {{ t('celkem', 'total') }} {{ _base_qty }}&nbsp;{{ item.base_unit }}</span>{%- endif -%}
         {#- Vybraná sériová čísla a šarže (InvoicePdfRenderer::withTrackingLines). -#}
         {%- for tracking_line in item.tracking_lines|default([]) -%}
-          <br><span style="font-size:85%;color:#666666">{{ tracking_line }}</span>
+          {%- if compact_items -%}<span style="font-size:85%;color:#666666"> · {{ tracking_line }}</span>
+          {%- else -%}<br><span style="font-size:85%;color:#666666">{{ tracking_line }}</span>{%- endif -%}
         {%- endfor -%}
       </td>
       {% if item.item_kind == 'discount' %}
@@ -296,7 +305,7 @@
       <td class="num nowrap">{% if item.duration_display is defined and item.duration_display is not null %}{{ item.duration_display }}{% else %}{{ item.quantity|number_format(item.quantity_decimals ?? (item.quantity == item.quantity|round(0) ? 0 : (item.quantity == item.quantity|round(1) ? 1 : (item.quantity == item.quantity|round(2) ? 2 : 3))), decimal_sep, thousand_sep) }}{% endif %}</td>
       {# Balení (issue #17): řádek v kartonech dostane rozpis na základní jednotky
          karty, pokud ho firma nemá v nastavení vypnutý (InvoicePdfRenderer::withBaseQuantity). #}
-      <td>{{ item.unit }}{% if item.base_qty is defined and item.base_qty is not null %}<br><span style="font-size:85%;color:#666666;white-space:nowrap">({{ t('celkem', 'total') }} {{ item.base_qty|number_format(item.base_qty == item.base_qty|round(0) ? 0 : (item.base_qty == item.base_qty|round(1) ? 1 : (item.base_qty == item.base_qty|round(2) ? 2 : 3)), decimal_sep, thousand_sep) }}&nbsp;{{ item.base_unit }})</span>{% endif %}</td>
+      <td>{{ item.unit }}{% if _base_qty is not null and not compact_items %}<br><span style="font-size:85%;color:#666666;white-space:nowrap">({{ t('celkem', 'total') }} {{ _base_qty }}&nbsp;{{ item.base_unit }})</span>{% endif %}</td>
       {# V režimu „ceny s DPH" nese unit_price_without_vat brutto; pro zobrazení dopočítáme
          skutečné netto z řádkového základu (total_without_vat / množství). #}
       {% if line_discount_columns|default(false) %}

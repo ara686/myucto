@@ -24907,6 +24907,8 @@
     "invoice_pdf_show_issued_by_hint": "Na PDF přibude řádek „Vystavil“ se jménem uživatele, který doklad vystavil. Starší doklady bez tohoto údaje ukážou autora dokladu. U už vystavených dokladů se řádek objeví až po přegenerování PDF.",
     "invoice_pdf_line_discount": "Na PDF faktury rozepsat slevu z ceníkové ceny",
     "invoice_pdf_line_discount_hint": "U položky se slevou vytiskne sloupce Cena/j před slevou, Sleva a Cena/j po slevě. Jen když má faktura aspoň jednu takovou položku, přirážka se nerozepisuje. Ceníkovou cenu doplní nacenění skladové karty.",
+    "invoice_pdf_compact_items": "Kompaktní řádky položek na PDF faktury",
+    "invoice_pdf_compact_items_hint": "Menší odsazení a písmo v tabulce položek, rozpis balení a sériová čísla na řádku popisu. Na stranu se vejde asi dvakrát víc položek. U už vystavených dokladů se projeví až po přegenerování PDF.",
     "default_hourly_rate": "Výchozí hodinová sazba",
     "auto_send_reminders": "Posílat automatické upomínky",
     "auto_send_reminders_hint": "Když je vypnuto, cron nebude posílat automatické upomínky pro tohoto dodavatele. Ruční odeslání (jednotlivé i hromadné) funguje vždy.",
