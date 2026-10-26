@@ -6,6 +6,7 @@ namespace MyInvoice\Service\Migration\Premier;
 
 use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Repository\PremierImportRepository;
+use MyInvoice\Service\Accounting\TakenOverRecord;
 use MyInvoice\Service\Bank\BankTransactionPostingScope;
 use MyInvoice\Service\Migration\MoneyS3\ImportProtocol;
 use MyInvoice\Service\Migration\Shared\JournalEntryLinker;
@@ -326,6 +327,12 @@ final class DocumentLinker
                 $existing[$row['invoice_id'] . '|' . $row['note']] = true;
             }
         }
+        // Pokladní doklad s evidovanou platbou je zapsaný, ať platbu založil převod nebo aplikace.
+        $stmt = $pdo->prepare("SELECT invoice_id, id FROM cash_documents WHERE supplier_id = ? AND invoice_payment_id IS NOT NULL AND invoice_id IN ({$in})");
+        $stmt->execute(array_merge([$ctx->supplierId], $ids));
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $existing[$row['invoice_id'] . '|cash|' . $row['id']] = true;
+        }
         $insert = $pdo->prepare(
             'INSERT INTO invoice_payments (supplier_id, invoice_id, paid_on, amount, currency, note, source, bank_transaction_id, created_by)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
@@ -343,7 +350,8 @@ final class DocumentLinker
         $record = function (int $invoiceId, string $target, float $czk, string $date) use ($ctx, $pdo, $invoices, $existing, $insert, $linkCash, &$left): ?float {
             [$kind, $movementId] = explode('|', $target);
             $note = $kind === 'cash' ? 'Úhrada převzatá z PREMIER, pokladní doklad #' . $movementId : 'Úhrada převzatá z PREMIER';
-            if (!isset($left[$invoiceId]) || isset($existing[$invoiceId . ($kind === 'bank' ? '|bank|' . $movementId : '|' . $note)])) {
+            if (!isset($left[$invoiceId]) || isset($existing[$invoiceId . ($kind === 'bank' ? '|bank|' . $movementId : '|' . $note)])
+                || ($kind === 'cash' && isset($existing[$invoiceId . '|cash|' . $movementId]))) {
                 return null;
             }
             $invoice = $invoices[$invoiceId];
@@ -491,17 +499,43 @@ final class DocumentLinker
         );
         $stmt->execute(array_merge([$ctx->supplierId], $finals));
         $credit = array_map('floatval', $stmt->fetchAll(PDO::FETCH_KEY_PAIR));
+        // Konečná faktura, která už čerpání má (dřívější převod, nebo ho uživatel upravil),
+        // se nechá být - opakovaný převod by jinak vrátil vazbu, kterou uživatel změnil.
+        $stmt = $pdo->prepare('SELECT DISTINCT final_invoice_id FROM purchase_advance_deductions WHERE supplier_id = ? AND final_invoice_id IN ('
+            . implode(',', array_fill(0, count($finals), '?')) . ')');
+        $stmt->execute(array_merge([$ctx->supplierId], $finals));
+        $done = array_fill_keys(array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN)), true);
+        // Zůstatek zálohy = debet 314 v jejím zápisu − dosavadní čerpání; víc se čerpat nesmí.
+        $advanceIds = array_values(array_unique(array_merge(...array_map('array_keys', array_values($deductions)))));
+        $stmt = $pdo->prepare(
+            "SELECT e.source_id, SUM(CASE WHEN l.side = 'debit' THEN l.amount ELSE 0 END)
+                    - (SELECT COALESCE(SUM(pad.amount), 0) FROM purchase_advance_deductions pad WHERE pad.supplier_id = e.supplier_id AND pad.advance_invoice_id = e.source_id)
+               FROM journal_entries e
+               JOIN journal_entry_lines l ON l.entry_id = e.id AND l.supplier_id = e.supplier_id
+               JOIN chart_of_accounts ca ON ca.id = l.account_id
+               LEFT JOIN chart_of_accounts pa ON pa.id = ca.parent_id
+              WHERE e.supplier_id = ? AND e.source_type = 'purchase_invoice' AND e.reversed_by IS NULL
+                AND e.source_id IN (" . implode(',', array_fill(0, count($advanceIds), '?')) . ")
+                AND (ca.account_code LIKE '314%' OR COALESCE(pa.account_code, '') LIKE '314%')
+              GROUP BY e.source_id, e.supplier_id"
+        );
+        $stmt->execute(array_merge([$ctx->supplierId], $advanceIds));
+        $remaining = array_map('floatval', $stmt->fetchAll(PDO::FETCH_KEY_PAIR));
         $insert = $pdo->prepare(
             'INSERT IGNORE INTO purchase_advance_deductions (supplier_id, final_invoice_id, advance_invoice_id, amount, created_by) VALUES (?, ?, ?, ?, ?)'
         );
         foreach ($deductions as $finalId => $advances) {
+            if (isset($done[$finalId])) {
+                continue;
+            }
             $left = round($credit[$finalId] ?? 0.0, 2);
             ksort($advances);
             foreach ($advances as $advanceId => $amount) {
-                $take = round(min($amount, $left), 2);
+                $take = round(min($amount, $left, $remaining[$advanceId] ?? 0.0), 2);
                 if ($take < 0.01) {
-                    break;
+                    continue;
                 }
+                $remaining[$advanceId] = round(($remaining[$advanceId] ?? 0.0) - $take, 2);
                 $insert->execute([$ctx->supplierId, $finalId, $advanceId, number_format($take, 2, '.', ''), $ctx->userOrNull()]);
                 if ($insert->rowCount() > 0) {
                     $ctx->protocol->count(self::STEP_PAYMENTS, 'advance_deductions');
@@ -531,7 +565,8 @@ final class DocumentLinker
                   JOIN journal_entry_lines l ON l.entry_id = e.id AND l.supplier_id = e.supplier_id
                   JOIN chart_of_accounts ca ON ca.id = l.account_id
                   LEFT JOIN chart_of_accounts pa ON pa.id = ca.parent_id
-                 WHERE d.supplier_id = ? AND d.document_kind IN ('invoice', 'credit_note') AND d.status NOT IN ('draft', 'cancelled') AND {$account}";
+                 WHERE d.supplier_id = ? AND d.document_kind IN ('invoice', 'credit_note') AND d.status NOT IN ('draft', 'cancelled') AND {$account}
+                   AND " . TakenOverRecord::documentSql('purchase_invoice', 'd');
         $stmt = $pdo->prepare(
             "SELECT d.id, d.vendor_id, SUM(CASE WHEN l.side = 'debit' THEN l.amount ELSE 0 END) AS debit,
                     (SELECT COALESCE(SUM(pad.amount), 0) FROM purchase_advance_deductions pad WHERE pad.supplier_id = d.supplier_id AND pad.advance_invoice_id = d.id) AS deducted
