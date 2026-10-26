@@ -1022,7 +1022,7 @@ final class DocumentLinker
         $s = $ctx->supplierId;
         $periodId = (int) $ctx->period['id'];
         $balance = (float) $pdo->query(
-            "SELECT COALESCE(SUM(CASE WHEN l.side = 'debit' THEN l.amount ELSE -l.amount END), 0)
+            "SELECT COALESCE(SUM(CASE WHEN l.side = 'debit' THEN l.signed_amount ELSE -l.signed_amount END), 0)
                FROM journal_entries e JOIN journal_entry_lines l ON l.entry_id = e.id AND l.supplier_id = e.supplier_id
                JOIN chart_of_accounts ca ON ca.id = l.account_id LEFT JOIN chart_of_accounts pa ON pa.id = ca.parent_id
               WHERE e.supplier_id = {$s} AND e.period_id = {$periodId} AND e.source_type = 'opening' AND e.reversed_by IS NULL

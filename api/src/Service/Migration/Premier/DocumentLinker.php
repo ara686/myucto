@@ -487,7 +487,7 @@ final class DocumentLinker
         $pdo = $this->db->pdo();
         $finals = array_keys($deductions);
         $stmt = $pdo->prepare(
-            "SELECT e.source_id, SUM(CASE WHEN l.side = 'credit' THEN l.amount ELSE 0 END) AS credit
+            "SELECT e.source_id, SUM(CASE WHEN l.side = 'credit' THEN l.signed_amount ELSE 0 END) AS credit
                FROM journal_entries e
                JOIN journal_entry_lines l ON l.entry_id = e.id AND l.supplier_id = e.supplier_id
                JOIN chart_of_accounts ca ON ca.id = l.account_id
@@ -508,7 +508,7 @@ final class DocumentLinker
         // Zůstatek zálohy = debet 314 v jejím zápisu − dosavadní čerpání; víc se čerpat nesmí.
         $advanceIds = array_values(array_unique(array_merge(...array_map('array_keys', array_values($deductions)))));
         $stmt = $pdo->prepare(
-            "SELECT e.source_id, SUM(CASE WHEN l.side = 'debit' THEN l.amount ELSE 0 END)
+            "SELECT e.source_id, SUM(CASE WHEN l.side = 'debit' THEN l.signed_amount ELSE 0 END)
                     - (SELECT COALESCE(SUM(pad.amount), 0) FROM purchase_advance_deductions pad WHERE pad.supplier_id = e.supplier_id AND pad.advance_invoice_id = e.source_id)
                FROM journal_entries e
                JOIN journal_entry_lines l ON l.entry_id = e.id AND l.supplier_id = e.supplier_id
@@ -568,7 +568,7 @@ final class DocumentLinker
                  WHERE d.supplier_id = ? AND d.document_kind IN ('invoice', 'credit_note') AND d.status NOT IN ('draft', 'cancelled') AND {$account}
                    AND " . TakenOverRecord::documentSql('purchase_invoice', 'd');
         $stmt = $pdo->prepare(
-            "SELECT d.id, d.vendor_id, SUM(CASE WHEN l.side = 'debit' THEN l.amount ELSE 0 END) AS debit,
+            "SELECT d.id, d.vendor_id, SUM(CASE WHEN l.side = 'debit' THEN l.signed_amount ELSE 0 END) AS debit,
                     (SELECT COALESCE(SUM(pad.amount), 0) FROM purchase_advance_deductions pad WHERE pad.supplier_id = d.supplier_id AND pad.advance_invoice_id = d.id) AS deducted
                {$lines} AND e.entry_date <= ?
               GROUP BY d.id, d.vendor_id HAVING debit > 0.005 ORDER BY MIN(e.entry_date), d.id"
@@ -585,7 +585,7 @@ final class DocumentLinker
             return;
         }
         $stmt = $pdo->prepare(
-            "SELECT d.id, d.vendor_id, SUM(CASE WHEN l.side = 'credit' THEN l.amount ELSE 0 END) AS credit
+            "SELECT d.id, d.vendor_id, SUM(CASE WHEN l.side = 'credit' THEN l.signed_amount ELSE 0 END) AS credit
                {$lines} AND e.entry_date >= ? AND e.entry_date <= ?
                 AND NOT EXISTS (SELECT 1 FROM purchase_advance_deductions pad WHERE pad.supplier_id = d.supplier_id AND pad.final_invoice_id = d.id)
               GROUP BY d.id, d.vendor_id HAVING credit > 0.005 ORDER BY MIN(e.entry_date), d.id"
