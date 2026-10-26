@@ -1375,7 +1375,12 @@ watch(
       loaded: loaded.value,
       storedDocument: isEdit.value && (editedStatus.value === 'draft' || isForce.value),
     })
-    if (rows.length === 0 || !confirm(t('invoice.price_level.reprice_confirm', { count: rows.length }))) return
+    if (rows.length === 0) return
+    // Ručně přepsaná cena má stav z této relace, uložená cena dokladu žádný.
+    const hasManual = rows.some(row => stockQuoteStates.get(row) != null)
+    const levelName = priceLevelOptions.value.find(l => l.id === level)?.name ?? t('invoice.price_level.no_level')
+    const question = hasManual ? 'invoice.price_level.reprice_confirm_manual' : 'invoice.price_level.reprice_confirm'
+    if (!confirm(t(question, { level: levelName, count: rows.length }))) return
     // Potvrzené řádky jsou odteď automatické: další změna odběratele, měny nebo hladiny
     // je přecení novým požadavkem a starší odpověď zahodí canApplyQuote.
     const before = rows.map(row => stockQuoteStates.get(row))
@@ -1392,16 +1397,19 @@ watch(
     const request = quoteStockRows(rows, 'context')
     const sent = rows.map(row => stockQuoteStates.get(row))
     void request.then((ok) => {
-      if (ok) return
-      // Ceny zůstaly, řádky se vrátí do stavu před potvrzením (příště se zase zeptá).
-      // Stav, který mezitím přepsal novější požadavek, zůstává.
+      // Řádek, do kterého se cena nezapsala (selhání, karta bez ceny v měně dokladu),
+      // se vrátí do stavu před potvrzením: cena zůstala a příště se zase zeptá.
+      // Stav, který mezitím přepsal novější požadavek nebo zapsaná cena, zůstává.
+      let unpriced = 0
       rows.forEach((row, i) => {
         if (stockQuoteStates.get(row) !== sent[i]) return
+        unpriced++
         const previous = before[i]
         if (previous) stockQuoteStates.set(row, previous)
         else stockQuoteStates.delete(row)
       })
-      toast.error(t('invoice.price_level.reprice_failed'))
+      if (!ok) toast.error(t('invoice.price_level.reprice_failed'))
+      else if (unpriced > 0) toast.warning(t('invoice.price_level.reprice_missing_price', { count: unpriced }))
     })
   },
 )

@@ -22562,7 +22562,10 @@
       "from_client": "Podle odběratele ({name})",
       "from_client_none": "Podle odběratele (bez hladiny)",
       "hint": "Přecení skladové řádky s automaticky doplněnou cenou, ručně upravené ceny zůstanou. U uloženého dokladu se editor zeptá, jestli přecenit všechny skladové řádky.",
-      "reprice_confirm": "Změnila se cenová hladina, podle které se doklad naceňuje. Přecenit skladové položky podle nové hladiny? Skladových řádků k přecenění: {count}, včetně ručně upravených cen. Zrušit ponechá uložené a ručně upravené ceny.",
+      "reprice_confirm": "Cenová hladina, podle které se doklad naceňuje, je teď {level}. Přecenit skladové položky podle ní? Skladových řádků k přecenění: {count}. Zrušit ponechá uložené ceny.",
+      "reprice_confirm_manual": "Cenová hladina, podle které se doklad naceňuje, je teď {level}. Přecenit skladové položky podle ní? Skladových řádků k přecenění: {count}, včetně ručně upravených cen. Zrušit ponechá uložené a ručně upravené ceny.",
+      "no_level": "bez hladiny",
+      "reprice_missing_price": "Skladových řádků bez ceny v měně dokladu: {count}. Jejich ceny zůstaly beze změny.",
       "reprice_failed": "Přecenění skladových položek podle nové hladiny se nepovedlo, ceny zůstaly beze změny.",
       "stale": "Hladina dokladu už není aktivní. Doklad se naceňuje podle odběratele, uložením se hladina z dokladu odebere."
     },

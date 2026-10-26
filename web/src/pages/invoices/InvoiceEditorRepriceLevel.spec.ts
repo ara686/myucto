@@ -51,6 +51,15 @@ type Vm = {
   priceLevelsLoaded: boolean
 }
 
+// Zprávy s parametry, ať test vidí, co dialog a hlášky říkají.
+const messages = {
+  reprice_confirm: 'confirm {level} {count}',
+  reprice_confirm_manual: 'confirm-manual {level} {count}',
+  no_level: 'bez hladiny',
+  reprice_failed: 'failed',
+  reprice_missing_price: 'missing {count}',
+}
+
 const flush = () => new Promise(resolve => setTimeout(resolve, 0))
 
 // Uložený koncept (nebo nový doklad) s načtenými řádky: dvě karty a jeden řádek bez karty.
@@ -66,7 +75,7 @@ async function mountEditor(path: string) {
   await router.isReady()
   const wrapper = shallowMount(InvoiceEditor, {
     global: {
-      plugins: [router, pinia, createI18n({ legacy: false, locale: 'cs', messages: { cs: {} }, missingWarn: false, fallbackWarn: false })],
+      plugins: [router, pinia, createI18n({ legacy: false, locale: 'cs', messages: { cs: { invoice: { price_level: messages } } }, missingWarn: false, fallbackWarn: false })],
       directives: { math: {} },
     },
   })
@@ -102,7 +111,7 @@ describe('InvoiceEditor: přecenění uloženého dokladu po změně hladiny', (
     await flush()
 
     expect(confirm).toHaveBeenCalledTimes(1)
-    expect(confirm).toHaveBeenCalledWith('invoice.price_level.reprice_confirm')
+    expect(confirm).toHaveBeenCalledWith('confirm Urgent 2')
     expect(quoteItems).toHaveBeenCalledTimes(1)
     expect(quoteItems.mock.calls[0][0].price_level_id).toBe(5)
     expect(quoteItems.mock.calls[0][0].lines.map(line => line.stock_item_id)).toEqual([7, 8])
@@ -207,7 +216,7 @@ describe('InvoiceEditor: přecenění uloženého dokladu po změně hladiny', (
     vm.form.price_level_id = 5
     await flush()
 
-    expect(toasts.value.map(toast => [toast.type, toast.text])).toEqual([['error', 'invoice.price_level.reprice_failed']])
+    expect(toasts.value.map(toast => [toast.type, toast.text])).toEqual([['error', 'failed']])
     expect(vm.form.items.map(row => row.unit_price_without_vat)).toEqual([100, 95, 500])
 
     // Ceny zůstaly ručně uložené, další změna hladiny se zase zeptá na oba řádky.
@@ -215,6 +224,42 @@ describe('InvoiceEditor: přecenění uloženého dokladu po změně hladiny', (
     await flush()
     expect(confirm).toHaveBeenCalledTimes(2)
     expect(quoteItems.mock.calls[1][0].lines).toHaveLength(2)
+    wrapper.unmount()
+  })
+
+  it('ručně upravenou cenu dialog zmíní, návrat bez hladiny ji pojmenuje', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(true).mockReturnValue(false)
+    const { wrapper, vm } = await mountEditor('/invoices/42')
+    vm.form.price_level_id = 3
+    await flush()
+    // Po přecenění uživatel jednu cenu přepíše ručně.
+    vm.form.items[0].unit_price_without_vat = 85
+    vm.form.price_level_id = 5
+    await flush()
+    vm.form.price_level_id = null
+    await flush()
+    expect(confirm.mock.calls.map(call => call[0])).toEqual(['confirm Dealer 2', 'confirm-manual Urgent 1', 'confirm-manual bez hladiny 1'])
+    wrapper.unmount()
+  })
+
+  it('karta bez ceny v měně dokladu: řádek zůstane uložený, hláška řekne kolik', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    quoteItems.mockImplementationOnce((payload: StockQuoteRequest) => Promise.resolve({
+      lines: quoted(payload, '80.00').lines.map(line => (line.stock_item_id === 7 ? { ...line, unit_price: null } : line)),
+    }) as never)
+    const { wrapper, vm } = await mountEditor('/invoices/42')
+    const { toasts } = useToast()
+    toasts.value = []
+
+    vm.form.price_level_id = 5
+    await flush()
+    expect(vm.form.items.map(row => row.unit_price_without_vat)).toEqual([100, 80, 500])
+    expect(toasts.value.map(toast => [toast.type, toast.text])).toEqual([['warning', 'missing 1']])
+
+    // Nenaceněný řádek se při další změně hladiny zase ptá, přeceněný jde automaticky.
+    vm.form.price_level_id = 3
+    await flush()
+    expect(confirm.mock.calls.map(call => call[0])).toEqual(['confirm Urgent 2', 'confirm Dealer 1'])
     wrapper.unmount()
   })
 })

@@ -1544,12 +1544,14 @@ velkoobchodní ceník pro jednorázový nákup. Proto má editor faktury pod odb
   ceny zůstanou.
 - U uloženého dokladu (koncept i úprava vystavené faktury) se ceny řádků samy nemění.
   Když po znovuotevření změníte hladinu dokladu nebo vyberete odběratele s jinou
-  hladinou, editor se zeptá **Přecenit skladové položky podle nové hladiny?** a uvede
-  počet řádků. Potvrzením se nacení všechny skladové řádky, i ty s ručně upravenou
-  cenou. **Zrušit** ponechá uložené i ručně upravené ceny. Řádky bez skladové karty,
-  textové řádky a sleva z celé faktury se nemění. Přeceněné řádky se při další změně
-  odběratele, měny nebo hladiny přeceňují samy jako u nového dokladu. Když přecenění
-  selže, editor to ohlásí a ceny zůstanou beze změny.
+  hladinou, editor se zeptá, jestli přecenit skladové položky podle nové hladiny, uvede
+  její název a počet řádků. Potvrzením se nacení všechny skladové řádky, i ty s ručně
+  upravenou cenou. **Zrušit** ponechá uložené i ručně upravené ceny. Řádky bez skladové
+  karty, textové řádky a sleva z celé faktury se nemění. Přeceněné řádky se při další
+  změně odběratele, měny nebo hladiny přeceňují samy jako u nového dokladu. Karta, která
+  nemá cenu v měně dokladu, se nepřecení: řádek si nechá cenu, editor řekne, kolika řádků
+  se to týká, a při další změně hladiny se zeptá znovu. Když přecenění selže, editor to
+  ohlásí a ceny zůstanou beze změny.
 - Hladina se uloží s dokladem, takže při další úpravě konceptu zůstane vybraná, detail
   faktury ji ukazuje a kopie faktury ji převezme. Ceny jsou uložené na řádcích, pozdější
   změna nebo deaktivace hladiny vystavený doklad nemění.
