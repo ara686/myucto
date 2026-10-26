@@ -286,8 +286,9 @@ function clientRouteParityErrors(manifestRoutes: readonly ManifestRoute[]): stri
 
 describe('sdílená klientská plocha vlastní domény', () => {
   it('obsahuje auditovanou klientskou plochu včetně nastavení firmy a legacy aliasů', () => {
-    expect(clientDomainRoutes).toHaveLength(59)
-    expect(new Set(clientDomainRoutes.map(route => route.name)).size).toBe(59)
+    // Archiv podání a klientské MCP přidávají dvě samostatné auditované routy.
+    expect(clientDomainRoutes).toHaveLength(60)
+    expect(new Set(clientDomainRoutes.map(route => route.name)).size).toBe(60)
     expect(clientDomainRoutes.slice(-3).map(route => route.name))
       .toEqual(['data-exchange', 'admin-export', 'admin-import'])
   })
@@ -309,7 +310,7 @@ describe('sdílená klientská plocha vlastní domény', () => {
       if (route!.path.includes(':')) parameterized.push(definition.name)
     }
 
-    expect(rendered).toHaveLength(51)
+    expect(rendered).toHaveLength(52)
     expect(redirects).toEqual([
       'profile-totp',
       'profile-shortcuts',
@@ -468,7 +469,7 @@ describe('sdílená klientská plocha vlastní domény', () => {
 
   it('pokrývá každý literální cíl klientské navigace manifestem a routerem', () => {
     const paths = [...new Set(clientNavigationPaths())]
-    expect(paths).toHaveLength(24)
+    expect(paths).toHaveLength(25)
 
     const routeNames = new Set(clientDomainRoutes.map(route => route.name))
     for (const path of paths) {
