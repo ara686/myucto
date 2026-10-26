@@ -277,16 +277,23 @@ doklad a nespustíte ani nepřipravíte inventuru.
 variabilního symbolu jen tehdy, když je faktura vystavená (ne koncept), jde
 o fakturu nebo dobropis a nemá vlastní výdejku či vratku z MyÚčta. Jinak se doklad
 převezme bez vazby na fakturu a kontrola ho vypíše i s důvodem. Převzetí podmínku
-ověří znovu, protože se faktura mezi kontrolou a převzetím mohla změnit.
+ověří znovu, protože se faktura mezi kontrolou a převzetím mohla změnit. Doklady,
+u kterých převzetí vazbu vynechalo, vypíše výsledek převzetí stejně jako kontrola.
 
 Navázaná převzatá výdejka platí jako výdej celé faktury, stejně jako výdejka, kterou
 k faktuře vytvořilo MyÚčto. Faktura proto nic nerezervuje. Když výdejka pokrývá jen
 část položek faktury, zbytek MyÚčto samo nevydá, ani po obnovení stornované faktury.
 Dorovnejte ho ruční výdejkou.
 
+Faktura založená v MyÚčtu se skladovými řádky s datem před koncem historie, kterou
+žádný převzatý doklad nekryje, drží rezervaci trvale. Vydat ji nejde, protože datum
+leží v zamčené historii. Takovou fakturu proto navažte v importu sloupcem
+**Vydaná faktura (VS)**.
+
 Storno vydané nebo přijaté faktury či dobropisu převzatou výdejku nebo příjemku
-nestornuje, historie zůstane, jak byla. Obnovení stornované faktury nebo dobropisu
-nový skladový doklad nevytvoří, protože k nim už převzatý doklad existuje.
+nestornuje, historie zůstane, jak byla. Obnovení stornované faktury nový skladový
+doklad nevytvoří, protože k ní už převzatá výdejka existuje. U dobropisu storno
+převzatou příjemku nestornuje a opakované vystavení dobropisu zboží podruhé nepřijme.
 
 **Vrácení importu:** chybný import vrátí správce firmy tlačítkem **Vrátit import**
 na stránce importu. Smažou se všechny převzaté doklady včetně vyrovnávací výdejky
