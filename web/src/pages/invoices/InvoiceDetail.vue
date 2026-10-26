@@ -18,6 +18,7 @@ import {
 } from '@/api/settings'
 import { adminApi, type InvoiceSmtpLog } from '@/api/admin'
 import { apiErrorCode, apiErrorMessage } from '@/api/errors'
+import { draftDeletionLockedForClient } from '@/api/locks'
 import AcceptPaymentDialog from '@/components/eet/AcceptPaymentDialog.vue'
 import QrInPersonPayment from '@/components/eet/QrInPersonPayment.vue'
 import EetInvoiceSummary from '@/components/eet/EetInvoiceSummary.vue'
@@ -400,7 +401,7 @@ function paymentsRelevant(): boolean {
 
 function loadPayments(invoiceId = invoice.value?.id ?? 0, generation = loadGeneration) {
   paymentsLoaded.value = false
-  if (!invoiceId || !invoice.value || !paymentsRelevant()) {
+  if (!invoiceId || !invoice.value || (!paymentsRelevant() && invoice.value.status !== 'draft')) {
     payments.value = []
     bankTransactions.value = []
     return
@@ -408,6 +409,7 @@ function loadPayments(invoiceId = invoice.value?.id ?? 0, generation = loadGener
   invoicesApi.listPayments(invoiceId)
     .then(r => {
       if (generation !== loadGeneration) return
+      if (!Array.isArray(r.payments) || !Array.isArray(r.bank_transactions)) return
       payments.value = r.payments
       bankTransactions.value = r.bank_transactions ?? []
       paymentsLoaded.value = true
@@ -1906,7 +1908,8 @@ const invoiceActions = computed<ActionItem[]>(() => {
       title: invoiceWillBeSigned.value ? (t('invoice.download_pdf_tooltip_signed') as string) : undefined,
       run: downloadPdf },
     { key: 'delete', label: t('common.delete'), icon: 'trash', tier: 'overflow', variant: 'danger',
-      show: isDraft.value && canDeletePermission && !lockedForMe.value, disabled: b, run: deleteInvoice },
+      show: isDraft.value && canDeletePermission && !(auth.isClientRole && draftDeletionLockedForClient(inv.locked,
+        payments.value.length > 0 || bankTransactions.value.length > 0 || !!inv.cash_documents?.length, paymentsLoaded.value)), disabled: b, run: deleteInvoice },
     // ── spodní panel „Více akcí" → pod „Pokročilé" (test/odeslání, admin, storno/destrukce) ──
     { key: 'client', label: t('invoice.client_detail'), icon: 'user', tier: 'advanced', variant: 'neutral',
       to: `/clients/${inv.client_id}` },

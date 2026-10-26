@@ -21,6 +21,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useSupplierStore } from '@/stores/supplier'
 import { canSaveToCompanyFolder, pdfFileName, savePdfToCompanyFolder } from '@/composables/useCompanyPdfSave'
 import { apiErrorMessage } from '@/api/errors'
+import { draftDeletionLockedForClient } from '@/api/locks'
 import ActionBar, { type ActionItem } from '@/components/ui/ActionBar.vue'
 import { offsetRoute } from '@/components/accounting/offsetLink'
 import { ICONS, btnFilledSm, btnOutline, btnOutlineSm } from '@/components/ui/buttonStyles'
@@ -956,7 +957,9 @@ const purchaseActions = computed<ActionItem[]>(() => {
     href: purchaseInvoicesApi.pohodaUrl(inv.id) })
 
   items.push({ key: 'delete', label: t('common.delete'), icon: 'trash', tier: 'overflow', variant: 'danger',
-    show: canDelete.value && canDeletePermission && !lockedForMe.value, disabled: acting.value, run: remove })
+    show: canDelete.value && canDeletePermission && !(auth.isClientRole && draftDeletionLockedForClient(inv.locked,
+      !!inv.bank_payments?.length || !!inv.cash_payments?.length || !!inv.settlement_payments?.length,
+      Array.isArray(inv.bank_payments) && Array.isArray(inv.cash_payments) && Array.isArray(inv.settlement_payments))), disabled: acting.value, run: remove })
 
   // admin „force" akce (pod „Pokročilé")
   items.push({ key: 'force-edit', label: t('purchase_invoice.force_edit'), icon: 'edit', tier: 'advanced', variant: 'warning',

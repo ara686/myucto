@@ -17,6 +17,8 @@ use MyInvoice\Repository\InvoiceRepository;
 use MyInvoice\Service\Accounting\DocumentJournalPurge;
 use MyInvoice\Service\Accounting\DocumentJournalSync;
 use MyInvoice\Service\Accounting\DocumentLockService;
+use MyInvoice\Service\Accounting\DocumentPaymentLinks;
+use MyInvoice\Service\Accounting\DocumentDeletionBoundary;
 use MyInvoice\Service\Accounting\JournalEntryDeletionRules;
 use MyInvoice\Service\Accounting\PostingException;
 use MyInvoice\Service\Accounting\RetentionGuard;
@@ -69,6 +71,8 @@ final class DeleteInvoiceAction
         private readonly StatsRecomputer $stats,
         private readonly VarsymbolGenerator $varsymbol,
         private readonly DocumentLockService $locks,
+        private readonly DocumentPaymentLinks $paymentLinks,
+        private readonly DocumentDeletionBoundary $deletionBoundary,
         private readonly DocumentJournalSync $journalSync,
         private readonly StockIssueService $stockIssue,
         private readonly RetentionGuard $retention,
@@ -91,11 +95,54 @@ final class DeleteInvoiceAction
             return Json::error($response, 'forbidden', 'Read-only role nemůže mazat.', 403);
         }
 
-        // Zámek dokladu (Epic F6) — PŘED status guardem: zaúčtovaný/uzavřený doklad
-        // klient nesmaže (403 document_locked), účetní v zavřeném období 409, admin
-        // jen s ?force=1 (client nikdy admin větev — M6).
         $documentLock = $this->locks->forInvoice($existing);
-        if ($deny = $this->denyIfLocked($request, $response, $documentLock, 'invoice', $id)) {
+        $supplierId = (int) ($existing['supplier_id'] ?? 0);
+        $explicitForceOverride = !empty($request->getQueryParams()['force']) && RequestAuthorization::isCompanyAdmin($request);
+        $periodCandidate = !$explicitForceOverride && $status === 'draft' && !$documentLock->booked && !$documentLock->posted
+            && ($documentLock->inClosedPeriod || ($documentLock->inClosingPeriod && RequestAuthorization::isClientType($request)));
+        $children = $this->db->pdo()->prepare(
+            $periodCandidate ? 'WITH RECURSIVE deletion_tree AS (
+                SELECT id, supplier_id, invoice_type, is_simplified, varsymbol, status, issue_date, tax_date, parent_invoice_id,
+                       effective_tax_date, booked_at, revenue_category_id
+                  FROM invoices FORCE INDEX (idx_inv_parent) WHERE supplier_id = ? AND parent_invoice_id = ?
+                UNION DISTINCT
+                SELECT i.id, i.supplier_id, i.invoice_type, i.is_simplified, i.varsymbol, i.status, i.issue_date, i.tax_date, i.parent_invoice_id,
+                       i.effective_tax_date, i.booked_at, i.revenue_category_id
+                  FROM deletion_tree parent STRAIGHT_JOIN invoices i FORCE INDEX (idx_inv_parent) ON parent.id = i.parent_invoice_id
+                 WHERE i.supplier_id = ?
+             ) SELECT * FROM deletion_tree WHERE id <> ?'
+            : 'SELECT id, supplier_id, invoice_type, is_simplified, varsymbol, status, issue_date, tax_date, parent_invoice_id,
+                      effective_tax_date, booked_at, revenue_category_id
+                 FROM invoices WHERE supplier_id = ? AND parent_invoice_id = ?'
+        );
+        $children->execute($periodCandidate ? [$supplierId, $id, $supplierId, $id] : [$supplierId, $id]);
+        $childRows = $children->fetchAll(\PDO::FETCH_ASSOC);
+        $childIds = array_map(static fn (array $row): int => (int) $row['id'], $childRows);
+        $deleteIds = [...$childIds, $id];
+        $childLocks = [];
+        foreach (array_chunk($childIds, 500) as $batch) {
+            $childLocks += $this->locks->lockedMapForSources($supplierId, 'invoice', $batch);
+        }
+        $allUnposted = !$documentLock->booked && !$documentLock->posted;
+        $allChildrenDraft = true;
+        foreach ($childRows as $child) {
+            $childLock = $childLocks[(int) $child['id']] ?? null;
+            if ($childLock === null || $childLock->booked || $childLock->posted) {
+                $allUnposted = false;
+            }
+            if ($child['status'] !== 'draft') {
+                $allChildrenDraft = false;
+            }
+        }
+        $hasFinancialLinks = !$allUnposted || !$allChildrenDraft;
+        if (!$explicitForceOverride && !$hasFinancialLinks && $status === 'draft'
+            && ($documentLock->inClosedPeriod || $documentLock->inClosingPeriod || $documentLock->dateLocked)) {
+            $hasFinancialLinks = $this->paymentLinks->existsForDocuments($supplierId, 'invoice', $deleteIds);
+        }
+        $deletionLock = $explicitForceOverride ? $documentLock : $documentLock->forDeletion($status, $hasFinancialLinks);
+        $periodOnlyExemption = $deletionLock !== $documentLock
+            && ($documentLock->inClosedPeriod || ($documentLock->inClosingPeriod && RequestAuthorization::isClientType($request)));
+        if ($deny = $this->denyIfLocked($request, $response, $deletionLock, 'invoice', $id)) {
             return $deny;
         }
 
@@ -115,20 +162,6 @@ final class DeleteInvoiceAction
             return $deny;
         }
 
-        $supplierId = (int) ($existing['supplier_id'] ?? 0);
-
-        // Najdi všechny child doklady (storno, dobropis) — díky CASCADE se smažou
-        // s parentem, ale chceme je zalogovat, invalidovat jejich PDF cache a zahrnout
-        // do posouzení, zda force-delete maže výhradně nezaúčtované doklady.
-        $children = $this->db->pdo()->prepare(
-            'SELECT id, supplier_id, invoice_type, is_simplified, varsymbol, status, issue_date, tax_date,
-                    effective_tax_date, booked_at, revenue_category_id
-               FROM invoices
-              WHERE parent_invoice_id = ?'
-        );
-        $children->execute([$id]);
-        $childRows = $children->fetchAll(\PDO::FETCH_ASSOC);
-
         // EET-07: doklad s platební událostí nebo evidovanou tržbou jde jen stornovat
         // (i admin s ?force=1); fiskální historie musí zůstat navázaná na doklad.
         $eetConflict = $this->eetHistory->invoiceConflict(
@@ -141,14 +174,6 @@ final class DeleteInvoiceAction
 
         $forceDelete = ($request->getQueryParams()['force'] ?? '') === '1'
             && RequestAuthorization::isCompanyAdmin($request);
-        $allUnposted = !$documentLock->booked && !$documentLock->posted;
-        foreach ($childRows as $child) {
-            $childLock = $this->locks->forInvoice($child);
-            if ($childLock->booked || $childLock->posted) {
-                $allUnposted = false;
-                break;
-            }
-        }
 
         // Zachyt stats závislosti PŘED delete (po delete už client_id/project_id nepřečteme)
         $clientId  = isset($existing['client_id'])  ? (int) $existing['client_id']  : null;
@@ -170,8 +195,6 @@ final class DeleteInvoiceAction
             'ip'         => $ip,
             'user_agent' => $request->getHeaderLine('User-Agent'),
         ];
-        $deleteIds = array_map(static fn(array $row): int => (int) $row['id'], $childRows);
-        $deleteIds[] = $id;
 
         $pdo = $this->db->pdo();
         $ownTx = !$pdo->inTransaction();
@@ -179,6 +202,11 @@ final class DeleteInvoiceAction
             $pdo->beginTransaction();
         }
         try {
+            if ($periodOnlyExemption && $this->deletionBoundary->changed($supplierId, 'invoice', [$existing, ...$childRows], false)) {
+                $deny = $this->denyIfLocked($request, $response, $documentLock, 'invoice', $id);
+                if ($ownTx && $pdo->inTransaction()) $pdo->rollBack();
+                return $deny ?? Json::error($response, 'document_changed', 'Doklad byl mezitím změněn. Načtěte jej znovu.', 409);
+            }
             // Admin force-delete zaúčtované faktury: dají-li se její zápisy (i storno
             // dvojice) smazat v deníku, smažou se nejdřív a faktura pak odchází jako
             // nezaúčtovaná. Nejde-li to u kteréhokoli dokladu skupiny, nesmaže se nic
