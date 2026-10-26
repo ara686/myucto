@@ -497,6 +497,15 @@ stejným číslem rozhoduje shoda částky, pak datum úhrady a nakonec rok. Dva
 stejně dobré kandidáty převod nespáruje a protokol je vypíše k ručnímu
 spárování. Spárovaná faktura dostane stav uhrazeno.
 
+Čerpání poskytnuté zálohy (314) převod naváže na zálohu i tehdy, když ho Money
+vede jen řádkem konečné faktury na zálohovém účtu se symbolem faktury
+(měsíční „vyúčtované zálohy", roční vyúčtování). Páruje po dodavateli podle
+IČO: nejdřív na zálohu nebo daňový doklad k přijaté platbě, jehož číslo řádek
+deníku uvádí, jinak na nejstarší otevřené zálohy zaplacené do data faktury.
+Zálohy z doby před prvním převáděným rokem jsou jen v počátečním stavu a vazbu
+nedostanou. Deník se tím nemění. Vazbu na zálohu nebo čerpání, které jste
+v MyÚčtu zadali nebo smazali, převod nepřepíše.
+
 Protokoly všech běhů zůstávají v přehledu pod průvodcem. Protokol zkoušky
 nanečisto z přehledu smažete, protokol ostrého převodu zůstává.
 

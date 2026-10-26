@@ -30,7 +30,9 @@ use PDO;
  * („… (daň. dokl. DPP001)") a popis DDKP („Doklad k přijaté platbě (záloha ZF190001)",
  * případně s bankovním dokladem úhrady zálohy „(záloha BV190038)"). Vazba se přijme jen
  * k záloze téhož partnera. Vrácení zálohy příchozí platbou se spáruje se zálohou
- * ({@see matchAdvanceRefunds()}).
+ * ({@see matchAdvanceRefunds()}). Čerpání, které Money vede bez odkazu na zálohu (řádek
+ * konečné faktury na zálohovém účtu s vlastním symbolem faktury), spáruje podle saldokonta
+ * {@see AdvanceDeductionMatcher}.
  *
  * Existující vazby převod nepřepisuje a opakovaný převod nic nezdvojí.
  */
@@ -123,6 +125,7 @@ final class AdvanceLinker
             $issued ? $this->linkIssued($ctx, $deductions, $ddkp) : $this->linkPurchase($ctx, $deductions, $ddkp);
         }
         $this->matchAdvanceRefunds($ctx);
+        (new AdvanceDeductionMatcher($this->db, $this->map))->match($ctx, $dirs);
     }
 
     /**
