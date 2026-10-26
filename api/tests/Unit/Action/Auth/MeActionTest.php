@@ -36,12 +36,15 @@ final class MeActionTest extends TestCase
             ->with(\PDO::FETCH_ASSOC)
             ->willReturn([]);
         $pdo = $this->createMock(\PDO::class);
+        // Instalace bez sloupce rozpisu slevy (2035) dostane volbu vypnutou, dotaz nespadne.
         $pdo->expects(self::once())
             ->method('prepare')
+            ->with(self::stringContains('0 AS invoice_pdf_show_line_discount'))
             ->willReturn($supplierStatement);
         $db = $this->createMock(Connection::class);
-        // Sloupce kontrolované kvůli instalacím pozadu s migrací: OSS a zjednodušený doklad (2037).
-        $db->expects(self::exactly(2))->method('hasColumn')
+        // Sloupce kontrolované kvůli instalacím pozadu s migrací: OSS, zjednodušený doklad (2037)
+        // a rozpis slevy na PDF (2035, tady záměrně chybí).
+        $db->expects(self::exactly(3))->method('hasColumn')
             ->willReturnCallback(static fn (string $table, string $column): bool =>
                 $table === 'supplier' && in_array($column, ['oss_enabled', 'simplified_hide_customer_default'], true));
         $db->expects(self::once())->method('pdo')->willReturn($pdo);

@@ -490,11 +490,14 @@ se nesčítá.
 **Sleva v % u řádku.** Se zapnutou volbou **Na PDF faktury rozepsat slevu z ceníkové ceny**
 (`Nastavení → Doklady`) má tabulka položek za cenou sloupec **Sleva %**, a to u skladového
 i ručně zadaného řádku. Zadejte slevu 0 až 100 % (nejvýš dvě desetinná místa, víc se
-zaokrouhlí). Cena za jednotku se přepočte z ceníkové ceny a zaokrouhlí na haléře, u časové
-položky na šest míst. Řádek bez ceníkové ceny ji převezme z aktuální ceny, takže
-„1 000,00 a sleva 10 %“ dá cenu 900,00. Ruční změna ceny slevu v poli přepočte, sleva nad
-100 % nebo text se nepřijme a pole se vrátí. Bez volby se editor nemění. Sleva z celé
-faktury funguje dál stejně a počítá se z cen řádků po slevě.
+zaokrouhlí, znak % můžete připsat). Cena za jednotku se přepočte z ceníkové ceny
+a zaokrouhlí na dvě desetinná místa, u časové položky na šest míst. U nízkých cen se proto
+procento spočtené ze zaokrouhlené ceny může od zadaného lišit o setiny. Řádek bez ceníkové
+ceny ji převezme z aktuální ceny, takže „1 000,00 a sleva 10 %“ dá cenu 900,00. Ruční změna
+ceny slevu v poli přepočte. Opravíte-li cenu na ceníkovou nebo nad ni (pole slevy je pak
+prázdné), další zadaná sleva se počítá z nové ceny. Sleva nad 100 % nebo text se nepřijme
+a pole se vrátí. Bez volby se editor nemění. Sleva z celé faktury funguje dál stejně
+a počítá se z cen řádků po slevě.
 
 **Pořadí.** Levým úchytem (☰) přetáhněte položky pro změnu pořadí. Pořadí se zachová v PDF.
 

@@ -44,6 +44,20 @@ describe('sleva v % zadaná u řádku', () => {
     expect(applyLineDiscount({ list_unit_price: null, unit_price_without_vat: -100 }, 10)).toBeNull()
   })
 
+  it('cena opravená na ceníkovou nebo nad ni se stane novou ceníkovou', () => {
+    expect(applyLineDiscount({ list_unit_price: 1000, unit_price_without_vat: 1200 }, 10)).toEqual({ list_unit_price: 1200, unit_price_without_vat: 1080 })
+    expect(applyLineDiscount({ list_unit_price: 1000, unit_price_without_vat: 1000 }, 5)).toEqual({ list_unit_price: 1000, unit_price_without_vat: 950 })
+    expect(applyLineDiscount({ list_unit_price: 1000, unit_price_without_vat: 1200 }, 0)).toBeNull()
+    expect(applyLineDiscount({ list_unit_price: 1000, unit_price_without_vat: 900 }, 20)).toEqual({ list_unit_price: 1000, unit_price_without_vat: 800 })
+  })
+
+  it('přijme i znak procenta', () => {
+    expect(parseLineDiscountInput('10%')).toBe(10)
+    expect(parseLineDiscountInput(' 12,5 % ')).toBe(12.5)
+    expect(parseLineDiscountInput('%')).toBe(0)
+    expect(parseLineDiscountInput('10%%')).toBeNull()
+  })
+
   it('vstup 0 až 100, desetinná čárka, víc míst se zaokrouhlí na dvě', () => {
     expect(parseLineDiscountInput('10')).toBe(10)
     expect(parseLineDiscountInput(' 12,5 ')).toBe(12.5)

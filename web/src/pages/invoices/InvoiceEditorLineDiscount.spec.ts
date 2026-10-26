@@ -117,6 +117,17 @@ describe('InvoiceEditor: sleva v % zadaná u řádku', () => {
     // Neplatná sleva řádek nemění.
     vm.setLineDiscount(row, '150')
     expect(row.unit_price_without_vat).toBe(875)
+
+    // Oprava ceny nad ceníkovou: další sleva se počítá z nové ceny.
+    row.unit_price_without_vat = 1200
+    vm.setLineDiscount(row, '10 %')
+    expect(row.list_unit_price).toBe(1200)
+    expect(row.unit_price_without_vat).toBe(1080)
+
+    // Desktop i mobilní pole mají přístupný název.
+    const inputs = wrapper.findAll('[data-test="line-discount-input"]')
+    expect(inputs.length).toBe(2)
+    for (const field of inputs) expect(field.attributes('aria-label')).toBe('invoice.line_discount.column')
     wrapper.unmount()
   })
 })

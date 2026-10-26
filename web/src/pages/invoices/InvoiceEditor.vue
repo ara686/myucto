@@ -3561,7 +3561,7 @@ useWindowTitle(
               <div v-if="showLineDiscountInput">
                 <label class="block text-xs font-medium text-neutral-600 mb-1">{{ t('invoice.line_discount.column') }}</label>
                 <input :value="lineDiscountInput(item)" @change="onLineDiscountChange(item, $event)" type="text" inputmode="decimal"
-                  placeholder="0" data-test="line-discount-input" :title="t('invoice.line_discount.input_hint')"
+                  placeholder="0" data-test="line-discount-input" :aria-label="t('invoice.line_discount.column')" :title="t('invoice.line_discount.input_hint')"
                   class="w-full h-10 px-3 border border-neutral-300 rounded text-right font-mono text-sm" />
               </div>
               <div v-if="supplierIsVatPayer">

@@ -45,9 +45,9 @@ export function lineDiscountInputValue(listPrice: number | string | null | undef
   return pct !== null && pct > 0 ? roundTo(pct, 2) : null
 }
 
-/** Zadaná sleva: 0 až 100 (prázdné = 0), desetinná čárka i tečka, na dvě místa. null = neplatný vstup. */
+/** Zadaná sleva: 0 až 100 (prázdné = 0), desetinná čárka i tečka, volitelně se znakem %, na dvě místa. null = neplatný vstup. */
 export function parseLineDiscountInput(raw: string): number | null {
-  const text = raw.trim().replace(',', '.')
+  const text = raw.trim().replace(/\s*%$/, '').replace(',', '.')
   if (text === '') return 0
   if (!/^\d+(\.\d+)?$/.test(text)) return null
   const pct = roundTo(Number(text), 2)
@@ -56,8 +56,10 @@ export function parseLineDiscountInput(raw: string): number | null {
 
 /**
  * Sleva v % zadaná u řádku: cena = ceníková × (1 − sleva / 100), zaokrouhlená na
- * `decimals` míst jako ruční cena řádku. Bez ceníkové ceny se jí stane aktuální cena
- * řádku. null = nic se nemění (bez ceníku a bez kladné ceny, nebo nulová sleva bez ceníku).
+ * `decimals` míst jako ruční cena řádku. Bez ceníkové ceny, nebo když je cena řádku
+ * na ceníkové či nad ní (pole slevy je prázdné, uživatel cenu opravil), se ceníkovou
+ * stane aktuální cena řádku. null = nic se nemění (bez kladné ceny, nebo nulová sleva
+ * z aktuální ceny).
  */
 export function applyLineDiscount(
   row: { list_unit_price?: number | string | null; unit_price_without_vat: number | string | null | undefined },
@@ -65,8 +67,8 @@ export function applyLineDiscount(
   decimals = 2,
 ): { list_unit_price: number; unit_price_without_vat: number } | null {
   let list = toNumber(row.list_unit_price)
-  if (list === null || list <= 0) {
-    const current = toNumber(row.unit_price_without_vat)
+  const current = toNumber(row.unit_price_without_vat)
+  if (list === null || list <= 0 || (current !== null && current > list)) {
     if (current === null || current <= 0 || pct === 0) return null
     list = current
   }

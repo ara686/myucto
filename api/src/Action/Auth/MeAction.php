@@ -79,6 +79,10 @@ final class MeAction
             $simplifiedSelect = $this->db->hasColumn('supplier', 'simplified_hide_customer_default')
                 ? 'simplified_hide_customer_default'
                 : '0 AS simplified_hide_customer_default';
+            // Rozpis slevy z ceníku na PDF (migrace 2035), stejná pojistka pro instalaci pozadu s migrací.
+            $lineDiscountSelect = $this->db->hasColumn('supplier', 'invoice_pdf_show_line_discount')
+                ? 'invoice_pdf_show_line_discount'
+                : '0 AS invoice_pdf_show_line_discount';
             $where  = '';
             $params = [];
             if ($allowed !== []) {
@@ -93,11 +97,12 @@ final class MeAction
             $cacheKey = 'me:suppliers:' . ($allowed === [] ? 'all' : implode(',', $allowed))
                 . ':' . ($ossSelect === 'oss_enabled' ? '1' : '0') . ':client-ai'
                 . ':' . ($simplifiedSelect === 'simplified_hide_customer_default' ? '1' : '0')
-                . ':legal-form:line-discount';
+                . ':legal-form'
+                . ':' . ($lineDiscountSelect === 'invoice_pdf_show_line_discount' ? '1' : '0');
             $suppliers = (array) $this->cache->remember(
                 EntityCache::GROUP_SUPPLIER,
                 $cacheKey,
-                function () use ($where, $params, $ossSelect, $simplifiedSelect): array {
+                function () use ($where, $params, $ossSelect, $simplifiedSelect, $lineDiscountSelect): array {
                     $stmt = $this->db->pdo()->prepare(
                         // dic + adresa: dashboard pod názvem firmy vypisuje identifikaci
                         // (IČ · DIČ · adresa) na jeden řádek — bez nich by musel dělat
@@ -106,7 +111,7 @@ final class MeAction
                                 is_vat_payer, is_identified, taxpayer_type,
                                 default_payment_due_days, default_payment_due_unit, default_prices_include_vat, default_rounding_mode,
                                 allow_refund_invoices, auto_send_reminders, payment_thanks_enabled, payment_thanks_default_checked,
-                                invoice_pdf_show_line_discount,
+                                ' . $lineDiscountSelect . ',
                                 ' . $simplifiedSelect . ',
                                 accounting_mode, accounting_enabled, payroll_enabled, stock_enabled, dimensions_enabled, fiscal_year_start_month, ' . $ossSelect . ',
                                 ai_provider, ai_data_region, ai_eu_residency_required, client_ai_extraction_enabled, '
