@@ -160,6 +160,7 @@ final class StockTakeService
             if ($take['status'] !== 'draft') {
                 throw new StockException('invalid_document', 'Do počítání lze přepnout jen rozpracovanou (draft) inventuru.', 422);
             }
+            StockHistoryImportService::assertNotRunning($this->db->pdo(), $supplierId, 'Probíhá převzetí nebo vrácení historie skladu. Inventuru spusťte po jeho dokončení.');
             $warehouseId = (int) $take['warehouse_id'];
             $this->warehouses->lockForStockOperation($supplierId, [$warehouseId]);
 
@@ -229,6 +230,7 @@ final class StockTakeService
             if ($take['status'] !== 'draft') {
                 throw new StockException('invalid_document', 'Připravit lze jen rozpracovanou inventuru.', 409);
             }
+            StockHistoryImportService::assertNotRunning($this->db->pdo(), $supplierId, 'Probíhá převzetí nebo vrácení historie skladu. Inventuru spusťte po jeho dokončení.');
             $job = $this->valuationJobs->enqueue($supplierId, $take['take_date'], [
                 'warehouse_id' => (int) $take['warehouse_id'], 'stock_take_id' => $id,
             ]);

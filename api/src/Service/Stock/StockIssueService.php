@@ -166,7 +166,10 @@ final class StockIssueService
         $hasPostedIssue = false;
         $hasPostedReturn = false;
         foreach ($this->docsRepo->listByInvoice($supplierId, $invoiceId) as $existing) {
-            if ((string) $existing['status'] !== 'posted' || (string) $existing['origin'] !== 'invoice') {
+            // Převzatá výdejka z historie skladu (import z jiného programu) je výdej k faktuře
+            // i s původem 'manual': obnovení stornované faktury by zboží vydalo podruhé.
+            if ((string) $existing['status'] !== 'posted'
+                || ((string) $existing['origin'] !== 'invoice' && $existing['history_import_job_id'] === null)) {
                 continue;
             }
             $hasPostedIssue = $hasPostedIssue || (string) $existing['doc_type'] === 'issue';

@@ -670,8 +670,9 @@ final class StockHistoryImportWorker
     }
 
     /**
-     * Ocení další dávku karet: všechny sklady karty v pořadí skladové knihy, příjem drží
-     * zadanou hodnotu, výdej bere klouzavý průměr, převodka přenese hodnotu výdeje.
+     * Ocení další dávku karet v pořadí skladové knihy, každý sklad karty vlastním klouzavým
+     * průměrem: příjem drží zadanou hodnotu, výdej bere průměr skladu, převodka přenese
+     * hodnotu výdeje na cílový sklad.
      * Vrací false, když už žádná karta nezbývá.
      */
     private function valuate(int $supplierId, array $job, array &$report): bool
@@ -812,6 +813,8 @@ final class StockHistoryImportWorker
         $from = (string) $job['input']['date_from'];
         if ($profile['cutover_date'] === null) {
             $this->assertNoLiveDocuments($supplierId);
+            // Inventura spuštěná během převzetí by po odemčení zásobu zdvojila.
+            StockHistoryImportService::assertNoOpenStockTake($pdo, $supplierId);
             $pdo->prepare('DELETE FROM stock_valuation_snapshots WHERE supplier_id = ? AND cutoff_date >= ?')
                 ->execute([$supplierId, $from]);
             $pdo->prepare('UPDATE supplier SET stock_history_locked_until = ? WHERE id = ?')
@@ -867,13 +870,15 @@ final class StockHistoryImportWorker
 
     /**
      * Úloha musí být nejnovější aplikací nebo vrácením firmy: opakovaná starší úloha
-     * (retry po vrácení nebo po novém importu) by přepsala novější stav. Sdílený zámek
-     * firmy ji řadí za právě zakládané vrácení či aplikaci.
+     * (retry po vrácení nebo po novém importu) by přepsala novější stav. Zámek firmy ji
+     * řadí za právě zakládané vrácení či aplikaci. Rovnou výhradní: dávka firmu později
+     * mění (zámek historie), povýšení sdíleného zámku proti uložení nastavení firmy
+     * končí deadlockem.
      */
     private function assertCurrent(int $supplierId, array $job): void
     {
         $pdo = $this->db->pdo();
-        $pdo->prepare('SELECT id FROM supplier WHERE id = ? LOCK IN SHARE MODE')->execute([$supplierId]);
+        $pdo->prepare('SELECT id FROM supplier WHERE id = ? FOR UPDATE')->execute([$supplierId]);
         $stmt = $pdo->prepare('SELECT MAX(id) FROM catalog_jobs WHERE supplier_id = ? AND kind IN (?, ?)');
         $stmt->execute([$supplierId, StockHistoryImportService::APPLY_KIND, StockHistoryImportService::ROLLBACK_KIND]);
         if ((int) $stmt->fetchColumn() !== (int) $job['id']) {

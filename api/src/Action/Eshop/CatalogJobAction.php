@@ -117,12 +117,22 @@ final class CatalogJobAction
         if (!empty($job['input']['stock_take_id'])) {
             return Json::error($response, 'stock_take_preparation', 'Přípravu inventury ovládejte v detailu inventury.', 409);
         }
-        if ($args['operation'] === 'retry' && in_array($job['kind'], [
+        $historyKinds = [
             \MyInvoice\Service\Stock\StockHistoryImportService::APPLY_KIND,
             \MyInvoice\Service\Stock\StockHistoryImportService::ROLLBACK_KIND,
-        ], true)) {
-            // Rozběhnutá historie se nedokončuje opakováním: mohla být mezitím vrácená.
-            return Json::error($response, 'history_import_retry_unsupported', 'Převzetí ani vrácení historie skladu nejde opakovat. Import vraťte a spusťte znovu.', 409);
+        ];
+        if ($args['operation'] === 'cancel' && $job['kind'] === $historyKinds[0]
+            && !RequestAuthorization::canRollbackStockHistoryImport($request)) {
+            // Zastavené převzetí bez data přechodu nechá zamčený celý sklad, jako rozjeté vrácení.
+            return Json::error($response, 'forbidden', 'Převzetí historie skladu může zastavit jen správce firmy.', 403);
+        }
+        if ($args['operation'] === 'retry' && in_array($job['kind'], $historyKinds, true)) {
+            // Opakovat jde jen poslední převzetí nebo vrácení; starší úloha by přepsala novější stav.
+            $stmt = $this->db->pdo()->prepare('SELECT MAX(id) FROM catalog_jobs WHERE supplier_id = ? AND kind IN (?, ?)');
+            $stmt->execute([$supplierId, ...$historyKinds]);
+            if ((int) $stmt->fetchColumn() !== $id) {
+                return Json::error($response, 'history_import_retry_unsupported', 'Opakovat jde jen poslední převzetí nebo vrácení historie skladu.', 409);
+            }
         }
         $changed = $args['operation'] === 'retry' ? $this->jobs->retry($supplierId, $id) : $this->jobs->cancel($supplierId, $id);
         if (!$changed) {

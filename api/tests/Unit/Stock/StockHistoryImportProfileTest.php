@@ -66,12 +66,16 @@ final class StockHistoryImportProfileTest extends TestCase
         $tomorrow = (new \DateTimeImmutable('tomorrow'))->format('Y-m-d');
         $profile = self::profile(['cutover_date' => null]);
         $indexes = StockHistoryImportProfile::headerIndexes($profile, self::HEADER);
-        self::assertSame(date('Y-m-d'), StockHistoryImportProfile::map($profile, $indexes, ['1', 'prijemka', date('Y-m-d'), 'HL', '', 'A', '1', '1'])['doc_date']);
-        try {
-            StockHistoryImportProfile::map($profile, $indexes, ['1', 'prijemka', $tomorrow, 'HL', '', 'A', '1', '1']);
-            self::fail('Doklad s budoucím datem musí selhat.');
-        } catch (\InvalidArgumentException $e) {
-            self::assertSame('history_import_doc_date_future', $e->getMessage());
+        $yesterday = (new \DateTimeImmutable('yesterday'))->format('Y-m-d');
+        self::assertSame($yesterday, StockHistoryImportProfile::map($profile, $indexes, ['1', 'prijemka', $yesterday, 'HL', '', 'A', '1', '1'])['doc_date']);
+        // Bez data přechodu by dnešní doklad historie zamkl i dnešní živé doklady.
+        foreach ([date('Y-m-d'), $tomorrow] as $date) {
+            try {
+                StockHistoryImportProfile::map($profile, $indexes, ['1', 'prijemka', $date, 'HL', '', 'A', '1', '1']);
+                self::fail('Doklad historie s dnešním nebo budoucím datem musí selhat.');
+            } catch (\InvalidArgumentException $e) {
+                self::assertSame('history_import_doc_date_not_past', $e->getMessage());
+            }
         }
         self::assertSame(date('Y-m-d'), self::profile(['cutover_date' => date('Y-m-d')])['cutover_date']);
         $this->expectExceptionMessage('history_import_cutover_future');

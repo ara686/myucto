@@ -126,7 +126,7 @@ final class StockHistoryImportAction
         }, 202);
     }
 
-    /** Koncový stav historie z náhledu proti stavu v MyÚčtu, JSON nebo XLSX (?format=xlsx). */
+    /** Koncový stav historie z náhledu proti počátečnímu stavu v MyÚčtu, JSON nebo XLSX (?format=xlsx). */
     public function endState(Request $request, Response $response, array $args): Response
     {
         $format = $request->getQueryParams()['format'] ?? 'json';

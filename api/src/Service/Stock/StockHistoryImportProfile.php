@@ -142,8 +142,9 @@ final class StockHistoryImportProfile
         if ($profile['cutover_date'] !== null && $date >= $profile['cutover_date']) {
             throw new \InvalidArgumentException('history_import_doc_date_after_cutover');
         }
-        if ($date > date('Y-m-d')) {
-            throw new \InvalidArgumentException('history_import_doc_date_future');
+        // Historie bez data přechodu zamkne sklad do svého posledního dne; dnešek patří živým dokladům.
+        if ($date >= date('Y-m-d')) {
+            throw new \InvalidArgumentException('history_import_doc_date_not_past');
         }
         if (mb_strlen($raw['warehouse']) > 20 || mb_strlen($raw['warehouse_to']) > 20 || mb_strlen($raw['sku']) > 50) {
             throw new \InvalidArgumentException('history_import_reference_too_long');

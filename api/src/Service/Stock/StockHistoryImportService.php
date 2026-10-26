@@ -38,7 +38,6 @@ final class StockHistoryImportService
         private readonly Connection $db,
         private readonly CatalogJobService $jobs,
         private readonly CatalogImportSourceStore $sources,
-        private readonly StockReportService $reports,
     ) {}
 
     public function preview(int $supplierId, int $sourceId, array $config, ?int $createdBy): array
@@ -140,8 +139,9 @@ final class StockHistoryImportService
 
     /**
      * Koncový stav historie z náhledu po skladech a kartách (s technickými příjemkami,
-     * když je firma zapnula) proti stavu v MyÚčtu k datu přechodu. Bez data přechodu
-     * se nemá s čím porovnat (firma nemá skladové doklady), stock_qty je null.
+     * když je firma zapnula) proti počátečnímu stavu v MyÚčtu k datu přechodu, tedy
+     * příjemkám s datem přechodu. Prodej ani jiný pohyb toho dne rozdíl nedělá (před D
+     * firma skladové doklady nemá). Bez data přechodu se nemá s čím porovnat, stock_qty je null.
      */
     public function endState(int $supplierId, int $previewId): array
     {
@@ -179,12 +179,20 @@ final class StockHistoryImportService
         }
         $cutover = $profile['cutover_date'];
         if ($cutover !== null) {
-            foreach ($this->reports->valuation($supplierId, $cutover, [])['items'] as $item) {
+            $stmt = $this->db->pdo()->prepare("SELECT d.warehouse_id, l.stock_item_id, w.code, i.sku, i.name, i.unit, SUM(l.qty) AS qty
+                FROM stock_documents d
+                JOIN stock_document_lines l ON l.document_id = d.id AND l.supplier_id = d.supplier_id
+                JOIN warehouses w ON w.id = d.warehouse_id AND w.supplier_id = d.supplier_id
+                JOIN stock_items i ON i.id = l.stock_item_id AND i.supplier_id = d.supplier_id
+                WHERE d.supplier_id = ? AND d.doc_date = ? AND d.doc_type = 'receipt' AND d.status = 'posted' AND d.history_import_job_id IS NULL
+                GROUP BY d.warehouse_id, l.stock_item_id, w.code, i.sku, i.name, i.unit");
+            $stmt->execute([$supplierId, $cutover]);
+            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $item) {
                 $rows[$item['warehouse_id'] . '-' . $item['stock_item_id']] ??= [
-                    'warehouse_code' => $item['warehouse_code'], 'sku' => $item['sku'], 'name' => $item['name'], 'unit' => $item['unit'],
+                    'warehouse_code' => $item['code'], 'sku' => $item['sku'], 'name' => $item['name'], 'unit' => $item['unit'],
                     'history_qty' => 0,
                 ];
-                $rows[$item['warehouse_id'] . '-' . $item['stock_item_id']]['stock_qty'] = StockValuation::qtyToT($item['qty']);
+                $rows[$item['warehouse_id'] . '-' . $item['stock_item_id']]['stock_qty'] = StockValuation::qtyToT((string) $item['qty']);
             }
         }
         usort($rows, static fn (array $a, array $b): int => [$a['warehouse_code'], $a['sku']] <=> [$b['warehouse_code'], $b['sku']]);
@@ -226,7 +234,7 @@ final class StockHistoryImportService
             if (in_array($active['status'] ?? null, ['queued', 'running'], true) || $stmt->fetchColumn() !== false) {
                 throw new EshopException('job_state_conflict', 'Import nebo jeho vrácení ještě běží.', 409);
             }
-            $this->assertNoOpenStockTake($supplierId);
+            self::assertNoOpenStockTake($this->db->pdo(), $supplierId);
             if ($this->closedPeriodHistoryDocuments($supplierId) > 0 && !$confirmClosedPeriods) {
                 throw new EshopException('history_import_closed_periods_unconfirmed', 'Část převzatých dokladů spadá do uzavřeného účetního období. Potvrďte, že je chcete smazat.', 409);
             }
@@ -295,13 +303,22 @@ final class StockHistoryImportService
     }
 
     /**
-     * Režim osiřelé historie z dokladů: když převzaté doklady na každém skladu a kartě
+     * Režim osiřelé historie z dokladů. Když převzaté doklady na každém skladu a kartě
      * končí na nule (vyrovnání k D−1), mazání stav skladu nemění a vrací se jako s datem
-     * přechodu. Jinak byla historie živým stavem a vrátit ji jde jen bez živých dokladů.
+     * přechodu. Stejně tak převzetí s D přerušené před vyrovnáním: zámek drží D−1, živé
+     * doklady jsou až po něm a firma je vedla už před převzetím. Jinak byla historie
+     * živým stavem a vrátit ji jde jen bez živých dokladů.
      */
     private function orphanCutover(int $supplierId): ?string
     {
         $pdo = $this->db->pdo();
+        $stmt = $pdo->prepare('SELECT s.stock_history_locked_until,
+                (SELECT MAX(doc_date) FROM stock_documents WHERE supplier_id = s.id AND history_import_job_id IS NOT NULL)
+            FROM supplier s WHERE s.id = ?');
+        $stmt->execute([$supplierId]);
+        [$locked, $lastDay] = $stmt->fetch(PDO::FETCH_NUM) ?: [null, null];
+        // Zámek běžícího převzetí není den historie.
+        $locked = $locked === self::LOCK_RUNNING ? null : $locked;
         $stmt = $pdo->prepare("SELECT 1 FROM (
                 SELECT d.warehouse_id AS wh, l.stock_item_id AS item, CASE WHEN d.doc_type = 'receipt' THEN l.qty ELSE -l.qty END AS qty
                 FROM stock_documents d JOIN stock_document_lines l ON l.document_id = d.id AND l.supplier_id = d.supplier_id
@@ -312,14 +329,25 @@ final class StockHistoryImportService
                 WHERE d.supplier_id = ? AND d.history_import_job_id IS NOT NULL AND d.status IN ('posted','reversed') AND d.doc_type = 'transfer'
             ) legs GROUP BY wh, item HAVING SUM(qty) <> 0 LIMIT 1");
         $stmt->execute([$supplierId, $supplierId]);
-        if ($stmt->fetchColumn() !== false) {
+        if ($stmt->fetchColumn() === false) {
+            return self::dayAfter(max((string) $locked, (string) $lastDay, '0001-01-01'));
+        }
+        if ($locked === null) {
             return null;
         }
-        $stmt = $pdo->prepare('SELECT GREATEST(COALESCE(s.stock_history_locked_until, \'0001-01-01\'),
-                COALESCE((SELECT MAX(doc_date) FROM stock_documents WHERE supplier_id = s.id AND history_import_job_id IS NOT NULL), \'0001-01-01\'))
-            FROM supplier s WHERE s.id = ?');
-        $stmt->execute([$supplierId]);
-        return (new \DateTimeImmutable((string) $stmt->fetchColumn()))->modify('+1 day')->format('Y-m-d');
+        // Živé doklady bez data přechodu vznikají až po převzetí, s datem přechodu už před ním
+        // (čas zaúčtování má přesnost na sekundy, shodu rozhodne pořadí dokladů).
+        $stmt = $pdo->prepare("SELECT
+                (SELECT 1 FROM stock_documents WHERE supplier_id = ? AND history_import_job_id IS NULL AND status IN ('posted','reversed') AND doc_date <= ? LIMIT 1),
+                (SELECT 1 FROM stock_document_lines l JOIN stock_documents d ON d.id = l.document_id AND d.supplier_id = l.supplier_id
+                    WHERE l.supplier_id = ? AND d.history_import_job_id IS NULL AND d.status IN ('posted','reversed')
+                        AND (l.ledger_booked_at, l.document_id) < (SELECT hl.ledger_booked_at, hl.document_id FROM stock_document_lines hl
+                            JOIN stock_documents hd ON hd.id = hl.document_id AND hd.supplier_id = hl.supplier_id
+                            WHERE hl.supplier_id = ? AND hd.history_import_job_id IS NOT NULL
+                            ORDER BY hl.ledger_booked_at, hl.document_id LIMIT 1) LIMIT 1)");
+        $stmt->execute([$supplierId, $locked, $supplierId, $supplierId]);
+        [$liveInHistory, $liveBefore] = $stmt->fetch(PDO::FETCH_NUM);
+        return $liveInHistory === null && $liveBefore !== null ? self::dayAfter($locked) : null;
     }
 
     private function closedPeriodHistoryDocuments(int $supplierId): int
@@ -378,14 +406,15 @@ final class StockHistoryImportService
         return (new \DateTimeImmutable($date))->modify('-1 day')->format('Y-m-d');
     }
 
-    /**
-     * Režim musí sedět se skladem firmy: bez D jen firma bez skladových dokladů, s D jen
-     * tak, aby historie skončila před prvním dokladem vzniklým v MyÚčtu.
-     */
-    /** Rozpracovaná inventura porovnává počty se stavem, který by import nebo vrácení změnily. */
-    private function assertNoOpenStockTake(int $supplierId): void
+    private static function dayAfter(string $date): string
     {
-        $stmt = $this->db->pdo()->prepare("SELECT 1 FROM stock_takes WHERE supplier_id = ? AND status IN ('preparing','counting')
+        return (new \DateTimeImmutable($date))->modify('+1 day')->format('Y-m-d');
+    }
+
+    /** Rozpracovaná inventura porovnává počty se stavem, který by import nebo vrácení změnily. */
+    public static function assertNoOpenStockTake(PDO $pdo, int $supplierId): void
+    {
+        $stmt = $pdo->prepare("SELECT 1 FROM stock_takes WHERE supplier_id = ? AND status IN ('preparing','counting')
             UNION ALL SELECT 1 FROM stock_cycle_counts WHERE supplier_id = ? AND status IN ('queued','running','counting') LIMIT 1");
         $stmt->execute([$supplierId, $supplierId]);
         if ($stmt->fetchColumn() !== false) {
@@ -393,12 +422,30 @@ final class StockHistoryImportService
         }
     }
 
+    /**
+     * Bez data přechodu je během převzetí a vrácení zamčený celý sklad. Inventura spuštěná
+     * v té době by porovnávala počty se stavem, který import ještě přepíše.
+     */
+    public static function assertNotRunning(PDO $pdo, int $supplierId, string $message): void
+    {
+        // Sdílený zámek: převzetí i vrácení nastavují zámek pod zámkem firmy.
+        $stmt = $pdo->prepare('SELECT stock_history_locked_until FROM supplier WHERE id = ? LOCK IN SHARE MODE');
+        $stmt->execute([$supplierId]);
+        if ($stmt->fetchColumn() === self::LOCK_RUNNING) {
+            throw new StockException('stock_history_import_running', $message, 409);
+        }
+    }
+
+    /**
+     * Režim musí sedět se skladem firmy: bez D jen firma bez skladových dokladů, s D jen
+     * tak, aby historie skončila před prvním dokladem vzniklým v MyÚčtu.
+     */
     private function assertMode(int $supplierId, array $profile): void
     {
         if ($this->active($supplierId) !== null || $this->orphan($supplierId) !== null) {
             throw new EshopException('history_import_active', 'Firma už má převzatou historii skladu. Další import je možný až po jejím vrácení.', 409);
         }
-        $this->assertNoOpenStockTake($supplierId);
+        self::assertNoOpenStockTake($this->db->pdo(), $supplierId);
         $stmt = $this->db->pdo()->prepare("SELECT MIN(doc_date) FROM stock_documents
             WHERE supplier_id = ? AND status IN ('posted','reversed') AND history_import_job_id IS NULL");
         $stmt->execute([$supplierId]);

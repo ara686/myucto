@@ -124,7 +124,7 @@ final class StockReportXlsxExporter
         $sheet = $ss->getActiveSheet();
         $sheet->setTitle('Koncový stav historie');
         $sheet->setCellValue('A1', $cutover !== null
-            ? 'Koncový stav převzaté historie proti stavu v MyÚčtu k ' . $this->czDate($cutover)
+            ? 'Koncový stav převzaté historie proti počátečnímu stavu v MyÚčtu k ' . $this->czDate($cutover)
             : 'Koncový stav převzaté historie');
         $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
 

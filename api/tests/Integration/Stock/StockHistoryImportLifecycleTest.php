@@ -11,6 +11,7 @@ use MyInvoice\Middleware\SupplierScopeMiddleware;
 use MyInvoice\Service\Eshop\CatalogJobService;
 use MyInvoice\Service\Eshop\EshopException;
 use MyInvoice\Service\Eshop\Import\CatalogImportSourceStore;
+use MyInvoice\Service\Stock\CycleCountService;
 use MyInvoice\Service\Stock\StockException;
 use MyInvoice\Service\Stock\StockHistoryImportService;
 use MyInvoice\Service\Stock\StockHistoryImportWorker;
@@ -320,7 +321,7 @@ final class StockHistoryImportLifecycleTest extends StockTestCase
         $this->expectOpenStockTake(fn () => $service->rollback($sid, $applied['id'], $this->userId));
     }
 
-    /** Koncový stav historie po skladech a kartách proti stavu v MyÚčtu k datu přechodu, i jako XLSX. */
+    /** Koncový stav historie po skladech a kartách proti počátečnímu stavu v MyÚčtu k datu přechodu, i jako XLSX. */
     public function testPreviewEndStateComparesWithStockAtCutover(): void
     {
         $sid = $this->createSupplier();
@@ -364,6 +365,169 @@ final class StockHistoryImportLifecycleTest extends StockTestCase
         self::assertSame('CELKEM (3 položek, s rozdílem 2)', $sheet->getCell('A7')->getValue());
     }
 
+    /** Bez data přechodu nejde během převzetí spustit inventuru; dokončení převzetí ji hlídá znovu. */
+    public function testLiveImportBlocksStockTakesUntilFinished(): void
+    {
+        $service = $this->container->get(StockHistoryImportService::class);
+        $jobs = $this->container->get(CatalogJobService::class);
+        $sid = $this->createSupplier();
+        $main = $this->warehouse($sid, 'HL');
+        $a = $this->item($sid, 'ZB-100');
+        $take = $this->takes->create($sid, ['warehouse_id' => $main, 'take_date' => date('Y-m-d'), 'counting_method' => 'physical_count',
+            'responsible_count_name' => 'A', 'responsible_inventory_name' => 'B'], $this->userId);
+        $job = $service->apply($sid, $this->stage($sid, self::csv(['P1;receipt;2020-01-05;HL;;ZB-100;10;50;;;;']), $this->config(null))['id'], $this->userId);
+
+        // Inventura spuštěná teď by čekala nulový stav a po převzetí by přebytek zásobu zdvojil.
+        $this->expectLocked(fn () => $this->takes->start($sid, (int) $take['id'], $this->userId));
+        $this->expectLocked(fn () => $this->takes->prepare($sid, (int) $take['id'], $this->userId));
+        $this->expectLocked(fn () => $this->container->get(CycleCountService::class)->create($sid, ['warehouse_id' => $main], $this->userId));
+        self::assertSame('draft', $this->takes->get($sid, (int) $take['id'])['status']);
+
+        // Inventura, která se ke spuštění dostala jinou cestou, převzetí nedokončí.
+        $this->db->pdo()->prepare("UPDATE stock_takes SET status = 'counting' WHERE id = ?")->execute([$take['id']]);
+        $this->expectOpenStockTake(fn () => $this->drain($sid, StockHistoryImportService::APPLY_KIND, $job['id']));
+        self::assertSame('failed', $jobs->find($sid, $job['id'])['status']);
+        self::assertSame(StockHistoryImportService::LOCK_RUNNING, $this->lockedUntil($sid));
+
+        $this->db->pdo()->prepare("UPDATE stock_takes SET status = 'draft' WHERE id = ?")->execute([$take['id']]);
+        self::assertSame(200, $this->changeThroughAction($sid, $job['id'], 'retry')->getStatusCode());
+        self::assertSame('completed', $this->drain($sid, StockHistoryImportService::APPLY_KIND, $job['id'])['status']);
+        self::assertSame('counting', $this->takes->start($sid, (int) $take['id'], $this->userId)['status']);
+        self::assertSame(['qtyT' => 10000, 'valueC' => 50000], $this->level($sid, $main, $a));
+    }
+
+    /** Koncový stav se porovnává s počátečním stavem k D, prodej v den přechodu rozdíl nedělá. */
+    public function testEndStateIgnoresOtherMovementsOnCutoverDay(): void
+    {
+        $sid = $this->createSupplier();
+        $main = $this->warehouse($sid, 'HL');
+        $a = $this->item($sid, 'ZB-100');
+        $this->receiveStock($sid, $main, $a, '10', 100.0, '2021-01-01');
+        $this->post($sid, 'issue', $main, null, '2021-01-01', [[$a, '3']]);
+        $this->post($sid, 'issue', $main, null, '2021-01-02', [[$a, '1']]);
+        $preview = $this->stage($sid, self::csv(['P1;prijemka;2020-01-05;HL;;ZB-100;10;50;;;;']), $this->config('2021-01-01'));
+        $state = $this->container->get(StockHistoryImportService::class)->endState($sid, $preview['id']);
+        self::assertSame(['count' => 1, 'differences' => 0], $state['totals']);
+        self::assertSame(['10.000', '10.000', '0.000'], [$state['items'][0]['history_qty'], $state['items'][0]['stock_qty'], $state['items'][0]['difference']]);
+    }
+
+    /** Převzetí s D přerušené obnovou z archivu (doklady bez vyrovnání): historie jde vrátit, živý stav zůstane. */
+    public function testOrphanFromInterruptedCutoverApplyCanBeRolledBack(): void
+    {
+        $service = $this->container->get(StockHistoryImportService::class);
+        $sid = $this->createSupplier();
+        $main = $this->warehouse($sid, 'HL');
+        $a = $this->item($sid, 'ZB-100');
+        $this->receiveStock($sid, $main, $a, '10', 100.0, '2021-01-01');
+        $level = $this->level($sid, $main, $a);
+        $job = $service->apply($sid, $this->stage($sid, self::csv(['P1;prijemka;2020-01-05;HL;;ZB-100;5;50;;;;']), $this->config('2021-01-01'))['id'], $this->userId);
+        $this->container->get(StockHistoryImportWorker::class)->tickKind($sid, StockHistoryImportService::APPLY_KIND, 1);
+        $this->forgetJobs($sid);
+
+        $rollback = $service->rollback($sid, (int) $service->orphan($sid), $this->userId);
+        self::assertSame('2021-01-01', $rollback['input']['cutover_date']);
+        self::assertSame('completed', $this->drain($sid, StockHistoryImportService::ROLLBACK_KIND, $rollback['id'])['status']);
+        self::assertSame(0, $this->historyCount($sid));
+        self::assertNull($this->lockedUntil($sid));
+        self::assertSame($level, $this->level($sid, $main, $a));
+    }
+
+    /** Osiřelá historie přerušeného převzetí bez D: hranice je poslední převzatý den, ne zámek 9999-12-31. */
+    public function testOrphanUnderRunningLockUsesLastHistoryDay(): void
+    {
+        $service = $this->container->get(StockHistoryImportService::class);
+        $sid = $this->createSupplier();
+        $main = $this->warehouse($sid, 'HL');
+        $a = $this->item($sid, 'ZB-100');
+        $job = $service->apply($sid, $this->stage($sid, self::csv(['P1;receipt;2020-01-05;HL;;ZB-100;5;50;;;;', 'V1;issue;2020-02-01;HL;;ZB-100;5;;;;;']), $this->config(null))['id'], $this->userId);
+        $this->container->get(StockHistoryImportWorker::class)->tickKind($sid, StockHistoryImportService::APPLY_KIND, 1);
+        $this->forgetJobs($sid);
+        $this->db->pdo()->prepare("INSERT INTO stock_valuation_snapshots (supplier_id, warehouse_id, stock_item_id, cutoff_date, qty, value_total, source_version)
+            VALUES (?, ?, ?, '2020-01-31', 5, 250, 1)")->execute([$sid, $main, $a]);
+
+        $rollback = $service->rollback($sid, (int) $service->orphan($sid), $this->userId);
+        self::assertSame('2020-02-02', $rollback['input']['cutover_date']);
+        self::assertSame('completed', $this->drain($sid, StockHistoryImportService::ROLLBACK_KIND, $rollback['id'])['status']);
+        self::assertSame(0, $this->historyCount($sid));
+        self::assertNull($this->lockedUntil($sid));
+        $stmt = $this->db->pdo()->prepare('SELECT COUNT(*) FROM stock_valuation_snapshots WHERE supplier_id = ?');
+        $stmt->execute([$sid]);
+        self::assertSame(0, (int) $stmt->fetchColumn());
+    }
+
+    /** Poslední převzetí zastavené nebo přerušené chybou jde dokončit opakováním, zrušit ho smí jen správce. */
+    public function testCurrentApplyCanBeRetriedAndOnlyAdminCancelsIt(): void
+    {
+        $service = $this->container->get(StockHistoryImportService::class);
+        $jobs = $this->container->get(CatalogJobService::class);
+        $worker = $this->container->get(StockHistoryImportWorker::class);
+        $sid = $this->createSupplier();
+        $main = $this->warehouse($sid, 'HL');
+        $a = $this->item($sid, 'ZB-100');
+        $preview = $this->stage($sid, self::csv(['P1;receipt;2020-01-05;HL;;ZB-100;10;50;;;;']), $this->config(null));
+        $job = $service->apply($sid, $preview['id'], $this->userId);
+
+        // Zrušení převzetí bez D nechá zamčený celý sklad: rozhoduje o něm správce jako o vrácení.
+        $response = $this->changeThroughAction($sid, $job['id'], 'cancel', 'accountant');
+        self::assertSame(403, $response->getStatusCode());
+        self::assertSame('forbidden', json_decode((string) $response->getBody(), true)['error']['code']);
+        self::assertSame('queued', $jobs->find($sid, $job['id'])['status']);
+
+        $worker->tickKind($sid, StockHistoryImportService::APPLY_KIND, 1);
+        self::assertSame(200, $this->changeThroughAction($sid, $job['id'], 'cancel')->getStatusCode());
+        $worker->tickKind($sid, StockHistoryImportService::APPLY_KIND, 1);
+        self::assertSame('cancelled', $jobs->find($sid, $job['id'])['status']);
+
+        self::assertSame(200, $this->changeThroughAction($sid, $job['id'], 'retry', 'accountant')->getStatusCode());
+        self::assertSame('completed', $this->drain($sid, StockHistoryImportService::APPLY_KIND, $job['id'])['status']);
+        self::assertSame(['qtyT' => 10000, 'valueC' => 50000], $this->level($sid, $main, $a));
+        self::assertSame('2020-01-05', $this->lockedUntil($sid));
+        self::assertSame(1, $this->historyCount($sid));
+    }
+
+    /** Bez data přechodu musí historie skončit nejpozději včera, jinak by zamkla i dnešní doklady. */
+    public function testLiveHistoryCannotEndToday(): void
+    {
+        $sid = $this->createSupplier();
+        $this->warehouse($sid, 'HL');
+        $this->item($sid, 'ZB-100');
+        $today = date('Y-m-d');
+        $preview = $this->stage($sid, self::csv(['P1;receipt;2020-01-05;HL;;ZB-100;10;50;;;;', "P2;receipt;{$today};HL;;ZB-100;1;50;;;;"]), $this->config(null));
+        self::assertSame([[3, 'failed', 'history_import_doc_date_not_past']], $this->failedRows($preview['id']));
+    }
+
+    /** Storno faktury převzatou výdejku nestornuje a obnovení faktury zboží podruhé nevydá. */
+    public function testInvoiceCancelAndRestoreKeepHistoryIssue(): void
+    {
+        $sid = $this->createSupplier();
+        $main = $this->warehouse($sid, 'HL');
+        $a = $this->item($sid, 'ZB-100');
+        $invoiceId = $this->invoiceDraft($sid, $this->client($sid), 'invoice', ['issue_date' => '2020-03-01', 'varsymbol' => '2020001']);
+        $this->invoiceItem($invoiceId, $a, $main, '4.000');
+        $this->db->pdo()->prepare("UPDATE invoices SET status = 'issued' WHERE id = ?")->execute([$invoiceId]);
+        $applied = $this->applyAll($sid, $this->stage($sid, self::csv([
+            'P1;receipt;2020-01-05;HL;;ZB-100;10;50;;;;',
+            'V1;issue;2020-02-01;HL;;ZB-100;4;;;2020001;;',
+        ]), $this->config(null))['id']);
+        self::assertSame('completed', $applied['status']);
+        $documents = fn (): array => array_map(
+            static fn (array $doc): array => [$doc['doc_number'], $doc['status']],
+            $this->docsRepo->listByInvoice($sid, $invoiceId),
+        );
+        self::assertSame([['V1', 'posted']], $documents());
+
+        $this->inTransaction(fn () => $this->issue->reverseForInvoice($sid, $invoiceId, $this->userId));
+        self::assertSame([['V1', 'posted']], $documents());
+        self::assertSame(6000, $this->level($sid, $main, $a)['qtyT']);
+
+        $this->inTransaction(fn () => $this->issue->issueForInvoice($sid, [
+            'id' => $invoiceId, 'supplier_id' => $sid, 'invoice_type' => 'invoice', 'parent_invoice_id' => null,
+            'issue_date' => '2020-03-01', 'tax_date' => '2020-03-01', 'varsymbol' => '2020001',
+        ], $this->userId));
+        self::assertSame([['V1', 'posted']], $documents());
+        self::assertSame(6000, $this->level($sid, $main, $a)['qtyT']);
+    }
+
     // ── pomocníci ────────────────────────────────────────────────────────────
 
     private function expectStale(callable $run): void
@@ -396,17 +560,43 @@ final class StockHistoryImportLifecycleTest extends StockTestCase
         }
     }
 
+    private function inTransaction(callable $run): void
+    {
+        $pdo = $this->db->pdo();
+        $pdo->exec('SET TRANSACTION ISOLATION LEVEL READ COMMITTED');
+        $pdo->beginTransaction();
+        try {
+            $run();
+            $pdo->commit();
+        } catch (\Throwable $e) {
+            $pdo->rollBack();
+            throw $e;
+        }
+    }
+
     private function retryThroughAction(int $supplierId, int $jobId): int
     {
-        $request = (new ServerRequestFactory())->createServerRequest('POST', '/api/stock/history-import/jobs/' . $jobId . '/retry')
-            ->withAttribute(SupplierScopeMiddleware::ATTR_CURRENT_ID, $supplierId)
-            ->withAttribute(AuthMiddleware::ATTR_METHOD, 'session')
-            ->withAttribute(AuthMiddleware::ATTR_USER, ['id' => $this->userId, 'role' => 'admin']);
-        $response = $this->container->get(CatalogJobAction::class)->change($request, new Response(), ['id' => $jobId, 'operation' => 'retry']);
+        $response = $this->changeThroughAction($supplierId, $jobId, 'retry');
         if ($response->getStatusCode() === 409) {
             self::assertSame('history_import_retry_unsupported', json_decode((string) $response->getBody(), true)['error']['code']);
         }
         return $response->getStatusCode();
+    }
+
+    private function changeThroughAction(int $supplierId, int $jobId, string $operation, string $role = 'admin'): \Psr\Http\Message\ResponseInterface
+    {
+        $request = (new ServerRequestFactory())->createServerRequest('POST', '/api/stock/history-import/jobs/' . $jobId . '/' . $operation)
+            ->withAttribute(SupplierScopeMiddleware::ATTR_CURRENT_ID, $supplierId)
+            ->withAttribute(AuthMiddleware::ATTR_METHOD, 'session')
+            ->withAttribute(AuthMiddleware::ATTR_USER, ['id' => $this->userId, 'role' => $role]);
+        return $this->container->get(CatalogJobAction::class)->change($request, new Response(), ['id' => $jobId, 'operation' => $operation]);
+    }
+
+    /** Obnova z archivu nepřenáší úlohy importu. */
+    private function forgetJobs(int $supplierId): void
+    {
+        $this->db->pdo()->prepare('DELETE FROM catalog_job_items WHERE supplier_id = ?')->execute([$supplierId]);
+        $this->db->pdo()->prepare('DELETE FROM catalog_jobs WHERE supplier_id = ?')->execute([$supplierId]);
     }
 
     private function post(int $supplierId, string $type, int $warehouseId, ?int $warehouseToId, string $date, array $lines): array

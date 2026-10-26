@@ -116,11 +116,11 @@ final class RbacSourceGuardsTest extends TestCase
         self::assertStringContainsString('RequestAuthorization::canChangeFiledVatPeriod($request)', $kinds);
     }
 
-    /** Vrácení importu historie skladu i retry/cancel jeho úlohy rozhoduje helper, ne vlastní kontrola. */
+    /** Vrácení importu historie skladu, retry/cancel jeho úlohy i zastavení převzetí rozhoduje helper, ne vlastní kontrola. */
     public function testStockHistoryRollbackUsesPermissionHelper(): void
     {
         $src = dirname(__DIR__, 2) . '/src';
-        foreach (['Action/Stock/StockHistoryImportAction.php', 'Service/Eshop/CatalogJobAccessPolicy.php'] as $relative) {
+        foreach (['Action/Stock/StockHistoryImportAction.php', 'Service/Eshop/CatalogJobAccessPolicy.php', 'Action/Eshop/CatalogJobAction.php'] as $relative) {
             $source = SourceCorpus::read($src . '/' . $relative);
             self::assertStringContainsString('RequestAuthorization::canRollbackStockHistoryImport($request)', $source, $relative);
             self::assertStringNotContainsString('isCompanyAdmin(', $source, $relative);

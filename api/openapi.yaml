@@ -22323,8 +22323,9 @@ paths:
       tags: [Stock]
       summary: Koncový stav historie po skladech a kartách
       description: |
-        Stav, na kterém převzatá historie skončí (s technickými příjemkami, když jsou zapnuté), proti stavu
-        v MyÚčtu k datu přechodu. Bez data přechodu jsou stock_qty a difference null. `format=xlsx` vrátí soubor.
+        Stav, na kterém převzatá historie skončí (s technickými příjemkami, když jsou zapnuté), proti počátečnímu
+        stavu v MyÚčtu k datu přechodu (příjemky s datem přechodu; prodeje toho dne se nepočítají). Bez data
+        přechodu jsou stock_qty a difference null. `format=xlsx` vrátí soubor.
       parameters:
       - { in: query, name: format, schema: { type: string, enum: [json, xlsx], default: json } }
       responses:
@@ -22366,9 +22367,10 @@ paths:
     post:
       tags: [Stock]
       summary: Pokračuje v importu historie nebo zastaví další dávky
-      description: Převzetí a vrácení znovu spustit nejde (history_import_retry_unsupported); import se vrátí a spustí znovu z náhledu.
+      description: Opakovat jde jen poslední převzetí nebo vrácení (jinak history_import_retry_unsupported). Převzetí zastaví jen správce firmy.
       responses:
         '200': { description: Aktualizovaný stav, content: { application/json: { schema: { $ref: '#/components/schemas/CatalogJob' } } } }
+        '403': { description: Převzetí historie může zastavit jen správce firmy }
         '409': { description: Operace není dostupná v aktuálním stavu }
 
   /api/v1/stock/documents:
