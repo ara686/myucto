@@ -4,7 +4,7 @@ import StockHistoryImport from '../StockHistoryImport.vue'
 
 const mocks = vi.hoisted(() => ({
   status: vi.fn(), upload: vi.fn(), sample: vi.fn(), preview: vi.fn(), job: vi.fn(), items: vi.fn(),
-  apply: vi.fn(), rollback: vi.fn(), retry: vi.fn(), cancel: vi.fn(), replace: vi.fn(),
+  apply: vi.fn(), rollback: vi.fn(), retry: vi.fn(), cancel: vi.fn(), replace: vi.fn(), endState: vi.fn(), downloadEndState: vi.fn(),
   route: { query: {} as Record<string, string> },
   auth: { canWrite: () => true, isCompanyAdminRole: true },
   supplierStore: undefined as any,
@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/api/stockHistoryImport', () => ({ stockHistoryImportApi: {
   status: mocks.status, upload: mocks.upload, sample: mocks.sample, preview: mocks.preview, job: mocks.job,
   items: mocks.items, apply: mocks.apply, rollback: mocks.rollback, retry: mocks.retry, cancel: mocks.cancel,
+  endState: mocks.endState, downloadEndState: mocks.downloadEndState,
 } }))
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => mocks.auth }))
 vi.mock('@/stores/supplier', async () => {
@@ -51,10 +52,11 @@ beforeEach(() => {
   mocks.route.query = {}
   mocks.auth.isCompanyAdminRole = true
   mocks.supplierStore.currentSupplierId = 1
-  mocks.status.mockResolvedValue({ locked_until: null, first_document_date: '2021-01-01', active: null, max_rows: 300000 })
+  mocks.status.mockResolvedValue({ locked_until: null, first_document_date: '2021-01-01', active: null, orphan_job_id: null, max_rows: 300000 })
   mocks.upload.mockResolvedValue(sample.source)
   mocks.sample.mockResolvedValue(sample)
   mocks.items.mockResolvedValue(emptyItems)
+  mocks.endState.mockResolvedValue({ cutover_date: '2021-01-01', items: [], totals: { count: 0, differences: 0 } })
   mocks.replace.mockImplementation(async ({ query }: { query: Record<string, string> }) => { mocks.route.query = query })
 })
 
@@ -85,7 +87,7 @@ describe('StockHistoryImport', () => {
   })
 
   it('sends no cut-over date in the live mode of a company without stock documents', async () => {
-    mocks.status.mockResolvedValue({ locked_until: null, first_document_date: null, active: null, max_rows: 300000 })
+    mocks.status.mockResolvedValue({ locked_until: null, first_document_date: null, active: null, orphan_job_id: null, max_rows: 300000 })
     mocks.preview.mockResolvedValue(stage)
     mocks.job.mockResolvedValue(stage)
     const wrapper = mountPage()
@@ -126,7 +128,7 @@ describe('StockHistoryImport', () => {
   it('lets only a company administrator roll back the active import', async () => {
     const active = { ...stage, id: 50, kind: 'stock_history_import_apply', report: { documents_created: 2 },
       input: { profile: { cutover_date: '2021-01-01' }, date_from: '2020-01-02', date_to: '2020-02-01' } }
-    mocks.status.mockResolvedValue({ locked_until: '2020-12-31', first_document_date: '2021-01-01', active, max_rows: 300000 })
+    mocks.status.mockResolvedValue({ locked_until: '2020-12-31', first_document_date: '2021-01-01', active, orphan_job_id: null, max_rows: 300000 })
     mocks.auth.isCompanyAdminRole = false
     let wrapper = mountPage()
     await flushPromises()
@@ -143,8 +145,80 @@ describe('StockHistoryImport', () => {
     expect(wrapper.text()).toContain('stock.history_import.rollback_text_cutover')
     await wrapper.get('[data-test="rollback-confirm"]').trigger('click')
     await flushPromises()
-    expect(mocks.rollback).toHaveBeenCalledWith(50)
+    expect(mocks.rollback).toHaveBeenCalledWith(50, false)
     expect(wrapper.find('[data-test="rollback-summary"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('asks to confirm deleting documents in a closed period during rollback', async () => {
+    const active = { ...stage, id: 50, kind: 'stock_history_import_apply', report: {}, input: { profile: { cutover_date: '2021-01-01' } } }
+    mocks.status.mockResolvedValue({ locked_until: '2020-12-31', first_document_date: '2021-01-01', active, orphan_job_id: null, max_rows: 300000 })
+    mocks.rollback
+      .mockRejectedValueOnce({ response: { data: { error: { code: 'history_import_closed_periods_unconfirmed' } } } })
+      .mockResolvedValueOnce({ ...stage, id: 51, kind: 'stock_history_import_rollback', status: 'queued', report: {} })
+    mocks.job.mockResolvedValue({ ...stage, id: 51, kind: 'stock_history_import_rollback', status: 'queued', report: {} })
+    const wrapper = mountPage()
+    await flushPromises()
+    await wrapper.get('[data-test="rollback-open"]').trigger('click')
+    await wrapper.get('[data-test="rollback-confirm"]').trigger('click')
+    await flushPromises()
+    expect(mocks.rollback).toHaveBeenLastCalledWith(50, false)
+    expect(wrapper.get('[data-test="rollback-confirm"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-test="rollback-confirm-closed"]').setValue(true)
+    await wrapper.get('[data-test="rollback-confirm"]').trigger('click')
+    await flushPromises()
+    expect(mocks.rollback).toHaveBeenLastCalledWith(50, true)
+    wrapper.unmount()
+  })
+
+  it('offers rollback of history without an import job and hides a new import', async () => {
+    mocks.status.mockResolvedValue({ locked_until: '2020-12-31', first_document_date: '2021-01-01', active: null, orphan_job_id: 77, max_rows: 300000 })
+    mocks.rollback.mockResolvedValue({ ...stage, id: 78, kind: 'stock_history_import_rollback', status: 'queued', report: {} })
+    mocks.job.mockResolvedValue({ ...stage, id: 78, kind: 'stock_history_import_rollback', status: 'queued', report: {} })
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.find('[data-test="orphan-import"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="create-preview"]').exists()).toBe(false)
+    await wrapper.get('[data-test="rollback-open"]').trigger('click')
+    expect(wrapper.text()).toContain('stock.history_import.rollback_text_orphan')
+    await wrapper.get('[data-test="rollback-confirm"]').trigger('click')
+    await flushPromises()
+    expect(mocks.rollback).toHaveBeenCalledWith(77, false)
+    wrapper.unmount()
+  })
+
+  it('shows the end state against stock at cut-over and downloads it as XLSX', async () => {
+    mocks.route.query = { history_job: '41' }
+    mocks.job.mockResolvedValue(stage)
+    mocks.endState.mockResolvedValue({ cutover_date: '2021-01-01', totals: { count: 2, differences: 1 }, items: [
+      { warehouse_code: 'HL', sku: 'ZB-1', name: 'Karta', unit: 'ks', history_qty: '10.000', stock_qty: '10.000', difference: '0.000' },
+      { warehouse_code: 'HL', sku: 'ZB-2', name: 'Karta 2', unit: 'ks', history_qty: '4.000', stock_qty: '5.000', difference: '-1.000' },
+    ] })
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(mocks.endState).toHaveBeenCalledWith(41)
+    const table = wrapper.get('[data-test="end-state"]')
+    expect(table.text()).toContain('ZB-2')
+    expect(table.text()).not.toContain('ZB-1')
+    await wrapper.get('[data-test="end-state-download"]').trigger('click')
+    expect(mocks.downloadEndState).toHaveBeenCalledWith(41)
+    wrapper.unmount()
+  })
+
+  it('offers retry only for the file check, not for a stopped import', async () => {
+    mocks.route.query = { history_job: '42' }
+    mocks.job.mockResolvedValue({ ...stage, id: 42, kind: 'stock_history_import_apply', status: 'cancelled', report: {} })
+    let wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.find('[data-test="retry"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="retry-unsupported"]').text()).toBe('stock.history_import.apply_stopped')
+    wrapper.unmount()
+
+    mocks.route.query = { history_job: '41' }
+    mocks.job.mockResolvedValue({ ...stage, status: 'failed' })
+    wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.find('[data-test="retry"]').exists()).toBe(true)
     wrapper.unmount()
   })
 })

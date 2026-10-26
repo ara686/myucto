@@ -3,8 +3,8 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  stockHistoryImportApi, type HistoryImportConfig, type HistoryImportField, type HistoryImportReport,
-  type HistoryImportSample, type HistoryImportStatus, type HistoryImportType,
+  stockHistoryImportApi, type HistoryImportConfig, type HistoryImportEndState, type HistoryImportField,
+  type HistoryImportReport, type HistoryImportSample, type HistoryImportStatus, type HistoryImportType,
 } from '@/api/stockHistoryImport'
 import type { OpeningImportJobItems, OpeningImportSource } from '@/api/openingStockImport'
 import type { CatalogJob } from '@/api/catalogJobs'
@@ -17,6 +17,9 @@ const STAGE_KIND = 'stock_history_import_stage'
 const APPLY_KIND = 'stock_history_import_apply'
 const ROLLBACK_KIND = 'stock_history_import_rollback'
 const TYPES: HistoryImportType[] = ['receipt', 'issue', 'transfer', 'surplus', 'shortage']
+/** Zámek celého skladu po dobu převzetí nebo vrácení bez data přechodu. */
+const LOCK_RUNNING = '9999-12-31'
+const END_STATE_ROWS = 100
 
 const { t } = useI18n()
 const route = useRoute()
@@ -36,6 +39,10 @@ const error = ref('')
 const liveMode = ref(false)
 const confirmClosed = ref(false)
 const rollbackOpen = ref(false)
+/** Vrácení smaže doklady v uzavřeném období: backend chce stejné potvrzení jako převzetí. */
+const rollbackNeedsConfirm = ref(false)
+const rollbackConfirmClosed = ref(false)
+const endState = ref<HistoryImportEndState | null>(null)
 let timer: ReturnType<typeof setInterval> | undefined
 let generation = 0
 const requestVersions = new Map<string, number>()
@@ -75,13 +82,26 @@ const canApply = computed(() => previewReady.value && !activeImport.value
   && (negatives.value === 0 || summary.value.fill_negative === true) && (closedPeriods.value === 0 || confirmClosed.value))
 /** Zadání aktivního importu (profil a rozsah dat), status ho vrací bez otisku zdroje. */
 const activeInput = computed(() => (activeImport.value as (CatalogJob & { input?: { profile?: { cutover_date: string | null }, date_from?: string, date_to?: string } }) | null)?.input ?? null)
-const canRollback = computed(() => auth.isCompanyAdminRole && !!activeImport.value
-  && !['queued', 'running'].includes(activeImport.value.status) && !running.value)
+/** Převzatá historie bez úlohy (obnova z archivu): blokuje nový import, správce ji vrátí. */
+const orphanId = computed(() => activeImport.value ? null : status.value?.orphan_job_id ?? null)
+const rollbackTarget = computed(() => activeImport.value?.id ?? orphanId.value)
+const canRollback = computed(() => auth.isCompanyAdminRole && rollbackTarget.value !== null
+  && !['queued', 'running'].includes(activeImport.value?.status ?? '') && !running.value)
+const lockedLabel = computed(() => status.value?.locked_until === LOCK_RUNNING
+  ? t('stock.history_import.locked_running') : status.value?.locked_until ?? '-')
+/** Převzetí a vrácení znovu spustit nejde; import se vrátí a spustí znovu z kontroly souboru. */
+const canRetry = computed(() => !!job.value && job.value.kind === STAGE_KIND && ['failed', 'cancelled'].includes(job.value.status))
+const endStateDifferences = computed(() => (endState.value?.items ?? [])
+  .filter(row => row.difference !== null && Number(row.difference) !== 0))
 const mappedFields = computed<HistoryImportField[]>(() => [...(sample.value?.fields ?? []), ...(sample.value?.optional_fields ?? [])])
 const formValid = computed(() => !!source.value
   && (liveMode.value ? !hasDocuments.value : /^\d{4}-\d{2}-\d{2}$/.test(config.value.cutover_date ?? ''))
   && /^[a-z0-9][a-z0-9_.-]{0,99}$/.test(config.value.source_key)
   && (sample.value?.fields ?? []).every(field => !!config.value.mapping[field]))
+
+function errorCode(e: any): string | undefined {
+  return e?.response?.data?.error?.code
+}
 
 function errorMessage(e: any) {
   const body = e?.response?.data?.error
@@ -158,6 +178,7 @@ async function reloadSample() {
 async function showJob(nextJob: CatalogJob, context: RequestContext) {
   job.value = nextJob
   report.value = null
+  endState.value = null
   reportPage.value = 1
   confirmClosed.value = false
   await router.replace({ query: { ...route.query, history_job: String(nextJob.id) } })
@@ -195,19 +216,43 @@ async function apply() {
   finally { if (isCurrent(context)) loading.value = false }
 }
 
+function openRollback() {
+  rollbackNeedsConfirm.value = false
+  rollbackConfirmClosed.value = false
+  rollbackOpen.value = true
+}
+
 async function rollback() {
-  const target = activeImport.value
-  if (!canRollback.value || !target || loading.value) return
+  const target = rollbackTarget.value
+  if (!canRollback.value || target === null || loading.value) return
   const context = captureContext('rollback')
   loading.value = true
   error.value = ''
-  rollbackOpen.value = false
   try {
-    const nextJob = await stockHistoryImportApi.rollback(target.id)
+    const nextJob = await stockHistoryImportApi.rollback(target, rollbackConfirmClosed.value)
     if (!isCurrent(context)) return
+    rollbackOpen.value = false
     await showJob(nextJob, context)
+    await loadStatus()
+  } catch (e) {
+    if (!isCurrent(context)) return
+    if (errorCode(e) === 'history_import_closed_periods_unconfirmed') rollbackNeedsConfirm.value = true
+    else { rollbackOpen.value = false; error.value = errorMessage(e) }
+  } finally { if (isCurrent(context)) loading.value = false }
+}
+
+async function loadEndState(id: number) {
+  const context = captureContext('end-state')
+  try {
+    const next = await stockHistoryImportApi.endState(id)
+    if (isCurrent(context) && job.value?.id === id) endState.value = next
   } catch (e) { if (isCurrent(context)) error.value = errorMessage(e) }
-  finally { if (isCurrent(context)) loading.value = false }
+}
+
+async function downloadEndState() {
+  if (!job.value) return
+  try { await stockHistoryImportApi.downloadEndState(job.value.id) }
+  catch (e) { error.value = errorMessage(e) }
 }
 
 async function loadStatus() {
@@ -233,6 +278,7 @@ async function refresh() {
     if (!['queued', 'running'].includes(next.status)) {
       stopPolling()
       if (next.kind !== STAGE_KIND) await loadStatus()
+      else if (next.status === 'completed' && !endState.value) await loadEndState(id)
     }
   } catch (e) { if (isCurrent(context)) error.value = errorMessage(e) }
 }
@@ -280,7 +326,7 @@ function reset() {
   generation++
   stopPolling()
   loading.value = false; sampleLoading.value = false; reportLoading.value = false
-  source.value = null; sample.value = null; job.value = null; report.value = null; reportPage.value = 1; error.value = ''
+  source.value = null; sample.value = null; job.value = null; report.value = null; endState.value = null; reportPage.value = 1; error.value = ''
   confirmClosed.value = false; rollbackOpen.value = false
   void router.replace({ query: {} })
   void initialize()
@@ -305,7 +351,7 @@ async function initialize() {
 watch(() => supplier.currentSupplierId, () => {
   generation++
   stopPolling()
-  source.value = null; sample.value = null; job.value = null; report.value = null; status.value = null
+  source.value = null; sample.value = null; job.value = null; report.value = null; endState.value = null; status.value = null
   config.value.cutover_date = null
   void router.replace({ query: {} })
   void initialize()
@@ -328,16 +374,25 @@ onBeforeUnmount(() => { generation++; stopPolling() })
     <section v-if="activeImport" data-test="active-import" class="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-xl border border-primary-200 bg-primary-50 p-4 text-sm">
       <div class="min-w-0">
         <p class="font-medium">{{ t('stock.history_import.active_title') }}</p>
-        <p class="text-neutral-600">{{ t('stock.history_import.active_text', { id: activeImport.id, from: activeInput?.date_from ?? '-', to: activeInput?.date_to ?? '-', locked: status?.locked_until ?? '-' }) }}</p>
+        <p class="text-neutral-600">{{ t('stock.history_import.active_text', { id: activeImport.id, from: activeInput?.date_from ?? '-', to: activeInput?.date_to ?? '-', locked: lockedLabel }) }}</p>
       </div>
       <div class="flex flex-wrap gap-2">
         <button v-if="job?.id !== activeImport.id" type="button" data-test="show-active" :class="btnOutline('neutral')" @click="openActive"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path :d="ICONS.eye" /></svg>{{ t('stock.history_import.show_import') }}</button>
-        <button v-if="canRollback" type="button" data-test="rollback-open" :disabled="loading" :class="btnOutline('danger')" @click="rollbackOpen = true"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path :d="ICONS.uturn" /></svg>{{ t('stock.history_import.rollback') }}</button>
+        <button v-if="canRollback" type="button" data-test="rollback-open" :disabled="loading" :class="btnOutline('danger')" @click="openRollback"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path :d="ICONS.uturn" /></svg>{{ t('stock.history_import.rollback') }}</button>
       </div>
       <p v-if="!auth.isCompanyAdminRole" class="w-full text-xs text-neutral-500">{{ t('stock.history_import.rollback_admin_only') }}</p>
     </section>
 
-    <section v-if="!job && !activeImport && status" class="min-w-0 space-y-5 rounded-xl border border-neutral-200 bg-surface p-5 shadow-sm">
+    <section v-if="orphanId !== null" data-test="orphan-import" class="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-xl border border-warning-200 bg-warning-50 p-4 text-sm">
+      <div class="min-w-0">
+        <p class="font-medium">{{ t('stock.history_import.orphan_title') }}</p>
+        <p class="text-neutral-600">{{ t('stock.history_import.orphan_text', { locked: lockedLabel }) }}</p>
+      </div>
+      <button v-if="canRollback" type="button" data-test="rollback-open" :disabled="loading" :class="btnOutline('danger')" @click="openRollback"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path :d="ICONS.uturn" /></svg>{{ t('stock.history_import.rollback') }}</button>
+      <p v-if="!auth.isCompanyAdminRole" class="w-full text-xs text-neutral-500">{{ t('stock.history_import.rollback_admin_only') }}</p>
+    </section>
+
+    <section v-if="!job && !activeImport && orphanId === null && status" class="min-w-0 space-y-5 rounded-xl border border-neutral-200 bg-surface p-5 shadow-sm">
       <fieldset class="space-y-2 text-sm">
         <legend class="font-medium">{{ t('stock.history_import.mode') }}</legend>
         <label class="flex items-start gap-2"><input v-model="liveMode" type="radio" :value="false" data-test="mode-cutover" class="mt-1" /><span><span class="font-medium">{{ t('stock.history_import.mode_cutover') }}</span><span class="block text-neutral-500">{{ t('stock.history_import.mode_cutover_hint') }}</span></span></label>
@@ -396,6 +451,15 @@ onBeforeUnmount(() => { generation++; stopPolling() })
         <div class="overflow-x-auto"><table class="min-w-full text-xs"><thead><tr><th class="px-2 py-1 text-left">{{ t('stock.opening_import.row') }}</th><th class="px-2 py-1 text-left">{{ t('stock.history_import.fields.doc_number') }}</th><th class="px-2 py-1 text-left">{{ t('stock.history_import.fields.doc_date') }}</th><th class="px-2 py-1 text-left">{{ t('stock.history_import.fields.warehouse') }}</th><th class="px-2 py-1 text-left">SKU</th><th class="px-2 py-1 text-right">{{ t('stock.history_import.missing_quantity') }}</th><th class="px-2 py-1 text-right">{{ t('stock.history_import.fill_cost') }}</th></tr></thead><tbody><tr v-for="item in summary.negatives ?? []" :key="item.source_row" class="border-t border-neutral-200"><td class="px-2 py-1">{{ item.source_row }}</td><td class="px-2 py-1">{{ item.doc_number }}</td><td class="px-2 py-1">{{ item.doc_date }}</td><td class="px-2 py-1">{{ item.warehouse }}</td><td class="px-2 py-1">{{ item.sku }}</td><td class="px-2 py-1 text-right">{{ item.missing_quantity }}</td><td class="px-2 py-1 text-right">{{ item.unit_cost }}</td></tr></tbody></table></div>
         <p v-if="negatives > (summary.negatives?.length ?? 0)" class="text-xs">{{ t('stock.history_import.negatives_more', { count: negatives - (summary.negatives?.length ?? 0) }) }}</p>
       </div>
+      <div v-if="job.kind === STAGE_KIND && endState" data-test="end-state" class="min-w-0 space-y-2 rounded-lg border border-neutral-200 p-4 text-sm">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <p class="font-medium">{{ t('stock.history_import.end_state_title') }}</p>
+          <button type="button" data-test="end-state-download" :class="btnOutline('neutral')" @click="downloadEndState"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path :d="ICONS.download" /></svg>{{ t('stock.history_import.end_state_download') }}</button>
+        </div>
+        <p>{{ endState.cutover_date ? t('stock.history_import.end_state_summary', { count: endState.totals.count, differences: endState.totals.differences, date: endState.cutover_date }) : t('stock.history_import.end_state_summary_live', { count: endState.totals.count }) }}</p>
+        <div v-if="endStateDifferences.length" class="overflow-x-auto"><table class="min-w-full text-xs"><thead><tr><th class="px-2 py-1 text-left">{{ t('stock.history_import.fields.warehouse') }}</th><th class="px-2 py-1 text-left">SKU</th><th class="px-2 py-1 text-left">{{ t('stock.history_import.end_state_name') }}</th><th class="px-2 py-1 text-right">{{ t('stock.history_import.end_state_history') }}</th><th class="px-2 py-1 text-right">{{ t('stock.history_import.end_state_stock') }}</th><th class="px-2 py-1 text-right">{{ t('stock.history_import.end_state_difference') }}</th></tr></thead><tbody><tr v-for="row in endStateDifferences.slice(0, END_STATE_ROWS)" :key="`${row.warehouse_code}/${row.sku}`" class="border-t border-neutral-200"><td class="px-2 py-1">{{ row.warehouse_code }}</td><td class="px-2 py-1">{{ row.sku }}</td><td class="px-2 py-1">{{ row.name }}</td><td class="px-2 py-1 text-right">{{ row.history_qty }}</td><td class="px-2 py-1 text-right">{{ row.stock_qty }}</td><td class="px-2 py-1 text-right font-medium">{{ row.difference }}</td></tr></tbody></table></div>
+        <p v-if="endStateDifferences.length > END_STATE_ROWS" class="text-xs">{{ t('stock.history_import.end_state_more', { count: endStateDifferences.length - END_STATE_ROWS }) }}</p>
+      </div>
       <label v-if="job.kind === STAGE_KIND && closedPeriods > 0 && previewReady" class="flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 p-4 text-sm"><input v-model="confirmClosed" type="checkbox" data-test="confirm-closed" class="mt-1" /><span>{{ t('stock.history_import.closed_periods', { count: closedPeriods }) }}</span></label>
 
       <div class="flex flex-wrap gap-3 text-sm"><span v-for="state in ['ready','applied','failed','skipped']" :key="state" class="rounded-full bg-neutral-100 px-3 py-1">{{ t(`stock.opening_import.status.${state}`) }}: {{ counts[state] || 0 }}</span></div>
@@ -405,9 +469,10 @@ onBeforeUnmount(() => { generation++; stopPolling() })
         <span class="text-sm text-neutral-500">{{ t('eshop.import2.page', { page: reportPage, pages: reportPages }) }}</span>
         <button type="button" :disabled="reportLoading || reportPage >= reportPages" :class="btnOutline('neutral')" @click="loadReport(reportPage + 1)">{{ t('common.next') }}<svg class="h-4 w-4 -rotate-90" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path :d="ICONS.chevron" /></svg></button>
       </div>
+      <p v-if="job.kind !== STAGE_KIND && ['failed', 'cancelled'].includes(job.status)" data-test="retry-unsupported" class="text-sm text-neutral-600">{{ t(job.kind === APPLY_KIND ? 'stock.history_import.apply_stopped' : 'stock.history_import.rollback_stopped') }}</p>
       <div class="flex flex-wrap justify-end gap-2">
         <button type="button" :class="btnOutline('neutral')" @click="reset"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path :d="ICONS.plus" /></svg>{{ t('stock.history_import.close') }}</button>
-        <button v-if="['failed','cancelled'].includes(job.status)" type="button" :class="btnOutline('primary')" @click="changeJob('retry')"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path :d="ICONS.cycle" /></svg>{{ t('common.retry') }}</button>
+        <button v-if="canRetry" type="button" data-test="retry" :class="btnOutline('primary')" @click="changeJob('retry')"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path :d="ICONS.cycle" /></svg>{{ t('common.retry') }}</button>
         <button v-if="previewReady" type="button" data-test="apply-import" :disabled="!canApply || loading" :class="btnFilled('success')" @click="apply"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path :d="ICONS.check" /></svg>{{ t('stock.history_import.apply') }}</button>
         <RouterLink v-if="job.kind === APPLY_KIND && job.status === 'completed'" to="/stock/documents" :class="btnFilled('primary')"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path :d="ICONS.doc" /></svg>{{ t('stock.history_import.open_documents') }}</RouterLink>
       </div>
@@ -416,10 +481,11 @@ onBeforeUnmount(() => { generation++; stopPolling() })
     <div v-if="rollbackOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" @click.self="rollbackOpen = false">
       <div class="w-full max-w-md space-y-3 rounded-lg bg-surface p-5 shadow-xl">
         <h2 class="text-lg font-semibold">{{ t('stock.history_import.rollback_title') }}</h2>
-        <p class="text-sm text-neutral-600">{{ t(activeInput?.profile?.cutover_date ? 'stock.history_import.rollback_text_cutover' : 'stock.history_import.rollback_text') }}</p>
+        <p class="text-sm text-neutral-600">{{ t(orphanId !== null ? 'stock.history_import.rollback_text_orphan' : activeInput?.profile?.cutover_date ? 'stock.history_import.rollback_text_cutover' : 'stock.history_import.rollback_text') }}</p>
+        <label v-if="rollbackNeedsConfirm" class="flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 p-3 text-sm"><input v-model="rollbackConfirmClosed" type="checkbox" data-test="rollback-confirm-closed" class="mt-1" /><span>{{ t('stock.history_import.rollback_closed_periods') }}</span></label>
         <div class="flex justify-end gap-2">
           <button type="button" :class="btnOutline('neutral')" @click="rollbackOpen = false">{{ t('common.cancel') }}</button>
-          <button type="button" data-test="rollback-confirm" :disabled="loading" :class="btnFilled('danger')" @click="rollback">{{ t('stock.history_import.rollback') }}</button>
+          <button type="button" data-test="rollback-confirm" :disabled="loading || (rollbackNeedsConfirm && !rollbackConfirmClosed)" :class="btnFilled('danger')" @click="rollback">{{ t('stock.history_import.rollback') }}</button>
         </div>
       </div>
     </div>

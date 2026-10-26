@@ -1,4 +1,5 @@
 import { api } from './client'
+import { downloadApiFile } from '@/utils/downloadFile'
 import type { CatalogJob } from './catalogJobs'
 import type { OpeningImportConfig, OpeningImportJobItems, OpeningImportSource } from './openingStockImport'
 
@@ -53,10 +54,30 @@ export interface HistoryImportReport {
 }
 
 export interface HistoryImportStatus {
+  /** 9999-12-31 = převzetí nebo vrácení bez data přechodu právě zamyká celý sklad. */
   locked_until: string | null
   first_document_date: string | null
   active: CatalogJob | null
+  /** Převzatá historie bez úlohy (např. po obnově z archivu): id pro vrácení, 0 = jen zámek. */
+  orphan_job_id: number | null
   max_rows: number
+}
+
+export interface HistoryImportEndStateRow {
+  warehouse_code: string
+  sku: string
+  name: string
+  unit: string
+  history_qty: string
+  /** Stav v MyÚčtu k datu přechodu; null bez data přechodu. */
+  stock_qty: string | null
+  difference: string | null
+}
+
+export interface HistoryImportEndState {
+  cutover_date: string | null
+  items: HistoryImportEndStateRow[]
+  totals: { count: number, differences: number }
 }
 
 export const stockHistoryImportApi = {
@@ -74,7 +95,11 @@ export const stockHistoryImportApi = {
     api.post<CatalogJob>('/stock/history-import/preview', { source_id: sourceId, config }).then(r => r.data),
   apply: (previewId: number, confirmClosedPeriods: boolean) =>
     api.post<CatalogJob>(`/stock/history-import/${previewId}/apply`, { confirm_closed_periods: confirmClosedPeriods }).then(r => r.data),
-  rollback: (applyId: number) => api.post<CatalogJob>(`/stock/history-import/${applyId}/rollback`).then(r => r.data),
+  rollback: (applyId: number, confirmClosedPeriods = false) =>
+    api.post<CatalogJob>(`/stock/history-import/${applyId}/rollback`, { confirm_closed_periods: confirmClosedPeriods }).then(r => r.data),
+  endState: (previewId: number) => api.get<HistoryImportEndState>(`/stock/history-import/jobs/${previewId}/end-state`).then(r => r.data),
+  downloadEndState: (previewId: number) =>
+    downloadApiFile(`/stock/history-import/jobs/${previewId}/end-state?format=xlsx`, 'koncovy-stav-historie.xlsx'),
   job: (id: number) => api.get<CatalogJob>(`/stock/history-import/jobs/${id}`).then(r => r.data),
   items: (id: number, page = 1) => api.get<OpeningImportJobItems>(`/stock/history-import/jobs/${id}/items`, { params: { page, limit: 50 } }).then(r => r.data),
   retry: (id: number) => api.post<CatalogJob>(`/stock/history-import/jobs/${id}/retry`).then(r => r.data),

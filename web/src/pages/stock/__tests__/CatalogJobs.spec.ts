@@ -34,6 +34,16 @@ describe('CatalogJobs', () => {
     expect(wrapper.find('a[href="/eshop?tab=import&import_job=1"]').exists()).toBe(true)
     expect(wrapper.find('a[href="/eshop?tab=price-matrix&matrix_job=2"]').exists()).toBe(true)
   })
+  it('offers no retry of a stopped stock history import or rollback', async () => {
+    mocks.list.mockResolvedValue([
+      { ...job(1, 'stock_history_import_apply'), status: 'cancelled' },
+      { ...job(2, 'stock_history_import_rollback'), status: 'failed' },
+      { ...job(3, 'stock_history_import_stage'), status: 'failed' },
+    ])
+    const wrapper = render()
+    await flushPromises()
+    expect(wrapper.findAll('button').filter(button => button.text() === 'common.retry')).toHaveLength(1)
+  })
   it('requires both write permissions to reopen internal workflows', async () => {
     mocks.stockWrite = false
     mocks.list.mockResolvedValue([job(1)])

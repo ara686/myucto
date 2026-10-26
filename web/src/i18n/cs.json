@@ -13869,6 +13869,22 @@
       "closed_periods": "{count} dokladů spadá do uzavřeného účetního období. Převzaté doklady se neúčtují a ocenění existujících dokladů se nezmění. Potvrzuji, že je chci převzít.",
       "imported_badge": "Převzato",
       "imported_hint": "Doklad převzatý importem historie skladu. Nejde stornovat; opravu udělejte vrácením importu.",
+      "locked_running": "probíhá převzetí nebo vrácení (celý sklad je zamčený)",
+      "orphan_title": "Firma má převzatou historii skladu bez záznamu o importu",
+      "orphan_text": "Převzaté doklady zůstaly bez úlohy importu, typicky po obnově firmy z archivu. Historie je uzamčená do {locked}. Další import je možný až po jejím vrácení.",
+      "rollback_text_orphan": "Smažou se všechny převzaté doklady včetně vyrovnávací výdejky a historie se odemkne. Když převzaté doklady tvořily současný stav skladu, jde to jen bez vlastních skladových dokladů firmy.",
+      "rollback_closed_periods": "Část převzatých dokladů spadá do uzavřeného účetního období. Potvrzuji, že je chci smazat.",
+      "apply_stopped": "Převzetí nejde spustit znovu. Vraťte import a spusťte ho znovu z kontroly souboru.",
+      "rollback_stopped": "Vrácení nedoběhlo. Spusťte ho znovu tlačítkem Vrátit import.",
+      "end_state_title": "Koncový stav historie po kartách",
+      "end_state_download": "Stáhnout XLSX",
+      "end_state_summary": "Karet na skladech: {count}. Od stavu v MyÚčtu k {date} se liší {differences}.",
+      "end_state_summary_live": "Karet na skladech: {count}. Stav skladu po převzetí bude odpovídat konci historie; porovnejte ho se starým programem v XLSX.",
+      "end_state_name": "Název",
+      "end_state_history": "Historie",
+      "end_state_stock": "MyÚčto",
+      "end_state_difference": "Rozdíl",
+      "end_state_more": "A dalších {count} karet s rozdílem, celý přehled je v XLSX.",
       "fields": {
         "doc_number": "Číslo dokladu",
         "doc_type": "Typ dokladu",
@@ -13896,7 +13912,7 @@
         "history_import_active": "Firma už má převzatou historii skladu. Další import je možný až po jejím vrácení.",
         "history_import_cutover_required": "Firma už má skladové doklady. Zadejte datum přechodu.",
         "history_import_cutover_after_documents": "Datum přechodu nesmí být pozdější než první skladový doklad v MyÚčtu.",
-        "history_import_closed_periods_unconfirmed": "Potvrďte převzetí dokladů v uzavřeném účetním období.",
+        "history_import_closed_periods_unconfirmed": "Potvrďte převzetí nebo smazání dokladů v uzavřeném účetním období.",
         "history_import_negative_stock": "Historie vede k zápornému stavu zásob.",
         "history_import_empty": "Náhled neobsahuje žádný doklad k převzetí.",
         "history_import_live_documents": "Firma mezitím zaúčtovala vlastní skladový doklad.",
@@ -13945,7 +13961,13 @@
         "import_file_invalid": "Vyberte platný CSV nebo XLSX soubor.",
         "import_file_empty": "Soubor je prázdný.",
         "import_file_too_large": "Soubor je příliš velký.",
-        "import_too_many_rows": "Soubor obsahuje příliš mnoho řádků."
+        "import_too_many_rows": "Soubor obsahuje příliš mnoho řádků.",
+        "history_import_doc_date_future": "Datum dokladu je v budoucnosti.",
+        "history_import_cutover_future": "Datum přechodu nesmí být v budoucnosti.",
+        "history_import_number_reserved": "Číslo patří technické příjemce nebo vyrovnávací výdejce, kterou import vytvoří. Použijte předponu.",
+        "history_import_stock_take_open": "Ve firmě běží inventura. Import historie spusťte až po jejím uzavření.",
+        "history_import_job_stale": "Úloha už neodpovídá poslednímu importu historie a nic nezapsala.",
+        "history_import_retry_unsupported": "Převzetí ani vrácení nejde spustit znovu. Vraťte import a spusťte ho znovu z kontroly souboru."
       }
     },
     "intrastat": {
@@ -14827,7 +14849,8 @@
       "fulfillment_tracking_required": "Vyplňte dopravce i tracking.",
       "fulfillment_return_excess": "Vratka překračuje expedované množství.",
       "fulfillment_return_warehouse_kind": "Cílový sklad neodpovídá dispozici vratky.",
-      "stock_history_locked": "Doklad spadá do převzaté historie skladu, kterou nejde měnit. Opravu udělejte vrácením importu historie."
+      "stock_history_locked": "Doklad spadá do převzaté historie skladu, kterou nejde měnit. Opravu udělejte vrácením importu historie.",
+      "stock_history_import_running": "Probíhá převzetí nebo vrácení historie skladu. Doklad zaúčtujte po jeho dokončení."
     },
     "lifecycle": {
       "copy_suffix": "kopie",

@@ -110,7 +110,7 @@ final class StockHistoryImportWorkflowTest extends StockTestCase
         $ledger = $this->levelsRepo->ledgerForItem($sid, $a, ['to' => '2020-12-31', 'limit' => 500]);
         self::assertCount(7, $ledger);
         self::assertSame([true], array_values(array_unique(array_column($ledger, 'imported'))));
-        self::assertFalse($this->levelsRepo->ledgerForItem($sid, $a, ['from' => '2099-01-01', 'limit' => 500])[0]['imported']);
+        self::assertFalse($this->levelsRepo->ledgerForItem($sid, $a, ['from' => '2021-01-01', 'limit' => 500])[0]['imported']);
         self::assertSame('0.000', array_reduce($ledger, static fn (string $sum, array $row): string => bcadd($sum, $row['qty_signed'], 3), '0'));
 
         // Převzatou historii nejde stornovat ani do ní zaúčtovat nový doklad.
