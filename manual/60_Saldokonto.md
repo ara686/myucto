@@ -76,14 +76,14 @@ Zůstatek účtu bez dokladu (přijatá nebo poskytnutá záloha, přeplatek za�
 2. Vyberte zápis, ze kterého zůstatek vznikl. Hledat můžete podle textu nebo čísla zápisu.
 3. Upravte popis, částku, splatnost a případně partnera a klikněte na **Založit položku**.
 
-Vznikne potvrzená [ostatní pohledávka nebo závazek](52_Ucetni_denik.md#521414-ostatni-pohledavky-a-zavazky) s číslem z řady. Zápis na straně MD založí pohledávku, zápis na straně Dal závazek. Položka se znovu neúčtuje, předpis zůstává v původním zápisu, takže saldokonto položku vidí a zůstatek hlavní knihy nezdvojí. Omyl napravíte stornem položky, protizápis nevznikne.
+Vznikne potvrzená [ostatní pohledávka nebo závazek](52_Ucetni_denik.md#521414-ostatni-pohledavky-a-zavazky) s číslem z řady. Zápis na straně MD založí pohledávku, zápis na straně Dal závazek. Položka se znovu neúčtuje, předpis zůstává v původním zápisu, takže saldokonto položku vidí a zůstatek hlavní knihy nezdvojí. Omyl napravíte stornem položky: protizápis nevznikne, položka zmizí ze saldokonta ode dne storna a ten den musí ležet v otevřeném účetním období.
 
 ### Návrh párování
 
 Tlačítko **Navrhnout párování** projde otevřené doklady k rozvahovému dni a nabídne jen jisté shody: číslo dokladu je v textu zápisu (nebo je zápis na doklad navázaný) a volná částka zápisu se rovná zbytku dokladu, případně zápis jmenuje víc dokladů jednoho partnera přesně za jejich součet. Bez čísla dokladu se navrhne jen jistý partner (vazba zápisu nebo jeho název v textu) s jediným dokladem této částky. Zápis i doklad jsou nejvýš v jednom návrhu. Označené návrhy potvrdíte tlačítkem **Potvrdit označené**; návrh, který mezitím přestal platit (doklad uhrazený), zůstane v seznamu s důvodem.
 
 > [!NOTE]
-> Přiřadit lze jen ruční (interní) zápis v Kč na účtech 311, 321, 315 a 325, ne zaúčtování dokladu, storno ani zápis, který doklad vyrovnává už vazbou na doklad. Doklad v cizí měně vyrovnejte kurzovým zápisem nebo zápočtem. Zápis v uzavřeném období přiřadí jen správce po potvrzení; přiřazení změní saldokonto k jeho konci, hlavní kniha zůstane beze změny. Kontrola uzávěrky počítá přiřazení stejně jako saldokonto.
+> Přiřadit lze jen ruční (interní) zápis v Kč na účtech 311, 321, 315 a 325, ne zaúčtování dokladu, storno ani zápis, který doklad vyrovnává už vazbou na doklad. Doklad v cizí měně vyrovnejte kurzovým zápisem nebo zápočtem. Zápis v uzavřeném období přiřadí jen správce po potvrzení; přiřazení změní saldokonto k jeho konci, hlavní kniha zůstane beze změny. Kontrola uzávěrky počítá přiřazení stejně jako saldokonto. Zápis s přiřazením nejde smazat a přeúčtování nesmí přiřazený řádek změnit (účet, stranu, pořadí) ani snížit pod přiřazenou částku; nejdřív přiřazení zrušte. Zápis se zápočtem převzatým z jiného programu se nepřiřazuje, zápočet už saldokonto počítá.
 
 ## 60.5 Když něco nejde
 

@@ -1721,6 +1721,8 @@ export interface SaldoItem {
   /** Daň z daňového dokladu k platbě — u advance_pending místo paid_czk. */
   advance_vat_czk?: number | null
   tax_document_id?: number | null
+  /** Doklad s vlastním předpisem na účtu: jen ten jde vyrovnat rozpadem zápisu v deníku. */
+  settleable?: boolean
 }
 
 export interface SaldoPartner {

@@ -17750,7 +17750,7 @@
       "delete": "Remove assignment",
       "delete_confirm": "Remove the assignment of the entry to the document? The document reopens in the accounts receivable/payable ledger.",
       "deleted": "Assignment removed.",
-      "foreign_currency": "The document is in a foreign currency. Settle it with an exchange difference entry or an offset; entry assignment covers CZK only.",
+      "foreign_currency": "The document cannot be settled by assigning an entry: it is in a foreign currency or has no open posting of its own on the account (opening balance only). Settle it with an exchange difference entry or an offset.",
       "no_candidates": "There is no unallocated manual entry on the account that could settle the document.",
       "match_amount": "same amount",
       "match_doc": "document number",

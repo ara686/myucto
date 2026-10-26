@@ -11,8 +11,11 @@ describe('saldoSettle', () => {
   })
 
   it('rozpadem zápisu vyrovná jen korunový doklad s kladným zbytkem na účtu dokladů', () => {
-    const invoice = { doc_type: 'invoice', currency_code: 'CZK', remaining_czk: 10 }
+    const invoice = { doc_type: 'invoice', settleable: true, currency_code: 'CZK', remaining_czk: 10 }
     expect(isSettleable(invoice, '311')).toBe(true)
+    // Doklad jen z počátečních stavů nemá vlastní předpis, rozpad by ho nesnížil.
+    expect(isSettleable({ ...invoice, settleable: false }, '311')).toBe(false)
+    expect(isSettleable({ doc_type: 'invoice', currency_code: 'CZK', remaining_czk: 10 }, '311')).toBe(false)
     expect(isSettleable(invoice, '314')).toBe(false)
     expect(isSettleable({ ...invoice, currency_code: 'EUR' }, '311')).toBe(false)
     expect(isSettleable({ ...invoice, remaining_czk: -10 }, '311')).toBe(false)

@@ -106,7 +106,7 @@ function makeReport(overrides: Partial<SaldoReport> = {}): SaldoReport {
             total_remaining: 1000,
             items: [
               { doc_type: 'invoice', doc_id: 101, doc_no: 'F-101', issue_date: '2099-01-10', due_date: '2099-01-24',
-                currency_code: 'CZK', amount_foreign: 0, booked_czk: 1000, paid_czk: 0, remaining_czk: 1000, days_overdue: 20 },
+                currency_code: 'CZK', amount_foreign: 0, booked_czk: 1000, paid_czk: 0, remaining_czk: 1000, days_overdue: 20, settleable: true },
             ],
           },
           {
@@ -115,7 +115,7 @@ function makeReport(overrides: Partial<SaldoReport> = {}): SaldoReport {
             total_remaining: 500,
             items: [
               { doc_type: 'invoice', doc_id: 102, doc_no: 'F-102', issue_date: '2099-05-01', due_date: '2099-05-15',
-                currency_code: 'CZK', amount_foreign: 0, booked_czk: 500, paid_czk: 0, remaining_czk: 500, days_overdue: 0 },
+                currency_code: 'CZK', amount_foreign: 0, booked_czk: 500, paid_czk: 0, remaining_czk: 500, days_overdue: 0, settleable: true },
             ],
           },
         ],
@@ -411,7 +411,7 @@ describe('Saldokonto.vue', () => {
     const report = makeReport()
     report.accounts[0].partners[0].items.push({
       doc_type: 'invoice', doc_id: 103, doc_no: 'F-103', issue_date: '2099-02-01', due_date: '2099-02-15',
-      currency_code: 'CZK', amount_foreign: 0, booked_czk: 200, paid_czk: 0, remaining_czk: 200, days_overdue: 0,
+      currency_code: 'CZK', amount_foreign: 0, booked_czk: 200, paid_czk: 0, remaining_czk: 200, days_overdue: 0, settleable: true,
     })
     serveSaldo(report)
     const wrapper = mount(Saldokonto)

@@ -6,6 +6,11 @@
 /** Účty, jejichž doklady jde vyrovnat rozpadem zápisu (shodně s JournalSettlementService::SETTLE_ACCOUNTS). */
 export const SETTLE_ACCOUNTS = ['311', '321', '315', '325']
 
+export interface SaldoAllocationResultLike {
+  created: unknown[]
+  failed: { index: number; code: string; message: string }[]
+}
+
 export interface SaldoSettleTarget {
   doc_type: 'invoice' | 'purchase_invoice'
   doc_id: number
@@ -48,6 +53,9 @@ export async function withPeriodForce<T>(
   }
 }
 
+/** Strop skupin v jednom požadavku (JournalSettlementService::MAX_GROUPS). */
+export const MAX_GROUPS_PER_REQUEST = 100
+
 /** Rozdělí volnou částku řádku na doklady v pořadí, každému nejvýš jeho zbytek. */
 export function distribute(free: number, remainings: number[]): number[] {
   let left = Math.round(free * 100)
@@ -59,8 +67,11 @@ export function distribute(free: number, remainings: number[]): number[] {
 }
 
 /** Lze položku saldokonta vyrovnat rozpadem zápisu? */
-export function isSettleable(item: { doc_type: string; kind?: string; currency_code: string; remaining_czk: number }, accountCode: string): boolean {
+export function isSettleable(item: { doc_type: string; kind?: string; settleable?: boolean; currency_code: string; remaining_czk: number }, accountCode: string): boolean {
+  // `settleable` = doklad má na účtu vlastní předpis (ne jen počáteční stav), jen ten
+  // rozpad zápisu snižuje.
   return (item.doc_type === 'invoice' || item.doc_type === 'purchase_invoice')
+    && item.settleable === true
     && (item.kind ?? 'document') === 'document'
     && item.currency_code === 'CZK'
     && SETTLE_ACCOUNTS.includes(accountCode)

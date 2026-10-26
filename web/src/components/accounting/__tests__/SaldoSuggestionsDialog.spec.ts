@@ -68,6 +68,26 @@ describe('SaldoSuggestionsDialog', () => {
     expect(wrapper.emitted('done')).toHaveLength(1)
   })
 
+  it('velký výběr pošle po dávkách a index odmítnutého návrhu přepočte na celý výběr', async () => {
+    const items = Array.from({ length: 101 }, (_, i) => suggestion(i + 1, [1000 + i]))
+    m.suggestions.mockResolvedValue({ as_of: '2099-12-31', truncated: false, items })
+    m.create
+      .mockResolvedValueOnce({ created: Array.from({ length: 100 }, (_, i) => ({ id: i })), failed: [] })
+      .mockResolvedValueOnce({ created: [], failed: [{ index: 0, code: 'document_not_open', message: 'Poslední neprošel.' }] })
+    const wrapper = mount(SaldoSuggestionsDialog, { props: { periodId: 6, asOf: '2099-12-31', account: 'all' } })
+    await flushPromises()
+
+    await wrapper.find('[data-testid="saldo-suggestions-submit"]').trigger('click')
+    await flushPromises()
+
+    expect(m.create).toHaveBeenCalledTimes(2)
+    expect(m.create.mock.calls[0][0].groups).toHaveLength(100)
+    expect(m.create.mock.calls[1][0].groups).toHaveLength(1)
+    expect(wrapper.findAll('tbody tr')).toHaveLength(1)
+    expect(wrapper.text()).toContain('Poslední neprošel.')
+    expect(wrapper.text()).toContain('PF-1100')
+  })
+
   it('odmítnutý návrh nechá v seznamu s důvodem', async () => {
     m.suggestions.mockResolvedValue({ as_of: '2099-12-31', truncated: false, items: [suggestion(1, [11]), suggestion(2, [21])] })
     m.create.mockResolvedValue({ created: [{ id: 1 }], failed: [{ index: 1, code: 'document_not_open', message: 'Doklad PF-21 není otevřený.' }] })

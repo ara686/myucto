@@ -17750,7 +17750,7 @@
       "delete": "Zrušit přiřazení",
       "delete_confirm": "Zrušit přiřazení zápisu k dokladu? Doklad se v saldokontu znovu otevře.",
       "deleted": "Přiřazení zrušeno.",
-      "foreign_currency": "Doklad je v cizí měně. Vyrovnejte ho kurzovým zápisem nebo zápočtem, přiřazení zápisu nese jen Kč.",
+      "foreign_currency": "Doklad nejde vyrovnat přiřazením zápisu: je v cizí měně, nebo nemá na účtu vlastní otevřený předpis (jen počáteční stav). Vyrovnejte ho kurzovým zápisem nebo zápočtem.",
       "no_candidates": "Na účtu není žádný volný ruční zápis, který by doklad mohl vyrovnat.",
       "match_amount": "stejná částka",
       "match_doc": "číslo dokladu",

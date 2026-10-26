@@ -8,7 +8,7 @@ import { formatDate, formatMoney } from '@/composables/useFormat'
 import { ICONS, btnFilled, btnOutline } from '@/components/ui/buttonStyles'
 import Modal from '@/components/ui/Modal.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
-import { apiErrorMessage, withPeriodForce } from './saldoSettle'
+import { MAX_GROUPS_PER_REQUEST, apiErrorMessage, withPeriodForce, type SaldoAllocationResultLike } from './saldoSettle'
 
 /**
  * Návrh párování: jisté shody otevřených dokladů saldokonta se zápisy v deníku
@@ -77,8 +77,19 @@ async function confirmSelected() {
     const groups = chosen.map(i => ({
       allocations: i.allocations.map(a => ({ line_id: i.line.line_id, doc_type: a.doc_type, doc_id: a.doc_id, amount: a.amount })),
     }))
+    // Server přijme nejvýš MAX_GROUPS_PER_REQUEST skupin; každá dávka je samostatná,
+    // index odmítnuté skupiny se přepočte na pořadí v celém výběru.
+    const run = async (force: boolean): Promise<SaldoAllocationResultLike> => {
+      const merged: SaldoAllocationResultLike = { created: [], failed: [] }
+      for (let start = 0; start < groups.length; start += MAX_GROUPS_PER_REQUEST) {
+        const part = await accountingApi.createSaldoAllocations({ groups: groups.slice(start, start + MAX_GROUPS_PER_REQUEST) }, force)
+        merged.created.push(...part.created)
+        merged.failed.push(...part.failed.map(f => ({ ...f, index: f.index + start })))
+      }
+      return merged
+    }
     const result = await withPeriodForce(
-      force => accountingApi.createSaldoAllocations({ groups }, force),
+      run,
       auth.isCompanyAdminRole,
       () => window.confirm(t('accounting.saldo_settle.period_closed_confirm')),
     )
