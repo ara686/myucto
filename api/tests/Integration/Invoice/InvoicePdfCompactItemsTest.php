@@ -82,6 +82,7 @@ final class InvoicePdfCompactItemsTest extends TestCase
         $html = $this->renderer->renderHtml($this->invoice(), includeCss: false);
 
         self::assertStringContainsString('<table class="items">', $html);
+        self::assertStringContainsString('<th style="width:30%">Popis</th>', $html);
         self::assertStringNotContainsString('items-compact', $html);
         self::assertStringContainsString('<br><span style="font-size:85%;color:#666666">Výr. č.: SN0001</span>', $html);
         self::assertStringContainsString('<br><span style="font-size:85%;color:#666666;white-space:nowrap">(celkem 20&nbsp;ks)</span>', $html);
@@ -95,7 +96,10 @@ final class InvoicePdfCompactItemsTest extends TestCase
         $html = $this->renderer->renderHtml($this->invoice(['invoice_pdf_compact_items' => 1]), includeCss: false);
 
         self::assertStringContainsString('<table class="items items-compact">', $html);
-        self::assertMatchesRegularExpression('~Řetězová sada\s*<span style="font-size:85%;color:#666666"> · Výr\. č\.: SN0001</span>~u', $html);
+        self::assertMatchesRegularExpression('~Řetězová sada\s*<span style="font-size:85%;color:#666666"> · Výr\.&nbsp;č\.:&nbsp;SN0001</span>~u', $html);
+        // Popis dostane šířku, kterou číselné sloupce v menším písmu nepotřebují.
+        self::assertStringContainsString('<th style="width:42%">Popis</th>', $html);
+        self::assertEqualsWithDelta(100.0, self::headerWidthSum($html), 0.001);
         self::assertMatchesRegularExpression('~Brzdové destičky\s*<span style="font-size:85%;color:#666666;white-space:nowrap"> · celkem&nbsp;20&nbsp;ks</span>~u', $html);
         self::assertStringContainsString('<td>bal</td>', $html);
     }
@@ -123,7 +127,9 @@ final class InvoicePdfCompactItemsTest extends TestCase
 
             self::assertStringContainsString('<table class="items items-ld items-compact">', $html);
             self::assertMatchesRegularExpression('~<td class="num nowrap">125,00</td>\s*<td class="num nowrap">20&nbsp;%</td>~u', $html);
-            self::assertStringContainsString('<span style="font-size:85%;color:#666666"> · Výr. č.: SN0001, SN0002</span>', $html);
+            self::assertStringContainsString('<span style="font-size:85%;color:#666666"> · Výr.&nbsp;č.:&nbsp;SN0001, SN0002</span>', $html);
+            self::assertMatchesRegularExpression('~<th style="width:(25|40)%">Popis</th>~u', $html);
+            self::assertEqualsWithDelta(100.0, self::headerWidthSum($html), 0.001);
             self::assertMatchesRegularExpression('~<tr class="text-row">\s*<td colspan="\d+">Montáž na místě</td>~u', $html);
         } finally {
             if ($pdo->inTransaction()) $pdo->rollBack();
@@ -140,6 +146,14 @@ final class InvoicePdfCompactItemsTest extends TestCase
             // Barvy a plochy zůstávají ze základních pravidel (černobílá varianta je pokrývá).
             self::assertDoesNotMatchRegularExpression('/(^|;)\s*(color|background)/i', $body);
         }
+    }
+
+    /** Součet šířek sloupců v hlavičce tabulky položek (v procentech). */
+    private static function headerWidthSum(string $html): float
+    {
+        self::assertSame(1, preg_match('~<table class="items[^"]*">\s*<thead>(.*?)</thead>~s', $html, $m));
+        preg_match_all('~<th[^>]*style="width:([\d.]+)%"~', $m[1], $w);
+        return array_sum(array_map('floatval', $w[1]));
     }
 
     /** @return array<string,mixed> */

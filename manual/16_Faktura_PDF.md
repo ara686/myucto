@@ -346,9 +346,11 @@ Vygenerované PDF obsahuje:
    včetně DPH jsou obě ceny bez DPH. Ceníková cena nemění částky dokladu ani export ISDOC
    a POHODA.
    Faktury s mnoha položkami zhustí volba **Kompaktní řádky položek na PDF faktury**
-   (`Nastavení → Doklady`, výchozí vypnuto): tabulka položek má menší odsazení a písmo
-   a rozpis balení („celkem 80 ks“) i sériová čísla a šarže se tisknou drobným písmem za
-   popisem položky na stejném řádku. Na stranu se tak vejde zhruba dvakrát víc položek.
+   (`Nastavení → Doklady`, výchozí vypnuto): tabulka položek má menší odsazení a písmo,
+   sloupec popisu je širší na úkor rezervy číselných sloupců (milionové částky se do nich
+   pořád vejdou) a rozpis balení („celkem 80 ks“) i sériová čísla a šarže se tisknou drobným
+   písmem za popisem položky na stejném řádku. Faktura s 50 položkami a dvouřádkovými názvy
+   dílů má místo čtyř stran dvě, se sloupci rozpisu slevy u řádku místo pěti tři.
    Volba mění jen vzhled tabulky, částky ani ostatní části dokladu ne. Projeví se na
    konceptech a na PDF vytvořených po zapnutí, už vygenerovaná PDF vystavených dokladů
    se nemění.

@@ -209,50 +209,52 @@
   <thead>
     <tr>
       {# Sleva z ceníkové ceny (migrace 2035, volba firmy): tři cenové sloupce místo
-         jednoho. Jen když ji má aspoň jeden řádek, jinak tabulka beze změny. #}
+         jednoho. Jen když ji má aspoň jeden řádek, jinak tabulka beze změny.
+         Kompaktní řádky dávají popisu víc šířky na úkor rezervy číselných sloupců:
+         užší popis se lámal na víc řádků a ty určovaly výšku řádku. #}
       {% if line_discount_columns|default(false) %}
       {% if supplier.is_vat_payer %}
-      <th style="width:20%">{{ t('Popis', 'Description') }}</th>
-      <th class="num nowrap" style="width:5.5%">{{ t('Mn.', 'Qty') }}</th>
-      <th class="nowrap" style="width:5.5%">{{ t('Jed.', 'Unit') }}</th>
-      <th class="num" style="width:13%">{{ t('Cena/j před slevou', 'Unit price before discount') }}</th>
-      <th class="num nowrap" style="width:8%">{{ t('Sleva', 'Discount') }}</th>
-      <th class="num" style="width:13%">{{ t('Cena/j po slevě', 'Unit price after discount') }}</th>
-      <th class="center nowrap vat" style="width:6%">{{ t('DPH', 'VAT') }}</th>
-      <th class="num nowrap" style="width:14.5%">{{ t('Bez DPH', 'Without VAT') }}</th>
-      <th class="num nowrap" style="width:14.5%">{{ t('S DPH', 'With VAT') }}</th>
+      <th style="width:{{ compact_items ? '25%' : '20%' }}">{{ t('Popis', 'Description') }}</th>
+      <th class="num nowrap" style="width:{{ compact_items ? '5.5%' : '5.5%' }}">{{ t('Mn.', 'Qty') }}</th>
+      <th class="nowrap" style="width:{{ compact_items ? '5.5%' : '5.5%' }}">{{ t('Jed.', 'Unit') }}</th>
+      <th class="num" style="width:{{ compact_items ? '12%' : '13%' }}">{{ t('Cena/j před slevou', 'Unit price before discount') }}</th>
+      <th class="num nowrap" style="width:{{ compact_items ? '8%' : '8%' }}">{{ t('Sleva', 'Discount') }}</th>
+      <th class="num" style="width:{{ compact_items ? '12%' : '13%' }}">{{ t('Cena/j po slevě', 'Unit price after discount') }}</th>
+      <th class="center nowrap vat" style="width:{{ compact_items ? '5%' : '6%' }}">{{ t('DPH', 'VAT') }}</th>
+      <th class="num nowrap" style="width:{{ compact_items ? '13.5%' : '14.5%' }}">{{ t('Bez DPH', 'Without VAT') }}</th>
+      <th class="num nowrap" style="width:{{ compact_items ? '13.5%' : '14.5%' }}">{{ t('S DPH', 'With VAT') }}</th>
       {% else %}
-      <th style="width:27%">{{ t('Popis', 'Description') }}</th>
-      <th class="num nowrap" style="width:7%">{{ t('Mn.', 'Qty') }}</th>
-      <th class="nowrap" style="width:6%">{{ t('Jed.', 'Unit') }}</th>
-      <th class="num" style="width:15%">{{ t('Cena/j před slevou', 'Unit price before discount') }}</th>
-      <th class="num nowrap" style="width:9%">{{ t('Sleva', 'Discount') }}</th>
-      <th class="num" style="width:15%">{{ t('Cena/j po slevě', 'Unit price after discount') }}</th>
+      <th style="width:{{ compact_items ? '40%' : '27%' }}">{{ t('Popis', 'Description') }}</th>
+      <th class="num nowrap" style="width:{{ compact_items ? '6%' : '7%' }}">{{ t('Mn.', 'Qty') }}</th>
+      <th class="nowrap" style="width:{{ compact_items ? '6%' : '6%' }}">{{ t('Jed.', 'Unit') }}</th>
+      <th class="num" style="width:{{ compact_items ? '12.5%' : '15%' }}">{{ t('Cena/j před slevou', 'Unit price before discount') }}</th>
+      <th class="num nowrap" style="width:{{ compact_items ? '8%' : '9%' }}">{{ t('Sleva', 'Discount') }}</th>
+      <th class="num" style="width:{{ compact_items ? '12.5%' : '15%' }}">{{ t('Cena/j po slevě', 'Unit price after discount') }}</th>
       {% if invoice.reverse_charge %}
-      <th class="num nowrap" style="width:21%">{{ t('Celkem bez DPH', 'Total excl. VAT') }}</th>
+      <th class="num nowrap" style="width:{{ compact_items ? '15%' : '21%' }}">{{ t('Celkem bez DPH', 'Total excl. VAT') }}</th>
       {% else %}
-      <th class="num nowrap" style="width:21%">{{ t('Celkem', 'Total') }}</th>
+      <th class="num nowrap" style="width:{{ compact_items ? '15%' : '21%' }}">{{ t('Celkem', 'Total') }}</th>
       {% endif %}
       {% endif %}
       {% elseif supplier.is_vat_payer %}
-      <th style="width:30%">{{ t('Popis', 'Description') }}</th>
-      <th class="num nowrap" style="width:7%">{{ t('Mn.', 'Qty') }}</th>
-      <th class="nowrap" style="width:7%">{{ t('Jed.', 'Unit') }}</th>
-      <th class="num nowrap" style="width:15%">{{ t('Cena/j', 'Price/unit') }}</th>
-      <th class="center nowrap vat" style="width:8%">{{ t('DPH', 'VAT') }}</th>
-      <th class="num nowrap" style="width:16%">{{ t('Bez DPH', 'Without VAT') }}</th>
-      <th class="num nowrap" style="width:17%">{{ t('S DPH', 'With VAT') }}</th>
+      <th style="width:{{ compact_items ? '42%' : '30%' }}">{{ t('Popis', 'Description') }}</th>
+      <th class="num nowrap" style="width:{{ compact_items ? '6.5%' : '7%' }}">{{ t('Mn.', 'Qty') }}</th>
+      <th class="nowrap" style="width:{{ compact_items ? '6%' : '7%' }}">{{ t('Jed.', 'Unit') }}</th>
+      <th class="num nowrap" style="width:{{ compact_items ? '12%' : '15%' }}">{{ t('Cena/j', 'Price/unit') }}</th>
+      <th class="center nowrap vat" style="width:{{ compact_items ? '6%' : '8%' }}">{{ t('DPH', 'VAT') }}</th>
+      <th class="num nowrap" style="width:{{ compact_items ? '13.5%' : '16%' }}">{{ t('Bez DPH', 'Without VAT') }}</th>
+      <th class="num nowrap" style="width:{{ compact_items ? '14%' : '17%' }}">{{ t('S DPH', 'With VAT') }}</th>
       {% else %}
-      <th style="width:42%">{{ t('Popis', 'Description') }}</th>
-      <th class="num nowrap" style="width:9%">{{ t('Mn.', 'Qty') }}</th>
-      <th class="nowrap" style="width:8%">{{ t('Jed.', 'Unit') }}</th>
-      <th class="num nowrap" style="width:18%">{{ t('Cena/j', 'Price/unit') }}</th>
+      <th style="width:{{ compact_items ? '58%' : '42%' }}">{{ t('Popis', 'Description') }}</th>
+      <th class="num nowrap" style="width:{{ compact_items ? '7%' : '9%' }}">{{ t('Mn.', 'Qty') }}</th>
+      <th class="nowrap" style="width:{{ compact_items ? '7%' : '8%' }}">{{ t('Jed.', 'Unit') }}</th>
+      <th class="num nowrap" style="width:{{ compact_items ? '13%' : '18%' }}">{{ t('Cena/j', 'Price/unit') }}</th>
       {# RC doklad neplátce/IO: částky jsou základ daně (samovyměří odběratel) —
          sloupec to musí říct, neutrální „Celkem" by byl nejednoznačný. #}
       {% if invoice.reverse_charge %}
-      <th class="num nowrap" style="width:23%">{{ t('Celkem bez DPH', 'Total excl. VAT') }}</th>
+      <th class="num nowrap" style="width:{{ compact_items ? '15%' : '23%' }}">{{ t('Celkem bez DPH', 'Total excl. VAT') }}</th>
       {% else %}
-      <th class="num nowrap" style="width:23%">{{ t('Celkem', 'Total') }}</th>
+      <th class="num nowrap" style="width:{{ compact_items ? '15%' : '23%' }}">{{ t('Celkem', 'Total') }}</th>
       {% endif %}
       {% endif %}
     </tr>
@@ -294,7 +296,9 @@
         {%- if compact_items and _base_qty is not null -%}<span style="font-size:85%;color:#666666;white-space:nowrap"> · {{ t('celkem', 'total') }}&nbsp;{{ _base_qty }}&nbsp;{{ item.base_unit }}</span>{%- endif -%}
         {#- Vybraná sériová čísla a šarže (InvoicePdfRenderer::withTrackingLines). -#}
         {%- for tracking_line in item.tracking_lines|default([]) -%}
-          {%- if compact_items -%}<span style="font-size:85%;color:#666666"> · {{ tracking_line }}</span>
+          {#- Popisek („Výr. č.:“) drží pevnými mezerami u prvního čísla, na konci řádku se neodtrhne. -#}
+          {%- if compact_items -%}{%- set _tl = tracking_line|split(': ', 2) -%}
+            <span style="font-size:85%;color:#666666"> · {% if _tl|length == 2 %}{{ _tl[0]|e|replace({' ': '&nbsp;'})|raw }}:&nbsp;{{ _tl[1] }}{% else %}{{ tracking_line }}{% endif %}</span>
           {%- else -%}<br><span style="font-size:85%;color:#666666">{{ tracking_line }}</span>{%- endif -%}
         {%- endfor -%}
       </td>
