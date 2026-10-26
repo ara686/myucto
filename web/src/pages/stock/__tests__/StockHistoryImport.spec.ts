@@ -41,7 +41,7 @@ const emptyItems = { items: [], pagination: { page: 1, limit: 50, total: 0, page
 function mountPage() {
   return shallowMount(StockHistoryImport, { global: { stubs: {
     RouterLink: true,
-    CatalogJobProgress: { name: 'CatalogJobProgress', props: ['job'], emits: ['cancel'], template: '<div data-test="progress">{{ job.kind }}</div>' },
+    CatalogJobProgress: { name: 'CatalogJobProgress', props: ['job', 'canCancel'], emits: ['cancel'], template: '<div data-test="progress">{{ job.kind }}</div>' },
   } } })
 }
 
@@ -209,13 +209,22 @@ describe('StockHistoryImport', () => {
     wrapper.unmount()
   })
 
-  it('offers retry only for the file check, not for a stopped import', async () => {
+  it('offers retry of the file check and of the current stopped import, not of an older one', async () => {
+    const stopped = { ...stage, id: 42, kind: 'stock_history_import_apply', status: 'cancelled', report: {} }
     mocks.route.query = { history_job: '42' }
-    mocks.job.mockResolvedValue({ ...stage, id: 42, kind: 'stock_history_import_apply', status: 'cancelled', report: {} })
+    mocks.status.mockResolvedValue({ locked_until: '9999-12-31', first_document_date: null, active: stopped, orphan_job_id: null, max_rows: 300000 })
+    mocks.job.mockResolvedValue(stopped)
     let wrapper = mountPage()
     await flushPromises()
-    expect(wrapper.find('[data-test="retry"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="retry"]').exists()).toBe(true)
     expect(wrapper.get('[data-test="retry-unsupported"]').text()).toBe('stock.history_import.apply_stopped')
+    wrapper.unmount()
+
+    mocks.status.mockResolvedValue({ locked_until: null, first_document_date: null, active: null, orphan_job_id: null, max_rows: 300000 })
+    wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.find('[data-test="retry"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="retry-unsupported"]').text()).toBe('stock.history_import.apply_stale')
     wrapper.unmount()
 
     mocks.route.query = { history_job: '41' }
@@ -223,6 +232,22 @@ describe('StockHistoryImport', () => {
     wrapper = mountPage()
     await flushPromises()
     expect(wrapper.find('[data-test="retry"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('lets only a company administrator stop a running import', async () => {
+    const running = { ...stage, id: 42, kind: 'stock_history_import_apply', status: 'running', report: {} }
+    mocks.route.query = { history_job: '42' }
+    mocks.job.mockResolvedValue(running)
+    mocks.auth.isCompanyAdminRole = false
+    let wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.getComponent({ name: 'CatalogJobProgress' }).props('canCancel')).toBe(false)
+    wrapper.unmount()
+    mocks.auth.isCompanyAdminRole = true
+    wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.getComponent({ name: 'CatalogJobProgress' }).props('canCancel')).toBe(true)
     wrapper.unmount()
   })
 

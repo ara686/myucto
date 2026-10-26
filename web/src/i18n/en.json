@@ -13874,11 +13874,12 @@
       "orphan_text": "Imported documents have no import job, typically after the company was restored from an archive. History is locked until {locked}. Another import is possible only after it is rolled back.",
       "rollback_text_orphan": "All imported documents including the settlement issue are deleted and the history is unlocked. If the imported documents made up the current stock, this is possible only without the company's own stock documents.",
       "rollback_closed_periods": "Some imported documents fall into a closed accounting period. I confirm I want to delete them.",
-      "apply_stopped": "The import cannot be restarted. Roll it back and run it again from the file check.",
+      "apply_stopped": "The import stopped. Continue with Try again, or roll the import back.",
+      "apply_stale": "This import no longer belongs to the latest stock history import and cannot be restarted.",
       "rollback_stopped": "The rollback did not finish. Start it again with Roll back import.",
       "end_state_title": "History end state by item",
       "end_state_download": "Download XLSX",
-      "end_state_summary": "Items in warehouses: {count}, of which differ from stock in MyÚčto on {date}: {differences}.",
+      "end_state_summary": "Items in warehouses: {count}, of which differ from the opening stock in MyÚčto on {date}: {differences}.",
       "end_state_summary_live": "Items in warehouses: {count}. Stock after the import will equal the end of the history; compare it with the previous software in the XLSX.",
       "end_state_name": "Name",
       "end_state_history": "History",
@@ -13962,12 +13963,12 @@
         "import_file_empty": "The file is empty.",
         "import_file_too_large": "The file is too large.",
         "import_too_many_rows": "The file has too many rows.",
-        "history_import_doc_date_future": "The document date is in the future.",
+        "history_import_doc_date_not_past": "The last day of the history must be yesterday at the latest.",
         "history_import_cutover_future": "The cut-over date cannot be in the future.",
         "history_import_number_reserved": "The number belongs to a technical receipt or settlement issue the import creates. Use a prefix.",
         "history_import_stock_take_open": "A stock take is in progress. Run the history import after it is closed.",
         "history_import_job_stale": "The job no longer matches the latest history import and wrote nothing.",
-        "history_import_retry_unsupported": "Neither the import nor the rollback can be restarted. Roll the import back and run it again from the file check."
+        "history_import_retry_unsupported": "Only the latest stock history import or rollback can be retried."
       },
       "status_applied": "Imported"
     },
@@ -14851,7 +14852,7 @@
       "fulfillment_return_excess": "The return exceeds the shipped quantity.",
       "fulfillment_return_warehouse_kind": "The target warehouse does not match the return disposition.",
       "stock_history_locked": "The document falls into the imported stock history, which cannot be changed. Roll back the history import to correct it.",
-      "stock_history_import_running": "A stock history import or rollback is in progress. Post the document after it finishes."
+      "stock_history_import_running": "A stock history import or rollback is in progress. Try again after it finishes."
     },
     "lifecycle": {
       "copy_suffix": "copy",

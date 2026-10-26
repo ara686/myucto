@@ -93,8 +93,11 @@ const lockedLabel = computed(() => status.value?.locked_until === LOCK_RUNNING
 const today = new Date().toLocaleDateString('sv')
 /** Datum přechodu je nejpozději první skladový doklad firmy a nejpozději dnes. */
 const cutoverMax = computed(() => [status.value?.first_document_date, today].filter((d): d is string => !!d).sort()[0])
-/** Převzetí a vrácení znovu spustit nejde; import se vrátí a spustí znovu z kontroly souboru. */
-const canRetry = computed(() => !!job.value && job.value.kind === STAGE_KIND && ['failed', 'cancelled'].includes(job.value.status))
+/** Kontrolu souboru jde opakovat vždy, převzetí jen to poslední (aktivní); starší úlohu backend odmítne. */
+const canRetry = computed(() => !!job.value && ['failed', 'cancelled'].includes(job.value.status)
+  && (job.value.kind === STAGE_KIND || (job.value.kind === APPLY_KIND && job.value.id === activeImport.value?.id)))
+/** Zastavené převzetí bez data přechodu nechá zamčený sklad: zastavit ho smí jen správce firmy. */
+const canCancel = computed(() => running.value && (job.value?.kind !== APPLY_KIND || auth.isCompanyAdminRole))
 const endStateDifferences = computed(() => (endState.value?.items ?? [])
   .filter(row => row.difference !== null && Number(row.difference) !== 0))
 const mappedFields = computed<HistoryImportField[]>(() => [...(sample.value?.fields ?? []), ...(sample.value?.optional_fields ?? [])])
@@ -457,7 +460,7 @@ onBeforeUnmount(() => { generation++; stopPolling() })
 
     <section v-if="job" class="min-w-0 space-y-4 rounded-xl border border-neutral-200 bg-surface p-5 shadow-sm">
       <p class="text-sm font-medium">{{ t(`stock.history_import.job_kind.${job.kind === ROLLBACK_KIND ? 'rollback' : job.kind === APPLY_KIND ? 'apply' : 'preview'}`) }}</p>
-      <CatalogJobProgress :job="job" :can-cancel="running" @cancel="changeJob('cancel')" />
+      <CatalogJobProgress :job="job" :can-cancel="canCancel" @cancel="changeJob('cancel')" />
 
       <div v-if="summary.documents" data-test="summary" class="grid min-w-0 grid-cols-2 gap-3 text-sm sm:grid-cols-4">
         <div v-for="type in TYPES" :key="type" class="rounded-lg bg-neutral-50 p-3"><p class="text-xs text-neutral-500">{{ t(`stock.history_import.types.${type}`) }}</p><p class="font-semibold">{{ summary.documents[type] ?? 0 }}</p></div>
@@ -491,7 +494,7 @@ onBeforeUnmount(() => { generation++; stopPolling() })
         <span class="text-sm text-neutral-500">{{ t('eshop.import2.page', { page: reportPage, pages: reportPages }) }}</span>
         <button type="button" :disabled="reportLoading || reportPage >= reportPages" :class="btnOutline('neutral')" @click="loadReport(reportPage + 1)">{{ t('common.next') }}<svg class="h-4 w-4 -rotate-90" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path :d="ICONS.chevron" /></svg></button>
       </div>
-      <p v-if="job.kind !== STAGE_KIND && ['failed', 'cancelled'].includes(job.status)" data-test="retry-unsupported" class="text-sm text-neutral-600">{{ t(job.kind === APPLY_KIND ? 'stock.history_import.apply_stopped' : 'stock.history_import.rollback_stopped') }}</p>
+      <p v-if="job.kind !== STAGE_KIND && ['failed', 'cancelled'].includes(job.status)" data-test="retry-unsupported" class="text-sm text-neutral-600">{{ t(job.kind === ROLLBACK_KIND ? 'stock.history_import.rollback_stopped' : canRetry ? 'stock.history_import.apply_stopped' : 'stock.history_import.apply_stale') }}</p>
       <div class="flex flex-wrap justify-end gap-2">
         <button type="button" :class="btnOutline('neutral')" @click="reset"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path :d="ICONS.x" /></svg>{{ t('stock.history_import.close') }}</button>
         <button v-if="canRetry" type="button" data-test="retry" :class="btnOutline('primary')" @click="changeJob('retry')"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path :d="ICONS.cycle" /></svg>{{ t('common.retry') }}</button>

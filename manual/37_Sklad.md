@@ -195,7 +195,7 @@ dokladu a doklad drží pohromadě jeho číslo. Velký export ukládejte raděj
 |---|---|---|
 | Číslo dokladu | ano | původní číslo ze starého programu, i s předponou nejvýš 30 znaků |
 | Typ dokladu | ano | příjemka, výdejka, převodka, přebytek, manko (i receipt, issue, transfer, surplus, shortage) |
-| Datum | ano | RRRR-MM-DD nebo D.M.RRRR, nejpozději dnešní den |
+| Datum | ano | RRRR-MM-DD nebo D.M.RRRR, nejpozději včerejší den |
 | Sklad | ano | kód skladu v MyÚčtu |
 | SKU | ano | skladová karta musí existovat a být skladová, bez šarží a sériových čísel |
 | Množství | ano | kladné číslo v základní jednotce karty |
@@ -206,9 +206,9 @@ dokladu a doklad drží pohromadě jeho číslo. Velký export ukládejte raděj
 | Přijatá faktura | ne | číslo dokladu dodavatele, jinak variabilní symbol |
 
 Přebytek se převezme jako příjemka a manko jako výdejka, obojí s původem
-**Inventura**. Výdeje a převodky ocení klouzavý průměr přes všechny sklady karty
-([§ 37.12.3](#37123-ocenovani-zasob)), takže se hodnoty mohou lišit od starého
-programu, který oceňoval jinak.
+**Inventura**. Výdej ocení klouzavý průměr skladu, ze kterého zboží odchází, a převodka
+přenese hodnotu výdeje na cílový sklad ([§ 37.12.3](#37123-ocenovani-zasob)). Hodnoty se
+proto mohou lišit od starého programu, který oceňoval jinak.
 
 **Dva způsoby navázání:**
 
@@ -221,7 +221,8 @@ programu, který oceňoval jinak.
   dokladů od data přechodu se tak nezmění.
 - **Historie je současný stav.** Jen pro firmu, která zatím žádný skladový doklad
   nemá. Stav skladu po importu odpovídá konci historie a na historii navážete
-  běžnými doklady.
+  běžnými doklady. Historie musí skončit nejpozději včera, dnešní den už patří
+  vlastním dokladům.
 
 **Postup:**
 
@@ -239,8 +240,9 @@ programu, který oceňoval jinak.
    (například `PRI-2026-0001`), kontrola odmítne. Stejně tak číslo, které si vezme
    vyrovnávací výdejka nebo technická příjemka.
 6. Projděte **Koncový stav historie po kartách**: kolik zůstane z historie na každém
-   skladu a kartě. U historie před přechodem ho kontrola porovná se stavem v MyÚčtu
-   k datu přechodu a vypíše karty s rozdílem. Tlačítko **Stáhnout XLSX** dá celý
+   skladu a kartě. U historie před přechodem ho kontrola porovná s počátečním stavem
+   v MyÚčtu k datu přechodu, tedy s příjemkami s tímto datem (typicky počáteční
+   zásoby), a vypíše karty s rozdílem. Prodeje a jiné pohyby toho dne se nepočítají. Tlačítko **Stáhnout XLSX** dá celý
    přehled k porovnání se stavem ve starém programu.
 7. Klikněte na **Převzít historii**.
 
@@ -266,8 +268,8 @@ Převzatá historie je uzamčená: převzatý doklad nejde stornovat a do obdob�
 historie nejde zaúčtovat nový doklad. Převzaté doklady se nepromítají do Intrastatu
 a do přehledu nevyfakturovaných příjemek v uzávěrce. Firma má najednou jen jeden
 import historie. U způsobu „historie je současný stav“ je během převzetí
-i vrácení zamčený celý sklad: žádný skladový doklad do jejich dokončení
-nezaúčtujete.
+i vrácení zamčený celý sklad: do jejich dokončení nezaúčtujete žádný skladový
+doklad a nespustíte ani nepřipravíte inventuru.
 
 Storno vydané nebo přijaté faktury převzatou výdejku či příjemku nestornuje,
 historie zůstane, jak byla. Obnovení stornované faktury novou výdejku nevytvoří,
@@ -280,9 +282,11 @@ U způsobu „historie je současný stav“ se navíc vynuluje stav skladu, pro
 vrátíte jen do prvního vlastního skladového dokladu firmy. Pak můžete import
 spustit znovu s opraveným souborem.
 
-Zastavené nebo chybou ukončené převzetí nejde spustit znovu. Import vraťte a spusťte
-ho znovu od kontroly souboru. Nedoběhlé vrácení spustíte znovu tlačítkem
-**Vrátit import**.
+Zastavené nebo chybou přerušené převzetí dokončíte tlačítkem **Zkusit znovu**, když
+jde o poslední import firmy; starší úlohu znovu spustit nejde. Zastavit převzetí smí
+jen správce firmy, protože u způsobu „historie je současný stav“ zůstane do jeho
+dokončení nebo vrácení zamčený celý sklad. Nedoběhlé vrácení spustíte znovu
+tlačítkem **Vrátit import**.
 
 Když se firma obnoví z archivu, který úlohy importu nepřenáší, zůstanou převzaté
 doklady bez záznamu o importu. Stránka importu to ukáže a správce firmy je vrátí stejně

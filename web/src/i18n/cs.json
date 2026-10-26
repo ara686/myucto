@@ -13874,11 +13874,12 @@
       "orphan_text": "Převzaté doklady zůstaly bez úlohy importu, typicky po obnově firmy z archivu. Historie je uzamčená do {locked}. Další import je možný až po jejím vrácení.",
       "rollback_text_orphan": "Smažou se všechny převzaté doklady včetně vyrovnávací výdejky a historie se odemkne. Když převzaté doklady tvořily současný stav skladu, jde to jen bez vlastních skladových dokladů firmy.",
       "rollback_closed_periods": "Část převzatých dokladů spadá do uzavřeného účetního období. Potvrzuji, že je chci smazat.",
-      "apply_stopped": "Převzetí nejde spustit znovu. Vraťte import a spusťte ho znovu z kontroly souboru.",
+      "apply_stopped": "Převzetí se zastavilo. Pokračujte tlačítkem Zkusit znovu, nebo import vraťte.",
+      "apply_stale": "Toto převzetí už nepatří k poslednímu importu historie a znovu ho spustit nejde.",
       "rollback_stopped": "Vrácení nedoběhlo. Spusťte ho znovu tlačítkem Vrátit import.",
       "end_state_title": "Koncový stav historie po kartách",
       "end_state_download": "Stáhnout XLSX",
-      "end_state_summary": "Karet na skladech: {count}, z toho s rozdílem proti stavu v MyÚčtu k {date}: {differences}.",
+      "end_state_summary": "Karet na skladech: {count}, z toho s rozdílem proti počátečnímu stavu v MyÚčtu k {date}: {differences}.",
       "end_state_summary_live": "Karet na skladech: {count}. Stav skladu po převzetí bude odpovídat konci historie; porovnejte ho se starým programem v XLSX.",
       "end_state_name": "Název",
       "end_state_history": "Historie",
@@ -13962,12 +13963,12 @@
         "import_file_empty": "Soubor je prázdný.",
         "import_file_too_large": "Soubor je příliš velký.",
         "import_too_many_rows": "Soubor obsahuje příliš mnoho řádků.",
-        "history_import_doc_date_future": "Datum dokladu je v budoucnosti.",
+        "history_import_doc_date_not_past": "Poslední den historie musí být nejpozději včera.",
         "history_import_cutover_future": "Datum přechodu nesmí být v budoucnosti.",
         "history_import_number_reserved": "Číslo patří technické příjemce nebo vyrovnávací výdejce, kterou import vytvoří. Použijte předponu.",
         "history_import_stock_take_open": "Ve firmě běží inventura. Import historie spusťte až po jejím uzavření.",
         "history_import_job_stale": "Úloha už neodpovídá poslednímu importu historie a nic nezapsala.",
-        "history_import_retry_unsupported": "Převzetí ani vrácení nejde spustit znovu. Vraťte import a spusťte ho znovu z kontroly souboru."
+        "history_import_retry_unsupported": "Opakovat jde jen poslední převzetí nebo vrácení historie skladu."
       },
       "status_applied": "Převzato"
     },
@@ -14851,7 +14852,7 @@
       "fulfillment_return_excess": "Vratka překračuje expedované množství.",
       "fulfillment_return_warehouse_kind": "Cílový sklad neodpovídá dispozici vratky.",
       "stock_history_locked": "Doklad spadá do převzaté historie skladu, kterou nejde měnit. Opravu udělejte vrácením importu historie.",
-      "stock_history_import_running": "Probíhá převzetí nebo vrácení historie skladu. Doklad zaúčtujte po jeho dokončení."
+      "stock_history_import_running": "Probíhá převzetí nebo vrácení historie skladu. Akci zopakujte po jeho dokončení."
     },
     "lifecycle": {
       "copy_suffix": "kopie",

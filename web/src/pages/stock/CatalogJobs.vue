@@ -40,10 +40,16 @@ function canManage(job: CatalogJob) {
   if (isBulk(job) || workflowUrl(job)) return auth.canWrite('eshop.write') && auth.canWrite('stock.items.write')
   return auth.canWrite('eshop.write')
 }
-/** Převzetí a vrácení historie skladu znovu spustit nejde (backend vrátí 409), jen vrátit a začít znovu. */
+const HISTORY_RUNS = ['stock_history_import_apply', 'stock_history_import_rollback']
+/** Převzetí a vrácení historie skladu jde opakovat jen u poslední takové úlohy (starší backend odmítne). */
+const latestHistoryRun = computed(() => Math.max(0, ...jobs.value.filter(job => HISTORY_RUNS.includes(job.kind)).map(job => job.id)))
 function canRetry(job: CatalogJob) {
   return (job.status === 'failed' || job.status === 'cancelled')
-    && job.kind !== 'stock_history_import_apply' && job.kind !== 'stock_history_import_rollback'
+    && (!HISTORY_RUNS.includes(job.kind) || job.id === latestHistoryRun.value)
+}
+/** Zastavené převzetí historie nechá zamčený sklad, zastavit ho smí jen správce firmy jako vrácení. */
+function canCancel(job: CatalogJob) {
+  return !job.stock_take_id && canManage(job) && (job.kind !== 'stock_history_import_apply' || auth.isCompanyAdminRole)
 }
 function workflowUrl(job: CatalogJob): string | null {
   if (job.kind.startsWith('stock_opening_import_')) return `/stock/opening-import?opening_job=${job.id}`
@@ -156,7 +162,7 @@ onBeforeUnmount(() => { disposed = true; if (timer) clearInterval(timer) })
     <div v-else class="space-y-2">
       <article v-for="job in jobs" :key="job.id" class="bg-surface border border-neutral-200 rounded-lg shadow-sm p-3">
         <div class="flex flex-wrap items-start justify-between gap-3"><div class="min-w-0"><div class="flex flex-wrap items-center gap-2"><span class="font-medium">{{ t(`eshop.jobs.kind.${job.kind}`, job.kind) }}</span><span class="text-xs px-2 py-0.5 rounded font-medium" :class="STATUS[job.status]">{{ t(`eshop.jobs.status.${job.status}`) }}</span></div><p class="text-xs text-neutral-500 mt-1">#{{ job.id }} · {{ formatDateTime(job.created_at) }}<span v-if="job.error_code"> · {{ job.error_code }}</span></p></div><div class="flex flex-wrap gap-2"><RouterLink v-if="job.stock_take_id" :to="`/stock/takes/${job.stock_take_id}`" :class="btnOutline('primary')"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" :d="ICONS.clipboardCheck" /></svg>{{ t('eshop.jobs.open_stock_take') }}</RouterLink><RouterLink v-if="job.kind === 'stock_valuation' && !job.stock_take_id" :to="`/stock/reports?valuation_job=${job.id}`" :class="btnOutline('neutral')"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M9 5h10v14H5V9m4 6L19 5" /></svg>{{ t('eshop.jobs.open_valuation') }}</RouterLink><template v-if="!job.stock_take_id && canManage(job)"><button v-if="canRetry(job)" type="button" :disabled="actingId !== null" :class="btnOutline('primary')" @click="retry(job.id)"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8 8 0 0 0 4.582 9M4.582 9H9m11 11v-5h-.581A8 8 0 0 1 4.58 13H15" /></svg>{{ t('common.retry') }}</button></template></div></div>
-        <CatalogJobProgress v-if="isActive(job)" class="mt-3" :job="job" :cancelling="actingId === job.id" :can-cancel="!job.stock_take_id && canManage(job)" @cancel="cancel(job.id)" />
+        <CatalogJobProgress v-if="isActive(job)" class="mt-3" :job="job" :cancelling="actingId === job.id" :can-cancel="canCancel(job)" @cancel="cancel(job.id)" />
         <div v-if="workflowUrl(job) && canManage(job)" class="mt-3 flex flex-wrap gap-2">
           <RouterLink :to="workflowUrl(job)!" :class="btnOutline('primary')">
             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path :d="ICONS.eye" /></svg>
