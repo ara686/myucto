@@ -12,6 +12,14 @@ use PHPUnit\Framework\TestCase;
 
 final class PermissionCatalogTest extends TestCase
 {
+    public function testReadOnlyPresetContainsNoWriteIncludingProfile(): void
+    {
+        $preset = (new PermissionCatalog())->legacyPreset('readonly');
+        self::assertSame(1, $preset['profile']);
+        self::assertSame(1, $preset['profile.tokens']);
+        foreach ($preset as $key => $level) self::assertLessThan(2, $level, $key);
+    }
+
     public function testClientBankPermissionsAreOptInAndActionChecksRequireRead(): void
     {
         $catalog = new PermissionCatalog();

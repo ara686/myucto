@@ -1770,10 +1770,8 @@ final class LicenseService
     /**
      * Kolik aktivních uživatelů zabírá licenční místo.
      *
-     * ⚠️ Rozhoduje SKUTEČNÉ OPRÁVNĚNÍ, ne název role — viz {@see SeatPolicy}.
-     * Počítat podle `system_key <> 'readonly'` se dalo obejít přiřazením
-     * override role přes obrazovku firem i přepsáním systémové role přes API,
-     * a v obou případech měl uživatel plná práva, aniž se objevil v počtu.
+     * Výjimku vestavěné čtecí role ověřuje {@see SeatPolicy} také proti
+     * skutečným oprávněním a všem per-firemním rolím.
      */
     private function queryActiveUsers(): int
     {

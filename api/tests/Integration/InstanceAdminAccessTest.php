@@ -116,7 +116,7 @@ final class InstanceAdminAccessTest extends TestCase
         $seats = new SeatPolicy($this->db);
         $payroll = new PayrollUsagePolicy($this->db);
         self::assertFalse($seats->roleGrantsWrite($this->technicalRole));
-        self::assertFalse($seats->occupiesSeat($this->technicalRole));
+        self::assertTrue($seats->occupiesSeat($this->technicalRole));
         $pdo->prepare('UPDATE supplier SET payroll_enabled = 1 WHERE id = ?')->execute([$this->supplierA]);
         $before = $seats->countActiveSeats();
         $payrollBefore = $payroll->countActiveUsers();
@@ -127,11 +127,11 @@ final class InstanceAdminAccessTest extends TestCase
         // Poškozená matice práv nesmí vytvořit výjimku z publikovaných licenčních pravidel.
         self::assertTrue($seats->roleGrantsWrite($this->technicalRole));
         self::assertTrue($seats->occupiesSeat($this->technicalRole, [$this->roleId('accountant')]));
-        self::assertSame($before + 1, $seats->countActiveSeats());
+        self::assertSame($before, $seats->countActiveSeats());
         self::assertSame($payrollBefore + 1, $payroll->countActiveUsers());
         self::assertTrue($seats->roleGrantsWrite($this->roleId('accountant')));
         $this->user($this->roleId('accountant'));
-        self::assertSame($before + 2, $seats->countActiveSeats());
+        self::assertSame($before + 1, $seats->countActiveSeats());
     }
 
     public function testConversionRevokesOldAccessAtomicallyAndKeepsMfa(): void
@@ -175,7 +175,7 @@ final class InstanceAdminAccessTest extends TestCase
         self::assertSame(0, (int) $pdo->query('SELECT COUNT(*) FROM user_technical_access WHERE user_id = ' . $target)->fetchColumn());
     }
 
-    public function testFullSeatLimitAllowsTechnicalCreationAndActivationButRollsBackBusinessConversion(): void
+    public function testFullSeatLimitBlocksTechnicalCreationActivationAndReadOnlyConversion(): void
     {
         $pdo = $this->db->pdo();
         $this->user($this->roleId('accountant'));
@@ -196,22 +196,32 @@ final class InstanceAdminAccessTest extends TestCase
             'name' => 'Synthetic technical capacity', 'role_id' => $this->technicalRole,
             'password' => 'Synthetic-FR224-Password-42!', 'locale' => 'cs',
         ]), (new ResponseFactory())->createResponse());
-        self::assertSame(201, $created->getStatusCode(), (string) $created->getBody());
-        $target = (int) json_decode((string) $created->getBody(), true, flags: JSON_THROW_ON_ERROR)['id'];
-        self::assertGreaterThan(0, $target);
+        self::assertSame(403, $created->getStatusCode(), (string) $created->getBody());
+        self::assertSame('license_user_limit', json_decode((string) $created->getBody(), true, flags: JSON_THROW_ON_ERROR)['error']['code']);
         self::assertSame($before, $seats->countActiveSeats());
+        $target = $this->user($this->technicalRole);
         $pdo->prepare('UPDATE users SET is_active = 0 WHERE id = ?')->execute([$target]);
         $activated = $action->update($this->adminRequest('PUT', '/')->withParsedBody(['is_active' => true]),
             (new ResponseFactory())->createResponse(), ['id' => $target]);
-        self::assertSame(200, $activated->getStatusCode(), (string) $activated->getBody());
+        self::assertSame(403, $activated->getStatusCode(), (string) $activated->getBody());
+        self::assertSame($before, $seats->countActiveSeats());
+        self::assertSame(0, (int) $pdo->query('SELECT is_active FROM users WHERE id = ' . $target)->fetchColumn());
+
+        $free = $action->create($this->adminRequest('POST', '/')->withParsedBody([
+            'email' => 'readonly-capacity-' . bin2hex(random_bytes(6)) . '@example.invalid',
+            'name' => 'Synthetic readonly capacity', 'role_id' => $this->roleId('readonly'),
+            'password' => 'Synthetic-FR224-Password-42!', 'locale' => 'cs',
+        ]), (new ResponseFactory())->createResponse());
+        self::assertSame(201, $free->getStatusCode(), (string) $free->getBody());
+        $target = (int) json_decode((string) $free->getBody(), true, flags: JSON_THROW_ON_ERROR)['id'];
         self::assertSame($before, $seats->countActiveSeats());
 
-        $this->access->replaceForUser($target, false, [$this->supplierA]);
+        $pdo->prepare('INSERT INTO user_suppliers (user_id, supplier_id) VALUES (?, ?)')->execute([$target, $this->supplierA]);
         $session = bin2hex(random_bytes(32));
         $pdo->prepare("INSERT INTO sessions (id,user_id,csrf_token,expires_at,ip,user_agent,last_user_activity_at,session_family_id)
             VALUES (?, ?, ?, NOW() + INTERVAL 1 DAY, INET6_ATON('127.0.0.1'), 'synthetic', UTC_TIMESTAMP(6), ?)")
             ->execute([$session, $target, bin2hex(random_bytes(32)), random_bytes(32)]);
-        $blocked = $action->update($this->adminRequest('PUT', '/')->withParsedBody(['role_id' => $this->roleId('accountant')]),
+        $blocked = $action->update($this->adminRequest('PUT', '/')->withParsedBody(['role_id' => $this->technicalRole]),
             (new ResponseFactory())->createResponse(), ['id' => $target]);
         self::assertSame(403, $blocked->getStatusCode(), (string) $blocked->getBody());
         $error = json_decode((string) $blocked->getBody(), true, flags: JSON_THROW_ON_ERROR);
@@ -220,9 +230,9 @@ final class InstanceAdminAccessTest extends TestCase
         $stmt = $pdo->prepare('SELECT role_id, is_active FROM users WHERE id = ?');
         $stmt->execute([$target]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
-        self::assertSame($this->technicalRole, (int) $user['role_id']);
+        self::assertSame($this->roleId('readonly'), (int) $user['role_id']);
         self::assertSame(1, (int) $user['is_active']);
-        self::assertSame(['all_suppliers' => false, 'supplier_ids' => [$this->supplierA]], $this->access->scopeForUser($target));
+        self::assertSame(1, (int) $pdo->query('SELECT COUNT(*) FROM user_suppliers WHERE user_id = ' . $target)->fetchColumn());
         $stmt = $pdo->prepare('SELECT revoked_at FROM sessions WHERE id = ? AND user_id = ?');
         $stmt->execute([$session, $target]);
         self::assertNull($stmt->fetchColumn(), 'Zamítnutá konverze nesmí zrušit dosavadní přihlášení.');

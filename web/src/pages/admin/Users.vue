@@ -13,12 +13,8 @@ const toast = useToast()
 const auth = useAuthStore()
 
 /**
- * Proč nejde přidat dalšího ZAPISUJÍCÍHO uživatele.
- *
- * ⚠️ Backend to posílá odjakživa, obrazovka to nečetla: admin vyplnil celý
- * formulář včetně hesla a teprve uložení skončilo na 403. Účty jen pro
- * čtení a klientské účty licenční místo nezabírají, takže je to varování,
- * ne zámek — kterou roli zvolit, ví admin líp než my.
+ * Limit aktivních účtů je varování: správce může stále založit účet
+ * s předdefinovanou rolí Pouze pro čtení, která licenční místo nečerpá.
  */
 const seatWarning = computed(() => {
   if (auth.newUserBlocked === 'no_license') return t('users.seat_blocked_no_license')
@@ -294,6 +290,7 @@ onMounted(load)
           <label class="text-sm"><span class="block font-medium mb-1">{{ t('users.role') }}<RequiredMark /></span><select v-model.number="form.role_id" :disabled="editingLastActiveSuperadmin" class="w-full h-10 px-3 border border-neutral-300 rounded-md bg-surface disabled:opacity-60"><option v-for="role in roles.filter(r => r.is_active || r.id === form.role_id)" :key="role.id" :value="role.id">{{ role.name }} ({{ t(`roles.types.${role.role_type}`) }})</option></select></label>
           <label class="text-sm"><span class="block font-medium mb-1">{{ t('common.language') }}</span><select v-model="form.locale" class="w-full h-10 px-3 border border-neutral-300 rounded-md bg-surface"><option value="cs">cs</option><option value="en">en</option></select></label>
         </div>
+        <p class="text-sm text-neutral-500">{{ t('users.seat_policy_hint') }}</p>
         <label v-if="form.id !== null" class="flex gap-2 items-center"><input v-model="form.is_active" :disabled="editingLastActiveSuperadmin" type="checkbox" />{{ t('common.active') }}<span v-if="editingLastActiveSuperadmin" class="text-xs text-neutral-500">— {{ t('users.is_last_admin_lock') }}</span></label>
         <label class="text-sm">
           <span class="block font-medium mb-1">{{ t('auth.password') }} <span class="font-normal text-neutral-500">— {{ t('common.optional') }}</span></span>

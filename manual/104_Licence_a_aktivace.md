@@ -270,11 +270,14 @@ v aplikaci i do karty stavu na stránce `Systém → Zakoupení`.
 | **Komerční funkce nedostupné (degraded)** | Předplatné neobnoveno (po ochranné lhůtě), případně chybí/neplatný podpis tokenu. | Bezplatné funkce plně; komerční moduly nedostupné |
 
 **Kdo se počítá do limitu uživatelů.** Do počtu licencovaných míst se počítají
-**aktivní uživatelé**, kterým alespoň jedna aktivní aplikační nebo klientská
-role dovoluje zápis do obchodních dat. Počítá se i zapisovací role přiřazená
-jen pro jednu firmu. Klientská role tedy není automaticky zdarma; rozhodují
-její skutečná oprávnění. Bezplatná je role pouze pro čtení a také self-service
-role, která dovoluje měnit jen vlastní profil nebo vlastní přístupové tokeny.
+**všichni aktivní uživatelé**, včetně klientů, technických správců a účtů
+s vlastní čtecí rolí. Výjimkou je pouze účet používající výhradně vestavěnou
+roli **Pouze pro čtení**, která nemá zápis mimo správu vlastních API tokenů.
+Posuzuje se výchozí role i role přiřazené jednotlivým firmám; jiná role
+u jediné firmy už licenční místo zabírá. Vlastní role se stejným názvem tuto
+výjimku nemá. Vlastní profil dovoluje pouze čtení. API tokeny mají výchozí
+oprávnění **Čtení**, správce může povolit **Zápis** pro jejich správu; token
+přitom nepřekročí oprávnění svého uživatele.
 Deaktivované účty se nepočítají. Vedle uživatelů se hlídá i **počet firem**
 (dodavatelů) proti limitu tarifu; počítá se každá založená firma.
 

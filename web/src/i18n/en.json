@@ -21283,7 +21283,7 @@
     "model_points": [
       "The free foundation stays available after the trial ends.",
       "A commercial license unlocks double-entry accounting, accounting tools and closing, stock and e-commerce, asset records, EPO integration and advanced VAT corrections.",
-      "Pricing is per active user and month; read-only and deactivated accounts do not count.",
+      "Pricing is per active user and month, including clients, technical administrators and custom read-only roles. Deactivated accounts and accounts using only the built-in Read-only role with no write permissions except their own API tokens do not count.",
       "The license is bound to a unique installation identifier; one key runs on one installation.",
       "The app verifies the license online roughly once a day; a brief loss of internet does not limit operation.",
       "Only technical data is transmitted (identifier, key, version, counts). No accounting or personal data."
@@ -26208,6 +26208,7 @@
       "bank_ignore": "Ignore payments"
     },
     "client_bank_hint": "Client bank permissions are optional. Importing, matching and ignoring require bank read access. Matching and unmatching also require document read access and permission to change their payments. Matching and importing can trigger automatic payment processing and journal entries according to company settings.",
+    "readonly_hint": "The built-in Read-only role can have write access only to manage its own API tokens. All other permissions allow at most reading.",
     "title": "Roles and permissions",
     "subtitle": "Control access to modules and significant actions.",
     "new": "New role",
@@ -26222,7 +26223,7 @@
     "usage": "Users: {users}, company overrides: {overrides}",
     "superadmin_locked": "The system superadmin role is locked and always has full access.",
     "system_descriptions": {
-      "instance_admin": "A fixed technical role without business access. The superadmin assigns its scope; it does not consume a licensed seat.",
+      "instance_admin": "A fixed technical role without business access. The superadmin assigns its scope; an active account consumes a licensed seat.",
       "superadmin": "A predefined system role with fixed permissions. It has full access to every company and is the only role that manages users, roles, licensing, and system-wide settings.",
       "admin": "A predefined role with fixed permissions. It can do everything in assigned companies and work with multiple companies assigned by a superadmin. It cannot change system-wide items in the System menu.",
       "admin_plus": "A predefined role with fixed permissions. It has the same permissions as Admin and can also create a company under System → Companies; it automatically receives Admin permissions for that company."
@@ -26282,8 +26283,9 @@
     "deactivate": "Deactivate",
     "edit_title": "Edit {email}",
     "new_title": "New user",
-    "seat_blocked_no_license": "Without a valid licence you can only create a read-only account. Read-only and client accounts do not take up a licensed seat.",
-    "seat_blocked_limit": "All licensed seats are taken. To add another writing user, extend your subscription or deactivate an existing account.",
+    "seat_blocked_no_license": "Without a valid licence, an active account can be added without a seat only with the built-in Read-only role. Client, technical and custom read-only accounts count towards the limit.",
+    "seat_blocked_limit": "All licensed seats are taken. To add another active account, extend your subscription or deactivate an existing account. The built-in Read-only role is the exception.",
+    "seat_policy_hint": "Every active account consumes a licensed seat. Only the built-in Read-only role, with no other roles and no write permissions except its own API tokens, is exempt.",
     "name_required": "Name *",
     "email_required": "Email *",
     "role_required": "Select a role.",
@@ -40098,7 +40100,7 @@
     "no_audit": "No technical operations have been recorded yet.",
     "technical_change": "Technical operation",
     "technical_scope": "Technical company scope",
-    "technical_scope_hint": "Assignment permits technical administration only. It does not open business modules or consume a licensed seat.",
+    "technical_scope_hint": "Assignment permits technical administration only. It does not open business modules; an active account consumes a licensed seat.",
     "all_suppliers": "All companies, including future companies",
     "audit_actions": {
       "smtp_updated": "SMTP settings changed",

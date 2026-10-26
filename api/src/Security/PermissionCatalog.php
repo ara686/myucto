@@ -6,7 +6,7 @@ namespace MyInvoice\Security;
 
 final class PermissionCatalog
 {
-    public const VERSION = '2026-10-eet-client-tax-submissions-mcp-v1';
+    public const VERSION = '2026-10-seat-readonly-tokens-v2';
 
     /** @var list<string> */
     private const GROUPS = [
@@ -290,7 +290,7 @@ final class PermissionCatalog
 
         $permissions = [];
         foreach ($keys as $key) {
-            $permissions[$key] = in_array($key, ['profile'], true)
+            $permissions[$key] = $key === 'profile' && $systemKey !== 'readonly'
                 || $systemKey === 'client' && $key !== 'settings.company'
                 ? AccessLevel::WRITE->value
                 : AccessLevel::READ->value;

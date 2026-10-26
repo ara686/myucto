@@ -50,7 +50,7 @@ final class LicenseState
      * funkce zůstanou plně funkční včetně vytváření a změn dat. Jakmile si
      * licenci koupí, platí počet míst z ní.
      *
-     * ⚠️ Nepočítají se sem účty bez business WRITE oprávnění. Typ role není
+     * ⚠️ Výjimku pro vestavěnou čtecí roli určuje SeatPolicy. Typ role není
      * výjimka: zapisující klientská role zabírá místo stejně jako staff role.
      */
     public const FREE_SEATS = 1;
@@ -186,8 +186,8 @@ final class LicenseState
      * se ptal na `hasCommercialFeatures()`, bezplatný tarif by měl uživatele
      * bez omezení — a přitom je to tarif, kde se za ně platí.
      *
-     * ⚠️ Týká se JEN rolí, které zabírají licenční místo. Uživatel bez business
-     * WRITE oprávnění jde založit vždy; samotný typ client žádnou výjimkou není.
+     * ⚠️ Týká se JEN rolí, které zabírají licenční místo. Bezplatná je pouze
+     * vestavěná role „Pouze pro čtení" podle pravidel SeatPolicy.
      */
     public function allowsNewUser(): bool
     {

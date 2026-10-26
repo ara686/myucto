@@ -1103,7 +1103,8 @@
         "2199_supplier_invoice_pdf_compact_items.sql",
         "2200_supplier_invoice_pdf_bank_in_footer.sql",
         "2201_stock_history_import.sql",
-        "2202_cash_journal_offset_notes.sql"
+        "2202_cash_journal_offset_notes.sql",
+        "2203_readonly_seat_policy.sql"
     ],
     "tables": {
         "abra_flexi_connections": {

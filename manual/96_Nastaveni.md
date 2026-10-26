@@ -124,8 +124,8 @@ její deaktivace nebo odebrání firmy se projeví bez nového přihlášení a 
 
 ### 96.4.1 Správce instance
 
-**Správce instance** zajišťuje technický provoz bez přístupu k firemním agendám. Nezabírá uživatelské ani mzdové
-licenční místo. Přihlašuje se běžným účtem, může používat vlastní MFA a po přihlášení otevře samostatnou
+**Správce instance** zajišťuje technický provoz bez přístupu k firemním agendám. Aktivní účet zabírá uživatelské
+licenční místo, mzdové místo nečerpá. Přihlašuje se běžným účtem, může používat vlastní MFA a po přihlášení otevře samostatnou
 **Správu instance**. Superadmin do ní může vstoupit také z menu Systém.
 
 **Založení a rozsah:**
@@ -674,7 +674,14 @@ smazat ani upravit jejich matici:
 | **Superadmin** | Plný přístup k firmám i celému systému. Jako jediný spravuje uživatele, role a přiřazení firem. |
 | **Admin** | Může dělat vše v přidělených firmách a pracovat s více firmami, které mu přidělí superadmin. Nemění celosystémové položky v menu Systém. |
 | **Admin Plus** | Má práva role Admin a navíc může v `Systém → Firmy` založit novou firmu. K nové firmě automaticky získá práva Admin. |
-| **Správce instance** | Technická správa bez přístupu k firemním agendám. Samostatný technický rozsah a schválené SMTP cíle, bez spotřeby licenčního místa. |
+| **Správce instance** | Technická správa bez přístupu k firemním agendám. Samostatný technický rozsah a schválené SMTP cíle; aktivní účet zabírá licenční místo. |
+
+Vestavěná role **Pouze pro čtení** nabízí u ostatních oprávnění nejvýše **Čtení**.
+Výjimkou jsou vlastní **API tokeny**, kde je výchozí **Čtení** a správce může povolit
+**Zápis** pro jejich správu. Token nezíská více práv než jeho uživatel. Účet s touto
+rolí bez jiných rolí licenční místo nečerpá. Vlastní čtecí role, klientské role
+i technické účty se do limitu aktivních uživatelů počítají, a to i při přiřazení
+jiné role pouze pro jednu firmu. Podrobnosti jsou v [§ 104.10.3](104_Licence_a_aktivace.md#104103-zkusebni-obdobi-a-stavy-licence).
 
 Provozní nastavení firmy má pět samostatných oprávnění: **Odesílací profily firmy**, **E-mailové šablony firmy**,
 **Branding firmy**, **Platební QR firmy** a klientské **Firemní podpisové profily a PDF podpisy**. Každou oblast lze

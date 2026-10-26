@@ -22,6 +22,7 @@ const orderedRoles = computed(() => [...roles.value].sort((a, b) =>
   (fixedRoleOrder[a.system_key ?? ''] ?? Number.MAX_SAFE_INTEGER)
   - (fixedRoleOrder[b.system_key ?? ''] ?? Number.MAX_SAFE_INTEGER)))
 const locked = computed(() => fixedRoleKeys.has(selected.value?.system_key ?? ''))
+const readonlyRole = computed(() => selected.value?.system_key === 'readonly')
 const applicableGroups = computed(() => Object.entries(catalog.value?.groups ?? {}).map(([key, permissions]) => ({
   key,
   permissions: permissions.filter(p => form.role_type === 'staff' ? p.role_types.includes('staff') : p.role_types.includes('client')),
@@ -40,7 +41,13 @@ function permissionLabel(permission: { key: string; label: string }): string {
 }
 
 function permissionLevels(key: string): readonly PermissionValue[] {
-  return rolePermissionLevels(form.role_type, key)
+  const levels = rolePermissionLevels(form.role_type, key)
+  return readonlyRole.value && key !== 'profile.tokens' ? levels.filter(level => level !== 2) : levels
+}
+
+function editablePermissions(permissions: Record<string, PermissionValue>): Record<string, PermissionValue> {
+  return Object.fromEntries(Object.entries(permissions).map(([key, level]) =>
+    [key, readonlyRole.value && key !== 'profile.tokens' && level === 2 ? (permissionLevels(key).includes(1) ? 1 : 0) : level]))
 }
 
 function isFixedRole(role: Pick<RoleListItem, 'system_key'>): boolean {
@@ -74,7 +81,7 @@ async function openRole(role: RoleListItem) {
     form.name = detail.name
     form.role_type = detail.role_type === 'client' ? 'client' : 'staff'
     form.is_active = detail.is_active
-    form.permissions = { ...detail.permissions }
+    form.permissions = editablePermissions(detail.permissions)
   } catch (e: any) { toast.error(e?.response?.data?.error?.message || t('common.error')) }
 }
 
@@ -98,7 +105,7 @@ async function save() {
   }
   saving.value = true
   try {
-    const permissions = Object.fromEntries(Object.entries(form.permissions).filter(([, level]) => level > 0)) as Record<string, PermissionValue>
+    const permissions = Object.fromEntries(Object.entries(editablePermissions(form.permissions)).filter(([, level]) => level > 0)) as Record<string, PermissionValue>
     if (creating.value) {
       const created = await rolesApi.create({ name: form.name.trim(), type: form.role_type, permissions })
       creating.value = false
@@ -164,6 +171,7 @@ onMounted(load)
           {{ roleDescription(selected?.system_key ?? null) }}
         </div>
         <div v-else class="space-y-4">
+          <p v-if="readonlyRole" class="text-sm text-neutral-500">{{ t('roles.readonly_hint') }}</p>
           <section v-for="group in applicableGroups" :key="group.key" class="border border-neutral-200 rounded-lg overflow-hidden">
             <h2 class="font-semibold px-3 py-2 bg-neutral-50">{{ t(`permissions.groups.${group.key}`, group.key) }}</h2>
             <div class="divide-y divide-neutral-100">

@@ -21283,7 +21283,7 @@
     "model_points": [
       "Bezplatný základ zůstává dostupný i po skončení zkušebního období.",
       "Komerční licence zpřístupňuje podvojné účetnictví, účetní nástroje a uzávěrky, sklad a e-shop, evidenci majetku, EPO napojení a rozšířené opravy DPH.",
-      "Cena je za jednoho aktivního uživatele a měsíc; uživatelé s rolí jen pro čtení a deaktivované účty se nepočítají.",
+      "Cena je za každého aktivního uživatele a měsíc, včetně klientů, technických správců a vlastních čtecích rolí. Nepočítají se deaktivované účty a účty používající výhradně vestavěnou roli Pouze pro čtení bez zápisu mimo vlastní API tokeny.",
       "Licence se váže na jedinečný identifikátor instalace; jeden klíč běží na jedné instalaci.",
       "Aplikace ověřuje licenci online zhruba jednou denně; krátký výpadek internetu provoz neomezí.",
       "Přenáší se jen technické údaje (identifikátor, klíč, verze, počty). Žádná účetní ani osobní data."
@@ -26208,6 +26208,7 @@
       "bank_ignore": "Ignorovat platby"
     },
     "client_bank_hint": "Bankovní oprávnění klienta jsou volitelná. Import, párování a ignorování vyžadují čtení banky. Párování a jeho zrušení navíc vyžadují čtení dokladů a právo měnit jejich úhrady. Párování a import mohou spustit automatické zpracování úhrad a účetních zápisů podle nastavení firmy.",
+    "readonly_hint": "Vestavěná role Pouze pro čtení může mít zápis jen pro správu vlastních API tokenů. Ostatní oprávnění dovolují nejvýše čtení.",
     "title": "Role a oprávnění",
     "subtitle": "Nastavení přístupu k modulům a významným akcím.",
     "new": "Nová role",
@@ -26222,7 +26223,7 @@
     "usage": "Uživatelé: {users}, role u firem: {overrides}",
     "superadmin_locked": "Systémová role superadmin je uzamčená a má vždy plný přístup.",
     "system_descriptions": {
-      "instance_admin": "Pevná technická role bez přístupu k firemním agendám. Rozsah přiděluje superadmin; účet nezabírá licenční místo.",
+      "instance_admin": "Pevná technická role bez přístupu k firemním agendám. Rozsah přiděluje superadmin; aktivní účet zabírá licenční místo.",
       "superadmin": "Předdefinovaná systémová role s pevnými právy. Má plný přístup ke všem firmám a jako jediná spravuje uživatele, role, licence a celosystémová nastavení.",
       "admin": "Předdefinovaná role s pevnými právy. Může dělat vše v přidělených firmách a pracovat s více firmami, které jí přidělí superadmin. Nemůže měnit celosystémové položky v menu Systém.",
       "admin_plus": "Předdefinovaná role s pevnými právy. Má stejná práva jako Admin a navíc může v Systém → Firmy založit novou firmu; k ní automaticky dostane práva Admin."
@@ -26282,8 +26283,9 @@
     "deactivate": "Deaktivovat",
     "edit_title": "Upravit {email}",
     "new_title": "Nový uživatel",
-    "seat_blocked_no_license": "Bez platné licence jde založit jen účet s právem jen pro čtení. Účty pro čtení a klientské účty licenční místo nezabírají.",
-    "seat_blocked_limit": "Licencovaná místa jsou obsazená. Dalšího zapisujícího uživatele přidáte po rozšíření předplatného, nebo po deaktivaci jiného účtu.",
+    "seat_blocked_no_license": "Bez platné licence lze přidat aktivní účet bez licenčního místa jen s vestavěnou rolí Pouze pro čtení. Klientské, technické a vlastní čtecí účty se počítají.",
+    "seat_blocked_limit": "Licencovaná místa jsou obsazená. Další aktivní účet přidáte po rozšíření předplatného nebo deaktivaci jiného účtu. Výjimkou je vestavěná role Pouze pro čtení.",
+    "seat_policy_hint": "Každý aktivní účet zabírá licenční místo. Výjimkou je pouze vestavěná role Pouze pro čtení bez jiných rolí a bez zápisu mimo vlastní API tokeny.",
     "name_required": "Jméno *",
     "email_required": "E-mail *",
     "role_required": "Vyberte roli.",
@@ -40098,7 +40100,7 @@
     "no_audit": "Zatím nejsou zaznamenané žádné technické operace.",
     "technical_change": "Technická operace",
     "technical_scope": "Technický rozsah firem",
-    "technical_scope_hint": "Přiřazení umožní jen technickou správu. Neotevírá firemní agendy a účet nezabírá licenční místo.",
+    "technical_scope_hint": "Přiřazení umožní jen technickou správu. Neotevírá firemní agendy; aktivní účet zabírá licenční místo.",
     "all_suppliers": "Všechny firmy včetně budoucích",
     "audit_actions": {
       "smtp_updated": "Změna SMTP",

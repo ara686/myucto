@@ -7,6 +7,7 @@ namespace MyInvoice\Repository;
 use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Security\AccessLevel;
 use MyInvoice\Security\PermissionCatalog;
+use MyInvoice\Service\License\SeatPolicy;
 
 final class RoleRepository
 {
@@ -162,9 +163,7 @@ final class RoleRepository
             return;
         }
         foreach ($levels as $key => $level) {
-            // Vlastní profil je zápis i u role jen pro čtení — jinak by si
-            // uživatel nezměnil ani heslo. Licenční místo z toho neplyne.
-            if ($key === 'profile') {
+            if (SeatPolicy::isSelfServicePermission((string) $key)) {
                 continue;
             }
             if ($level >= AccessLevel::WRITE->value) {
