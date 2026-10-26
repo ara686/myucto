@@ -192,11 +192,30 @@ function switchToAsOfPeriod() {
   load()
 }
 
+/**
+ * Všechny účty se načítají souběžně po jednom: server počítá každý účet zvlášť a na
+ * velké firmě trvá jeden účet i sekundu, takže sestava naráz by čekala na součet.
+ * Skládá se stejně jako na serveru: pořadí účtů a vynechané účty bez zůstatku i položek.
+ */
+async function fetchReport(): Promise<SaldoReport> {
+  const params = queryParams()
+  if (params.account !== 'all') return accountingApi.getSaldo(params)
+  const parts = await Promise.all(
+    ACCOUNT_OPTIONS.filter(a => a !== 'all').map(account => accountingApi.getSaldo({ ...params, account })),
+  )
+  return {
+    ...parts[0],
+    accounts: parts
+      .flatMap(p => p.accounts)
+      .filter(b => Math.round(b.gl_balance * 100) !== 0 || b.partners.length > 0),
+  }
+}
+
 async function load() {
   if (!filters.period_id) return
   loading.value = true
   try {
-    report.value = await accountingApi.getSaldo(queryParams())
+    report.value = await fetchReport()
   } catch (e: any) {
     toast.error(e?.response?.data?.error?.message || t('common.error'))
     report.value = null

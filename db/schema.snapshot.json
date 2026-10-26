@@ -1091,7 +1091,8 @@
         "2187_receipt_links.sql",
         "2188_quick_receipts.sql",
         "2189_gopay_clearing_longblob.sql",
-        "2190_purchase_advance_deductions.sql"
+        "2190_purchase_advance_deductions.sql",
+        "2191_cash_document_invoice_payment_index.sql"
     ],
     "tables": {
         "abra_flexi_connections": {
@@ -3796,6 +3797,7 @@
                 "fk_cashdoc_project": "BTREE (project_id)",
                 "idx_cashdoc_auto_settlement": "BTREE (supplier_id, auto_settlement, status)",
                 "idx_cashdoc_invoice": "BTREE (invoice_id)",
+                "idx_cashdoc_invoice_payment": "BTREE (supplier_id, invoice_payment_id)",
                 "idx_cashdoc_project": "BTREE (supplier_id, project_id)",
                 "idx_cashdoc_purchase": "BTREE (purchase_invoice_id)",
                 "idx_cashdoc_register_date": "BTREE (register_id, issue_date)",

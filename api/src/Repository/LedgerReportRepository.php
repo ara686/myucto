@@ -431,7 +431,12 @@ final class LedgerReportRepository
      * (221 −) s běžným účtem (221 +) přes syntetiku (§58 vyhl. 500/2002 Sb.). Pro účty mimo
      * `$splitCodes` (balance_condition='any') zůstává chování beze změny (jedno netto číslo).
      *
+     * `$onlyCodes` omezí výsledek na vyjmenované syntetiky (saldokonto čte šest účtů
+     * z několika stovek). Vynechané účty se vůbec nečtou, zůstatky vyjmenovaných jsou
+     * stejné jako bez filtru.
+     *
      * @param list<string> $splitCodes syntetické prefixy k rozdělení per analytika
+     * @param list<string>|null $onlyCodes jen tyto syntetiky; null = všechny
      * @return list<array{account_id:int, code:string, name:string, account_type:string, md:float, d:float}>
      */
     public function syntheticBalances(
@@ -441,6 +446,7 @@ final class LedgerReportRepository
         array $splitCodes = [],
         array $preserveCodes = [],
         ?DimensionFilter $dimension = null,
+        ?array $onlyCodes = null,
     ): array
     {
         $accountDefinitions=AccountDefinitionRepository::relation($asOf,$supplierId);
@@ -465,6 +471,15 @@ final class LedgerReportRepository
             $lowerBoundSql = ' AND e.entry_date >= ?';
             $params[] = $lowerBound;
         }
+        $onlyCodesSql = '';
+        if ($onlyCodes !== null) {
+            $onlyCodes = array_values(array_unique(array_map('strval', $onlyCodes)));
+            if ($onlyCodes === []) {
+                return [];
+            }
+            $onlyCodesSql = ' AND COALESCE(p.account_code, a.account_code) IN (' . implode(',', array_fill(0, count($onlyCodes), '?')) . ')';
+            array_push($params, ...$onlyCodes);
+        }
         // Agregace per LIST účet (a.id) + jeho syntetika — roll-up i případný D2 split
         // (kladné/záporné saldo per analytika) se dopočítá v PHP.
         $stmt = $this->db->pdo()->prepare(
@@ -486,7 +501,7 @@ final class LedgerReportRepository
                 AND a.account_type NOT IN ('offbalance','closing')
                 AND " . JournalTaxOrigin::includedSql() . "
                 AND e.entry_date <= ?{$plCond}
-                AND (a.account_type NOT IN ('asset','liability','equity') OR ? IS NULL OR e.entry_date >= ?){$lowerBoundSql}
+                AND (a.account_type NOT IN ('asset','liability','equity') OR ? IS NULL OR e.entry_date >= ?){$lowerBoundSql}{$onlyCodesSql}
               GROUP BY COALESCE(p.id, a.id), COALESCE(p.account_code, a.account_code),
                        COALESCE(p.name, a.name), a.account_type, a.id
               ORDER BY code"

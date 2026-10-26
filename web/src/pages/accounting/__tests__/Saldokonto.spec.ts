@@ -101,6 +101,19 @@ function makeReport(overrides: Partial<SaldoReport> = {}): SaldoReport {
   }
 }
 
+/**
+ * Server vrací účet, o který si stránka řekne; „všechny účty“ stránka skládá
+ * ze souběžných požadavků po jednotlivých účtech.
+ */
+function serveSaldo(report: SaldoReport) {
+  m.getSaldo.mockImplementation(async (params: { account?: string }) => ({
+    ...report,
+    accounts: !params.account || params.account === 'all'
+      ? report.accounts
+      : report.accounts.filter(b => b.account.code === params.account),
+  }))
+}
+
 describe('Saldokonto.vue', () => {
   beforeEach(() => {
     m.listPeriods.mockReset()
@@ -115,7 +128,7 @@ describe('Saldokonto.vue', () => {
   })
 
   it('(a) výchozí pohled je plochý seznam, seřazený dle splatnosti vzestupně napříč partnery', async () => {
-    m.getSaldo.mockResolvedValue(makeReport())
+    serveSaldo(makeReport())
     const wrapper = mount(Saldokonto)
     await flushPromises()
 
@@ -128,7 +141,7 @@ describe('Saldokonto.vue', () => {
   })
 
   it('PDF bez zapnutého členění zůstává inventarizačním protokolem', async () => {
-    m.getSaldo.mockResolvedValue(makeReport())
+    serveSaldo(makeReport())
     m.exportReport.mockResolvedValue({ data: new Blob() })
     URL.createObjectURL = vi.fn(() => 'blob:x')
     URL.revokeObjectURL = vi.fn()
@@ -143,7 +156,7 @@ describe('Saldokonto.vue', () => {
 
   it('uložená volba členění se načte a pošle do exportu PDF, změna hranic se uloží', async () => {
     prefOptions.value = { pdf_aging: { enabled: true, boundaries: [30, 90], detail: false } }
-    m.getSaldo.mockResolvedValue(makeReport())
+    serveSaldo(makeReport())
     m.exportReport.mockResolvedValue({ data: new Blob() })
     URL.createObjectURL = vi.fn(() => 'blob:x')
     URL.revokeObjectURL = vi.fn()
@@ -176,7 +189,7 @@ describe('Saldokonto.vue', () => {
       issue_date: '2099-01-10', due_date: '2099-01-24', currency_code: 'CZK',
       amount_foreign: 0, booked_czk: 1000, paid_czk: 0, remaining_czk: 1000, days_overdue: 20,
     }
-    m.getSaldo.mockResolvedValue(report)
+    serveSaldo(report)
     const wrapper = mount(Saldokonto)
     await flushPromises()
 
@@ -185,7 +198,7 @@ describe('Saldokonto.vue', () => {
   })
 
   it('(b) přepnutí na "podle partnera" vykreslí seskupenou tabulku se dvěma partnery', async () => {
-    m.getSaldo.mockResolvedValue(makeReport())
+    serveSaldo(makeReport())
     const wrapper = mount(Saldokonto)
     await flushPromises()
 
@@ -201,7 +214,7 @@ describe('Saldokonto.vue', () => {
   })
 
   it('(c) filtr partnera zúží plochý seznam na jeho doklady', async () => {
-    m.getSaldo.mockResolvedValue(makeReport())
+    serveSaldo(makeReport())
     const wrapper = mount(Saldokonto)
     await flushPromises()
 
@@ -216,7 +229,7 @@ describe('Saldokonto.vue', () => {
   })
 
   it('(d) filtr "po splatnosti (dní, min.)" zúží na doklady po splatnosti', async () => {
-    m.getSaldo.mockResolvedValue(makeReport())
+    serveSaldo(makeReport())
     const wrapper = mount(Saldokonto)
     await flushPromises()
 
@@ -234,7 +247,7 @@ describe('Saldokonto.vue', () => {
     const report = makeReport({
       as_of_period: { id: 5, fiscal_year: 2098, starts_on: '2098-01-01', ends_on: '2098-12-31', status: 'closed' },
     })
-    m.getSaldo.mockResolvedValue(report)
+    serveSaldo(report)
     const wrapper = mount(Saldokonto)
     await flushPromises()
 
@@ -244,7 +257,7 @@ describe('Saldokonto.vue', () => {
   })
 
   it('(f) konfrontace se zůstatkem hlavní knihy je i v plochém pohledu', async () => {
-    m.getSaldo.mockResolvedValue(makeReport({
+    serveSaldo(makeReport({
       accounts: [{ ...makeReport().accounts[0], open_items_total: 1200, difference: 300, matches: false }],
     }))
     const wrapper = mount(Saldokonto)
@@ -259,7 +272,7 @@ describe('Saldokonto.vue', () => {
 
   it('(g) deep-link z adresy předvyplní období, rozvahový den, účet i pohled', async () => {
     routeQuery.value = { period_id: '6', as_of: '2099-03-31', account: '321', view: 'partner' }
-    m.getSaldo.mockResolvedValue(makeReport())
+    serveSaldo(makeReport())
     const wrapper = mount(Saldokonto)
     await flushPromises()
 
@@ -274,7 +287,7 @@ describe('Saldokonto.vue', () => {
     // Přijatá faktura je splatná mezi vydanými — v jednom seznamu řazeném dle
     // splatnosti seděla mezi nimi a od pohledávek ji odlišoval jen kód účtu.
     const base = makeReport()
-    m.getSaldo.mockResolvedValue(makeReport({
+    serveSaldo(makeReport({
       accounts: [
         base.accounts[0],
         {
@@ -317,11 +330,24 @@ describe('Saldokonto.vue', () => {
 
   it('(h) neexistující období z adresy nezhodí načtení, spadne na výchozí rok', async () => {
     routeQuery.value = { period_id: '999' }
-    m.getSaldo.mockResolvedValue(makeReport())
+    serveSaldo(makeReport())
     mount(Saldokonto)
     await flushPromises()
 
-    expect(m.getSaldo).toHaveBeenCalledWith({ period_id: 6, as_of: undefined, account: 'all' })
+    expect(m.getSaldo).toHaveBeenCalledWith({ period_id: 6, as_of: undefined, account: '311' })
     routeQuery.value = {}
+  })
+
+  it('(j) všechny účty načte souběžně po účtech a vynechá účty bez zůstatku i položek', async () => {
+    const base = makeReport()
+    const empty = { ...base.accounts[0], account: { id: 3, code: '314', name: 'Zálohy', normal_side: 'debit' as any },
+      gl_balance: 0, open_items_total: 0, open_items_count: 0, partners: [] }
+    serveSaldo(makeReport({ accounts: [base.accounts[0], empty] }))
+    const wrapper = mount(Saldokonto)
+    await flushPromises()
+
+    expect(m.getSaldo.mock.calls.map(c => c[0].account)).toEqual(['311', '321', '314', '324', '315', '325'])
+    expect(wrapper.findAll('tbody tr')).toHaveLength(2)
+    expect(wrapper.text()).not.toContain('314 - Zálohy')
   })
 })
