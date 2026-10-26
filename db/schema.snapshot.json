@@ -1099,7 +1099,9 @@
         "2195_advance_deduction_settlement.sql",
         "2196_client_tax_submission_permissions.sql",
         "2197_instance_admin.sql",
-        "2198_bank_email_mark_seen_after_import.sql"
+        "2198_bank_email_mark_seen_after_import.sql",
+        "2199_supplier_invoice_pdf_compact_items.sql",
+        "2200_supplier_invoice_pdf_bank_in_footer.sql"
     ],
     "tables": {
         "abra_flexi_connections": {
@@ -25718,6 +25720,8 @@
                 "integration_sample_seeded_at": "datetime NULL DEFAULT NULL",
                 "invoice_number_format": "varchar(60) NULL DEFAULT NULL",
                 "invoice_number_period": "enum('year','month','none') NOT NULL DEFAULT 'month'",
+                "invoice_pdf_bank_in_footer": "tinyint(1) NOT NULL DEFAULT 0",
+                "invoice_pdf_compact_items": "tinyint(1) NOT NULL DEFAULT 0",
                 "invoice_pdf_monochrome": "tinyint(1) NOT NULL DEFAULT 0",
                 "invoice_pdf_show_base_qty": "tinyint(1) NOT NULL DEFAULT 1",
                 "invoice_pdf_show_issued_by": "tinyint(1) NOT NULL DEFAULT 0",

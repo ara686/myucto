@@ -144,6 +144,12 @@ export function isPriceStillAuto(state: StockQuoteState | null | undefined, curr
   return round(Number(currentPrice) || 0, 2) === round(state.autoPrice, 2)
 }
 
+export function canRepriceStockPrice(value: number | string | null | undefined): boolean {
+  if (value === null || value === undefined || value === '') return false
+  const price = Number(value)
+  return Number.isFinite(price) && price >= 0
+}
+
 export interface StockPricingContext {
   /** Skladová evidence zapnutá; bez ní se editor chová přesně jako dřív. */
   stockEnabled: boolean
@@ -168,7 +174,23 @@ export function rowsToRequote<T extends PricedRow>(
   ctx: StockPricingContext,
 ): T[] {
   if (!ctx.stockEnabled || !ctx.loaded) return []
-  return rows.filter(row => row.stock_item_id != null && isPriceStillAuto(stateOf(row), row.unit_price_without_vat))
+  return rows.filter(row => row.stock_item_id != null && canRepriceStockPrice(row.unit_price_without_vat)
+    && isPriceStillAuto(stateOf(row), row.unit_price_without_vat))
+}
+
+/**
+ * Skladové řádky uloženého dokladu, které po změně cenové hladiny nepřecení automatika
+ * (rowsToRequote): cena načtená s dokladem nebo ručně přepsaná. Přecení se jen po
+ * výslovném potvrzení uživatele. Nový doklad, vypnutý sklad a hydratace nic nevrací.
+ */
+export function rowsToConfirmRepricing<T extends PricedRow>(
+  rows: T[],
+  stateOf: (row: T) => StockQuoteState | null | undefined,
+  ctx: StockPricingContext & { storedDocument: boolean },
+): T[] {
+  if (!ctx.stockEnabled || !ctx.loaded || !ctx.storedDocument) return []
+  return rows.filter(row => row.stock_item_id != null && canRepriceStockPrice(row.unit_price_without_vat)
+    && !isPriceStillAuto(stateOf(row), row.unit_price_without_vat))
 }
 
 export interface ContextRepricing<T> {
@@ -244,7 +266,7 @@ export function shouldRequoteOnUnitChange(
   baseUnit: string,
   units: PackagingUnitLike[] | null | undefined,
 ): boolean {
-  if (sameUnit(oldUnit, newUnit)) return false
+  if (!canRepriceStockPrice(currentPrice) || sameUnit(oldUnit, newUnit)) return false
   if (isPriceStillAuto(state, currentPrice)) return true
   const a = ratioOf(oldUnit, baseUnit, units)
   const b = ratioOf(newUnit, baseUnit, units)

@@ -22421,7 +22421,12 @@
     "line_discount": {
       "hint_discount": "Ceník {price} · sleva {pct} %",
       "hint_markup": "Ceník {price} · přirážka {pct} %",
-      "title": "Ceníková cena karty před slevou. Ruční změna ceny ji zachová a sleva se přepočítá. Na PDF ji rozepíše volba v Nastavení."
+      "hint_discount_card": "Ceník karty {price} · sleva {pct} %",
+      "hint_markup_card": "Ceník karty {price} · přirážka {pct} %",
+      "table_hint": "Slevu z ceníkové ceny zadáte i v procentech ve sloupci Sleva % u položky.",
+      "column": "Sleva %",
+      "input_hint": "Sleva z ceníkové ceny řádku, 0 až 100 %. Přepočte cenu za jednotku. Řádek bez ceníkové ceny ji převezme z aktuální ceny. U skladového řádku se počítá z ceníku karty a nahrazuje slevu i přirážku cenové hladiny.",
+      "title": "Ceníková cena před slevou. Ruční změna ceny ji zachová a sleva se přepočítá. Na PDF ji rozepíše volba v Nastavení."
     },
     "price_list_requires_context": "Před vložením z ceníku vyberte zákazníka a měnu dokladu.",
     "asset_sale": {
@@ -22599,7 +22604,12 @@
       "label": "Cenová hladina dokladu",
       "from_client": "Podle odběratele ({name})",
       "from_client_none": "Podle odběratele (bez hladiny)",
-      "hint": "Přecení skladové řádky s automaticky doplněnou cenou. Ručně upravené ceny a ceny už uloženého dokladu zůstanou.",
+      "hint": "Přecení skladové řádky s automaticky doplněnou cenou, ručně upravené ceny zůstanou. U uloženého dokladu se editor zeptá, jestli přecenit všechny skladové řádky.",
+      "reprice_confirm": "Cenová hladina, podle které se doklad naceňuje, je teď {level}. Přecenit skladové položky podle ní? Skladových řádků k přecenění: {count}. Zrušit ponechá uložené ceny.",
+      "reprice_confirm_manual": "Cenová hladina, podle které se doklad naceňuje, je teď {level}. Přecenit skladové položky podle ní? Skladových řádků k přecenění: {count}, včetně ručně upravených cen. Zrušit ponechá uložené a ručně upravené ceny.",
+      "no_level": "bez hladiny",
+      "reprice_missing_price": "Skladových řádků bez ceny v měně dokladu: {count}. Jejich ceny zůstaly beze změny.",
+      "reprice_failed": "Přecenění skladových položek podle nové hladiny se nepovedlo, ceny zůstaly beze změny.",
       "stale": "Hladina dokladu už není aktivní. Doklad se naceňuje podle odběratele, uložením se hladina z dokladu odebere."
     },
     "simplified_document": "Zjednodušený daňový doklad (§ 30 ZDPH)",
@@ -24908,7 +24918,11 @@
     "invoice_pdf_show_issued_by": "Tisknout na faktuře, kdo ji vystavil",
     "invoice_pdf_show_issued_by_hint": "Na PDF přibude řádek „Vystavil“ se jménem uživatele, který doklad vystavil. Starší doklady bez tohoto údaje ukážou autora dokladu. U už vystavených dokladů se řádek objeví až po přegenerování PDF.",
     "invoice_pdf_line_discount": "Na PDF faktury rozepsat slevu z ceníkové ceny",
-    "invoice_pdf_line_discount_hint": "U položky se slevou vytiskne sloupce Cena/j před slevou, Sleva a Cena/j po slevě. Jen když má faktura aspoň jednu takovou položku, přirážka se nerozepisuje. Ceníkovou cenu doplní nacenění skladové karty.",
+    "invoice_pdf_line_discount_hint": "U položky se slevou vytiskne sloupce Cena/j před slevou, Sleva a Cena/j po slevě. Jen když má faktura aspoň jednu takovou položku, přirážka se nerozepisuje. Ceníkovou cenu doplní nacenění skladové karty. Editor faktury pak u položky nabídne pole Sleva %.",
+    "invoice_pdf_compact_items": "Kompaktní řádky položek na PDF faktury",
+    "invoice_pdf_compact_items_hint": "Menší odsazení a písmo v tabulce položek, širší sloupec popisu, rozpis balení a sériová čísla na řádku popisu. Faktura s mnoha položkami má zhruba o polovinu méně stran, s rozpisem slevy u řádku o něco víc. U už vystavených dokladů se projeví až po přegenerování PDF.",
+    "invoice_pdf_bank_in_footer": "Bankovní spojení v patičce PDF faktury",
+    "invoice_pdf_bank_in_footer_hint": "Číslo účtu, IBAN, BIC a banka se vytisknou v patičce každé strany, u součtu zůstane jen QR platba v rámečku. Variabilní symbol je v údajích dokladu. Uhrazená faktura a platba hotově nebo kartou vypadají jako dosud. U už vystavených dokladů se projeví až po přegenerování PDF.",
     "default_hourly_rate": "Výchozí hodinová sazba",
     "auto_send_reminders": "Posílat automatické upomínky",
     "auto_send_reminders_hint": "Když je vypnuto, cron nebude posílat automatické upomínky pro tohoto dodavatele. Ruční odeslání (jednotlivé i hromadné) funguje vždy.",

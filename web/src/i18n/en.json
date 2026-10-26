@@ -22421,7 +22421,12 @@
     "line_discount": {
       "hint_discount": "List {price} · discount {pct} %",
       "hint_markup": "List {price} · markup {pct} %",
-      "title": "List price of the stock card before discount. A manual price change keeps it and the discount is recalculated. The PDF itemises it when the option in Settings is on."
+      "hint_discount_card": "Card list {price} · discount {pct} %",
+      "hint_markup_card": "Card list {price} · markup {pct} %",
+      "table_hint": "A discount from the list price can also be entered as a percentage in the Disc. % column of each item.",
+      "column": "Disc. %",
+      "input_hint": "Discount from the list price of the line, 0 to 100 %. Recalculates the unit price. A line without a list price takes it from the current price. On a stock line it is calculated from the card list price and replaces the price level discount or markup.",
+      "title": "List price before discount. A manual price change keeps it and the discount is recalculated. The PDF itemises it when the option in Settings is on."
     },
     "price_list_requires_context": "Select a customer and document currency before inserting a price list item.",
     "asset_sale": {
@@ -22599,7 +22604,12 @@
       "label": "Document price level",
       "from_client": "From customer ({name})",
       "from_client_none": "From customer (no level)",
-      "hint": "Reprices stock lines with an automatically filled price. Manually edited prices and prices of an already saved document stay.",
+      "hint": "Reprices stock lines with an automatically filled price, manually edited prices stay. On a saved document the editor asks whether to reprice all stock lines.",
+      "reprice_confirm": "The price level used to price this document is now {level}. Reprice stock items by it? Stock lines to reprice: {count}. Cancel keeps the saved prices.",
+      "reprice_confirm_manual": "The price level used to price this document is now {level}. Reprice stock items by it? Stock lines to reprice: {count}, including manually edited prices. Cancel keeps the saved and manually edited prices.",
+      "no_level": "no level",
+      "reprice_missing_price": "Stock lines without a price in the document currency: {count}. Their prices stay unchanged.",
+      "reprice_failed": "Repricing stock items by the new level failed, the prices stay unchanged.",
       "stale": "The document price level is no longer active. The document is priced by the customer's level; saving removes the level from the document."
     },
     "simplified_document": "Simplified tax document (§ 30 VAT Act)",
@@ -24908,7 +24918,11 @@
     "invoice_pdf_show_issued_by": "Print who issued the invoice",
     "invoice_pdf_show_issued_by_hint": "The PDF gets an “Issued by” line with the name of the user who issued the document. Older documents without this record show the document's author. On already issued documents the line appears only after their PDF is regenerated.",
     "invoice_pdf_line_discount": "Show the discount from the list price on the invoice PDF",
-    "invoice_pdf_line_discount_hint": "Items with a discount get the columns Unit price before discount, Discount and Unit price after discount. Only when the invoice has at least one such item; a markup is not itemised. The list price comes from pricing the stock card.",
+    "invoice_pdf_line_discount_hint": "Items with a discount get the columns Unit price before discount, Discount and Unit price after discount. Only when the invoice has at least one such item; a markup is not itemised. The list price comes from pricing the stock card. The invoice editor then offers a Discount % field on each item.",
+    "invoice_pdf_compact_items": "Compact item rows on the invoice PDF",
+    "invoice_pdf_compact_items_hint": "Smaller padding and font in the item table, a wider description column, package breakdown and serial numbers on the description line. An invoice with many items needs roughly half as many pages, slightly more with the per-line discount breakdown. On already issued documents it shows only after their PDF is regenerated.",
+    "invoice_pdf_bank_in_footer": "Bank details in the invoice PDF footer",
+    "invoice_pdf_bank_in_footer_hint": "Account number, IBAN, BIC and bank are printed in the footer of every page, only the QR payment stays in a box next to the totals. The variable symbol is in the document details. Paid invoices and cash or card payments look as before. On already issued documents it shows only after their PDF is regenerated.",
     "default_hourly_rate": "Default hourly rate",
     "auto_send_reminders": "Send automatic reminders",
     "auto_send_reminders_hint": "When off, the cron will not send automatic reminders for this supplier. Manual send (single + bulk) always works.",

@@ -227,6 +227,10 @@ Dobropis vztahující se k jiné faktuře nezakládejte ručně přes **Typ dokl
   odběratele. Prázdný seznam zůstává jen pro odběratele.
 - **Zakázka** (volitelná): má-li klient zakázky, nabídne se jen jeho vlastní. Po výběru
   zakázky se předvyplní hodinová sazba a splatnost.
+- **Cenová hladina dokladu** (jen se zapnutým skladem): nahradí pro tento doklad hladinu
+  klienta. U uloženého dokladu se editor po změně hladiny nebo výběru klienta s jinou
+  hladinou zeptá, jestli přecenit skladové řádky, viz
+  [§ 38.11.18.3](38_Eshop.md#3811183-cenova-hladina-na-dokladu).
 - **Zjednodušený daňový doklad** (§ 30 ZDPH, jen plátce): klient je u něj nepovinný. S vybraným
   klientem se pod zaškrtávátkem objeví **Netisknout odběratele na dokladu**; klient na dokladu
   zůstane, jen se nevytiskne na PDF ani webové faktuře (ISDOC, i ten vložený do PDF, odběratele
@@ -351,6 +355,10 @@ hlášení, kniha DPH) ukazují stejné číslo.
 - **Zadání celkem s DPH:** editor **respektuje aktuální režim** dokladu (nepřepíná ho za vás).
   V běžném režimu bez DPH se z brutto dopočítá jednotková cena bez DPH (odečtením DPH shora),
   v režimu s DPH se uloží brutto. Režim přepínáte jen ručně.
+- **Skladové karty:** karta a nacenění podle odběratele nesou cenu bez DPH. V režimu s DPH
+  editor při výběru karty i při přecenění (změna odběratele, měny nebo hladiny) přičte DPH
+  podle sazby řádku, karta za 1 000 Kč při 21 % se tak vloží jako 1 210,00. Stejně se převede
+  i ceníková cena řádku. U přenesené daňové povinnosti zůstává cena bez DPH.
 - **Zobrazení jednotkové ceny:** v detailu, PDF i exportech (ISDOC, Pohoda) se „Cena/MJ“ vždy
   ukazuje jako **netto** (bez DPH), i v režimu s DPH, kde se netto dopočítá z řádkového základu.
 - **Předvyplnění per dodavatel:** výchozí režim nové faktury nastavíte v `Nastavení`, záložce
@@ -486,6 +494,25 @@ změna ceny ceníkovou cenu zachová a procento se přepočítá, jiná karta ji
 informace: částky faktury počítá dál cena řádku. Na PDF ji rozepíše volba z
 [§ 16.10.4](16_Faktura_PDF.md#16104-pdf-struktura). Se [slevou z celé faktury](#sleva-z-cele-faktury)
 se nesčítá.
+
+**Sleva v % u řádku.** Se zapnutou volbou **Na PDF faktury rozepsat slevu z ceníkové ceny**
+(`Nastavení → Doklady`) má tabulka položek za cenou sloupec **Sleva %**, a to u skladového
+i ručně zadaného řádku. Zadejte slevu 0 až 100 % (nejvýš dvě desetinná místa, víc se
+zaokrouhlí, znak % můžete připsat). Cena za jednotku se přepočte z ceníkové ceny
+a zaokrouhlí půl nahoru na dvě desetinná místa, i u časové položky. U nízkých cen se proto
+procento spočtené ze zaokrouhlené ceny může od zadaného lišit o setiny. Řádek bez ceníkové
+ceny ji převezme z aktuální ceny, takže „1 000,00 a sleva 10 %“ dá cenu 900,00. Ruční změna
+ceny slevu v poli přepočte. Opravíte-li u řádku bez skladové karty cenu nad ceníkovou (pole
+slevy je pak prázdné), další zadaná sleva se počítá z nové ceny.
+U záporné jednotkové ceny je pole slevy neaktivní, aby vratka nebo odpočet nezměnily
+znaménko. Dobropis se záporným množstvím a kladnou jednotkovou cenou slevu umožňuje.
+
+U skladového řádku se sleva počítá vždy z ceníkové ceny karty a **nahrazuje slevu
+i přirážku cenové hladiny**: karta za 1 000,00 v hladině s přirážkou 10 % (cena 1 100,00)
+a sleva 5 % dá 950,00, sleva 0 vrátí cenu karty 1 000,00. Pod cenou řádku je pak
+„Ceník karty 1 000,00 · sleva 5 %“. Sleva nad 100 % nebo text se nepřijme a pole se vrátí.
+Bez volby se editor nemění. Sleva z celé faktury funguje dál stejně a počítá se z cen
+řádků po slevě.
 
 **Pořadí.** Levým úchytem (☰) přetáhněte položky pro změnu pořadí. Pořadí se zachová v PDF.
 
