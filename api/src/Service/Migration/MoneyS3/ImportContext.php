@@ -90,6 +90,19 @@ final class ImportContext
         return $this->dirYears[(string) ($row['__dir'] ?? '')] ?? null;
     }
 
+    /**
+     * Opravný převod vazeb ({@see ImportOptions::$relinkOnly}) nový záznam nezakládá;
+     * započítá ho v protokolu kroku jako vynechaný.
+     */
+    public function skipsNew(string $step): bool
+    {
+        if (!$this->options->relinkOnly) {
+            return false;
+        }
+        $this->protocol->count($step, 'relink_skipped');
+        return true;
+    }
+
     /** Rok, jehož knihy už jsou v MyÚčtu uzavřené — doklady do něj už nepřibývají. */
     public function isLocked(int $year): bool
     {

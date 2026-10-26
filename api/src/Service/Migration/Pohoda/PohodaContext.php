@@ -107,6 +107,14 @@ final class PohodaContext
 
     public ?int $runId = null;
 
+    /**
+     * Opravný převod vazeb: firma už je převedená a v MyÚčtu se mezitím účtuje. Převod
+     * projde export, ale nic nového nezaloží (zápis, doklad, pohyb, partnera, kartu) - jen
+     * u převzatých záznamů znovu dopočítá úhrady, zápočty, zálohy a kurzové rozdíly.
+     * Novější doklady z POHODY by se jinak zdvojily s tím, co uživatel zadal v MyÚčtu.
+     */
+    public bool $relinkOnly = false;
+
     /** @var (callable(string,int,int):void)|null */
     public $progress = null;
 
@@ -203,6 +211,16 @@ final class PohodaContext
         if ($this->progress !== null) {
             ($this->progress)($step, $done, $total);
         }
+    }
+
+    /** Opravný převod nový záznam nezakládá; započítá ho v protokolu kroku jako vynechaný. */
+    public function skipsNew(string $step): bool
+    {
+        if (!$this->relinkOnly) {
+            return false;
+        }
+        $this->protocol->count($step, 'relink_skipped');
+        return true;
     }
 
     public function userOrNull(): ?int

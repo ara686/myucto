@@ -112,6 +112,9 @@ final class CashBankImporter
                 $p->count(self::STEP_CASH, 'existing');
                 continue;
             }
+            if ($ctx->skipsNew(self::STEP_CASH)) {
+                continue;
+            }
             if ($ctx->skipsDate($issue)) {
                 $p->count(self::STEP_CASH, 'later_year_skipped');
                 continue;
@@ -302,6 +305,9 @@ final class CashBankImporter
                 $mapKey = 'stmt|' . $code . '|' . $ctx->year() . '|' . $statementNo;
                 $statementId = $existingStatements[$mapKey] ?? null;
                 $isNewStatement = $statementId === null;
+                if ($isNewStatement && $ctx->skipsNew(self::STEP_BANK)) {
+                    continue;
+                }
                 if ($isNewStatement) {
                     $statementId = $writer->createStatement(
                         $ctx->supplierId, $mapKey, sprintf('%s %s/%d', $code, $statementNo, $ctx->year()), $meta['number'] !== '' ? $meta['number'] : (string) $code,
@@ -337,6 +343,9 @@ final class CashBankImporter
                         $ctx->bankTransactions[$number][] = ['id' => $existingTx[$txKey], 'date' => $date];
                         self::rememberReferences($ctx, $r, $existingTx[$txKey]);
                         $p->count(self::STEP_BANK, 'existing');
+                        continue;
+                    }
+                    if ($ctx->skipsNew(self::STEP_BANK)) {
                         continue;
                     }
                     [$vs, $description] = self::symbolAndDescription($h);

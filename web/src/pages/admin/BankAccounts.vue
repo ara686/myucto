@@ -879,7 +879,7 @@ async function deleteMessage(m: BankEmailProcessedMessage) {
               <tr v-for="c in currencies" :key="c.id">
                 <td class="px-3 py-2 font-mono">{{ c.code }} <span class="text-xs text-neutral-500">{{ c.symbol }}</span></td>
                 <td class="px-3 py-2">{{ c.label }}</td>
-                <td class="px-3 py-2 font-mono text-xs">
+                <td class="px-3 py-2 font-mono">
                   {{ c.account_number || '—' }}<span v-if="c.bank_code"> / {{ c.bank_code }}</span>
                 </td>
                 <td class="px-3 py-2 font-mono text-xs">{{ c.iban || '—' }}</td>
@@ -993,22 +993,22 @@ async function deleteMessage(m: BankEmailProcessedMessage) {
                       <td class="px-3 py-2 text-right font-mono whitespace-nowrap text-neutral-600">
                         {{ a.current_balance_czk !== null ? formatMoney(a.current_balance_czk, 'CZK') : '—' }}
                       </td>
-                      <td class="px-3 py-2 text-xs whitespace-nowrap">
+                      <td class="px-3 py-2 whitespace-nowrap">
                         {{ formatDate(a.statement_date) }}
                         <span v-if="a.current_source === 'bank_api'" :title="t('bank_accounts.balances_source_api_hint')"
-                          class="ml-1 inline-flex items-center px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-500 font-medium">
+                          class="ml-1 inline-flex items-center px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-500 text-xs font-medium">
                           {{ t('bank_accounts.balances_source_api') }}
                         </span>
                         <span v-if="a.current_source === 'import'" :title="t('bank_accounts.balances_source_import_hint')"
-                          class="ml-1 inline-flex items-center px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-500 font-medium">
+                          class="ml-1 inline-flex items-center px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-500 text-xs font-medium">
                           {{ t('bank_accounts.balances_source_import') }}
                         </span>
                         <span v-if="a.current_source === 'email_notice'" :title="t('bank_accounts.balances_source_email_hint')"
-                          class="ml-1 inline-flex items-center px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-500 font-medium">
+                          class="ml-1 inline-flex items-center px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-500 text-xs font-medium">
                           {{ t('bank_accounts.balances_source_email') }}
                         </span>
                       </td>
-                      <td class="px-3 py-2 text-right text-xs">{{ a.statement_count }}</td>
+                      <td class="px-3 py-2 text-right">{{ a.statement_count }}</td>
                     </tr>
                   </tbody>
                   <tfoot class="bg-neutral-50 border-t border-neutral-200">
@@ -1216,9 +1216,9 @@ async function deleteMessage(m: BankEmailProcessedMessage) {
                 <td class="px-3 py-2 font-mono text-xs">{{ account.host || '—' }}<span v-if="account.port">:{{ account.port }}</span></td>
                 <td class="px-3 py-2">{{ account.folder || 'INBOX' }}</td>
                 <td class="px-3 py-2">{{ account.max_messages_per_run }}</td>
-                <td class="px-3 py-2 text-xs">
-                  <div>{{ account.last_scan_at || '—' }}</div>
-                  <div v-if="account.last_scan_status" :class="account.last_scan_status === 'ok' ? 'text-success-600' : 'text-danger-600'">
+                <td class="px-3 py-2">
+                  <div class="whitespace-nowrap">{{ account.last_scan_at || '—' }}</div>
+                  <div v-if="account.last_scan_status" class="text-xs" :class="account.last_scan_status === 'ok' ? 'text-success-600' : 'text-danger-600'">
                     {{ account.last_scan_status }}<span v-if="account.last_scan_message"> · {{ account.last_scan_message }}</span>
                   </div>
                 </td>
@@ -1535,8 +1535,8 @@ async function deleteMessage(m: BankEmailProcessedMessage) {
             <tbody class="divide-y divide-neutral-100">
               <tr v-for="m in messages" :key="m.id">
                 <td class="px-3 py-2 font-mono text-xs">#{{ m.id }}<div v-if="m.imap_uid" class="text-neutral-500">UID {{ m.imap_uid }}</div></td>
-                <td class="px-3 py-2 text-xs">{{ m.imap_account_name || (m.imap_account_id ? `#${m.imap_account_id}` : '—') }}</td>
-                <td class="px-3 py-2 text-xs whitespace-nowrap">
+                <td class="px-3 py-2">{{ m.imap_account_name || (m.imap_account_id ? `#${m.imap_account_id}` : '—') }}</td>
+                <td class="px-3 py-2 whitespace-nowrap">
                   <time :datetime="m.processed_at">{{ formatDateTime(m.processed_at) }}</time>
                 </td>
                 <td class="px-3 py-2 max-w-sm">
@@ -1554,9 +1554,9 @@ async function deleteMessage(m: BankEmailProcessedMessage) {
                   </div>
                 </td>
                 <td class="px-3 py-2">{{ m.provider_code || '—' }}</td>
-                <td class="px-3 py-2 font-mono text-xs">
-                  {{ m.parsed_payload?.variable_symbol || '—' }}
-                  <div v-if="m.parsed_payload?.amount">{{ m.parsed_payload.amount }} {{ m.parsed_payload.currency }}</div>
+                <td class="px-3 py-2 font-mono">
+                  <div class="text-xs">{{ m.parsed_payload?.variable_symbol || '—' }}</div>
+                  <div v-if="m.parsed_payload?.amount" class="whitespace-nowrap">{{ m.parsed_payload.amount }} {{ m.parsed_payload.currency }}</div>
                 </td>
                 <td class="px-3 py-2">
                   <span v-if="m.bank_transaction_id">#{{ m.bank_transaction_id }}</span>
@@ -1611,7 +1611,7 @@ async function deleteMessage(m: BankEmailProcessedMessage) {
                   <div class="truncate">{{ a.filename }}</div>
                   <div class="text-xs text-neutral-500 truncate">{{ a.sender }}<template v-if="a.subject"> · {{ a.subject }}</template></div>
                 </td>
-                <td class="px-3 py-2 text-xs whitespace-nowrap">
+                <td class="px-3 py-2 whitespace-nowrap">
                   <time :datetime="a.created_at">{{ formatDateTime(a.created_at) }}</time>
                 </td>
                 <td class="px-3 py-2 whitespace-nowrap">

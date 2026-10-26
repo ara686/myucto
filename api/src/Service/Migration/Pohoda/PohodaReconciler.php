@@ -160,6 +160,8 @@ final class PohodaReconciler
             $stmt->execute($params);
             return round((float) $stmt->fetchColumn(), 2);
         };
+        // Předpis dokladu převod vždy přetypuje na typ dokladu. Navázaný ruční zápis
+        // (`manual`) je vyrovnání - zápočet interním dokladem - a do předpisů nepatří.
         $oneSided = static fn (string $entry, string $prefix): string =>
             "(SELECT COUNT(DISTINCT l2.side) FROM journal_entry_lines l2 FORCE INDEX (ix_jel_closing_by_entry)
                 JOIN chart_of_accounts a2 ON a2.id = l2.account_id AND a2.supplier_id = l2.supplier_id
@@ -169,7 +171,7 @@ final class PohodaReconciler
                FROM journal_entry_lines l
                JOIN journal_entries e ON e.id = l.entry_id AND e.supplier_id = l.supplier_id
                JOIN chart_of_accounts a ON a.id = l.account_id AND a.supplier_id = l.supplier_id
-              WHERE l.supplier_id = ? AND e.period_id IN ({$in}) AND a.account_code LIKE '{$prefix}%' AND e.source_type <> 'opening'
+              WHERE l.supplier_id = ? AND e.period_id IN ({$in}) AND a.account_code LIKE '{$prefix}%' AND e.source_type NOT IN ('opening', 'manual')
                 AND " . $oneSided('e.id', $prefix) . "
                 AND EXISTS (SELECT 1 FROM journal_entry_document_links k
                              JOIN pohoda_import_map m ON m.supplier_id = k.supplier_id AND m.target_id = k.doc_id AND m.kind = '{$kind}'
@@ -182,7 +184,7 @@ final class PohodaReconciler
                              JOIN journal_entries e ON e.id = k.entry_id AND e.supplier_id = k.supplier_id
                              JOIN journal_entry_lines l ON l.entry_id = e.id AND l.supplier_id = e.supplier_id
                             WHERE k.supplier_id = d.supplier_id AND k.doc_id = d.id AND e.period_id IN ({$in}) AND k.doc_type = '{$docType}'
-                              AND e.source_type <> 'opening'
+                              AND e.source_type NOT IN ('opening', 'manual')
                               AND " . ($onAccount ? '' : 'NOT ') . $oneSided('k.entry_id', $prefix) . ")
                 AND EXISTS (SELECT 1 FROM pohoda_import_map m WHERE m.supplier_id = d.supplier_id AND m.kind = '{$kind}' AND m.target_id = d.id)";
 
@@ -310,7 +312,7 @@ final class PohodaReconciler
                        FROM journal_entry_lines l JOIN chart_of_accounts a ON a.id = l.account_id AND a.supplier_id = l.supplier_id
                       WHERE l.supplier_id = e.supplier_id AND l.entry_id = e.id AND a.account_code LIKE '{$prefix}%') AS journal
                FROM journal_entries e
-              WHERE e.supplier_id = ? AND e.period_id IN (" . (implode(',', array_map('intval', $periodIds)) ?: '0') . ") AND e.source_type <> 'opening' AND EXISTS (SELECT 1 {$linked})
+              WHERE e.supplier_id = ? AND e.period_id IN (" . (implode(',', array_map('intval', $periodIds)) ?: '0') . ") AND e.source_type NOT IN ('opening', 'manual') AND EXISTS (SELECT 1 {$linked})
                 AND (SELECT COUNT(DISTINCT l2.side) FROM journal_entry_lines l2 FORCE INDEX (ix_jel_closing_by_entry)
                        JOIN chart_of_accounts a2 ON a2.id = l2.account_id AND a2.supplier_id = l2.supplier_id
                       WHERE l2.supplier_id = e.supplier_id AND l2.entry_id = e.id AND a2.account_code LIKE '{$prefix}%') = 1"
