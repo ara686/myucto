@@ -242,9 +242,9 @@ proto mohou lišit od starého programu, který oceňoval jinak.
    nenavážou na fakturu (viz **Vazba na fakturu** níže).
 6. Projděte **Koncový stav historie po kartách**: kolik zůstane z historie na každém
    skladu a kartě. U historie před přechodem ho kontrola porovná s počátečním stavem
-   v MyÚčtu k datu přechodu a vypíše karty s rozdílem. Počátečním stavem je import
-   počátečních zásob s tímto datem, když jste ho použili, jinak všechny příjemky
-   s tímto datem. Prodeje a jiné pohyby toho dne se nepočítají. Tlačítko **Stáhnout XLSX** dá celý
+   v MyÚčtu k datu přechodu a vypíše karty s rozdílem. Počátečním stavem skladu je
+   import počátečních zásob do tohoto skladu s tímto datem, když jste ho použili,
+   jinak všechny příjemky do skladu s tímto datem. Prodeje a jiné pohyby toho dne se nepočítají. Tlačítko **Stáhnout XLSX** dá celý
    přehled k porovnání se stavem ve starém programu.
 7. Klikněte na **Převzít historii**.
 
