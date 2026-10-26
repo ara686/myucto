@@ -209,14 +209,15 @@ final class PurchaseInvoiceSubmissionRepository
     }
 
     /** @param list<int> $purchaseInvoiceIds @return array<int,bool> */
-    public function accountantManagedMap(int $supplierId, array $purchaseInvoiceIds): array
+    public function accountantManagedMap(int $supplierId, array $purchaseInvoiceIds, bool $currentRead = false): array
     {
         $ids = array_values(array_unique(array_filter(array_map('intval', $purchaseInvoiceIds))));
         if ($ids === []) return [];
         $in = implode(',', array_fill(0, count($ids), '?'));
+        $index = $currentRead ? ' FORCE INDEX (idx_pi_submission_invoice)' : '';
         $stmt = $this->db->pdo()->prepare(
-            "SELECT purchase_invoice_id FROM purchase_invoice_submissions
-              WHERE supplier_id = ? AND status = 'processed' AND purchase_invoice_id IN ($in)"
+            "SELECT purchase_invoice_id FROM purchase_invoice_submissions{$index}
+              WHERE supplier_id = ? AND status = 'processed' AND purchase_invoice_id IN ($in)" . ($currentRead ? ' FOR UPDATE' : '')
         );
         $stmt->execute([$supplierId, ...$ids]);
         $map = [];

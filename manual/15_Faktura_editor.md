@@ -720,7 +720,7 @@ faktury**:
 | **Vystavit** | Přidělí variabilní symbol, vygeneruje PDF a nastaví stav **Vystaveno**. **Nelze vrátit zpět** (jen storno nebo dobropis) |
 | **Odeslat klientovi** | Pošle vystavenou fakturu e-mailem klientovi (samostatný krok po vystavení) |
 | **Zobrazit PDF** / **Stáhnout PDF** | Otevře, resp. stáhne PDF (nabídka dalších akcí). U konceptu jsou dostupné, jakmile má faktura aspoň jednu položku |
-| **Smazat** | Jen pro koncept, vystavenou fakturu smazat nelze |
+| **Smazat** | Jen pro koncept, vystavenou fakturu smazat nelze. Nezaúčtovaný koncept bez platebních a dalších finančních vazeb lze smazat i s datem v uzavřeném období |
 | **Klonovat** | Vytvoří nový koncept jako kopii faktury (po potvrzení lze posunout měsíce v popiscích o +1). Klonování zachová položky i výkaz víceprací |
 
 ### 15.9.6 Výkaz víceprací

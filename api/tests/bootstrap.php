@@ -113,6 +113,7 @@ require __DIR__ . '/../vendor/autoload.php';
     '*/api/src/Security/UserRoleProfile.php',
     '*/api/src/Service/Accounting/DocumentAutoPoster.php',
     '*/api/src/Service/Accounting/DocumentLockService.php',
+    '*/api/src/Service/Accounting/DocumentPaymentLinks.php',
     '*/api/src/Service/Accounting/PostingService.php',
     '*/api/src/Service/Accounting/Bank/BankPostingService.php',
     '*/api/src/Service/Automation/AutomationRecommendationService.php',

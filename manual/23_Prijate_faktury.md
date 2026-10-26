@@ -337,7 +337,8 @@ Neobsahuje pevnou výchozí částku. Pravidlo samo nemění fakturu. Úhrady fa
 | **Uhrazená** | Zaplaceno ručně nebo automaticky z bankovního výpisu | Konečný stav |
 | **Stornovaná** | Stornovaný doklad, ponechaný pro audit | Vrátit ze storna |
 
-Smazat jde **jen koncept**. Pro pozdější stavy použijte **Stornovat**, zachová auditní stopu. Omylem stornovaný doklad
+Smazat jde **jen koncept**. Nezaúčtovaný koncept bez platebních a dalších finančních vazeb lze smazat i s datem v uzavřeném období.
+Koncept předaný do správy účetní maže účetní. Pro pozdější stavy použijte **Stornovat**, zachová auditní stopu. Omylem stornovaný doklad
 obnovíte v detailu akcí **Vrátit ze storna**, doklad se vrátí do stavu **Přijatá** (viz
 [§ 23.11.25](#231125-vratit-ze-storna-a-stejne-cislo-dokladu)).
 

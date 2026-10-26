@@ -15,6 +15,7 @@ const m = vi.hoisted(() => ({
   stockRead: true,
   stockWrite: true,
   offsetsWrite: true,
+  isClientRole: false,
 }))
 
 // vue-router — useRoute (id), useRouter (push), RouterLink jako jednoduchý stub.
@@ -71,7 +72,7 @@ vi.mock('@/stores/auth', () => ({
     canRead: (permission: string) => permission === 'stock' ? m.stockRead : true,
     canWrite: (permission: string) => permission === 'stock' ? m.stockWrite : permission === 'accounting.offsets' ? m.offsetsWrite : true,
     hasCommercialFeatures: true,
-    isClientRole: false,
+    get isClientRole() { return m.isClientRole },
     isSuperadmin: false,
     user: { id: 1 },
   }),
@@ -255,7 +256,49 @@ describe('InvoiceDetail.vue — bankovní úhrady', () => {
     m.stockRead = true
     m.stockWrite = true
     m.offsetsWrite = true
+    m.isClientRole = false
     if (m.route) m.route.params.id = '258'
+  })
+
+  it.each([
+    ['period_closed', true], ['period_closing', true], ['date_locked', true],
+    ['booked', false], ['posted', false], ['accountant_managed', false],
+  ] as const)('klientské smazání konceptu při zámku %s: %s', async (reason, visible) => {
+    m.isClientRole = true
+    m.get.mockResolvedValue(makeInvoice({
+      status: 'draft',
+      bank_payments: [], cash_payments: [], settlement_payments: [],
+      locked: { is_locked: true, reasons: [reason], booked_at: null, journal_entry_id: null,
+        period_status: null, date_locked: false, accountant_managed: reason === 'accountant_managed' },
+    }))
+    const wrapper = mount(InvoiceDetail, { global: { stubs } })
+    await flushPromises()
+    try {
+      const actions = wrapper.getComponent({ name: 'ActionBar' }).props('actions') as { key: string; show?: boolean }[]
+      expect(actions.find(a => a.key === 'delete')?.show).toBe(visible)
+      expect(actions.find(a => a.key === 'edit')?.show).toBe(false)
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it.each(['bank_payments', 'cash_payments', 'settlement_payments', 'unavailable'] as const)('klient nesmaže zamčený koncept při %s', async field => {
+    m.isClientRole = true
+    m.get.mockResolvedValue(makeInvoice({
+      status: 'draft', paid_amount: 0,
+      bank_payments: [], cash_payments: [], settlement_payments: [],
+      ...(field === 'unavailable' ? { bank_payments: undefined } : { [field]: [{ id: 7 }] }),
+      locked: { is_locked: true, reasons: ['period_closed'], booked_at: null, journal_entry_id: null,
+        period_status: 'closed', date_locked: false, accountant_managed: false },
+    }))
+    const wrapper = mount(InvoiceDetail, { global: { stubs } })
+    await flushPromises()
+    try {
+      const actions = wrapper.getComponent({ name: 'ActionBar' }).props('actions') as { key: string; show?: boolean }[]
+      expect(actions.find(a => a.key === 'delete')?.show).toBe(false)
+    } finally {
+      wrapper.unmount()
+    }
   })
 
   it('zavře párování s bankou při přechodu na jiný doklad', async () => {
