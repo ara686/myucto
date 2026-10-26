@@ -391,7 +391,7 @@ final class StockHistoryImportLifecycleTest extends StockTestCase
             $run();
             self::fail('Doklad během importu historie musí selhat.');
         } catch (StockException $e) {
-            self::assertSame('stock_history_locked', $e->errorCode);
+            self::assertSame('stock_history_import_running', $e->errorCode);
         }
     }
 

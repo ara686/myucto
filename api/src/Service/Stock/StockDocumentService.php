@@ -708,7 +708,7 @@ final class StockDocumentService
         $lockedUntil = $stmt->fetchColumn();
         if (is_string($lockedUntil) && $docDate <= $lockedUntil) {
             throw new StockException(
-                'stock_history_locked',
+                $lockedUntil === StockHistoryImportService::LOCK_RUNNING ? 'stock_history_import_running' : 'stock_history_locked',
                 $lockedUntil === StockHistoryImportService::LOCK_RUNNING
                     ? 'Probíhá převzetí nebo vrácení historie skladu. Doklad zaúčtujte po jeho dokončení.'
                     : 'Doklad spadá do převzaté historie skladu (do ' . $lockedUntil . '). Opravu proveďte dokladem s pozdějším datem.',
