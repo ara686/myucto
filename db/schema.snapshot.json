@@ -1093,6 +1093,7 @@
         "2189_gopay_clearing_longblob.sql",
         "2190_purchase_advance_deductions.sql",
         "2191_cash_document_invoice_payment_index.sql",
+        "2192_journal_settlement_allocations.sql",
         "2193_internal_documents.sql"
     ],
     "tables": {
@@ -7874,6 +7875,42 @@
                 "fk_jlp_supplier": "(supplier_id) -> supplier (id) ON UPDATE RESTRICT ON DELETE CASCADE"
             },
             "checks": []
+        },
+        "journal_settlement_allocations": {
+            "type": "BASE TABLE",
+            "engine": "InnoDB",
+            "collation": "utf8mb4_unicode_ci",
+            "columns": {
+                "account_id": "bigint(20) unsigned NOT NULL",
+                "amount": "decimal(15,2) NOT NULL",
+                "created_at": "timestamp NOT NULL DEFAULT current_timestamp()",
+                "created_by": "bigint(20) unsigned NULL DEFAULT NULL",
+                "doc_id": "bigint(20) unsigned NOT NULL",
+                "doc_type": "enum('invoice','purchase_invoice','other_item') NOT NULL",
+                "entry_id": "bigint(20) unsigned NOT NULL",
+                "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
+                "kind": "enum('settlement','origin') NOT NULL DEFAULT 'settlement'",
+                "line_no": "int(10) unsigned NOT NULL",
+                "released_on": "date NULL DEFAULT NULL",
+                "side": "enum('debit','credit') NOT NULL",
+                "supplier_id": "int(10) unsigned NOT NULL"
+            },
+            "indexes": {
+                "PRIMARY": "UNIQUE BTREE (id)",
+                "ix_jsa_account": "BTREE (supplier_id, account_id)",
+                "ix_jsa_created_by": "BTREE (created_by)",
+                "ix_jsa_doc": "BTREE (supplier_id, doc_type, doc_id)",
+                "uq_jsa_line_doc": "UNIQUE BTREE (supplier_id, entry_id, line_no, account_id, side, doc_type, doc_id)"
+            },
+            "foreign_keys": {
+                "fk_jsa_account": "(supplier_id, account_id) -> chart_of_accounts (supplier_id, id) ON UPDATE RESTRICT ON DELETE CASCADE",
+                "fk_jsa_created_by": "(created_by) -> users (id) ON UPDATE RESTRICT ON DELETE SET NULL",
+                "fk_jsa_entry": "(supplier_id, entry_id) -> journal_entries (supplier_id, id) ON UPDATE RESTRICT ON DELETE CASCADE",
+                "fk_jsa_supplier": "(supplier_id) -> supplier (id) ON UPDATE RESTRICT ON DELETE CASCADE"
+            },
+            "checks": {
+                "chk_jsa_amount": "`amount` > 0"
+            }
         },
         "license": {
             "type": "BASE TABLE",
