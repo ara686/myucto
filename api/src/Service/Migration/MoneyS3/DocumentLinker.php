@@ -154,6 +154,7 @@ final class DocumentLinker
         $movements = $this->bankMovements($ctx->supplierId);
         $issuedPayments = new IssuedPaymentRecorder($this->db);
         $matchTx = $pdo->prepare('SELECT bank_transaction_id FROM payment_matches WHERE id = ? AND supplier_id = ? AND invoice_id = ?');
+        $sameMatch = $pdo->prepare('SELECT MIN(id) FROM payment_matches WHERE supplier_id = ? AND bank_transaction_id = ? AND (invoice_id = ? OR purchase_invoice_id = ?)');
 
         foreach ([['PFaktury', $ctx->purchaseInvoices, false], ['VFaktury', $ctx->issuedInvoices, true]] as [$table, $docs, $isIssued]) {
             foreach ($ctx->backup->rowsAcrossYears($table) as $r) {
@@ -199,15 +200,20 @@ final class DocumentLinker
                     if ($movement !== null && $movement['currency'] !== 'CZK' && $txAmount >= 0.01) {
                         $matched = abs($movement['amount']) * min(1.0, $matched / $txAmount);
                     }
-                    $insertMatch->execute([
-                        $ctx->supplierId,
-                        $txId,
-                        $isIssued ? $docId : null,
-                        $isIssued ? null : $docId,
-                        number_format($matched, 2, '.', ''),
-                        $ctx->userId > 0 ? $ctx->userId : null,
-                    ]);
-                    $matchId = (int) $pdo->lastInsertId();
+                    // Pohyb s dokladem spárovaný mezitím v MyÚčtu se nezdvojí.
+                    $sameMatch->execute([$ctx->supplierId, $txId, $isIssued ? $docId : 0, $isIssued ? 0 : $docId]);
+                    $matchId = (int) $sameMatch->fetchColumn();
+                    if ($matchId === 0) {
+                        $insertMatch->execute([
+                            $ctx->supplierId,
+                            $txId,
+                            $isIssued ? $docId : null,
+                            $isIssued ? null : $docId,
+                            number_format($matched, 2, '.', ''),
+                            $ctx->userId > 0 ? $ctx->userId : null,
+                        ]);
+                        $matchId = (int) $pdo->lastInsertId();
+                    }
                     $markTx->execute([$ctx->userId > 0 ? $ctx->userId : null, $isIssued ? $docId : null, $txId, $ctx->supplierId]);
                     if ($paidAt !== null) {
                         ($isIssued ? $markIssuedPaid : $markPurchasePaid)->execute([$paidAt, $docId, $ctx->supplierId]);

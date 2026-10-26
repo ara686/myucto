@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MyInvoice\Service\Migration\MoneyS3;
 
 use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Service\Accounting\TakenOverRecord;
 use PDO;
 
 /**
@@ -145,8 +146,9 @@ final class AdvanceLinker
      * Vrácení poskytnuté zálohy: příchozí platba zaúčtovaná v Money na zálohový účet (314),
      * nespárovaná, s variabilním symbolem zálohy (číslo dodavatele nebo VS), se spáruje se
      * zálohou - je-li taková záloha právě jedna a vrácená částka nepřesahuje, co na ni bylo
-     * zaplaceno a ještě nevráceno. Saldokonto pak zálohu vrácením uzavře. Opakovaný převod
-     * pohyb spárovaný jinde (i ručně v MyÚčtu) nemění.
+     * zaplaceno a ještě nevráceno. Saldokonto pak zálohu vrácením uzavře. Jen pohyb
+     * zaúčtovaný převzatým zápisem; opakovaný převod pohyb spárovaný jinde (i ručně v MyÚčtu)
+     * ani pohyb zaúčtovaný v MyÚčtu nemění.
      */
     private function matchAdvanceRefunds(ImportContext $ctx): void
     {
@@ -183,7 +185,8 @@ final class AdvanceLinker
                 AND EXISTS (SELECT 1 FROM journal_entries e JOIN journal_entry_lines l ON l.entry_id = e.id AND l.supplier_id = e.supplier_id
                               JOIN chart_of_accounts ca ON ca.id = l.account_id LEFT JOIN chart_of_accounts pa ON pa.id = ca.parent_id
                              WHERE e.supplier_id = bs.supplier_id AND e.source_type = 'bank' AND e.source_id = bt.id AND e.reversed_by IS NULL
-                               AND l.side = 'credit' AND (ca.account_code LIKE '314%' OR COALESCE(pa.account_code, '') LIKE '314%'))"
+                               AND l.side = 'credit' AND (ca.account_code LIKE '314%' OR COALESCE(pa.account_code, '') LIKE '314%')
+                               AND " . TakenOverRecord::journalEntrySql('e') . ')'
         );
         $refunds->execute([$ctx->supplierId]);
         $match = $pdo->prepare('INSERT INTO payment_matches (supplier_id, bank_transaction_id, invoice_id, purchase_invoice_id, amount, match_type, matched_by_user_id) VALUES (?, ?, NULL, ?, ?, "manual", ?)');

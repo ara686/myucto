@@ -87,6 +87,9 @@ final class CashBankImporter
                 $p->count(self::STEP_CASH, 'existing');
                 continue;
             }
+            if ($ctx->skipsNew(self::STEP_CASH)) {
+                continue;
+            }
             if ($ctx->isLocked($year)) {
                 $p->warn(self::STEP_CASH, 'year_locked', "Pokladní doklad {$docNo}: rok {$year} je uzavřený, doklad nepřevzat.");
                 continue;
@@ -204,7 +207,9 @@ final class CashBankImporter
 
         // Zkouška nanečisto účet firmy nedoplňuje: zámek řádku měny by v její transakci
         // blokoval vystavování dokladů firmy (cizí klíč na měnu) až do konce zkoušky.
-        if (!$ctx->options->isDryRun()) {
+        // Opravný převod účty firmy, výpisy ani pohyby nezakládá a stavy výpisů nemění.
+        $relink = $ctx->options->relinkOnly;
+        if (!$ctx->options->isDryRun() && !$relink) {
             $registrar = new BankAccountRegistrar($this->db, $this->bankAccounts);
             $this->fillOwnAccount($ctx->supplierId, $accounts, $registrar);
             $companyAccounts = self::companyAccounts($accounts);
@@ -224,13 +229,15 @@ final class CashBankImporter
         // se počítá po pohybech výpisů. Účet v cizí měně deník v té měně nevede — počáteční
         // stav je součet pohybů účtu ze všech předchozích let zálohy ({@see foreignOpenings()}).
         $writer = new BankStatementImportWriter($this->db, 'money-s3');
-        $foreignOpenings = $this->anchorForeignOpenings($ctx, $accounts, self::foreignOpenings($ctx, $accounts), $writer);
+        $foreignOpenings = $relink ? [] : $this->anchorForeignOpenings($ctx, $accounts, self::foreignOpenings($ctx, $accounts), $writer);
 
         foreach ($byStatement as $statementKey => $rows) {
             [$yearText, $code] = explode('|', $statementKey, 2);
             $year = (int) $yearText;
-            if ($ctx->isLocked($year)) {
-                $p->info(self::STEP_BANK, 'year_locked', "Bankovní pohyby účtu {$code} za rok {$year}: rok je uzavřený, nepřebírají se.");
+            if ($ctx->isLocked($year) || $relink) {
+                if ($ctx->isLocked($year)) {
+                    $p->info(self::STEP_BANK, 'year_locked', "Bankovní pohyby účtu {$code} za rok {$year}: rok je uzavřený, nepřebírají se.");
+                }
                 $lockedCurrency = ($accounts[$code] ?? ['currency' => 'CZK'])['currency'];
                 foreach ($rows as $i => $r) {
                     $txKey = $txKeys[$statementKey][$i];
@@ -240,6 +247,8 @@ final class CashBankImporter
                         if ($lockedCurrency !== 'CZK') {
                             $ctx->bankTransactionCzk[$existingTx[$txKey]] = self::transactionAmount($r, $lockedCurrency)[1];
                         }
+                    } elseif (!$ctx->isLocked($year)) {
+                        $ctx->skipsNew(self::STEP_BANK);
                     }
                 }
                 continue;
@@ -531,7 +540,7 @@ final class CashBankImporter
      * Pokladna na stejném účtu, kterou firma už má, se použije — pokladna je v MyÚčtu
      * vázaná na účet (unikátní na firmu), druhá na týž účet nevznikne.
      */
-    private function ensureRegister(ImportContext $ctx, string $code, string $name, string $primaryAccount): int
+    private function ensureRegister(ImportContext $ctx, string $code, string $name, string $primaryAccount): ?int
     {
         $mapped = $this->map->get($ctx->supplierId, MoneyS3ImportRepository::KIND_CASH_REGISTER, $code);
         if ($mapped !== null) {
@@ -548,6 +557,9 @@ final class CashBankImporter
                 $this->map->put($ctx->supplierId, MoneyS3ImportRepository::KIND_CASH_REGISTER, $code, (int) $found, $ctx->runId);
                 return (int) $found;
             }
+        }
+        if ($ctx->skipsNew(self::STEP_CASH)) {
+            return null;
         }
         $nameTaken = $pdo->prepare('SELECT 1 FROM cash_registers WHERE supplier_id = ? AND name = ? LIMIT 1');
         $nameTaken->execute([$ctx->supplierId, mb_substr($name, 0, 100)]);

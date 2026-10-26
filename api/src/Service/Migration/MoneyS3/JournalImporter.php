@@ -143,6 +143,9 @@ final class JournalImporter
         $years = [];
         foreach ($plan as $item) {
             $ctx->dirYears[$item['dir']] = $item['year'];
+            if ($ctx->options->relinkOnly && $this->periods->findByYear($ctx->supplierId, $item['year']) === null && $ctx->skipsNew(self::STEP)) {
+                continue; // opravný převod období nezakládá
+            }
             $period = $this->ensurePeriod($ctx, $item);
             $ctx->periods[$item['year']] = $period;
             if ($period['locked']) {
@@ -208,6 +211,9 @@ final class JournalImporter
             $key = $year . '|' . $groupKey;
             if (isset($existing[$key])) {
                 $stats['existing']++;
+                continue;
+            }
+            if ($ctx->skipsNew(self::STEP)) {
                 continue;
             }
             $isOpening = $groupKey === Ms3Journal::OPENING_SOURCE;

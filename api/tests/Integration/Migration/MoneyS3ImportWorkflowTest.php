@@ -341,4 +341,54 @@ final class MoneyS3ImportWorkflowTest extends MoneyS3ImportTestCase
         self::assertContains('journal_not_empty', array_column($protocol->get('preflight'), 'code'));
         self::assertSame(1, $this->rowCount('journal_entries', $supplierId));
     }
+
+    /**
+     * Firma převedená z Money se dál účtuje v MyÚčtu, řádný opakovaný převod rozjetý deník
+     * odmítne. Opravný převod vazeb (relinkOnly) projde zálohu, ale nic nového nezaloží -
+     * ani doklady, které v Money mezitím přibyly - a převzatým dokladům jen znovu dopočítá
+     * úhrady. Vlastní zápis uživatele zůstane, jak byl.
+     */
+    public function testRelinkOnlyRestoresPaymentsWithoutCreatingAnything(): void
+    {
+        $supplierId = $this->supplier();
+        self::assertFalse($this->import($supplierId)->hasErrors());
+        $pdo = $this->db->pdo();
+
+        // Uživatel po převodu zaúčtuje vlastní zápis; dřívější verze převodu platby nezaložila.
+        $period = $this->container(AccountingPeriodRepository::class)->findByYear($supplierId, 2025);
+        $stmt = $pdo->prepare("SELECT id FROM chart_of_accounts WHERE supplier_id = ? AND account_code IN ('518.000', '211.000') ORDER BY account_code");
+        $stmt->execute([$supplierId]);
+        [$cash, $expense] = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+        $own = $this->container(JournalEntryRepository::class)->insert(
+            ['supplier_id' => $supplierId, 'period_id' => (int) $period['id'], 'entry_date' => '2025-12-20', 'source_type' => 'manual',
+             'description' => 'Zápis zadaný v MyÚčtu', 'posted_at' => '2025-12-20 10:00:00'],
+            [['account_id' => $expense, 'side' => 'debit', 'amount' => '75.00'], ['account_id' => $cash, 'side' => 'credit', 'amount' => '75.00']],
+        );
+        $pdo->prepare('DELETE FROM invoice_payments WHERE supplier_id = ?')->execute([$supplierId]);
+
+        $regular = $this->import($supplierId);
+        self::assertTrue($regular->failed());
+        self::assertContains('journal_not_empty', array_column($regular->get('preflight'), 'code'));
+        self::assertSame(0, $this->rowCount('invoice_payments', $supplierId));
+
+        // V Money mezitím přibyly další doklady a pohyby (FV25002, FP25007, BP25004…).
+        SyntheticAgenda::writeLzFiles($this->tmp . '/agenda.lz', SyntheticAgenda::filesWithPartialPayments());
+        $before = $this->snapshotCounts($supplierId);
+        $relink = $this->importer->run($supplierId, $this->userId, $this->backup(),
+            new ImportOptions(ImportOptions::MODE_IMPORT, true, null, [], [], false, null, ImportOptions::DISPOSAL_YEAR_TAX_HALF, false, true));
+
+        self::assertFalse($relink->hasErrors(), $this->explain($relink));
+        self::assertContains('relink_keeps_own_journal', array_column($relink->get('preflight'), 'code'));
+        self::assertSame(1, $this->rowCount('invoice_payments', $supplierId,
+            "amount = 24200.00 AND source = 'bank' AND invoice_id = (SELECT id FROM invoices WHERE supplier_id = {$supplierId} AND varsymbol = 'FV24001')"));
+        self::assertSame(1, $this->rowCount('invoice_payments', $supplierId));
+        self::assertSame($before, $this->snapshotCounts($supplierId), 'Opravný převod nic nového nezaloží.');
+        self::assertSame(0, $this->rowCount('invoices', $supplierId, "varsymbol IN ('FV25002', 'FV25003')"));
+        self::assertSame(1, $this->rowCount('journal_entries', $supplierId, "id = {$own} AND description = 'Zápis zadaný v MyÚčtu'"));
+        $skipped = 0;
+        foreach ($relink->toArray()['steps'] as $step) {
+            $skipped += (int) ($step['counts']['relink_skipped'] ?? 0);
+        }
+        self::assertGreaterThan(0, $skipped, $this->explain($relink));
+    }
 }
