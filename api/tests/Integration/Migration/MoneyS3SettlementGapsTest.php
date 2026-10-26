@@ -259,25 +259,25 @@ final class MoneyS3SettlementGapsTest extends MoneyS3ImportTestCase
 
     private function invoice(string $no): int
     {
-        return $this->id('SELECT id FROM invoices WHERE supplier_id = ? AND varsymbol = ?', $no);
+        return $this->lookupId('SELECT id FROM invoices WHERE supplier_id = ? AND varsymbol = ?', $no);
     }
 
     private function purchase(string $vendorNo): int
     {
-        return $this->id('SELECT id FROM purchase_invoices WHERE supplier_id = ? AND vendor_invoice_number = ?', $vendorNo);
+        return $this->lookupId('SELECT id FROM purchase_invoices WHERE supplier_id = ? AND vendor_invoice_number = ?', $vendorNo);
     }
 
     private function entry(string $no): int
     {
-        return $this->id("SELECT id FROM journal_entries WHERE supplier_id = ? AND source_type = 'manual' AND document_no = ?", $no);
+        return $this->lookupId("SELECT id FROM journal_entries WHERE supplier_id = ? AND source_type = 'manual' AND document_no = ?", $no);
     }
 
     private function movement(string $bankRef): int
     {
-        return $this->id('SELECT t.id FROM bank_transactions t JOIN bank_statements s ON s.id = t.statement_id WHERE s.supplier_id = ? AND t.bank_ref = ?', $bankRef);
+        return $this->lookupId('SELECT t.id FROM bank_transactions t JOIN bank_statements s ON s.id = t.statement_id WHERE s.supplier_id = ? AND t.bank_ref = ?', $bankRef);
     }
 
-    private function id(string $sql, string $value): int
+    private function lookupId(string $sql, string $value): int
     {
         $stmt = $this->db->pdo()->prepare($sql);
         $stmt->execute([$this->supplierId, $value]);
