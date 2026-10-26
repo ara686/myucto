@@ -291,7 +291,7 @@
         {%- endif -%}
         {#- Kompaktní řádky tisknou rozpis balení a sériová čísla za popisem na stejném
             řádku: v úzkém sloupci jednotky by se rozpis lámal na několik řádků. -#}
-        {%- if compact_items and _base_qty is not null -%}<span style="font-size:85%;color:#666666"> · {{ t('celkem', 'total') }} {{ _base_qty }}&nbsp;{{ item.base_unit }}</span>{%- endif -%}
+        {%- if compact_items and _base_qty is not null -%}<span style="font-size:85%;color:#666666;white-space:nowrap"> · {{ t('celkem', 'total') }}&nbsp;{{ _base_qty }}&nbsp;{{ item.base_unit }}</span>{%- endif -%}
         {#- Vybraná sériová čísla a šarže (InvoicePdfRenderer::withTrackingLines). -#}
         {%- for tracking_line in item.tracking_lines|default([]) -%}
           {%- if compact_items -%}<span style="font-size:85%;color:#666666"> · {{ tracking_line }}</span>

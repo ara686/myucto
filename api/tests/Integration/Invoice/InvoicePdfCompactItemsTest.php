@@ -85,6 +85,9 @@ final class InvoicePdfCompactItemsTest extends TestCase
         self::assertStringNotContainsString('items-compact', $html);
         self::assertStringContainsString('<br><span style="font-size:85%;color:#666666">Výr. č.: SN0001</span>', $html);
         self::assertStringContainsString('<br><span style="font-size:85%;color:#666666;white-space:nowrap">(celkem 20&nbsp;ks)</span>', $html);
+        self::assertStringNotContainsString('> · ', $html);
+        // Vypnutá volba = stejný výstup, jako když ji firma vůbec nemá (dnešní stav).
+        self::assertSame($html, $this->renderer->renderHtml($this->invoice(['invoice_pdf_compact_items' => 0]), includeCss: false));
     }
 
     public function testCompactOptionTightensRowsAndMovesSecondaryTextsOntoTheDescriptionLine(): void
@@ -93,8 +96,38 @@ final class InvoicePdfCompactItemsTest extends TestCase
 
         self::assertStringContainsString('<table class="items items-compact">', $html);
         self::assertMatchesRegularExpression('~Řetězová sada\s*<span style="font-size:85%;color:#666666"> · Výr\. č\.: SN0001</span>~u', $html);
-        self::assertMatchesRegularExpression('~Brzdové destičky\s*<span style="font-size:85%;color:#666666"> · celkem 20&nbsp;ks</span>~u', $html);
+        self::assertMatchesRegularExpression('~Brzdové destičky\s*<span style="font-size:85%;color:#666666;white-space:nowrap"> · celkem&nbsp;20&nbsp;ks</span>~u', $html);
         self::assertStringContainsString('<td>bal</td>', $html);
+    }
+
+    /**
+     * Volba čtená z živého řádku firmy (koncept bez snapshotu) spolu s rozpisem slevy
+     * (třída items-ld), textovým řádkem a položkou s více sériovými čísly.
+     */
+    public function testCompactCombinesWithLineDiscountTextRowAndSeveralSerialNumbers(): void
+    {
+        $container = Bootstrap::buildContainer();
+        $pdo = $container->get(Connection::class)->pdo();
+        $renderer = $container->get(InvoicePdfRenderer::class);
+        $pdo->beginTransaction();
+        try {
+            $supplierId = $this->createIsolatedSupplier($pdo, 1);
+            $pdo->prepare('UPDATE supplier SET invoice_pdf_compact_items = 1, invoice_pdf_show_line_discount = 1 WHERE id = ?')
+                ->execute([$supplierId]);
+            $invoice = ['supplier_id' => $supplierId, 'status' => 'draft', 'supplier_snapshot' => null] + $this->invoice();
+            $invoice['items'][0]['tracking_allocations'][] = ['serial_number' => 'SN0002'];
+            $invoice['items'][0] += ['list_unit_price' => 125.0, 'line_discount_pct' => 20.0];
+            $invoice['items'][] = ['description' => 'Montáž na místě', 'item_kind' => 'text'];
+
+            $html = $renderer->renderHtml($invoice, includeCss: false);
+
+            self::assertStringContainsString('<table class="items items-ld items-compact">', $html);
+            self::assertMatchesRegularExpression('~<td class="num nowrap">125,00</td>\s*<td class="num nowrap">20&nbsp;%</td>~u', $html);
+            self::assertStringContainsString('<span style="font-size:85%;color:#666666"> · Výr. č.: SN0001, SN0002</span>', $html);
+            self::assertMatchesRegularExpression('~<tr class="text-row">\s*<td colspan="\d+">Montáž na místě</td>~u', $html);
+        } finally {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+        }
     }
 
     public function testCompactStylesheetRulesOnlyShrinkSpacingAndType(): void
