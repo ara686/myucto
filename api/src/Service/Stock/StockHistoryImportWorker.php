@@ -34,6 +34,11 @@ final class StockHistoryImportWorker
     private const APPLY_BATCH = 500;
     private const VALUATION_ITEMS = 200;
     private const REPORT_LIMIT = 100;
+    /** Faktura podle čísla s tím, co rozhoduje o vazbě převzatého dokladu (viz invoiceLinkProblem). */
+    private const INVOICE_LINK_SQL = "SELECT i.id, i.varsymbol, i.status, i.invoice_type,
+            EXISTS(SELECT 1 FROM stock_documents d WHERE d.supplier_id = i.supplier_id AND d.invoice_id = i.id
+                AND d.origin IN ('invoice','credit_note')) AS own_stock
+        FROM invoices i WHERE i.supplier_id = ?";
 
     public function __construct(
         private readonly Connection $db,
@@ -209,8 +214,8 @@ final class StockHistoryImportWorker
         foreach ($lookup('SELECT id, sku, is_stocked, tracking_mode FROM stock_items WHERE supplier_id = ? AND sku IN (%s)', array_column($rows, 'sku')) as $item) {
             $out['items'][mb_strtolower((string) $item['sku'])] = $item;
         }
-        foreach ($lookup('SELECT id, varsymbol FROM invoices WHERE supplier_id = ? AND varsymbol IN (%s)', array_filter(array_column($rows, 'invoice_number'))) as $invoice) {
-            $out['invoices'][mb_strtolower((string) $invoice['varsymbol'])] = (int) $invoice['id'];
+        foreach ($lookup(self::INVOICE_LINK_SQL . ' AND i.varsymbol IN (%s)', array_filter(array_column($rows, 'invoice_number'))) as $invoice) {
+            $out['invoices'][mb_strtolower((string) $invoice['varsymbol'])] = $invoice;
         }
         $purchaseNumbers = array_filter(array_column($rows, 'purchase_invoice_number'));
         foreach ($lookup('SELECT id, vendor_invoice_number AS number FROM purchase_invoices WHERE supplier_id = ? AND vendor_invoice_number IN (%s)', $purchaseNumbers) as $invoice) {
@@ -247,9 +252,12 @@ final class StockHistoryImportWorker
             throw new \InvalidArgumentException('history_import_tracking_unsupported');
         }
         $invoiceId = null;
+        $unlinked = null;
         if ($values['invoice_number'] !== null) {
-            $invoiceId = $references['invoices'][mb_strtolower($values['invoice_number'])]
+            $invoice = $references['invoices'][mb_strtolower($values['invoice_number'])]
                 ?? throw new \InvalidArgumentException('history_import_invoice_not_found');
+            $unlinked = self::invoiceLinkProblem($invoice);
+            $invoiceId = $unlinked === null ? (int) $invoice['id'] : null;
         }
         $purchaseInvoiceId = null;
         if ($values['purchase_invoice_number'] !== null) {
@@ -280,6 +288,7 @@ final class StockHistoryImportWorker
             'warehouse_to_id' => $warehouseToId,
             'stock_item_id' => (int) $item['id'],
             'invoice_id' => $invoiceId,
+            'invoice_unlinked' => $unlinked,
             'purchase_invoice_id' => $purchaseInvoiceId,
             'value_total' => $value,
         ];
@@ -425,6 +434,17 @@ final class StockHistoryImportWorker
             $to = $to === null || $row['date_to'] > $to ? $row['date_to'] : $to;
         }
 
+        // Doklady, které se na fakturu nenavážou (koncept, jiný typ, faktura s vlastním výdejem).
+        $stmt = $pdo->prepare("SELECT MIN(source_row) AS source_row,
+                JSON_VALUE(input_json, '$.values.doc_number') AS doc_number,
+                JSON_VALUE(input_json, '$.values.invoice_number') AS invoice_number,
+                JSON_VALUE(input_json, '$.values.invoice_unlinked') AS reason
+            FROM catalog_job_items WHERE supplier_id = ? AND job_id = ? AND status = 'ready'
+                AND JSON_VALUE(input_json, '$.values.invoice_unlinked') IS NOT NULL
+            GROUP BY JSON_VALUE(input_json, '$.doc'), doc_number, invoice_number, reason ORDER BY source_row");
+        $stmt->execute([$supplierId, $jobId]);
+        $unlinked = array_map(static fn (array $row): array => ['source_row' => (int) $row['source_row']] + $row, $stmt->fetchAll(PDO::FETCH_ASSOC));
+
         $closed = 0;
         $mode = $pdo->prepare('SELECT accounting_mode FROM supplier WHERE id = ?');
         $mode->execute([$supplierId]);
@@ -452,6 +472,8 @@ final class StockHistoryImportWorker
             'negative_count' => $negativeCount,
             'negatives' => $negatives,
             'closed_period_documents' => $closed,
+            'invoice_unlinked_count' => count($unlinked),
+            'invoice_unlinked' => array_slice($unlinked, 0, self::REPORT_LIMIT),
         ];
     }
 
@@ -523,7 +545,7 @@ final class StockHistoryImportWorker
     private function apply(int $supplierId, array $job): array
     {
         $this->assertCurrent($supplierId, $job);
-        $report = $job['report'] + ['phase' => 'documents', 'documents_created' => 0, 'fill_documents' => 0, 'valuation_cursor' => 0, 'settlement' => []];
+        $report = $job['report'] + ['phase' => 'documents', 'documents_created' => 0, 'fill_documents' => 0, 'valuation_cursor' => 0, 'settlement' => [], 'invoice_unlinked_on_apply' => 0];
         $checkpoint = $job['checkpoint'];
         $done = false;
         if ($report['phase'] === 'documents') {
@@ -590,9 +612,24 @@ final class StockHistoryImportWorker
         }
         $this->assertNumbersFree($supplierId, $numbers);
 
+        // Faktura se od náhledu mohla změnit (vystavení, vlastní výdejka): vazbu ověří znovu.
+        $invoiceIds = array_values(array_unique(array_filter(array_map(static fn (array $rows): ?int => $rows[0]['values']['invoice_id'], $groups))));
+        $linkable = [];
+        if ($invoiceIds !== []) {
+            $stmt = $pdo->prepare(self::INVOICE_LINK_SQL . ' AND i.id IN (' . implode(',', array_fill(0, count($invoiceIds), '?')) . ')');
+            $stmt->execute([$supplierId, ...$invoiceIds]);
+            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $invoice) {
+                $linkable[(int) $invoice['id']] = self::invoiceLinkProblem($invoice) === null;
+            }
+        }
+
         $now = (string) $pdo->query('SELECT NOW()')->fetchColumn();
         foreach ($groups as $rows) {
             $values = $rows[0]['values'];
+            if ($values['invoice_id'] !== null && !($linkable[$values['invoice_id']] ?? false)) {
+                $values['invoice_id'] = null;
+                $report['invoice_unlinked_on_apply']++;
+            }
             $fills = $profile['fill_negative'] ? self::fills($rows) : [];
             if ($fills !== []) {
                 $this->insertDocument($supplierId, $job, $now, [
@@ -905,6 +942,21 @@ final class StockHistoryImportWorker
         if ($taken !== []) {
             throw new StockException('history_import_number_exists', 'Číslo dokladu už ve firmě existuje: ' . implode(', ', $taken) . '.', 409, $taken);
         }
+    }
+
+    /**
+     * Převzatý doklad se naváže jen na vystavenou fakturu nebo dobropis, který nemá vlastní
+     * skladový doklad z MyÚčta. Jinak by vazba zablokovala výdej nebo vratku živého dokladu
+     * (převzatý doklad se počítá jako proběhlý výdej). Vrací důvod, proč se nenaváže.
+     */
+    private static function invoiceLinkProblem(array $invoice): ?string
+    {
+        return match (true) {
+            !in_array($invoice['invoice_type'], ['invoice', 'credit_note'], true) => 'type',
+            $invoice['status'] === 'draft' => 'draft',
+            (bool) $invoice['own_stock'] => 'own_stock',
+            default => null,
+        };
     }
 
     /** @return list<array{stock_item_id:int, quantity:string, unit_cost:string}> */

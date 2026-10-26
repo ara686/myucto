@@ -139,9 +139,10 @@ final class StockHistoryImportService
 
     /**
      * Koncový stav historie z náhledu po skladech a kartách (s technickými příjemkami,
-     * když je firma zapnula) proti počátečnímu stavu v MyÚčtu k datu přechodu, tedy
-     * příjemkám s datem přechodu. Prodej ani jiný pohyb toho dne rozdíl nedělá (před D
-     * firma skladové doklady nemá). Bez data přechodu se nemá s čím porovnat, stock_qty je null.
+     * když je firma zapnula) proti počátečnímu stavu v MyÚčtu k datu přechodu: řádkům
+     * importu počátečních zásob s tímto datem, když ho firma použila, jinak příjemkám
+     * s datem přechodu. Prodej ani jiný pohyb toho dne rozdíl nedělá (před D firma
+     * skladové doklady nemá). Bez data přechodu se nemá s čím porovnat, stock_qty je null.
      */
     public function endState(int $supplierId, int $previewId): array
     {
@@ -185,6 +186,9 @@ final class StockHistoryImportService
                 JOIN warehouses w ON w.id = d.warehouse_id AND w.supplier_id = d.supplier_id
                 JOIN stock_items i ON i.id = l.stock_item_id AND i.supplier_id = d.supplier_id
                 WHERE d.supplier_id = ? AND d.doc_date = ? AND d.doc_type = 'receipt' AND d.status = 'posted' AND d.history_import_job_id IS NULL
+                    AND (NOT EXISTS (SELECT 1 FROM external_entity_map WHERE supplier_id = d.supplier_id AND connection_id IS NULL AND entity_type = 'stock_opening_line')
+                        OR EXISTS (SELECT 1 FROM external_entity_map m WHERE m.supplier_id = d.supplier_id AND m.connection_id IS NULL
+                            AND m.entity_type = 'stock_opening_line' AND m.internal_id = l.id))
                 GROUP BY d.warehouse_id, l.stock_item_id, w.code, i.sku, i.name, i.unit");
             $stmt->execute([$supplierId, $cutover]);
             foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $item) {

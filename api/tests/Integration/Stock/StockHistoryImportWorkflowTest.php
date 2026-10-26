@@ -43,6 +43,8 @@ final class StockHistoryImportWorkflowTest extends StockTestCase
         $b = $this->item($sid, 'ZB-200');
         $client = $this->client($sid);
         $invoice = $this->invoiceDraft($sid, $client, 'invoice', ['varsymbol' => '2020000001', 'issue_date' => '2020-02-01']);
+        // Převzatý doklad se váže jen na vystavenou fakturu.
+        $this->db->pdo()->prepare("UPDATE invoices SET status = 'issued' WHERE id = ?")->execute([$invoice]);
         $purchase = $this->purchaseInvoice($sid, $client, ['vendor_invoice_number' => 'FP98-7', 'issue_date' => '2020-01-05']);
 
         $this->receiveStock($sid, $main, $a, '10', 100.0, '2021-01-01');

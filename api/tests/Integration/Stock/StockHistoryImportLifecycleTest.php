@@ -528,6 +528,102 @@ final class StockHistoryImportLifecycleTest extends StockTestCase
         self::assertSame(6000, $this->level($sid, $main, $a)['qtyT']);
     }
 
+    /**
+     * Převzatý doklad se naváže jen na vystavenou fakturu nebo dobropis bez vlastního skladového
+     * dokladu. Jinak se převezme bez vazby a náhled i převzetí to vypíšou; živé faktury dál vydávají.
+     */
+    public function testHistoryDocumentLinksOnlyToIssuedInvoiceWithoutOwnStock(): void
+    {
+        $sid = $this->createSupplier();
+        $main = $this->warehouse($sid, 'HL');
+        $a = $this->item($sid, 'ZB-100');
+        $this->receiveStock($sid, $main, $a, '10', 100.0, '2021-01-01');
+        $live = $this->issuedInvoice($sid, 'invoice', '2025001', '2021-02-10', $main, $a, '2.000');
+        $this->inTransaction(fn () => $this->issue->issueForInvoice($sid, $live, $this->userId));
+        $draft = $this->issuedInvoice($sid, 'invoice', '2025002', '2021-02-11', $main, $a, '2.000', 'draft');
+        $this->issuedInvoice($sid, 'proforma', '2025003', '2020-03-01', $main, $a, '1.000');
+        $later = $this->issuedInvoice($sid, 'invoice', '2025004', '2021-03-01', $main, $a, '1.000');
+        $old = $this->issuedInvoice($sid, 'invoice', '2025005', '2020-03-01', null, null, '1.000');
+        self::assertSame(8000, $this->level($sid, $main, $a)['qtyT']);
+
+        $preview = $this->stage($sid, self::csv([
+            'P1;receipt;2020-01-05;HL;;ZB-100;15;50;;;;',
+            'V1;issue;2020-06-01;HL;;ZB-100;5;;;2025001;;',
+            'V2;issue;2020-06-02;HL;;ZB-100;1;;;2025002;;',
+            'V3;issue;2020-06-03;HL;;ZB-100;1;;;2025003;;',
+            'V4;issue;2020-06-04;HL;;ZB-100;1;;;2025004;;',
+            'V5;issue;2020-06-05;HL;;ZB-100;1;;;2025005;;',
+        ]), $this->config('2021-01-01'));
+        self::assertSame('completed', $preview['status']);
+        self::assertSame([], $this->failedRows($preview['id']));
+        self::assertSame(3, $preview['report']['invoice_unlinked_count']);
+        self::assertSame([
+            [3, 'V1', '2025001', 'own_stock'],
+            [4, 'V2', '2025002', 'draft'],
+            [5, 'V3', '2025003', 'type'],
+        ], array_map(static fn (array $row): array => [$row['source_row'], $row['doc_number'], $row['invoice_number'], $row['reason']], $preview['report']['invoice_unlinked']));
+
+        // Mezi náhledem a převzetím faktura 2025004 dostala vlastní výdejku: převzetí vazbu vynechá.
+        $this->inTransaction(fn () => $this->issue->issueForInvoice($sid, $later, $this->userId));
+        $applied = $this->applyAll($sid, $preview['id']);
+        self::assertSame('completed', $applied['status']);
+        self::assertSame(1, $applied['report']['invoice_unlinked_on_apply']);
+        $stmt = $this->db->pdo()->prepare('SELECT doc_number, invoice_id FROM stock_documents WHERE supplier_id = ? AND history_import_job_id IS NOT NULL AND doc_type = ? AND doc_number LIKE ? ORDER BY id');
+        $stmt->execute([$sid, 'issue', 'V%']);
+        self::assertSame([['V1', null], ['V2', null], ['V3', null], ['V4', null], ['V5', $old['id']]],
+            array_map(static fn (array $row): array => [$row[0], $row[1] === null ? null : (int) $row[1]], $stmt->fetchAll(\PDO::FETCH_NUM)));
+
+        // Živá faktura po stornu a obnovení zboží znovu vydá, vystavený koncept také.
+        $level = $this->level($sid, $main, $a)['qtyT'];
+        $this->inTransaction(fn () => $this->issue->reverseForInvoice($sid, $live['id'], $this->userId));
+        $this->inTransaction(fn () => $this->issue->issueForInvoice($sid, $live, $this->userId));
+        self::assertSame($level, $this->level($sid, $main, $a)['qtyT']);
+        $this->db->pdo()->prepare("UPDATE invoices SET status = 'issued' WHERE id = ?")->execute([$draft['id']]);
+        $this->inTransaction(fn () => $this->issue->issueForInvoice($sid, $draft, $this->userId));
+        self::assertSame($level - 2000, $this->level($sid, $main, $a)['qtyT']);
+    }
+
+    /** Storno dobropisu převzatou příjemku nestornuje a obnovení dobropisu zboží podruhé nevrátí. */
+    public function testCreditNoteCancelAndRestoreKeepHistoryReturn(): void
+    {
+        $sid = $this->createSupplier();
+        $main = $this->warehouse($sid, 'HL');
+        $a = $this->item($sid, 'ZB-100');
+        $creditNote = $this->issuedInvoice($sid, 'credit_note', 'D2020009', '2020-07-01', $main, $a, '-2.000');
+        $applied = $this->applyAll($sid, $this->stage($sid, self::csv([
+            'P1;receipt;2020-01-05;HL;;ZB-100;10;50;;;;',
+            'P2;receipt;2020-06-01;HL;;ZB-100;2;50;;D2020009;;',
+        ]), $this->config(null))['id']);
+        self::assertSame('completed', $applied['status']);
+        self::assertSame(12000, $this->level($sid, $main, $a)['qtyT']);
+        $this->inTransaction(fn () => $this->issue->reverseForInvoice($sid, $creditNote['id'], $this->userId));
+        $this->inTransaction(fn () => $this->issue->issueForInvoice($sid, $creditNote, $this->userId));
+        self::assertSame([['P2', 'posted']], array_map(
+            static fn (array $doc): array => [$doc['doc_number'], $doc['status']],
+            $this->docsRepo->listByInvoice($sid, $creditNote['id']),
+        ));
+        self::assertSame(12000, $this->level($sid, $main, $a)['qtyT']);
+    }
+
+    /** Má-li firma import počátečních zásob, je počátečním stavem k D jen on, ne další příjemka toho dne. */
+    public function testEndStateUsesOpeningImportLinesWhenPresent(): void
+    {
+        $sid = $this->createSupplier();
+        $main = $this->warehouse($sid, 'HL');
+        $a = $this->item($sid, 'ZB-100');
+        $opening = $this->receiveStock($sid, $main, $a, '10', 100.0, '2021-01-01');
+        $stmt = $this->db->pdo()->prepare('SELECT id FROM stock_document_lines WHERE document_id = ?');
+        $stmt->execute([$opening['id']]);
+        $this->db->pdo()->prepare("INSERT INTO external_entity_map (supplier_id, connection_id, source_key, entity_type, external_id, internal_id)
+            VALUES (?, NULL, 'stary-sklad', 'stock_opening_line', 'ZB-100', ?)")->execute([$sid, (int) $stmt->fetchColumn()]);
+        $this->receiveStock($sid, $main, $a, '4', 100.0, '2021-01-01');
+        $this->post($sid, 'issue', $main, null, '2021-01-01', [[$a, '3']]);
+        $preview = $this->stage($sid, self::csv(['P1;prijemka;2020-01-05;HL;;ZB-100;10;50;;;;']), $this->config('2021-01-01'));
+        $state = $this->container->get(StockHistoryImportService::class)->endState($sid, $preview['id']);
+        self::assertSame(['count' => 1, 'differences' => 0], $state['totals']);
+        self::assertSame('10.000', $state['items'][0]['stock_qty']);
+    }
+
     // ── pomocníci ────────────────────────────────────────────────────────────
 
     private function expectStale(callable $run): void
@@ -558,6 +654,16 @@ final class StockHistoryImportLifecycleTest extends StockTestCase
         } catch (StockException $e) {
             self::assertSame('stock_history_import_running', $e->errorCode);
         }
+    }
+
+    /** Faktura (dobropis, proforma) s jedním řádkem; bez karty jde o fakturu bez skladových řádků. */
+    private function issuedInvoice(int $supplierId, string $type, string $number, string $date, ?int $warehouseId, ?int $itemId, string $qty, string $status = 'issued'): array
+    {
+        $id = $this->invoiceDraft($supplierId, $this->client($supplierId), $type, ['issue_date' => $date, 'varsymbol' => $number]);
+        $this->invoiceItem($id, $itemId, $warehouseId, $qty);
+        $this->db->pdo()->prepare('UPDATE invoices SET status = ? WHERE id = ?')->execute([$status, $id]);
+        return ['id' => $id, 'supplier_id' => $supplierId, 'invoice_type' => $type, 'parent_invoice_id' => null,
+            'issue_date' => $date, 'tax_date' => $date, 'varsymbol' => $number];
     }
 
     private function inTransaction(callable $run): void
