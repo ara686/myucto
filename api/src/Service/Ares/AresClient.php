@@ -103,12 +103,16 @@ final class AresClient
             $dic = $groupDic !== '' || !$individualVatActive ? $groupDic : $dic;
         }
 
-        // Skládáme ulici z částí
+        // Skládáme ulici z částí. Místní část obce bez ulic ARES vrací bez `nazevUlice`,
+        // adresa se pak píše názvem části obce a číslem domu (issue #252).
         $street = trim((string) ($sidlo['nazevUlice'] ?? ''));
+        if ($street === '') {
+            $street = trim((string) ($sidlo['nazevCastiObce'] ?? ''));
+        }
         $cisloDom = $sidlo['cisloDomovni'] ?? null;
         $cisloOr  = $sidlo['cisloOrientacni'] ?? null;
         if ($cisloDom !== null && $cisloOr !== null) {
-            $street .= ' ' . $cisloDom . '/' . $cisloOr;
+            $street .= ' ' . $cisloDom . '/' . $cisloOr . (string) ($sidlo['cisloOrientacniPismeno'] ?? '');
         } elseif ($cisloDom !== null) {
             $street .= ' ' . $cisloDom;
         }
