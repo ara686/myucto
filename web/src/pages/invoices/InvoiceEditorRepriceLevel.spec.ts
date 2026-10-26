@@ -197,8 +197,8 @@ describe('InvoiceEditor: přecenění uloženého dokladu po změně hladiny', (
     wrapper.unmount()
   })
 
-  it('selhání nacenění po potvrzení ohlásí chybou', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
+  it('selhání nacenění po potvrzení ohlásí chybou a příště se zeptá znovu', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
     quoteItems.mockImplementationOnce(() => Promise.reject(new Error('offline')))
     const { wrapper, vm } = await mountEditor('/invoices/42')
     const { toasts } = useToast()
@@ -209,6 +209,12 @@ describe('InvoiceEditor: přecenění uloženého dokladu po změně hladiny', (
 
     expect(toasts.value.map(toast => [toast.type, toast.text])).toEqual([['error', 'invoice.price_level.reprice_failed']])
     expect(vm.form.items.map(row => row.unit_price_without_vat)).toEqual([100, 95, 500])
+
+    // Ceny zůstaly ručně uložené, další změna hladiny se zase zeptá na oba řádky.
+    vm.form.price_level_id = 3
+    await flush()
+    expect(confirm).toHaveBeenCalledTimes(2)
+    expect(quoteItems.mock.calls[1][0].lines).toHaveLength(2)
     wrapper.unmount()
   })
 })
