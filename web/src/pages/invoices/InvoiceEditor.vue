@@ -590,7 +590,7 @@ function onStockSelect(rowIndex: number, itemId: number | null) {
       }
       if (si.promo_price != null) {
         toast.info(t('invoice.promo_price_applied', {
-          price: formatMoney(Number(si.promo_price)),
+          price: formatMoney(stockPriceForRow(item, Number(si.promo_price))),
           label: si.promo_label ?? t('invoice.promo_price_generic'),
         }))
       }
@@ -612,7 +612,7 @@ function onStockSelect(rowIndex: number, itemId: number | null) {
       void quoteStockRows([item], 'select', initialStockUnit(si)).then((quoted) => {
         if (!quoted && quoteFailureFallback('select', si)?.promoToast) {
           toast.info(t('invoice.promo_price_applied', {
-            price: formatMoney(Number(si.promo_price)),
+            price: formatMoney(stockPriceForRow(item, Number(si.promo_price))),
             label: si.promo_label ?? t('invoice.promo_price_generic'),
           }))
         }

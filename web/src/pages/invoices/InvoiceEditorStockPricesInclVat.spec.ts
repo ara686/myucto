@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { SupplierBrief } from '@/api/auth'
 import type { StockQuoteRequest } from '@/api/stock'
 import { useSupplierStore } from '@/stores/supplier'
+import { useToast } from '@/composables/useToast'
 
 const pending = () => new Promise(() => {})
 // Nacenění vrací cenu vždy bez DPH.
@@ -47,7 +48,7 @@ async function mountEditor(pricesIncludeVat: boolean) {
   await router.isReady()
   const wrapper = shallowMount(InvoiceEditor, {
     global: {
-      plugins: [router, pinia, createI18n({ legacy: false, locale: 'cs', messages: { cs: {} }, missingWarn: false, fallbackWarn: false })],
+      plugins: [router, pinia, createI18n({ legacy: false, locale: 'cs', messages: { cs: { invoice: { promo_price_applied: 'akce {price}' } } }, missingWarn: false, fallbackWarn: false })],
       directives: { math: {} },
     },
   })
@@ -95,6 +96,21 @@ describe('InvoiceEditor: skladová cena na dokladu s cenami včetně DPH', () =>
     expect(vm.form.items[0].unit_price_without_vat).toBe(1000)
     expect(await vm.quoteStockRows([vm.form.items[0]], 'context')).toBe(true)
     expect([vm.form.items[0].unit_price_without_vat, vm.form.items[0].list_unit_price]).toEqual([900, 1000])
+    wrapper.unmount()
+  })
+
+  it('toast akční ceny ukáže cenu, kterou řádek dostal (s DPH)', async () => {
+    const { wrapper, vm } = await mountEditor(true)
+    vm.stockItemsCache.set(7, {
+      id: 7, sku: 'H-1', name: 'Helma', unit: 'ks', vat_rate_id: 1, promo_label: 'Výprodej',
+      sale_price_without_vat: '1000.00', effective_price: '800.00', promo_price: '800.00', units: [], has_customer_prices: false,
+    })
+    const { toasts } = useToast()
+    toasts.value = []
+    vm.onStockSelect(0, 7)
+    expect(vm.form.items[0].unit_price_without_vat).toBe(968)
+    const text = toasts.value.map(toast => toast.text).join(' ').replace(/\s/g, ' ')
+    expect(text).toMatch(/akce 968,00/)
     wrapper.unmount()
   })
 })
