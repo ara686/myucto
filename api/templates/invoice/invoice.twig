@@ -9,7 +9,7 @@
 </head>
 <body>
 
-{# Bankovní spojení v patičce každé strany (volba firmy, migrace 2195). Jen když by ho
+{# Bankovní spojení v patičce každé strany (volba firmy, migrace 2198). Jen když by ho
    jinak tiskl platební panel (převod k úhradě), panel pak ukáže jen QR. Uhrazeno,
    hotově, kartou a vratka zůstávají beze změny. #}
 {% set bank_in_footer = supplier.invoice_pdf_bank_in_footer|default(false) and bank and refund_amount is null

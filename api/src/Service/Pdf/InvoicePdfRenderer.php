@@ -573,7 +573,7 @@ final class InvoicePdfRenderer
     }
 
     /**
-     * @param bool $bankInFooter bankovní spojení v patičce (migrace 2195): dlouhý název banky
+     * @param bool $bankInFooter bankovní spojení v patičce (migrace 2198): dlouhý název banky
      *        nebo zahraniční IBAN patičku zalomí, spodní okraj proto roste s její výškou
      *        (`stretch` = nejméně 18 mm). Bez volby zůstává pevný okraj.
      */
@@ -593,7 +593,7 @@ final class InvoicePdfRenderer
         ]);
     }
 
-    /** Volba firmy `invoice_pdf_bank_in_footer` (migrace 2195), čtená stejně jako šablonou. */
+    /** Volba firmy `invoice_pdf_bank_in_footer` (migrace 2198), čtená stejně jako šablonou. */
     private function bankInFooter(array $invoice): bool
     {
         return !empty($this->resolveSupplier($invoice)['invoice_pdf_bank_in_footer']);
