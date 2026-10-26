@@ -5,9 +5,15 @@ declare(strict_types=1);
 namespace MyInvoice\Tests\Integration\Eet;
 
 use DI\Container;
+use MyInvoice\Action\Eet\EetDevicesAction;
 use MyInvoice\Bootstrap;
 use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Middleware\AuthMiddleware;
+use MyInvoice\Middleware\SupplierScopeMiddleware;
+use MyInvoice\Service\Accounting\Cash\CashRegisterService;
+use MyInvoice\Service\Accounting\ChartOfAccountsSeeder;
 use MyInvoice\Service\Eet\EetCommandException;
+use MyInvoice\Service\Eet\EetSettingsService;
 use MyInvoice\Service\Eet\EetCorrectionService;
 use MyInvoice\Service\Eet\EetCredentialProvider;
 use MyInvoice\Service\Eet\EetDeviceRepository;
@@ -23,6 +29,8 @@ use PDO;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Psr\Clock\ClockInterface;
+use Slim\Psr7\Factory\ServerRequestFactory;
+use Slim\Psr7\Response as Psr7Response;
 use Symfony\Component\Clock\MockClock;
 
 /**
@@ -97,6 +105,8 @@ final class EetDelegationFlowTest extends TestCase
                 'DELETE FROM eet_settings WHERE supplier_id = ?',
                 'DELETE FROM eet_devices WHERE supplier_id = ?',
                 'DELETE FROM eet_units WHERE supplier_id = ?',
+                'DELETE FROM eet_settings_history WHERE supplier_id = ?',
+                'DELETE FROM activity_log WHERE supplier_id = ?',
                 'DELETE FROM supplier WHERE id = ?',
             ] as $sql) {
                 $pdo->prepare($sql)->execute([$this->supplierId]);
@@ -217,7 +227,153 @@ final class EetDelegationFlowTest extends TestCase
         $this->command()->accept($this->supplierId, $this->userId, 'pov-same-0001', $this->sale('100', (int) $device['id']));
     }
 
+    public function testDelegatedDeviceIsNeverDefaultNorMappedToCashRegister(): void
+    {
+        $device = $this->delegatedDevice();
+        try {
+            $this->container->get(EetSettingsService::class)->update($this->supplierId, ['default_device_id' => (int) $device['id']], $this->userId);
+            self::fail('Zařízení v pověření prošlo jako výchozí.');
+        } catch (EetException $e) {
+            self::assertSame('default_device_id', $e->details['field'] ?? null);
+        }
+
+        $registerId = $this->register();
+        try {
+            $this->devices()->update($this->supplierId, (int) $device['id'], ['cash_register_id' => $registerId]);
+            self::fail('Zařízení v pověření šlo přiřadit pokladně.');
+        } catch (EetException $e) {
+            self::assertSame('cash_register_id', $e->details['field'] ?? null);
+        }
+
+        try {
+            $this->devices()->update($this->supplierId, $this->defaultDeviceId, ['delegation' => 'single', 'delegating_eic' => self::DELEGATOR]);
+            self::fail('Výchozí zařízení šlo přepnout na pověření.');
+        } catch (EetException $e) {
+            self::assertSame('delegation', $e->details['field'] ?? null);
+        }
+    }
+
+    public function testDelegatedDefaultDeviceIsNotUsedWithoutExplicitChoice(): void
+    {
+        $device = $this->delegatedDevice();
+        // Stav mimo validaci (starší data, souběh): výchozí zařízení eviduje v pověření.
+        $this->db->pdo()->prepare('UPDATE eet_settings SET default_device_id = ? WHERE supplier_id = ?')
+            ->execute([(int) $device['id'], $this->supplierId]);
+
+        try {
+            $this->command()->accept($this->supplierId, $this->userId, 'pov-default-0001', $this->sale('100', null));
+            self::fail('Vlastní tržba odešla přes výchozí zařízení v pověření.');
+        } catch (EetCommandException $e) {
+            self::assertSame('device_id', $e->extra['field'] ?? null);
+        }
+        self::assertSame(0, (int) $this->scalar('SELECT COUNT(*) FROM eet_records WHERE supplier_id = ?', [$this->supplierId]));
+
+        $explicit = $this->command()->accept($this->supplierId, $this->userId, 'pov-default-0002', $this->sale('100', (int) $device['id']));
+        self::assertSame(self::DELEGATOR, $this->record((int) $explicit['eet']['record_id'])['delegating_eic']);
+    }
+
+    public function testTaxpayerEicCannotBecomeTheDelegatorOfADevice(): void
+    {
+        $device = $this->delegatedDevice();
+        try {
+            $this->container->get(EetSettingsService::class)->update($this->supplierId, ['eic' => strtolower(self::DELEGATOR)], $this->userId);
+            self::fail('EIČ firmy šlo změnit na EIČ pověřujícího.');
+        } catch (EetException $e) {
+            self::assertSame(422, $e->httpStatus);
+            self::assertSame(['eic', [(string) $device['code']]], [$e->details['field'] ?? null, $e->details['devices'] ?? null]);
+        }
+        self::assertSame(self::TAXPAYER, $this->scalar('SELECT eic FROM eet_settings WHERE supplier_id = ?', [$this->supplierId]));
+    }
+
+    public function testDeviceAuditKeepsPreviousAndNewDelegation(): void
+    {
+        $device = $this->delegatedDevice();
+        $request = (new ServerRequestFactory())->createServerRequest('PATCH', '/api/eet/devices/' . $device['id'])
+            ->withAttribute(SupplierScopeMiddleware::ATTR_CURRENT_ID, $this->supplierId)
+            ->withAttribute(AuthMiddleware::ATTR_USER, ['id' => $this->userId, 'role' => 'admin'])
+            ->withParsedBody(['delegation' => 'multiple', 'delegating_eic' => 'CZ8551015704']);
+        $response = $this->container->get(EetDevicesAction::class)->update($request, new Psr7Response(), ['id' => (string) $device['id']]);
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getBody());
+
+        $payload = json_decode((string) $this->scalar(
+            "SELECT payload FROM activity_log WHERE supplier_id = ? AND action = 'eet_device_update' ORDER BY id DESC LIMIT 1",
+            [$this->supplierId],
+        ), true);
+        self::assertSame(['single', self::DELEGATOR], [$payload['old']['delegation'] ?? null, $payload['old']['delegating_eic'] ?? null]);
+        self::assertSame(['multiple', 'CZ8551015704'], [$payload['new']['delegation'] ?? null, $payload['new']['delegating_eic'] ?? null]);
+    }
+
+    public function testDatabaseRejectsMalformedDelegationValues(): void
+    {
+        $pdo = $this->db->pdo();
+        foreach ([
+            ["UPDATE eet_devices SET delegation = 'multiple', delegating_eic = '' WHERE id = ?", [$this->defaultDeviceId]],
+            ["UPDATE eet_devices SET delegation = 'single', delegating_eic = 'cz00000019' WHERE id = ?", [$this->defaultDeviceId]],
+        ] as [$sql, $params]) {
+            try {
+                $pdo->prepare($sql)->execute($params);
+                self::fail('Databáze přijala neplatné EIČ pověřujícího: ' . $sql);
+            } catch (\PDOException $e) {
+                self::assertStringContainsString('chk_eet_device_delegating_eic', $e->getMessage());
+            }
+        }
+        $result = $this->command()->accept($this->supplierId, $this->userId, 'pov-db-0001', $this->sale('100', null));
+        try {
+            $pdo->prepare('UPDATE eet_records SET multiple_delegators = 2 WHERE id = ?')->execute([(int) $result['eet']['record_id']]);
+            self::fail('Databáze přijala multiple_delegators = 2.');
+        } catch (\PDOException $e) {
+            self::assertStringContainsString('chk_eet_records_multiple_delegators', $e->getMessage());
+        }
+    }
+
+    public function testExternalRecordKeepsDelegationAndItsCorrectionToo(): void
+    {
+        $body = [
+            'amount' => '200.00', 'eet_context' => 'external',
+            'external_eet' => [
+                'eic' => self::TAXPAYER, 'id_jednotky' => 555002, 'id_pokl' => '5/5583', 'porad_cis' => '22',
+                'dat_trzby' => '2026-11-02T09:32:01+01:00', 'celk_trzba' => '200.00',
+                'eic_poverujiciho' => 'cz8551015704', 'povereni_vice_popl' => 'true',
+            ],
+        ];
+        $result = $this->command()->accept($this->supplierId, $this->userId, 'pov-ext-0001', $body);
+        $record = $this->row("SELECT id, delegating_eic, multiple_delegators FROM eet_records WHERE supplier_id = ? AND status = 'external'", [$this->supplierId]);
+        self::assertSame(['CZ8551015704', 1], [$record['delegating_eic'], (int) $record['multiple_delegators']]);
+        self::assertNotEmpty($result);
+
+        $this->container->get(EetCorrectionService::class)->create(
+            $this->supplierId, $this->userId, (int) $record['id'], 'pov-ext-corr-0001', ['amount' => '50', 'reason' => 'refund'],
+        );
+        $correction = $this->row("SELECT delegating_eic, multiple_delegators FROM eet_records WHERE supplier_id = ? AND kind = 'correction'", [$this->supplierId]);
+        self::assertSame(['CZ8551015704', 1], [$correction['delegating_eic'], (int) $correction['multiple_delegators']]);
+
+        $body['external_eet']['porad_cis'] = '23';
+        $body['external_eet']['eic_poverujiciho'] = self::TAXPAYER;
+        try {
+            $this->command()->accept($this->supplierId, $this->userId, 'pov-ext-0002', $body);
+            self::fail('Externí tržba s pověřujícím shodným s poplatníkem prošla.');
+        } catch (EetCommandException $e) {
+            self::assertSame('external_eet.eic_poverujiciho', $e->extra['field'] ?? null);
+        }
+    }
+
     // ── pomocníci ───────────────────────────────────────────────────────────
+
+    /** @return array<string,mixed> */
+    private function delegatedDevice(): array
+    {
+        return $this->devices()->create($this->supplierId, [
+            'unit_id' => $this->unitId, 'code' => $this->code(), 'name' => 'Pověření', 'delegation' => 'single', 'delegating_eic' => self::DELEGATOR,
+        ]);
+    }
+
+    private function register(): int
+    {
+        if ((int) $this->scalar('SELECT COUNT(*) FROM chart_of_accounts WHERE supplier_id = ?', [$this->supplierId]) === 0) {
+            $this->container->get(ChartOfAccountsSeeder::class)->seedForSupplier($this->supplierId);
+        }
+        return $this->container->get(CashRegisterService::class)->create($this->supplierId, ['name' => 'Pokladna', 'account_code' => '211', 'is_default' => true]);
+    }
 
     private function command(): EetPaymentCommand
     {

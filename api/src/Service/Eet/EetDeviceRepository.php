@@ -171,14 +171,53 @@ final class EetDeviceRepository
             throw EetException::validation('Příznak aktivního zařízení musí být true/false.', ['field' => 'active']);
         }
 
+        $delegation = $this->delegation($supplierId, $pick);
+        // Zařízení v pověření dostává tržby jen výslovnou volbou: pokladna ho nevybere
+        // automaticky a nesmí být výchozím zařízením firmy.
+        if ($delegation->isDelegated()) {
+            if ($cashRegisterId !== null) {
+                throw EetException::validation(
+                    'Zařízení s evidencí v pověření nelze přiřadit pokladně: tržby z jejích dokladů by se tiše evidovaly v pověření.',
+                    ['field' => 'cash_register_id'],
+                );
+            }
+            if ($current !== null && $this->isDefault($supplierId, (int) $current['id'])) {
+                throw EetException::validation(
+                    'Výchozí zařízení firmy nemůže evidovat v pověření. Nejdřív nastavte jiné výchozí zařízení.',
+                    ['field' => 'delegation'],
+                );
+            }
+        }
+
         return [
             'unit_id' => $unitId,
             'code' => $code,
             'name' => $name,
             'cash_register_id' => $cashRegisterId,
-            'delegation' => $this->delegation($supplierId, $pick),
+            'delegation' => $delegation,
             'active' => $active,
         ];
+    }
+
+    private function isDefault(int $supplierId, int $deviceId): bool
+    {
+        $stmt = $this->db->pdo()->prepare('SELECT 1 FROM eet_settings WHERE supplier_id = ? AND default_device_id = ?');
+        $stmt->execute([$supplierId, $deviceId]);
+        return $stmt->fetchColumn() !== false;
+    }
+
+    /**
+     * Kódy zařízení, u kterých je dané EIČ pověřujícím poplatníkem.
+     *
+     * @return list<string>
+     */
+    public function codesDelegatedBy(int $supplierId, string $eic): array
+    {
+        $stmt = $this->db->pdo()->prepare(
+            "SELECT code FROM eet_devices WHERE supplier_id = ? AND delegation <> 'none' AND delegating_eic = ? ORDER BY code"
+        );
+        $stmt->execute([$supplierId, $eic]);
+        return array_map('strval', $stmt->fetchAll(\PDO::FETCH_COLUMN));
     }
 
     /**

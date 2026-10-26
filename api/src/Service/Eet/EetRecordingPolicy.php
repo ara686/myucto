@@ -80,7 +80,7 @@ final class EetRecordingPolicy
             return new EetPolicyDecision(EetPolicyDecision::UNSUPPORTED, $in->businessPurpose,
                 self::UNSUPPORTED_PURPOSES[$in->businessPurpose]);
         }
-        $violation = $in->delegation()->violation(isset($in->settings['eic']) ? (string) $in->settings['eic'] : null);
+        $violation = $in->delegation->violation(isset($in->settings['eic']) ? (string) $in->settings['eic'] : null);
         if ($violation !== null) {
             return new EetPolicyDecision(EetPolicyDecision::UNKNOWN, 'delegation_invalid',
                 $violation['message'] . ' Opravte pověření v nastavení pokladního zařízení EET.');

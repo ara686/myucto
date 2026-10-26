@@ -97,4 +97,23 @@ describe('pověření pokladního zařízení EET', () => {
 
     expect(m.updateDevice).toHaveBeenCalledWith(5, expect.objectContaining({ delegation: 'none', delegating_eic: null }))
   })
+
+  it('zařízení v pověření nejde nastavit jako výchozí ani přiřadit pokladně', async () => {
+    m.listRegisters.mockResolvedValue([{ id: 9, name: 'Pokladna', account_code: '211', is_active: true }])
+    m.devices.mockResolvedValue([device({ id: 5, cash_register_id: 9 }), device({ id: 6, code: 'POK-2', delegation: 'single', delegating_eic: 'CZ00000019' })])
+    const wrapper = await render()
+    const defaults = wrapper.find('[data-test="eet-devices"]').findAll('button').filter(b => b.text().includes('eet.devices.make_default'))
+    // Desktop a mobilní řádek: výchozím jde udělat jen zařízení bez pověření.
+    expect(defaults).toHaveLength(2)
+
+    const edit = wrapper.find('[data-test="eet-devices"]').findAll('button').find(b => b.text().includes('common.edit'))
+    await edit!.trigger('click')
+    expect(wrapper.find('[data-test="eet-device-register"]').exists()).toBe(true)
+    await wrapper.find('[data-test="eet-device-delegation"]').setValue('multiple')
+    expect(wrapper.find('[data-test="eet-device-register"]').exists()).toBe(false)
+    await saveButton(wrapper).trigger('click')
+    await flushPromises()
+
+    expect(m.updateDevice).toHaveBeenCalledWith(5, expect.objectContaining({ delegation: 'multiple', cash_register_id: null }))
+  })
 })

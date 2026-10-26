@@ -39185,7 +39185,8 @@
       "delegating_eic": "Authorising taxpayer EIČ",
       "delegating_eic_optional": "Authorising taxpayer EIČ (optional)",
       "delegating_eic_hint": "CZ followed by 8 to 10 digits, must differ from the company EIČ. With several taxpayers the Financial Administration recommends it when the sale is not the company income.",
-      "delegation_badge_single": "Authorised by {eic}"
+      "delegation_badge_single": "Authorised by {eic}",
+      "delegation_scope_note": "A device with authorisation cannot be the default one or be linked to a cash register; sales go to it only when it is chosen explicitly."
     },
     "certificates": {
       "title": "Cash certificates",

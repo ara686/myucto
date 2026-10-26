@@ -599,7 +599,7 @@ final class QuickReceiptService
     }
 
     /**
-     * Zařízení EET: zadané (musí patřit firmě), jinak výchozí aktivní zařízení firmy.
+     * Zařízení EET: zadané (musí patřit firmě), jinak výchozí aktivní zařízení firmy bez pověření.
      *
      * @param array<string,mixed> $settings
      * @return array{id:int, cash_register_id:?int}|null
@@ -611,10 +611,11 @@ final class QuickReceiptService
         if ($deviceId === null) {
             return null;
         }
-        $stmt = $this->db->pdo()->prepare('SELECT id, cash_register_id, active FROM eet_devices WHERE id = ? AND supplier_id = ?');
+        $stmt = $this->db->pdo()->prepare('SELECT id, cash_register_id, active, delegation FROM eet_devices WHERE id = ? AND supplier_id = ?');
         $stmt->execute([$deviceId, $supplierId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        if ($row === false || (!$explicit && (int) $row['active'] !== 1)) {
+        // Výchozí zařízení v pověření se nepoužije: tržba v pověření jen výslovnou volbou.
+        if ($row === false || (!$explicit && ((int) $row['active'] !== 1 || (string) $row['delegation'] !== 'none'))) {
             if ($explicit) {
                 throw new QuickReceiptException('device_not_found', 'Pokladní zařízení nenalezeno.', 404, ['field' => 'device_id']);
             }

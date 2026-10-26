@@ -40,7 +40,7 @@ final class EetRecordFactory
      *              credit_topup_amount?:?string, credit_draw_amount?:?string,
      *              corrects_record_id?:?int, correction_reason?:?string,
      *              policy_decision?:?string, policy_reason?:?string, created_by?:?int,
-     *              delegation?:?EetDelegation, now?:?\DateTimeImmutable} $input
+     *              delegation?:?EetDelegation, device_field?:string, now?:?\DateTimeImmutable} $input
      * @return array{id:int, public_id:string, sequence_number:string, unit_id:int, device_id:int}
      * @throws EetCommandException
      */
@@ -61,23 +61,35 @@ final class EetRecordFactory
         }
 
         $saleAt = EetValues::local($input['sale_at']);
+        // Pole chyb zařízení podle volajícího (platba device_id, pokladní doklad eet_device_id).
+        $field = (string) ($input['device_field'] ?? 'device_id');
+        $explicitDevice = (int) ($input['device_id'] ?? 0) > 0;
         $deviceId = (int) ($input['device_id'] ?? 0) ?: (int) ($settings['default_device_id'] ?? 0);
         if ($deviceId <= 0) {
             throw EetCommandException::notConfigured('Není zvolené pokladní zařízení EET a firma nemá výchozí zařízení.');
         }
-        $device = $this->lockDevice($supplierId, $deviceId);
+        $device = $this->lockDevice($supplierId, $deviceId, $field);
         $day = $saleAt->format('Y-m-d');
         if ((int) $device['active'] !== 1) {
-            throw EetCommandException::validation('Pokladní zařízení EET není aktivní.', 'device_id');
+            throw EetCommandException::validation('Pokladní zařízení EET není aktivní.', $field);
         }
         if ((string) $device['valid_from'] > $day || ($device['valid_to'] !== null && (string) $device['valid_to'] < $day)) {
-            throw EetCommandException::validation('Provozovna (evidenční jednotka) zařízení není k času tržby platná.', 'device_id');
+            throw EetCommandException::validation('Provozovna (evidenční jednotka) zařízení není k času tržby platná.', $field);
         }
 
-        $delegation = ($input['delegation'] ?? null) instanceof EetDelegation ? $input['delegation'] : EetDelegation::fromDevice($device);
+        $override = ($input['delegation'] ?? null) instanceof EetDelegation ? $input['delegation'] : null;
+        $delegation = $override ?? EetDelegation::fromDevice($device);
+        // Tržba v pověření jen na výslovně zvolené zařízení: výchozí zařízení dostává
+        // vlastní tržby bez volby obsluhy (oprava nese pověření původní tržby).
+        if ($override === null && !$explicitDevice && $delegation->isDelegated()) {
+            throw EetCommandException::validation(
+                'Výchozí zařízení eviduje v pověření a vlastní tržba by tiše odešla jako tržba v pověření. Zvolte zařízení výslovně.',
+                $field,
+            );
+        }
         $violation = $delegation->violation($eic);
         if ($violation !== null) {
-            throw EetCommandException::validation($violation['message'] . ' Opravte pověření v nastavení pokladního zařízení EET.', 'device_id');
+            throw EetCommandException::validation($violation['message'] . ' Opravte pověření v nastavení pokladního zařízení EET.', $field);
         }
 
         $saleYear = (int) $saleAt->format('Y');
@@ -146,7 +158,7 @@ final class EetRecordFactory
      * u firmy jedinečná (`external_key`).
      *
      * @param array{sale_at:\DateTimeImmutable, total_amount:string, eic?:?string, unit_number?:?int,
-     *              device_code?:?string, sequence_number?:?string, pok?:?string, external_key?:?string,
+     *              device_code?:?string, sequence_number?:?string, pok?:?string, external_key?:?string, delegation?:?EetDelegation,
      *              policy_reason?:?string, created_by?:?int, now?:?\DateTimeImmutable} $input
      * @param array<string,mixed> $settings řádek eet_settings
      * @return array{id:int, public_id:string}
@@ -169,15 +181,20 @@ final class EetRecordFactory
         if ($cents === 0 || abs($cents) > EetValues::MAX_ABS_CENTS) {
             throw EetCommandException::validation('Částka tržby musí být nenulová a v absolutní hodnotě pod 100 milionů Kč.', 'amount');
         }
+        $delegation = ($input['delegation'] ?? null) instanceof EetDelegation ? $input['delegation'] : EetDelegation::none();
+        if (($violation = $delegation->violation($eic)) !== null) {
+            throw EetCommandException::validation($violation['message'], 'external_eet.eic_poverujiciho');
+        }
         $publicId = EetValues::uuid4();
         $pdo->prepare(
             "INSERT INTO eet_records
-               (public_id, supplier_id, payment_event_id, kind, environment, eic, unit_id, unit_number, device_id, device_code,
-                sequence_number, external_key, sale_at, sale_at_offset, total_amount, policy_decision, policy_reason, policy_version,
-                status, deadline_at, overdue, next_attempt_at, pok, created_by)
-             VALUES (?, ?, ?, 'sale', ?, ?, NULL, ?, NULL, ?, ?, ?, ?, ?, ?, 'external', ?, ?, 'external', ?, 0, NULL, ?, ?)"
+               (public_id, supplier_id, payment_event_id, kind, environment, eic, delegating_eic, multiple_delegators, unit_id, unit_number,
+                device_id, device_code, sequence_number, external_key, sale_at, sale_at_offset, total_amount, policy_decision, policy_reason,
+                policy_version, status, deadline_at, overdue, next_attempt_at, pok, created_by)
+             VALUES (?, ?, ?, 'sale', ?, ?, ?, ?, NULL, ?, NULL, ?, ?, ?, ?, ?, ?, 'external', ?, ?, 'external', ?, 0, NULL, ?, ?)"
         )->execute([
             $publicId, $supplierId, $paymentEventId, $environment, $eic,
+            $delegation->delegatingEic, $delegation->multipleDelegators() ? 1 : 0,
             $input['unit_number'] ?? null, $input['device_code'] ?? null, $input['sequence_number'] ?? null, $input['external_key'] ?? null,
             EetValues::dbSecond($saleAt), $saleAt->format('P'), $total,
             $input['policy_reason'] ?? 'external_system', EetRecordingPolicy::VERSION,
@@ -216,7 +233,7 @@ final class EetRecordFactory
      * @return array<string,mixed>
      * @throws EetCommandException
      */
-    private function lockDevice(int $supplierId, int $deviceId): array
+    private function lockDevice(int $supplierId, int $deviceId, string $field = 'device_id'): array
     {
         $stmt = $this->db->pdo()->prepare(
             'SELECT d.id, d.unit_id, d.code, d.active, d.sequence_year, d.next_sequence, d.delegation, d.delegating_eic,
@@ -229,7 +246,7 @@ final class EetRecordFactory
         $stmt->execute([$deviceId, $supplierId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         if ($row === false) {
-            throw EetCommandException::validation('Pokladní zařízení EET nenalezeno.', 'device_id');
+            throw EetCommandException::validation('Pokladní zařízení EET nenalezeno.', $field);
         }
         return $row;
     }

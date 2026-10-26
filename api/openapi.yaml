@@ -33897,6 +33897,8 @@ components:
         porad_cis: { type: string, pattern: '^[0-9a-zA-Z.,:;/#\-_ ]{1,25}$' }
         dat_trzby: { type: string, format: date-time, description: 'RRRR-MM-DDThh:mm:ss s časovou zónou, ne v budoucnosti' }
         celk_trzba: { type: string, description: Celková částka tržby v Kč (kladná) }
+        eic_poverujiciho: { type: string, pattern: '^CZ[0-9]{8,10}$', description: EIČ pověřujícího poplatníka u tržby evidované v pověření (nesmí se shodovat s EIČ firmy) }
+        povereni_vice_popl: { type: boolean, description: Pověření více poplatníky; uvádí se jen hodnota true }
     InvoicePaymentEetResult:
       type: object
       additionalProperties: true

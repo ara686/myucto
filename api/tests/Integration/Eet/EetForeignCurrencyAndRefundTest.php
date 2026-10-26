@@ -14,6 +14,7 @@ use MyInvoice\Middleware\AuthMiddleware;
 use MyInvoice\Middleware\SupplierScopeMiddleware;
 use MyInvoice\Service\Accounting\Bank\BankPostingService;
 use MyInvoice\Service\Accounting\Cash\CashDocumentService;
+use MyInvoice\Service\Accounting\Cash\CashException;
 use MyInvoice\Service\Accounting\Cash\CashRegisterService;
 use MyInvoice\Service\Accounting\ChartOfAccountsSeeder;
 use MyInvoice\Service\Currency\CnbExchangeRateClient;
@@ -345,6 +346,94 @@ final class EetForeignCurrencyAndRefundTest extends TestCase
         self::assertSame('issued', $this->scalar('SELECT status FROM invoices WHERE id = ?', [$creditNoteId]));
     }
 
+    /**
+     * Storno vrácení k tržbě v pověření: kladná tržba vrací opravy, takže nese jejich
+     * pověření, i když jde přes zařízení pokladny bez pověření.
+     */
+    public function testRefundVoucherReversalKeepsDelegationOfTheCorrections(): void
+    {
+        $this->stubRates([]);
+        $delegated = $this->delegatedDevice();
+        $invoiceId = $this->invoice(1210);
+        $this->command()->accept($this->supplierId, $this->userId, 'pov-paid-01', [
+            'invoice_id' => $invoiceId, 'amount' => '1210', 'channel' => 'cash', 'contact_context' => 'in_person', 'device_id' => $delegated,
+        ]);
+        $creditNoteId = $this->invoice(-1210, 'credit_note', $invoiceId);
+        $registerId = $this->mappedRegister();
+        $service = $this->container->get(CashDocumentService::class);
+        $created = $service->create($this->supplierId, $this->refundVoucher($registerId, $creditNoteId, 1210), $this->userId);
+        $this->clock->modify('+1 hour');
+        $service->reverse($this->supplierId, (int) $created['id'], ['reason' => 'Vráceno omylem'], $this->userId);
+
+        $rows = $this->db->pdo()->prepare(
+            'SELECT kind, total_amount, delegating_eic, device_id, policy_reason FROM eet_records WHERE supplier_id = ? ORDER BY id'
+        );
+        $rows->execute([$this->supplierId]);
+        $records = $rows->fetchAll(PDO::FETCH_ASSOC);
+        self::assertCount(3, $records);
+        self::assertSame(['correction', '-1210.00', 'CZ683555118'], [$records[1]['kind'], $records[1]['total_amount'], $records[1]['delegating_eic']]);
+        self::assertSame(['sale', '1210.00', 'CZ683555118', $this->deviceId, 'refund_reversal'], [
+            $records[2]['kind'], $records[2]['total_amount'], $records[2]['delegating_eic'], (int) $records[2]['device_id'], $records[2]['policy_reason'],
+        ]);
+    }
+
+    /** Vrácení opravilo tržby různého pověření: jedna kladná tržba je nevrátí, storno se odmítne. */
+    public function testRefundVoucherReversalWithMixedDelegationIsRefused(): void
+    {
+        $this->stubRates([]);
+        $delegated = $this->delegatedDevice();
+        $invoiceId = $this->invoice(1000);
+        $this->command()->accept($this->supplierId, $this->userId, 'pov-mix-01', [
+            'invoice_id' => $invoiceId, 'amount' => '600', 'channel' => 'cash', 'contact_context' => 'in_person', 'device_id' => $delegated,
+        ]);
+        $this->clock->modify('+1 minute');
+        $this->command()->accept($this->supplierId, $this->userId, 'pov-mix-02', [
+            'invoice_id' => $invoiceId, 'amount' => '400', 'channel' => 'cash', 'contact_context' => 'in_person',
+        ]);
+        $creditNoteId = $this->invoice(-1000, 'credit_note', $invoiceId);
+        $registerId = $this->mappedRegister();
+        $service = $this->container->get(CashDocumentService::class);
+        $created = $service->create($this->supplierId, $this->refundVoucher($registerId, $creditNoteId, 1000), $this->userId);
+        self::assertSame(2, (int) $this->scalar("SELECT COUNT(*) FROM eet_records WHERE supplier_id = ? AND kind = 'correction'", [$this->supplierId]));
+
+        try {
+            $service->reverse($this->supplierId, (int) $created['id'], ['reason' => 'Vráceno omylem'], $this->userId);
+            self::fail('Storno oprav různého pověření prošlo jednou tržbou.');
+        } catch (CashException $e) {
+            self::assertSame('eet_device_id', $e->extra['field'] ?? null);
+        }
+        self::assertSame(0, (int) $this->scalar("SELECT COUNT(*) FROM eet_records WHERE supplier_id = ? AND policy_reason = 'refund_reversal'", [$this->supplierId]));
+    }
+
+    /**
+     * Příjmový doklad pokladny jde na zařízení pokladny bez pověření; zařízení v pověření
+     * přiřazené pokladně mimo validaci se automaticky nevybere. Chyba zařízení při
+     * zaúčtování dokladu nese pole volajícího (`eet_device_id`).
+     */
+    public function testCashIncomeNeverPicksDelegatedDeviceImplicitly(): void
+    {
+        $this->stubRates([]);
+        $delegated = $this->delegatedDevice();
+        $registerId = $this->mappedRegister();
+        // Stav mimo validaci: zařízení v pověření je přiřazené pokladně a má nižší id než zařízení pokladny.
+        $this->db->pdo()->prepare('UPDATE eet_devices SET cash_register_id = ? WHERE id = ?')->execute([$registerId, $delegated]);
+        $this->db->pdo()->prepare('UPDATE eet_devices SET cash_register_id = NULL WHERE id = ?')->execute([$this->deviceId]);
+
+        $service = $this->container->get(CashDocumentService::class);
+        $service->create($this->supplierId, $this->incomeVoucher($registerId, 300), $this->userId);
+        $record = $this->row('SELECT device_id, delegating_eic FROM eet_records WHERE supplier_id = ?', [$this->supplierId]);
+        self::assertSame([$this->deviceId, null], [(int) $record['device_id'], $record['delegating_eic']]);
+
+        // Výslovně zvolené zařízení v pověření s EIČ shodným s firmou: chyba míří na eet_device_id.
+        $this->db->pdo()->prepare("UPDATE eet_settings SET eic = 'CZ683555118' WHERE supplier_id = ?")->execute([$this->supplierId]);
+        try {
+            $service->create($this->supplierId, $this->incomeVoucher($registerId, 200) + ['eet_device_id' => $delegated], $this->userId);
+            self::fail('Tržba s pověřujícím shodným s poplatníkem prošla.');
+        } catch (CashException $e) {
+            self::assertSame('eet_device_id', $e->extra['field'] ?? null);
+        }
+    }
+
     /** Firma bez aktivní EET: vrácení k dobropisu beze změny chování. */
     public function testCompanyWithoutEetKeepsCreditNoteRefundUnchanged(): void
     {
@@ -394,6 +483,22 @@ final class EetForeignCurrencyAndRefundTest extends TestCase
     {
         return ['register_id' => $registerId, 'doc_type' => 'out', 'purpose' => 'invoice_payment', 'invoice_id' => $creditNoteId,
             'issue_date' => self::DAY, 'description' => 'Vrácení k dobropisu', 'total_amount' => $amount];
+    }
+
+    /** @return array<string,mixed> */
+    private function incomeVoucher(int $registerId, float $amount): array
+    {
+        return ['register_id' => $registerId, 'doc_type' => 'in', 'purpose' => 'sale',
+            'issue_date' => self::DAY, 'description' => 'Prodej za hotové', 'total_amount' => $amount];
+    }
+
+    /** Zařízení pověřené poplatníkem CZ683555118 (situace 4), bez pokladny a ne výchozí. */
+    private function delegatedDevice(): int
+    {
+        $unitId = (int) $this->scalar('SELECT unit_id FROM eet_devices WHERE id = ?', [$this->deviceId]);
+        $this->db->pdo()->prepare("INSERT INTO eet_devices (supplier_id, unit_id, code, name, delegation, delegating_eic) VALUES (?, ?, ?, 'Pověření', 'single', 'CZ683555118')")
+            ->execute([$this->supplierId, $unitId, 'D' . substr(bin2hex(random_bytes(6)), 0, 10)]);
+        return (int) $this->db->pdo()->lastInsertId();
     }
 
     /** @return list<array<string,mixed>> */

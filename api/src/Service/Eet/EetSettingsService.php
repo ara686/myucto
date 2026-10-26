@@ -232,6 +232,15 @@ final class EetSettingsService
                 if (!EetIdentifiers::isEic($eic)) {
                     throw EetException::validation('DIČ poplatníka (EIČ) má tvar CZ a 8 až 10 číslic.', ['field' => 'eic']);
                 }
+                // EIČ pověřujícího se nesmí shodovat s EIČ poplatníka (metodika, kap. 3).
+                $conflicts = $eic !== $current['eic'] ? $this->devices->codesDelegatedBy($supplierId, $eic) : [];
+                if ($conflicts !== []) {
+                    throw EetException::validation(
+                        'Nové EIČ firmy je EIČ pověřujícího u zařízení ' . implode(', ', $conflicts)
+                        . '. Nejdřív u nich pověření opravte.',
+                        ['field' => 'eic', 'devices' => $conflicts],
+                    );
+                }
                 $next['eic'] = $eic;
             }
         }
@@ -283,6 +292,14 @@ final class EetSettingsService
                 $device = is_int($deviceId) && $deviceId > 0 ? $this->devices->find($supplierId, $deviceId) : null;
                 if ($device === null || !$device['active']) {
                     throw EetException::validation('Výchozí zařízení musí být aktivní zařízení této firmy.', ['field' => 'default_device_id']);
+                }
+                // Výchozí zařízení dostávají tržby bez výslovné volby; vlastní tržby nesmí
+                // tiše odejít jako tržby v pověření.
+                if ($device['delegation'] !== EetDelegation::NONE) {
+                    throw EetException::validation(
+                        'Zařízení s evidencí v pověření nemůže být výchozí. Tržby v pověření se evidují jen na výslovně zvolené zařízení.',
+                        ['field' => 'default_device_id'],
+                    );
                 }
                 $next['default_device_id'] = $deviceId;
             }

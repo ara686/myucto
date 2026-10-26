@@ -8,8 +8,9 @@ namespace MyInvoice\Service\Eet;
  * Vstup politiky evidence. Klientské tvrzení „evidovat / neevidovat" sem záměrně
  * nevede: povinnost určuje server z okolností platby a profilu firmy.
  *
- * Pověření (`delegatingEic`, `multipleDelegators`) je nastavení pokladního zařízení,
- * ne tvrzení klienta: volající ho předává ze zařízení, přes které tržba půjde.
+ * Pověření (`delegation`) je nastavení pokladního zařízení, ne tvrzení klienta:
+ * volající ho předává celé ze zařízení, přes které tržba půjde, aby politika
+ * poznala i druh pověření bez EIČ (situace 4 bez povinného EIČ pověřujícího).
  */
 final class EetPolicyInput
 {
@@ -33,13 +34,6 @@ final class EetPolicyInput
         public readonly string $amount = '0.00',
         public readonly string $origin = 'api',
         public readonly string $kind = 'payment',
-        public readonly ?string $delegatingEic = null,
-        public readonly bool $multipleDelegators = false,
+        public readonly EetDelegation $delegation = new EetDelegation(EetDelegation::NONE),
     ) {}
-
-    /** Pověření zařízení, přes které se tržba eviduje ({@see EetDelegation}). */
-    public function delegation(): EetDelegation
-    {
-        return EetDelegation::fromItems($this->delegatingEic, $this->multipleDelegators);
-    }
 }

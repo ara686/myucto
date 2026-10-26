@@ -291,7 +291,7 @@ async function saveDevice() {
   try {
     const payload = {
       unit_id: f.unit_id, code: f.code.trim(), name: f.name.trim() === '' ? null : f.name.trim(),
-      cash_register_id: f.cash_register_id, active: f.active,
+      cash_register_id: f.delegation === 'none' ? f.cash_register_id : null, active: f.active,
       delegation: f.delegation,
       delegating_eic: f.delegation === 'none' || f.delegating_eic.trim() === '' ? null : f.delegating_eic.trim().toUpperCase(),
     }
@@ -753,7 +753,7 @@ const th = 'px-3 py-2 text-left font-medium'
                   </td>
                   <td v-if="canWrite" class="px-3 py-2">
                     <div class="flex flex-wrap justify-end gap-1">
-                      <button v-if="d.active && settings.default_device_id !== d.id" type="button" :class="btnOutlineSm('success')" @click="setDefaultDevice(d)">
+                      <button v-if="d.active && d.delegation === 'none' && settings.default_device_id !== d.id" type="button" :class="btnOutlineSm('success')" @click="setDefaultDevice(d)">
                         <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" :d="ICONS.check" /></svg>
                         {{ t('eet.devices.make_default') }}
                       </button>
@@ -784,7 +784,7 @@ const th = 'px-3 py-2 text-left font-medium'
               <div v-if="d.cash_register_id !== null" class="text-xs text-neutral-600">{{ t('eet.devices.register') }}: {{ registerLabel(d.cash_register_id) }}</div>
               <div v-if="d.delegation !== 'none'"><span :class="[BADGE, BADGE_CLASS.info]">{{ delegationBadge(d) }}</span></div>
               <div v-if="canWrite" class="flex flex-wrap gap-1">
-                <button v-if="d.active && settings.default_device_id !== d.id" type="button" :class="btnOutlineSm('success')" @click="setDefaultDevice(d)">
+                <button v-if="d.active && d.delegation === 'none' && settings.default_device_id !== d.id" type="button" :class="btnOutlineSm('success')" @click="setDefaultDevice(d)">
                   <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" :d="ICONS.check" /></svg>
                   {{ t('eet.devices.make_default') }}
                 </button>
@@ -1018,7 +1018,7 @@ const th = 'px-3 py-2 text-left font-medium'
           <span>{{ t('eet.devices.name') }}</span>
           <input v-model="deviceForm.name" type="text" maxlength="120" :class="formInput" />
         </label>
-        <label v-if="registers.length > 0 || deviceForm.cash_register_id !== null" :class="[formLabel, 'sm:col-span-2']">
+        <label v-if="deviceForm.delegation === 'none' && (registers.length > 0 || deviceForm.cash_register_id !== null)" :class="[formLabel, 'sm:col-span-2']">
           <span>{{ t('eet.devices.register') }}</span>
           <select v-model="deviceForm.cash_register_id" :class="formInput" data-test="eet-device-register">
             <option :value="null">{{ t('eet.devices.register_none') }}</option>
@@ -1032,6 +1032,7 @@ const th = 'px-3 py-2 text-left font-medium'
             <option v-for="mode in DELEGATION_MODES" :key="mode" :value="mode">{{ t(`eet.devices.delegation_modes.${mode}`) }}</option>
           </select>
           <span class="text-xs text-neutral-500">{{ t(`eet.devices.delegation_hints.${deviceForm.delegation}`) }}</span>
+          <span v-if="deviceForm.delegation !== 'none'" class="text-xs text-neutral-500">{{ t('eet.devices.delegation_scope_note') }}</span>
         </label>
         <label v-if="deviceForm.delegation !== 'none'" :class="[formLabel, 'sm:col-span-2']">
           <span>{{ t(deviceForm.delegation === 'single' ? 'eet.devices.delegating_eic' : 'eet.devices.delegating_eic_optional') }}</span>

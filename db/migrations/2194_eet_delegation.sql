@@ -36,3 +36,16 @@ ALTER TABLE eet_records
   ADD COLUMN IF NOT EXISTS multiple_delegators TINYINT(1) NOT NULL DEFAULT 0
     COMMENT 'povereni_vice_popl: tržba plyne více poplatníkům, kteří pověřili evidencí'
     AFTER delegating_eic;
+
+-- Formát EIČ pověřujícího (CZ + 8 až 10 číslic, nikdy prázdný řetězec) hlídá
+-- i databáze, aby se do zprávy nedostala hodnota, kterou XSD odmítne.
+ALTER TABLE eet_devices
+  ADD CONSTRAINT IF NOT EXISTS chk_eet_device_delegating_eic CHECK (
+    delegating_eic IS NULL OR delegating_eic REGEXP '^CZ[0-9]{8,10}$'
+  );
+
+ALTER TABLE eet_records
+  ADD CONSTRAINT IF NOT EXISTS chk_eet_records_delegating_eic CHECK (
+    delegating_eic IS NULL OR delegating_eic REGEXP '^CZ[0-9]{8,10}$'
+  ),
+  ADD CONSTRAINT IF NOT EXISTS chk_eet_records_multiple_delegators CHECK (multiple_delegators IN (0, 1));

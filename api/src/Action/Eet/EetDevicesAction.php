@@ -64,12 +64,13 @@ final class EetDevicesAction
         if (($invalid = $this->invalidReference($response, $supplierId, $body)) !== null) {
             return $invalid;
         }
+        $previous = $this->devices->find($supplierId, EetActionSupport::id($args));
         try {
             $device = $this->devices->update($supplierId, EetActionSupport::id($args), $body);
         } catch (EetException $exception) {
             return EetActionSupport::error($response, $exception);
         }
-        $this->audit($request, 'eet_device_update', $device, $supplierId);
+        $this->audit($request, 'eet_device_update', $device, $supplierId, $previous);
         return Json::ok($response, $device);
     }
 
@@ -99,18 +100,41 @@ final class EetDevicesAction
         return Json::error($response, 'invalid_reference', TenantReferenceGuard::message($violations), 422);
     }
 
-    /** @param array<string,mixed> $device */
-    private function audit(Request $request, string $action, array $device, int $supplierId): void
+    /**
+     * Audit zařízení. U změny nese předchozí stav (`old`), aby šlo dohledat, kdy a kdo
+     * přepnul pověření nebo EIČ pověřujícího.
+     *
+     * @param array<string,mixed> $device
+     * @param array<string,mixed>|null $previous
+     */
+    private function audit(Request $request, string $action, array $device, int $supplierId, ?array $previous = null): void
     {
+        $payload = self::auditState($device);
+        if ($previous !== null) {
+            $payload = ['old' => self::auditState($previous), 'new' => $payload];
+        }
         $this->logger->log(
             $action,
             EetActionSupport::userId($request),
             'eet_device',
             (int) $device['id'],
-            ['code' => $device['code'], 'unit_id' => $device['unit_id'], 'active' => $device['active'], 'delegation' => $device['delegation']],
+            $payload,
             null,
             null,
             $supplierId,
         );
+    }
+
+    /**
+     * @param array<string,mixed> $device
+     * @return array<string,mixed>
+     */
+    private static function auditState(array $device): array
+    {
+        return [
+            'code' => $device['code'], 'unit_id' => $device['unit_id'], 'active' => $device['active'],
+            'cash_register_id' => $device['cash_register_id'],
+            'delegation' => $device['delegation'], 'delegating_eic' => $device['delegating_eic'],
+        ];
     }
 }

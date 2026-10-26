@@ -5431,6 +5431,7 @@
                 "fk_eet_device_unit": "(supplier_id, unit_id) -> eet_units (supplier_id, id) ON UPDATE RESTRICT ON DELETE CASCADE"
             },
             "checks": {
+                "chk_eet_device_delegating_eic": "`delegating_eic` is null or `delegating_eic` regexp '^CZ[0-9]{8,10}$'",
                 "chk_eet_device_delegation": "`delegation` = 'none' and `delegating_eic` is null or `delegation` = 'single' and `delegating_eic` is not null or `delegation` = 'multiple'"
             }
         },
@@ -5502,6 +5503,8 @@
             },
             "checks": {
                 "chk_eet_records_amount": "`total_amount` > -100000000 and `total_amount` < 100000000",
+                "chk_eet_records_delegating_eic": "`delegating_eic` is null or `delegating_eic` regexp '^CZ[0-9]{8,10}$'",
+                "chk_eet_records_multiple_delegators": "`multiple_delegators` in (0,1)",
                 "warnings_json": "`warnings_json` is null or json_valid(`warnings_json`)"
             }
         },

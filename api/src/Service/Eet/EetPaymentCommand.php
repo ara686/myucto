@@ -66,7 +66,8 @@ final class EetPaymentCommand
     /** Kanály, u kterých se platba vypořádá hned (žádné bankovní ověření). */
     private const SETTLED_CHANNELS = ['cash', 'stored_value'];
 
-    private const EXTERNAL_FIELDS = ['pok', 'eic', 'id_jednotky', 'id_pokl', 'porad_cis', 'dat_trzby', 'celk_trzba'];
+    private const EXTERNAL_FIELDS = ['pok', 'eic', 'id_jednotky', 'id_pokl', 'porad_cis', 'dat_trzby', 'celk_trzba',
+        'eic_poverujiciho', 'povereni_vice_popl'];
 
     private const PAYABLE_STATUSES = ['issued', 'sent', 'reminded', 'paid'];
 
@@ -526,7 +527,7 @@ final class EetPaymentCommand
                     $decision = $this->policy->evaluate(new EetPolicyInput(
                         $settings, $orderedAt, 'qr_in_person', (string) $intent['contact_context'], 'sale',
                         (string) $intent['currency'], (string) $intent['amount'], 'payment_intent', 'payment',
-                        $delegation->delegatingEic, $delegation->multipleDelegators(),
+                        $delegation,
                     ));
                     self::assertAcceptable($decision);
 
@@ -731,6 +732,10 @@ final class EetPaymentCommand
                         'device_code' => $in['external']['id_pokl'] ?? null,
                         'sequence_number' => $in['external']['porad_cis'] ?? null,
                         'pok' => $in['external']['pok'] ?? null,
+                        'delegation' => EetDelegation::fromItems(
+                            $in['external']['eic_poverujiciho'] ?? null,
+                            ($in['external']['povereni_vice_popl'] ?? false) === true,
+                        ),
                         'external_key' => $in['external_key'],
                         'created_by' => $userId > 0 ? $userId : null,
                     ]);
@@ -887,8 +892,19 @@ final class EetPaymentCommand
                 continue;
             }
             $path = 'external_eet.' . $field;
+            if ($field === 'povereni_vice_popl') {
+                $flag = filter_var($value, FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE);
+                if ($flag === null) {
+                    throw EetCommandException::validation('Příznak pověření více poplatníky musí být true/false.', $path);
+                }
+                // Položka je relevantní jen jako true (metodika, kap. 3, situace 5).
+                if ($flag) {
+                    $external[$field] = true;
+                }
+                continue;
+            }
             $external[$field] = match ($field) {
-                'eic' => self::externalString($value, $path, static fn (string $v): bool => EetIdentifiers::isEic($v),
+                'eic', 'eic_poverujiciho' => self::externalString($value, $path, static fn (string $v): bool => EetIdentifiers::isEic($v),
                     'EIČ musí mít tvar CZ a 8 až 10 číslic.', true),
                 'id_pokl' => self::externalString($value, $path, static fn (string $v): bool => EetIdentifiers::isDeviceCode($v),
                     'Označení pokladního zařízení smí mít 1 až 20 znaků (písmena bez diakritiky, číslice, mezera a . , : ; / # - _).'),
@@ -928,6 +944,13 @@ final class EetPaymentCommand
             throw EetCommandException::validation('Datum úhrady musí být ve formátu RRRR-MM-DD.', 'paid_on');
         }
         $eic = $external['eic'] ?? $firmEic;
+        // Pověření externí evidence se převezme do záznamu, aby oprava tržby (vratka přes
+        // MyÚčto) nesla stejné pověření jako tržba, kterou opravuje.
+        $violation = EetDelegation::fromItems($external['eic_poverujiciho'] ?? null, ($external['povereni_vice_popl'] ?? false) === true)
+            ->violation($eic !== '' ? $eic : null);
+        if ($violation !== null) {
+            throw EetCommandException::validation($violation['message'], 'external_eet.eic_poverujiciho');
+        }
         return [
             'amount' => $amount,
             'currency' => $currency,
@@ -1101,8 +1124,7 @@ final class EetPaymentCommand
             $in['amount'],
             $in['invoice_id'] !== null ? 'invoice_payment' : 'quick_sale',
             $kind,
-            $delegation->delegatingEic,
-            $delegation->multipleDelegators(),
+            $delegation,
         ));
     }
 
@@ -1179,6 +1201,7 @@ final class EetPaymentCommand
             throw EetCommandException::validation(
                 'Pověření jiného poplatníka se nastavuje u pokladního zařízení EET. Zvolte zařízení s pověřením (device_id).',
                 'delegating_eic',
+                ['reason_code' => 'delegation_requires_device'],
             );
         }
         $invoiceId = self::positiveInt($input['invoice_id'] ?? null, 'invoice_id', false);

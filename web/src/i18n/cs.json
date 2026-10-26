@@ -39185,7 +39185,8 @@
       "delegating_eic": "EIČ pověřujícího poplatníka",
       "delegating_eic_optional": "EIČ pověřujícího poplatníka (nepovinné)",
       "delegating_eic_hint": "CZ a 8 až 10 číslic, nesmí být shodné s EIČ firmy. U více poplatníků ho Finanční správa doporučuje uvést, když firmě tržba neplyne.",
-      "delegation_badge_single": "Pověření: {eic}"
+      "delegation_badge_single": "Pověření: {eic}",
+      "delegation_scope_note": "Zařízení v pověření nemůže být výchozí ani přiřazené pokladně, tržby na něj jdou jen při jeho výslovné volbě."
     },
     "certificates": {
       "title": "Pokladní certifikáty",

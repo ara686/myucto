@@ -157,6 +157,7 @@ final class EetCashDocumentRecorder
         $topUp = $this->storedValue->forCashDocument($supplierId, $doc, EetValues::toCents($amount));
         $record = $this->records->create($supplierId, $eventId, $settings, [
             'device_id' => $deviceId,
+            'device_field' => 'eet_device_id',
             'sale_at' => $saleAt,
             'total_amount' => $amount,
             'credit_topup_amount' => $topUp !== null ? EetValues::fromCents($topUp) : null,
@@ -288,6 +289,7 @@ final class EetCashDocumentRecorder
         if ($cents <= 0) {
             return null;
         }
+        $delegation = $this->refundDelegation($supplierId, $refunds);
         $docStmt = $this->db->pdo()->prepare('SELECT register_id, invoice_id FROM cash_documents WHERE id = ? AND supplier_id = ?');
         $docStmt->execute([$cashDocumentId, $supplierId]);
         $doc = $docStmt->fetch(PDO::FETCH_ASSOC) ?: ['register_id' => 0, 'invoice_id' => null];
@@ -333,8 +335,11 @@ final class EetCashDocumentRecorder
         ]);
         $record = $this->records->create($supplierId, $eventId, $settings, [
             'device_id' => $deviceId,
+            'device_field' => 'eet_device_id',
             'sale_at' => $now,
             'total_amount' => $amount,
+            // Tržba vrací zpět opravy, proto nese jejich pověření, ne pověření zařízení.
+            'delegation' => $delegation,
             'policy_decision' => EetPolicyDecision::REQUIRED,
             'policy_reason' => 'refund_reversal',
             'created_by' => $userId !== null && $userId > 0 ? $userId : null,
@@ -344,6 +349,33 @@ final class EetCashDocumentRecorder
             ->execute([$record['device_id'], $record['unit_id'], $eventId, $supplierId]);
         $this->dispatch->dispatchAfterCommit($record['id']);
         return $record['id'];
+    }
+
+    /**
+     * Pověření oprav, které storno vrací. Opravy různých pověření (tržby faktury přijaté
+     * přes různá zařízení) by jedna kladná tržba nevrátila správně, proto se storno odmítne.
+     *
+     * @param list<array{id:int|string, amount:string, invoice_id:int|string|null}> $refunds
+     * @throws EetCommandException
+     */
+    private function refundDelegation(int $supplierId, array $refunds): EetDelegation
+    {
+        $ids = array_map(static fn (array $r): int => (int) $r['id'], $refunds);
+        $in = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $this->db->pdo()->prepare(
+            "SELECT DISTINCT delegating_eic, multiple_delegators FROM eet_records
+              WHERE supplier_id = ? AND kind = 'correction' AND payment_event_id IN ({$in})"
+        );
+        $stmt->execute([$supplierId, ...$ids]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        if (count($rows) > 1) {
+            throw EetCommandException::validation(
+                'Vrácení k dobropisu opravilo tržby evidované v různém pověření. Storno nejde zaevidovat jednou tržbou; '
+                . 'vraťte peníze novým příjmovým dokladem na zařízení odpovídajícího pověření.',
+                'eet_device_id',
+            );
+        }
+        return $rows === [] ? EetDelegation::none() : EetDelegation::fromRecord($rows[0]);
     }
 
     /**
@@ -465,7 +497,8 @@ final class EetCashDocumentRecorder
         if ($deviceId <= 0) {
             return null;
         }
-        $stmt = $this->db->pdo()->prepare('SELECT id FROM eet_devices WHERE id = ? AND supplier_id = ? AND active = 1');
+        // Výchozí zařízení dostává vlastní tržby; zařízení v pověření jen výslovnou volbou.
+        $stmt = $this->db->pdo()->prepare("SELECT id FROM eet_devices WHERE id = ? AND supplier_id = ? AND active = 1 AND delegation = 'none'");
         $stmt->execute([$deviceId, $supplierId]);
         return $stmt->fetchColumn() === false ? null : $deviceId;
     }
@@ -473,7 +506,7 @@ final class EetCashDocumentRecorder
     private function deviceForRegister(int $supplierId, int $registerId): ?int
     {
         $stmt = $this->db->pdo()->prepare(
-            'SELECT id FROM eet_devices WHERE supplier_id = ? AND cash_register_id = ? AND active = 1 ORDER BY id LIMIT 1'
+            "SELECT id FROM eet_devices WHERE supplier_id = ? AND cash_register_id = ? AND active = 1 AND delegation = 'none' ORDER BY id LIMIT 1"
         );
         $stmt->execute([$supplierId, $registerId]);
         $id = $stmt->fetchColumn();

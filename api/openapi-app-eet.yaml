@@ -20,6 +20,15 @@ info:
     jednotky, zařízení, certifikáty, diagnostika a export jsou jen pro webovou relaci
     (`security` u každé operace).
 
+
+    Změny kontraktu 2026-10.4: evidence v pověření (scénář `delegation` přešel
+    z `unsupported_scenarios` do `supported_scenarios`). Pověření se nastavuje
+    u zařízení (`delegation`, `delegating_eic`), záznam ho vrací v `delegating_eic`
+    a `multiple_delegators`. Pole `delegating_eic` v těle platby dřív vedlo na
+    `unsupported` s důvodem `delegation`; teď vrací 422 `eet_validation`
+    (`field = delegating_eic`, `reason_code = delegation_requires_device`).
+    Zařízení v pověření nesmí být výchozí ani přiřazené pokladně.
+
     '
 servers:
 - url: /
@@ -1818,6 +1827,13 @@ components:
               format: date-time
             celk_trzba:
               $ref: '#/components/schemas/EetMoney'
+            eic_poverujiciho:
+              type: string
+              pattern: ^CZ[0-9]{8,10}$
+              description: EIČ pověřujícího poplatníka, pokud externí systém evidoval v pověření (nesmí se shodovat s EIČ firmy)
+            povereni_vice_popl:
+              type: boolean
+              description: Pověření více poplatníky; uvádí se jen hodnota true
         paid_on:
           type: string
           format: date
@@ -2263,8 +2279,9 @@ components:
           eic:
             type: string
           delegating_eic:
-            type: string
-            nullable: true
+            type:
+            - string
+            - 'null'
             description: EIČ pověřujícího poplatníka (`eic_poverujiciho`), jak odešlo ve zprávě
           multiple_delegators:
             type: boolean

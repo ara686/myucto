@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace MyInvoice\Tests\Unit\Service\Eet;
 
+use MyInvoice\Service\Eet\EetDelegation;
 use MyInvoice\Service\Eet\EetPolicyDecision;
 use MyInvoice\Service\Eet\EetPolicyInput;
 use MyInvoice\Service\Eet\EetRecordingPolicy;
@@ -67,6 +68,7 @@ final class EetRecordingPolicyTest extends TestCase
         yield 'pověření více poplatníky s EIČ' => [['channel' => 'cash', 'context' => 'in_person', 'delegating' => 'CZ00000019', 'multiple' => true], 'required', 'cash'];
         yield 'pověření, vzdálený převod' => [['channel' => 'bank_transfer', 'context' => 'remote', 'delegating' => 'CZ00000019'], 'not_subject', 'remote_payment'];
         yield 'pověřující shodný s poplatníkem' => [['channel' => 'cash', 'context' => 'in_person', 'delegating' => 'CZ8551015704'], 'unknown', 'delegation_invalid'];
+        yield 'pověření jedním poplatníkem bez EIČ' => [['channel' => 'cash', 'context' => 'in_person', 'mode' => 'single'], 'unknown', 'delegation_invalid'];
         yield 'pověřující se špatným EIČ' => [['channel' => 'cash', 'context' => 'in_person', 'delegating' => 'CZ12'], 'unknown', 'delegation_invalid'];
         yield 'jiný účel' => [['channel' => 'cash', 'context' => 'in_person', 'purpose' => 'other'], 'unknown', 'purpose_unclassified'];
         yield 'záloha na zakázku hotově' => [['channel' => 'cash', 'context' => 'in_person', 'purpose' => 'order_deposit'], 'required', 'cash'];
@@ -95,8 +97,9 @@ final class EetRecordingPolicyTest extends TestCase
             '1210.00',
             $case['origin'] ?? 'invoice_payment',
             $case['kind'] ?? 'payment',
-            $case['delegating'] ?? null,
-            $case['multiple'] ?? false,
+            $case['mode'] ?? null
+                ? new EetDelegation($case['mode'], $case['delegating'] ?? null)
+                : EetDelegation::fromItems($case['delegating'] ?? null, $case['multiple'] ?? false),
         ));
 
         self::assertSame([$decision, $reason], [$result->decision, $result->reasonCode]);
