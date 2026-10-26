@@ -239,6 +239,11 @@ final class DocumentLinker
                     // Pohyb s dokladem spárovaný mezitím v MyÚčtu se nezdvojí.
                     $sameMatch->execute([$ctx->supplierId, $txId, $isIssued ? $docId : 0, $isIssued ? 0 : $docId]);
                     $matchId = (int) $sameMatch->fetchColumn();
+                    if ($matchId === 0 && isset($existing[self::paymentMapKey($txId, $type, $docId)])) {
+                        // Párování podle symbolu, které převod vytvořil dřív a uživatel ho zrušil.
+                        $p->count(self::STEP_PAYMENTS, 'removed_kept');
+                        continue;
+                    }
                     if ($matchId === 0 && $matched < 0.01) {
                         $p->count(self::STEP_PAYMENTS, 'capacity_exhausted');
                         continue;
@@ -310,6 +315,7 @@ final class DocumentLinker
         }
         $this->repairForeignMatchAmounts($ctx, $movements);
         (new PairingSymbolMatcher($this->db, $this->map, $issuedPayments))->match($ctx, $movements);
+        $this->recordMissingIssuedPayments($ctx, $issuedPayments, $movements);
         (new AdvanceLinker($this->db, $this->map))->link($ctx);
         $this->markBookedWithoutInvoice($ctx);
         if ($cashMulti !== []) {
@@ -320,28 +326,36 @@ final class DocumentLinker
     }
 
     /**
+     * SQL podmínka „párování `$p` vytvořil převod". Párování vzniklé převodem je v mapě úhrad:
+     * podle `UDoklad` pod klíčem dokladu (`v|rok|číslo`, `p|rok|číslo` - cíl musí patřit
+     * dokladu z klíče, cílem bývá i id pokladního dokladu), podle párovacího symbolu a vrácení
+     * zálohy pod klíčem pohybu a dokladu ({@see paymentMapKey()}). Ostatní párování zadal uživatel.
+     */
+    public static function ownMatchSql(string $p): string
+    {
+        return "(EXISTS (SELECT 1 FROM money_s3_import_map m
+                          JOIN money_s3_import_map dm ON dm.supplier_id = m.supplier_id
+                           AND dm.kind = IF({$p}.invoice_id IS NOT NULL, 'invoice', 'purchase_invoice')
+                           AND dm.target_id = COALESCE({$p}.invoice_id, {$p}.purchase_invoice_id)
+                         WHERE m.supplier_id = {$p}.supplier_id AND m.kind = 'payment' AND m.target_id = {$p}.id
+                           AND m.money_key = CONCAT(IF({$p}.invoice_id IS NOT NULL, 'v|', 'p|'), dm.money_key))
+                 OR EXISTS (SELECT 1 FROM money_s3_import_map m
+                         WHERE m.supplier_id = {$p}.supplier_id AND m.kind = 'payment' AND m.target_id = {$p}.id
+                           AND m.money_key = CONCAT('ps|', {$p}.bank_transaction_id, '|', IF({$p}.invoice_id IS NOT NULL, 'invoice|', 'purchase_invoice|'),
+                                                    COALESCE({$p}.invoice_id, {$p}.purchase_invoice_id))))";
+    }
+
+    /**
      * Bankovní pohyby firmy jedním dotazem: id => částka v měně pohybu, měna, datum, částka
      * v Kč (u pohybu v cizí měně z Money, jinak částka sama), stav párování, součet párování
-     * (v měně pohybu) a zda má pohyb živý převzatý bankovní zápis.
+     * (v měně pohybu), počet párování zadaných uživatelem ({@see ownMatchSql()}) a zda má
+     * pohyb živý převzatý bankovní zápis.
      *
      * @return array<int,array{amount:float,currency:string,date:string,czk:float,status:string,reason:string,matched:float,taken:bool}>
      */
     private function bankMovements(int $supplierId): array
     {
-        // Párování vzniklé převodem je v mapě úhrad: podle `UDoklad` pod klíčem dokladu
-        // (`v|rok|číslo`, `p|rok|číslo` - cíl musí patřit dokladu z klíče, cílem bývá i id
-        // pokladního dokladu), podle párovacího symbolu a vrácení zálohy pod klíčem pohybu
-        // a dokladu ({@see paymentMapKey()}). Ostatní párování zadal uživatel.
-        $own = "EXISTS (SELECT 1 FROM money_s3_import_map m
-                          JOIN money_s3_import_map dm ON dm.supplier_id = m.supplier_id
-                           AND dm.kind = IF(p.invoice_id IS NOT NULL, 'invoice', 'purchase_invoice')
-                           AND dm.target_id = COALESCE(p.invoice_id, p.purchase_invoice_id)
-                         WHERE m.supplier_id = p.supplier_id AND m.kind = 'payment' AND m.target_id = p.id
-                           AND m.money_key = CONCAT(IF(p.invoice_id IS NOT NULL, 'v|', 'p|'), dm.money_key))
-                 OR EXISTS (SELECT 1 FROM money_s3_import_map m
-                         WHERE m.supplier_id = p.supplier_id AND m.kind = 'payment' AND m.target_id = p.id
-                           AND m.money_key = CONCAT('ps|', p.bank_transaction_id, '|', IF(p.invoice_id IS NOT NULL, 'invoice|', 'purchase_invoice|'),
-                                                    COALESCE(p.invoice_id, p.purchase_invoice_id)))";
+        $own = self::ownMatchSql('p');
         $stmt = $this->db->pdo()->prepare(
             'SELECT t.id, t.amount, t.currency, DATE(t.posted_at) AS posted_on, t.match_status, t.match_reason,
                     COALESCE(pm.matched, 0) AS matched, COALESCE(pm.foreign_matches, 0) AS foreign_matches,
@@ -510,6 +524,50 @@ final class DocumentLinker
         }
         if ($fixed > 0) {
             $ctx->protocol->count(self::STEP_PAYMENTS, 'foreign_match_amount_fixed', $fixed);
+        }
+    }
+
+    /**
+     * Párování vydané faktury, které vytvořil převod a ke kterému chybí evidovaná úhrada
+     * (dřívější verze ji k faktuře, kterou Money neoznačilo jako uhrazenou, nezakládala):
+     * úhrada se doplní v částce párování, jako při párování v bance v MyÚčtu. Párování
+     * zadané uživatelem i vratka (odchozí pohyb) se nechají.
+     *
+     * @param array<int,array<string,mixed>> $movements
+     */
+    private function recordMissingIssuedPayments(ImportContext $ctx, IssuedPaymentRecorder $payments, array $movements): void
+    {
+        $stmt = $this->db->pdo()->prepare(
+            'SELECT p.bank_transaction_id, p.invoice_id, p.amount FROM payment_matches p
+              WHERE p.supplier_id = ? AND p.invoice_id IS NOT NULL
+                AND NOT EXISTS (SELECT 1 FROM invoice_payments ip WHERE ip.invoice_id = p.invoice_id AND ip.bank_transaction_id = p.bank_transaction_id)
+                AND ' . self::ownMatchSql('p') . '
+              ORDER BY p.id'
+        );
+        $stmt->execute([$ctx->supplierId]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        if ($rows === []) {
+            return;
+        }
+        $docNo = [];
+        foreach ($ctx->bankTransactions as $key => $id) {
+            $docNo[(int) $id] = explode('|', (string) $key, 3)[1] ?? '';
+        }
+        foreach ($rows as $r) {
+            $tx = (int) $r['bank_transaction_id'];
+            $m = $movements[$tx] ?? null;
+            if ($m === null || $m['amount'] <= 0) {
+                continue;
+            }
+            $matched = abs((float) $r['amount']);
+            $czk = $matched;
+            if ($m['currency'] !== 'CZK') {
+                $czk = isset($ctx->bankTransactionCzk[$tx]) && abs($m['amount']) >= 0.01 ? $matched * abs($ctx->bankTransactionCzk[$tx]) / abs($m['amount']) : 0.0;
+            }
+            $amount = $payments->toInvoiceCurrency($ctx->supplierId, (int) $r['invoice_id'], $czk, $m['currency'], $matched);
+            if ($amount !== null && $amount >= 0.01) {
+                $payments->record($ctx, (int) $r['invoice_id'], 'bank', $tx, null, $amount, $m['date'], $docNo[$tx] ?? '');
+            }
         }
     }
 

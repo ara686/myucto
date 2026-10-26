@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MyInvoice\Service\Migration\MoneyS3;
 
 use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Service\Invoice\InvoicePaymentService;
 use PDO;
 
 /**
@@ -13,16 +14,24 @@ use PDO;
  * úplnosti i uvolnění pohybu; samotné párování (`payment_matches`, vazba pokladního
  * dokladu) ji nenahradí.
  *
- * Stav faktury a uhrazenou částku vede převod podle Money (`Uhrazeno`), platby ji jen
- * doplňují: jejich součet nepřesáhne `paid_total`. Částka je v měně faktury. Platby se
- * zakládají běžným a zálohovým fakturám (úhrada proformy je inkasem zálohy na 324, čerpá
- * ji konečná faktura navázaná {@see AdvanceLinker}); dobropis ani daňový doklad k platbě
- * se v MyÚčtu neplatí. Opakovaný převod platbu nezdvojí (banka: pohyb + faktura, pokladna
- * a zápočet dobropisu: poznámka s číslem dokladu + faktura).
+ * Součet plateb nepřesáhne částku faktury: větší z uhrazené částky podle Money
+ * (`paid_total`, `Uhrazeno` - Money vede úhradu jen datem, celou) a částky k úhradě.
+ * Fakturu, kterou Money neoznačilo jako uhrazenou (zaplacenou po částech, nebo jen
+ * spárovanou bez data úhrady), tak platby jejích úhrad nesníží jen do nuly - stejně jako
+ * při párování v bance v MyÚčtu. Uhrazená částka a stav faktury se pak dopočítají jako
+ * po zaevidované platbě ({@see sync()}); uhrazenou podle Money převod nesnižuje.
+ *
+ * Částka je v měně faktury. Platby se zakládají běžným a zálohovým fakturám (úhrada
+ * proformy je inkasem zálohy na 324, čerpá ji konečná faktura navázaná {@see AdvanceLinker});
+ * dobropis ani daňový doklad k platbě se v MyÚčtu neplatí. Opakovaný převod platbu nezdvojí
+ * (banka: pohyb + faktura, pokladna a zápočet dobropisu: poznámka s číslem dokladu + faktura).
  */
 final class IssuedPaymentRecorder
 {
-    /** @var array<int,array{status:string,type:string,paid_total:float,rate:?float,currency:string,recorded:float}> */
+    /** Poznámka platby, kterou založil převod (a kterou smí převod upravit). */
+    private const NOTE_PREFIX = 'Převzato z Money S3, ';
+
+    /** @var array<int,array{status:string,type:string,paid_total:float,to_pay:float,rate:?float,currency:string,recorded:float}|null> */
     private array $invoices = [];
 
     public function __construct(private readonly Connection $db) {}
@@ -68,11 +77,7 @@ final class IssuedPaymentRecorder
             return null;
         }
         $pdo = $this->db->pdo();
-        $note = match ($kind) {
-            'credit_note' => 'Převzato z Money S3, zápočet dobropisu ',
-            'settlement' => 'Převzato z Money S3, zápočet interním dokladem ',
-            default => 'Převzato z Money S3, úhrada ',
-        } . $paymentNo;
+        $note = self::note($kind, $paymentNo);
         if ($kind === 'bank') {
             $dup = $pdo->prepare('SELECT 1 FROM invoice_payments WHERE bank_transaction_id = ? AND invoice_id = ?');
             $dup->execute([$txId, $invoiceId]);
@@ -83,7 +88,7 @@ final class IssuedPaymentRecorder
         if ($dup->fetchColumn() !== false) {
             return null;
         }
-        $amount = round(min(abs($amount), $row['paid_total'] - $row['recorded']), 2);
+        $amount = round(min(abs($amount), self::limit($row) - $row['recorded']), 2);
         if ($amount < 0.01) {
             return null;
         }
@@ -100,16 +105,95 @@ final class IssuedPaymentRecorder
                 ->execute([$paymentId, $cashId, $ctx->supplierId, $invoiceId]);
         }
         $this->invoices[$invoiceId]['recorded'] = $row['recorded'] + $amount;
+        $this->sync($ctx->supplierId, $invoiceId);
         $ctx->protocol->count(DocumentLinker::STEP_PAYMENTS, 'issued_payments_recorded');
         return $paymentId;
     }
 
-    /** @return array{status:string,type:string,paid_total:float,rate:?float,currency:string,recorded:float}|null */
+    /**
+     * Bankovní úhrada faktury po srovnání párování s deníkem Money: platbu, kterou k pohybu
+     * založil převod, nastaví na novou částku (nejvýš do částky faktury), chybějící založí.
+     * Platbu zadanou v MyÚčtu nemění.
+     */
+    public function setBank(ImportContext $ctx, int $invoiceId, int $txId, float $amount, string $date, string $paymentNo): void
+    {
+        $row = $this->invoice($ctx->supplierId, $invoiceId);
+        if ($row === null) {
+            return;
+        }
+        $pdo = $this->db->pdo();
+        $current = $pdo->prepare("SELECT id, amount, note FROM invoice_payments WHERE supplier_id = ? AND bank_transaction_id = ? AND invoice_id = ? AND source = 'bank'");
+        $current->execute([$ctx->supplierId, $txId, $invoiceId]);
+        $payments = $current->fetchAll(PDO::FETCH_ASSOC);
+        if ($payments === []) {
+            $this->record($ctx, $invoiceId, 'bank', $txId, null, $amount, $date, $paymentNo);
+            return;
+        }
+        if (count($payments) !== 1 || !str_starts_with((string) $payments[0]['note'], self::NOTE_PREFIX)) {
+            return;
+        }
+        $old = (float) $payments[0]['amount'];
+        $new = round(min(abs($amount), self::limit($row) - $row['recorded'] + $old), 2);
+        if ($new < 0.01 || abs($new - $old) < 0.005) {
+            return;
+        }
+        $pdo->prepare('UPDATE invoice_payments SET amount = ? WHERE id = ? AND supplier_id = ?')
+            ->execute([number_format($new, 2, '.', ''), (int) $payments[0]['id'], $ctx->supplierId]);
+        $this->invoices[$invoiceId]['recorded'] = $row['recorded'] - $old + $new;
+        $this->sync($ctx->supplierId, $invoiceId);
+        $ctx->protocol->count(DocumentLinker::STEP_PAYMENTS, 'issued_payments_adjusted');
+    }
+
+    private static function note(string $kind, string $paymentNo): string
+    {
+        return self::NOTE_PREFIX . match ($kind) {
+            'credit_note' => 'zápočet dobropisu ',
+            'settlement' => 'zápočet interním dokladem ',
+            default => 'úhrada ',
+        } . $paymentNo;
+    }
+
+    /** @param array{paid_total:float,to_pay:float} $row */
+    private static function limit(array $row): float
+    {
+        return max($row['paid_total'], $row['to_pay']);
+    }
+
+    /**
+     * Uhrazená částka a stav faktury po změně plateb, stejně jako po zaevidované platbě
+     * v MyÚčtu ({@see InvoicePaymentService::recordPayment()}): uhrazená částka je součet
+     * plateb, faktura, kterou platby pokryjí, je uhrazená ke dni poslední platby. Uhrazenou
+     * částku a stav, které převod převzal z Money, nesnižuje.
+     */
+    private function sync(int $supplierId, int $invoiceId): void
+    {
+        $pdo = $this->db->pdo();
+        $pdo->prepare(
+            'UPDATE invoices i
+                SET i.paid_total = GREATEST(i.paid_total, (SELECT COALESCE(SUM(p.amount), 0) FROM invoice_payments p WHERE p.invoice_id = i.id))
+              WHERE i.id = ? AND i.supplier_id = ?'
+        )->execute([$invoiceId, $supplierId]);
+        $pdo->prepare(
+            "UPDATE invoices i
+                SET i.status = 'paid', i.paid_at = COALESCE(i.paid_at, (SELECT MAX(p.paid_on) FROM invoice_payments p WHERE p.invoice_id = i.id))
+              WHERE i.id = ? AND i.supplier_id = ? AND i.status IN ('issued', 'sent', 'reminded')
+                AND i.amount_to_pay > 0 AND i.paid_total >= i.amount_to_pay - ?"
+        )->execute([$invoiceId, $supplierId, InvoicePaymentService::TOLERANCE]);
+        $paid = $pdo->prepare('SELECT paid_total, status FROM invoices WHERE id = ?');
+        $paid->execute([$invoiceId]);
+        $r = $paid->fetch(PDO::FETCH_ASSOC);
+        if ($r !== false && isset($this->invoices[$invoiceId])) {
+            $this->invoices[$invoiceId]['paid_total'] = (float) $r['paid_total'];
+            $this->invoices[$invoiceId]['status'] = (string) $r['status'];
+        }
+    }
+
+    /** @return array{status:string,type:string,paid_total:float,to_pay:float,rate:?float,currency:string,recorded:float}|null */
     private function invoice(int $supplierId, int $invoiceId): ?array
     {
         if (!array_key_exists($invoiceId, $this->invoices)) {
             $stmt = $this->db->pdo()->prepare(
-                "SELECT i.status, i.invoice_type, i.paid_total, i.exchange_rate, cur.code AS currency,
+                "SELECT i.status, i.invoice_type, i.paid_total, i.amount_to_pay, i.exchange_rate, cur.code AS currency,
                         (SELECT COALESCE(SUM(ip.amount), 0) FROM invoice_payments ip WHERE ip.invoice_id = i.id) AS recorded
                    FROM invoices i JOIN currencies cur ON cur.id = i.currency_id
                   WHERE i.id = ? AND i.supplier_id = ?"
@@ -120,6 +204,7 @@ final class IssuedPaymentRecorder
                 'status' => (string) $r['status'],
                 'type' => (string) $r['invoice_type'],
                 'paid_total' => (float) $r['paid_total'],
+                'to_pay' => (float) $r['amount_to_pay'],
                 'rate' => $r['exchange_rate'] !== null && (float) $r['exchange_rate'] > 0 ? (float) $r['exchange_rate'] : null,
                 'currency' => (string) $r['currency'],
                 'recorded' => (float) $r['recorded'],
