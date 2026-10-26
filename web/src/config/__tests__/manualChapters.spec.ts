@@ -32,6 +32,8 @@ describe('contextual manual for application menu', () => {
     ['/imports/stereo-nx', '21_Importy'],
     ['/other-items', '52_Ucetni_denik'],
     ['/other-items/new', '52_Ucetni_denik'],
+    ['/accounting/internal-documents', '52_Ucetni_denik'],
+    ['/accounting/internal-documents/12/edit', '52_Ucetni_denik'],
     ['/reports/cnb-rate-audit', '46_Ucetni_kontroly_a_inventarizace'],
     ['/reports/invoice-series-completeness', '46_Ucetni_kontroly_a_inventarizace'],
     ['/reports/vat-coefficient', '41_Vykazy_DPH'],

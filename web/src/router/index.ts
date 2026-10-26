@@ -128,6 +128,9 @@ const routePermissions: Record<string, [PermissionKey | readonly PermissionKey[]
   'scan-attach': ['documents.upload', 'write'],
   'accounting-accounts': ['accounting'], 'accounting-account-detail': ['accounting'],
   'accounting-journal': ['accounting'], 'accounting-journal-new': ['accounting.journal.write', 'write'], 'accounting-ai-assistant': ['accounting'],
+  // Interní doklady: čtení jako deník, koncept jako ruční zápis (zaúčtování hlídá server právem accounting.journal.post).
+  'accounting-internal-documents': ['accounting'], 'accounting-internal-document-detail': ['accounting'],
+  'accounting-internal-document-new': ['accounting.journal.write', 'write'], 'accounting-internal-document-edit': ['accounting.journal.write', 'write'],
   // Čtení = zobrazení rozpadu mzdy; samotné zaúčtování hlídá server (accounting.journal.post).
   // Bez záznamu v téhle mapě guard route zahodí na homepage (deny-by-default, :327).
   'accounting-payroll': ['accounting'],

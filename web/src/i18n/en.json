@@ -334,6 +334,130 @@
       "split_hint": "Splits the document amount evenly; the rounding remainder goes to the last installment. Save the schedule afterwards."
     }
   },
+  "internal_documents": {
+    "title": "Internal documents",
+    "subtitle": "Offsets, reclassifications, receivable write-offs, exchange differences, corrections and accruals with their own number series. Posting creates a manual entry in the journal.",
+    "new": "New internal document",
+    "export_csv": "Export CSV",
+    "status_label": "Status",
+    "status": {
+      "draft": "Draft",
+      "posted": "Posted",
+      "reversed": "Reversed"
+    },
+    "kind_label": "Type",
+    "kind": {
+      "other": "Other",
+      "offset": "Offset",
+      "reclassification": "Reclassification",
+      "write_off": "Receivable write-off",
+      "fx_difference": "Exchange difference",
+      "correction": "Correction",
+      "accrual": "Accrual"
+    },
+    "partner": "Partner",
+    "partner_directory": "Partner from contacts",
+    "search": "Search",
+    "search_placeholder": "Number, description, partner or note",
+    "date_from": "Document date from",
+    "date_to": "Document date to",
+    "empty": "No internal documents",
+    "empty_hint": "Create an internal document with New internal document or from a manual entry in the journal.",
+    "document_no": "Number",
+    "document_date": "Document date",
+    "entry_date": "Transaction date",
+    "item": "Description",
+    "amount": "Amount",
+    "no_number": "Draft without number",
+    "document_count": "Documents: {count}",
+    "summary": "Documents in total: {count}",
+    "posted_total": "Posted in total",
+    "confirm_delete": "Delete the internal document draft?",
+    "back": "Internal documents",
+    "edit": "Edit internal document",
+    "quick_entry": "Quick internal document entry",
+    "form_hint": "Pick a template or enter debit and credit lines. A line without an amount is calculated so that both sides match.",
+    "templates_title": "Templates",
+    "templates_hint": "A template prefills the type, description and accounts, you add the amounts.",
+    "templates": {
+      "offset": {
+        "title": "Receivable and payable offset",
+        "hint": "Debit 321 / credit 311, link the partner's issued and received invoice."
+      },
+      "reclassification": {
+        "title": "Reclassification",
+        "hint": "Move an amount from one account to another."
+      },
+      "write_off": {
+        "title": "Receivable write-off",
+        "hint": "Debit 546 / credit 311, link the written-off invoice."
+      },
+      "fx_loss": {
+        "title": "Exchange loss",
+        "hint": "Debit 563 / credit 311, adjust the ledger account to the document."
+      },
+      "fx_gain": {
+        "title": "Exchange gain",
+        "hint": "Debit 311 / credit 663, adjust the ledger account to the document."
+      },
+      "accrual": {
+        "title": "Accrual",
+        "hint": "Debit 518 / credit 389, adjust the expense account to the case."
+      }
+    },
+    "details": "Document details",
+    "lines": "Debit and credit lines",
+    "lines_hint": "Search accounts by number or name. A draft may be unbalanced, only a balanced document can be posted.",
+    "balance": "Balance",
+    "add_line": "Add line",
+    "line_account": "Account of line {n}",
+    "line_side": "Side of line {n}",
+    "line_amount": "Amount of line {n}",
+    "line_cost_center": "Cost centre of line {n}",
+    "remove_line": "Remove line {n}",
+    "auto_balance": "Calculated",
+    "shortcuts": "Enter in the last amount adds a line, Alt+N new line, Ctrl+S save draft, Ctrl+Enter post.",
+    "links_title": "Linked documents",
+    "links_hint": "Documents the case relates to. They are linked to the journal entry when posted.",
+    "links_hint_offset": "Pick the partner's issued and received invoice. The ledger settles both invoices by the link.",
+    "note": "Note",
+    "attachments_after_save": "Attach files (offset agreement, write-off evidence) in the document detail after saving.",
+    "save_and_post": "Save and post",
+    "save_draft": "Save draft",
+    "validation_required": "Fill in the description and the document date.",
+    "lines_incomplete": "Every line needs an account and a positive amount.",
+    "not_balanced": "Debit and credit do not match, the document can only be saved as a draft.",
+    "posted_toast": "Internal document {number} is posted.",
+    "saved_draft": "The draft is saved.",
+    "not_found": "Internal document not found.",
+    "post": "Post",
+    "open_journal": "Open in journal",
+    "reverse": "Reverse",
+    "journal": "Journal",
+    "journal_entry": "Journal entry",
+    "not_posted": "Not posted yet",
+    "reversal_entry": "Reversal entry",
+    "draft_hint": "Posting creates a manual journal entry and gives the document a number from the ID series.",
+    "account": "Account",
+    "total": "Total",
+    "no_lines": "The document has no lines yet.",
+    "attachments": "Attachments",
+    "confirm_reverse": "The reversal creates a counter entry in the journal. The document stays on record as reversed.",
+    "reverse_reason": "Reversal reason",
+    "reverse_date": "Reversal date",
+    "reason_required": "Enter the reversal reason (at least 3 characters).",
+    "reversed_toast": "The internal document is reversed.",
+    "confirm_post": "Post the internal document to the journal?",
+    "posted_at": "Posted",
+    "reversal_reason": "Reversal reason",
+    "confirm_from_entry": "Create an internal document for this entry? The entry does not change, it only gets a number from the ID series if it has none.",
+    "created_from_entry": "Internal document {number} is created.",
+    "journal_posting_of": "The entry posts internal document",
+    "journal_reversal_of": "The entry reverses internal document",
+    "open_document": "Open internal document",
+    "from_entry_hint": "This manual entry has no internal document yet.",
+    "from_entry": "Create internal document"
+  },
   "invoice_default_note": {
     "title": "Default note below items",
     "hint": "Text pre-filled into the note below items on every newly created document. You can rewrite or delete it in the document at any time; already issued documents are left untouched.",
@@ -916,7 +1040,8 @@
       "bank_transaction": "Bank transaction",
       "cash_document": "Cash document",
       "other_item": "Other receivable or payable",
-      "invoice_payment": "Invoice payment"
+      "invoice_payment": "Invoice payment",
+      "internal_document": "Internal document"
     },
     "panel_title": "Documents",
     "panel_attach": "Attach document",
@@ -1833,7 +1958,9 @@
     "property_service_lifecycle": "Service estimates and final costs",
     "property_issuance": "Charge issuance",
     "framework_conversion": "Controlled conversion 500 → 504",
-    "property_charges": "Charge components and rates"
+    "property_charges": "Charge components and rates",
+    "internal_documents": "Internal documents",
+    "quick_internal_document": "Internal document"
   },
   "migration_nonprofit_notice": {
     "title": "Data transfer has not been verified for non-profit organisations",
@@ -16939,7 +17066,9 @@
         "advance_posted": "The advance is not posted as a document. Its posting consists of the payment to the advance account and the advance settlement in the final invoice.",
         "relation_advance_payment": "Advance payment",
         "relation_advance_final": "Settlement in final invoice"
-      }
+      },
+      "internal_document_badge": "Internal document",
+      "internal_document_reversal_badge": "Internal document reversal"
     },
     "manual": {
       "title": "Manual journal entry",
@@ -19108,7 +19237,7 @@
           "opening": "Opening entries (OT)",
           "fx": "FX differences (KR)",
           "transfer": "Account transfers (PP)",
-          "manual": "Manual entries (ID)",
+          "manual": "Internal documents and manual entries (ID)",
           "cash_in": "Cash receipts (PPD)",
           "cash_out": "Cash payments (VPD)",
           "stock_in": "Stock receipts (PRI)",

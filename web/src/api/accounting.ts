@@ -184,6 +184,8 @@ export interface JournalEntry {
    * zápočet). Podklad pro odznak ve sloupci Zdroj; obsah panelu dodá /journal/{id}/related.
    */
   has_related?: boolean
+  /** Interní doklad, jehož zaúčtováním (posting) nebo stornem (reversal) zápis je (migrace 2193). */
+  internal_document?: { id: number; document_no: string | null; status: 'draft' | 'posted' | 'reversed'; role: 'posting' | 'reversal' } | null
   automation?: AutomationProvenance | null
   posting_lines?: Array<{ side: JournalSide; amount: number; account_code: string; account_name: string | null }>
   vat_breakdown?: Array<{ rate: number; base: number; vat: number }>

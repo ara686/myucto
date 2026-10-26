@@ -3114,6 +3114,16 @@ final class Routes
             $g->get   ('/other-items/{id:[0-9]+}/payment-candidates', [\MyInvoice\Action\Accounting\OtherItemAction::class, 'paymentCandidates']);
             $g->post  ('/other-items/{id:[0-9]+}/allocations', [\MyInvoice\Action\Accounting\OtherItemAction::class, 'allocate']);
             $g->delete('/other-items/{id:[0-9]+}/allocations/{allocation_id:[0-9]+}', [\MyInvoice\Action\Accounting\OtherItemAction::class, 'unallocate']);
+            // Interní doklady (migrace 2193). Specifické cesty PŘED generickým /internal-documents/{id}.
+            $g->get   ('/internal-documents',                       [\MyInvoice\Action\Accounting\InternalDocumentAction::class, 'list']);
+            $g->post  ('/internal-documents',                       [\MyInvoice\Action\Accounting\InternalDocumentAction::class, 'create']);
+            $g->get   ('/internal-documents/export',                [\MyInvoice\Action\Accounting\InternalDocumentAction::class, 'export']);
+            $g->post  ('/internal-documents/from-entry/{id:[0-9]+}', [\MyInvoice\Action\Accounting\InternalDocumentAction::class, 'fromEntry']);
+            $g->get   ('/internal-documents/{id:[0-9]+}',           [\MyInvoice\Action\Accounting\InternalDocumentAction::class, 'get']);
+            $g->put   ('/internal-documents/{id:[0-9]+}',           [\MyInvoice\Action\Accounting\InternalDocumentAction::class, 'update']);
+            $g->delete('/internal-documents/{id:[0-9]+}',           [\MyInvoice\Action\Accounting\InternalDocumentAction::class, 'delete']);
+            $g->post  ('/internal-documents/{id:[0-9]+}/post',      [\MyInvoice\Action\Accounting\InternalDocumentAction::class, 'post']);
+            $g->post  ('/internal-documents/{id:[0-9]+}/reverse',   [\MyInvoice\Action\Accounting\InternalDocumentAction::class, 'reverse']);
             $g->post  ('/cash-documents',                      [\MyInvoice\Action\Accounting\Cash\CashDocumentAction::class, 'create']);
             $g->get   ('/cash-documents/unpaid',               [\MyInvoice\Action\Accounting\Cash\CashDocumentAction::class, 'unpaid']);
             $g->get   ('/cash-documents/rule-presets',         [\MyInvoice\Action\Accounting\Cash\CashDocumentAction::class, 'rulePresets']);

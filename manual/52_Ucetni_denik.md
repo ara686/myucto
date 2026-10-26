@@ -1,6 +1,6 @@
 # 52. Účetní deník
 
-> Chronologický seznam všech účetních zápisů firmy v podvojném účetnictví. Kapitola je návod, jak v deníku zápis najít, založit ruční zápis, opravit nebo stornovat chybný zápis, doúčtovat doklady z jiného systému a vést ostatní pohledávky a závazky.
+> Chronologický seznam všech účetních zápisů firmy v podvojném účetnictví. Kapitola je návod, jak v deníku zápis najít, založit ruční zápis, opravit nebo stornovat chybný zápis, doúčtovat doklady z jiného systému, vést ostatní pohledávky a závazky a interní doklady.
 
 ## 52.1 Kdy to potřebujete
 
@@ -75,6 +75,9 @@ Z bankovního výpisu použijte u pohybu **Otevřít v účetním deníku**. Ote
 
 > [!TIP]
 > Opakuje-li se zápis, klikněte v rozbaleném zápisu na **Kopírovat jako nový**. Otevře se formulář s týmiž řádky a dnešním datem. Příklad ručního zápisu je v [§ 52.14.5.5](#521455-priklad-rucni-zapis-se-dvema-radky).
+
+> [!TIP]
+> Zápočet, přeúčtování, odpis pohledávky nebo kurzový rozdíl s vlastním číslem, partnerem a přílohami založte jako interní doklad ([§ 52.14.15](#521415-interni-doklady)). Zaúčtuje se týmž ručním zápisem.
 
 ## 52.5 Krok za krokem: převod mezi účty přes 261
 
@@ -1539,6 +1542,89 @@ zakládání, úpravy a úhrady vyžadují zápis. Zaúčtování a storno v pod
 Přiřazení bankovní platby vyžaduje přístup k bance a párování, přiřazení
 pokladního dokladu přístup k pokladně. Připojené dokumenty vidí uživatel
 s přístupem k dokumentům.
+
+### 52.14.15 Interní doklady
+
+Agenda **Interní doklady** (menu **Účetnictví → Interní doklady**, hned pod
+ostatními pohledávkami a závazky) je evidence interních dokladů s vlastní číselnou
+řadou: zápočty pohledávek a závazků, přeúčtování, odpisy pohledávek, kurzové
+rozdíly, opravy a dohadné položky. Interní doklad je hlavička nad ručním zápisem
+deníku. Nese číslo, data, popis, partnera, přílohy a poznámku, zápis v deníku nese
+kontaci.
+
+#### 52.14.15.1 Krok za krokem: rychlé zadání
+
+1. Otevřete `Účetnictví → Interní doklady` a klikněte na **Nový interní doklad**.
+   Stejný formulář otevře i položka **Interní doklad** v rychlém přidání (tlačítko **+**).
+2. Vyberte šablonu: **Zápočet pohledávky a závazku** (MD 321 / D 311),
+   **Přeúčtování**, **Odpis pohledávky** (MD 546 / D 311), **Kurzová ztráta**
+   (MD 563 / D 311), **Kurzový zisk** (MD 311 / D 663) nebo **Dohadná položka**
+   (MD 518 / D 389). Šablona předvyplní druh, popis a účty. Účty můžete přepsat,
+   například na analytiku.
+3. Vyplňte **Datum dokladu**, případně **Datum účetního případu** (výchozí je datum
+   dokladu) a partnera.
+4. Doplňte částku do prvního řádku. Řádek bez částky se dopočítá, takže u dvouřádkového
+   případu píšete částku jen jednou. Tlačítko **Dorovnat** přidá řádek, který rozdíl
+   stran vyrovná.
+5. U zápočtu v části **Navázané doklady** vyhledejte vydanou a přijatou fakturu partnera.
+6. Klikněte na **Uložit a zaúčtovat**. Nevyrovnaný nebo rozpracovaný doklad uložte
+   tlačítkem **Uložit koncept**.
+
+Formulář jde ovládat klávesnicí: Enter v částce posledního řádku přidá řádek,
+Alt+N přidá řádek, Ctrl+S uloží koncept a Ctrl+Enter doklad zaúčtuje.
+
+**Jak poznáte, že je hotovo:** Doklad je ve stavu **Zaúčtováno**, má číslo z řady ID
+a v detailu odkaz na zápis deníku.
+
+#### 52.14.15.2 Zaúčtování a číselná řada
+
+Zaúčtování vytvoří ruční zápis deníku stejnou cestou jako formulář **Ruční zápis**:
+platí kontrola MD = Dal, účty z účtové osnovy, otevřené účetní období a zámek
+účtování k datu. Zápis je běžný ruční zápis, takže ho hlavní kniha, výkazy,
+saldokonto i kontroly berou jako každý jiný. Číslo zápisu je číslo interního
+dokladu, popis zápisu je popis dokladu.
+
+Číslo se vydává až při zaúčtování z řady **Interní doklady a ruční zápisy (ID)**,
+kterou sdílí i ruční zápisy s automatickým číslováním. Prefix, tvar čísla i další
+číslo nastavíte v `Nástroje → Uzávěrka` v části **Číselné řady**. Koncept číslo nemá.
+
+Navázané doklady se při zaúčtování přenesou do vazeb zápisu
+([§ 52.14.7.4](#521474-vazba-na-doklad)). U zápočtu tak saldokonto obě faktury vyrovná
+podle zápisu.
+
+DPH řádky interní doklad nemá, stejně jako ruční zápis. Zdanitelné plnění patří do faktur.
+
+#### 52.14.15.3 Seznam, filtry a export
+
+Seznam ukazuje číslo, datum dokladu, popis s druhem, partnera, částku (součet strany MD)
+a stav. Filtrovat jde podle stavu, druhu, partnera, období (datum dokladu od a do)
+a textu (číslo, popis, partner, poznámka). Sloupce se řadí kliknutím na záhlaví.
+Tlačítko **Export CSV** stáhne doklady podle aktuálních filtrů.
+
+#### 52.14.15.4 Storno, smazání a vazba na deník
+
+- **Koncept** jde upravit i smazat.
+- **Zaúčtovaný doklad** stornujete v jeho detailu tlačítkem **Stornovat**. Vznikne
+  protizápis k zápisu dokladu a doklad přejde do stavu **Stornováno**. Do zamčeného nebo
+  uzavřeného období storno nepůjde, zvolte datum v otevřeném období.
+- Zápis interního dokladu nejde stornovat přímo v deníku, deník odkáže na detail dokladu.
+  Smažete-li zápis v deníku, doklad se vrátí do konceptu a při novém zaúčtování dostane
+  své původní číslo.
+- V deníku má zápis interního dokladu u čísla odkaz **Interní doklad**, rozbalený zápis
+  ukazuje odkaz na doklad.
+
+Interní doklad jde vytvořit i nad existujícím ručním zápisem: v rozbaleném zápisu
+deníku klikněte na **Vytvořit interní doklad**. Zápis se nezmění, jen dostane číslo
+z řady ID, pokud žádné nemá (to jde jen u zápisu v otevřeném období).
+
+#### 52.14.15.5 Přílohy a oprávnění
+
+Přílohy (dohodu o zápočtu, podklad k odpisu) připojíte v detailu dokladu v části
+**Přílohy**. Ukládají se do Dokumentů ve složce *Interní doklady/rok/měsíc*.
+
+Seznam a detail vidí uživatel s přístupem k účetnictví. Koncept zakládá a upravuje,
+kdo smí zapisovat ruční zápisy. Zaúčtování, storno a vytvoření dokladu nad ručním
+zápisem vyžadují oprávnění zaúčtovat v deníku.
 
 ## 52.15 Související kapitoly
 

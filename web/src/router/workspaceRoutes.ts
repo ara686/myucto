@@ -236,6 +236,11 @@ export function createWorkspaceRoutes(): RouteRecordRaw[] {
       { path: 'accounting/periods',       name: 'accounting-periods',       component: () => import('@/pages/accounting/Periods.vue'), meta: { requiresDoubleEntry: true } },
       { path: 'accounting/journal',       name: 'accounting-journal',       component: () => import('@/pages/accounting/Journal.vue'),         meta: { requiresDoubleEntry: true } },
       { path: 'accounting/journal/new',   name: 'accounting-journal-new',   component: () => import('@/pages/accounting/ManualEntry.vue'),     meta: { requiresDoubleEntry: true, requiresSupplier: true } },
+      // Interní doklady (ID): hlavička nad ručním zápisem deníku s číselnou řadou a rychlým zadáním.
+      { path: 'accounting/internal-documents', name: 'accounting-internal-documents', component: () => import('@/pages/internal-documents/InternalDocuments.vue'), meta: { requiresDoubleEntry: true, requiresSupplier: true } },
+      { path: 'accounting/internal-documents/new', name: 'accounting-internal-document-new', component: () => import('@/pages/internal-documents/InternalDocumentEditor.vue'), meta: { requiresDoubleEntry: true, requiresSupplier: true } },
+      { path: 'accounting/internal-documents/:id(\\d+)', name: 'accounting-internal-document-detail', component: () => import('@/pages/internal-documents/InternalDocumentDetail.vue'), meta: { requiresDoubleEntry: true, requiresSupplier: true } },
+      { path: 'accounting/internal-documents/:id(\\d+)/edit', name: 'accounting-internal-document-edit', component: () => import('@/pages/internal-documents/InternalDocumentEditor.vue'), meta: { requiresDoubleEntry: true, requiresSupplier: true } },
       // AI asistent k účtování — chat s přílohami, návrhy zápisů a zařazení do Dokumentů.
       { path: 'accounting/ai-assistant', name: 'accounting-ai-assistant', component: () => import('@/pages/accounting/AiAssistant.vue'), meta: { requiresDoubleEntry: true, requiresSupplier: true } },
       { path: 'accounting/payroll',       name: 'accounting-payroll',       component: () => import('@/pages/accounting/PayrollRecap.vue'),    meta: { requiresDoubleEntry: true, requiresSupplier: true } },

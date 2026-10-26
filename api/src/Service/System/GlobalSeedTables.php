@@ -391,6 +391,7 @@ final class GlobalSeedTables
         'instance_exports',
         'integration_change_log', 'integration_change_state', 'integration_inbox', 'integration_inbox_state',
         'integration_outbox',
+        'internal_document_lines', 'internal_documents',
         'invoice_attachments', 'invoice_items', 'invoice_payment_schedule', 'invoice_payments',
         'invoice_pdfs', 'invoice_settlements',
         'invoices',

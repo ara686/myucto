@@ -10791,7 +10791,7 @@ paths:
               type: object
               required: [entity_type, entity_id]
               properties:
-                entity_type: { type: string, enum: [client, invoice, purchase_invoice, project, journal_entry, bank_transaction, cash_document, other_item, invoice_payment] }
+                entity_type: { type: string, enum: [client, invoice, purchase_invoice, project, journal_entry, bank_transaction, cash_document, other_item, invoice_payment, internal_document] }
                 entity_id: { type: integer }
       responses:
         '200': { description: Aktuální vazby, content: { application/json: { schema: { type: object, properties: { links: { type: array, items: { $ref: '#/components/schemas/DocumentLink' } } } } } } }
@@ -10808,7 +10808,7 @@ paths:
             schema:
               type: object
               properties:
-                entity_type: { type: string, enum: [client, invoice, purchase_invoice, project, journal_entry, bank_transaction, cash_document, other_item, invoice_payment] }
+                entity_type: { type: string, enum: [client, invoice, purchase_invoice, project, journal_entry, bank_transaction, cash_document, other_item, invoice_payment, internal_document] }
                 entity_id: { type: integer }
       responses:
         '200': { description: Aktuální vazby, content: { application/json: { schema: { type: object, properties: { links: { type: array, items: { $ref: '#/components/schemas/DocumentLink' } } } } } } }
@@ -10819,7 +10819,7 @@ paths:
       summary: Dokumenty navázané na entitu (oboustranné párování)
       parameters:
         - { $ref: '#/components/parameters/SupplierIdHeader' }
-        - { name: type, in: path, required: true, schema: { type: string, enum: [client, invoice, purchase_invoice, project, journal_entry, bank_transaction, cash_document, other_item, invoice_payment] } }
+        - { name: type, in: path, required: true, schema: { type: string, enum: [client, invoice, purchase_invoice, project, journal_entry, bank_transaction, cash_document, other_item, invoice_payment, internal_document] } }
         - { name: id, in: path, required: true, schema: { type: integer } }
       responses:
         '200': { description: Navázané dokumenty, content: { application/json: { schema: { type: object, properties: { documents: { type: array, items: { $ref: '#/components/schemas/Document' } } } } } } }
@@ -17704,6 +17704,148 @@ paths:
         content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: '#/components/schemas/OtherItemInstallmentInput' } } } } } }
       responses:
         '200': { description: Splátky, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: '#/components/schemas/OtherItemInstallment' } } } } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v1/accounting/internal-documents:
+    get:
+      tags: [Accounting]
+      summary: Interní doklady (ID) s filtry, řazením a stránkováním
+      description: Jen podvojné účetnictví (jinak 403 wrong_accounting_mode). Čtení vyžaduje právo `accounting`.
+      parameters:
+        - { $ref: '#/components/parameters/SupplierIdHeader' }
+        - { in: query, name: status, schema: { type: string, enum: [all, draft, posted, reversed] } }
+        - { in: query, name: kind, schema: { type: string, enum: [other, offset, reclassification, write_off, fx_difference, correction, accrual] } }
+        - { in: query, name: partner_id, schema: { type: integer } }
+        - { in: query, name: from, schema: { type: string, format: date }, description: Datum dokladu od }
+        - { in: query, name: to, schema: { type: string, format: date }, description: Datum dokladu do }
+        - { in: query, name: q, schema: { type: string }, description: Číslo dokladu, popis, partner nebo poznámka }
+        - { in: query, name: page, schema: { type: integer, minimum: 1 } }
+        - { in: query, name: per_page, schema: { type: integer, minimum: 1, maximum: 200 } }
+        - { in: query, name: sort_by, schema: { type: string, enum: [document_no, document_date, entry_date, title, partner_name, amount, status] } }
+        - { in: query, name: sort_dir, schema: { type: string, enum: [asc, desc], default: desc } }
+      responses:
+        '200': { description: Stránkovaný seznam, content: { application/json: { schema: { $ref: '#/components/schemas/InternalDocumentList' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    post:
+      tags: [Accounting]
+      summary: Vytvoří koncept interního dokladu
+      description: Koncept smí být nevyrovnaný, do deníku se zapíše až zaúčtováním. Přes API token nedostupné (403 token_write_forbidden). Právo `accounting.journal.write`.
+      parameters:
+        - { $ref: '#/components/parameters/SupplierIdHeader' }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/InternalDocumentInput' } } }
+      responses:
+        '201': { description: Koncept, content: { application/json: { schema: { $ref: '#/components/schemas/InternalDocument' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
+  /api/v1/accounting/internal-documents/export:
+    get:
+      tags: [Accounting]
+      summary: Export interních dokladů do CSV se stejnými filtry jako seznam
+      parameters:
+        - { $ref: '#/components/parameters/SupplierIdHeader' }
+        - { in: query, name: status, schema: { type: string, enum: [all, draft, posted, reversed] } }
+        - { in: query, name: kind, schema: { type: string } }
+        - { in: query, name: partner_id, schema: { type: integer } }
+        - { in: query, name: from, schema: { type: string, format: date } }
+        - { in: query, name: to, schema: { type: string, format: date } }
+        - { in: query, name: q, schema: { type: string } }
+      responses:
+        '200': { description: CSV (UTF-8 s BOM, oddělovač středník), content: { text/csv: { schema: { type: string } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
+  /api/v1/accounting/internal-documents/from-entry/{id}:
+    post:
+      tags: [Accounting]
+      summary: Vytvoří interní doklad nad existujícím ručním zápisem deníku
+      description: |
+        Jen aktivní zaúčtovaný ruční zápis (`source_type = manual`, bez `source_id`), který není stornovaný ani stornem
+        a nemá jiný interní doklad (409 internal_documents.error.entry_has_document). Zápis bez čísla dokladu dostane číslo
+        z řady ID, pokud leží v otevřeném období (jinak 409 internal_documents.error.entry_number_locked). Přes API token
+        nedostupné (403 token_write_forbidden). Právo `accounting.journal.post`.
+      parameters:
+        - { $ref: '#/components/parameters/SupplierIdHeader' }
+        - { in: path, name: id, required: true, schema: { type: integer }, description: ID zápisu deníku }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                kind: { type: string, enum: [other, offset, reclassification, write_off, fx_difference, correction, accrual] }
+                title: { type: string, maxLength: 255 }
+                partner_id: { type: [integer, 'null'] }
+                partner_name: { type: [string, 'null'], maxLength: 190 }
+                note: { type: [string, 'null'] }
+      responses:
+        '201': { description: Zaúčtovaný interní doklad, content: { application/json: { schema: { $ref: '#/components/schemas/InternalDocument' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/accounting/internal-documents/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/SupplierIdHeader' }
+      - { in: path, name: id, required: true, schema: { type: integer } }
+    get:
+      tags: [Accounting]
+      summary: Detail interního dokladu s řádky kontace
+      responses:
+        '200': { description: Detail, content: { application/json: { schema: { $ref: '#/components/schemas/InternalDocument' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Accounting]
+      summary: Změní koncept (částečná úprava, chybějící klíč = uložená hodnota)
+      description: Nekoncept vrátí 409 internal_documents.error.not_draft. Přes API token nedostupné (403 token_write_forbidden).
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/InternalDocumentInput' } } }
+      responses:
+        '200': { description: Změněný koncept, content: { application/json: { schema: { $ref: '#/components/schemas/InternalDocument' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    delete:
+      tags: [Accounting]
+      summary: Smaže koncept
+      description: Zaúčtovaný doklad se nemaže, stornuje se (409 internal_documents.error.not_draft). Přes API token nedostupné.
+      responses:
+        '200': { description: Smazáno }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v1/accounting/internal-documents/{id}/post:
+    post:
+      tags: [Accounting]
+      summary: Zaúčtuje koncept ručním zápisem deníku
+      description: |
+        Vydá číslo z řady ID (sdílené s ručními zápisy) a zapíše ruční zápis (`source_type = manual`) se stejnou validací
+        jako `POST /accounting/journal`: MD = D, účty z účtové osnovy, otevřené období a zámek k datu (`period_not_open`,
+        `date_locked`, `unbalanced_entry`). Vazby na doklady se přenesou do vazeb zápisu. Přes API token nedostupné
+        (403 token_write_forbidden). Právo `accounting.journal.post`.
+      parameters:
+        - { $ref: '#/components/parameters/SupplierIdHeader' }
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: Zaúčtovaný doklad, content: { application/json: { schema: { $ref: '#/components/schemas/InternalDocument' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
+  /api/v1/accounting/internal-documents/{id}/reverse:
+    post:
+      tags: [Accounting]
+      summary: Stornuje zaúčtovaný doklad protizápisem
+      description: Storno zápisu deníku stejným mechanismem jako `POST /accounting/journal/{id}/reverse`. Přes API token nedostupné. Právo `accounting.journal.post`.
+      parameters:
+        - { $ref: '#/components/parameters/SupplierIdHeader' }
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [reason], properties: { reason: { type: string, minLength: 3, maxLength: 500 }, entry_date: { type: string, format: date } } } } }
+      responses:
+        '200': { description: Stornovaný doklad, content: { application/json: { schema: { $ref: '#/components/schemas/InternalDocument' } } } }
         '403': { $ref: '#/components/responses/Forbidden' }
 
   /api/v1/accounting/cash-documents:
@@ -39508,6 +39650,72 @@ components:
         profit_czk: { type: number }
         posted: { type: number }
         draft: { type: number }
+    InternalDocumentLine:
+      type: object
+      required: [account_code, side, amount]
+      properties:
+        account_code: { type: string, maxLength: 20 }
+        side: { type: string, enum: [debit, credit] }
+        amount: { type: number, exclusiveMinimum: 0 }
+        is_red_storno: { type: boolean }
+        cost_center: { type: [string, 'null'], maxLength: 50 }
+        dimensions: { type: object, additionalProperties: { type: integer }, description: Typ dimenze -> hodnota }
+    InternalDocumentLink:
+      type: object
+      required: [doc_type, doc_id]
+      properties:
+        doc_type: { type: string, enum: [invoice, purchase_invoice, cash, bank] }
+        doc_id: { type: integer }
+        note: { type: [string, 'null'], maxLength: 255 }
+    InternalDocumentInput:
+      type: object
+      required: [title, document_date]
+      properties:
+        kind: { type: string, enum: [other, offset, reclassification, write_off, fx_difference, correction, accrual], default: other }
+        title: { type: string, maxLength: 255 }
+        document_date: { type: string, format: date }
+        entry_date: { type: string, format: date, description: Datum účetního případu, výchozí = datum dokladu }
+        partner_id: { type: [integer, 'null'] }
+        partner_name: { type: [string, 'null'], maxLength: 190 }
+        note: { type: [string, 'null'] }
+        lines: { type: array, maxItems: 200, items: { $ref: '#/components/schemas/InternalDocumentLine' } }
+        document_links:
+          type: array
+          maxItems: 50
+          description: Vazby na doklady (např. vydaná a přijatá faktura zápočtu); při zaúčtování se přenesou do vazeb zápisu deníku.
+          items: { $ref: '#/components/schemas/InternalDocumentLink' }
+    InternalDocument:
+      type: object
+      required: [id, kind, title, document_date, entry_date, amount, status, document_links]
+      properties:
+        id: { type: integer, format: int64 }
+        kind: { type: string, enum: [other, offset, reclassification, write_off, fx_difference, correction, accrual] }
+        title: { type: string }
+        document_date: { type: string, format: date }
+        entry_date: { type: string, format: date }
+        partner_id: { type: [integer, 'null'] }
+        partner_name: { type: [string, 'null'] }
+        amount: { type: number, description: Součet strany MD (červené storno odečítá) }
+        note: { type: [string, 'null'] }
+        status: { type: string, enum: [draft, posted, reversed] }
+        document_no: { type: [string, 'null'], description: Číslo z řady ID, vydané při zaúčtování }
+        journal_entry_id: { type: [integer, 'null'], format: int64, description: Ruční zápis deníku (source_type manual) }
+        reversal_entry_id: { type: [integer, 'null'], format: int64 }
+        reversal_reason: { type: [string, 'null'] }
+        posted_at: { type: [string, 'null'], format: date-time }
+        reversed_at: { type: [string, 'null'], format: date-time }
+        document_count: { type: integer, description: Jen v seznamu, počet připojených dokumentů }
+        lines: { type: array, items: { $ref: '#/components/schemas/InternalDocumentLine' }, description: Jen v detailu }
+        document_links: { type: array, items: { $ref: '#/components/schemas/InternalDocumentLink' } }
+    InternalDocumentList:
+      type: object
+      required: [items, total, page, per_page]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/InternalDocument' } }
+        total: { type: integer }
+        page: { type: integer }
+        per_page: { type: integer }
+        totals: { type: object, properties: { posted_amount: { type: number } } }
     OtherItemAllocation:
       type: object
       properties:
@@ -43626,6 +43834,29 @@ components:
           type: boolean
           description: Jen v listu — zápis má protějšek v grafu doklad ↔ úhrada (bankovní pohyb, pokladní doklad nebo
             zápočet).
+        internal_document:
+          type:
+          - object
+          - 'null'
+          description: Interní doklad, jehož zaúčtováním (role posting) nebo stornem (role reversal) zápis je; jinak null.
+          properties:
+            id:
+              type: integer
+            document_no:
+              type:
+              - string
+              - 'null'
+            status:
+              type: string
+              enum:
+              - draft
+              - posted
+              - reversed
+            role:
+              type: string
+              enum:
+              - posting
+              - reversal
         vat_breakdown:
           type: array
           description: Jen s include_vat_breakdown=1; u faktur rozpad podle sazeb, jinak prázdné pole.
@@ -44101,13 +44332,13 @@ components:
     DocumentLink:
       type: object
       properties:
-        entity_type: { type: string, enum: [client, invoice, purchase_invoice, project, journal_entry, bank_transaction, cash_document, other_item, invoice_payment] }
+        entity_type: { type: string, enum: [client, invoice, purchase_invoice, project, journal_entry, bank_transaction, cash_document, other_item, invoice_payment, internal_document] }
         entity_id: { type: integer }
         label: { type: string }
     DocumentLinkCandidate:
       type: object
       properties:
-        entity_type: { type: string, enum: [client, invoice, purchase_invoice, project, journal_entry, bank_transaction, cash_document, other_item, invoice_payment] }
+        entity_type: { type: string, enum: [client, invoice, purchase_invoice, project, journal_entry, bank_transaction, cash_document, other_item, invoice_payment, internal_document] }
         entity_id: { type: integer }
         label: { type: string }
         sublabel: { type: string }

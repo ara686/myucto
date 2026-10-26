@@ -1117,6 +1117,10 @@ function entryRange(entry: JournalEntryDetail): { from: string; to: string } {
                   <div v-if="e.source_bank_ref && e.source_bank_ref !== e.document_no"
                        class="text-[10px] text-neutral-400 whitespace-nowrap"
                        :title="t('accounting.journal.bank_ref_hint', { ref: e.source_bank_ref })">{{ e.source_bank_ref }}</div>
+                  <RouterLink v-if="e.internal_document" :to="{ name: 'accounting-internal-document-detail', params: { id: e.internal_document.id } }"
+                    class="block whitespace-nowrap font-sans text-[10px] text-primary-700 hover:underline" data-test="journal-internal-document" @click.stop>
+                    {{ t(e.internal_document.role === 'reversal' ? 'accounting.journal.internal_document_reversal_badge' : 'accounting.journal.internal_document_badge') }}
+                  </RouterLink>
                 </td>
                 <td v-else-if="c.key === 'document_date'" :data-custom-color="!!colors.color('document_date')" :style="colors.cellStyle('document_date')" class="px-3 py-2 whitespace-nowrap">{{ e.document_date ? formatDate(e.document_date) : '—' }}</td>
                 <td v-else-if="c.key === 'description'" :data-custom-color="!!colors.color('description')" :style="colors.cellStyle('description')" class="px-3 py-2 wrap-cell" :title="e.description || undefined">
@@ -1233,6 +1237,10 @@ function entryRange(entry: JournalEntryDetail): { from: string; to: string } {
                 <span v-if="e.source_bank_ref && e.source_bank_ref !== e.document_no"
                       class="font-mono text-[10px] text-neutral-400 truncate"
                       :title="t('accounting.journal.bank_ref_hint', { ref: e.source_bank_ref })">{{ e.source_bank_ref }}</span>
+                <RouterLink v-if="e.internal_document" :to="{ name: 'accounting-internal-document-detail', params: { id: e.internal_document.id } }"
+                  class="whitespace-nowrap text-[10px] text-primary-700 hover:underline" @click.stop>
+                  {{ t(e.internal_document.role === 'reversal' ? 'accounting.journal.internal_document_reversal_badge' : 'accounting.journal.internal_document_badge') }}
+                </RouterLink>
               </span>
               <span class="font-mono text-sm font-semibold whitespace-nowrap" :data-custom-color="!!colors.color('amount')" :style="colors.cellStyle('amount')">
                 {{ formatMoney(e.amount ?? 0) }}

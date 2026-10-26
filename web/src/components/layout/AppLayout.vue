@@ -660,6 +660,8 @@ const navSections = computed<NavSection[]>(() => {
         ] : []),
         { to: '/accounting/saldo',            label: t('nav.accounting_saldo'),            icon: ICONS.coin },
         { to: '/other-items', label: t('nav.other_items'), icon: ICONS.crm, permission: 'other_items' as PermissionKey, newTo: '/other-items/new' },
+        // Interní doklady (ID) hned pod ostatními pohledávkami a závazky: zápočty, přeúčtování, odpisy, kurzové rozdíly.
+        { to: '/accounting/internal-documents', label: t('nav.internal_documents'), icon: ICONS.documents, permission: 'accounting' as PermissionKey, newTo: '/accounting/internal-documents/new' },
         { to: '/accounting/document-completeness', label: t('nav.accounting_document_completeness'), icon: ICONS.approvals, permission: 'accounting' },
         { to: '/accounting/monthly-check',    label: t('nav.accounting_monthly_check'),    icon: ICONS.approvals },
         { to: '/accounting/monthly-report',   label: t('nav.accounting_monthly_report'),   icon: ICONS.reports },
@@ -1242,6 +1244,7 @@ const quickActions = computed(() => {
     { to: '/purchase-invoices/new', label: t('nav.quick_purchase'), icon: ICONS.purchase },
     ...(!clientExperience.value && auth.hasCommercialFeatures && auth.canWrite('accounting.journal.write') ? [
       { to: '/accounting/journal/new', label: t('nav.quick_journal'), icon: ICONS.accounting },
+      { to: '/accounting/internal-documents/new', label: t('nav.quick_internal_document'), icon: ICONS.documents },
     ] : []),
     ...(clientExperience.value ? [] : [
       { to: '/logbook?tab=trips&new=trip', label: t('nav.quick_trip'),    icon: ICONS.logbook },

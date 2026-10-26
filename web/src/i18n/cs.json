@@ -334,6 +334,130 @@
       "split_hint": "Rozdělí částku dokladu rovnoměrně, haléřový zbytek připadne na poslední splátku. Kalendář pak uložte."
     }
   },
+  "internal_documents": {
+    "title": "Interní doklady",
+    "subtitle": "Zápočty, přeúčtování, odpisy pohledávek, kurzové rozdíly, opravy a dohadné položky s vlastní číselnou řadou. Zaúčtováním vznikne ruční zápis v účetním deníku.",
+    "new": "Nový interní doklad",
+    "export_csv": "Export CSV",
+    "status_label": "Stav",
+    "status": {
+      "draft": "Koncept",
+      "posted": "Zaúčtováno",
+      "reversed": "Stornováno"
+    },
+    "kind_label": "Druh",
+    "kind": {
+      "other": "Ostatní",
+      "offset": "Zápočet",
+      "reclassification": "Přeúčtování",
+      "write_off": "Odpis pohledávky",
+      "fx_difference": "Kurzový rozdíl",
+      "correction": "Oprava",
+      "accrual": "Dohadná položka"
+    },
+    "partner": "Partner",
+    "partner_directory": "Partner z adresáře",
+    "search": "Hledat",
+    "search_placeholder": "Číslo, popis, partner nebo poznámka",
+    "date_from": "Datum dokladu od",
+    "date_to": "Datum dokladu do",
+    "empty": "Žádné interní doklady",
+    "empty_hint": "Interní doklad založíte tlačítkem Nový interní doklad nebo z ručního zápisu v účetním deníku.",
+    "document_no": "Číslo",
+    "document_date": "Datum dokladu",
+    "entry_date": "Datum účetního případu",
+    "item": "Popis",
+    "amount": "Částka",
+    "no_number": "Koncept bez čísla",
+    "document_count": "Dokumenty: {count}",
+    "summary": "Celkem dokladů: {count}",
+    "posted_total": "Zaúčtováno celkem",
+    "confirm_delete": "Smazat koncept interního dokladu?",
+    "back": "Interní doklady",
+    "edit": "Upravit interní doklad",
+    "quick_entry": "Rychlé zadání interního dokladu",
+    "form_hint": "Vyberte šablonu nebo zadejte řádky MD a D. Řádek bez částky se dopočítá tak, aby strany souhlasily.",
+    "templates_title": "Šablony",
+    "templates_hint": "Šablona předvyplní druh, popis a účty, částky doplníte.",
+    "templates": {
+      "offset": {
+        "title": "Zápočet pohledávky a závazku",
+        "hint": "MD 321 / D 311, navažte vydanou a přijatou fakturu partnera."
+      },
+      "reclassification": {
+        "title": "Přeúčtování",
+        "hint": "Přesun částky z jednoho účtu na jiný."
+      },
+      "write_off": {
+        "title": "Odpis pohledávky",
+        "hint": "MD 546 / D 311, navažte odepisovanou fakturu."
+      },
+      "fx_loss": {
+        "title": "Kurzová ztráta",
+        "hint": "MD 563 / D 311, účet saldokonta upravte podle dokladu."
+      },
+      "fx_gain": {
+        "title": "Kurzový zisk",
+        "hint": "MD 311 / D 663, účet saldokonta upravte podle dokladu."
+      },
+      "accrual": {
+        "title": "Dohadná položka",
+        "hint": "MD 518 / D 389, nákladový účet upravte podle případu."
+      }
+    },
+    "details": "Údaje dokladu",
+    "lines": "Řádky MD a D",
+    "lines_hint": "Účet hledejte podle čísla nebo názvu. Koncept může být nevyrovnaný, zaúčtovat jde jen vyrovnaný doklad.",
+    "balance": "Dorovnat",
+    "add_line": "Přidat řádek",
+    "line_account": "Účet řádku {n}",
+    "line_side": "Strana řádku {n}",
+    "line_amount": "Částka řádku {n}",
+    "line_cost_center": "Středisko řádku {n}",
+    "remove_line": "Odebrat řádek {n}",
+    "auto_balance": "Dopočítá se",
+    "shortcuts": "Enter v poslední částce přidá řádek, Alt+N nový řádek, Ctrl+S uložit koncept, Ctrl+Enter zaúčtovat.",
+    "links_title": "Navázané doklady",
+    "links_hint": "Doklady, kterých se případ týká. Při zaúčtování se navážou na zápis deníku.",
+    "links_hint_offset": "Vyberte vydanou a přijatou fakturu partnera. Saldokonto podle vazby obě faktury vyrovná.",
+    "note": "Poznámka",
+    "attachments_after_save": "Přílohy (dohodu o zápočtu, podklad k odpisu) připojíte v detailu dokladu po uložení.",
+    "save_and_post": "Uložit a zaúčtovat",
+    "save_draft": "Uložit koncept",
+    "validation_required": "Vyplňte popis a datum dokladu.",
+    "lines_incomplete": "Každý řádek potřebuje účet a kladnou částku.",
+    "not_balanced": "Strany MD a D se neshodují, doklad jde uložit jen jako koncept.",
+    "posted_toast": "Interní doklad {number} je zaúčtovaný.",
+    "saved_draft": "Koncept je uložený.",
+    "not_found": "Interní doklad nebyl nalezen.",
+    "post": "Zaúčtovat",
+    "open_journal": "Otevřít v deníku",
+    "reverse": "Stornovat",
+    "journal": "Účetní deník",
+    "journal_entry": "Zápis deníku",
+    "not_posted": "Zatím nezaúčtováno",
+    "reversal_entry": "Storno zápis",
+    "draft_hint": "Zaúčtováním vznikne ruční zápis v deníku a doklad dostane číslo z řady ID.",
+    "account": "Účet",
+    "total": "Celkem",
+    "no_lines": "Doklad zatím nemá žádné řádky.",
+    "attachments": "Přílohy",
+    "confirm_reverse": "Storno vytvoří v deníku protizápis k zápisu dokladu. Doklad zůstane v evidenci jako stornovaný.",
+    "reverse_reason": "Důvod storna",
+    "reverse_date": "Datum storna",
+    "reason_required": "Uveďte důvod storna (alespoň 3 znaky).",
+    "reversed_toast": "Interní doklad je stornovaný.",
+    "confirm_post": "Zaúčtovat interní doklad do účetního deníku?",
+    "posted_at": "Zaúčtováno",
+    "reversal_reason": "Důvod storna",
+    "confirm_from_entry": "Vytvořit k zápisu interní doklad? Zápis se nezmění, jen dostane číslo z řady ID, pokud žádné nemá.",
+    "created_from_entry": "Interní doklad {number} je vytvořený.",
+    "journal_posting_of": "Zápis je zaúčtováním interního dokladu",
+    "journal_reversal_of": "Zápis je stornem interního dokladu",
+    "open_document": "Otevřít interní doklad",
+    "from_entry_hint": "Ruční zápis zatím nemá interní doklad.",
+    "from_entry": "Vytvořit interní doklad"
+  },
   "invoice_default_note": {
     "title": "Výchozí poznámka pod položkami",
     "hint": "Text, který se předvyplní do poznámky pod položkami na každém nově zakládaném dokladu. V dokladu ho lze kdykoli přepsat nebo smazat; už vystavené doklady se nemění.",
@@ -916,7 +1040,8 @@
       "bank_transaction": "Bankovní pohyb",
       "cash_document": "Pokladní doklad",
       "other_item": "Ostatní pohledávka nebo závazek",
-      "invoice_payment": "Úhrada faktury"
+      "invoice_payment": "Úhrada faktury",
+      "internal_document": "Interní doklad"
     },
     "panel_title": "Dokumenty",
     "panel_attach": "Připojit dokument",
@@ -1833,7 +1958,9 @@
       "svj": "Tato agenda je jen pro společenství vlastníků jednotek."
     },
     "property_funds": "Zálohy a příjmy vlastníků",
-    "property_issuance": "Vydání předpisů"
+    "property_issuance": "Vydání předpisů",
+    "internal_documents": "Interní doklady",
+    "quick_internal_document": "Interní doklad"
   },
   "migration_nonprofit_notice": {
     "title": "Převod pro neziskové organizace nebyl ověřen",
@@ -16939,7 +17066,9 @@
         "advance_posted": "Záloha se neúčtuje jako předpis. Její zaúčtování tvoří úhrada na účet zálohy a zúčtování zálohy v konečné faktuře.",
         "relation_advance_payment": "Úhrada zálohy",
         "relation_advance_final": "Zúčtování v konečné faktuře"
-      }
+      },
+      "internal_document_badge": "Interní doklad",
+      "internal_document_reversal_badge": "Storno interního dokladu"
     },
     "manual": {
       "title": "Ruční účetní zápis",
@@ -19108,7 +19237,7 @@
           "opening": "Otevírací zápisy (OT)",
           "fx": "Kurzové rozdíly (KR)",
           "transfer": "Převody mezi účty (PP)",
-          "manual": "Ruční zápisy (ID)",
+          "manual": "Interní doklady a ruční zápisy (ID)",
           "cash_in": "Příjmové pokladní doklady (PPD)",
           "cash_out": "Výdajové pokladní doklady (VPD)",
           "stock_in": "Skladové příjemky (PRI)",

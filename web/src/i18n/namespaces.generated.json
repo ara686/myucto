@@ -88,6 +88,7 @@
     "imports",
     "instance_export",
     "integrations",
+    "internal_documents",
     "invoice_default_note",
     "kb_plus",
     "linked_documents",
@@ -654,11 +655,28 @@
       "automation",
       "dimensions",
       "documents",
+      "internal_documents",
       "linked_documents",
       "other_items"
     ],
     "accounting-journal-new": [
       "dimensions"
+    ],
+    "accounting-internal-documents": [
+      "internal_documents"
+    ],
+    "accounting-internal-document-new": [
+      "dimensions",
+      "internal_documents"
+    ],
+    "accounting-internal-document-detail": [
+      "documents",
+      "internal_documents",
+      "linked_documents"
+    ],
+    "accounting-internal-document-edit": [
+      "dimensions",
+      "internal_documents"
     ],
     "accounting-ai-assistant": [
       "other_items"

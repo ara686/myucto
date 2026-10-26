@@ -80,6 +80,7 @@ export const MANUAL_CHAPTERS: ManualChapterRule[] = [
   [/^\/accounting\/nonprofit-funding(?:\/|$)/, '117_Granty_a_ucelove_dary'],
   [/^\/accounting\/periods(?:\/|$)/, '72_Uzaverka'],
   [/^\/accounting\/journal(?:\/|$)/, '52_Ucetni_denik'],
+  [/^\/accounting\/internal-documents(?:\/|$)/, '52_Ucetni_denik'],
   [/^\/accounting(?:\/|$)|^\/utilities(?:\/|$)/, '73_Ucetni_nastroje'],
   [/^\/tax-evidence(?:\/|$)/, '74_Danova_evidence'],
   [/^\/admin\/suppliers(?:\/|$)/, '95_Multi_supplier'],

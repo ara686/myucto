@@ -14,6 +14,7 @@ import LinkedDocumentsPanel from '@/components/documents/LinkedDocumentsPanel.vu
 import CollapsibleSection from '@/components/ui/CollapsibleSection.vue'
 import JournalLineDimensionsEditor from '@/components/dimensions/JournalLineDimensionsEditor.vue'
 import OtherItemSourceContext from './OtherItemSourceContext.vue'
+import InternalDocumentJournalContext from './InternalDocumentJournalContext.vue'
 import RepostModal from './RepostModal.vue'
 import WorkspaceTeleport from '@/components/workspace/WorkspaceTeleport.vue'
 import type { JournalPostingSource } from '@/api/accounting'
@@ -106,6 +107,7 @@ function onLineDimensionsSaved(byLine: Record<number, Record<number, number>>, s
       @preview="id => emit('preview', id)" @focus-entry="id => emit('focus-entry', id)" />
     <OtherItemSourceContext v-if="detail.source_type === 'other_item' && detail.source_id"
       :key="detail.id" :entry-id="detail.id" />
+    <InternalDocumentJournalContext :key="`internal-document-${detail.id}`" :detail="detail" />
     <WhyPanel v-if="detail.automation" class="mt-3" :provenance="detail.automation" />
     <!-- Epic F7: inline editace description (§35) + přílohy §33a -->
     <CollapsibleSection class="mt-4" :title="t('accounting.journal.extras_title')"
@@ -133,8 +135,9 @@ function onLineDimensionsSaved(byLine: Record<number, Record<number, number>>, s
           <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" :d="ICONS.edit" /></svg>
           <span class="whitespace-nowrap">{{ t('accounting.repost.action') }}</span>
         </button>
-        <!-- Zúčtování DPH se nestornuje, přepočítává se a maže na místě (VatClearingService). -->
-        <button v-if="canWrite && !detail.reversed_by && detail.source_type !== 'vat_clearing'" @click="emit('reverse', detail)" :class="btnOutline('danger')">
+        <!-- Zúčtování DPH se nestornuje, přepočítává se a maže na místě (VatClearingService).
+             Zápis interního dokladu se stornuje v detailu dokladu. -->
+        <button v-if="canWrite && !detail.reversed_by && detail.source_type !== 'vat_clearing' && !detail.internal_document" @click="emit('reverse', detail)" :class="btnOutline('danger')">
           <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" :d="ICONS.uturn" /></svg>
           {{ t('accounting.journal.reverse') }}
         </button>
