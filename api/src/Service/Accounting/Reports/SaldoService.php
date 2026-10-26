@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace MyInvoice\Service\Accounting\Reports;
 
+use MyInvoice\Infrastructure\Cache\SupplierDataCache;
 use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Repository\AccountingPeriodRepository;
 use MyInvoice\Repository\LedgerReportRepository;
@@ -68,7 +69,48 @@ final class SaldoService
         private readonly SaldoRepository $saldo,
         private readonly LedgerReportRepository $ledger,
         private readonly AccountingPeriodRepository $periods,
+        private readonly SupplierDataCache $cache,
     ) {}
+
+    /**
+     * {@see build} pro zobrazení a export sestavy: celá sestava se drží v cache firmy,
+     * stránkuje se až z ní. U firmy s desítkami tisíc dokladů trvá sestavení sekundy
+     * a účetní ji otevírá opakovaně (přepnutí okna, export po náhledu). Cache zahodí
+     * každý zápis do dat firmy ({@see SupplierDataCache}), takže po spárování platby
+     * se sestava spočítá znovu.
+     *
+     * Jen pro samostatný request: generace dat se zvedá až na jeho konci, proto
+     * uzávěrka ani kontroly, které saldo čtou po vlastním zápisu, volají {@see build}.
+     *
+     * @return array<string,mixed>
+     * @throws ReportException 422 too_many_rows nad {@see MAX_OPEN_ITEMS}
+     */
+    public function buildCached(
+        int $supplierId,
+        int $periodId,
+        ?string $asOf,
+        ?string $accountFilter = null,
+        ?int $partnerId = null,
+        ?int $page = null,
+        ?int $perPage = null,
+    ): array {
+        $name = 'saldo:' . $periodId . ':' . ($asOf ?? '') . ':' . ($accountFilter ?? 'all') . ':' . ($partnerId ?? 0);
+        $data = $this->cache->remember(
+            $supplierId,
+            $name,
+            new \DateTimeImmutable(),
+            fn (): array => $this->build($supplierId, $periodId, $asOf, $accountFilter, $partnerId),
+        );
+        $data['entity']['prepared_at'] = date('Y-m-d H:i');
+        if ($page !== null) {
+            foreach ($data['accounts'] as &$block) {
+                $block = self::paginatePartners($block, $page, $perPage);
+            }
+            unset($block);
+        }
+
+        return $data;
+    }
 
     /**
      * @param string|null $accountFilter kód účtu (311/321/…) nebo null/'all' = default sada
