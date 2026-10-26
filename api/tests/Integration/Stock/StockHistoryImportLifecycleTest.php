@@ -230,6 +230,72 @@ final class StockHistoryImportLifecycleTest extends StockTestCase
         self::assertSame('completed', $this->drain($sid, StockHistoryImportService::ROLLBACK_KIND, $rollback['id'])['status']);
     }
 
+    /** Vyrovnávací výdejky a technické příjemky mají jednoznačná čísla i u dlouhých kódů a čísel. */
+    public function testGeneratedNumbersStayUniqueForLongCodesAndNumbers(): void
+    {
+        $sid = $this->createSupplier();
+        $first = $this->warehouse($sid, 'SKLAD-PRODEJNA-01A');
+        $second = $this->warehouse($sid, 'SKLAD-PRODEJNA-01B', false);
+        $this->item($sid, 'ZB-100');
+        $long = str_repeat('X', 28);
+        $csv = self::csv([
+            "{$long}-1;vydejka;2020-01-05;SKLAD-PRODEJNA-01A;;ZB-100;2;;;;;",
+            "{$long}-2;vydejka;2020-01-06;SKLAD-PRODEJNA-01A;;ZB-100;1;;;;;",
+            'P1;prijemka;2020-02-01;SKLAD-PRODEJNA-01A;;ZB-100;10;20;;;;',
+            'P2;prijemka;2020-02-01;SKLAD-PRODEJNA-01B;;ZB-100;5;20;;;;',
+        ]);
+        $preview = $this->stage($sid, $csv, $this->config('2021-01-01', ['fill_negative' => true]));
+        self::assertSame(0, $preview['report']['counts']['failed'] ?? 0);
+        $applied = $this->applyAll($sid, $preview['id']);
+        self::assertSame('completed', $applied['status']);
+        $stmt = $this->db->pdo()->prepare('SELECT doc_number FROM stock_documents WHERE supplier_id = ? AND history_import_job_id IS NOT NULL ORDER BY id');
+        $stmt->execute([$sid]);
+        self::assertSame([
+            StockHistoryImportService::fillNumber("{$long}-1", 2), "{$long}-1",
+            StockHistoryImportService::fillNumber("{$long}-2", 3), "{$long}-2",
+            'P1', 'P2',
+            "UH-{$first}-2020-12-31", "UH-{$second}-2020-12-31",
+        ], $stmt->fetchAll(\PDO::FETCH_COLUMN));
+        self::assertSame(str_repeat('X', 26) . '-TP2', StockHistoryImportService::fillNumber("{$long}-1", 2));
+    }
+
+    /** Náhled odmítne doklad, jehož číslo si vezme technická příjemka nebo vyrovnávací výdejka. */
+    public function testPreviewRejectsNumbersReservedForGeneratedDocuments(): void
+    {
+        $sid = $this->createSupplier();
+        $main = $this->warehouse($sid, 'HL');
+        $this->item($sid, 'ZB-100');
+        $fill = StockHistoryImportService::fillNumber('V1', 2);
+        $preview = $this->stage($sid, self::csv([
+            'V1;vydejka;2020-01-05;HL;;ZB-100;2;;;;;',
+            "{$fill};prijemka;2020-02-01;HL;;ZB-100;10;20;;;;",
+            "UH-{$main}-2020-12-31;prijemka;2020-02-01;HL;;ZB-100;1;20;;;;",
+            'P3;prijemka;2020-02-01;HL;;ZB-100;1;20;;;;',
+        ]), $this->config('2021-01-01', ['fill_negative' => true]));
+        self::assertSame([
+            [3, 'failed', 'history_import_number_reserved'],
+            [4, 'failed', 'history_import_number_reserved'],
+        ], $this->failedRows($preview['id']));
+
+        // Technická příjemka by kolidovala s dokladem, který už ve firmě je.
+        $this->db->pdo()->prepare("INSERT INTO stock_documents (supplier_id, doc_type, origin, warehouse_id, doc_number, doc_date, status, created_by, description)
+            VALUES (?, 'receipt', 'manual', ?, ?, '2020-01-01', 'draft', ?, '')")->execute([$sid, $main, $fill, $this->userId]);
+        $preview = $this->stage($sid, self::csv(['V1;vydejka;2020-01-05;HL;;ZB-100;2;;;;;']), $this->config('2021-01-01', ['fill_negative' => true]));
+        self::assertSame([[2, 'failed', 'history_import_number_exists']], $this->failedRows($preview['id']));
+
+        // Vyrovnávací výdejka by kolidovala s dokladem firmy: převzetí se vůbec nespustí.
+        $this->db->pdo()->prepare('UPDATE stock_documents SET doc_number = ? WHERE supplier_id = ? AND doc_number = ?')
+            ->execute(["UH-{$main}-2020-12-31", $sid, $fill]);
+        $preview = $this->stage($sid, self::csv(['P1;prijemka;2020-01-05;HL;;ZB-100;2;10;;;;']), $this->config('2021-01-01'));
+        try {
+            $this->container->get(StockHistoryImportService::class)->apply($sid, $preview['id'], $this->userId);
+            self::fail('Kolize čísla vyrovnávací výdejky musí selhat před převzetím.');
+        } catch (StockException $e) {
+            self::assertSame('history_import_number_exists', $e->errorCode);
+        }
+        self::assertNull($this->lockedUntil($sid));
+    }
+
     // ── pomocníci ────────────────────────────────────────────────────────────
 
     private function expectStale(callable $run): void
@@ -295,6 +361,13 @@ final class StockHistoryImportLifecycleTest extends StockTestCase
             );
         }
         return $out;
+    }
+
+    private function failedRows(int $jobId): array
+    {
+        $stmt = $this->db->pdo()->prepare("SELECT source_row, status, error_code FROM catalog_job_items WHERE job_id = ? AND status = 'failed' ORDER BY source_row");
+        $stmt->execute([$jobId]);
+        return array_map(static fn (array $row): array => [(int) $row[0], $row[1], $row[2]], $stmt->fetchAll(\PDO::FETCH_NUM));
     }
 
     private function historyCount(int $supplierId): int

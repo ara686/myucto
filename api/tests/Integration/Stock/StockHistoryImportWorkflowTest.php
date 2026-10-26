@@ -76,7 +76,7 @@ final class StockHistoryImportWorkflowTest extends StockTestCase
         self::assertSame($liveIssue['lines'][0]['value_total'], $this->docsRepo->findWithLines($sid, (int) $liveIssue['id'])['lines'][0]['value_total']);
 
         $docs = $this->historyDocuments($sid);
-        self::assertSame(['P98-1', 'V98-1', 'T98-1', 'I98-1', 'M98-1', 'P98-2', 'UH-HL-2020-12-31', 'UH-POB-2020-12-31'], array_column($docs, 'doc_number'));
+        self::assertSame(['P98-1', 'V98-1', 'T98-1', 'I98-1', 'M98-1', 'P98-2', "UH-{$main}-2020-12-31", "UH-{$branch}-2020-12-31"], array_column($docs, 'doc_number'));
         $byNumber = array_column($docs, null, 'doc_number');
         self::assertSame($purchase, $byNumber['P98-1']['purchase_invoice_id']);
         self::assertSame($invoice, $byNumber['V98-1']['invoice_id']);
@@ -294,8 +294,8 @@ final class StockHistoryImportWorkflowTest extends StockTestCase
         $applied = $this->applyAll($sid, $preview['id']);
         self::assertSame('completed', $applied['status']);
         self::assertSame(3, $applied['report']['fill_documents']);
-        self::assertSame(['V0-TP', 'V0', 'P1', 'V1-TP', 'V1', 'V2-TP', 'V2', 'P2'], array_column($this->historyDocuments($sid), 'doc_number'));
-        $fill = array_column($this->historyDocuments($sid), null, 'doc_number')['V1-TP'];
+        self::assertSame(['V0-TP2', 'V0', 'P1', 'V1-TP4', 'V1', 'V2-TP5', 'V2', 'P2'], array_column($this->historyDocuments($sid), 'doc_number'));
+        $fill = array_column($this->historyDocuments($sid), null, 'doc_number')['V1-TP4'];
         self::assertStringContainsString('doplnění záporného stavu před V1', $fill['description']);
         self::assertSame(['qtyT' => 5000, 'valueC' => 30000], $this->level($sid, $main, $a));
         self::assertSame(['qtyT' => 0, 'valueC' => 0], $this->level($sid, $main, $b));

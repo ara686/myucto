@@ -388,6 +388,7 @@ final class StockHistoryImportWorker
             'quantity', CAST(negative.fill AS CHAR), 'unit_cost', CAST(COALESCE(negative.last_cost, 0) AS CHAR)))
         WHERE target.supplier_id = ? AND target.job_id = ?")
             ->execute([$supplierId, $jobId, $supplierId, $jobId]);
+        $this->checkReservedNumbers($supplierId, $jobId, $profile);
 
         $stmt = $pdo->prepare("SELECT COUNT(*) FROM catalog_job_items
             WHERE supplier_id = ? AND job_id = ? AND status = 'ready' AND JSON_EXISTS(input_json, '$.fill')");
@@ -454,6 +455,69 @@ final class StockHistoryImportWorker
         ];
     }
 
+    /**
+     * Čísla, která aplikace přidělí sama (technické příjemky, vyrovnávací výdejky), nesmí
+     * patřit dokladu ze souboru; technická příjemka navíc ani dokladu, který ve firmě už je.
+     */
+    private function checkReservedNumbers(int $supplierId, int $jobId, array $profile): void
+    {
+        $pdo = $this->db->pdo();
+        $reserved = [];
+        $fills = [];
+        $fillDocs = [];
+        if ($profile['fill_negative']) {
+            $stmt = $pdo->prepare("SELECT JSON_VALUE(input_json, '$.doc') AS doc,
+                    MIN(JSON_VALUE(input_json, '$.values.doc_number')) AS doc_number, MIN(source_row) AS source_row
+                FROM catalog_job_items WHERE supplier_id = ? AND job_id = ? AND status = 'ready'
+                GROUP BY JSON_VALUE(input_json, '$.doc') HAVING MAX(JSON_EXISTS(input_json, '$.fill')) = 1");
+            $stmt->execute([$supplierId, $jobId]);
+            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                $number = StockHistoryImportService::fillNumber($row['doc_number'], (int) $row['source_row']);
+                $reserved[mb_strtolower($number)] = true;
+                $fills[$number] = $row['doc'];
+                $fillDocs[mb_strtolower($number)] = $row['doc'];
+            }
+        }
+        if ($profile['cutover_date'] !== null) {
+            $stmt = $pdo->prepare("SELECT DISTINCT CAST(JSON_VALUE(input_json, '$.values.warehouse_id') AS UNSIGNED) FROM catalog_job_items
+                    WHERE supplier_id = ? AND job_id = ? AND status = 'ready'
+                UNION SELECT DISTINCT CAST(JSON_VALUE(input_json, '$.values.warehouse_to_id') AS UNSIGNED) FROM catalog_job_items
+                    WHERE supplier_id = ? AND job_id = ? AND status = 'ready' AND JSON_VALUE(input_json, '$.values.doc_type') = 'transfer'");
+            $stmt->execute([$supplierId, $jobId, $supplierId, $jobId]);
+            foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $warehouseId) {
+                $reserved[mb_strtolower(StockHistoryImportService::settlementNumber((int) $warehouseId, $profile['cutover_date']))] = true;
+            }
+        }
+        if ($reserved === []) {
+            return;
+        }
+        $stmt = $pdo->prepare("SELECT DISTINCT JSON_VALUE(input_json, '$.doc') FROM catalog_job_items
+            WHERE supplier_id = ? AND job_id = ? AND status = 'ready'");
+        $stmt->execute([$supplierId, $jobId]);
+        // Klíč dokladu je jeho číslo malými písmeny (StockHistoryImportProfile::documentKey).
+        $this->failDocuments($supplierId, $jobId, array_values(array_filter($stmt->fetchAll(PDO::FETCH_COLUMN), static fn (string $doc): bool => isset($reserved[$doc]))), 'history_import_number_reserved');
+        $taken = [];
+        foreach (array_chunk(array_keys($fills), 1000) as $chunk) {
+            $stmt = $pdo->prepare('SELECT doc_number FROM stock_documents WHERE supplier_id = ? AND doc_number IN ('
+                . implode(',', array_fill(0, count($chunk), '?')) . ')');
+            $stmt->execute([$supplierId, ...$chunk]);
+            foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $number) {
+                $taken[] = $fillDocs[mb_strtolower($number)];
+            }
+        }
+        $this->failDocuments($supplierId, $jobId, $taken, 'history_import_number_exists');
+    }
+
+    private function failDocuments(int $supplierId, int $jobId, array $docs, string $error): void
+    {
+        foreach (array_chunk($docs, 1000) as $chunk) {
+            $this->db->pdo()->prepare("UPDATE catalog_job_items SET status = 'failed', error_code = ?
+                WHERE supplier_id = ? AND job_id = ? AND status = 'ready' AND JSON_VALUE(input_json, '$.doc') IN ("
+                . implode(',', array_fill(0, count($chunk), '?')) . ')')
+                ->execute([$error, $supplierId, $jobId, ...$chunk]);
+        }
+    }
+
     // ── aplikace ─────────────────────────────────────────────────────────────
 
     private function apply(int $supplierId, array $job): array
@@ -488,7 +552,7 @@ final class StockHistoryImportWorker
         $profile = $job['input']['profile'];
         $limit = self::APPLY_BATCH;
         while (true) {
-            $stmt = $pdo->prepare('SELECT ordinal, stock_item_id, input_json FROM catalog_job_items
+            $stmt = $pdo->prepare('SELECT ordinal, source_row, stock_item_id, input_json FROM catalog_job_items
                 WHERE supplier_id = ? AND job_id = ? AND ordinal > ? ORDER BY ordinal LIMIT ' . ($limit + 1));
             $stmt->execute([$supplierId, $job['id'], $job['checkpoint']]);
             $groups = [];
@@ -506,7 +570,7 @@ final class StockHistoryImportWorker
                     $groups[] = [];
                     $last = $input['doc'];
                 }
-                $groups[array_key_last($groups)][] = ['ordinal' => (int) $row['ordinal']] + $input;
+                $groups[array_key_last($groups)][] = ['ordinal' => (int) $row['ordinal'], 'source_row' => (int) $row['source_row']] + $input;
             }
             if ($groups !== [] || $last === null) {
                 break;
@@ -521,7 +585,7 @@ final class StockHistoryImportWorker
         foreach ($groups as $rows) {
             $numbers[] = $rows[0]['values']['doc_number'];
             if ($profile['fill_negative'] && self::fills($rows) !== []) {
-                $numbers[] = self::fillNumber($rows[0]['values']['doc_number']);
+                $numbers[] = StockHistoryImportService::fillNumber($rows[0]['values']['doc_number'], self::firstRow($rows));
             }
         }
         $this->assertNumbersFree($supplierId, $numbers);
@@ -536,7 +600,7 @@ final class StockHistoryImportWorker
                     'origin' => 'manual',
                     'warehouse_id' => $values['warehouse_id'],
                     'warehouse_to_id' => null,
-                    'doc_number' => self::fillNumber($values['doc_number']),
+                    'doc_number' => StockHistoryImportService::fillNumber($values['doc_number'], self::firstRow($rows)),
                     'doc_date' => $values['doc_date'],
                     'description' => mb_substr('Technická příjemka: doplnění záporného stavu před ' . $values['doc_number'] . ' (převzatá historie)', 0, 255),
                     'partner_name' => null,
@@ -693,9 +757,7 @@ final class StockHistoryImportWorker
             $documentId = $report['settlement'][$warehouseId]['document_id'] ?? null;
             $lineNo = $report['settlement'][$warehouseId]['lines'] ?? 0;
             if ($documentId === null) {
-                $code = $pdo->prepare('SELECT code FROM warehouses WHERE supplier_id = ? AND id = ?');
-                $code->execute([$supplierId, $warehouseId]);
-                $number = mb_substr('UH-' . (string) $code->fetchColumn(), 0, 19) . '-' . $date;
+                $number = StockHistoryImportService::settlementNumber($warehouseId, (string) $job['input']['profile']['cutover_date']);
                 $this->assertNumbersFree($supplierId, [$number]);
                 $now ??= (string) $pdo->query('SELECT NOW()')->fetchColumn();
                 $pdo->prepare("INSERT INTO stock_documents
@@ -856,9 +918,9 @@ final class StockHistoryImportWorker
         return $fills;
     }
 
-    private static function fillNumber(string $number): string
+    private static function firstRow(array $rows): int
     {
-        return mb_substr($number, 0, 27) . '-TP';
+        return min(array_column($rows, 'source_row'));
     }
 
     /** Hodnota řádku příjmu v haléřích, zaokrouhlená polovinou nahoru (jako příjemka v MyÚčtu). */

@@ -84,6 +84,9 @@ final class StockHistoryImportService
                 throw new EshopException('history_import_closed_periods_unconfirmed', 'Část dokladů spadá do uzavřeného účetního období. Potvrďte, že je chcete převzít.', 409);
             }
             $this->assertMode($supplierId, $profile);
+            if ($profile['cutover_date'] !== null) {
+                $this->assertSettlementNumbersFree($supplierId, $previewId, $profile['cutover_date']);
+            }
 
             $id = $this->jobs->enqueue($supplierId, self::APPLY_KIND, $source['input'] + [
                 'source_job_id' => $previewId,
@@ -271,6 +274,37 @@ final class StockHistoryImportService
         if ($live->fetchColumn() !== false) {
             throw new StockException('history_import_live_documents', 'Po převzetí historie už firma zaúčtovala vlastní skladový doklad, import bez data přechodu proto nejde vrátit.', 409);
         }
+    }
+
+    /** Vyrovnávací výdejky dostanou čísla až na konci převzetí; kolizi je třeba odhalit před ním. */
+    private function assertSettlementNumbersFree(int $supplierId, int $previewId, string $cutover): void
+    {
+        $stmt = $this->db->pdo()->prepare("SELECT DISTINCT CAST(JSON_VALUE(input_json, '$.values.warehouse_id') AS UNSIGNED) FROM catalog_job_items
+                WHERE supplier_id = ? AND job_id = ? AND status = 'ready'
+            UNION SELECT DISTINCT CAST(JSON_VALUE(input_json, '$.values.warehouse_to_id') AS UNSIGNED) FROM catalog_job_items
+                WHERE supplier_id = ? AND job_id = ? AND status = 'ready' AND JSON_VALUE(input_json, '$.values.doc_type') = 'transfer'");
+        $stmt->execute([$supplierId, $previewId, $supplierId, $previewId]);
+        $numbers = array_map(static fn ($id): string => self::settlementNumber((int) $id, $cutover), $stmt->fetchAll(PDO::FETCH_COLUMN));
+        $stmt = $this->db->pdo()->prepare('SELECT doc_number FROM stock_documents WHERE supplier_id = ? AND doc_number IN ('
+            . implode(',', array_fill(0, count($numbers), '?')) . ')');
+        $stmt->execute([$supplierId, ...$numbers]);
+        $taken = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        if ($taken !== []) {
+            throw new StockException('history_import_number_exists', 'Číslo vyrovnávací výdejky už ve firmě existuje: ' . implode(', ', $taken) . '. Přečíslujte ten doklad.', 409, $taken);
+        }
+    }
+
+    /** Číslo technické příjemky před dokladem: řádek souboru ji odliší i po zkrácení čísla. */
+    public static function fillNumber(string $number, int $sourceRow): string
+    {
+        $suffix = '-TP' . $sourceRow;
+        return mb_substr($number, 0, 30 - strlen($suffix)) . $suffix;
+    }
+
+    /** Číslo vyrovnávací výdejky skladu k D−1 (id skladu, kód by se po zkrácení mohl shodovat). */
+    public static function settlementNumber(int $warehouseId, string $cutover): string
+    {
+        return 'UH-' . $warehouseId . '-' . self::dayBefore($cutover);
     }
 
     public static function dayBefore(string $date): string
