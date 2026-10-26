@@ -88,8 +88,8 @@ const orphanId = computed(() => activeImport.value ? null : status.value?.orphan
 const rollbackTarget = computed(() => activeImport.value?.id ?? orphanId.value)
 const canRollback = computed(() => auth.isCompanyAdminRole && rollbackTarget.value !== null
   && !['queued', 'running'].includes(activeImport.value?.status ?? '') && !running.value)
-const lockedLabel = computed(() => status.value?.locked_until === LOCK_RUNNING
-  ? t('stock.history_import.locked_running') : formatDate(status.value?.locked_until))
+/** Běžící převzetí nebo vrácení zamyká celý sklad: popisuje ho samostatná věta, ne datum. */
+const lockRunning = computed(() => status.value?.locked_until === LOCK_RUNNING)
 const today = new Date().toLocaleDateString('sv')
 /** Datum přechodu je nejpozději první skladový doklad firmy a nejpozději dnes. */
 const cutoverMax = computed(() => [status.value?.first_document_date, today].filter((d): d is string => !!d).sort()[0])
@@ -399,7 +399,7 @@ onBeforeUnmount(() => { generation++; stopPolling() })
     <section v-if="activeImport" data-test="active-import" class="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-xl border border-primary-200 bg-primary-50 p-4 text-sm">
       <div class="min-w-0">
         <p class="font-medium">{{ t('stock.history_import.active_title') }}</p>
-        <p class="text-neutral-600">{{ t('stock.history_import.active_text', { id: activeImport.id, from: formatDate(activeInput?.date_from), to: formatDate(activeInput?.date_to), locked: lockedLabel }) }}</p>
+        <p class="text-neutral-600">{{ t(lockRunning ? 'stock.history_import.active_text_running' : 'stock.history_import.active_text', { id: activeImport.id, from: formatDate(activeInput?.date_from), to: formatDate(activeInput?.date_to), locked: formatDate(status?.locked_until) }) }}</p>
       </div>
       <div class="flex flex-wrap gap-2">
         <button v-if="job?.id !== activeImport.id" type="button" data-test="show-active" :class="btnOutline('neutral')" @click="openActive"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path :d="ICONS.eye" /></svg>{{ t('stock.history_import.show_import') }}</button>
@@ -411,7 +411,7 @@ onBeforeUnmount(() => { generation++; stopPolling() })
     <section v-if="orphanId !== null" data-test="orphan-import" class="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-xl border border-warning-200 bg-warning-50 p-4 text-sm">
       <div class="min-w-0">
         <p class="font-medium">{{ t('stock.history_import.orphan_title') }}</p>
-        <p class="text-neutral-600">{{ t('stock.history_import.orphan_text', { locked: lockedLabel }) }}</p>
+        <p class="text-neutral-600">{{ t(lockRunning ? 'stock.history_import.orphan_text_running' : 'stock.history_import.orphan_text', { locked: formatDate(status?.locked_until) }) }}</p>
       </div>
       <button v-if="canRollback" type="button" data-test="rollback-open" :disabled="loading" :class="btnOutline('danger')" @click="openRollback"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path :d="ICONS.uturn" /></svg>{{ t('stock.history_import.rollback') }}</button>
       <p v-if="!auth.isCompanyAdminRole" class="w-full text-xs text-neutral-500">{{ t('stock.history_import.rollback_admin_only') }}</p>
@@ -465,7 +465,7 @@ onBeforeUnmount(() => { generation++; stopPolling() })
       <div v-if="summary.documents" data-test="summary" class="grid min-w-0 grid-cols-2 gap-3 text-sm sm:grid-cols-4">
         <div v-for="type in TYPES" :key="type" class="rounded-lg bg-neutral-50 p-3"><p class="text-xs text-neutral-500">{{ t(`stock.history_import.types.${type}`) }}</p><p class="font-semibold">{{ summary.documents[type] ?? 0 }}</p></div>
         <div class="rounded-lg bg-neutral-50 p-3"><p class="text-xs text-neutral-500">{{ t('stock.history_import.lines') }}</p><p class="font-semibold">{{ summary.lines ?? 0 }}</p></div>
-        <div class="rounded-lg bg-neutral-50 p-3"><p class="text-xs text-neutral-500">{{ t('stock.history_import.period') }}</p><p class="font-semibold">{{ formatDate(summary.date_from) }} – {{ formatDate(summary.date_to) }}</p></div>
+        <div class="rounded-lg bg-neutral-50 p-3"><p class="text-xs text-neutral-500">{{ t('stock.history_import.period') }}</p><p class="font-semibold"><span class="whitespace-nowrap">{{ formatDate(summary.date_from) }}</span> – <span class="whitespace-nowrap">{{ formatDate(summary.date_to) }}</span></p></div>
         <div class="rounded-lg bg-neutral-50 p-3"><p class="text-xs text-neutral-500">{{ t('stock.history_import.cutover_date') }}</p><p class="font-semibold">{{ summary.cutover_date ? formatDate(summary.cutover_date) : t('stock.history_import.mode_live') }}</p></div>
       </div>
       <p v-if="job.kind === APPLY_KIND" data-test="apply-summary" class="text-sm">{{ t('stock.history_import.documents_created', { count: summary.documents_created ?? 0, fills: summary.fill_documents ?? 0 }) }}</p>

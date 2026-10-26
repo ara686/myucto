@@ -280,8 +280,9 @@ převezme bez vazby na fakturu a kontrola ho vypíše i s důvodem. Převzetí p
 ověří znovu, protože se faktura mezi kontrolou a převzetím mohla změnit.
 
 Navázaná převzatá výdejka platí jako výdej celé faktury, stejně jako výdejka, kterou
-k faktuře vytvořilo MyÚčto. Když pokrývá jen část položek faktury, zbytek MyÚčto
-samo nevydá, ani po obnovení stornované faktury. Dorovnejte ho ruční výdejkou.
+k faktuře vytvořilo MyÚčto. Faktura proto nic nerezervuje. Když výdejka pokrývá jen
+část položek faktury, zbytek MyÚčto samo nevydá, ani po obnovení stornované faktury.
+Dorovnejte ho ruční výdejkou.
 
 Storno vydané nebo přijaté faktury či dobropisu převzatou výdejku nebo příjemku
 nestornuje, historie zůstane, jak byla. Obnovení stornované faktury nebo dobropisu

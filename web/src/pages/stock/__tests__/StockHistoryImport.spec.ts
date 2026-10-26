@@ -276,6 +276,29 @@ describe('StockHistoryImport', () => {
     wrapper.unmount()
   })
 
+  it('describes a running lock in a whole sentence and keeps dates of the period unbroken', async () => {
+    const active = { ...stage, id: 42, kind: 'stock_history_import_apply', status: 'running', report: {}, input: { profile: { cutover_date: null }, date_from: '2020-01-02', date_to: '2020-02-01' } }
+    mocks.status.mockResolvedValue({ locked_until: '9999-12-31', first_document_date: null, active, orphan_job_id: null, max_rows: 300000 })
+    let wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.get('[data-test="active-import"]').text()).toContain('stock.history_import.active_text_running')
+    wrapper.unmount()
+
+    mocks.status.mockResolvedValue({ locked_until: '9999-12-31', first_document_date: null, active: null, orphan_job_id: 0, max_rows: 300000 })
+    wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.get('[data-test="orphan-import"]').text()).toContain('stock.history_import.orphan_text_running')
+    wrapper.unmount()
+
+    mocks.route.query = { history_job: '41' }
+    mocks.status.mockResolvedValue({ locked_until: null, first_document_date: '2021-01-01', active: null, orphan_job_id: null, max_rows: 300000 })
+    mocks.job.mockResolvedValue(stage)
+    wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.get('[data-test="summary"]').findAll('span.whitespace-nowrap').map(span => span.text())).toEqual(['2020-01-02', '2020-02-01'])
+    wrapper.unmount()
+  })
+
   it('shows the file content of a row without recognised values and labels taken-over rows', async () => {
     mocks.route.query = { history_job: '41' }
     mocks.job.mockResolvedValue({ ...stage, report: { ...stage.report, counts: { applied: 1, failed: 1 } } })
