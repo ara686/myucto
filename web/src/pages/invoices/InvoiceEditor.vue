@@ -518,13 +518,27 @@ function rowUsesQuote(item: InvoiceItem): boolean {
   })
 }
 
+/**
+ * Cena ze skladu (karta i nacenění ji vrací vždy bez DPH) v základu cen dokladu. V režimu
+ * „ceny s DPH" nese pole ceny řádku brutto, proto se přičte DPH podle sazby řádku. Bez DPH
+ * zůstává u neplátce a u přenesené daňové povinnosti, stejně jako v součtech dokladu.
+ */
+function stockPriceForRow(item: InvoiceItem, net: number): number
+function stockPriceForRow(item: InvoiceItem, net: number | null): number | null
+function stockPriceForRow(item: InvoiceItem, net: number | null): number | null {
+  if (net === null || !form.value.prices_include_vat || !supplierIsVatPayer.value || form.value.reverse_charge) return net
+  const rate = vatRates.value.find(v => v.id === item.vat_rate_id)?.rate_percent ?? 0
+  return round2(net * (100 + rate) / 100)
+}
+
 /** Odběratel bez hladiny u karty bez funkcí: řádek dostane zpět původní cenu karty, jednotka zůstává. */
 function restoreLegacyStockPrice(item: InvoiceItem) {
   const si = item.stock_item_id != null ? stockItemsCache.get(item.stock_item_id) : null
-  const price = legacyRestorePrice(si)
-  if (price === null) return
+  const net = legacyRestorePrice(si)
+  if (net === null) return
+  const price = stockPriceForRow(item, net)
   item.unit_price_without_vat = price
-  item.list_unit_price = si ? legacyListPrice(si) : null
+  item.list_unit_price = si ? stockPriceForRow(item, legacyListPrice(si)) : null
   stockQuoteStates.set(item, { seq: ++stockQuoteSeq, autoPrice: price, source: null, discountPct: null, priceLevel: null })
 }
 
@@ -556,6 +570,8 @@ function onStockSelect(rowIndex: number, itemId: number | null) {
     // Sloučené pole (popis = combobox): výběr karty popis přepíše názvem — dosavadní text byl
     // vyhledávací dotaz. Řádek jde dál libovolně přepsat ručně (volný text zůstává první občan).
     item.description = si.name
+    // Sazba karty před cenou: v režimu „ceny s DPH" se podle ní dopočte cena řádku.
+    if (si.vat_rate_id != null && vatRates.value.some(v => v.id === si.vat_rate_id)) item.vat_rate_id = si.vat_rate_id
     if (!usesStockPricingFeatures(si) && !pricingHasLevel.value) {
       // Karta bez balení a bez individuálních cen, odběratel bez hladiny: původní chování
       // beze změny. Doplněná cena se jen zapamatuje (bez requestu), aby šla přecenit,
@@ -567,9 +583,10 @@ function onStockSelect(rowIndex: number, itemId: number | null) {
       // odpovědi bez toho pole; nikdy nesmí akci obejít.
       const price = si.effective_price ?? si.sale_price_without_vat
       if (price != null) {
-        item.unit_price_without_vat = Number(price)
-        item.list_unit_price = legacyListPrice(si)
-        stockQuoteStates.set(item, { seq: ++stockQuoteSeq, autoPrice: Number(price), source: null, discountPct: null, priceLevel: null })
+        const rowPrice = stockPriceForRow(item, Number(price))
+        item.unit_price_without_vat = rowPrice
+        item.list_unit_price = stockPriceForRow(item, legacyListPrice(si))
+        stockQuoteStates.set(item, { seq: ++stockQuoteSeq, autoPrice: rowPrice, source: null, discountPct: null, priceLevel: null })
       }
       if (si.promo_price != null) {
         toast.info(t('invoice.promo_price_applied', {
@@ -585,9 +602,10 @@ function onStockSelect(rowIndex: number, itemId: number | null) {
       const legacy = legacyStockSelection(si)
       item.unit = legacy.unit
       if (legacy.price != null) {
-        item.unit_price_without_vat = legacy.price
-        item.list_unit_price = legacyListPrice(si)
-        stockQuoteStates.set(item, { seq: ++stockQuoteSeq, autoPrice: legacy.price, source: null, discountPct: null, priceLevel: null })
+        const rowPrice = stockPriceForRow(item, legacy.price)
+        item.unit_price_without_vat = rowPrice
+        item.list_unit_price = stockPriceForRow(item, legacyListPrice(si))
+        stockQuoteStates.set(item, { seq: ++stockQuoteSeq, autoPrice: rowPrice, source: null, discountPct: null, priceLevel: null })
       } else {
         stockQuoteStates.delete(item)
       }
@@ -600,7 +618,6 @@ function onStockSelect(rowIndex: number, itemId: number | null) {
         }
       })
     }
-    if (si.vat_rate_id != null && vatRates.value.some(v => v.id === si.vat_rate_id)) item.vat_rate_id = si.vat_rate_id
   }
   if (item.warehouse_id == null) item.warehouse_id = defaultWarehouseId.value
   void prefillFromProduct(item, itemId)
@@ -659,8 +676,8 @@ async function quoteStockRows(rows: InvoiceItem[], mode: QuoteMode, requestUnit?
       const { item, quote } = target
       if (!canApplyQuote(quote, item, stockQuoteStates.get(item))) continue
       const unit = unitAfterQuote(mode, quote.requestUnit, line)
-      const price = quotedUnitPrice(line)
-      if (price === null) {
+      const quoted = quotedUnitPrice(line)
+      if (quoted === null) {
         // Karta bez ceny v měně dokladu: jednotka (balení) se přepne i tak a dosavadní
         // cena se jen přepočte na novou jednotku. Změna zákazníka / měny řádek nemění.
         if (mode === 'context') continue
@@ -679,9 +696,10 @@ async function quoteStockRows(rows: InvoiceItem[], mode: QuoteMode, requestUnit?
         continue
       }
       if (unit !== null) item.unit = unit
+      const price = stockPriceForRow(item, quoted)
       item.unit_price_without_vat = price
       // Ceníková cena ve stejném základu jako cena řádku (migrace 2035).
-      item.list_unit_price = quotedListPrice(line)
+      item.list_unit_price = stockPriceForRow(item, quotedListPrice(line))
       stockQuoteStates.set(item, {
         seq: quote.seq,
         autoPrice: price,

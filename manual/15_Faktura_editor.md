@@ -351,6 +351,10 @@ hlášení, kniha DPH) ukazují stejné číslo.
 - **Zadání celkem s DPH:** editor **respektuje aktuální režim** dokladu (nepřepíná ho za vás).
   V běžném režimu bez DPH se z brutto dopočítá jednotková cena bez DPH (odečtením DPH shora),
   v režimu s DPH se uloží brutto. Režim přepínáte jen ručně.
+- **Skladové karty:** karta a nacenění podle odběratele nesou cenu bez DPH. V režimu s DPH
+  editor při výběru karty i při přecenění (změna odběratele, měny nebo hladiny) přičte DPH
+  podle sazby řádku, karta za 1 000 Kč při 21 % se tak vloží jako 1 210,00. Stejně se převede
+  i ceníková cena řádku. U přenesené daňové povinnosti zůstává cena bez DPH.
 - **Zobrazení jednotkové ceny:** v detailu, PDF i exportech (ISDOC, Pohoda) se „Cena/MJ“ vždy
   ukazuje jako **netto** (bez DPH), i v režimu s DPH, kde se netto dopočítá z řádkového základu.
 - **Předvyplnění per dodavatel:** výchozí režim nové faktury nastavíte v `Nastavení`, záložce
