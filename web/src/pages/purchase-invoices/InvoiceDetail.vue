@@ -22,6 +22,7 @@ import { useSupplierStore } from '@/stores/supplier'
 import { canSaveToCompanyFolder, pdfFileName, savePdfToCompanyFolder } from '@/composables/useCompanyPdfSave'
 import { apiErrorMessage } from '@/api/errors'
 import ActionBar, { type ActionItem } from '@/components/ui/ActionBar.vue'
+import { offsetRoute } from '@/components/accounting/offsetLink'
 import { ICONS, btnFilledSm, btnOutline, btnOutlineSm } from '@/components/ui/buttonStyles'
 import LockedBadge from '@/components/ui/LockedBadge.vue'
 import PostingBadge from '@/components/ui/PostingBadge.vue'
@@ -869,6 +870,12 @@ const purchaseActions = computed<ActionItem[]>(() => {
 
   items.push({ key: 'edit', label: t('common.edit'), icon: 'edit', tier: 'secondary', variant: 'success',
     show: canEdit.value && w && !lockedForMe.value, to: `/purchase-invoices/${inv.id}/edit` })
+
+  // Vzájemný zápočet s partnerem: stránka Zápočty předvyplněná dodavatelem a touto fakturou.
+  items.push({ key: 'mutual-offset', label: t('accounting.offsets.mutual_offset_action'), icon: 'swap', tier: 'secondary', variant: 'primary',
+    show: isDoubleEntry.value && auth.canWrite('accounting.offsets') && ['invoice', 'receipt'].includes(inv.document_kind)
+      && ['received', 'booked'].includes(inv.status) && (inv.currency ?? 'CZK') === 'CZK' && Number(inv.remaining_amount ?? 0) > 0.005,
+    to: offsetRoute(Number(inv.vendor_id), [{ doc_type: 'purchase_invoice', doc_id: inv.id, amount: null }]) })
 
   // Platební kalendář (issue #140): další platby se stejným číslem dokladu podle tohoto vzoru.
   // Týká se jen dokladů pro opakované platby (nájem, energie), proto v „…", ne v hlavní liště.

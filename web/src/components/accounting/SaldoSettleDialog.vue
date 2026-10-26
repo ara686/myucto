@@ -15,6 +15,7 @@ import { ICONS, btnFilled, btnOutline, btnIconSm } from '@/components/ui/buttonS
 import Modal from '@/components/ui/Modal.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import { apiErrorMessage, distribute, withPeriodForce, type SaldoSettleTarget } from './saldoSettle'
+import { offsetRoute } from './offsetLink'
 
 const PaymentMethodModal = defineAsyncComponent(() => import('@/components/invoices/PaymentMethodModal.vue'))
 
@@ -49,6 +50,10 @@ const single = computed(() => props.items.length === 1)
 const first = computed(() => props.items[0])
 const totalRemaining = computed(() => Math.round(props.items.reduce((s, i) => s + i.remaining_czk, 0) * 100) / 100)
 const canOffset = computed(() => single.value && auth.canWrite('accounting.offsets'))
+/** Vzájemný zápočet s partnerem (stránka Zápočty předvyplněná partnerem a dokladem). */
+const canMutualOffset = computed(() => auth.canWrite('accounting.offsets') && props.items.every(i => i.currency_code === 'CZK'))
+const mutualOffsetLink = computed(() => offsetRoute(first.value.partner_id,
+  props.items.map(i => ({ doc_type: i.doc_type, doc_id: i.doc_id, amount: i.remaining_czk }))))
 
 /** Jeden doklad: víc řádků s částkou. Víc dokladů: jeden řádek rozdělený mezi doklady. */
 const picked = ref<Record<number, number>>({})
@@ -308,6 +313,10 @@ onMounted(load)
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" :d="ICONS.swap" /></svg>
             {{ t('accounting.saldo_settle.offset_open') }}
           </button>
+          <RouterLink v-if="canMutualOffset" :to="mutualOffsetLink" :class="[btnOutline('primary'), 'whitespace-nowrap']" data-testid="saldo-settle-mutual-offset">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" :d="ICONS.swap" /></svg>
+            {{ t('accounting.saldo_settle.mutual_offset_partner') }}
+          </RouterLink>
           <RouterLink v-for="it in items" :key="`${it.doc_type}-${it.doc_id}`" :to="docLink(it)" :class="[btnOutline('neutral'), 'whitespace-nowrap']">
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" :d="ICONS.doc" /></svg>
             {{ t('accounting.saldo_settle.open_document', { doc: it.doc_no }) }}

@@ -17616,7 +17616,9 @@
       "col_actions": "Akce",
       "status_draft": "Návrh",
       "status_confirmed": "Potvrzeno",
-      "status_cancelled": "Zrušeno"
+      "status_cancelled": "Zrušeno",
+      "mutual_offset_action": "Vzájemný zápočet",
+      "prefill_missing": "Doklady z odkazu, které už partner nemá otevřené, se nepředvyplnily: {count}."
     },
     "fx_rates": {
       "title": "Kurzový režim",
@@ -17830,7 +17832,9 @@
       "advance_period_closed_confirm": "Konečná faktura je zaúčtovaná v uzavřeném účetním období. Čerpání změní saldokonto ode dne jejího zaúčtování (hlavní kniha zůstane beze změny). Pokračovat jako správce?",
       "advance_final_label": "konečná faktura {doc}",
       "advance_issues_hint": "Čerpání záloh těchto konečných faktur přesahuje jejich odpočet zálohy v deníku (faktura přeúčtovaná s menším odpočtem nebo čerpání z převodu). Saldokonto zálohy uzavírá o čerpání, které hlavní kniha nenese: čerpání v dialogu Vyrovnat u zálohy upravte, nebo opravte zaúčtování faktury.",
-      "advance_issue_excess": "přečerpáno o {amount}"
+      "advance_issue_excess": "přečerpáno o {amount}",
+      "mutual_offset": "Vzájemný zápočet",
+      "mutual_offset_partner": "Vzájemný zápočet s partnerem"
     },
     "account_statement": {
       "title": "Opis účtu",

@@ -20,7 +20,8 @@ import SortableTh from '@/components/ui/SortableTh.vue'
 import DateInput from '@/components/ui/DateInput.vue'
 import SaldoAdvanceInfo from '@/components/accounting/SaldoAdvanceInfo.vue'
 import { useAuthStore } from '@/stores/auth'
-import { ADVANCE_ACCOUNTS, SUGGEST_ACCOUNTS, isAdvanceAccount, isSettleable, type SaldoSettleTarget } from '@/components/accounting/saldoSettle'
+import { ADVANCE_ACCOUNTS, SUGGEST_ACCOUNTS, isAdvanceAccount, isOffsetable, isSettleable, type SaldoSettleTarget } from '@/components/accounting/saldoSettle'
+import { balancedOffsetDocs, offsetRoute } from '@/components/accounting/offsetLink'
 import SaldoAdvanceIssues from '@/components/accounting/SaldoAdvanceIssues.vue'
 
 const SaldoSettleDialog = defineAsyncComponent(() => import('@/components/accounting/SaldoSettleDialog.vue'))
@@ -322,6 +323,26 @@ function openSettlePartner(it: SaldoItem, b: SaldoAccountBlock, partnerId: numbe
 function canSettleItem(it: SaldoItem, accountCode: string) {
   return canSettle.value && isSettleable(it, accountCode)
 }
+
+// ── Vzájemný zápočet z výběru (pohledávky i závazky jednoho partnera) ───────
+const canMutualOffset = computed(() => auth.canWrite('accounting.offsets'))
+/** Výběr řádků nabízí vyrovnání zápisem i zápočet; zaškrtávátko stačí jedno z práv. */
+const canPick = computed(() => canSettle.value || canMutualOffset.value)
+
+function pickable(it: FlatRow): boolean {
+  return (canSettle.value && isSettleable(it, it.account_code)) || (canMutualOffset.value && isOffsetable(it, it.account_code))
+}
+
+const mutualOffsetLink = computed(() => {
+  if (!canMutualOffset.value) return null
+  const rows = selectedItems.value
+  if (rows.length === 0 || !rows.every(r => r.partner_id === rows[0].partner_id && isOffsetable(r, r.account_code))) return null
+  const receivables = rows.filter(r => r.doc_type === 'invoice').map(r => ({ doc_id: r.doc_id, remaining: r.remaining_czk }))
+  const payables = rows.filter(r => r.doc_type === 'purchase_invoice').map(r => ({ doc_id: r.doc_id, remaining: r.remaining_czk }))
+  if (receivables.length === 0 || payables.length === 0) return null
+  return offsetRoute(rows[0].partner_id, balancedOffsetDocs(receivables, payables))
+})
+
 function onSettleDone() {
   settleTargets.value = null
   residualFor.value = null
@@ -607,13 +628,17 @@ onMounted(async () => {
         </div>
 
         <EmptyState v-if="s.rows.length === 0" boxed accent="neutral" icon="search" :title="t('accounting.saldo.flat_empty')" />
-        <div v-if="canSettle && selectedItems.some(r => r.side === s.side)" class="flex flex-wrap items-center gap-2 mb-2 text-sm">
+        <div v-if="canPick && selectedItems.some(r => r.side === s.side)" class="flex flex-wrap items-center gap-2 mb-2 text-sm">
           <span>{{ t('accounting.saldo_settle.selected', { count: selectedItems.length }) }}</span>
-          <button type="button" :disabled="!bulkValid" :class="[btnFilled('success'), 'whitespace-nowrap']" @click="openSettle(selectedItems)">
+          <button v-if="canSettle" type="button" :disabled="!bulkValid" :class="[btnFilled('success'), 'whitespace-nowrap']" @click="openSettle(selectedItems)">
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" :d="ICONS.check" /></svg>
             {{ t('accounting.saldo_settle.settle_selected') }}
           </button>
-          <span v-if="!bulkValid" class="text-xs text-neutral-500">{{ t('accounting.saldo_settle.selected_mixed') }}</span>
+          <span v-if="canSettle && !bulkValid" class="text-xs text-neutral-500">{{ t('accounting.saldo_settle.selected_mixed') }}</span>
+          <RouterLink v-if="mutualOffsetLink" :to="mutualOffsetLink" :class="[btnOutline('primary'), 'whitespace-nowrap']" data-testid="saldo-mutual-offset">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" :d="ICONS.swap" /></svg>
+            {{ t('accounting.saldo_settle.mutual_offset') }}
+          </RouterLink>
           <button type="button" :class="[btnOutline('neutral'), 'whitespace-nowrap']" @click="selectedRows = new Set()">{{ t('accounting.saldo_settle.clear_selection') }}</button>
         </div>
         <div v-if="s.rows.length > 0" class="bg-surface border border-neutral-200 rounded-lg shadow-sm overflow-hidden">
@@ -621,7 +646,7 @@ onMounted(async () => {
             <table class="w-full text-sm">
               <thead class="bg-neutral-50 text-xs text-neutral-500 uppercase tracking-wide">
                 <tr>
-                  <th v-if="canSettle" class="px-3 py-2 w-8"><span class="sr-only">{{ t('accounting.saldo_settle.col_pick') }}</span></th>
+                  <th v-if="canPick" class="px-3 py-2 w-8"><span class="sr-only">{{ t('accounting.saldo_settle.col_pick') }}</span></th>
                   <SortableTh :label="t('accounting.saldo.col_account')" sort-key="account_code" :sort="sort" @toggle="toggleSort" />
                   <SortableTh :label="t('accounting.saldo.col_partner')" sort-key="partner_name" :sort="sort" @toggle="toggleSort" />
                   <SortableTh :label="t('accounting.saldo.col_doc')" sort-key="doc_no" :sort="sort" @toggle="toggleSort" />
@@ -636,8 +661,8 @@ onMounted(async () => {
               </thead>
               <tbody class="divide-y divide-neutral-100">
                 <tr v-for="it in s.visible" :key="`${it.account_code}-${it.doc_type}-${it.doc_id}`" class="hover:bg-neutral-50">
-                  <td v-if="canSettle" class="px-3 py-2">
-                    <input v-if="isSettleable(it, it.account_code)" type="checkbox" class="rounded border-neutral-300"
+                  <td v-if="canPick" class="px-3 py-2">
+                    <input v-if="pickable(it)" type="checkbox" class="rounded border-neutral-300"
                       :checked="selectedRows.has(rowKey(it))" :aria-label="t('accounting.saldo_settle.select_aria', { doc: it.doc_no })" @change="toggleRow(it)" />
                   </td>
                   <td class="px-3 py-2 font-mono text-xs whitespace-nowrap">{{ it.account_code }}</td>
@@ -677,7 +702,7 @@ onMounted(async () => {
               </tbody>
               <tfoot class="bg-neutral-50 text-sm font-semibold">
                 <tr v-if="s.hidden > 0" class="font-normal">
-                  <td class="px-3 py-2 text-center" :colspan="canSettle ? 11 : 9">
+                  <td class="px-3 py-2 text-center" :colspan="9 + (canPick ? 1 : 0) + (canSettle ? 1 : 0)">
                     <button type="button" :class="btnOutlineSm" @click="showMore(s.side, s.hidden)">
                       {{ t('accounting.saldo.show_more', { count: Math.min(s.hidden, ROW_CHUNK) }) }}
                     </button>
@@ -687,7 +712,7 @@ onMounted(async () => {
                   </td>
                 </tr>
                 <tr>
-                  <td class="px-3 py-2" :colspan="canSettle ? 9 : 8">{{ t(`accounting.saldo.side_${s.side}_total`) }}</td>
+                  <td class="px-3 py-2" :colspan="canPick ? 9 : 8">{{ t(`accounting.saldo.side_${s.side}_total`) }}</td>
                   <td class="px-3 py-2 text-right font-mono">{{ formatMoney(s.total) }}</td>
                   <td v-if="canSettle"></td>
                 </tr>

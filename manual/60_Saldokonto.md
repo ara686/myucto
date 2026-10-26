@@ -66,7 +66,11 @@ Doklad zůstává otevřený, přestože ho hlavní kniha má vyrovnaný intern�
 3. U jednoho dokladu můžete vybrat víc zápisů a upravit částky. U víc dokladů vyberete jeden zápis a jeho částku rozdělíte mezi doklady.
 4. Klikněte na **Vyrovnat**. Doklad je vyrovnaný ke dni zápisu a **Rozdíl** klesne o přiřazenou částku. Hlavní kniha ani předvaha se nemění.
 
-Na kartě **Zápočet / odpis** založíte zápočet dokladu proti zvolenému účtu, který zápis v deníku teprve vytvoří (viz [Zápočty](67_Zapocty.md)). Přiřazení zrušíte v dialogu **Vyrovnat** u seznamu **Už přiřazené zápisy**.
+Na kartě **Zápočet / odpis** založíte zápočet dokladu proti zvolenému účtu, který zápis v deníku teprve vytvoří (viz [Zápočty](67_Zapocty.md)), nebo tlačítkem **Vzájemný zápočet s partnerem** otevřete stránku Zápočty předvyplněnou partnerem a dokladem. Přiřazení zrušíte v dialogu **Vyrovnat** u seznamu **Už přiřazené zápisy**.
+
+### Vzájemný zápočet z výběru
+
+Když partner na pohledávkové straně (311, 315) i závazkové straně (321, 325) má otevřené faktury v Kč, označte v pohledu **Podle dokladů** zaškrtávátky jeho pohledávky i závazky a klikněte na **Vzájemný zápočet**. Otevře se stránka [Zápočty](67_Zapocty.md#673-krok-za-krokem-sestavit-a-potvrdit-zapocet) s vybraným partnerem a doklady. Částky jsou vyrovnané na menší ze stran: větší strana se rozdělí mezi doklady v pořadí výběru, každému nejvýš jeho zbytek. Tlačítko se zobrazí jen s oprávněním k vytváření zápočtů.
 
 ### Vyrovnání zálohy konečnou fakturou
 

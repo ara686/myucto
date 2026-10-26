@@ -79,6 +79,20 @@ export function isAdvanceAccount(accountCode: string): boolean {
 /** Účty, na kterých návrh párování něco hledá (rozpad zápisu i čerpání záloh). */
 export const SUGGEST_ACCOUNTS = [...SETTLE_ACCOUNTS, ...Object.keys(ADVANCE_ACCOUNTS)]
 
+/**
+ * Jde položku saldokonta zahrnout do vzájemného zápočtu (stránka Zápočty)? Zápočet bere
+ * vydané faktury na pohledávkových účtech 311/315 a přijaté na závazkových 321/325, v Kč
+ * a s kladným zbytkem (dobropis ani záloha čekající na vyúčtování se nezapočítávají).
+ */
+export function isOffsetable(item: { doc_type: string; kind?: string; currency_code: string; remaining_czk: number }, accountCode: string): boolean {
+  const accountOk = item.doc_type === 'invoice' ? ['311', '315'].includes(accountCode)
+    : item.doc_type === 'purchase_invoice' ? ['321', '325'].includes(accountCode) : false
+  return accountOk
+    && (item.kind ?? 'document') === 'document'
+    && item.currency_code === 'CZK'
+    && Math.round(item.remaining_czk * 100) > 0
+}
+
 /** Lze položku saldokonta vyrovnat (rozpadem zápisu, na zálohovém účtu čerpáním konečnou fakturou)? */
 export function isSettleable(item: { doc_type: string; kind?: string; settleable?: boolean; currency_code: string; remaining_czk: number }, accountCode: string): boolean {
   // `settleable` = doklad má na účtu vlastní předpis (ne jen počáteční stav), jen ten

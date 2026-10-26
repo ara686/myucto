@@ -9,6 +9,7 @@ const m = vi.hoisted(() => ({
   toastError: vi.fn(),
   toastSuccess: vi.fn(),
   admin: false,
+  offsets: true,
 }))
 
 vi.mock('@/api/accounting', () => ({
@@ -19,7 +20,7 @@ vi.mock('@/api/accounting', () => ({
   },
 }))
 vi.mock('@/stores/auth', () => ({
-  useAuthStore: () => ({ canWrite: () => true, get isCompanyAdminRole() { return m.admin } }),
+  useAuthStore: () => ({ canWrite: (p: string) => p === 'accounting.offsets' ? m.offsets : true, get isCompanyAdminRole() { return m.admin } }),
 }))
 vi.mock('@/composables/useToast', () => ({ useToast: () => ({ error: m.toastError, success: m.toastSuccess }) }))
 vi.mock('@/composables/useFormat', () => ({ formatMoney: (v: number) => String(v), formatDate: (v: string) => v }))
@@ -68,7 +69,23 @@ describe('SaldoSettleDialog', () => {
     m.create.mockReset()
     m.toastError.mockReset()
     m.admin = false
+    m.offsets = true
     m.create.mockResolvedValue({ created: [{ id: 1 }], failed: [] })
+  })
+
+  it('cesta zápočtu nabídne vzájemný zápočet s partnerem jen s právem k zápočtům', async () => {
+    m.candidates.mockResolvedValue(candidates([]))
+    const wrapper = mount(SaldoSettleDialog, { props: { items: [target(7, 640)], asOf: '2099-12-31' } })
+    await flushPromises()
+    await wrapper.findAll('[role="tab"]')[1].trigger('click')
+    const link = wrapper.findAllComponents({ name: 'RouterLink' }).find(l => (l.props('to') as { name?: string })?.name === 'accounting-offsets')
+    expect(link?.props('to')).toEqual({ name: 'accounting-offsets', query: { partner_id: '3', docs: 'purchase_invoice:7:640.00' } })
+
+    m.offsets = false
+    const denied = mount(SaldoSettleDialog, { props: { items: [target(7, 640)], asOf: '2099-12-31' } })
+    await flushPromises()
+    await denied.findAll('[role="tab"]')[1].trigger('click')
+    expect(denied.find('[data-testid="saldo-settle-mutual-offset"]').exists()).toBe(false)
   })
 
   it('jistou shodu předvyplní a potvrzení pošle rozpad jednoho zápisu', async () => {

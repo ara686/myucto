@@ -39,6 +39,7 @@ import { useToast } from '@/composables/useToast'
 import { useAccountingPeriodToast } from '@/composables/useAccountingPeriodToast'
 import WorkReportModal from '@/components/modals/WorkReportModal.vue'
 import ActionBar, { type ActionItem } from '@/components/ui/ActionBar.vue'
+import { offsetRoute } from '@/components/accounting/offsetLink'
 import { ICONS, btnFilled, btnOutline, btnOutlineSm } from '@/components/ui/buttonStyles'
 import LockedBadge from '@/components/ui/LockedBadge.vue'
 import PostingBadge from '@/components/ui/PostingBadge.vue'
@@ -1870,6 +1871,11 @@ const invoiceActions = computed<ActionItem[]>(() => {
       show: canRequestApproval.value && canApprovalPermission, disabled: b, loading: busy.value === 'approval-request', run: requestApproval },
     { key: 'partial', label: t('invoice.partial_payment'), icon: 'coin', tier: 'secondary', variant: 'warning',
       show: canPartialPayment.value && !eetPayAvailable.value, disabled: b, run: openPartialPayment },
+    // Vzájemný zápočet s partnerem: stránka Zápočty předvyplněná odběratelem a touto fakturou.
+    { key: 'mutual-offset', label: t('accounting.offsets.mutual_offset_action'), icon: 'swap', tier: 'secondary', variant: 'primary',
+      show: isDoubleEntry.value && auth.canWrite('accounting.offsets') && isIssued.value && inv.invoice_type === 'invoice'
+        && (inv.currency ?? 'CZK') === 'CZK' && Number(inv.amount_to_pay ?? 0) - Number(inv.paid_total ?? 0) > 0.005,
+      to: offsetRoute(Number(inv.client_id), [{ doc_type: 'invoice', doc_id: inv.id, amount: null }]) },
     { key: 'wr', label: t('invoice.wr_btn'), icon: 'chart', tier: 'secondary', variant: 'primary',
       show: isDraft.value && inv.invoice_type !== 'tax_document' && w && !lockedForMe.value,
       title: t('invoice.wr_btn') as string, run: () => { wrModalOpen.value = true } },

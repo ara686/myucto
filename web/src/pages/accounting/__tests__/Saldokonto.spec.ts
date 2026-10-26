@@ -524,6 +524,41 @@ describe('Saldokonto.vue', () => {
     }])
   })
 
+  it('(s) pohledávka i závazek jednoho partnera nabídnou vzájemný zápočet vyrovnaný na menší stranu', async () => {
+    const report = makeReport()
+    report.accounts.push({
+      account: { id: 2, code: '321', name: 'Dodavatelé', normal_side: 'credit' as any },
+      gl_balance: 400, open_items_total: 400, open_items_count: 1, difference: 0, matches: true,
+      partners_pagination: { page: 1, per_page: 2, total: 1, pages: 1 },
+      partners: [{
+        partner_id: 10, partner_name: 'Alfa s.r.o.', total_remaining: 400,
+        items: [{ doc_type: 'purchase_invoice', doc_id: 201, doc_no: 'PF-201', issue_date: '2099-01-12', due_date: '2099-01-26',
+          currency_code: 'CZK', amount_foreign: 0, booked_czk: 400, paid_czk: 0, remaining_czk: 400, days_overdue: 0, settleable: true }],
+      }],
+    })
+    serveSaldo(report)
+
+    // Bez práva k zápočtům (ani k deníku) se výběr nenabízí.
+    const denied = mount(Saldokonto)
+    await flushPromises()
+    expect(denied.findAll('tbody input[type="checkbox"]')).toHaveLength(0)
+
+    authState.write = ['accounting.offsets']
+    const wrapper = mount(Saldokonto)
+    await flushPromises()
+    const pick = (doc: string) => wrapper.find(`input[aria-label*="${doc}"]`)
+    await pick('F-101').setValue(true)
+    expect(wrapper.find('[data-testid="saldo-mutual-offset"]').exists()).toBe(false)
+    await pick('PF-201').setValue(true)
+    const link = wrapper.findAllComponents({ name: 'RouterLink' }).find(l => (l.props('to') as { name?: string })?.name === 'accounting-offsets')
+    expect(link?.props('to')).toEqual({
+      name: 'accounting-offsets',
+      query: { partner_id: '10', docs: 'invoice:101:400.00,purchase_invoice:201:400.00' },
+    })
+    // Rozpad zápisu bez práva k deníku není.
+    expect(wrapper.findAll('button').some(b => b.text().includes('accounting.saldo_settle.settle_selected'))).toBe(false)
+  })
+
   it('(r) přečerpané konečné faktury zálohového účtu ukáže varování', async () => {
     const report = makeReport({
       accounts: [{
