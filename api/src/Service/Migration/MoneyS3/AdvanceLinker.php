@@ -80,7 +80,8 @@ final class AdvanceLinker
             }
             $deductions = [];
             $taxDocuments = [];
-            foreach ($ctx->backup->rowsAcrossYears($itemTable, ['Cislo', 'Popis', 'Cena', 'PocetMJ', 'Zaloha', 'CisloZaFak', 'RokZaFak'], $dirs) as $r) {
+            $legacy = [];
+            foreach ($ctx->backup->rowsAcrossYears($itemTable, ['Cislo', 'Popis', 'Cena', 'PocetMJ', 'CenaTyp', 'SazbaDPH', 'Zaloha', 'CisloZaFak', 'RokZaFak'], $dirs) as $r) {
                 if ((int) ($r['Zaloha'] ?? 0) !== 1 || (int) ($r['CisloZaFak'] ?? 0) <= 0) {
                     continue;
                 }
@@ -92,8 +93,10 @@ final class AdvanceLinker
                     || in_array($final['kind'], self::ADVANCE_KINDS, true) || !str_contains($text, $advance['doc'])) {
                     continue;
                 }
-                $amount = round(abs((float) ($r['Cena'] ?? 0) * (float) (($r['PocetMJ'] ?? 0) ?: 1)), 2);
+                $gross = round(abs((float) ($r['Cena'] ?? 0) * (float) (($r['PocetMJ'] ?? 0) ?: 1)), 2);
+                $amount = self::deductedBase($gross, (int) ($r['CenaTyp'] ?? 0), (float) ($r['SazbaDPH'] ?? 0));
                 $deductions[$final['id']][$advance['id']] = round(($deductions[$final['id']][$advance['id']] ?? 0.0) + $amount, 2);
+                $legacy[$final['id']][$advance['id']] = round(($legacy[$final['id']][$advance['id']] ?? 0.0) + $gross, 2);
                 if (preg_match('/da[nň]\.?\s*dokl\.?\s*([^\s)]+)/u', $text, $m) === 1) {
                     $taxDocuments[$final['year'] . '|' . $m[1]][$advance['id']] = true;
                 }
@@ -122,7 +125,7 @@ final class AdvanceLinker
                     }
                 }
             }
-            $issued ? $this->linkIssued($ctx, $deductions, $ddkp) : $this->linkPurchase($ctx, $deductions, $ddkp);
+            $issued ? $this->linkIssued($ctx, $deductions, $ddkp) : $this->linkPurchase($ctx, $deductions, $ddkp, $legacy);
         }
         $this->matchAdvanceRefunds($ctx);
         $this->repointCancelledAdvanceRefunds($ctx);
@@ -223,6 +226,35 @@ final class AdvanceLinker
     }
 
     /**
+     * Čerpaná částka položky odpočtu zálohy: čerpání ze zálohového účtu je základ (daň čerpá
+     * DDKP). Položka s cenou včetně DPH (`CenaTyp` 4 u sazby nad nulou - u reálné agendy
+     * ve všech 90 případech, kde se liší od kreditu 314 o daň) se přepočte sazbou na základ.
+     */
+    public static function deductedBase(float $amount, int $priceType, float $rate): float
+    {
+        return $priceType === 4 && $rate > 0.0 ? round($amount / (1 + $rate / 100), 2) : round($amount, 2);
+    }
+
+    /** Částka čerpání dorovnaná na zbytek zálohy (`$available`), liší-li se jen o haléře zaokrouhlení. */
+    public static function snap(float $amount, ?float $available): float
+    {
+        return $available !== null && abs($available - $amount) < 0.05 ? round($available, 2) : round($amount, 2);
+    }
+
+    /**
+     * Čerpání nejvýš do volné strany čerpání faktury (`$free`, null = faktura bez zaúčtované
+     * strany). Základ přepočtený z ceny s DPH se od kreditu 314 v deníku Money liší
+     * zaokrouhlením o haléře - pak platí částka z deníku.
+     */
+    public static function fitDeduction(float $amount, ?float $free): float
+    {
+        if ($free === null) {
+            return round($amount, 2);
+        }
+        return round(abs($free - $amount) < 0.05 ? $free : min($amount, $free), 2);
+    }
+
+    /**
      * Vratka poskytnuté zálohy, kterou převod podle `UDoklad` spároval s dokladem, který
      * zálohu jen ruší (dobropis k DDKP, záporná zálohová faktura), a ne se zálohou samou.
      * Saldokonto vratku k takovému dokladu nezapočte a vrácená záloha v něm zůstane otevřená
@@ -304,8 +336,9 @@ final class AdvanceLinker
     /**
      * @param array<int,array<int,float>> $deductions konečná faktura => záloha => čerpáno
      * @param array<int,array<int,true>> $ddkp DDKP => zálohy
+     * @param array<int,array<int,float>> $legacy částka položky, jak ji převod zapisoval dřív (včetně DPH)
      */
-    private function linkPurchase(ImportContext $ctx, array $deductions, array $ddkp): void
+    private function linkPurchase(ImportContext $ctx, array $deductions, array $ddkp, array $legacy = []): void
     {
         $p = $ctx->protocol;
         $pdo = $this->db->pdo();
@@ -318,16 +351,21 @@ final class AdvanceLinker
         $current = $pdo->prepare("SELECT advance_purchase_invoice_id FROM purchase_invoices WHERE id = ? AND supplier_id = ? AND document_kind = 'invoice'");
         $taken = $pdo->prepare('SELECT 1 FROM purchase_invoices WHERE supplier_id = ? AND advance_purchase_invoice_id = ? LIMIT 1');
         $set = $pdo->prepare('UPDATE purchase_invoices SET advance_purchase_invoice_id = ? WHERE id = ? AND supplier_id = ? AND advance_purchase_invoice_id IS NULL');
-        // Čerpání z odkazu položky na zálohu převod eviduje v mapě: čerpání mimo mapu zadal
-        // uživatel ({@see AdvanceDeductionMatcher}). Čerpání založené dřívější verzí převodu
-        // se do mapy převezme, když ho běh odvodí znovu se stejnou částkou.
+        // Čerpání z odkazu položky na zálohu převod zapisuje přes AdvanceDeductionService
+        // (volný odpočet faktury, ruční čerpání nepřepíše) a eviduje v mapě: čerpání mimo
+        // mapu zadal uživatel ({@see AdvanceDeductionMatcher}). Čerpání převodu z dřívější
+        // verze (bez mapy, `source = import`) se převezme, když ho běh odvodí znovu - i s
+        // částkou včetně DPH, kterou ta verze zapisovala; opraví se na základ.
+        $service = AdvanceDeductionMatcher::service($this->db);
         $source = (new AdvanceDeductionMatcher($this->db, $this->map))->hasSourceColumn();
-        $deduct = $pdo->prepare('INSERT IGNORE INTO purchase_advance_deductions (supplier_id, final_invoice_id, advance_invoice_id, amount, created_by'
-            . ($source ? ', source' : '') . ') VALUES (?, ?, ?, ?, ?' . ($source ? ", 'import'" : '') . ')');
         $existingPad = $pdo->prepare('SELECT id, amount' . ($source ? ', source' : ", 'import'") . ' FROM purchase_advance_deductions
             WHERE supplier_id = ? AND final_invoice_id = ? AND advance_invoice_id = ?');
+        $correct = $pdo->prepare('UPDATE purchase_advance_deductions SET amount = ? WHERE id = ? AND supplier_id = ?' . ($source ? " AND source = 'import'" : ''));
         $mapped = $this->map?->all($ctx->supplierId, MoneyS3ImportRepository::KIND_ADVANCE_DEDUCTION) ?? [];
+        // Zbytek zálohy podle saldokonta: haléřový rozdíl přepočtu z ceny s DPH dorovná na zálohu.
+        $openAdvances = (new AdvanceDeductionMatcher($this->db, $this->map))->openAdvances($ctx->supplierId);
         $userId = $ctx->userId > 0 ? $ctx->userId : null;
+        $corrected = [];
         $live = $pdo->prepare("SELECT id FROM purchase_invoices WHERE supplier_id = ? AND document_kind = 'advance'");
         $live->execute([$ctx->supplierId]);
         $liveAdvances = array_fill_keys(array_map('intval', $live->fetchAll(PDO::FETCH_COLUMN)), true);
@@ -367,19 +405,57 @@ final class AdvanceLinker
                     continue;
                 }
                 $key = AdvanceDeductionMatcher::mapKey($finalId, $advanceId);
-                if (isset($mapped[$key])) {
-                    continue;
-                }
-                $deduct->execute([$ctx->supplierId, $finalId, $advanceId, number_format($amount, 2, '.', ''), $userId]);
-                if ($deduct->rowCount() > 0) {
-                    $this->map?->put($ctx->supplierId, MoneyS3ImportRepository::KIND_ADVANCE_DEDUCTION, $key, (int) $pdo->lastInsertId(), $ctx->runId);
-                    $p->count(DocumentLinker::STEP_PAYMENTS, 'advance_deductions');
-                    continue;
-                }
                 $existingPad->execute([$ctx->supplierId, $finalId, $advanceId]);
                 $row = $existingPad->fetch(PDO::FETCH_NUM);
-                if ($row !== false && $row[2] === 'import' && abs((float) $row[1] - $amount) < 0.005) {
+                if ($row === false) {
+                    if (isset($mapped[$key])) {
+                        continue; // čerpání převodu uživatel smazal
+                    }
+                    $state = $service->importState($ctx->supplierId, 'purchase_invoice', [$finalId])[$finalId];
+                    $free = $state['posted'] && $state['deductible'] >= 0.005 ? max(0.0, $state['unassigned']) : null;
+                    $written = $service->recordImported($ctx->supplierId, 'purchase_invoice', $finalId, $advanceId, self::fitDeduction(self::snap($amount, $openAdvances[$advanceId] ?? null), $free), $userId);
+                    if ($written >= 0.01) {
+                        $existingPad->execute([$ctx->supplierId, $finalId, $advanceId]);
+                        $this->map?->put($ctx->supplierId, MoneyS3ImportRepository::KIND_ADVANCE_DEDUCTION, $key, (int) $existingPad->fetchColumn(), $ctx->runId);
+                        $p->count(DocumentLinker::STEP_PAYMENTS, 'advance_deductions');
+                    }
+                    continue;
+                }
+                $had = round((float) $row[1], 2);
+                $ours = $row[2] === 'import' && (isset($mapped[$key])
+                    || abs($had - $amount) < 0.005 || abs($had - ($legacy[$finalId][$advanceId] ?? $amount)) < 0.005);
+                if (!$ours) {
+                    continue;
+                }
+                if (!isset($mapped[$key])) {
                     $this->map?->put($ctx->supplierId, MoneyS3ImportRepository::KIND_ADVANCE_DEDUCTION, $key, (int) $row[0], $ctx->runId);
+                }
+                if (abs($had - $amount) >= 0.005) {
+                    // Částka převodu (dřív včetně DPH) - nejvýš do strany čerpání faktury.
+                    $state = $service->importState($ctx->supplierId, 'purchase_invoice', [$finalId])[$finalId];
+                    $target = self::fitDeduction(self::snap($amount, ($openAdvances[$advanceId] ?? 0.0) + $had), $state['posted'] && $state['deductible'] >= 0.005 ? $had + max(0.0, $state['unassigned']) : null);
+                    if ($target >= 0.01 && abs($target - $had) >= 0.005) {
+                        $correct->execute([number_format($target, 2, '.', ''), (int) $row[0], $ctx->supplierId]);
+                        $p->count(DocumentLinker::STEP_PAYMENTS, 'advance_deductions_corrected');
+                        $corrected[] = [(int) $row[0], $finalId, $advanceId, $target];
+                    }
+                }
+            }
+        }
+        // Opravené čerpání, které nechalo zálohu otevřenou jen o haléře zaokrouhlení přepočtu
+        // z ceny s DPH, ji dorovná (nejvýš do strany čerpání faktury) - ať opakovaný převod
+        // nemá co opravovat.
+        if ($corrected !== []) {
+            $open = (new AdvanceDeductionMatcher($this->db, $this->map))->openAdvances($ctx->supplierId);
+            foreach ($corrected as [$padId, $finalId, $advanceId, $target]) {
+                $rest = $open[$advanceId] ?? 0.0;
+                if ($rest < 0.005 || $rest >= 0.05) {
+                    continue;
+                }
+                $state = $service->importState($ctx->supplierId, 'purchase_invoice', [$finalId])[$finalId];
+                $add = $state['posted'] && $state['deductible'] >= 0.005 ? min($rest, max(0.0, $state['unassigned'])) : $rest;
+                if ($add >= 0.005) {
+                    $correct->execute([number_format(round($target + $add, 2), 2, '.', ''), $padId, $ctx->supplierId]);
                 }
             }
         }

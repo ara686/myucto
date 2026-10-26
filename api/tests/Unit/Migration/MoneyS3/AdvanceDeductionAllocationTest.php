@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MyInvoice\Tests\Unit\Migration\MoneyS3;
 
 use MyInvoice\Service\Migration\MoneyS3\AdvanceDeductionMatcher;
+use MyInvoice\Service\Migration\MoneyS3\AdvanceLinker;
 use PHPUnit\Framework\TestCase;
 
 /** Párování čerpání záloh po partnerovi ({@see AdvanceDeductionMatcher::allocate()}). */
@@ -97,6 +98,13 @@ final class AdvanceDeductionAllocationTest extends TestCase
             ['date' => '2024-12-10', 'amount' => 1210.0],
             ['date' => '2024-12-10', 'amount' => -210.0],
         ], 'ico:2' => [['date' => '2024-06-01', 'amount' => -100.0]]]));
+    }
+
+    public function testDeductionItemWithPriceIncludingVatDeductsBase(): void
+    {
+        self::assertSame(57980.17, AdvanceLinker::deductedBase(70156.0, 4, 21.0));
+        self::assertSame(1000.0, AdvanceLinker::deductedBase(1000.0, 0, 21.0), 'Cena bez DPH zůstává.');
+        self::assertSame(500.0, AdvanceLinker::deductedBase(500.0, 4, 0.0), 'Záloha bez daně zůstává.');
     }
 
     /** @return array{id:int,partner:string,date:string,open:float} */

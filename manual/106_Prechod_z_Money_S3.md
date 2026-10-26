@@ -502,9 +502,12 @@ vede jen řádkem konečné faktury na zálohovém účtu se symbolem faktury
 (měsíční „vyúčtované zálohy", roční vyúčtování). Páruje po dodavateli podle
 IČO: nejdřív na zálohu nebo daňový doklad k přijaté platbě, jehož číslo řádek
 deníku uvádí, jinak na nejstarší otevřené zálohy zaplacené do data faktury.
-Zálohy z doby před prvním převáděným rokem jsou jen v počátečním stavu a vazbu
-nedostanou. Deník se tím nemění. Vazbu na zálohu nebo čerpání, které jste
-v MyÚčtu zadali nebo smazali, převod nepřepíše.
+Zálohy z doby před prvním převáděným rokem převod dopočte z deníku roku před
+převodem (počáteční stav je v Money bez IČO) a čerpání je spotřebuje přednostně,
+vazbu ale nedostanou. Dobropis konečné faktury její čerpání vrací. Vratku zálohy,
+kterou Money vede pod symbolem dobropisu, převod spáruje se zálohou. Deník se tím
+nemění. Vazbu na zálohu nebo čerpání, které jste v MyÚčtu zadali nebo smazali
+(i čerpání ze saldokonta), převod nepřepíše.
 
 Protokoly všech běhů zůstávají v přehledu pod průvodcem. Protokol zkoušky
 nanečisto z přehledu smažete, protokol ostrého převodu zůstává.

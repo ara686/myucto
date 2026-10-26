@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace MyInvoice\Service\Migration\MoneyS3;
 
 use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Repository\AdvanceDeductionRepository;
 use MyInvoice\Repository\MoneyS3ImportRepository;
 use MyInvoice\Repository\SaldoRepository;
+use MyInvoice\Service\Accounting\AdvanceDeductionService;
 use MyInvoice\Service\Accounting\DocumentPostingGroup;
 use MyInvoice\Service\Accounting\TakenOverRecord;
 use PDO;
@@ -28,8 +30,7 @@ use PDO;
  *    základ, daň čerpá DDKP sám. K dispozici je ode dne první úhrady (záloha placená
  *    fakturou ode dne zápisu, neuhrazená ode dne vystavení),
  *  - čerpáním je kredit převzaté konečné faktury na 314 (bez přeúčtování mezi analytikami
- *    v témž zápisu, stejně jako ve {@see SaldoRepository}), snížený o už evidované čerpání.
- *    Jen faktura s přímým zápisem: saldokonto čerpání jiné faktury nezapočte,
+ *    v témž zápisu, stejně jako ve {@see SaldoRepository}), snížený o už evidované čerpání,
  *  - opravný doklad konečné faktury (dobropis se zápornými částkami, tedy debetem 314) její
  *    čerpání vrací: nejdřív se vyrovná s fakturou (čerpání faktura × dobropis) a jako
  *    záloha ani čerpání do párování nevstupuje,
@@ -93,10 +94,20 @@ final class AdvanceDeductionMatcher
         $pool = $this->openItems($ctx->supplierId, $accountId);
         $advances = array_values(array_filter($this->advances($ctx->supplierId, $pool), static fn (array $a): bool => !isset($blocked[$a['id']])));
         $deductions = array_values(array_filter($this->deductions($ctx->supplierId, $accountId, $from), static fn (array $d): bool => !isset($blocked[$d['id']])));
+        // Volný odpočet faktury určuje služba čerpání (SSOT i pro ruční čerpání); převod jí
+        // nepřidělí víc, než zapíše, jinak by opakovaný běh rozděloval zbytek znovu.
+        $state = $deductions === [] ? [] : self::service($this->db)->importState($ctx->supplierId, 'purchase_invoice', array_column($deductions, 'id'));
+        foreach ($deductions as $i => $d) {
+            $s = $state[$d['id']] ?? null;
+            if ($s !== null && $s['posted'] && $s['deductible'] >= self::EPSILON) {
+                $deductions[$i]['amount'] = round(min($d['amount'], max(0.0, $s['unassigned'])), 2);
+            }
+        }
+        $deductions = array_values(array_filter($deductions, static fn (array $d): bool => $d['amount'] >= 0.01));
         if ($deductions === []) {
             return;
         }
-        $finals = array_fill_keys(array_column($deductions, 'id'), true);
+        $finals =array_fill_keys(array_column($deductions, 'id'), true);
         $corrections = array_values(array_filter(
             $this->corrections($ctx->supplierId, $pool),
             static fn (array $c): bool => isset($finals[$c['final']]) && !isset($blocked[$c['id']]),
@@ -462,8 +473,8 @@ final class AdvanceDeductionMatcher
     /**
      * Kredity převzatých konečných faktur na 314 od prvního převáděného roku, snížené
      * o evidované čerpání faktury. Faktura s vazbou na zálohu se nebere (saldokonto jí
-     * přičítá celý kredit) a jen faktura s přímým zápisem, kterou saldokonto jako čerpání
-     * zálohy započte.
+     * přičítá celý kredit). Zápisy faktury (vlastní i skupina zaúčtování) bere stejně jako
+     * saldokonto ({@see SaldoRepository::advanceDeductionEntriesSql()}).
      *
      * @return list<array{id:int,partner:string,date:string,amount:float,fifo:bool}>
      */
@@ -484,8 +495,6 @@ final class AdvanceDeductionMatcher
                 AND d.advance_purchase_invoice_id IS NULL
                 AND e.posted_at IS NOT NULL AND e.reversed_by IS NULL AND e.entry_date >= ?
                 AND (ca.id = {$accountId} OR ca.parent_id = {$accountId})
-                AND EXISTS (SELECT 1 FROM journal_entries fe WHERE fe.supplier_id = d.supplier_id AND fe.source_type = 'purchase_invoice'
-                               AND fe.source_id = d.id AND fe.posted_at IS NOT NULL AND fe.reversed_by IS NULL)
                 AND " . TakenOverRecord::documentSql('purchase_invoice', 'd') . '
               ORDER BY d.id, e.id, l.id'
         );
@@ -694,7 +703,9 @@ final class AdvanceDeductionMatcher
     }
 
     /**
-     * Zápis čerpání a mapy převodu v jedné transakci.
+     * Zápis čerpání a mapy převodu v jedné transakci. Čerpání zapisuje
+     * {@see AdvanceDeductionService::recordImported()}: nejvýš volný odpočet faktury, dvojici,
+     * kterou už spojuje jiné čerpání (i ruční), nemění.
      *
      * @param array<int,array<int,float>> $deductions
      * @param array<string,int> $mapped
@@ -703,9 +714,8 @@ final class AdvanceDeductionMatcher
     private function write(ImportContext $ctx, array $deductions, array $mapped): array
     {
         $pdo = $this->db->pdo();
-        $source = $this->hasSourceColumn();
-        $insert = $pdo->prepare('INSERT IGNORE INTO purchase_advance_deductions (supplier_id, final_invoice_id, advance_invoice_id, amount, created_by'
-            . ($source ? ', source' : '') . ') VALUES (?, ?, ?, ?, ?' . ($source ? ", 'import'" : '') . ')');
+        $service = self::service($this->db);
+        $find = $pdo->prepare('SELECT id FROM purchase_advance_deductions WHERE supplier_id = ? AND final_invoice_id = ? AND advance_invoice_id = ?');
         $userId = $ctx->userId > 0 ? $ctx->userId : null;
         $written = [];
         $own = !$pdo->inTransaction();
@@ -719,13 +729,13 @@ final class AdvanceDeductionMatcher
                     if (isset($mapped[$key]) || $amount < 0.01) {
                         continue;
                     }
-                    $insert->execute([$ctx->supplierId, $finalId, $advanceId, number_format($amount, 2, '.', ''), $userId]);
-                    if ($insert->rowCount() === 0) {
-                        // Dvojici už spojuje jiné čerpání; nepřepisuje se.
+                    if ($service->recordImported($ctx->supplierId, 'purchase_invoice', $finalId, $advanceId, $amount, $userId) < 0.01) {
+                        // Dvojici už spojuje jiné čerpání, nebo faktura nemá volný odpočet; nepřepisuje se.
                         $ctx->protocol->count(DocumentLinker::STEP_PAYMENTS, 'advance_deduction_pair_exists');
                         continue;
                     }
-                    $this->map?->put($ctx->supplierId, MoneyS3ImportRepository::KIND_ADVANCE_DEDUCTION, $key, (int) $pdo->lastInsertId(), $ctx->runId);
+                    $find->execute([$ctx->supplierId, $finalId, $advanceId]);
+                    $this->map?->put($ctx->supplierId, MoneyS3ImportRepository::KIND_ADVANCE_DEDUCTION, $key, (int) $find->fetchColumn(), $ctx->runId);
                     $ctx->protocol->count(DocumentLinker::STEP_PAYMENTS, 'advance_deductions_matched');
                     $written[] = $finalId;
                 }
@@ -740,6 +750,12 @@ final class AdvanceDeductionMatcher
             throw $e;
         }
         return $written;
+    }
+
+    /** Služba čerpání záloh pro převod (bez DI kontejneru, převod skládá kroky sám). */
+    public static function service(Connection $db): AdvanceDeductionService
+    {
+        return new AdvanceDeductionService($db, new AdvanceDeductionRepository($db), new SaldoRepository($db));
     }
 
     private static function partner(mixed $ico, int $vendorId): string
