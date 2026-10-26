@@ -14746,6 +14746,10 @@ paths:
         (přijatá/poskytnutá platba), `advance_vat_czk` (daň z daňového dokladu
         k platbě) a `tax_document_id`; `remaining_czk` je základ zálohy se znaménkem
         (součet položek = zůstatek hlavní knihy) a `days_overdue` je 0.
+
+        `settleable` = vydaný nebo přijatý doklad s vlastním předpisem na účtu, který lze
+        vyrovnat přiřazením zápisu v deníku (`/api/v1/accounting/saldo-settlements/*`).
+        Doklady zastoupené jen v počátečních stavech a úhrady před zaúčtováním ho nemají.
       parameters:
         - $ref: '#/components/parameters/SupplierIdHeader'
         - { in: query, name: period_id, required: true, schema: { type: integer } }
@@ -14788,7 +14792,9 @@ paths:
         přijatá má dáti). Vynechá předpis dokladu, storno, červené storno a zápis, který
         doklad vyrovnává už vazbou bez částky. Řazení: shoda volné částky se zbytkem
         dokladu, číslo dokladu v textu zápisu (nebo vazba na doklad), partner, datum.
-        Doklad v cizí měně (`document.supported = false`) kandidáty nemá.
+        Doklad v cizí měně nebo bez vlastního otevřeného předpisu na účtu
+        (`document.supported = false`) kandidáty nemá. Vynechá i zápis se zápočtem převzatým
+        z jiného programu a řádek se zdvojeným pořadím.
       parameters:
         - $ref: '#/components/parameters/SupplierIdHeader'
         - { in: query, name: doc_type, required: true, schema: { type: string, enum: [invoice, purchase_invoice] } }

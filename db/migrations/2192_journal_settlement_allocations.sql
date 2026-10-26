@@ -13,10 +13,14 @@
 --                se znovu neúčtuje, předpis zůstává v původním zápisu.
 -- `amount` je v Kč a vždy kladná, na straně řádku.
 --
--- Řádek se drží přes (entry_id, line_no) a účet v okamžiku rozpadu, ne přes id řádku,
--- stejně jako párování okruhů (migrace 1895): přeúčtování zápisu řádky smaže a vloží znovu
--- s novými id. Nesouhlasí-li po něm na daném pořadí účet, rozpad se přestane počítat.
--- Smazání zápisu ho odnese kaskádou.
+-- Řádek se drží přes (entry_id, line_no), účet a stranu v okamžiku rozpadu, ne přes id
+-- řádku, stejně jako párování okruhů (migrace 1895): přeúčtování zápisu řádky smaže a vloží
+-- znovu s novými id. Přeúčtování, které by řádek s rozpadem změnilo nebo odebralo, i smazání
+-- takového zápisu blokuje JournalSettlementUseGuard; nesouhlasí-li přesto na daném pořadí
+-- účet nebo strana, rozpad se nepočítá.
+--
+-- `released_on` = den, od kterého předpis ostatní položky ze zůstatku přestal platit (storno
+-- položky). Saldokonto k dřívějšímu dni položku dál ukazuje.
 --
 -- Rozpad je metadata, ne účetní zápis: nemění deník, obraty ani zůstatky.
 SET NAMES utf8mb4;
@@ -27,14 +31,16 @@ CREATE TABLE IF NOT EXISTS journal_settlement_allocations (
   entry_id    BIGINT UNSIGNED NOT NULL,
   line_no     INT UNSIGNED    NOT NULL,
   account_id  BIGINT UNSIGNED NOT NULL COMMENT 'Účet řádku v okamžiku rozpadu (kontrola po přeúčtování)',
+  side        ENUM('debit','credit') NOT NULL COMMENT 'Strana řádku v okamžiku rozpadu',
   kind        ENUM('settlement','origin') NOT NULL DEFAULT 'settlement',
   doc_type    ENUM('invoice','purchase_invoice','other_item') NOT NULL,
   doc_id      BIGINT UNSIGNED NOT NULL COMMENT 'ID dokladu dle doc_type (bez FK, polymorfní)',
   amount      DECIMAL(15,2)   NOT NULL COMMENT 'Kč, kladné, na straně řádku',
+  released_on DATE            NULL COMMENT 'Předpis ostatní položky zrušen od tohoto dne (storno položky)',
   created_by  BIGINT UNSIGNED NULL,
   created_at  TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
-  UNIQUE KEY uq_jsa_line_doc (supplier_id, entry_id, line_no, doc_type, doc_id),
+  UNIQUE KEY uq_jsa_line_doc (supplier_id, entry_id, line_no, account_id, side, doc_type, doc_id),
   KEY ix_jsa_doc (supplier_id, doc_type, doc_id),
   KEY ix_jsa_account (supplier_id, account_id),
   KEY ix_jsa_created_by (created_by),

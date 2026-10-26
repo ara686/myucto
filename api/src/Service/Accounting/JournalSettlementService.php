@@ -33,7 +33,10 @@ final class JournalSettlementService
 {
     /** Saldokontní účty dokladů, jejichž vyrovnání jde rozepsat (zálohové účty mají vlastní čerpání). */
     public const SETTLE_ACCOUNTS = ['311', '321', '315', '325'];
-    public const MAX_ALLOCATIONS = 200;
+    /** Strop řádků rozpadu v jedné skupině (jedna transakce, zámky řádků i dokladů). */
+    public const MAX_ALLOCATIONS = 50;
+    /** Strop skupin v jednom hromadném potvrzení návrhů; UI posílá po dávkách. */
+    public const MAX_GROUPS = 100;
     public const MAX_CANDIDATES = 50;
     public const MAX_RESIDUAL_LINES = 100;
     public const MAX_SUGGESTIONS = 500;
@@ -69,11 +72,13 @@ final class JournalSettlementService
     public function candidates(int $supplierId, string $docType, int $docId, string $accountCode, string $asOf): array
     {
         $side = self::settleSide($docType);
-        $doc = $this->repo->lockDocument($supplierId, $docType, $docId, false)
+        $doc = $this->repo->document($supplierId, $docType, $docId)
             ?? throw new JournalSettlementException('not_found', 'Doklad nenalezen.', 404);
         $account = $this->settleAccount($supplierId, $accountCode);
-        $remaining = $this->remaining($supplierId, $doc, $account, $asOf) ?? 0.0;
-        $lines = $doc['currency_code'] === 'CZK'
+        $open = $this->remaining($supplierId, $doc, $account, $asOf);
+        $remaining = $open ?? 0.0;
+        $supported = $doc['currency_code'] === 'CZK' && $open !== null;
+        $lines = $supported
             ? $this->repo->freeLines(
                 $supplierId,
                 $this->repo->accountFamily($supplierId, $account['id']),
@@ -95,7 +100,7 @@ final class JournalSettlementService
                 'remaining'     => $remaining,
                 'account'       => ['id' => $account['id'], 'code' => $account['code'], 'name' => $account['name']],
                 'side'          => $side,
-                'supported'     => $doc['currency_code'] === 'CZK',
+                'supported'     => $supported,
             ],
             'allocations' => $this->repo->listForDocument($supplierId, $docType, $docId),
             'items'       => $lines,
@@ -167,17 +172,23 @@ final class JournalSettlementService
         $rows = $this->normalizeAllocations($input);
         $pdo = $this->db->pdo();
         $ownTx = !$pdo->inTransaction();
+        // READ COMMITTED: zbytek dokladu i volná částka řádku se čtou až po zámcích a každé
+        // čtení vidí poslední potvrzený stav. Pod REPEATABLE READ by snapshot z prvního čtení
+        // nepoznal rozpad, který souběžný požadavek potvrdil, zatímco tenhle čekal na zámek
+        // dokladu, a doklad by se přealokoval (vzor IssueInvoiceAction).
+        if ($ownTx) $pdo->exec('SET TRANSACTION ISOLATION LEVEL READ COMMITTED');
         if ($ownTx) $pdo->beginTransaction();
         try {
-            $lines = $this->repo->lines($supplierId, array_column($rows, 'line_id'), true);
             $docKeys = [];
             foreach ($rows as $r) {
                 $docKeys[$r['doc_type'] . ':' . $r['doc_id']] = [$r['doc_type'], $r['doc_id']];
             }
             ksort($docKeys);
+            $this->repo->lockForAllocation($supplierId, array_column($rows, 'line_id'), array_values($docKeys));
+            $lines = $this->repo->lines($supplierId, array_column($rows, 'line_id'));
             $docs = [];
             foreach ($docKeys as $key => [$type, $id]) {
-                $doc = $this->repo->lockDocument($supplierId, $type, $id)
+                $doc = $this->repo->document($supplierId, $type, $id)
                     ?? throw new JournalSettlementException('not_found', 'Doklad nenalezen.', 404);
                 if ($doc['currency_code'] !== 'CZK') {
                     throw new JournalSettlementException('document_currency', 'Doklad v cizí měně vyrovnejte kurzovým zápisem, rozpad zápisu nese jen Kč.');
@@ -207,7 +218,7 @@ final class JournalSettlementService
             }
             foreach ($lineTotals as $lineId => $total) {
                 $line = $lines[$lineId];
-                $free = round($line['amount'] - $this->repo->usedOnLine($supplierId, $line['entry_id'], $line['line_no'], $line['account_id']), 2);
+                $free = round($line['amount'] - $this->repo->usedOnLine($supplierId, $line), 2);
                 if ($total > $free + self::TOLERANCE) {
                     throw new JournalSettlementException('line_overallocated',
                         'Řádek zápisu ' . ($line['document_no'] ?? '#' . $line['entry_id']) . ' má volných jen ' . self::money($free) . ' Kč.', 409);
@@ -290,15 +301,17 @@ final class JournalSettlementService
         $amount = self::amount($input['amount'] ?? null);
         $pdo = $this->db->pdo();
         $ownTx = !$pdo->inTransaction();
+        if ($ownTx) $pdo->exec('SET TRANSACTION ISOLATION LEVEL READ COMMITTED');
         if ($ownTx) $pdo->beginTransaction();
         try {
-            $line = $this->repo->lines($supplierId, [$lineId], true)[$lineId]
+            $this->repo->lockForAllocation($supplierId, [$lineId], []);
+            $line = $this->repo->lines($supplierId, [$lineId])[$lineId]
                 ?? throw new JournalSettlementException('line_not_found', 'Řádek zápisu nenalezen.', 404);
             $this->assertLine($supplierId, $line, null, SaldoService::DEFAULT_ACCOUNTS);
             if ($this->repo->hasCountedLink($supplierId, $line['entry_id'])) {
                 throw new JournalSettlementException('entry_linked', 'Zápis už je navázaný na doklad, zůstatek bez dokladu z něj založit nelze.', 409);
             }
-            $free = round($line['amount'] - $this->repo->usedOnLine($supplierId, $line['entry_id'], $line['line_no'], $line['account_id']), 2);
+            $free = round($line['amount'] - $this->repo->usedOnLine($supplierId, $line), 2);
             if ($amount > $free + self::TOLERANCE) {
                 throw new JournalSettlementException('line_overallocated', 'Řádek zápisu má volných jen ' . self::money($free) . ' Kč.', 409);
             }
@@ -381,6 +394,7 @@ final class JournalSettlementService
         foreach ($block['partners'] as $partner) {
             foreach ($partner['items'] as $it) {
                 if (!in_array($it['doc_type'], ['invoice', 'purchase_invoice'], true)
+                    || empty($it['settleable'])
                     || ($it['kind'] ?? 'document') !== 'document'
                     || $it['currency_code'] !== 'CZK'
                     || $it['remaining_czk'] < self::TOLERANCE) {
@@ -408,7 +422,9 @@ final class JournalSettlementService
             if ($ids === []) continue;
             foreach ($this->repo->documentNumbers($supplierId, $type, array_values($ids)) as $id => $numbers) {
                 foreach ([...$numbers, $docs[$type . ':' . $id]['doc_no']] as $number) {
-                    $byNumber[self::token($number)][$type . ':' . $id] = true;
+                    if (JournalSettlementRepository::isDocumentNumber($number)) {
+                        $byNumber[self::token($number)][$type . ':' . $id] = true;
+                    }
                 }
             }
         }
@@ -560,6 +576,13 @@ final class JournalSettlementService
         if (!in_array($line['source_type'], JournalSettlementRepository::ALLOCATABLE_SOURCES, true) || $line['own_posting']) {
             throw new JournalSettlementException('line_source', 'Rozepsat na doklady lze jen řádek ručního (interního) zápisu, ne zaúčtování dokladu.', 409);
         }
+        if ($line['imported_settlement']) {
+            throw new JournalSettlementException('entry_settled',
+                'Zápis ' . $ref . ' nese zápočet převzatý z jiného programu, který saldokonto už počítá. Rozpad by vyrovnání zdvojil.', 409);
+        }
+        if ($line['duplicate_line_no']) {
+            throw new JournalSettlementException('line_ambiguous', 'Zápis ' . $ref . ' má víc řádků se stejným pořadím, řádek nelze jednoznačně rozepsat.', 409);
+        }
         if ($line['is_red_storno']) {
             throw new JournalSettlementException('line_red_storno', 'Řádek červeného storna nelze rozepsat na doklady.', 409);
         }
@@ -578,8 +601,9 @@ final class JournalSettlementService
     }
 
     /**
-     * Zbývá k vyrovnání (Kč, na normální straně účtu) podle saldokonta k `$asOf`. NULL =
-     * doklad na účtu otevřený není.
+     * Zbývá k vyrovnání (Kč, na normální straně účtu) podle saldokonta k `$asOf`, spočtené jen
+     * pro tento doklad. NULL = doklad nemá na účtu vlastní otevřený předpis (uhrazený, jen
+     * v počátečních stavech).
      *
      * @param array<string,mixed> $doc
      * @param array{id:int, code:string, account_type:string, normal_side:?string} $account
@@ -588,10 +612,7 @@ final class JournalSettlementService
     {
         $normal = $account['normal_side'] ?? (in_array($account['account_type'], ['asset', 'expense'], true) ? 'debit' : 'credit');
         $remaining = null;
-        foreach ($this->saldo->openItems($supplierId, $account['id'], $asOf, $account['code'], null, $doc['partner_id']) as $it) {
-            if ($it['doc_type'] !== $doc['doc_type'] || (int) $it['doc_id'] !== $doc['doc_id']) {
-                continue;
-            }
+        foreach ($this->saldo->documentOpenItems($supplierId, $doc['doc_type'], $doc['doc_id'], $account['id'], $asOf) as $it) {
             $booked = $normal === 'debit' ? (float) $it['booked_signed'] : -(float) $it['booked_signed'];
             $remaining = round(($remaining ?? 0.0) + SaldoRepository::settlementAmounts($booked, (float) $it['paid_ratio'])['remaining'], 2);
         }

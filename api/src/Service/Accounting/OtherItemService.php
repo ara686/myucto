@@ -81,6 +81,17 @@ final class OtherItemService
         return $this->get($supplierId, $id);
     }
 
+    /** Je položka založená ze zůstatku zápisu a její předpis ještě platí? */
+    public function hasJournalOrigin(int $supplierId, int $id): bool
+    {
+        $stmt = $this->db->pdo()->prepare(
+            "SELECT 1 FROM journal_settlement_allocations
+              WHERE supplier_id = ? AND doc_type = 'other_item' AND doc_id = ? AND kind = 'origin' AND released_on IS NULL LIMIT 1"
+        );
+        $stmt->execute([$supplierId, $id]);
+        return $stmt->fetchColumn() !== false;
+    }
+
     public function update(int $supplierId, int $id, array $input, ?int $userId): array
     {
         $pdo = $this->db->pdo();
@@ -270,6 +281,19 @@ final class OtherItemService
             }
             if ((float) $item['paid_amount'] > 0) {
                 throw new OtherItemException('has_payments', 'Doklad má spárované úhrady. Nejprve je odpojte.', 409);
+            }
+            // Položka ze zůstatku bez dokladu nemá vlastní zápis, předpis nese řádek převzatého
+            // zápisu. Storno ji proto ruší jen od svého dne (saldokonto k dřívějšímu dni ji dál
+            // ukazuje) a ten den musí ležet v otevřeném účetním období, stejně jako protizápis.
+            if ($item['journal_entry_id'] === null && $this->hasJournalOrigin($supplierId, $id)) {
+                $releasedOn = $entryDate ?? date('Y-m-d');
+                $period = $pdo->prepare('SELECT status FROM accounting_periods WHERE supplier_id = ? AND starts_on <= ? AND ends_on >= ? ORDER BY starts_on DESC LIMIT 1 FOR UPDATE');
+                $period->execute([$supplierId, $releasedOn, $releasedOn]);
+                $status = $period->fetchColumn();
+                if ($status === false || AccountingPeriodStatus::isClosed((string) $status)) {
+                    throw new OtherItemException('period_closed', 'Storno položky ze zůstatku musí ležet v otevřeném účetním období.', 409);
+                }
+                (new \MyInvoice\Repository\JournalSettlementRepository($this->db))->releaseOrigin($supplierId, $id, $releasedOn);
             }
             $entryId = $item['journal_entry_id'] !== null
                 ? $this->posting->reverse($supplierId, (int) $item['journal_entry_id'], [

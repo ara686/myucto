@@ -1242,6 +1242,7 @@ final class JournalAction
             (new \MyInvoice\Service\Property\Charges\Issuance\IssuanceUseGuard($this->db))->assertPostingEntriesMutable($supplierId, [$id]);
             (new \MyInvoice\Service\Property\Payments\Workflow\PaymentMutationContext($this->db))->assertEntriesMutable($supplierId, [$id]);
             (new \MyInvoice\Service\Accounting\Allocation\JointAllocationUseGuard($this->db))->assertEntriesMutable($supplierId, [$id]);
+            (new \MyInvoice\Service\Accounting\JournalSettlementUseGuard($this->db))->assertEntriesFree($supplierId, [$id]);
             $stmt = $pdo->prepare(
                 'SELECT je.id, je.period_id, je.entry_date, je.document_no, je.source_type,
                         je.source_id, je.posted_at, je.reversed_by, p.status AS period_status,
@@ -1621,6 +1622,7 @@ final class JournalAction
             (new \MyInvoice\Service\Property\Charges\Issuance\IssuanceUseGuard($this->db))->assertPostingEntriesMutable($supplierId, [$originalId, $reversalId]);
             (new \MyInvoice\Service\Property\Payments\Workflow\PaymentMutationContext($this->db))->assertEntriesMutable($supplierId, [$originalId, $reversalId]);
             (new \MyInvoice\Service\Accounting\Allocation\JointAllocationUseGuard($this->db))->assertEntriesMutable($supplierId, [$originalId, $reversalId]);
+            (new \MyInvoice\Service\Accounting\JournalSettlementUseGuard($this->db))->assertEntriesFree($supplierId, [$originalId, $reversalId]);
             $load->execute([$reversalId, $supplierId]);
             $reversal = $load->fetch(\PDO::FETCH_ASSOC);
             if ($reversal === false) {

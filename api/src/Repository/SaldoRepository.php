@@ -347,7 +347,10 @@ final class SaldoRepository
             $map,
             $limit,
         );
-        return array_merge($rows, $this->fetchOriginOtherItems($supplierId, $accountId, $asOf, $partnerId, $dueBefore, $map));
+        $origin = $limit !== null && count($rows) >= $limit
+            ? []
+            : $this->fetchOriginOtherItems($supplierId, $accountId, $asOf, $partnerId, $dueBefore, $orderByDue, $limit === null ? null : $limit - count($rows), $map);
+        return array_merge($rows, $origin);
     }
 
     /**
@@ -357,13 +360,24 @@ final class SaldoRepository
      * řádkem a saldokonto tak zůstatek nezdvojí. Úhrady jako u ostatních položek
      * (`other_item_allocations`), jen s bankovním či pokladním řádkem na tomtéž
      * saldokontním účtu, protože zápis položky, podle kterého se účet jinak ověřuje, neexistuje.
+     * Storno položky platí od `released_on`, k dřívějšímu dni ji saldokonto dál ukazuje.
+     *
+     * Firma bez takové položky (naprostá většina) zaplatí jen bodový dotaz po indexu.
      *
      * @param callable(array<string,mixed>):array<string,mixed> $map
      * @return list<array<string,mixed>>
      */
-    private function fetchOriginOtherItems(int $supplierId, int $accountId, string $asOf, ?int $partnerId, ?string $dueBefore, callable $map): array
+    private function fetchOriginOtherItems(int $supplierId, int $accountId, string $asOf, ?int $partnerId, ?string $dueBefore, bool $orderByDue, ?int $limit, callable $map): array
     {
+        $any = $this->db->pdo()->prepare(
+            "SELECT 1 FROM journal_settlement_allocations WHERE supplier_id = ? AND doc_type = 'other_item' AND kind = 'origin' LIMIT 1"
+        );
+        $any->execute([$supplierId]);
+        if ($any->fetchColumn() === false) {
+            return [];
+        }
         $partnerFilter = $partnerId === null ? '' : ' AND oi.partner_id = ' . $partnerId;
+        $order = $orderByDue ? 'oi.due_on, oi.id' : 'partner_name, oi.due_on, oi.id';
         $sql = "SELECT oi.id AS doc_id, COALESCE(oi.document_no, CONCAT('#', oi.id)) AS doc_no,
                        oi.issued_on AS issue_date, oi.due_on AS due_date, oi.status,
                        COALESCE(oi.partner_id, -CAST(oi.id AS SIGNED)) AS partner_id,
@@ -384,6 +398,9 @@ final class SaldoRepository
                       JOIN other_items payment_item ON payment_item.id = a.other_item_id
                            AND payment_item.supplier_id = a.supplier_id
                      WHERE a.supplier_id = {$supplierId}
+                       AND a.other_item_id IN (SELECT oja.doc_id FROM journal_settlement_allocations oja
+                                                WHERE oja.supplier_id = {$supplierId} AND oja.doc_type = 'other_item'
+                                                  AND oja.kind = 'origin')
                        AND (a.reversed_on IS NULL OR a.reversed_on > ?)
                        AND EXISTS (
                            SELECT 1 FROM journal_entries pe
@@ -404,11 +421,12 @@ final class SaldoRepository
                    AND e.posted_at IS NOT NULL AND e.entry_date <= ?
                    AND (e.reversed_by IS NULL OR rev.entry_date > ?)
                    AND (ca.id = {$accountId} OR ca.parent_id = {$accountId})
-                   AND oi.deleted_at IS NULL AND oi.status IN ('confirmed', 'posted')
+                   AND (ja.released_on IS NULL OR ja.released_on > ?)
+                   AND oi.deleted_at IS NULL
                    {$partnerFilter}" . self::dueBeforeSql('oi', $dueBefore, 'due_on') . "
                  GROUP BY oi.id, oi.document_no, oi.issued_on, oi.due_on, oi.status,
                           oi.partner_id, cl.company_name, oi.partner_name, oi.currency, oi.amount, paid.paid_sum
-                 ORDER BY partner_name, oi.due_on, oi.id";
+                 ORDER BY {$order}";
         $stmt = $this->db->pdo()->prepare($sql);
         $stmt->execute(self::asOfParams($sql, $asOf));
         $out = [];
@@ -416,6 +434,9 @@ final class SaldoRepository
             $item = $map($row);
             if (self::settlementAmounts((float) $item['booked_signed'], (float) $item['paid_ratio'])['open']) {
                 $out[] = $item;
+                if ($limit !== null && count($out) >= $limit) {
+                    break;
+                }
             }
         }
         return $out;
@@ -1011,6 +1032,23 @@ final class SaldoRepository
             }
             $offset += count($rows);
         } while (count($rows) === $pageSize);
+    }
+
+    /**
+     * Otevřené položky jednoho dokladu s vlastním předpisem na účtu (vydaný nebo přijatý),
+     * spočtené stejně jako sestava, ale jen pro ten doklad. Pro rozpad zápisu na doklady:
+     * celé saldo partnera by se počítalo uvnitř zápisové transakce zbytečně.
+     *
+     * @param 'invoice'|'purchase_invoice' $docType
+     * @return list<array<string,mixed>>
+     */
+    public function documentOpenItems(int $supplierId, string $docType, int $docId, int $accountId, string $asOf): array
+    {
+        return match ($docType) {
+            'invoice' => iterator_to_array($this->fetchOpenInvoices($supplierId, $accountId, $asOf, null, stream: true, invoiceIds: [$docId]), false),
+            'purchase_invoice' => $this->fetchOpenPurchases($supplierId, $accountId, $asOf, null, documentId: $docId),
+            default => throw new \InvalidArgumentException('Invalid settlement document type.'),
+        };
     }
 
     public function settlementComponents(int $supplierId, string $docType, int $docId, int $accountId, string $asOf, bool $currentRead = false): ?array
@@ -1623,6 +1661,8 @@ final class SaldoRepository
                     'currency_code'  => (string) $r['currency_code'],
                     'booked_signed'  => round((float) $r['booked_signed'], 2),
                     'foreign_signed' => round((float) $r['foreign_signed'], 2),
+                    // Doklad s vlastním předpisem na účtu: jen ten jde vyrovnat rozpadem zápisu.
+                    'settleable'     => true,
                     // Stejnoměnný poměr k asOf; invoice_payments pokrývá bankovní,
                     // hotovostní i ruční platby jednotně. Dobropis tam ale nikdy
                     // nepřistane — jeho proplacení nese stav dokladu (CreditNoteRefundExpr).
@@ -1987,6 +2027,7 @@ final class SaldoRepository
                     'currency_code'  => (string) $r['currency_code'],
                     'booked_signed'  => round((float) $r['booked_signed'], 2),
                     'foreign_signed' => round((float) $r['foreign_signed'], 2),
+                    'settleable'     => true,
                     // status='paid' je autoritativní až od paid_at (a jen bez nedoplatku); jinak
                     // se poměr skládá z kanálů, kterými se přijatá faktura umí vyrovnat: banka
                     // (payment_matches převedené do měny dokladu), pokladna a oba zápočty

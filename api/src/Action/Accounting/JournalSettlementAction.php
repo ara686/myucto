@@ -119,8 +119,8 @@ final class JournalSettlementAction
         $body = (array) ($request->getParsedBody() ?? []);
         $batch = array_key_exists('groups', $body);
         $groups = $batch ? $body['groups'] : [['allocations' => $body['allocations'] ?? null]];
-        if (!is_array($groups) || $groups === [] || !array_is_list($groups) || count($groups) > JournalSettlementService::MAX_SUGGESTIONS) {
-            return Json::error($response, 'invalid_allocations', 'Zadejte 1 až ' . JournalSettlementService::MAX_SUGGESTIONS . ' skupin vyrovnání.', 422);
+        if (!is_array($groups) || $groups === [] || !array_is_list($groups) || count($groups) > JournalSettlementService::MAX_GROUPS) {
+            return Json::error($response, 'invalid_allocations', 'Zadejte 1 až ' . JournalSettlementService::MAX_GROUPS . ' skupin vyrovnání.', 422);
         }
         $lineIds = [];
         foreach ($groups as $group) {

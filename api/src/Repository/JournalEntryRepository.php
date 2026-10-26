@@ -662,6 +662,7 @@ final class JournalEntryRepository
         if ((new \MyInvoice\Service\Nonprofit\Capital\CapitalUseGuard($this->db, $this))->assertEntryChange((int) $header['supplier_id'], $id, $lines, $header['entry_date'], $header)) return;
         (new \MyInvoice\Service\Property\Payments\Workflow\PaymentMutationContext($this->db))->assertEntriesMutable((int) $header['supplier_id'], [$id]);
         if (($header['posted_at'] ?? null) !== null) (new \MyInvoice\Service\Accounting\Funding\NativeCostCoverage($this->db))->assertCreditNotePosting($header);
+        (new \MyInvoice\Service\Accounting\JournalSettlementUseGuard($this->db))->assertEntryChange((int) $header['supplier_id'], $id, $lines);
         $validationPrevious = SystemDimensionWritePolicy::canRetainEntryAssignments($header, $previous) ? $previous['lines'] : [];
         (new SystemDimensionWritePolicy($this->db))->assertJournal($header, $lines, $validationPrevious);
         $retained = SystemDimensionWritePolicy::retainedAssignments($lines, $previous['lines']);
@@ -733,6 +734,7 @@ final class JournalEntryRepository
             throw new PostingException('version_conflict', 'Zápis #' . $entryId . ' se mezitím změnil nebo byl stornován — načtěte aktuální stav.', 409);
         }
         if ($entry['posted_at'] !== null) (new \MyInvoice\Service\Accounting\Funding\NativeCostCoverage($this->db))->assertCreditNotePosting($entry);
+        (new \MyInvoice\Service\Accounting\JournalSettlementUseGuard($this->db))->assertLinesRemovable($supplierId, $entryId, $removeLineIds);
         $remove = array_fill_keys(array_map('intval', $removeLineIds), true);
         $retained = array_values(array_filter($entry['lines'], static fn (array $line): bool => !isset($remove[(int) $line['id']])));
         $nextLineNo = $retained === [] ? 0 : max(array_column($retained, 'line_no')) + 1;

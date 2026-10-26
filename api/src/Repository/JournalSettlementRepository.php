@@ -39,25 +39,45 @@ final class JournalSettlementRepository
     }
 
     /**
-     * Řádky zápisu s tím, co o nich potřebuje validace rozpadu. `$lock` zamkne řádky
-     * deníku (FOR UPDATE jen nad `journal_entry_lines`, ne nad osnovou a obdobím).
+     * Zamkne řádky deníku a doklady rozpadu (FOR UPDATE) dřív, než se cokoli přečte:
+     * souběžné rozpady téhož řádku nebo dokladu se seřadí a druhý už počítá s prvním.
+     * Řádky i doklady se zamykají ve vzestupném pořadí, aby souběh nevedl k uváznutí.
+     *
+     * @param list<int> $lineIds
+     * @param list<array{0:string,1:int}> $documents [doc_type, doc_id]
+     */
+    public function lockForAllocation(int $supplierId, array $lineIds, array $documents): void
+    {
+        $pdo = $this->db->pdo();
+        $ids = self::ids($lineIds);
+        if ($ids !== []) {
+            $pdo->prepare('SELECT id FROM journal_entry_lines WHERE supplier_id = ? AND id IN (' . implode(',', $ids) . ') ORDER BY id FOR UPDATE')
+                ->execute([$supplierId]);
+        }
+        foreach (['invoice' => 'invoices', 'purchase_invoice' => 'purchase_invoices'] as $type => $table) {
+            $docIds = self::ids(array_map(static fn (array $d): int => (int) $d[1], array_filter($documents, static fn (array $d): bool => $d[0] === $type)));
+            if ($docIds !== []) {
+                $pdo->prepare("SELECT id FROM {$table} WHERE supplier_id = ? AND id IN (" . implode(',', $docIds) . ') ORDER BY id FOR UPDATE')
+                    ->execute([$supplierId]);
+            }
+        }
+    }
+
+    /**
+     * Řádky zápisu s tím, co o nich potřebuje validace rozpadu. Zamyká je
+     * {@see lockForAllocation()}.
      *
      * @param list<int> $lineIds
      * @return array<int,array<string,mixed>> podle id řádku
      */
-    public function lines(int $supplierId, array $lineIds, bool $lock = false): array
+    public function lines(int $supplierId, array $lineIds): array
     {
-        $ids = array_values(array_unique(array_filter(array_map('intval', $lineIds), static fn (int $id): bool => $id > 0)));
+        $ids = self::ids($lineIds);
         if ($ids === []) {
             return [];
         }
-        sort($ids);
         $in = implode(',', $ids);
         $pdo = $this->db->pdo();
-        if ($lock) {
-            $pdo->prepare("SELECT id FROM journal_entry_lines WHERE supplier_id = ? AND id IN ({$in}) ORDER BY id FOR UPDATE")
-                ->execute([$supplierId]);
-        }
         $stmt = $pdo->prepare(
             "SELECT l.id AS line_id, l.entry_id, l.line_no, l.account_id, l.side, l.amount, l.is_red_storno,
                     l.currency_code, ca.account_code, ca.name AS account_name,
@@ -68,7 +88,11 @@ final class JournalSettlementRepository
                     EXISTS (SELECT 1 FROM journal_document_postings jdp
                              WHERE jdp.supplier_id = e.supplier_id AND jdp.entry_id = e.id) AS own_posting,
                     EXISTS (SELECT 1 FROM journal_entries o
-                             WHERE o.supplier_id = e.supplier_id AND o.reversed_by = e.id) AS is_reversal
+                             WHERE o.supplier_id = e.supplier_id AND o.reversed_by = e.id) AS is_reversal,
+                    NOT " . JournalSettlementAllocationSql::noImportedSettlementSql('e.supplier_id', 'e.id') . " AS imported_settlement,
+                    EXISTS (SELECT 1 FROM journal_entry_lines dup
+                             WHERE dup.supplier_id = l.supplier_id AND dup.entry_id = l.entry_id
+                               AND dup.line_no = l.line_no AND dup.id <> l.id) AS duplicate_line_no
                FROM journal_entry_lines l
                JOIN journal_entries e ON e.id = l.entry_id AND e.supplier_id = l.supplier_id
                JOIN chart_of_accounts ca ON ca.id = l.account_id AND ca.supplier_id = l.supplier_id
@@ -102,19 +126,21 @@ final class JournalSettlementRepository
                 'period_status'  => $r['period_status'] !== null ? (string) $r['period_status'] : null,
                 'own_posting'    => (int) $r['own_posting'] === 1,
                 'is_reversal'    => (int) $r['is_reversal'] === 1,
+                'imported_settlement' => (int) $r['imported_settlement'] === 1,
+                'duplicate_line_no' => (int) $r['duplicate_line_no'] === 1,
             ];
         }
         return $out;
     }
 
-    /** Už rozepsaná částka řádku (rozpady i předpisy živých ostatních položek). */
-    public function usedOnLine(int $supplierId, int $entryId, int $lineNo, int $accountId): float
+    /** Už rozepsaná částka řádku (rozpady i nezrušené předpisy ostatních položek). */
+    public function usedOnLine(int $supplierId, array $line): float
     {
         $stmt = $this->db->pdo()->prepare(
-            "SELECT used FROM (" . JournalSettlementAllocationSql::usedByLineSql($supplierId, [$accountId]) . ") u
-              WHERE u.entry_id = ? AND u.line_no = ?"
+            "SELECT used FROM (" . JournalSettlementAllocationSql::usedByLineSql($supplierId, [(int) $line['account_id']]) . ") u
+              WHERE u.entry_id = ? AND u.line_no = ? AND u.side = ?"
         );
-        $stmt->execute([$entryId, $lineNo]);
+        $stmt->execute([$line['entry_id'], $line['line_no'], $line['side']]);
         return round((float) ($stmt->fetchColumn() ?: 0), 2);
     }
 
@@ -131,7 +157,8 @@ final class JournalSettlementRepository
               WHERE supplier_id = ? AND entry_id = ? AND doc_type = ?'
         );
         $alloc = $this->db->pdo()->prepare(
-            'SELECT 1 FROM journal_settlement_allocations WHERE supplier_id = ? AND entry_id = ? AND doc_type = ? LIMIT 1'
+            'SELECT 1 FROM journal_settlement_allocations ja ' . JournalSettlementAllocationSql::lineJoin('ja', 'l') . "
+              WHERE ja.supplier_id = ? AND ja.entry_id = ? AND ja.doc_type = ? AND ja.kind = 'settlement' LIMIT 1"
         );
         foreach ($types as $type) {
             $stmt->execute([$supplierId, $entryId, $type]);
@@ -149,8 +176,9 @@ final class JournalSettlementRepository
     /**
      * Řádky ručních zápisů na účtech `$accountIds` a straně `$side`, které mají k `$asOf`
      * volnou (nerozepsanou) částku. Vynechá zápis, který je předpisem dokladu (skupina
-     * zaúčtování), storno a stornovaný zápis, červené storno a zápis, který doklad
-     * druhu `$docType` vyrovnává už starou vazbou.
+     * zaúčtování), storno a stornovaný zápis, červené storno, zápis se zápočtem převzatým
+     * z jiného programu, řádek se zdvojeným pořadím a zápis, který doklad druhu `$docType`
+     * vyrovnává už starou vazbou.
      *
      * `$search` zúží výběr na text nebo číslo zápisu. `$score` (volitelné) přidá sloupce shody s dokladem a řadí podle nich:
      * `amount_match` (volná částka = zbývá), `doc_match` (číslo dokladu v textu zápisu nebo
@@ -247,7 +275,7 @@ final class JournalSettlementRepository
                   JOIN journal_entries e ON e.id = l.entry_id AND e.supplier_id = l.supplier_id
                   JOIN chart_of_accounts ca ON ca.id = l.account_id AND ca.supplier_id = l.supplier_id
                   LEFT JOIN (" . JournalSettlementAllocationSql::usedByLineSql($supplierId, $accountIds) . ") u
-                         ON u.entry_id = l.entry_id AND u.line_no = l.line_no AND u.account_id = l.account_id
+                         ON u.entry_id = l.entry_id AND u.line_no = l.line_no AND u.account_id = l.account_id AND u.side = l.side
                  WHERE l.supplier_id = {$supplierId} AND l.account_id IN ({$ids}){$sideSql}
                    AND l.is_red_storno = 0
                    AND e.supplier_id = {$supplierId} AND e.source_type IN ({$sources})
@@ -257,6 +285,10 @@ final class JournalSettlementRepository
                                     WHERE jdp.supplier_id = e.supplier_id AND jdp.entry_id = e.id)
                    AND NOT EXISTS (SELECT 1 FROM journal_entries o
                                     WHERE o.supplier_id = e.supplier_id AND o.reversed_by = e.id)
+                   AND " . JournalSettlementAllocationSql::noImportedSettlementSql('e.supplier_id', 'e.id') . "
+                   AND NOT EXISTS (SELECT 1 FROM journal_entry_lines dup
+                                    WHERE dup.supplier_id = l.supplier_id AND dup.entry_id = l.entry_id
+                                      AND dup.line_no = l.line_no AND dup.id <> l.id)
                    AND " . implode(' AND ', $countedLink) . "
                    AND {$free} >= 0.005
                  ORDER BY {$order}
@@ -283,13 +315,13 @@ final class JournalSettlementRepository
     }
 
     /**
-     * Doklad firmy pro rozpad, zamčený (FOR UPDATE), aby se souběžné rozpady téhož dokladu
-     * seřadily. NULL = doklad u TÉTO firmy neexistuje (cizí a neexistující se nerozlišují).
+     * Doklad firmy pro rozpad (zamyká ho {@see lockForAllocation()}). NULL = doklad u TÉTO
+     * firmy neexistuje (cizí a neexistující se nerozlišují).
      *
      * @return array{doc_type:string, doc_id:int, partner_id:int, partner_name:string, currency_code:string,
      *               status:string, issue_date:string, numbers:list<string>, doc_no:string}|null
      */
-    public function lockDocument(int $supplierId, string $docType, int $docId, bool $lock = true): ?array
+    public function document(int $supplierId, string $docType, int $docId): ?array
     {
         $sql = match ($docType) {
             'invoice' => "SELECT d.id, d.client_id AS partner_id, cl.company_name AS partner_name, cur.code AS currency_code,
@@ -309,12 +341,7 @@ final class JournalSettlementRepository
         if ($sql === null || $docId <= 0) {
             return null;
         }
-        $pdo = $this->db->pdo();
-        if ($lock) {
-            $table = $docType === 'invoice' ? 'invoices' : 'purchase_invoices';
-            $pdo->prepare("SELECT id FROM {$table} WHERE id = ? AND supplier_id = ? FOR UPDATE")->execute([$docId, $supplierId]);
-        }
-        $stmt = $pdo->prepare($sql);
+        $stmt = $this->db->pdo()->prepare($sql);
         $stmt->execute([$docId, $supplierId]);
         $r = $stmt->fetch(PDO::FETCH_ASSOC);
         if ($r === false) {
@@ -323,7 +350,7 @@ final class JournalSettlementRepository
         $numbers = array_values(array_unique(array_filter([
             trim((string) ($r['varsymbol'] ?? '')),
             trim((string) ($r['vendor_invoice_number'] ?? '')),
-        ], static fn (string $n): bool => mb_strlen($n) >= 3)));
+        ], [self::class, 'isDocumentNumber'])));
         return [
             'doc_type'      => $docType,
             'doc_id'        => (int) $r['id'],
@@ -357,29 +384,99 @@ final class JournalSettlementRepository
                 $out[(int) $r['id']] = array_values(array_unique(array_filter([
                     trim((string) ($r['varsymbol'] ?? '')),
                     trim((string) ($r['vendor_invoice_number'] ?? '')),
-                ], static fn (string $n): bool => mb_strlen($n) >= 3)));
+                ], [self::class, 'isDocumentNumber'])));
             }
         }
         return $out;
     }
 
+    /**
+     * Opakovaný rozpad téhož řádku (stejné pořadí, účet i strana) na tentýž doklad se
+     * přičte k původnímu. Klíč nese účet i stranu, takže se nikdy nepřičte k rozpadu,
+     * kterému řádek mezitím přestal odpovídat.
+     */
     public function insert(int $supplierId, array $line, string $kind, string $docType, int $docId, float $amount, ?int $userId): int
     {
         $pdo = $this->db->pdo();
         $pdo->prepare(
             'INSERT INTO journal_settlement_allocations
-                (supplier_id, entry_id, line_no, account_id, kind, doc_type, doc_id, amount, created_by)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (supplier_id, entry_id, line_no, account_id, side, kind, doc_type, doc_id, amount, created_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id), amount = amount + VALUES(amount)'
-        )->execute([$supplierId, $line['entry_id'], $line['line_no'], $line['account_id'], $kind, $docType, $docId, round($amount, 2), $userId]);
+        )->execute([$supplierId, $line['entry_id'], $line['line_no'], $line['account_id'], $line['side'], $kind, $docType, $docId, round($amount, 2), $userId]);
         return (int) $pdo->lastInsertId();
+    }
+
+    /**
+     * Rozpady zápisů (zamčené), pro hlídání přeúčtování a mazání zápisu.
+     *
+     * @param list<int> $entryIds
+     * @return list<array{id:int, entry_id:int, line_no:int, account_id:int, side:string, kind:string, amount:float, released_on:?string}>
+     */
+    public function forEntries(int $supplierId, array $entryIds): array
+    {
+        $ids = self::ids($entryIds);
+        if ($ids === []) {
+            return [];
+        }
+        $stmt = $this->db->pdo()->prepare(
+            'SELECT id, entry_id, line_no, account_id, side, kind, amount, released_on
+               FROM journal_settlement_allocations
+              WHERE supplier_id = ? AND entry_id IN (' . implode(',', $ids) . ') ORDER BY id FOR UPDATE'
+        );
+        $stmt->execute([$supplierId]);
+        return array_map(static fn (array $r): array => [
+            'id' => (int) $r['id'], 'entry_id' => (int) $r['entry_id'], 'line_no' => (int) $r['line_no'],
+            'account_id' => (int) $r['account_id'], 'side' => (string) $r['side'], 'kind' => (string) $r['kind'],
+            'amount' => round((float) $r['amount'], 2), 'released_on' => $r['released_on'] !== null ? (string) $r['released_on'] : null,
+        ], $stmt->fetchAll(PDO::FETCH_ASSOC));
+    }
+
+    /** Předpis ostatní položky ze zůstatku, který ještě platí (zamčený). */
+    public function activeOrigin(int $supplierId, int $otherItemId): ?array
+    {
+        $stmt = $this->db->pdo()->prepare(
+            "SELECT id, entry_id FROM journal_settlement_allocations
+              WHERE supplier_id = ? AND doc_type = 'other_item' AND doc_id = ? AND kind = 'origin' AND released_on IS NULL
+              ORDER BY id LIMIT 1 FOR UPDATE"
+        );
+        $stmt->execute([$supplierId, $otherItemId]);
+        $r = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $r === false ? null : ['id' => (int) $r['id'], 'entry_id' => (int) $r['entry_id']];
+    }
+
+    /** Zruší předpis ostatní položky ze zůstatku od data storna položky. */
+    public function releaseOrigin(int $supplierId, int $otherItemId, string $releasedOn): void
+    {
+        $this->db->pdo()->prepare(
+            "UPDATE journal_settlement_allocations SET released_on = ?
+              WHERE supplier_id = ? AND doc_type = 'other_item' AND doc_id = ? AND kind = 'origin' AND released_on IS NULL"
+        )->execute([$releasedOn, $supplierId, $otherItemId]);
+    }
+
+    /**
+     * Číslo dokladu, které má smysl hledat v textu zápisu: aspoň čtyři znaky s písmenem
+     * i číslicí, čistě číselné aspoň pět. Krátký variabilní symbol nebo `#5` by se našel
+     * v datu či částce a dal by falešnou shodu.
+     */
+    public static function isDocumentNumber(string $number): bool
+    {
+        $n = preg_replace('/[^\p{L}\p{N}]+/u', '', $number) ?? '';
+        if (str_starts_with(trim($number), '#')) {
+            return false;
+        }
+        $len = mb_strlen($n);
+        if (preg_match('/^\p{N}+$/u', $n) === 1) {
+            return $len >= 5;
+        }
+        return $len >= 4 && preg_match('/\p{N}/u', $n) === 1 && preg_match('/\p{L}/u', $n) === 1;
     }
 
     /** @return array<string,mixed>|null */
     public function find(int $supplierId, int $id, bool $lock = false): ?array
     {
         $stmt = $this->db->pdo()->prepare(
-            'SELECT id, entry_id, line_no, account_id, kind, doc_type, doc_id, amount, created_by, created_at
+            'SELECT id, entry_id, line_no, account_id, side, kind, doc_type, doc_id, amount, released_on, created_by, created_at
                FROM journal_settlement_allocations WHERE id = ? AND supplier_id = ?' . ($lock ? ' FOR UPDATE' : '')
         );
         $stmt->execute([$id, $supplierId]);
@@ -415,14 +512,14 @@ final class JournalSettlementRepository
     public function listForDocument(int $supplierId, string $docType, int $docId): array
     {
         $stmt = $this->db->pdo()->prepare(
-            "SELECT ja.id, ja.entry_id, ja.line_no, ja.account_id, ja.kind, ja.doc_type, ja.doc_id, ja.amount,
-                    ja.created_by, ja.created_at, ca.account_code, e.entry_date, e.document_no, e.description,
+            "SELECT ja.id, ja.entry_id, ja.line_no, ja.account_id, ja.side, ja.kind, ja.doc_type, ja.doc_id, ja.amount,
+                    ja.released_on, ja.created_by, ja.created_at, ca.account_code, e.entry_date, e.document_no, e.description,
                     l.id AS line_id
                FROM journal_settlement_allocations ja
                JOIN journal_entries e ON e.id = ja.entry_id AND e.supplier_id = ja.supplier_id
                JOIN chart_of_accounts ca ON ca.id = ja.account_id AND ca.supplier_id = ja.supplier_id
                LEFT JOIN journal_entry_lines l ON l.supplier_id = ja.supplier_id AND l.entry_id = ja.entry_id
-                    AND l.line_no = ja.line_no AND l.account_id = ja.account_id
+                    AND l.line_no = ja.line_no AND l.account_id = ja.account_id AND l.side = ja.side
               WHERE ja.supplier_id = ? AND ja.doc_type = ? AND ja.doc_id = ?
               ORDER BY e.entry_date, ja.id"
         );
@@ -445,10 +542,12 @@ final class JournalSettlementRepository
             'entry_id'   => (int) $r['entry_id'],
             'line_no'    => (int) $r['line_no'],
             'account_id' => (int) $r['account_id'],
+            'side'       => (string) $r['side'],
             'kind'       => (string) $r['kind'],
             'doc_type'   => (string) $r['doc_type'],
             'doc_id'     => (int) $r['doc_id'],
             'amount'     => round((float) $r['amount'], 2),
+            'released_on' => $r['released_on'] !== null ? (string) $r['released_on'] : null,
             'created_by' => $r['created_by'] !== null ? (int) $r['created_by'] : null,
             'created_at' => (string) $r['created_at'],
         ];
@@ -464,6 +563,14 @@ final class JournalSettlementRepository
                 $out[] = ['doc_type' => $type, 'doc_id' => (int) $id];
             }
         }
+        return $out;
+    }
+
+    /** @return list<int> kladná id bez duplicit, vzestupně */
+    private static function ids(array $ids): array
+    {
+        $out = array_values(array_unique(array_filter(array_map('intval', $ids), static fn (int $id): bool => $id > 0)));
+        sort($out);
         return $out;
     }
 

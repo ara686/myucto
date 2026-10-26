@@ -149,6 +149,12 @@ final class OtherItemAction
                 && !$this->requirePermission($request, $response, 'accounting.journal.post', AccessLevel::WRITE, $err)) {
                 throw new OtherItemException('forbidden', 'Pro storno zaúčtovaného dokladu nemáš oprávnění.', 403);
             }
+            // Položka ze zůstatku nese předpis v řádku zápisu; storno mění saldokonto stejně
+            // jako zrušení rozpadu zápisu, proto potřebuje i právo zápisu do deníku.
+            if ($existing['journal_entry_id'] === null && $this->service->hasJournalOrigin($supplierId, $id)
+                && !$this->requirePermission($request, $response, 'accounting.journal.write', AccessLevel::WRITE, $err)) {
+                throw new OtherItemException('forbidden', 'Pro storno položky ze zůstatku zápisu nemáš oprávnění.', 403);
+            }
             $body = (array) ($request->getParsedBody() ?? []);
             $item = $this->service->reverse($supplierId, $id, (string) ($body['reason'] ?? ''),
                 $this->userId($request), isset($body['entry_date']) && $body['entry_date'] !== '' ? (string) $body['entry_date'] : null);

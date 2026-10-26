@@ -11,7 +11,10 @@ use MyInvoice\Repository\ClosingRepository;
 use MyInvoice\Repository\JournalEntryDocumentLinkRepository;
 use MyInvoice\Service\Accounting\JournalSettlementException;
 use MyInvoice\Service\Accounting\JournalSettlementService;
+use MyInvoice\Service\Accounting\JournalSettlementUseGuard;
+use MyInvoice\Service\Accounting\OtherItemException;
 use MyInvoice\Service\Accounting\OtherItemService;
+use MyInvoice\Service\Accounting\PostingException;
 use MyInvoice\Service\Accounting\Reports\SaldoService;
 use MyInvoice\Tests\Integration\Accounting\Bank\BankPostingTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -245,7 +248,7 @@ final class JournalSettlementTest extends BankPostingTestCase
 
         $this->assertSettlementError('origin_allocation', fn () => $this->settlements->delete($this->supplierId, $result['allocation_id']));
 
-        $this->container->get(OtherItemService::class)->reverse($this->supplierId, (int) $result['item']['id'], 'Omyl při založení', $this->userId);
+        $this->container->get(OtherItemService::class)->reverse($this->supplierId, (int) $result['item']['id'], 'Omyl při založení', $this->userId, self::YEAR . '-12-31');
         $cancelled = $this->block('311', $asOf);
         self::assertNull($this->remaining($cancelled, 'other_item', (int) $result['item']['id']));
         self::assertEqualsWithDelta($before['difference'], $cancelled['difference'], 0.001);
@@ -282,6 +285,180 @@ final class JournalSettlementTest extends BankPostingTestCase
         $deleted = $this->callAction($action, 'delete', 'DELETE', 'accountant', [], ['id' => (string) $allocationId]);
         self::assertSame(200, $deleted['status']);
         self::assertEqualsWithDelta(250.0, $this->remaining($this->block('321', self::YEAR . '-12-31'), 'purchase_invoice', $doc), 0.001);
+    }
+
+
+    public function testRepostOrDeleteCannotMoveOrShrinkAllocatedLine(): void
+    {
+        $partner = $this->client('Syntetický partner přeúčtování');
+        $doc = $this->document('purchase_invoice', 'ROZ-REP', $partner, 1000.0, '321');
+        $entryId = $this->manual('321', 'debit', 1000.0, self::YEAR . '-07-01', 'Zápočet ROZ-REP');
+        $this->settlements->allocate($this->supplierId, [
+            ['line_id' => $this->lineId($entryId, '321'), 'doc_type' => 'purchase_invoice', 'doc_id' => $doc, 'amount' => 600.0],
+        ], $this->userId);
+        $entry = $this->journal->find($entryId, $this->supplierId);
+        $header = array_intersect_key($entry, array_flip(['supplier_id', 'period_id', 'entry_date', 'document_date', 'document_no', 'description', 'source_type', 'source_id', 'posted_at', 'posted_by']));
+        $lines = array_map(static fn (array $l): array => [
+            'account_id' => (int) $l['account_id'], 'side' => $l['side'], 'amount' => (float) $l['amount'], 'line_no' => (int) $l['line_no'],
+        ], $entry['lines']);
+        $map = $this->accounts->codeToIdMap($this->supplierId);
+        $variants = [
+            'menší částka' => array_map(static fn (array $l): array => [...$l, 'amount' => 500.0], $lines),
+            'prohozené strany' => array_map(static fn (array $l): array => [...$l, 'side' => $l['side'] === 'debit' ? 'credit' : 'debit'], $lines),
+            'jiný účet na pořadí' => array_map(static fn (array $l): array => $l['account_id'] === (int) $map['321']['id']
+                ? [...$l, 'account_id' => (int) $map['325']['id']] : $l, $lines),
+            'přečíslované řádky' => array_map(static fn (array $l): array => [...$l, 'line_no' => $l['line_no'] + 10], $lines),
+        ];
+        foreach ($variants as $label => $changed) {
+            try {
+                $this->journal->replace($entryId, $header, $changed);
+                self::fail('Přeúčtování prošlo: ' . $label);
+            } catch (PostingException $e) {
+                self::assertSame('allocation_saldo_in_use', $e->errorCode, $label);
+            }
+        }
+        // Beze změny řádku s rozpadem projde (např. jiný popis).
+        $this->journal->replace($entryId, [...$header, 'description' => 'Zápočet ROZ-REP opravený popis'], $lines);
+
+        $line321 = array_values(array_filter($this->journal->find($entryId, $this->supplierId)['lines'], static fn (array $l): bool => (int) $l['account_id'] === (int) $map['321']['id']))[0];
+        try {
+            $this->journal->replaceSomeLines($entryId, $this->supplierId, (int) $this->journal->find($entryId, $this->supplierId)['row_version'], [(int) $line321['id']], []);
+            self::fail('Odebrání rozepsaného řádku prošlo.');
+        } catch (PostingException $e) {
+            self::assertSame('allocation_saldo_in_use', $e->errorCode);
+        }
+        try {
+            (new JournalSettlementUseGuard($this->db))->assertEntriesFree($this->supplierId, [$entryId]);
+            self::fail('Smazání zápisu s rozpadem prošlo.');
+        } catch (PostingException $e) {
+            self::assertSame('allocation_saldo_in_use', $e->errorCode);
+        }
+        self::assertEqualsWithDelta(400.0, $this->remaining($this->block('321', self::YEAR . '-12-31'), 'purchase_invoice', $doc), 0.001);
+    }
+
+    public function testDuplicateLineNumberDoesNotCountAllocationTwice(): void
+    {
+        $partner = $this->client('Syntetický partner pořadí');
+        $doc = $this->document('purchase_invoice', 'ROZ-DUPNO', $partner, 1000.0, '321');
+        $entryId = $this->manual('321', 'debit', 1000.0, self::YEAR . '-07-01', 'Zápočet ROZ-DUPNO');
+        $line = $this->lineId($entryId, '321');
+        $this->settlements->allocate($this->supplierId, [
+            ['line_id' => $line, 'doc_type' => 'purchase_invoice', 'doc_id' => $doc, 'amount' => 600.0],
+        ], $this->userId);
+        // Převod může vložit dva řádky se stejným pořadím (jedinečnost DB nevynucuje).
+        $this->db->pdo()->prepare(
+            'INSERT INTO journal_entry_lines (entry_id, supplier_id, account_id, side, amount, line_no)
+             SELECT entry_id, supplier_id, account_id, side, amount, line_no FROM journal_entry_lines WHERE id = ?'
+        )->execute([$line]);
+
+        self::assertEqualsWithDelta(400.0, $this->remaining($this->block('321', self::YEAR . '-12-31'), 'purchase_invoice', $doc), 0.001);
+        $this->assertSettlementError('line_ambiguous', fn () => $this->settlements->allocate($this->supplierId, [
+            ['line_id' => $line, 'doc_type' => 'purchase_invoice', 'doc_id' => $doc, 'amount' => 100.0],
+        ], $this->userId));
+    }
+
+    public function testEntryWithImportedSettlementCannotBeAllocated(): void
+    {
+        $partner = $this->client('Syntetický partner převzatého zápočtu');
+        $doc = $this->document('purchase_invoice', 'ROZ-IMP', $partner, 1000.0, '321');
+        $entryId = $this->manual('321', 'debit', 1000.0, self::YEAR . '-07-01', 'Interní doklad ROZ-IMP');
+        $map = $this->accounts->codeToIdMap($this->supplierId);
+        $this->db->pdo()->prepare(
+            "INSERT INTO invoice_settlements (supplier_id, doc_type, doc_id, settled_on, amount, account_id, status, journal_entry_id)
+             VALUES (?, 'purchase_invoice', ?, ?, 1000, ?, 'confirmed', ?)"
+        )->execute([$this->supplierId, $doc, self::YEAR . '-07-01', (int) $map['395']['id'], $entryId]);
+
+        $this->assertSettlementError('entry_settled', fn () => $this->settlements->allocate($this->supplierId, [
+            ['line_id' => $this->lineId($entryId, '321'), 'doc_type' => 'purchase_invoice', 'doc_id' => $doc, 'amount' => 1000.0],
+        ], $this->userId));
+        $other = $this->document('purchase_invoice', 'ROZ-IMP2', $partner, 1000.0, '321');
+        $candidates = $this->settlements->candidates($this->supplierId, 'purchase_invoice', $other, '321', self::YEAR . '-12-31');
+        self::assertNotContains($this->lineId($entryId, '321'), array_column($candidates['items'], 'line_id'));
+    }
+
+    public function testOrphanAllocationNeitherAbsorbsNewOneNorDisablesLink(): void
+    {
+        $partner = $this->client('Syntetický partner osiřelého rozpadu');
+        $doc = $this->document('purchase_invoice', 'ROZ-ORF', $partner, 1000.0, '321');
+        $entryId = $this->manual('321', 'debit', 1000.0, self::YEAR . '-07-01', 'Zápočet ROZ-ORF');
+        $line = $this->lineId($entryId, '321');
+        $this->settlements->allocate($this->supplierId, [
+            ['line_id' => $line, 'doc_type' => 'purchase_invoice', 'doc_id' => $doc, 'amount' => 300.0],
+        ], $this->userId);
+        // Rozpad, kterému řádek přestal odpovídat (účet mimo hlídané cesty změněný).
+        $map = $this->accounts->codeToIdMap($this->supplierId);
+        $this->db->pdo()->prepare('UPDATE journal_settlement_allocations SET account_id = ? WHERE supplier_id = ? AND entry_id = ?')
+            ->execute([(int) $map['325']['id'], $this->supplierId, $entryId]);
+
+        $this->settlements->allocate($this->supplierId, [
+            ['line_id' => $line, 'doc_type' => 'purchase_invoice', 'doc_id' => $doc, 'amount' => 300.0],
+        ], $this->userId);
+        self::assertEqualsWithDelta(700.0, $this->remaining($this->block('321', self::YEAR . '-12-31'), 'purchase_invoice', $doc), 0.001,
+            'Nový rozpad se nepřičte k osiřelému.');
+
+        // Osiřelý rozpad nevypíná starou vazbu zápisu na jediný doklad.
+        $linked = $this->document('purchase_invoice', 'ROZ-ORF2', $partner, 500.0, '321');
+        $entry2 = $this->manual('321', 'debit', 500.0, self::YEAR . '-07-02', 'Vyrovnání ROZ-ORF2');
+        $this->db->pdo()->prepare(
+            "INSERT INTO journal_settlement_allocations (supplier_id, entry_id, line_no, account_id, side, kind, doc_type, doc_id, amount)
+             VALUES (?, ?, 0, ?, 'debit', 'settlement', 'purchase_invoice', ?, 100)"
+        )->execute([$this->supplierId, $entry2, (int) $map['325']['id'], $linked]);
+        $this->container->get(JournalEntryDocumentLinkRepository::class)->add($entry2, $this->supplierId, 'purchase_invoice', $linked, null, $this->userId);
+        self::assertNull($this->remaining($this->block('321', self::YEAR . '-12-31'), 'purchase_invoice', $linked));
+    }
+
+    public function testCancelledResidualItemDisappearsOnlyFromCancellationDayInOpenPeriod(): void
+    {
+        $entry = $this->manual('311', 'debit', 400.0, self::YEAR . '-03-01', 'Přeplatek bez dokladu');
+        $result = $this->settlements->createOtherItem($this->supplierId, [
+            'line_id' => $this->lineId($entry, '311'), 'amount' => 400.0, 'title' => 'Syntetický přeplatek',
+        ], $this->userId);
+        $id = (int) $result['item']['id'];
+        $items = $this->container->get(OtherItemService::class);
+
+        $this->db->pdo()->prepare("UPDATE accounting_periods SET status = 'closed' WHERE id = ? AND supplier_id = ?")
+            ->execute([$this->periodId, $this->supplierId]);
+        try {
+            $items->reverse($this->supplierId, $id, 'Omyl při založení', $this->userId, self::YEAR . '-09-01');
+            self::fail('Storno v uzavřeném období prošlo.');
+        } catch (OtherItemException $e) {
+            self::assertSame('period_closed', $e->errorCode);
+        }
+        $this->db->pdo()->prepare("UPDATE accounting_periods SET status = 'open' WHERE id = ? AND supplier_id = ?")
+            ->execute([$this->periodId, $this->supplierId]);
+
+        $items->reverse($this->supplierId, $id, 'Omyl při založení', $this->userId, self::YEAR . '-09-01');
+        self::assertEqualsWithDelta(400.0, $this->remaining($this->block('311', self::YEAR . '-08-31'), 'other_item', $id), 0.001,
+            'K datu před stornem položka v saldokontu zůstává.');
+        self::assertNull($this->remaining($this->block('311', self::YEAR . '-09-30'), 'other_item', $id));
+    }
+
+    public function testResidualItemsRespectLimitAndDueOrder(): void
+    {
+        $ids = [];
+        // Partner podle abecedy první má pozdější splatnost: řazení podle splatnosti a podle
+        // partnera dají různé pořadí.
+        foreach ([['Syntetický Alfa limitu', '2099-10-01'], ['Syntetický Zeta limitu', '2099-08-01']] as $i => [$name, $due]) {
+            $entry = $this->manual('311', 'debit', 100.0 + $i, self::YEAR . '-03-0' . ($i + 1), 'Záloha ' . $i);
+            $ids[] = (int) $this->settlements->createOtherItem($this->supplierId, [
+                'line_id' => $this->lineId($entry, '311'), 'amount' => 100.0 + $i, 'partner_id' => $this->client($name), 'due_on' => $due,
+            ], $this->userId)['item']['id'];
+        }
+        $saldo = $this->container->get(\MyInvoice\Repository\SaldoRepository::class);
+        $account = $saldo->resolveAccount($this->supplierId, '311');
+        $method = new \ReflectionMethod($saldo, 'fetchOpenOtherItems');
+        $rows = $method->invoke($saldo, $this->supplierId, (int) $account['id'], self::YEAR . '-12-31', 1, null, null, true);
+        self::assertCount(1, $rows);
+        self::assertSame($ids[1], $rows[0]['doc_id'], 'Řazení podle splatnosti vrátí dřívější splatnost.');
+    }
+
+    public function testSuggestionIgnoresShortDocumentNumbers(): void
+    {
+        $partner = $this->client('Syntetický partner krátkého čísla');
+        $doc = $this->document('purchase_invoice', '7711', $partner, 2468.0, '321');
+        $this->manual('321', 'debit', 2468.0, self::YEAR . '-07-01', 'úhrada 7711 bez dalšího');
+        $suggestions = $this->settlements->suggestions($this->supplierId, $this->periodId, self::YEAR . '-12-31', '321');
+        self::assertSame([], array_values(array_filter($suggestions['items'], static fn (array $s): bool => $s['allocations'][0]['doc_id'] === $doc)));
     }
 
     // ── pomocníci ────────────────────────────────────────────────────────────

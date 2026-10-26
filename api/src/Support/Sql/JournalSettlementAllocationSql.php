@@ -8,9 +8,10 @@ namespace MyInvoice\Support\Sql;
  * Jediný zdroj pravdy pro rozpad řádku zápisu na doklady saldokonta
  * (`journal_settlement_allocations`, migrace 2192).
  *
- * Řádek se drží přes (entry_id, line_no) a účet v okamžiku rozpadu; řádek, který po
- * přeúčtování na tom pořadí nese jiný účet, se nepočítá ({@see lineJoin}). Platnost
- * k rozvahovému dni měří stejně jako hlavní kniha: `entry_date` zápisu a jeho protizápisu.
+ * Řádek se drží přes (entry_id, line_no), účet a stranu v okamžiku rozpadu. Rozpad,
+ * kterému na tom pořadí neodpovídá účet nebo strana (přeúčtování mimo hlídané cesty),
+ * se nepočítá ({@see lineJoin}). Platnost k rozvahovému dni měří stejně jako hlavní kniha:
+ * `entry_date` zápisu a jeho protizápisu.
  *
  * Volají ji {@see LinkedManualSettlementSql::settledSql} (vyrovnání dokladů v saldokontu
  * i v uzávěrkové kontrole K3), `SaldoRepository` (předpis ostatní položky založené ze
@@ -51,43 +52,62 @@ final class JournalSettlementAllocationSql
     }
 
     /**
-     * Rozpad platí jen pro řádek, který na pořadí `line_no` pořád nese účet z okamžiku
-     * rozpadu (vzor párování okruhů). `$a` = alias rozpadu, `$l` = alias řádku.
+     * Rozpad platí jen pro řádek, který na pořadí `line_no` pořád nese účet a stranu
+     * z okamžiku rozpadu (vzor párování okruhů). `journal_entry_lines` nemá jedinečné
+     * (entry_id, line_no), proto se bere nejnižší id: rozpad se nesmí započíst dvakrát
+     * jen proto, že převod vložil dva řádky se stejným pořadím. `$a` = alias rozpadu,
+     * `$l` = alias řádku.
      */
     public static function lineJoin(string $a, string $l): string
     {
-        return "JOIN journal_entry_lines {$l} ON {$l}.supplier_id = {$a}.supplier_id AND {$l}.entry_id = {$a}.entry_id
-                     AND {$l}.line_no = {$a}.line_no AND {$l}.account_id = {$a}.account_id";
+        return "JOIN journal_entry_lines {$l} ON {$l}.id = (
+                     SELECT MIN({$l}x.id) FROM journal_entry_lines {$l}x
+                      WHERE {$l}x.supplier_id = {$a}.supplier_id AND {$l}x.entry_id = {$a}.entry_id
+                        AND {$l}x.line_no = {$a}.line_no AND {$l}x.account_id = {$a}.account_id
+                        AND {$l}x.side = {$a}.side
+                 ) AND {$l}.supplier_id = {$a}.supplier_id";
     }
 
     /**
-     * `NOT EXISTS`: zápis `$entryExpr` nemá rozpad na doklady druhu `$docTypeExpr`. Zápis
-     * s rozpadem se ve staré vazbě bez částky nepočítá, jinak by se vyrovnání započetlo dvakrát.
+     * `NOT EXISTS`: zápis `$entryExpr` nemá živý rozpad (řádek pořád sedí) na doklady
+     * druhu `$docTypeExpr`. Zápis s rozpadem se ve staré vazbě bez částky nepočítá, jinak by
+     * se vyrovnání započetlo dvakrát; osiřelý rozpad starou vazbu nevypíná.
      */
     public static function noAllocationSql(string $supplierExpr, string $entryExpr, string $docTypeExpr, bool $currentRead = false): string
     {
         $lock = $currentRead ? ' FOR UPDATE' : '';
         return "NOT EXISTS (
                    SELECT 1 FROM journal_settlement_allocations jsa
+                   " . self::lineJoin('jsa', 'jsl') . "
                     WHERE jsa.supplier_id = {$supplierExpr} AND jsa.entry_id = {$entryExpr}
-                      AND jsa.doc_type = {$docTypeExpr}{$lock}
+                      AND jsa.doc_type = {$docTypeExpr} AND jsa.kind = 'settlement'{$lock}
                )";
     }
 
     /**
-     * Použitá částka řádků (Kč): rozpady na doklady i předpisy živých ostatních položek.
-     * Výstup `entry_id`, `line_no`, `account_id`, `used`. Bez placeholderů, ID literálem.
+     * Použitá částka řádků (Kč): rozpady na doklady i nezrušené předpisy ostatních položek.
+     * Výstup `entry_id`, `line_no`, `account_id`, `side`, `used`. Bez placeholderů, ID literálem.
      *
      * @param list<int> $accountIds
      */
     public static function usedByLineSql(int $supplierId, array $accountIds): string
     {
         $ids = implode(',', array_map('intval', $accountIds ?: [0]));
-        return "SELECT u.entry_id, u.line_no, u.account_id, SUM(u.amount) AS used
+        return "SELECT u.entry_id, u.line_no, u.account_id, u.side, SUM(u.amount) AS used
                   FROM journal_settlement_allocations u
-                  LEFT JOIN other_items uoi ON u.kind = 'origin' AND uoi.id = u.doc_id AND uoi.supplier_id = u.supplier_id
                  WHERE u.supplier_id = {$supplierId} AND u.account_id IN ({$ids})
-                   AND (u.kind = 'settlement' OR (uoi.deleted_at IS NULL AND uoi.status IN ('confirmed', 'posted')))
-                 GROUP BY u.entry_id, u.line_no, u.account_id";
+                   AND (u.kind = 'settlement' OR u.released_on IS NULL)
+                 GROUP BY u.entry_id, u.line_no, u.account_id, u.side";
+    }
+
+    /**
+     * `NOT EXISTS`: zápis `$entryExpr` nenese zápočet převzatý z jiného programu
+     * (`invoice_settlements.journal_entry_id`). Takový zápočet saldokonto i K3 počítají
+     * samy, rozpad téhož zápisu by vyrovnání zdvojil.
+     */
+    public static function noImportedSettlementSql(string $supplierExpr, string $entryExpr): string
+    {
+        return "NOT EXISTS (SELECT 1 FROM invoice_settlements ist
+                             WHERE ist.journal_entry_id = {$entryExpr} AND ist.supplier_id = {$supplierExpr})";
     }
 }
