@@ -12,6 +12,7 @@ use MyInvoice\Service\Eshop\CatalogJobService;
 use MyInvoice\Service\Eshop\EshopException;
 use MyInvoice\Service\Eshop\Import\CatalogImportSourceStore;
 use MyInvoice\Service\Stock\CycleCountService;
+use MyInvoice\Service\Stock\InTransitService;
 use MyInvoice\Service\Stock\StockException;
 use MyInvoice\Service\Stock\StockHistoryImportService;
 use MyInvoice\Service\Stock\StockHistoryImportWorker;
@@ -622,6 +623,28 @@ final class StockHistoryImportLifecycleTest extends StockTestCase
         $state = $this->container->get(StockHistoryImportService::class)->endState($sid, $preview['id']);
         self::assertSame(['count' => 1, 'differences' => 0], $state['totals']);
         self::assertSame('10.000', $state['items'][0]['stock_qty']);
+    }
+
+    /** Faktura krytá převzatou výdejkou nic nerezervuje: převzatá výdejka platí za výdej celé faktury. */
+    public function testInvoiceCoveredByHistoryIssueReservesNothing(): void
+    {
+        $sid = $this->createSupplier();
+        $main = $this->warehouse($sid, 'HL');
+        $a = $this->item($sid, 'ZB-100');
+        $this->receiveStock($sid, $main, $a, '25', 100.0, '2021-01-01');
+        $this->issuedInvoice($sid, 'invoice', '2020001', '2020-03-01', $main, $a, '4.000');
+        $open = $this->issuedInvoice($sid, 'invoice', '2020002', '2020-03-02', $main, $a, '1.000');
+        $applied = $this->applyAll($sid, $this->stage($sid, self::csv([
+            'P1;receipt;2020-01-05;HL;;ZB-100;10;50;;;;',
+            'V1;issue;2020-03-01;HL;;ZB-100;4;;;2020001;;',
+        ]), $this->config('2021-01-01'))['id']);
+        self::assertSame('completed', $applied['status']);
+
+        $quantities = $this->container->get(InTransitService::class);
+        $row = $quantities->quantities($sid, [$a])[0];
+        self::assertSame(['25.000', '1.000', '24.000'], [$row['on_hand'], $row['reserved'], $row['sellable']]);
+        $reservations = $quantities->reservations($sid, [$a]);
+        self::assertSame([$open['id']], array_column($reservations[0]['invoices'] ?? [], 'invoice_id'));
     }
 
     // ── pomocníci ────────────────────────────────────────────────────────────
