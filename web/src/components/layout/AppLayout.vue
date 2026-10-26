@@ -33,6 +33,7 @@ import WorkspaceHost from '@/components/workspace/WorkspaceHost.vue'
 import WorkspaceNavLink from '@/components/workspace/WorkspaceNavLink.vue'
 import WorkspaceWindowSwitcher from '@/components/workspace/WorkspaceWindowSwitcher.vue'
 import WorkspaceWindowButton from '@/components/workspace/WorkspaceWindowButton.vue'
+import WorkspaceReloadButton from '@/components/workspace/WorkspaceReloadButton.vue'
 import WorkspaceFavorites from '@/components/workspace/WorkspaceFavorites.vue'
 import WorkspaceFavoritesButton from '@/components/workspace/WorkspaceFavoritesButton.vue'
 import { getWindowManager } from '@/workspace/windowRegistry'
@@ -2284,8 +2285,11 @@ onBeforeUnmount(() => {
               </button>
               <LanguageToggle />
               <ThemeToggle />
-              <WorkspaceFavoritesButton class="border border-neutral-200" />
-              <WorkspaceWindowButton class="border border-neutral-200" />
+              <div class="flex h-8 items-center gap-0.5 rounded-lg bg-neutral-100/80 p-0.5 shadow-inner ring-1 ring-neutral-200/80" role="group" :aria-label="t('favorites.group_label')">
+                <WorkspaceFavoritesButton class="h-7! hover:bg-surface!" />
+                <WorkspaceReloadButton class="h-7! hover:bg-surface!" />
+                <WorkspaceWindowButton class="h-7! hover:bg-surface!" />
+              </div>
             </div>
             <div v-if="tabletNavigationRail && supplierStore.hasMultiple" class="flex min-w-0 flex-1 justify-center">
               <SupplierSwitcher placement="above" compact />
