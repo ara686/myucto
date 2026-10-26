@@ -686,6 +686,52 @@ final class DomainLoginFlowTest extends TestCase
         }
     }
 
+    #[TestWith(['+00:00'])]
+    #[TestWith(['+01:00'])]
+    #[TestWith(['+02:00'])]
+    #[TestWith(['-05:00'])]
+    public function testTemporaryCookieRetainsLifetimeInEveryDatabaseTimezone(string $timezone): void
+    {
+        $pdo = $this->db->pdo();
+        $originalTimezone = (string) $pdo->query('SELECT @@session.time_zone')->fetchColumn();
+        $container = Bootstrap::buildContainer();
+        $middleware = new DomainLoginSessionMiddleware(
+            $this->db,
+            $container->get(\MyInvoice\Service\Auth\DomainLoginSessionCookie::class),
+            $container->get(\Psr\Clock\ClockInterface::class),
+            new \Slim\Psr7\Factory\ResponseFactory(),
+        );
+        $cookie = $this->cookies->create(str_repeat('a', 64), time() + 86400);
+        $handler = new class($cookie) implements \Psr\Http\Server\RequestHandlerInterface {
+            public function __construct(private readonly string $cookie) {}
+            public function handle(\Psr\Http\Message\ServerRequestInterface $request): \Psr\Http\Message\ResponseInterface
+            {
+                return (new Response())->withHeader('Set-Cookie', $this->cookie);
+            }
+        };
+        try {
+            // Služba zapisuje UTC_TIMESTAMP; cookie musí zachovat stejnou životnost.
+            $pdo->prepare('SET time_zone = ?')->execute([$timezone]);
+            $flow = $this->start(self::opaqueToken());
+            $response = $middleware->process(
+                $this->canonicalRequest('POST', '/api/auth/login')
+                    ->withHeader(DomainLoginSessionMiddleware::REQUEST_HEADER, $flow['request_token'])
+                    ->withHeader(DomainLoginSessionMiddleware::STATE_HEADER, $flow['state']),
+                $handler,
+            );
+            $header = $response->getHeaderLine('Set-Cookie');
+            self::assertMatchesRegularExpression('/; Max-Age=\d+;/', $header);
+            preg_match('/; Max-Age=(\d+);/', $header, $matches);
+            self::assertGreaterThanOrEqual(590, (int) $matches[1], $timezone . ': ' . $header);
+            self::assertLessThanOrEqual(600, (int) $matches[1]);
+            preg_match('/; Expires=([^;]+)/', $header, $expires);
+            self::assertGreaterThanOrEqual(time() + 590, strtotime($expires[1]));
+            self::assertLessThanOrEqual(time() + 600, strtotime($expires[1]));
+        } finally {
+            $pdo->prepare('SET time_zone = ?')->execute([$originalTimezone]);
+        }
+    }
+
     /** @return array{request_token:string,state:string,login_url:string,expires_in:int} */
     private function start(string $verifier): array
     {

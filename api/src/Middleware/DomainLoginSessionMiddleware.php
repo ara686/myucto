@@ -68,8 +68,9 @@ final class DomainLoginSessionMiddleware implements MiddlewareInterface
             || ($method === 'GET' && $path === '/api/auth/session/status');
         $expiresAt = $this->clock->now()->getTimestamp();
         if (!$cleanup) {
+            // Služba zapisuje UTC_TIMESTAMP; UNIX_TIMESTAMP by expiraci posunul o zónu spojení.
             $stmt = $this->db->pdo()->prepare(
-                "SELECT UNIX_TIMESTAMP(r.expires_at) AS expires_at
+                "SELECT TIMESTAMPDIFF(SECOND, '1970-01-01 00:00:00', r.expires_at) AS expires_at
                    FROM supplier_domain_login_requests r
                    JOIN supplier_domains d ON d.id = r.supplier_domain_id AND d.supplier_id = r.supplier_id
                   WHERE r.request_token_hash = ? AND r.state_hash = ?
