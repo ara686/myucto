@@ -94,6 +94,7 @@ async function save() {
       <div>
         <p class="font-semibold">{{ t('settings.accounting_framework.testing_warning_title') }}</p>
         <p class="mt-1 text-sm">{{ t('settings.accounting_framework.testing_warning') }}</p>
+        <a href="https://github.com/radekhulan/myucto/issues/258" target="_blank" rel="noopener" class="mt-2 inline-block text-sm font-medium underline hover:text-warning-900" data-test="framework-testing-warning-link">{{ t('settings.accounting_framework.testing_warning_link') }}</a>
       </div>
     </div>
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl">
