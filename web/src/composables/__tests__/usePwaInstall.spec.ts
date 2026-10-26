@@ -32,7 +32,7 @@ beforeEach(() => setEnv())
 it('offers the native prompt on a mobile browser and consumes it after accepting', async () => {
   const { usePwaInstall } = await load()
   const { mode, install } = usePwaInstall()
-  expect(mode.value).toBeNull()
+  expect(mode.value).toBe('manual')
   const event = fireInstallPrompt('accepted')
   expect(event.defaultPrevented).toBe(true)
   expect(mode.value).toBe('prompt')
@@ -41,12 +41,12 @@ it('offers the native prompt on a mobile browser and consumes it after accepting
   expect(mode.value).toBeNull()
 })
 
-it('stops offering after the prompt is dismissed (event is single-use)', async () => {
+it('falls back to the manual hint after the prompt is dismissed (event is single-use)', async () => {
   const { usePwaInstall } = await load()
   const { mode, install } = usePwaInstall()
   fireInstallPrompt('dismissed')
   expect(await install()).toBe(false)
-  expect(mode.value).toBeNull()
+  expect(mode.value).toBe('manual')
 })
 
 it('offers nothing when already running as an installed app', async () => {
@@ -74,15 +74,16 @@ it('treats iPadOS reporting as a touch Mac as iOS', async () => {
   expect(usePwaInstall().mode.value).toBe('ios')
 })
 
-it('offers nothing on desktop or on other mobile browsers without the event', async () => {
+it('offers the manual hint on desktop and on mobile browsers without the event', async () => {
   setEnv({ mq: { '(pointer: coarse)': false }, width: 1280, ua: 'Mozilla/5.0 (Windows NT 10.0) Chrome/120', platform: 'Win32', touch: 0 })
   const desktop = await load()
+  expect(desktop.usePwaInstall().mode.value).toBe('manual')
   fireInstallPrompt('accepted')
-  expect(desktop.usePwaInstall().mode.value).toBeNull()
+  expect(desktop.usePwaInstall().mode.value).toBe('prompt')
 
   setEnv()
   const android = await load()
-  expect(android.usePwaInstall().mode.value).toBeNull()
+  expect(android.usePwaInstall().mode.value).toBe('manual')
 })
 
 it('hides the offer after appinstalled', async () => {

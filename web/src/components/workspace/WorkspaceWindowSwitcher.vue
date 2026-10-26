@@ -22,6 +22,12 @@ const windows = computed(() => {
 
 function close(): void { workspace.windowSwitcherOpen = false }
 
+/** Na dotykovém zařízení by fokus do hledání vysunul klávesnici přes půl seznamu. */
+function focusSearch(): void {
+  if (window.matchMedia?.('(pointer: coarse)').matches) return
+  input.value?.focus()
+}
+
 async function select(id: string): Promise<void> {
   returnFocus = null
   close()
@@ -33,7 +39,7 @@ async function closeWindow(id: string): Promise<void> {
   await getWindowManager()?.closeWindow(id)
   selected.value = Math.max(0, Math.min(index, windows.value.length - 1))
   await nextTick()
-  input.value?.focus()
+  focusSearch()
 }
 
 function isCurrent(window: { paneId: string | null }): boolean {
@@ -93,7 +99,7 @@ watch(() => workspace.windowSwitcherOpen, async open => {
     lockBodyScroll()
     locked = true
     await nextTick()
-    input.value?.focus()
+    focusSearch()
   } else {
     if (locked) unlockBodyScroll()
     locked = false
@@ -138,7 +144,7 @@ onBeforeUnmount(() => { if (locked) unlockBodyScroll() })
           </div>
           <p v-if="!windows.length" class="px-3 py-6 text-center text-sm text-neutral-500">{{ t('workspace.no_windows') }}</p>
         </div>
-        <footer class="space-y-1.5 border-t border-neutral-200 bg-neutral-50 px-5 py-3 text-xs text-neutral-500">
+        <footer class="space-y-1.5 border-t pointer-coarse:hidden border-neutral-200 bg-neutral-50 px-5 py-3 text-xs text-neutral-500">
           <p>{{ t('workspace.window_keyboard_hint') }}</p>
           <p v-if="shortcuts.comboFor('windows.recent')">{{ formatShortcut(shortcuts.comboFor('windows.recent')) }}: {{ t('workspace.recent_windows') }}</p>
           <p>{{ t('workspace.window_memory_hint') }}</p>

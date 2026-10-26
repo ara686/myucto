@@ -119,6 +119,19 @@ final class DocumentBranchParityGuardsTest extends TestCase
             'advanceParentOf'    => 'vydaná větev pokrývá DDKP výčtem, přijatá rozlišuje vazební sloupec',
             'withAdvanceChildren' => 'vydaná větev pokrývá DDKP výčtem, přijatá rozlišuje vazební sloupec',
         ],
+
+        // Dopočet čerpání poskytnutých záloh (314) z POHODY: odpočet přes přijatý DDKP
+        // a vrácení zálohy. Vydané zálohy POHODA vyúčtuje vazbou proformy na finál, kterou
+        // převod přebírá přímo; dopočet z účtu 314 se jich netýká.
+        'Service/Migration/Pohoda/DocumentLinker.php' => [
+            'inferAdvanceSettlements' => 'dopočet čerpání se týká jen poskytnutých záloh na 314',
+        ],
+
+        // ZDD (daňový doklad k přijaté platbě zálohy) a čerpání zálohy vede ABRA Flexi jen
+        // u přijatých faktur; vydané zálohy převod z ABRA Flexi nepřebírá.
+        'Service/Migration/Abra/AbraDocumentRelationLinker.php' => [
+            'linkAdvanceDeductions' => 'čerpání přijatých záloh a ZDD z ABRA Flexi, vydaná větev v převodu není',
+        ],
     ];
 
     public function testTaxDocumentExceptionIsMirroredOnBothBranches(): void

@@ -82,6 +82,7 @@ const mobileSearchRef = ref<InstanceType<typeof GlobalSearch> | null>(null)
 
 const mobileOpen = ref(false)
 const userMenuOpen = ref(false)
+const quickAddOpen = ref(false)
 const navigationLayoutOpen = ref(false)
 const supportOpen = ref(false)
 const featureOpen = ref(false)
@@ -1550,6 +1551,7 @@ function syncActivePaneTitle(): void {
 watch([() => workspace.activeFullPath, () => workspace.layoutRevision], () => {
   mobileOpen.value = false
   userMenuOpen.value = false
+  quickAddOpen.value = false
   syncActivePaneTitle()
 }, { immediate: true })
 
@@ -1712,7 +1714,9 @@ onBeforeUnmount(() => {
             />
           </div>
 
-          <div class="relative hidden lg:flex h-full items-center">
+          <!-- Telefon na šířku má místo draweru lištu ikon a hamburger chybí,
+               uživatelské menu proto zůstává nahoře vpravo i pod lg. -->
+          <div class="relative h-full items-center" :class="tabletNavigationRail ? 'flex' : 'hidden lg:flex'">
             <button
               ref="userMenuButton"
               type="button"
@@ -1815,7 +1819,9 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div v-if="supplierStore.hasMultiple && supplierStore.currentSupplier" class="lg:hidden bg-primary-50 border-t border-primary-100">
+      <!-- S lištou ikon (telefon na šířku) je přepínač firmy uprostřed patičky
+           a hlavička si ušetří řádek. -->
+      <div v-if="supplierStore.hasMultiple && supplierStore.currentSupplier && !tabletNavigationRail" class="lg:hidden bg-primary-50 border-t border-primary-100">
         <div class="px-3 py-1.5">
           <span class="sr-only">{{ t('supplier.active_label') }}</span>
           <SupplierSwitcher full-width />
@@ -1836,16 +1842,7 @@ onBeforeUnmount(() => {
         :menu-label="t('nav.tablet_menu_rail_label')"
         :expand-label="isDesktop ? t('nav.menu_full') : undefined"
         @expand="setDesktopNavigationMode('side')"
-        :class="[
-          'sticky top-[calc(var(--instance-alert-h,0px)+3rem)] h-[calc(100dvh-3rem-var(--instance-alert-h,0px)-1px)]',
-          // Lišta s přepínačem dodavatele (2,125rem) je uvnitř hlavičky, ale `lg:hidden` —
-          // od 1024 px má nulovou výšku. Bez `lg:` prefixu se o ni rail odsazoval i na
-          // desktopu, takže mu nad hlavou zůstal pruh plátna. Zrcadlí to, co níž dělá
-          // plný sidebar: pod lg offset s lištou, od lg bez ní.
-          supplierStore.hasMultiple && supplierStore.currentSupplier
-            ? 'top-[calc(var(--instance-alert-h,0px)+5.125rem)] h-[calc(100dvh-5.125rem-var(--instance-alert-h,0px))] lg:top-[calc(var(--instance-alert-h,0px)+3rem)] lg:h-[calc(100dvh-3rem-var(--instance-alert-h,0px)-1px)]'
-            : '',
-        ]"
+        class="sticky top-[calc(var(--instance-alert-h,0px)+3rem)] h-[calc(100dvh-3rem-var(--instance-alert-h,0px)-1px)]"
       />
 
       <!-- Mobile backdrop -->
@@ -2291,13 +2288,41 @@ onBeforeUnmount(() => {
               <WorkspaceFavoritesButton class="border border-neutral-200" />
               <WorkspaceWindowButton class="border border-neutral-200" />
             </div>
-            <div class="flex flex-wrap items-center justify-end gap-1.5">
-              <WorkspaceNavLink v-if="!clientExperience" to="/admin/support" :class="supportBtnClass" :title="t('support.help_title')">
-                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                  <path stroke-linecap="round" stroke-linejoin="round" :d="ICONS.help" />
+            <div v-if="tabletNavigationRail && supplierStore.hasMultiple" class="flex min-w-0 flex-1 justify-center">
+              <SupplierSwitcher placement="above" compact />
+            </div>
+            <!-- Podpora je na mobilu v menu; v patičce je místo ní zakládání dokladů. -->
+            <div v-if="quickActions.length > 0" class="relative">
+              <button
+                type="button"
+                :class="supportBtnClass"
+                class="h-8! px-3! text-xs!"
+                :aria-expanded="quickAddOpen"
+                aria-haspopup="menu"
+                @click="quickAddOpen = !quickAddOpen"
+              >
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14M5 12h14" />
                 </svg>
-                {{ t('support.help_link') }}
-              </WorkspaceNavLink>
+                {{ t('common.add') }}
+              </button>
+              <div v-if="quickAddOpen" class="fixed inset-0 z-10" aria-hidden="true" @click="quickAddOpen = false"></div>
+              <div v-if="quickAddOpen" class="absolute bottom-full right-0 z-40 mb-2 w-60 max-h-[calc(100dvh-var(--app-header-height,3rem)-var(--app-footer-height,3rem)-1rem)] overflow-y-auto overscroll-contain rounded-lg border border-neutral-200 bg-surface py-1 shadow-xl" role="menu">
+                <WorkspaceNavLink
+                  v-for="action in quickActions"
+                  :key="action.to"
+                  :to="action.to"
+                  fresh
+                  class="flex items-center gap-2.5 px-3 py-2.5 text-sm text-neutral-700 hover:bg-neutral-50 hover:text-primary-700"
+                  role="menuitem"
+                  @click="quickAddOpen = false"
+                >
+                  <svg class="w-4 h-4 shrink-0 text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" :d="action.icon" />
+                  </svg>
+                  <span>{{ action.label }}</span>
+                </WorkspaceNavLink>
+              </div>
             </div>
           </div>
         </footer>

@@ -17217,7 +17217,7 @@ paths:
               type: object
               required: [file]
               properties:
-                file: { type: string, format: binary, description: 'GoPay Clearing XML nebo výpis z obchodního účtu XLS/XLSX, nejvýše 2 MB' }
+                file: { type: string, format: binary, description: 'GoPay Clearing XML nebo výpis z obchodního účtu XLS/XLSX, XML nejvýše 32 MB, XLS/XLSX nejvýše 2 MB' }
                 pdf: { type: string, format: binary, description: Volitelné původní PDF vyúčtování, nejvýše 10 MiB }
       responses:
         '200': { description: Vyúčtování už existovalo a bylo znovu zpracováno, content: { application/json: { schema: { $ref: '#/components/schemas/GoPayImportResult' } } } }

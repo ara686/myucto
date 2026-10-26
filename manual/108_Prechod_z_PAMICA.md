@@ -753,6 +753,12 @@ MyÚčto / rozdíl**:
 - pojistné zaměstnavatele na zdravotní,
 - záloha na daň, srážková daň a daňový bonus.
 
+Strana PAMICA nese čísla tak, jak šla do měsíčního hlášení: čistá mzda
+zahrnuje i náhradu mzdy za pracovní neschopnost a vyměřovací základ sociálního
+pojištění je jen v měsíci s účastí na pojištění. Příjem dohody pod rozhodným
+příjmem nebo jednatele bez účasti se převezme jako příjem z nepojištěné
+činnosti.
+
 Rozhodovací vrstvou je **přehled měsíců**: za každý měsíc roku počet osob,
 počet odchylek, největší rozdíl a stav. Rozkliknutý měsíc ukáže své odchylky
 po osobách a veličinách; tlačítkem *Zobrazit celý rozpad* se pod ním dokreslí

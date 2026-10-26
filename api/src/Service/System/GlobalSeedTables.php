@@ -420,6 +420,7 @@ final class GlobalSeedTables
         'other_item_schedule_occurrences', 'other_item_schedules', 'other_items',
         'password_resets',
         'payment_matches', 'payment_order_items', 'payment_orders',
+        'purchase_advance_deductions',
         'payroll_absences', 'payroll_annual_document_batch_attempts', 'payroll_annual_document_batch_items',
         'payroll_annual_document_batches', 'payroll_annual_document_revisions',
         'payroll_annual_document_sources', 'payroll_annual_settlement_certificates',

@@ -33,6 +33,12 @@ final class PaymentMatchAuditBatchTest extends TestCase
             'journal_entries (id INTEGER PRIMARY KEY, supplier_id INTEGER, source_type TEXT, source_id INTEGER, posted_at TEXT, reversed_by INTEGER)',
             'journal_entry_lines (entry_id INTEGER, supplier_id INTEGER, account_id INTEGER, amount NUMERIC, signed_amount NUMERIC GENERATED ALWAYS AS (amount) VIRTUAL)',
             'chart_of_accounts (id INTEGER PRIMARY KEY, account_code TEXT, parent_id INTEGER)',
+            // Mapy převodu z jiných programů (převzatý bankovní zápis, TakenOverRecord).
+            'abra_flexi_import_map (supplier_id INTEGER, kind TEXT, target_id INTEGER)',
+            'money_s3_import_map (supplier_id INTEGER, kind TEXT, target_id INTEGER)',
+            'pohoda_import_map (supplier_id INTEGER, kind TEXT, target_id INTEGER)',
+            'premier_import_map (supplier_id INTEGER, kind TEXT, target_id INTEGER)',
+            'stereo_nx_import_map (supplier_id INTEGER, kind TEXT, target_id INTEGER)',
         ] as $schema) {
             $this->pdo->exec('CREATE TABLE ' . $schema);
         }
