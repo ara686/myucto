@@ -1102,7 +1102,8 @@
         "2198_bank_email_mark_seen_after_import.sql",
         "2199_supplier_invoice_pdf_compact_items.sql",
         "2200_supplier_invoice_pdf_bank_in_footer.sql",
-        "2201_stock_history_import.sql"
+        "2201_stock_history_import.sql",
+        "2202_cash_journal_offset_notes.sql"
     ],
     "tables": {
         "abra_flexi_connections": {
@@ -3841,7 +3842,7 @@
                 "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
                 "pinned": "tinyint(1) NOT NULL DEFAULT 0",
                 "source_id": "bigint(20) unsigned NOT NULL",
-                "source_type": "enum('cash','bank','invoice_payment','purchase_invoice','gopay') NOT NULL",
+                "source_type": "enum('cash','bank','invoice_payment','purchase_invoice','gopay','credit_note_offset') NOT NULL",
                 "supplier_id": "int(10) unsigned NOT NULL",
                 "updated_at": "timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP()",
                 "updated_by": "bigint(20) unsigned NULL DEFAULT NULL"

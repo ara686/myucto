@@ -17,6 +17,8 @@ use MyInvoice\Repository\PurchaseInvoiceSubmissionRepository;
 use MyInvoice\Security\RequestAuthorization;
 use MyInvoice\Service\Accounting\DocumentJournalSync;
 use MyInvoice\Service\Accounting\DocumentLockService;
+use MyInvoice\Service\Accounting\DocumentPaymentLinks;
+use MyInvoice\Service\Accounting\DocumentDeletionBoundary;
 use MyInvoice\Service\Accounting\PostingException;
 use MyInvoice\Service\ActivityLogger;
 use MyInvoice\Service\IpMatcher;
@@ -40,6 +42,8 @@ final class DeletePurchaseInvoiceAction
         private readonly IpMatcher $ipMatcher,
         private readonly Config $config,
         private readonly DocumentLockService $locks,
+        private readonly DocumentPaymentLinks $paymentLinks,
+        private readonly DocumentDeletionBoundary $deletionBoundary,
         private readonly Connection $db,
         private readonly DocumentJournalSync $journalSync,
         private readonly PurchaseInvoiceSubmissionRepository $submissions,
@@ -60,10 +64,15 @@ final class DeletePurchaseInvoiceAction
             return Json::error($response, 'not_found', 'Přijatá faktura nenalezena.', 404);
         }
 
-        // Zámek dokladu (Epic F6) — PŘED status guardem: zaúčtovaný/uzavřený doklad
-        // klient nesmaže (403 document_locked), účetní v zavřeném období 409, admin
-        // ?force=1 (client nikdy admin větev — M6).
-        if ($deny = $this->denyIfLocked($request, $response, $this->locks->forPurchaseInvoice($existing), 'purchase_invoice', $id)) {
+        $documentLock = $this->locks->forPurchaseInvoice($existing);
+        $explicitForceOverride = !empty($request->getQueryParams()['force']) && RequestAuthorization::isCompanyAdmin($request);
+        $hasFinancialLinks = !$explicitForceOverride && $existing['status'] === 'draft' && !$documentLock->booked && !$documentLock->posted
+            && ($documentLock->inClosedPeriod || $documentLock->inClosingPeriod || $documentLock->dateLocked)
+            && $this->paymentLinks->existsForDocuments($supplierId, 'purchase_invoice', [$id]);
+        $deletionLock = $explicitForceOverride ? $documentLock : $documentLock->forDeletion((string) $existing['status'], $hasFinancialLinks);
+        $periodOnlyExemption = $deletionLock !== $documentLock
+            && ($documentLock->inClosedPeriod || ($documentLock->inClosingPeriod && RequestAuthorization::isClientType($request)));
+        if ($deny = $this->denyIfLocked($request, $response, $deletionLock, 'purchase_invoice', $id)) {
             return $deny;
         }
 
@@ -104,6 +113,11 @@ final class DeletePurchaseInvoiceAction
         }
         $reopenedSubmissionIds = [];
         try {
+            if ($periodOnlyExemption && $this->deletionBoundary->changed($supplierId, 'purchase_invoice', [$existing], $documentLock->accountantManaged)) {
+                $deny = $this->denyIfLocked($request, $response, $documentLock, 'purchase_invoice', $id);
+                if ($ownTx && $pdo->inTransaction()) $pdo->rollBack();
+                return $deny ?? Json::error($response, 'document_changed', 'Doklad byl mezitím změněn. Načtěte jej znovu.', 409);
+            }
             $this->journalSync->onDelete($supplierId, 'purchase_invoice', $id, [
                 'user_id'    => $user['id'] ?? null,
                 'posted_by'  => $user['id'] ?? null,
