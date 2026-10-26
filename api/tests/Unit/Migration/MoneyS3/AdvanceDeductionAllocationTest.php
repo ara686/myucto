@@ -55,6 +55,50 @@ final class AdvanceDeductionAllocationTest extends TestCase
         self::assertSame([20 => 0.01], $result['unmatched']);
     }
 
+    public function testReferenceOfLaterInvoiceWinsOverEarlierFifo(): void
+    {
+        $result = AdvanceDeductionMatcher::allocate(
+            [],
+            [self::advance(10, '2025-01-01', 1000.0), self::advance(11, '2025-02-01', 1000.0)],
+            [self::deduction(20, '2025-03-01', 1000.0), self::deduction(21, '2025-04-01', 1000.0, [10])],
+        );
+        self::assertSame([20 => [11 => 1000.0], 21 => [10 => 1000.0]], $result['deductions']);
+    }
+
+    public function testCreditNoteReturnsDeductionOfItsInvoiceBeforeFifo(): void
+    {
+        $result = AdvanceDeductionMatcher::allocate(
+            [],
+            [self::advance(10, '2025-01-01', 1000.0)],
+            [self::deduction(20, '2025-02-01', 1000.0)],
+            [['id' => 30, 'final' => 20, 'amount' => 1000.0]],
+        );
+        self::assertSame([20 => [30 => 1000.0]], $result['deductions'], 'Záloha 10 zůstane otevřená.');
+    }
+
+    public function testFifoPairsOnlyCrownDocuments(): void
+    {
+        $foreign = ['fifo' => false] + self::advance(10, '2025-01-01', 1000.0);
+        $result = AdvanceDeductionMatcher::allocate(
+            [],
+            [$foreign, self::advance(11, '2025-01-02', 500.0)],
+            [self::deduction(20, '2025-02-01', 800.0), ['fifo' => false] + self::deduction(21, '2025-02-02', 300.0)],
+        );
+        self::assertSame([20 => [11 => 500.0]], $result['deductions']);
+        self::assertSame([20 => 300.0, 21 => 300.0], $result['unmatched']);
+    }
+
+    public function testCarriedAdvancesFromYearBeforeConversion(): void
+    {
+        self::assertSame(['ico:1' => 1000.0], AdvanceDeductionMatcher::carriedAdvances(['ico:1' => [
+            ['date' => '2024-11-10', 'amount' => 1210.0],
+            ['date' => '2024-11-10', 'amount' => -210.0],
+            ['date' => '2024-12-05', 'amount' => -1500.0], // čerpá i zálohy ze starších let - přebytek se zahodí
+            ['date' => '2024-12-10', 'amount' => 1210.0],
+            ['date' => '2024-12-10', 'amount' => -210.0],
+        ], 'ico:2' => [['date' => '2024-06-01', 'amount' => -100.0]]]));
+    }
+
     /** @return array{id:int,partner:string,date:string,open:float} */
     private static function advance(int $id, string $date, float $open, string $partner = 'ico:1'): array
     {

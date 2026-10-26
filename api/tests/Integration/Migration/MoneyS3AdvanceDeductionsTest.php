@@ -13,9 +13,10 @@ use PDO;
 /**
  * Čerpání poskytnutých záloh, které Money vede bez odkazu na zálohu
  * ({@see SyntheticAgenda::filesWithAdvanceDeductions()}): měsíční vyúčtování vlastním
- * symbolem faktury, roční vyúčtování víc záloh, vrácení na zálohu a odkaz na DDKP v popisu.
- * Řádný i opravný převod je musí spárovat tak, aby saldokonto 314 odpovídalo hlavní knize,
- * opakovaný běh nic nezmění a vazby zadané v MyÚčtu zůstanou.
+ * symbolem faktury, zálohy z roku před převodem (počáteční stav bez IČO), dobropis konečné
+ * faktury, odkaz na zálohu v popisu a vrácení na zálohu. Řádný i opravný převod je musí
+ * spárovat tak, aby saldokonto 314 odpovídalo hlavní knize, opakovaný běh nic nezmění
+ * a vazby zadané v MyÚčtu zůstanou.
  */
 final class MoneyS3AdvanceDeductionsTest extends MoneyS3ImportTestCase
 {
@@ -30,31 +31,30 @@ final class MoneyS3AdvanceDeductionsTest extends MoneyS3ImportTestCase
         self::assertFalse($protocol->hasErrors(), $this->explain($protocol));
     }
 
-    public function testMonthlySettlementWithOwnSymbolConsumesPreviousAdvance(): void
+    public function testMonthlySettlementConsumesAdvanceFromYearBeforeConversionAndCreditNoteReturnsIt(): void
     {
-        // FP25101 čerpá zálohu z doby před převodem (počáteční stav), další měsíce vždy předchozí DDKP.
+        // FP25101 čerpá zálohu z prosince 2024 (dopočtenou z deníku roku před převodem),
+        // ne DD25101 zaplacenou před ní. Dobropis DP25103 vrací čerpání FP25103.
         self::assertSame([
             ['FP25102', 'DD25101', '1000.00'],
-            ['FP25103', 'DD25102', '1000.00'],
-        ], $this->deductions('33445567'));
-        self::assertSame([], $this->openOn314('33445567'));
+            ['FP25103', 'DP25103', '1000.00'],
+        ], $this->deductions(SyntheticAgenda::ADVANCE_VENDOR_ICO));
+        self::assertSame(['7700001-DD25102 1000'], $this->openOn314(SyntheticAgenda::ADVANCE_VENDOR_ICO), 'DD25102 je po stornu FP25103 otevřená.');
     }
 
-    public function testAnnualSettlementRefundAndReferenceCloseAllAdvances(): void
+    public function testReferenceWinsAcrossInvoicesRefundAndAnnualSettlementCloseAllAdvances(): void
     {
         self::assertSame([
-            ['FP25111', 'DD25111', '1000.00'],
             ['FP25111', 'DD25112', '1000.00'],
-            ['FP25111', 'DD25113', '500.00'],
-            ['FP25113', 'DD25113', '500.00'],
-            ['FP25113', 'FP25112', '300.00'],
-        ], $this->deductions('44556675'));
-        self::assertSame([], $this->openOn314('44556675'));
-        // Hlavní kniha 314 nese mimo zálohy Delty a Epsilonu jen daň DZ25001 bez úhrady (-210),
-        // kterou saldokonto jako položku nevede; zálohy samy jsou vyrovnané.
+            ['FP25113', 'DD25111', '1000.00'],
+            ['FP25114', 'DD25113', '1000.00'],
+            ['FP25114', 'FP25112', '300.00'],
+        ], $this->deductions(SyntheticAgenda::SECOND_ADVANCE_VENDOR_ICO));
+        self::assertSame([], $this->openOn314(SyntheticAgenda::SECOND_ADVANCE_VENDOR_ICO));
+        // Hlavní kniha 314 nese mimo zálohy Delty a Epsilonu daň DZ25001 bez úhrady (-210)
+        // a počáteční stav záloh Delty (1 000), který FP25101 vyčerpala.
         $saldo = $this->saldo314();
-        self::assertSame([], $saldo['partners'], json_encode($saldo));
-        self::assertSame(-210.0, $saldo['difference'], json_encode($saldo));
+        self::assertSame(1000.0 - 210.0 - 1000.0, $saldo['difference'], json_encode($saldo));
     }
 
     public function testRelinkChangesNothingAndKeepsUserLinks(): void
@@ -66,14 +66,33 @@ final class MoneyS3AdvanceDeductionsTest extends MoneyS3ImportTestCase
 
         $sid = $this->supplierId;
         $pdo = $this->db->pdo();
-        // Uživatel čerpání FP25103 smazal a FP25102 svázal se zálohou DD25102 po svém.
-        $pdo->prepare('DELETE FROM purchase_advance_deductions WHERE supplier_id = ? AND final_invoice_id = ?')->execute([$sid, $this->doc('FP25103')]);
-        $pdo->prepare('DELETE FROM purchase_advance_deductions WHERE supplier_id = ? AND final_invoice_id = ?')->execute([$sid, $this->doc('FP25102')]);
+        // Uživatel smazal čerpání FP25114 a FP25102 svázal se zálohou DD25102 po svém.
+        $pdo->prepare('DELETE FROM purchase_advance_deductions WHERE supplier_id = ? AND final_invoice_id IN (?, ?)')->execute([$sid, $this->doc('FP25114'), $this->doc('FP25102')]);
         $pdo->prepare('UPDATE purchase_invoices SET advance_purchase_invoice_id = ? WHERE id = ?')->execute([$this->doc('DD25102'), $this->doc('FP25102')]);
         $repair = $this->convert(true);
         self::assertFalse($repair->hasErrors(), $this->explain($repair));
-        self::assertSame([], $this->deductions('33445567'), 'Smazané čerpání ani vazbu uživatele převod nepřepíše.');
-        self::assertSame($this->doc('DD25102'), (int) $pdo->query('SELECT advance_purchase_invoice_id FROM purchase_invoices WHERE id = ' . $this->doc('FP25102'))->fetchColumn());
+        self::assertSame([['FP25103', 'DP25103', '1000.00']], $this->deductions(SyntheticAgenda::ADVANCE_VENDOR_ICO), 'Vazbu uživatele převod nepřepíše.');
+        self::assertSame([['FP25111', 'DD25112', '1000.00'], ['FP25113', 'DD25111', '1000.00']],
+            $this->deductions(SyntheticAgenda::SECOND_ADVANCE_VENDOR_ICO), 'Smazané čerpání převod znovu nezaloží.');
+    }
+
+    public function testDeductionEnteredByUserExcludesInvoiceAndAdvance(): void
+    {
+        $sid = $this->supplierId;
+        $pdo = $this->db->pdo();
+        $pdo->prepare('DELETE FROM purchase_advance_deductions WHERE supplier_id = ?')->execute([$sid]);
+        $pdo->prepare("DELETE FROM money_s3_import_map WHERE supplier_id = ? AND kind = 'advance_deduction'")->execute([$sid]);
+        // Čerpání mimo mapu převodu zadal uživatel: FP25111 vyrovnal 400 Kč ze zálohy DD25113.
+        $pdo->prepare('INSERT INTO purchase_advance_deductions (supplier_id, final_invoice_id, advance_invoice_id, amount) VALUES (?, ?, ?, 400.00)')
+            ->execute([$sid, $this->doc('FP25111'), $this->doc('DD25113')]);
+        $repair = $this->convert(true);
+        self::assertFalse($repair->hasErrors(), $this->explain($repair));
+        self::assertSame([
+            ['FP25111', 'DD25113', '400.00'],
+            ['FP25113', 'DD25111', '1000.00'],
+            ['FP25114', 'DD25112', '1000.00'],
+            ['FP25114', 'FP25112', '300.00'],
+        ], $this->deductions(SyntheticAgenda::SECOND_ADVANCE_VENDOR_ICO));
     }
 
     public function testJournalStaysUntouched(): void
@@ -90,7 +109,7 @@ final class MoneyS3AdvanceDeductionsTest extends MoneyS3ImportTestCase
         $repair = $this->convert(true);
         self::assertFalse($repair->hasErrors(), $this->explain($repair));
         self::assertSame($before, $journal());
-        self::assertCount(2, $this->deductions('33445567'), 'Opravný převod doplní čerpání firmě převedené dřívější verzí.');
+        self::assertCount(2, $this->deductions(SyntheticAgenda::ADVANCE_VENDOR_ICO), 'Opravný převod doplní čerpání firmě převedené dřívější verzí.');
     }
 
     private function convert(bool $relink): ImportProtocol

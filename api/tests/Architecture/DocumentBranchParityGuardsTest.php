@@ -86,6 +86,11 @@ final class DocumentBranchParityGuardsTest extends TestCase
             'advanceDates' => 'záloha na 314 může být samostatný přijatý DDKP, na 324 jen proforma (saldokonto)',
         ],
 
+        // Vratka poskytnuté zálohy (314) je jen přijatá strana; přijatou zálohu (324) vrací
+        // převod párováním vydané proformy jinou cestou.
+        'Service/Migration/MoneyS3/AdvanceLinker.php' => [
+            'repointCancelledAdvanceRefunds' => 'vratka poskytnuté zálohy - jen přijatá strana (314)',
+        ],
         'Service/Bank/StatementMatcher.php' => [
             'matchPurchase'             => 'vydaný DDKP je vždy paid → nikdy platební cíl',
             'matchPurchaseFuzzy'        => 'vydaný DDKP je vždy paid → nikdy platební cíl',

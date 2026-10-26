@@ -1090,15 +1090,18 @@ final class SyntheticAgenda
 
     /**
      * Agenda s čerpáním poskytnutých záloh, které Money vede bez odkazu na zálohu (řádek
-     * konečné faktury na 314 se symbolem a IČO faktury). Převádí se od roku 2025:
-     *   - Dodavatel Delta platí měsíční zálohy 1 210 Kč (BV25101, BV25102), ke každé daňový
-     *     doklad k přijaté platbě (DD25101, DD25102: základ 314.200 / 314.100, daň 343 / 314.100).
-     *     Měsíční faktury „vyúčtované zálohy" čerpají vždy zálohu předchozího měsíce zápornou
-     *     částkou MD 314.200 / D 321: FP25101 zálohu z prosince 2024 (jen počáteční stav),
-     *     FP25102 DD25101 a FP25103 DD25102,
-     *   - Dodavatel Epsilon platí tři zálohy (DD25111 až DD25113), roční vyúčtování FP25111
-     *     (MD 321 / D 314.200, 2 500) je čerpá najednou, FP25112 vrací 300 Kč na zálohu
-     *     (MD 314.200 / D 321) a FP25113 odečítá 800 Kč s odkazem na DD25113 v popisu.
+     * konečné faktury na 314 se symbolem a IČO faktury). Převádí se od roku 2025, počáteční
+     * stav 314 Money vede bez IČO:
+     *   - Dodavatel Delta platí měsíční zálohy 1 210 Kč, ke každé daňový doklad k přijaté
+     *     platbě (základ 314.200 / 314.100, daň 343 / 314.100): v prosinci 2024 (BV24101,
+     *     DD24101 - jen v deníku roku před převodem), BV25101/DD25101 a BV25102/DD25102.
+     *     Měsíční faktury „vyúčtované zálohy" čerpají zálohu předchozího měsíce zápornou
+     *     částkou MD 314.200 / D 321: FP25101 zálohu z prosince 2024, FP25102 DD25101
+     *     a FP25103 DD25102, kterou ale dobropis DP25103 stornuje - DD25102 zůstane otevřená,
+     *   - Dodavatel Epsilon platí tři zálohy (DD25111 až DD25113). FP25111 (1 000) čerpá bez
+     *     odkazu, pozdější FP25113 (1 000) s odkazem na nejstarší DD25111 v popisu, FP25112
+     *     vrací 300 Kč na zálohu (MD 314.200 / D 321) a roční vyúčtování FP25114 (1 300)
+     *     čerpá zbytek.
      *
      * @return array<string,string>
      */
@@ -1129,36 +1132,43 @@ final class SyntheticAgenda
         ], $advanceLines);
         $delta = self::ADVANCE_VENDOR_ICO;
         $epsilon = self::SECOND_ADVANCE_VENDOR_ICO;
+        $chart = [
+            ['Ucet' => '314100', 'Nazev' => 'Poskytnuté zálohy - platby'],
+            ['Ucet' => '314200', 'Nazev' => 'Poskytnuté zálohy - základ'],
+        ];
+        $append('ROK.001/UcDenik.DAT', $journalFields, $advance('BV24101', 'DD24101', '2024-12-10', '7700001', $delta));
+        $append('ROK.001/UcOsnova.DAT', self::CHART_FIELDS, $chart);
         $append('ROK.002/UcDenik.DAT', $journalFields, array_merge(
             [
-                ['Cislo' => -201, 'Zdroj' => 'XP', 'Datum' => '2025-01-01', 'Popis' => 'Počáteční stav záloh', 'UcMD' => '314200', 'UcD' => '701000', 'Castka' => 1000.0, 'ParICO' => $delta],
+                // Počáteční stav Money vede bez IČO.
+                ['Cislo' => -201, 'Zdroj' => 'XP', 'Datum' => '2025-01-01', 'Popis' => 'Počáteční stav záloh', 'UcMD' => '314200', 'UcD' => '701000', 'Castka' => 1000.0],
                 ['Cislo' => -202, 'Zdroj' => 'XP', 'Datum' => '2025-01-01', 'Popis' => 'Počáteční stav závazků', 'UcMD' => '701000', 'UcD' => '325000', 'Castka' => 1000.0],
             ],
-            $final('FP25101', '2025-01-05', 1500.0, '8800001', $delta, [$line('FP', 'FP25101', '2025-01-05', 'vyúčtované zálohy', '314200', '321000', -1000.0, '8800001', $delta)]),
             $advance('BV25101', 'DD25101', '2025-01-10', '7700001', $delta),
-            $final('FP25102', '2025-02-05', 1500.0, '8800002', $delta, [$line('FP', 'FP25102', '2025-02-05', 'vyúčtované zálohy', '314200', '321000', -1000.0, '8800002', $delta)]),
+            $final('FP25101', '2025-01-15', 1500.0, '8800001', $delta, [$line('FP', 'FP25101', '2025-01-15', 'vyúčtované zálohy', '314200', '321000', -1000.0, '8800001', $delta)]),
             $advance('BV25102', 'DD25102', '2025-02-10', '7700001', $delta),
-            $final('FP25103', '2025-03-05', 1500.0, '8800003', $delta, [$line('FP', 'FP25103', '2025-03-05', 'vyúčtované zálohy', '314200', '321000', -1000.0, '8800003', $delta)]),
+            $final('FP25102', '2025-02-15', 1500.0, '8800002', $delta, [$line('FP', 'FP25102', '2025-02-15', 'vyúčtované zálohy', '314200', '321000', -1000.0, '8800002', $delta)]),
+            $final('FP25103', '2025-03-15', 1500.0, '8800003', $delta, [$line('FP', 'FP25103', '2025-03-15', 'vyúčtované zálohy', '314200', '321000', -1000.0, '8800003', $delta)]),
+            // Dobropis FP25103: Money ho vede zápornými částkami, odpočet zálohy tedy jako debet 314.
+            $final('DP25103', '2025-03-20', -1500.0, '8800003', $delta, [$line('FP', 'DP25103', '2025-03-20', 'storno vyúčtovaných záloh', '314200', '321000', 1000.0, '8800003', $delta)]),
             $advance('BV25111', 'DD25111', '2025-04-10', '7700011', $epsilon),
             $advance('BV25112', 'DD25112', '2025-05-10', '7700011', $epsilon),
             $advance('BV25113', 'DD25113', '2025-06-10', '7700011', $epsilon),
-            $final('FP25111', '2025-07-01', 3000.0, '8800011', $epsilon, [$line('FP', 'FP25111', '2025-07-01', 'odpočet - roční vyúčtování', '321000', '314200', 2500.0, '8800011', $epsilon)]),
+            $final('FP25111', '2025-07-01', 3000.0, '8800011', $epsilon, [$line('FP', 'FP25111', '2025-07-01', 'odpočet záloh', '321000', '314200', 1000.0, '8800011', $epsilon)]),
             $final('FP25112', '2025-07-15', 100.0, '8800012', $epsilon, [$line('FP', 'FP25112', '2025-07-15', 'vráceno na zálohu', '314200', '321000', 300.0, '8800012', $epsilon)]),
-            $final('FP25113', '2025-08-01', 1000.0, '8800013', $epsilon, [$line('FP', 'FP25113', '2025-08-01', 'Odpočet zálohy DD25113', '321000', '314200', 800.0, '8800013', $epsilon)]),
+            $final('FP25113', '2025-08-01', 2000.0, '8800013', $epsilon, [$line('FP', 'FP25113', '2025-08-01', 'Odpočet zálohy DD25111', '321000', '314200', 1000.0, '8800013', $epsilon)]),
+            $final('FP25114', '2025-09-01', 2000.0, '8800014', $epsilon, [$line('FP', 'FP25114', '2025-09-01', 'roční vyúčtování', '321000', '314200', 1300.0, '8800014', $epsilon)]),
         ));
-        $append('ROK.002/UcOsnova.DAT', self::CHART_FIELDS, [
-            ['Ucet' => '314100', 'Nazev' => 'Poskytnuté zálohy - platby'],
-            ['Ucet' => '314200', 'Nazev' => 'Poskytnuté zálohy - základ'],
-        ]);
+        $append('ROK.002/UcOsnova.DAT', self::CHART_FIELDS, $chart);
         $vendor = static fn (string $ico, string $name): array => [
             'D_ICO' => $ico, 'D_DIC' => 'CZ' . $ico, 'D_Nazev' => $name, 'D_Ulice' => 'Vzorová 1', 'D_Mesto' => 'Praha', 'D_Psc' => '110 00',
             'SazbaDPH1' => 12.0, 'SazbaDPH2' => 21.0, 'KodDPH' => self::KOD_DPH_PURCHASE, 'Uhrada' => 'převodem', 'Druh' => 'N',
         ];
-        $received = static fn (array $partner, int $cislo, string $no, string $sym, string $date, float $base, float $total, array $extra = []): array => $partner + [
+        $received = static fn (array $partner, int $cislo, string $no, string $sym, string $date, float $base, float $total, array $extra = []): array => $extra + $partner + [
             'Cislo' => $cislo, 'Doklad' => $no, 'PrijatDokl' => $sym, 'VarSymbol' => $sym,
             'Vystaveno' => $date, 'DatUcPr' => $date, 'PlnenoDPH' => $date, 'Splatno' => $date, 'Doruceno' => $date,
             'Zaklad_2' => $base, 'DPH_2' => round($base * 0.21, 2), 'CelkemSDPH' => $total, 'Popis' => 'Spotřeba',
-        ] + $extra;
+        ];
         $ddkp = static fn (array $partner, int $cislo, string $no, string $sym, string $date, string $bank): array => ['Druh' => 'D'] + $partner + [
             'Cislo' => $cislo, 'Doklad' => $no, 'PrijatDokl' => $sym . '-' . $no, 'VarSymbol' => $sym,
             'Vystaveno' => $date, 'DatUcPr' => $date, 'PlnenoDPH' => $date, 'Splatno' => $date, 'Doruceno' => $date,
@@ -1168,17 +1178,19 @@ final class SyntheticAgenda
         $d = $vendor($delta, 'Dodavatel Delta a.s.');
         $e = $vendor($epsilon, 'Dodavatel Epsilon a.s.');
         $append('ROK.002/PFaktury.DAT', array_merge(self::PURCHASE_FIELDS, [['Cislo', 'L', 4]]), [
-            $received($d, 101, 'FP25101', '8800001', '2025-01-05', 1500.0, 815.0),
             $ddkp($d, 102, 'DD25101', '7700001', '2025-01-10', 'BV25101'),
-            $received($d, 103, 'FP25102', '8800002', '2025-02-05', 1500.0, 815.0),
+            $received($d, 101, 'FP25101', '8800001', '2025-01-15', 1500.0, 815.0),
             $ddkp($d, 104, 'DD25102', '7700001', '2025-02-10', 'BV25102'),
-            $received($d, 105, 'FP25103', '8800003', '2025-03-05', 1500.0, 815.0),
+            $received($d, 103, 'FP25102', '8800002', '2025-02-15', 1500.0, 815.0),
+            $received($d, 105, 'FP25103', '8800003', '2025-03-15', 1500.0, 815.0),
+            $received($d, 106, 'DP25103', '8800003', '2025-03-20', -1500.0, -815.0, ['Dobropis' => 1, 'PrijatDokl' => 'DP-8800003']),
             $ddkp($e, 111, 'DD25111', '7700011', '2025-04-10', 'BV25111'),
             $ddkp($e, 112, 'DD25112', '7700011', '2025-05-10', 'BV25112'),
             $ddkp($e, 113, 'DD25113', '7700011', '2025-06-10', 'BV25113'),
-            $received($e, 114, 'FP25111', '8800011', '2025-07-01', 3000.0, 1130.0),
+            $received($e, 114, 'FP25111', '8800011', '2025-07-01', 3000.0, 2630.0),
             $received($e, 115, 'FP25112', '8800012', '2025-07-15', 100.0, 421.0, ['Zaklad_0' => 300.0]),
-            $received($e, 116, 'FP25113', '8800013', '2025-08-01', 1000.0, 410.0),
+            $received($e, 116, 'FP25113', '8800013', '2025-08-01', 2000.0, 1420.0),
+            $received($e, 117, 'FP25114', '8800014', '2025-09-01', 2000.0, 1120.0),
         ]);
         $bank = static fn (string $no, string $date, string $vs, string $name, int $vypis): array => [
             'Doklad' => $no, 'Ucet' => 'BU', 'Vydej' => 1, 'DatUcPr' => $date, 'DatPlat' => $date, 'Celkem' => 1210.0,

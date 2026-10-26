@@ -125,6 +125,7 @@ final class AdvanceLinker
             $issued ? $this->linkIssued($ctx, $deductions, $ddkp) : $this->linkPurchase($ctx, $deductions, $ddkp);
         }
         $this->matchAdvanceRefunds($ctx);
+        $this->repointCancelledAdvanceRefunds($ctx);
         (new AdvanceDeductionMatcher($this->db, $this->map))->match($ctx, $dirs);
     }
 
@@ -222,6 +223,85 @@ final class AdvanceLinker
     }
 
     /**
+     * Vratka poskytnuté zálohy, kterou převod podle `UDoklad` spároval s dokladem, který
+     * zálohu jen ruší (dobropis k DDKP, záporná zálohová faktura), a ne se zálohou samou.
+     * Saldokonto vratku k takovému dokladu nezapočte a vrácená záloha v něm zůstane otevřená
+     * (Money vratku vede pod symbolem dobropisu). Párování se přesune na zálohu téhož
+     * partnera, jejíž otevřený zbytek (nebo zaplacená částka) se s vratkou přesně shoduje -
+     * je-li taková záloha právě jedna, zaplacená před vratkou. Jen celé párování pohybu
+     * s jediným dokladem, které vytvořil převod ({@see DocumentLinker::ownMatchSql()}), na
+     * převzatém bankovním zápisu s kreditem 314; nový klíč mapy ho dál vede jako párování
+     * převodu, takže opakovaný převod ho nevrátí ani nezdvojí.
+     */
+    private function repointCancelledAdvanceRefunds(ImportContext $ctx): void
+    {
+        $pdo = $this->db->pdo();
+        $refunds = $pdo->prepare(
+            "SELECT pm.id AS match_id, bt.id AS tx_id, bt.amount, DATE(bt.posted_at) AS posted_on, t.id AS target_id, t.vendor_id, COALESCE(c.ic, '') AS ic
+               FROM payment_matches pm
+               JOIN bank_transactions bt ON bt.id = pm.bank_transaction_id AND bt.amount > 0
+               JOIN bank_statements bs ON bs.id = bt.statement_id AND bs.supplier_id = pm.supplier_id
+               JOIN purchase_invoices t ON t.id = pm.purchase_invoice_id AND t.supplier_id = pm.supplier_id
+               JOIN clients c ON c.id = t.vendor_id
+              WHERE pm.supplier_id = ?
+                AND (t.document_kind = 'credit_note' OR (t.document_kind = 'advance' AND t.total_with_vat < 0))
+                AND ABS(pm.amount - bt.amount) < 0.005
+                AND NOT EXISTS (SELECT 1 FROM payment_matches o WHERE o.bank_transaction_id = bt.id AND o.id <> pm.id)
+                AND " . DocumentLinker::ownMatchSql('pm') . "
+                AND EXISTS (SELECT 1 FROM journal_entries e JOIN journal_entry_lines l ON l.entry_id = e.id AND l.supplier_id = e.supplier_id
+                              JOIN chart_of_accounts ca ON ca.id = l.account_id LEFT JOIN chart_of_accounts pa ON pa.id = ca.parent_id
+                             WHERE e.supplier_id = pm.supplier_id AND e.source_type = 'bank' AND e.source_id = bt.id AND e.reversed_by IS NULL
+                               AND l.side = 'credit' AND (ca.account_code LIKE '314%' OR COALESCE(pa.account_code, '') LIKE '314%')
+                               AND " . TakenOverRecord::journalEntrySql('e') . ')'
+        );
+        $refunds->execute([$ctx->supplierId]);
+        $rows = $refunds->fetchAll(PDO::FETCH_ASSOC);
+        if ($rows === []) {
+            return;
+        }
+        $open = (new AdvanceDeductionMatcher($this->db, $this->map))->openAdvances($ctx->supplierId);
+        if ($open === []) {
+            return;
+        }
+        $ids = array_keys($open);
+        $candidates = $pdo->prepare(
+            "SELECT a.id, a.vendor_id, COALESCE(c.ic, '') AS ic,
+                    (SELECT COALESCE(SUM(pm.amount), 0) FROM payment_matches pm JOIN bank_transactions bt ON bt.id = pm.bank_transaction_id
+                      WHERE pm.supplier_id = a.supplier_id AND pm.purchase_invoice_id = a.id AND bt.amount < 0) AS paid,
+                    (SELECT MIN(DATE(bt.posted_at)) FROM payment_matches pm JOIN bank_transactions bt ON bt.id = pm.bank_transaction_id
+                      WHERE pm.supplier_id = a.supplier_id AND pm.purchase_invoice_id = a.id AND bt.amount < 0) AS paid_on
+               FROM purchase_invoices a JOIN clients c ON c.id = a.vendor_id
+              WHERE a.supplier_id = ? AND a.id IN (" . implode(',', array_fill(0, count($ids), '?')) . ")
+                AND (a.document_kind = 'advance' OR (a.document_kind = 'tax_document' AND a.parent_purchase_invoice_id IS NULL))
+                AND a.total_with_vat > 0 AND " . TakenOverRecord::documentSql('purchase_invoice', 'a')
+        );
+        $candidates->execute([$ctx->supplierId, ...$ids]);
+        $advances = $candidates->fetchAll(PDO::FETCH_ASSOC);
+        $move = $pdo->prepare('UPDATE payment_matches SET purchase_invoice_id = ? WHERE id = ? AND supplier_id = ? AND purchase_invoice_id = ?');
+        $taken = [];
+        foreach ($rows as $r) {
+            $amount = (float) $r['amount'];
+            $hits = array_values(array_filter($advances, static fn (array $a): bool =>
+                !isset($taken[(int) $a['id']])
+                && ($r['ic'] !== '' ? $a['ic'] === $r['ic'] : (int) $a['vendor_id'] === (int) $r['vendor_id'])
+                && $a['paid_on'] !== null && (string) $a['paid_on'] <= (string) $r['posted_on']
+                && (abs($open[(int) $a['id']] - $amount) < 0.005 || abs((float) $a['paid'] - $amount) < 0.005)));
+            if (count($hits) !== 1) {
+                continue;
+            }
+            $advanceId = (int) $hits[0]['id'];
+            $move->execute([$advanceId, (int) $r['match_id'], $ctx->supplierId, (int) $r['target_id']]);
+            if ($move->rowCount() === 0) {
+                continue;
+            }
+            $taken[$advanceId] = true;
+            $this->map?->put($ctx->supplierId, MoneyS3ImportRepository::KIND_PAYMENT, DocumentLinker::paymentMapKey((int) $r['tx_id'], 'purchase_invoice', $advanceId),
+                (int) $r['match_id'], $ctx->runId);
+            $ctx->protocol->count(DocumentLinker::STEP_PAYMENTS, 'advance_refund_repointed');
+        }
+    }
+
+    /**
      * @param array<int,array<int,float>> $deductions konečná faktura => záloha => čerpáno
      * @param array<int,array<int,true>> $ddkp DDKP => zálohy
      */
@@ -238,7 +318,15 @@ final class AdvanceLinker
         $current = $pdo->prepare("SELECT advance_purchase_invoice_id FROM purchase_invoices WHERE id = ? AND supplier_id = ? AND document_kind = 'invoice'");
         $taken = $pdo->prepare('SELECT 1 FROM purchase_invoices WHERE supplier_id = ? AND advance_purchase_invoice_id = ? LIMIT 1');
         $set = $pdo->prepare('UPDATE purchase_invoices SET advance_purchase_invoice_id = ? WHERE id = ? AND supplier_id = ? AND advance_purchase_invoice_id IS NULL');
-        $deduct = $pdo->prepare('INSERT IGNORE INTO purchase_advance_deductions (supplier_id, final_invoice_id, advance_invoice_id, amount, created_by) VALUES (?, ?, ?, ?, ?)');
+        // Čerpání z odkazu položky na zálohu převod eviduje v mapě: čerpání mimo mapu zadal
+        // uživatel ({@see AdvanceDeductionMatcher}). Čerpání založené dřívější verzí převodu
+        // se do mapy převezme, když ho běh odvodí znovu se stejnou částkou.
+        $source = (new AdvanceDeductionMatcher($this->db, $this->map))->hasSourceColumn();
+        $deduct = $pdo->prepare('INSERT IGNORE INTO purchase_advance_deductions (supplier_id, final_invoice_id, advance_invoice_id, amount, created_by'
+            . ($source ? ', source' : '') . ') VALUES (?, ?, ?, ?, ?' . ($source ? ", 'import'" : '') . ')');
+        $existingPad = $pdo->prepare('SELECT id, amount' . ($source ? ', source' : ", 'import'") . ' FROM purchase_advance_deductions
+            WHERE supplier_id = ? AND final_invoice_id = ? AND advance_invoice_id = ?');
+        $mapped = $this->map?->all($ctx->supplierId, MoneyS3ImportRepository::KIND_ADVANCE_DEDUCTION) ?? [];
         $userId = $ctx->userId > 0 ? $ctx->userId : null;
         $live = $pdo->prepare("SELECT id FROM purchase_invoices WHERE supplier_id = ? AND document_kind = 'advance'");
         $live->execute([$ctx->supplierId]);
@@ -278,9 +366,20 @@ final class AdvanceLinker
                 if ($linked === $advanceId || $amount < 0.01) {
                     continue;
                 }
+                $key = AdvanceDeductionMatcher::mapKey($finalId, $advanceId);
+                if (isset($mapped[$key])) {
+                    continue;
+                }
                 $deduct->execute([$ctx->supplierId, $finalId, $advanceId, number_format($amount, 2, '.', ''), $userId]);
                 if ($deduct->rowCount() > 0) {
+                    $this->map?->put($ctx->supplierId, MoneyS3ImportRepository::KIND_ADVANCE_DEDUCTION, $key, (int) $pdo->lastInsertId(), $ctx->runId);
                     $p->count(DocumentLinker::STEP_PAYMENTS, 'advance_deductions');
+                    continue;
+                }
+                $existingPad->execute([$ctx->supplierId, $finalId, $advanceId]);
+                $row = $existingPad->fetch(PDO::FETCH_NUM);
+                if ($row !== false && $row[2] === 'import' && abs((float) $row[1] - $amount) < 0.005) {
+                    $this->map?->put($ctx->supplierId, MoneyS3ImportRepository::KIND_ADVANCE_DEDUCTION, $key, (int) $row[0], $ctx->runId);
                 }
             }
         }
