@@ -51,6 +51,13 @@ describe('sleva v % zadaná u řádku', () => {
     expect(applyLineDiscount({ list_unit_price: 1000, unit_price_without_vat: 900 }, 20)).toEqual({ list_unit_price: 1000, unit_price_without_vat: 800 })
   })
 
+  it('skladový řádek s přirážkou hladiny počítá slevu z ceníku karty', () => {
+    const row = { stock_item_id: 7, list_unit_price: 1000, unit_price_without_vat: 1100 }
+    expect(applyLineDiscount(row, 5)).toEqual({ list_unit_price: 1000, unit_price_without_vat: 950 })
+    expect(applyLineDiscount(row, 0)).toEqual({ list_unit_price: 1000, unit_price_without_vat: 1000 })
+    expect(applyLineDiscount({ ...row, stock_item_id: null }, 5)).toEqual({ list_unit_price: 1100, unit_price_without_vat: 1045 })
+  })
+
   it('přijme i znak procenta', () => {
     expect(parseLineDiscountInput('10%')).toBe(10)
     expect(parseLineDiscountInput(' 12,5 % ')).toBe(12.5)

@@ -118,7 +118,14 @@ describe('InvoiceEditor: sleva v % zadaná u řádku', () => {
     vm.setLineDiscount(row, '150')
     expect(row.unit_price_without_vat).toBe(875)
 
-    // Oprava ceny nad ceníkovou: další sleva se počítá z nové ceny.
+    // Skladový řádek nad ceníkovou (přirážka hladiny): sleva se počítá z ceníku karty.
+    row.unit_price_without_vat = 1200
+    vm.setLineDiscount(row, '10 %')
+    expect(row.list_unit_price).toBe(1000)
+    expect(row.unit_price_without_vat).toBe(900)
+
+    // Ruční řádek s cenou opravenou nad ceníkovou: další sleva se počítá z nové ceny.
+    row.stock_item_id = null
     row.unit_price_without_vat = 1200
     vm.setLineDiscount(row, '10 %')
     expect(row.list_unit_price).toBe(1200)

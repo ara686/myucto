@@ -56,19 +56,20 @@ export function parseLineDiscountInput(raw: string): number | null {
 
 /**
  * Sleva v % zadaná u řádku: cena = ceníková × (1 − sleva / 100), zaokrouhlená na
- * `decimals` míst jako ruční cena řádku. Bez ceníkové ceny, nebo když je cena řádku
- * na ceníkové či nad ní (pole slevy je prázdné, uživatel cenu opravil), se ceníkovou
- * stane aktuální cena řádku. null = nic se nemění (bez kladné ceny, nebo nulová sleva
+ * `decimals` míst jako ruční cena řádku. Bez ceníkové ceny, nebo když je cena ručního
+ * řádku nad ceníkovou (pole slevy je prázdné, uživatel cenu opravil), se ceníkovou
+ * stane aktuální cena řádku. U skladového řádku je ceníková cena z karty závazná,
+ * přirážka hladiny ji nepřepíše. null = nic se nemění (bez kladné ceny, nebo nulová sleva
  * z aktuální ceny).
  */
 export function applyLineDiscount(
-  row: { list_unit_price?: number | string | null; unit_price_without_vat: number | string | null | undefined },
+  row: { stock_item_id?: number | null; list_unit_price?: number | string | null; unit_price_without_vat: number | string | null | undefined },
   pct: number,
   decimals = 2,
 ): { list_unit_price: number; unit_price_without_vat: number } | null {
   let list = toNumber(row.list_unit_price)
   const current = toNumber(row.unit_price_without_vat)
-  if (list === null || list <= 0 || (current !== null && current > list)) {
+  if (list === null || list <= 0 || (row.stock_item_id == null && current !== null && current > list)) {
     if (current === null || current <= 0 || pct === 0) return null
     list = current
   }

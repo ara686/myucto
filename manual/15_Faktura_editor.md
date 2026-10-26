@@ -494,8 +494,9 @@ zaokrouhlí, znak % můžete připsat). Cena za jednotku se přepočte z ceníko
 a zaokrouhlí na dvě desetinná místa, u časové položky na šest míst. U nízkých cen se proto
 procento spočtené ze zaokrouhlené ceny může od zadaného lišit o setiny. Řádek bez ceníkové
 ceny ji převezme z aktuální ceny, takže „1 000,00 a sleva 10 %“ dá cenu 900,00. Ruční změna
-ceny slevu v poli přepočte. Opravíte-li cenu na ceníkovou nebo nad ni (pole slevy je pak
-prázdné), další zadaná sleva se počítá z nové ceny. Sleva nad 100 % nebo text se nepřijme
+ceny slevu v poli přepočte. Opravíte-li u řádku bez skladové karty cenu nad ceníkovou (pole
+slevy je pak prázdné), další zadaná sleva se počítá z nové ceny. U skladového řádku zůstává
+ceníkovou cenou cena karty, i když je cena řádku kvůli přirážce hladiny vyšší. Sleva nad 100 % nebo text se nepřijme
 a pole se vrátí. Bez volby se editor nemění. Sleva z celé faktury funguje dál stejně
 a počítá se z cen řádků po slevě.
 
