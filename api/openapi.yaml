@@ -22315,6 +22315,49 @@ paths:
         '200': { description: Položky a stránkování, content: { application/json: { schema: { type: object } } } }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /api/v1/stock/history-import/jobs/{id}/end-state:
+    parameters:
+    - $ref: '#/components/parameters/SupplierIdHeader'
+    - { in: path, name: id, required: true, schema: { type: integer, minimum: 1 }, description: ID dokončeného náhledu }
+    get:
+      tags: [Stock]
+      summary: Koncový stav historie po skladech a kartách
+      description: |
+        Stav, na kterém převzatá historie skončí (s technickými příjemkami, když jsou zapnuté), proti stavu
+        v MyÚčtu k datu přechodu. Bez data přechodu jsou stock_qty a difference null. `format=xlsx` vrátí soubor.
+      parameters:
+      - { in: query, name: format, schema: { type: string, enum: [json, xlsx], default: json } }
+      responses:
+        '200':
+          description: Koncový stav
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cutover_date: { type: [string, 'null'], format: date }
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        warehouse_code: { type: string }
+                        sku: { type: string }
+                        name: { type: string }
+                        unit: { type: string }
+                        history_qty: { type: string }
+                        stock_qty: { type: [string, 'null'] }
+                        difference: { type: [string, 'null'] }
+                  totals:
+                    type: object
+                    properties:
+                      count: { type: integer }
+                      differences: { type: integer }
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Náhled ještě není dokončen }
+
   /api/v1/stock/history-import/jobs/{id}/{operation}:
     parameters:
     - $ref: '#/components/parameters/SupplierIdHeader'

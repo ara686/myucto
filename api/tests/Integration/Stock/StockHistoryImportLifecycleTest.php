@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MyInvoice\Tests\Integration\Stock;
 
 use MyInvoice\Action\Eshop\CatalogJobAction;
+use MyInvoice\Action\Stock\StockHistoryImportAction;
 use MyInvoice\Middleware\AuthMiddleware;
 use MyInvoice\Middleware\SupplierScopeMiddleware;
 use MyInvoice\Service\Eshop\CatalogJobService;
@@ -14,6 +15,7 @@ use MyInvoice\Service\Stock\StockException;
 use MyInvoice\Service\Stock\StockHistoryImportService;
 use MyInvoice\Service\Stock\StockHistoryImportWorker;
 use MyInvoice\Service\Stock\StockReportService;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 use Slim\Psr7\Factory\ServerRequestFactory;
 use Slim\Psr7\Response;
 use Slim\Psr7\UploadedFile;
@@ -316,6 +318,49 @@ final class StockHistoryImportLifecycleTest extends StockTestCase
         $this->db->pdo()->prepare("INSERT INTO stock_takes (supplier_id, warehouse_id, take_date, status) VALUES (?, ?, '2021-02-01', 'preparing')")
             ->execute([$sid, $main]);
         $this->expectOpenStockTake(fn () => $service->rollback($sid, $applied['id'], $this->userId));
+    }
+
+    /** Koncový stav historie po skladech a kartách proti stavu v MyÚčtu k datu přechodu, i jako XLSX. */
+    public function testPreviewEndStateComparesWithStockAtCutover(): void
+    {
+        $sid = $this->createSupplier();
+        $main = $this->warehouse($sid, 'HL');
+        $branch = $this->warehouse($sid, 'POB', false);
+        $a = $this->item($sid, 'ZB-100');
+        $b = $this->item($sid, 'ZB-200');
+        $this->receiveStock($sid, $main, $a, '10', 100.0, '2021-01-01');
+        $this->receiveStock($sid, $branch, $b, '5', 10.0, '2021-01-01');
+        $preview = $this->stage($sid, self::csv([
+            'P1;prijemka;2020-01-05;HL;;ZB-100;12;50;;;;',
+            'V1;vydejka;2020-02-01;HL;;ZB-100;1;;;;;',
+            'T1;prevodka;2020-03-01;HL;POB;ZB-100;1;;;;;',
+            'P2;prijemka;2020-04-01;POB;;ZB-200;4;10;;;;',
+        ]), $this->config('2021-01-01'));
+        $state = $this->container->get(StockHistoryImportService::class)->endState($sid, $preview['id']);
+        self::assertSame('2021-01-01', $state['cutover_date']);
+        self::assertSame(['count' => 3, 'differences' => 2], $state['totals']);
+        self::assertSame([
+            ['HL', 'ZB-100', '10.000', '10.000', '0.000'],
+            ['POB', 'ZB-100', '1.000', '0.000', '1.000'],
+            ['POB', 'ZB-200', '4.000', '5.000', '-1.000'],
+        ], array_map(static fn (array $row): array => [$row['warehouse_code'], $row['sku'], $row['history_qty'], $row['stock_qty'], $row['difference']], $state['items']));
+
+        $request = (new ServerRequestFactory())->createServerRequest('GET', '/api/stock/history-import/jobs/' . $preview['id'] . '/end-state?format=xlsx')
+            ->withQueryParams(['format' => 'xlsx'])
+            ->withAttribute(SupplierScopeMiddleware::ATTR_CURRENT_ID, $sid)
+            ->withAttribute(AuthMiddleware::ATTR_METHOD, 'session')
+            ->withAttribute(AuthMiddleware::ATTR_USER, ['id' => $this->userId, 'role' => 'admin']);
+        $response = $this->container->get(StockHistoryImportAction::class)->endState($request, new Response(), ['id' => $preview['id']]);
+        self::assertSame(200, $response->getStatusCode());
+        self::assertStringContainsString('spreadsheetml', $response->getHeaderLine('Content-Type'));
+        $path = tempnam(sys_get_temp_dir(), 'history-end-state-');
+        $this->files[] = $path;
+        file_put_contents($path, (string) $response->getBody());
+        $sheet = IOFactory::load($path)->getActiveSheet();
+        self::assertSame(['POB', 'ZB-200', 4.0, 5.0, -1.0], [
+            $sheet->getCell('A6')->getValue(), $sheet->getCell('B6')->getValue(),
+            $sheet->getCell('E6')->getValue(), $sheet->getCell('F6')->getValue(), $sheet->getCell('G6')->getValue(),
+        ]);
     }
 
     // ── pomocníci ────────────────────────────────────────────────────────────

@@ -38,6 +38,7 @@ final class StockHistoryImportService
         private readonly Connection $db,
         private readonly CatalogJobService $jobs,
         private readonly CatalogImportSourceStore $sources,
+        private readonly StockReportService $reports,
     ) {}
 
     public function preview(int $supplierId, int $sourceId, array $config, ?int $createdBy): array
@@ -135,6 +136,70 @@ final class StockHistoryImportService
             }
             throw $e;
         }
+    }
+
+    /**
+     * Koncový stav historie z náhledu po skladech a kartách (s technickými příjemkami,
+     * když je firma zapnula) proti stavu v MyÚčtu k datu přechodu. Bez data přechodu
+     * se nemá s čím porovnat (firma nemá skladové doklady), stock_qty je null.
+     */
+    public function endState(int $supplierId, int $previewId): array
+    {
+        $job = $this->jobs->find($supplierId, $previewId);
+        if ($job === null || $job['kind'] !== self::STAGE_KIND) {
+            throw new EshopException('not_found', 'Náhled importu historie nenalezen.', 404);
+        }
+        if ($job['status'] !== 'completed') {
+            throw new EshopException('job_state_conflict', 'Náhled ještě není dokončen.', 409);
+        }
+        $profile = $job['input']['profile'];
+        $fill = $profile['fill_negative'] ? "COALESCE(CAST(JSON_VALUE(input_json, '$.fill.quantity') AS DECIMAL(14,3)), 0)" : '0';
+        $stmt = $this->db->pdo()->prepare("SELECT legs.wh, legs.item, w.code, i.sku, i.name, i.unit, SUM(legs.qty) AS qty
+            FROM (
+                SELECT CAST(JSON_VALUE(input_json, '$.values.warehouse_id') AS UNSIGNED) AS wh, stock_item_id AS item,
+                    {$fill} + CASE WHEN JSON_VALUE(input_json, '$.values.doc_type') IN ('receipt','surplus') THEN 1 ELSE -1 END
+                        * CAST(JSON_VALUE(input_json, '$.values.quantity') AS DECIMAL(14,3)) AS qty
+                FROM catalog_job_items WHERE supplier_id = ? AND job_id = ? AND status = 'ready'
+                UNION ALL
+                SELECT CAST(JSON_VALUE(input_json, '$.values.warehouse_to_id') AS UNSIGNED), stock_item_id,
+                    CAST(JSON_VALUE(input_json, '$.values.quantity') AS DECIMAL(14,3))
+                FROM catalog_job_items WHERE supplier_id = ? AND job_id = ? AND status = 'ready'
+                    AND JSON_VALUE(input_json, '$.values.doc_type') = 'transfer'
+            ) legs
+            JOIN warehouses w ON w.id = legs.wh AND w.supplier_id = ?
+            JOIN stock_items i ON i.id = legs.item AND i.supplier_id = ?
+            GROUP BY legs.wh, legs.item, w.code, i.sku, i.name, i.unit");
+        $stmt->execute([$supplierId, $previewId, $supplierId, $previewId, $supplierId, $supplierId]);
+        $rows = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $rows[$row['wh'] . '-' . $row['item']] = [
+                'warehouse_code' => $row['code'], 'sku' => $row['sku'], 'name' => $row['name'], 'unit' => $row['unit'],
+                'history_qty' => StockValuation::qtyToT((string) $row['qty']), 'stock_qty' => 0,
+            ];
+        }
+        $cutover = $profile['cutover_date'];
+        if ($cutover !== null) {
+            foreach ($this->reports->valuation($supplierId, $cutover, [])['items'] as $item) {
+                $rows[$item['warehouse_id'] . '-' . $item['stock_item_id']] ??= [
+                    'warehouse_code' => $item['warehouse_code'], 'sku' => $item['sku'], 'name' => $item['name'], 'unit' => $item['unit'],
+                    'history_qty' => 0,
+                ];
+                $rows[$item['warehouse_id'] . '-' . $item['stock_item_id']]['stock_qty'] = StockValuation::qtyToT($item['qty']);
+            }
+        }
+        usort($rows, static fn (array $a, array $b): int => [$a['warehouse_code'], $a['sku']] <=> [$b['warehouse_code'], $b['sku']]);
+        $differences = 0;
+        $items = array_map(static function (array $row) use ($cutover, &$differences): array {
+            $difference = $row['history_qty'] - $row['stock_qty'];
+            $differences += $cutover !== null && $difference !== 0 ? 1 : 0;
+            return [
+                'warehouse_code' => $row['warehouse_code'], 'sku' => $row['sku'], 'name' => $row['name'], 'unit' => $row['unit'],
+                'history_qty' => StockValuation::tToDecimal($row['history_qty']),
+                'stock_qty' => $cutover !== null ? StockValuation::tToDecimal($row['stock_qty']) : null,
+                'difference' => $cutover !== null ? StockValuation::tToDecimal($difference) : null,
+            ];
+        }, $rows);
+        return ['cutover_date' => $cutover, 'items' => $items, 'totals' => ['count' => count($items), 'differences' => $differences]];
     }
 
     /**

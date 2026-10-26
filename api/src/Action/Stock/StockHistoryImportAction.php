@@ -17,9 +17,11 @@ use MyInvoice\Service\IpMatcher;
 use MyInvoice\Service\Stock\StockException;
 use MyInvoice\Service\Stock\StockHistoryImportProfile;
 use MyInvoice\Service\Stock\StockHistoryImportService;
+use MyInvoice\Service\Stock\StockReportXlsxExporter;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Psr\Http\Message\UploadedFileInterface;
+use Slim\Psr7\Factory\StreamFactory;
 
 final class StockHistoryImportAction
 {
@@ -31,6 +33,7 @@ final class StockHistoryImportAction
         private readonly CatalogImportSourceStore $sources,
         private readonly CatalogImportReader $reader,
         private readonly StockHistoryImportService $imports,
+        private readonly StockReportXlsxExporter $xlsx,
         private readonly ActivityLogger $logger,
         private readonly IpMatcher $ipMatcher,
     ) {}
@@ -121,6 +124,29 @@ final class StockHistoryImportAction
             unset($job['input']);
             return $job;
         }, 202);
+    }
+
+    /** Koncový stav historie z náhledu proti stavu v MyÚčtu, JSON nebo XLSX (?format=xlsx). */
+    public function endState(Request $request, Response $response, array $args): Response
+    {
+        $format = $request->getQueryParams()['format'] ?? 'json';
+        if (!in_array($format, ['json', 'xlsx'], true)) {
+            return Json::error($response, 'validation_failed', "format musí být 'json' nebo 'xlsx'.", 422);
+        }
+        $data = null;
+        $result = $this->run($request, $response, function (int $supplierId) use ($args, &$data): array {
+            return $data = $this->imports->endState($supplierId, (int) $args['id']);
+        });
+        if ($format === 'json' || $data === null) {
+            return $result;
+        }
+        $out = $this->xlsx->historyEndState($data);
+        return $result
+            ->withBody((new StreamFactory())->createStream($out['bytes']))
+            ->withHeader('Content-Type', $out['mime'])
+            ->withHeader('Content-Disposition', 'attachment; filename="' . $out['filename'] . '"')
+            ->withHeader('Content-Length', (string) strlen($out['bytes']))
+            ->withHeader('Cache-Control', 'private, no-store');
     }
 
     /** Vrácení aktivního importu: jen správce firmy, zapíše se do auditního logu. */

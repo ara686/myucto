@@ -4291,6 +4291,7 @@ final class Routes
             $g->post  ('/history-import/{id:[0-9]+}/rollback', [\MyInvoice\Action\Stock\StockHistoryImportAction::class, 'rollback']);
             $g->get   ('/history-import/jobs/{id:[0-9]+}', [\MyInvoice\Action\Eshop\CatalogJobAction::class, 'get']);
             $g->get   ('/history-import/jobs/{id:[0-9]+}/items', [\MyInvoice\Action\Eshop\CatalogJobAction::class, 'items']);
+            $g->get   ('/history-import/jobs/{id:[0-9]+}/end-state', [\MyInvoice\Action\Stock\StockHistoryImportAction::class, 'endState']);
             $g->post  ('/history-import/jobs/{id:[0-9]+}/{operation:retry|cancel}', [\MyInvoice\Action\Eshop\CatalogJobAction::class, 'change']);
 
             $g->get   ('/fulfillment/tasks',                                      [\MyInvoice\Action\Stock\FulfillmentAction::class, 'list']);
