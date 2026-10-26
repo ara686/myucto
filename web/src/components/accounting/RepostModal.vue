@@ -20,7 +20,7 @@ import { journalAmount } from '@/utils/journalAmount'
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
-  accountingApi, postingErrorI18nKey,
+  accountingApi, postingErrorMessage,
   type ChartAccount, type JournalPostingSource, type RepostPlan,
 } from '@/api/accounting'
 import {
@@ -181,7 +181,7 @@ async function load(): Promise<void> {
     lines.value = editableLines(p.lines)
     applyProposal()
   } catch (e: any) {
-    error.value = t(postingErrorI18nKey(e?.response?.data?.error?.code))
+    error.value = postingErrorMessage(t, e)
   } finally {
     loading.value = false
   }
@@ -340,7 +340,7 @@ async function submit(): Promise<void> {
     const code = e?.response?.data?.error?.code
     error.value = code === 'split_in_locked_period' || code === 'invalid_dimension'
       ? (e?.response?.data?.error?.message || t('common.error'))
-      : t(postingErrorI18nKey(code))
+      : postingErrorMessage(t, e)
   } finally {
     saving.value = false
   }

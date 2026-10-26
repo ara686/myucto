@@ -26,6 +26,7 @@ vi.mock('@/api/accounting', () => {
       repost: m.repost,
     },
     postingErrorI18nKey: (code: string) => `err.${code}`,
+    postingErrorMessage: (_t: unknown, e: any) => `err.${e?.response?.data?.error?.code}`,
   }
 })
 vi.mock('@/components/ui/Modal.vue', () => ({ default: { template: '<div><slot /></div>' } }))

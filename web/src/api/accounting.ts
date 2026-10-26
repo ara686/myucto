@@ -1995,6 +1995,8 @@ export const POSTING_ERROR_CODES = [
   'advance_tax_document_oss',
   // DDKP (daňový doklad k platbě) v reverse-charge režimu se automaticky neúčtuje.
   'ddkp_reverse_charge_unsupported',
+  // Přijatá faktura se samovyměřením a nárokem na odpočet „bez nároku".
+  'rc_partial_deduction_unsupported',
   // Přeúčtování: datum je zamčené (§35 soft-close) resp. storno i oprava by padly
   // na jiné datum než původní zápis a uživatel to ještě nepotvrdil.
   'date_locked', 'repost_date_shift_confirmation_required', 'version_conflict',
@@ -2005,6 +2007,21 @@ export function postingErrorI18nKey(code: string | null | undefined): string {
   return (POSTING_ERROR_CODES as readonly string[]).includes(code ?? '')
     ? `accounting.posting_errors.${code}`
     : 'accounting.posting_errors.generic'
+}
+
+/**
+ * Hláška k chybě zaúčtování z odpovědi API. Neznámý kód ukáže text ze serveru —
+ * obecné „nepodařilo se zaúčtovat" by uživateli zatajilo, co má na dokladu opravit.
+ */
+export function postingErrorMessage(t: (key: string) => string, e: any): string {
+  const err = e?.response?.data?.error
+  const code = typeof err?.code === 'string' ? err.code : null
+  if ((POSTING_ERROR_CODES as readonly string[]).includes(code ?? '')) {
+    return t(`accounting.posting_errors.${code}`)
+  }
+  return typeof err?.message === 'string' && err.message !== ''
+    ? err.message
+    : t('accounting.posting_errors.generic')
 }
 
 /**

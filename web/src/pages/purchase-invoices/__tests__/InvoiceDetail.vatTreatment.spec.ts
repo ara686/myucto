@@ -90,6 +90,7 @@ vi.mock('@/stores/supplier', () => ({
 vi.mock('@/api/accounting', () => ({
   accountingApi: { postPurchase: vi.fn() },
   postingErrorI18nKey: () => 'error',
+  postingErrorMessage: () => 'error',
 }))
 
 vi.mock('@/api/stock', () => ({

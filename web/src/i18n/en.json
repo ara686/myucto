@@ -17296,6 +17296,7 @@
       "advance_tax_document_unposted": "The tax document for the payment received on this advance is not posted. Post it before the final invoice, otherwise the advance would be settled against VAT that is not on the account yet.",
       "advance_tax_document_oss": "The tax document for the payment received carries OSS VAT only and is not posted on its own (under OSS no tax document is issued for an advance). Cancel it and issue the final invoice without it, or settle the advance with a manual entry.",
       "ddkp_reverse_charge_unsupported": "A tax document for payment under the reverse-charge regime is not posted automatically — post the VAT with a manual entry.",
+      "rc_partial_deduction_unsupported": "The document is under the reverse-charge regime (self-assessed VAT) but its VAT deduction is set to \"no deduction\". This combination is not posted automatically. If the document relates to your business activity, set full deduction in its editor, otherwise post it with a manual entry.",
       "date_locked": "The entry date falls into the locked part of the books. An admin can move the lock in accounting settings.",
       "repost_date_shift_confirmation_required": "The original date is closed or locked — confirm that both the reversal and the correction will land on a different date.",
       "version_conflict": "The document posting has changed. Reload the reposting preview and review its entries."
