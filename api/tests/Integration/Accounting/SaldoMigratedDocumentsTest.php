@@ -7,8 +7,10 @@ namespace MyInvoice\Tests\Integration\Accounting;
 use MyInvoice\Bootstrap;
 use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Repository\AccountingPeriodRepository;
+use MyInvoice\Repository\ClosingRepository;
 use MyInvoice\Repository\JournalEntryDocumentLinkRepository;
 use MyInvoice\Service\Accounting\ChartOfAccountsSeeder;
+use MyInvoice\Service\Accounting\DocumentPostingGroup;
 use MyInvoice\Service\Accounting\PostingService;
 use MyInvoice\Service\Accounting\Reports\SaldoService;
 use PHPUnit\Framework\Attributes\Group;
@@ -484,7 +486,224 @@ final class SaldoMigratedDocumentsTest extends TestCase
         self::assertCount(1, $p['items'], 'Proforma nesmí být navíc položkou „uhrazeno před zaúčtováním".');
     }
 
+    // ── A5: doklad zaúčtovaný víc zápisy (skupina zaúčtování) ────────────────
+
+    /**
+     * Převod z programu, který účtuje doklad po řádcích (ABRA): základ nese přímý zápis se
+     * zdrojem dokladu, DPH ruční zápis ve skupině zaúčtování dokladu, navázaný na doklad
+     * i měkkou vazbou. Předpisem je celá částka, DPH není ruční vyrovnání: dřív doklad po
+     * úplné úhradě zůstal otevřený o DPH a uzávěrková kontrola počítala DPH jako záporné
+     * vyrovnání.
+     */
+    public function testInvoicePostedByTwoEntriesOfPostingGroup(): void
+    {
+        $client = $this->client('Odběratel po řádcích');
+        $inv = $this->invoice($client, 1210.00, self::YEAR . '-03-01', self::YEAR . '-03-15');
+        $this->postInGroup('invoice', $inv, [
+            [self::l('311', 'debit', 1000.00), self::l('602', 'credit', 1000.00)],
+            [self::l('311', 'debit', 210.00), self::l('343', 'credit', 210.00)],
+        ], self::YEAR . '-03-01');
+
+        $open = $this->account('311', self::YEAR . '-03-31');
+        self::assertSame(self::cents(1210.00), self::cents($open['gl_balance']));
+        self::assertSame(self::cents(1210.00), self::cents($open['open_items_total']), 'Předpis ze všech zápisů skupiny.');
+        self::assertSame(0, self::cents($open['difference']));
+        $p = $this->partner($open, $client);
+        self::assertNotNull($p);
+        self::assertCount(1, $p['items']);
+        self::assertSame(self::cents(1210.00), self::cents($p['items'][0]['booked_czk']));
+
+        $tx = $this->bankInvoicePayment($inv, 610.00, self::YEAR . '-04-10');
+        $this->posting->postDocument($this->supplierId, 'bank', $tx, [
+            self::l('221', 'debit', 610.00),
+            self::l('311', 'credit', 610.00),
+        ], $this->opts(self::YEAR . '-04-10'));
+        $partial = $this->account('311', self::YEAR . '-04-30');
+        self::assertSame(self::cents(600.00), self::cents($partial['open_items_total']), 'Částečná úhrada snižuje celý předpis.');
+        self::assertSame(0, self::cents($partial['difference']));
+
+        $tx = $this->bankInvoicePayment($inv, 600.00, self::YEAR . '-05-10');
+        $this->posting->postDocument($this->supplierId, 'bank', $tx, [
+            self::l('221', 'debit', 600.00),
+            self::l('311', 'credit', 600.00),
+        ], $this->opts(self::YEAR . '-05-10'));
+        $this->db->pdo()->prepare("UPDATE invoices SET status = 'paid', paid_total = 1210.00, paid_at = ? WHERE id = ?")
+            ->execute([self::YEAR . '-05-10', $inv]);
+
+        $paid = $this->account('311', self::YEAR . '-05-31');
+        self::assertSame(0, self::cents($paid['gl_balance']));
+        self::assertSame(0, self::cents($paid['open_items_total']), 'Uhrazený doklad nezůstane otevřený o DPH.');
+        self::assertNull($this->partner($paid, $client));
+        $closing = new ClosingRepository($this->db);
+        self::assertSame([], array_values(array_filter(
+            $closing->paidInvoicesOpenSaldo($this->supplierId, self::YEAR . '-05-31'),
+            static fn (array $r): bool => $r['id'] === $inv,
+        )), 'Kontrola zaplacených dokladů bere předpis z celé skupiny.');
+    }
+
+    /**
+     * Přijatá faktura po řádcích, přímý zápis bez řádku na 321 (jen přeúčtování nákladu):
+     * položka saldokonta vznikne jen ze zápisů skupiny a úhradou zmizí.
+     */
+    public function testPurchaseWhoseDirectEntryHasNo321Line(): void
+    {
+        $vendor = $this->client('Dodavatel po řádcích');
+        $pi = $this->purchaseInvoice($vendor, 1210.00, self::YEAR . '-03-01', self::YEAR . '-03-15', 210.00);
+        $this->postInGroup('purchase_invoice', $pi, [
+            [self::l('518', 'debit', 50.00), self::l('501', 'credit', 50.00)],
+            [self::l('518', 'debit', 1000.00), self::l('321', 'credit', 1000.00)],
+            [self::l('343', 'debit', 210.00), self::l('321', 'credit', 210.00)],
+        ], self::YEAR . '-03-01');
+
+        $open = $this->account('321', self::YEAR . '-03-31');
+        self::assertSame(self::cents(1210.00), self::cents($open['gl_balance']));
+        self::assertSame(self::cents(1210.00), self::cents($open['open_items_total']));
+        self::assertSame(0, self::cents($open['difference']));
+
+        $tx = $this->bankPurchasePayment($pi, 1210.00, self::YEAR . '-04-02');
+        $this->posting->postDocument($this->supplierId, 'bank', $tx, [
+            self::l('321', 'debit', 1210.00),
+            self::l('221', 'credit', 1210.00),
+        ], $this->opts(self::YEAR . '-04-02'));
+        $this->db->pdo()->prepare("UPDATE purchase_invoices SET status = 'paid', paid_at = ? WHERE id = ?")
+            ->execute([self::YEAR . '-04-02', $pi]);
+
+        $paid = $this->account('321', self::YEAR . '-04-30');
+        self::assertSame(0, self::cents($paid['open_items_total']));
+        self::assertNull($this->partner($paid, $vendor));
+        $closing = new ClosingRepository($this->db);
+        self::assertSame([], array_values(array_filter(
+            $closing->paidPurchasesOpenSaldo($this->supplierId, self::YEAR . '-04-30'),
+            static fn (array $r): bool => $r['id'] === $pi,
+        )));
+    }
+
+    /** DDKP zaúčtovaný dvěma zápisy čerpá zálohu na 314 oběma. */
+    public function testTaxDocumentPostedByPostingGroupDrawsAdvance(): void
+    {
+        $vendor = $this->client('Záloha s DDKP po řádcích');
+        $advance = $this->paidAdvance($vendor, 1210.00, self::YEAR . '-02-05');
+        $ddkp = $this->purchaseInvoice($vendor, 1210.00, self::YEAR . '-02-06', self::YEAR . '-02-06', 210.00);
+        $this->db->pdo()->prepare("UPDATE purchase_invoices SET document_kind = 'tax_document', parent_purchase_invoice_id = ? WHERE id = ?")
+            ->execute([$advance, $ddkp]);
+        $this->postInGroup('purchase_invoice', $ddkp, [
+            [self::l('343', 'debit', 100.00), self::l('314', 'credit', 100.00)],
+            [self::l('343', 'debit', 110.00), self::l('314', 'credit', 110.00)],
+        ], self::YEAR . '-02-06');
+
+        $acc = $this->account('314', self::YEAR . '-02-28');
+        self::assertSame(self::cents(1000.00), self::cents($acc['gl_balance']));
+        self::assertSame(self::cents(1000.00), self::cents($acc['open_items_total']), 'DDKP čerpá DPH ze všech svých zápisů.');
+        self::assertSame(0, self::cents($acc['difference']));
+    }
+
+    // ── A6: záloha placená v cizí měně ───────────────────────────────────────
+
+    /**
+     * Zálohová faktura 1 000 EUR zaplacená z eurového účtu: `payment_matches.amount` je
+     * v eurech, bankovní zápis nese na 314 Kč kurzem dne platby. Položka saldokonta je
+     * v Kč shodně s hlavní knihou, ne 1 000 „korun".
+     */
+    public function testAdvancePaidInEurIsCzkOnAccount(): void
+    {
+        $eur = (int) $this->db->pdo()->query("SELECT id FROM currencies WHERE code = 'EUR' LIMIT 1")->fetchColumn();
+        if ($eur === 0) {
+            self::markTestSkipped('Měna EUR v číselníku chybí.');
+        }
+        $vendor = $this->client('Zahraniční dodavatel');
+        $advance = $this->purchaseInvoice($vendor, 1000.00, self::YEAR . '-06-01', self::YEAR . '-06-10');
+        $this->db->pdo()->prepare("UPDATE purchase_invoices SET document_kind = 'advance', status = 'paid', paid_at = ?, currency_id = ?, exchange_rate = 25.000 WHERE id = ?")
+            ->execute([self::YEAR . '-06-05', $eur, $advance]);
+        $tx = $this->bankTransaction(-1000.00, self::YEAR . '-06-05');
+        $this->db->pdo()->prepare("UPDATE bank_transactions SET currency = 'EUR' WHERE id = ?")->execute([$tx]);
+        $this->match($tx, $advance, 1000.00);
+        $this->posting->postDocument($this->supplierId, 'bank', $tx, [
+            self::l('314', 'debit', 25100.00),
+            self::l('221', 'credit', 25100.00),
+        ], $this->opts(self::YEAR . '-06-05'));
+
+        $acc = $this->account('314', self::YEAR . '-06-30');
+        self::assertSame(self::cents(25100.00), self::cents($acc['gl_balance']));
+        self::assertSame(self::cents(25100.00), self::cents($acc['open_items_total']), 'Záloha v Kč zaúčtovanou částkou platby.');
+        self::assertSame(0, self::cents($acc['difference']));
+        $items = $this->itemsByDoc($acc, $vendor);
+        self::assertSame(self::cents(25100.00), self::cents($items[$advance]['booked_czk'] ?? 0));
+    }
+
+    // ── A7: zápočet převzatý z jiného programu v kontrole zaplacených dokladů ─
+
+    /**
+     * Interní doklad převzatý z Money S3 vyrovnává dvě faktury najednou (321 MD / 395 D),
+     * rozpad nese jen `invoice_settlements` s vazbou na ten zápis. Saldokonto doklady
+     * uzavírá zápočtem; kontrola zaplacených dokladů je dřív hlásila s otevřeným saldem,
+     * protože zápočet četla jen ze zápisů typu `settlement`.
+     */
+    public function testImportedSettlementClosesPaidDocumentsInClosingCheck(): void
+    {
+        $vendor = $this->client('Zápočet převzatý dodavatel');
+        $piA = $this->purchaseInvoice($vendor, 300.00, self::YEAR . '-03-01', self::YEAR . '-03-15');
+        $piB = $this->purchaseInvoice($vendor, 200.00, self::YEAR . '-03-02', self::YEAR . '-03-15');
+        $this->postPurchase($piA, [self::l('518', 'debit', 300.00), self::l('321', 'credit', 300.00)], self::YEAR . '-03-01');
+        $this->postPurchase($piB, [self::l('518', 'debit', 200.00), self::l('321', 'credit', 200.00)], self::YEAR . '-03-02');
+        $client = $this->client('Zápočet převzatý odběratel');
+        $inv = $this->invoice($client, 500.00, self::YEAR . '-03-03', self::YEAR . '-03-17');
+        $this->posting->postDocument($this->supplierId, 'invoice', $inv, [
+            self::l('311', 'debit', 500.00), self::l('602', 'credit', 500.00),
+        ], $this->opts(self::YEAR . '-03-03'));
+        $internal = $this->posting->postDocument($this->supplierId, 'manual', null, [
+            self::l('321', 'debit', 500.00),
+            self::l('311', 'credit', 500.00),
+        ], $this->opts(self::YEAR . '-03-20'));
+
+        $pdo = $this->db->pdo();
+        $account = (int) $pdo->query("SELECT id FROM chart_of_accounts WHERE supplier_id = {$this->supplierId} AND account_code = '311'")->fetchColumn();
+        $settle = $pdo->prepare("INSERT INTO invoice_settlements (supplier_id, doc_type, doc_id, settled_on, amount, account_id, note, status, journal_entry_id, invoice_payment_id, created_by)
+                                 VALUES (?, ?, ?, ?, ?, ?, 'převzato', 'confirmed', ?, ?, ?)");
+        foreach ([[$piA, 300.00], [$piB, 200.00]] as [$pi, $amount]) {
+            $settle->execute([$this->supplierId, 'purchase_invoice', $pi, self::YEAR . '-03-20', $amount, $account, $internal, null, $this->userId]);
+            $pdo->prepare("UPDATE purchase_invoices SET status = 'paid', paid_at = ? WHERE id = ?")->execute([self::YEAR . '-03-20', $pi]);
+        }
+        $pdo->prepare("INSERT INTO invoice_payments (supplier_id, invoice_id, paid_on, amount, currency, source) VALUES (?, ?, ?, 500.00, 'CZK', 'settlement')")
+            ->execute([$this->supplierId, $inv, self::YEAR . '-03-20']);
+        $payment = (int) $pdo->lastInsertId();
+        $settle->execute([$this->supplierId, 'invoice', $inv, self::YEAR . '-03-20', 500.00, $account, $internal, $payment, $this->userId]);
+        $pdo->prepare("UPDATE invoices SET status = 'paid', paid_total = 500.00, paid_at = ? WHERE id = ?")->execute([self::YEAR . '-03-20', $inv]);
+
+        $asOf = self::YEAR . '-03-31';
+        self::assertNull($this->partner($this->account('321', $asOf), $vendor), 'Saldokonto přijaté faktury uzavírá zápočtem.');
+        self::assertNull($this->partner($this->account('311', $asOf), $client), 'Saldokonto vydané faktury uzavírá evidovanou platbou.');
+        $closing = new ClosingRepository($this->db);
+        $purchases = array_column($closing->paidPurchasesOpenSaldo($this->supplierId, $asOf), 'id');
+        self::assertNotContains($piA, $purchases);
+        self::assertNotContains($piB, $purchases);
+        self::assertNotContains($inv, array_column($closing->paidInvoicesOpenSaldo($this->supplierId, $asOf), 'id'));
+
+        // Před datem zápočtu jsou doklady pořád otevřené (kontrola k 19. 3. je nehlásí jen proto,
+        // že ještě nejsou uhrazené): zápočet se počítá až od svého dne.
+        $pdo->prepare("UPDATE purchase_invoices SET paid_at = NULL WHERE id = ?")->execute([$piA]);
+        $early = array_column($closing->paidPurchasesOpenSaldo($this->supplierId, self::YEAR . '-03-19'), 'saldo', 'id');
+        self::assertSame(self::cents(300.00), self::cents($early[$piA] ?? 0), 'Zápočet po rozvahovém dni nevyrovnává.');
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────────
+
+    /**
+     * Doklad zaúčtovaný víc zápisy jako po převodu: první nese zdroj dokladu, další jsou
+     * ruční zápisy ve skupině zaúčtování dokladu, všechny navázané i měkkou vazbou.
+     *
+     * @param list<list<array{account_code:string, side:string, amount:float}>> $entries
+     */
+    private function postInGroup(string $docType, int $docId, array $entries, string $date): void
+    {
+        $ids = [];
+        foreach ($entries as $i => $lines) {
+            $ids[] = $this->posting->postDocument($this->supplierId, $i === 0 ? $docType : 'manual', $i === 0 ? $docId : null, $lines, $this->opts($date));
+        }
+        (new DocumentPostingGroup($this->db))->attach($this->supplierId, $docType, $docId, $ids);
+        foreach ($ids as $id) {
+            $this->links->add($id, $this->supplierId, $docType, $docId, null, $this->userId);
+        }
+    }
 
     /** @param list<array{account_code:string, side:string, amount:float}> $lines */
     private function opening(array $lines): int

@@ -6,6 +6,7 @@ namespace MyInvoice\Repository;
 
 use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Service\Accounting\Activation\OpeningBalanceDocuments;
+use MyInvoice\Service\Accounting\DocumentPostingGroup;
 use MyInvoice\Support\Sql\CreditNoteRefundExpr;
 use MyInvoice\Support\Sql\LinkedManualSettlementSql;
 use MyInvoice\Support\Sql\PurchaseSettledExpr;
@@ -391,9 +392,7 @@ final class SaldoRepository
                         AND oe.source_type = 'opening' AND oe.posted_at IS NOT NULL AND oe.reversed_by IS NULL
                         AND oe.entry_date <= ?
                         AND (oca.id = {$accountId} OR oca.parent_id = {$accountId}))
-             AND NOT EXISTS (SELECT 1 FROM journal_entries own
-                              WHERE own.supplier_id = {$alias}.supplier_id AND own.source_type = '{$docType}'
-                                AND own.source_id = {$alias}.id AND own.posted_at IS NOT NULL AND own.reversed_by IS NULL)";
+             AND NOT " . DocumentPostingGroup::activePostingExistsSql("'{$docType}'", "{$alias}.id", "{$alias}.supplier_id");
         $home = static fn (string $amount, string $alias): string =>
             "(CASE WHEN {$alias}.exchange_rate IS NULL OR cur.code = 'CZK' THEN {$amount} ELSE ROUND({$amount} * {$alias}.exchange_rate, 2) END)";
         $out = [];
@@ -461,14 +460,25 @@ final class SaldoRepository
                        {$home('d.total_with_vat', 'd')} AS booked, {$home('d.total_vat', 'd')} AS vat,
                        (SELECT COUNT(*) FROM purchase_invoices td WHERE td.supplier_id = d.supplier_id AND td.parent_purchase_invoice_id = d.id
                            AND td.document_kind = 'tax_document' AND td.status NOT IN ('draft', 'cancelled')) AS tax_documents,
-                       (SELECT COALESCE(SUM(pm.amount), 0) FROM payment_matches pm
+                       (SELECT COALESCE(SUM(CASE WHEN " . self::txCurrencySql('bt', 'bs') . " = 'CZK' THEN pm.amount
+                                                 ELSE COALESCE((SELECT SUM(rl.signed_amount)
+                                                                  FROM journal_entries re
+                                                                  JOIN journal_entry_lines rl ON rl.entry_id = re.id AND rl.supplier_id = re.supplier_id
+                                                                       AND rl.side = 'credit'
+                                                                  JOIN chart_of_accounts rca ON rca.id = rl.account_id
+                                                                 WHERE re.supplier_id = pm.supplier_id AND re.source_type = 'bank'
+                                                                   AND re.source_id = bt.id AND re.posted_at IS NOT NULL AND re.reversed_by IS NULL
+                                                                   AND (rca.id = {$accountId} OR rca.parent_id = {$accountId})), pm.amount) END), 0)
+                          FROM payment_matches pm
                           JOIN bank_transactions bt ON bt.id = pm.bank_transaction_id AND bt.amount > 0
+                          JOIN bank_statements bs ON bs.id = bt.statement_id
                          WHERE pm.supplier_id = d.supplier_id AND pm.purchase_invoice_id = d.id AND DATE(bt.posted_at) <= ?)
                      + (SELECT COALESCE(SUM(CASE WHEN ch.document_kind = 'tax_document'
                                                  THEN (CASE WHEN l.side = 'credit' THEN l.signed_amount ELSE -l.signed_amount END)
                                                  WHEN l.side = 'credit' THEN l.signed_amount ELSE 0 END), 0)
                           FROM purchase_invoices ch
-                          JOIN journal_entries e ON e.supplier_id = ch.supplier_id AND e.source_type = 'purchase_invoice' AND e.source_id = ch.id
+                          JOIN (" . DocumentPostingGroup::entriesSql('purchase_invoice', $supplierId) . ") de ON de.doc_id = ch.id
+                          JOIN journal_entries e ON e.supplier_id = ch.supplier_id AND e.id = de.entry_id
                           JOIN journal_entry_lines l ON l.entry_id = e.id AND l.supplier_id = e.supplier_id
                           JOIN chart_of_accounts ca ON ca.id = l.account_id
                           LEFT JOIN journal_entries rev ON rev.id = e.reversed_by
@@ -523,8 +533,9 @@ final class SaldoRepository
                                         WHERE fe.supplier_id = pad.supplier_id AND fe.source_type = 'purchase_invoice'
                                           AND fe.source_id = pad.final_invoice_id AND fe.posted_at IS NOT NULL
                                           AND fe.entry_date <= ? AND (fe.reversed_by IS NULL OR frev.entry_date > ?))) AS settled
-                  FROM purchase_invoices d
-                  JOIN journal_entries e ON e.supplier_id = d.supplier_id AND e.source_type = 'purchase_invoice' AND e.source_id = d.id
+                  FROM (" . DocumentPostingGroup::entriesSql('purchase_invoice', $supplierId) . ") de
+                  JOIN purchase_invoices d ON d.id = de.doc_id AND d.supplier_id = {$supplierId}
+                  JOIN journal_entries e ON e.supplier_id = d.supplier_id AND e.id = de.entry_id
                   JOIN journal_entry_lines l ON l.entry_id = e.id AND l.supplier_id = e.supplier_id
                   JOIN chart_of_accounts ca ON ca.id = l.account_id
                   LEFT JOIN journal_entries rev ON rev.id = e.reversed_by
@@ -677,6 +688,75 @@ final class SaldoRepository
         ];
     }
 
+    /** Měna bankovního pohybu (prázdná měna pohybu = měna výpisu), velkými písmeny. */
+    private static function txCurrencySql(string $bt, string $bs): string
+    {
+        return "UPPER(COALESCE(NULLIF({$bt}.currency, ''), NULLIF({$bs}.currency, ''), 'CZK'))";
+    }
+
+    /**
+     * Částka bankovního párování zálohy v Kč, jak ji nese zálohový účet. Korunový pohyb se
+     * bere částkou párování. U cizoměnového pohybu je `payment_matches.amount` v měně pohybu
+     * (převody z jiných programů ho ale plní i v Kč), proto se bere částka, kterou bankovní
+     * zápis zaúčtoval na účet `x.account_id` na straně `$side`, tedy kurzem pohybu shodně
+     * s hlavní knihou; pohyb pro víc záloh se rozpočte poměrem párování. Kurzový rozdíl
+     * proti čerpání kurzem dokladu vyrovnává až kurzový zápis. Vyžaduje aliasy `x` (params),
+     * `pm`, `bt`, `bs` a `$doc` (`purchase_invoices` zálohy).
+     */
+    private static function advanceMatchCzkSql(string $side, string $doc): string
+    {
+        return "CASE WHEN " . self::txCurrencySql('bt', 'bs') . " = 'CZK' THEN pm.amount
+                     ELSE COALESCE(
+                         (SELECT SUM(CASE WHEN fl.side = '{$side}' THEN fl.signed_amount ELSE 0 END)
+                            FROM journal_entries fe
+                            JOIN journal_entry_lines fl ON fl.entry_id = fe.id AND fl.supplier_id = fe.supplier_id
+                            JOIN chart_of_accounts fca ON fca.id = fl.account_id
+                            LEFT JOIN journal_entries frev ON frev.id = fe.reversed_by
+                           WHERE fe.supplier_id = pm.supplier_id AND fe.source_type = 'bank' AND fe.source_id = bt.id
+                             AND fe.posted_at IS NOT NULL AND fe.entry_date <= x.as_of
+                             AND (fe.reversed_by IS NULL OR frev.entry_date > x.as_of)
+                             AND (fca.id = x.account_id OR fca.parent_id = x.account_id))
+                         * pm.amount / NULLIF((SELECT SUM(fpm.amount) FROM payment_matches fpm
+                                                 JOIN purchase_invoices fpi ON fpi.id = fpm.purchase_invoice_id
+                                                      AND fpi.supplier_id = fpm.supplier_id
+                                                      AND fpi.document_kind IN ('advance', 'tax_document')
+                                                WHERE fpm.supplier_id = pm.supplier_id
+                                                  AND fpm.bank_transaction_id = pm.bank_transaction_id), 0),
+                         ROUND(pm.amount * COALESCE(NULLIF({$doc}.exchange_rate, 0), 1), 2)) END";
+    }
+
+    /**
+     * Úhrada proformy (`invoice_payments.amount`, měna dokladu) v Kč, jak ji nese účet
+     * `x.account_id` (zrcadlo {@see advanceMatchCzkSql}). Korunová se bere, jak je, cizoměnová
+     * částkou, kterou zaúčtoval bankovní zápis (poměrem úhrad téhož pohybu) nebo pokladní
+     * doklad úhrady; bez zaúčtování kurzem proformy. Vyžaduje aliasy `x`, `ip` a `ipf`.
+     */
+    private static function proformaPaymentCzkSql(): string
+    {
+        $posted = static fn (string $from, string $where): string =>
+            "(SELECT SUM(CASE WHEN fl.side = 'credit' THEN fl.signed_amount ELSE 0 END)
+                {$from}
+                JOIN journal_entry_lines fl ON fl.entry_id = fe.id AND fl.supplier_id = fe.supplier_id
+                JOIN chart_of_accounts fca ON fca.id = fl.account_id
+                LEFT JOIN journal_entries frev ON frev.id = fe.reversed_by
+               WHERE {$where}
+                 AND fe.posted_at IS NOT NULL AND fe.entry_date <= x.as_of
+                 AND (fe.reversed_by IS NULL OR frev.entry_date > x.as_of)
+                 AND (fca.id = x.account_id OR fca.parent_id = x.account_id))";
+        $bank = $posted('FROM journal_entries fe',
+            "fe.supplier_id = ip.supplier_id AND fe.source_type = 'bank' AND fe.source_id = ip.bank_transaction_id");
+        $cash = $posted("FROM cash_documents fcd
+                JOIN journal_entries fe ON fe.supplier_id = fcd.supplier_id AND fe.source_type = 'cash' AND fe.source_id = fcd.id",
+            'fcd.supplier_id = ip.supplier_id AND fcd.invoice_payment_id = ip.id');
+        return "CASE WHEN UPPER(COALESCE(NULLIF(ip.currency, ''), 'CZK')) = 'CZK' THEN ip.amount
+                     ELSE COALESCE(
+                         {$bank} * ip.amount / NULLIF((SELECT SUM(fip.amount) FROM invoice_payments fip
+                                                        WHERE fip.supplier_id = ip.supplier_id
+                                                          AND fip.bank_transaction_id = ip.bank_transaction_id), 0),
+                         {$cash},
+                         ROUND(ip.amount * COALESCE(NULLIF(ipf.exchange_rate, 0), 1), 2)) END";
+    }
+
     /** `AND cl.id = <id>` (int literál, viz fetchOpenInvoices) nebo prázdný řetězec. */
     private static function partnerSql(?int $partnerId): string
     {
@@ -754,20 +834,32 @@ final class SaldoRepository
         return self::bookedOnAccountSql('purchase_invoice', $purchaseIdExpr);
     }
 
+    /**
+     * Předpisem je přímý zápis dokladu i zápis z jeho skupiny zaúčtování. Dva samostatné
+     * EXISTS, aby každá větev zůstala bodovým dotazem po indexu.
+     */
     private static function bookedOnAccountSql(string $sourceType, string $docIdExpr): string
     {
-        return "EXISTS (
-                   SELECT 1
-                     FROM journal_entries be
-                     JOIN journal_entry_lines bl ON bl.entry_id = be.id AND bl.supplier_id = be.supplier_id
+        $onAccount = "JOIN journal_entry_lines bl ON bl.entry_id = be.id AND bl.supplier_id = be.supplier_id
                      JOIN chart_of_accounts bca ON bca.id = bl.account_id
                      LEFT JOIN journal_entries brev ON brev.id = be.reversed_by
                     WHERE be.supplier_id = x.supplier_id
-                      AND be.source_type = '{$sourceType}' AND be.source_id = {$docIdExpr}
                       AND be.posted_at IS NOT NULL AND be.entry_date <= x.as_of
                       AND (be.reversed_by IS NULL OR brev.entry_date > x.as_of)
-                      AND (bca.id = x.account_id OR bca.parent_id = x.account_id)
-               )";
+                      AND (bca.id = x.account_id OR bca.parent_id = x.account_id)";
+        return "(EXISTS (
+                   SELECT 1
+                     FROM journal_entries be
+                     {$onAccount}
+                      AND be.source_type = '{$sourceType}' AND be.source_id = {$docIdExpr}
+               ) OR EXISTS (
+                   SELECT 1
+                     FROM journal_document_postings bjdp
+                     JOIN journal_entries be ON be.supplier_id = bjdp.supplier_id AND be.id = bjdp.entry_id
+                     {$onAccount}
+                      AND bjdp.supplier_id = x.supplier_id AND bjdp.doc_type = '{$sourceType}' AND bjdp.doc_id = {$docIdExpr}
+                      AND be.source_id IS NULL
+               ))";
     }
 
     private static function dueBeforeSql(string $alias, ?string $dueBefore, string $column = 'due_date'): string
@@ -965,7 +1057,7 @@ final class SaldoRepository
                        CAST(? AS DATE) AS as_of,
                        CAST(? AS UNSIGNED) AS account_id
             ), collected AS (
-                SELECT ip.invoice_id, SUM(ip.amount) AS collected_czk
+                SELECT ip.invoice_id, SUM(" . self::proformaPaymentCzkSql() . ") AS collected_czk
                   FROM invoice_payments ip
                   CROSS JOIN params x
                   JOIN invoices ipf ON ipf.id = ip.invoice_id AND ipf.supplier_id = ip.supplier_id
@@ -1006,8 +1098,8 @@ final class SaldoRepository
                 SELECT child.parent_invoice_id AS invoice_id, SUM({$settledAmount}) AS settled_czk
                   FROM invoices child
                   CROSS JOIN params x
-                  JOIN journal_entries e
-                    ON e.supplier_id = child.supplier_id AND e.source_type = 'invoice' AND e.source_id = child.id
+                  JOIN (" . DocumentPostingGroup::entriesSql('invoice', $supplierId) . ") de ON de.doc_id = child.id
+                  JOIN journal_entries e ON e.supplier_id = child.supplier_id AND e.id = de.entry_id
                   JOIN journal_entry_lines l ON l.entry_id = e.id AND l.supplier_id = e.supplier_id
                   JOIN chart_of_accounts ca ON ca.id = l.account_id
                   LEFT JOIN journal_entries rev ON rev.id = e.reversed_by
@@ -1091,6 +1183,10 @@ final class SaldoRepository
      * vyrovnává {@see advanceOnAccountCte}). Záloha s vlastním předpisem na účtu se nebere
      * a samostatný DDKP taky ne: ten na 321 nese vlastní předpis i úhradu a vyrovná se sám.
      *
+     * Úhrada zálohy je v Kč ({@see advanceMatchCzkSql}): `payment_matches.amount` cizoměnového
+     * pohybu je v měně pohybu a položka pak nesla částku v dolarech či eurech jako koruny. Čerpání DDKP a konečnou fakturou se bere ze všech zápisů
+     * jejich skupiny zaúčtování.
+     *
      * @return list<array<string,mixed>>
      */
     private function fetchPaidAdvances(
@@ -1168,10 +1264,11 @@ final class SaldoRepository
             ), paid AS (
                 SELECT advance_id, SUM(paid_czk) AS paid_czk
                   FROM (
-                      SELECT pm.purchase_invoice_id AS advance_id, pm.amount AS paid_czk
+                      SELECT pm.purchase_invoice_id AS advance_id, " . self::advanceMatchCzkSql('debit', 'ppi') . " AS paid_czk
                         FROM payment_matches pm
                         CROSS JOIN params x
                         JOIN bank_transactions bt ON bt.id = pm.bank_transaction_id
+                        JOIN bank_statements bs ON bs.id = bt.statement_id
                         JOIN purchase_invoices ppi ON ppi.id = pm.purchase_invoice_id AND ppi.supplier_id = pm.supplier_id
                                                   AND ppi.document_kind IN ('advance', 'tax_document')
                        WHERE pm.supplier_id = x.supplier_id AND pm.purchase_invoice_id IS NOT NULL
@@ -1219,9 +1316,8 @@ final class SaldoRepository
                   ) link
                   CROSS JOIN params x
                   JOIN purchase_invoices chd ON chd.id = link.child_id
-                  JOIN journal_entries e
-                    ON e.supplier_id = link.supplier_id
-                   AND e.source_type = 'purchase_invoice' AND e.source_id = link.child_id
+                  JOIN (" . DocumentPostingGroup::entriesSql('purchase_invoice', $supplierId) . ") de ON de.doc_id = link.child_id
+                  JOIN journal_entries e ON e.supplier_id = link.supplier_id AND e.id = de.entry_id
                   JOIN journal_entry_lines l ON l.entry_id = e.id AND l.supplier_id = e.supplier_id
                   JOIN chart_of_accounts ca ON ca.id = l.account_id
                   LEFT JOIN journal_entries rev ON rev.id = e.reversed_by
@@ -1247,10 +1343,12 @@ final class SaldoRepository
                  GROUP BY pad.advance_invoice_id
                 UNION ALL
                 -- Vrácení zálohy: příchozí platba spárovaná se zálohou, zaúčtovaná na zálohový účet.
-                SELECT pm.purchase_invoice_id, SUM(pm.amount)
+                SELECT pm.purchase_invoice_id, SUM(" . self::advanceMatchCzkSql('credit', 'rpi') . ")
                   FROM payment_matches pm
                   CROSS JOIN params x
                   JOIN bank_transactions bt ON bt.id = pm.bank_transaction_id AND bt.amount > 0
+                  JOIN bank_statements bs ON bs.id = bt.statement_id
+                  JOIN purchase_invoices rpi ON rpi.id = pm.purchase_invoice_id AND rpi.supplier_id = pm.supplier_id
                  WHERE pm.supplier_id = x.supplier_id AND pm.purchase_invoice_id IS NOT NULL
                    AND EXISTS (SELECT 1 FROM journal_entries re
                                  JOIN journal_entry_lines rl ON rl.entry_id = re.id AND rl.supplier_id = re.supplier_id
@@ -1365,10 +1463,8 @@ final class SaldoRepository
         $paidExpr    = 'COALESCE(paid.paid_sum, 0)';
         $advanceExpr = 'ROUND(COALESCE(adv.advance_sum, 0), 2)';
         $toPayExpr   = 'COALESCE(d.amount_to_pay, 0)';
-        $bookedExpr  = "ROUND(SUM(CASE WHEN l.side = 'debit' THEN l.signed_amount ELSE -l.signed_amount END), 2)";
-        $foreignExpr = "ROUND(SUM(CASE WHEN l.currency_code IS NOT NULL AND l.currency_code <> 'CZK'
-                                       THEN (CASE WHEN l.side = 'debit' THEN l.signed_amount_foreign ELSE -l.signed_amount_foreign END)
-                                       ELSE 0 END), 2)";
+        $bookedExpr  = 'ROUND(SUM(b.booked_part), 2)';
+        $foreignExpr = 'ROUND(SUM(b.foreign_part), 2)';
         // Proplacený dobropis se v `invoice_payments` neobjeví (PAYABLE_TYPES ho tam
         // nepustí) — zkratka „vrácené peníze ⇒ poměr 1" je proto jediný způsob, jak
         // ho uzavřít. Zrcadlí zkratku `d.status='paid'` z fetchOpenPurchases().
@@ -1414,22 +1510,14 @@ final class SaldoRepository
                    {$manualExpr} AS manual_settled,
                    {$bookedExpr} AS booked_signed,
                    {$foreignExpr} AS foreign_signed
-              FROM journal_entries e
-              JOIN journal_entry_lines l ON l.entry_id = e.id AND l.supplier_id = e.supplier_id
-              JOIN chart_of_accounts ca ON ca.id = l.account_id
-              LEFT JOIN journal_entries rev ON rev.id = e.reversed_by
-              JOIN invoices d      ON d.id = e.source_id AND d.supplier_id = e.supplier_id
+              FROM (" . self::bookedByDocSql('invoice', $supplierId, $accountId, $currentRead, $invoiceIds) . ") b
+              JOIN invoices d      ON d.id = b.doc_id AND d.supplier_id = {$supplierId}
               JOIN clients cl      ON cl.id = d.client_id
               JOIN currencies cur  ON cur.id = d.currency_id
               LEFT JOIN paid       ON paid.invoice_id = d.id
               LEFT JOIN advances adv ON adv.advance_id = d.parent_invoice_id
               LEFT JOIN man        ON man.doc_id = d.id
-             WHERE e.supplier_id = {$supplierId} AND e.source_type = 'invoice'
-               AND e.posted_at IS NOT NULL
-               AND e.entry_date <= ?
-               AND (e.reversed_by IS NULL OR rev.entry_date > ?)
-               AND (ca.id = {$accountId} OR ca.parent_id = {$accountId})
-               AND d.status <> 'draft'
+             WHERE d.status <> 'draft'
                AND (d.status <> 'cancelled' OR d.cancelled_at IS NULL OR DATE(d.cancelled_at) > ?)
                " . self::partnerSql($partnerId) . self::dueBeforeSql('d', $dueBefore) . $invoiceFilter . "
              GROUP BY d.id, doc_no, d.issue_date, d.due_date, d.status, d.invoice_type, d.paid_at, d.parent_invoice_id,
@@ -1485,6 +1573,54 @@ final class SaldoRepository
             $limit,
             ...($stream ? [$currentRead, $componentsOnly] : []),
         );
+    }
+
+    /**
+     * Předpis dokladů na účtu `$accountId` (vč. analytik) k asOf po dokladech: `doc_id`,
+     * `booked_part` (MD − D v Kč), `foreign_part` (totéž v cizí měně). Přímý zápis se
+     * zdrojem dokladu a zápisy, které doklad vlastní ve skupině zaúčtování
+     * ({@see DocumentPostingGroup::entriesSql}): převod z programu, který účtuje doklad po
+     * řádcích, nese zdroj jen na prvním zápisu a doklad pak vypadal otevřený o všechny
+     * ostatní řádky. Doklad může mít řádek v obou větvích, volající je sčítá v GROUP BY.
+     *
+     * Každá větev agreguje zvlášť a jde od svého indexu (idx_je_supplier_source, resp.
+     * uq_jdp_doc_entry), účet filtruje už uvnitř. Odvozená tabulka nad všemi zápisy dokladů
+     * vedla optimalizátor od dokladů k řádkům a u účtu bez dokladů ztrojnásobila čas.
+     * Čtyři placeholdery asOf (entry_date a storno v každé větvi).
+     *
+     * @param 'invoice'|'purchase_invoice' $docType
+     * @param list<int>|null $docIds omezení na doklady (rozpad jednoho dokladu)
+     */
+    private static function bookedByDocSql(string $docType, int $supplierId, int $accountId, bool $currentRead, ?array $docIds = null): string
+    {
+        $lock = $currentRead ? ' FOR UPDATE' : '';
+        $ids = $docIds === null ? null : implode(',', array_map('intval', $docIds));
+        $sums = "SUM(CASE WHEN l.side = 'debit' THEN l.signed_amount ELSE -l.signed_amount END) AS booked_part,
+                 SUM(CASE WHEN l.currency_code IS NOT NULL AND l.currency_code <> 'CZK'
+                          THEN (CASE WHEN l.side = 'debit' THEN l.signed_amount_foreign ELSE -l.signed_amount_foreign END)
+                          ELSE 0 END) AS foreign_part";
+        $lines = "JOIN journal_entry_lines l ON l.entry_id = e.id AND l.supplier_id = e.supplier_id
+                  JOIN chart_of_accounts ca ON ca.id = l.account_id
+                  LEFT JOIN journal_entries rev ON rev.id = e.reversed_by";
+        $live = "AND e.posted_at IS NOT NULL AND e.entry_date <= ?
+                   AND (e.reversed_by IS NULL OR rev.entry_date > ?)
+                   AND (ca.id = {$accountId} OR ca.parent_id = {$accountId})";
+        return "(SELECT e.source_id AS doc_id, {$sums}
+                   FROM journal_entries e
+                   {$lines}
+                  WHERE e.supplier_id = {$supplierId} AND e.source_type = '{$docType}'
+                    " . ($ids === null ? '' : "AND e.source_id IN ({$ids})") . "
+                    {$live}
+                  GROUP BY e.source_id{$lock})
+                UNION ALL
+                (SELECT jdp.doc_id, {$sums}
+                   FROM journal_document_postings jdp
+                   JOIN journal_entries e ON e.supplier_id = jdp.supplier_id AND e.id = jdp.entry_id
+                   {$lines}
+                  WHERE jdp.supplier_id = {$supplierId} AND jdp.doc_type = '{$docType}' AND e.source_id IS NULL
+                    " . ($ids === null ? '' : "AND jdp.doc_id IN ({$ids})") . "
+                    {$live}
+                  GROUP BY jdp.doc_id{$lock})";
     }
 
     /**
@@ -1635,10 +1771,8 @@ final class SaldoRepository
         $afterExpr      = 'COALESCE(m.matched_after, 0)';
         $advanceExpr    = 'ROUND(COALESCE(adv.advance_sum, 0), 2)';
         $toPayExpr      = 'COALESCE(d.amount_to_pay, 0)';
-        $bookedExpr     = "ROUND(SUM(CASE WHEN l.side = 'debit' THEN l.signed_amount ELSE -l.signed_amount END), 2)";
-        $foreignExpr    = "ROUND(SUM(CASE WHEN l.currency_code IS NOT NULL AND l.currency_code <> 'CZK'
-                                          THEN (CASE WHEN l.side = 'debit' THEN l.signed_amount_foreign ELSE -l.signed_amount_foreign END)
-                                          ELSE 0 END), 2)";
+        $bookedExpr     = 'ROUND(SUM(b.booked_part), 2)';
+        $foreignExpr    = 'ROUND(SUM(b.foreign_part), 2)';
 
         // Zkratka „doklad je k asOf plně uhrazený podle svého stavu" — SQL protějšek
         // $paidByStatusAsOf níže; bez ní by se do PHP tahaly i doklady, které sestava
@@ -1718,23 +1852,15 @@ final class SaldoRepository
                    {$manualExpr} AS manual_settled,
                    {$bookedExpr} AS booked_signed,
                    {$foreignExpr} AS foreign_signed
-              FROM journal_entries e
-              JOIN journal_entry_lines l ON l.entry_id = e.id AND l.supplier_id = e.supplier_id
-              JOIN chart_of_accounts ca ON ca.id = l.account_id
-              LEFT JOIN journal_entries rev ON rev.id = e.reversed_by
-              JOIN purchase_invoices d ON d.id = e.source_id AND d.supplier_id = e.supplier_id
+              FROM (" . self::bookedByDocSql('purchase_invoice', $supplierId, $accountId, $currentRead, $documentId === null ? null : [$documentId]) . ") b
+              JOIN purchase_invoices d ON d.id = b.doc_id AND d.supplier_id = {$supplierId}
               JOIN clients cl          ON cl.id = d.vendor_id
               JOIN currencies cur      ON cur.id = d.currency_id
               LEFT JOIN matches m      ON m.doc_id = d.id
               LEFT JOIN cash ch        ON ch.doc_id = d.id
               LEFT JOIN advances adv   ON adv.advance_id = d.advance_purchase_invoice_id
               LEFT JOIN man            ON man.doc_id = d.id
-             WHERE e.supplier_id = {$supplierId} AND e.source_type = 'purchase_invoice'
-               AND e.posted_at IS NOT NULL
-               AND e.entry_date <= ?
-               AND (e.reversed_by IS NULL OR rev.entry_date > ?)
-               AND (ca.id = {$accountId} OR ca.parent_id = {$accountId})
-               AND d.status <> 'draft'
+             WHERE d.status <> 'draft'
                AND (d.status <> 'cancelled' OR d.cancelled_at IS NULL OR DATE(d.cancelled_at) > ?)
                " . self::partnerSql($partnerId) . self::dueBeforeSql('d', $dueBefore) . $documentFilter . "
              GROUP BY d.id, d.supplier_id, doc_no, d.issue_date, d.due_date, d.status, d.paid_at,

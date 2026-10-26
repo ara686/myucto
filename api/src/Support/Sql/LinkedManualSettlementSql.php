@@ -18,6 +18,10 @@ namespace MyInvoice\Support\Sql;
  * a přiznat ji celou každému dokladu by nesoulad schovalo. Doklad pak zůstane
  * v kontrole i v saldu k ručnímu posouzení.
  *
+ * Zápis, který doklad vlastní ve skupině zaúčtování (`journal_document_postings`, doklad
+ * zaúčtovaný po řádcích víc zápisy), vyrovnáním není: je to další část předpisu.
+ * Agregace ho proto vynechává a předpis z něj skládají volající.
+ *
  * Volají ji `ClosingRepository` (K3) a `SaldoRepository` (otevřené položky).
  */
 final class LinkedManualSettlementSql
@@ -86,7 +90,16 @@ final class LinkedManualSettlementSql
                        ({$unique}) AS allocation_complete"
             : "dl.doc_id,
                        SUM(CASE WHEN l.side = '{$settleSide}' THEN l.signed_amount ELSE -l.signed_amount END) AS settled";
+        // Zápis ze skupiny zaúčtování téhož dokladu je jeho předpis, ne vyrovnání: volající
+        // ho berou do předpisu přes DocumentPostingGroup::entriesSql(). Členové pro
+        // kurzovou evidenci (members) zůstávají beze změny.
+        $ownPosting = "NOT EXISTS (
+                       SELECT 1 FROM journal_document_postings own
+                        WHERE own.supplier_id = dl.supplier_id AND own.entry_id = dl.entry_id
+                          AND own.doc_type = dl.doc_type AND own.doc_id = dl.doc_id{$lock}
+                   )";
         $tail = $members ? 'ORDER BY dl.doc_id, e.id, l.line_no, l.id' : "AND {$unique}
+                   AND {$ownPosting}
                  GROUP BY dl.doc_id";
         $effective = $lifecycle ? '' : " AND e.entry_date <= {$asOfExpr}
                    AND (e.reversed_by IS NULL OR rev.entry_date > {$asOfExpr})";
