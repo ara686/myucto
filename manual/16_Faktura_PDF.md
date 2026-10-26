@@ -344,7 +344,8 @@ Vygenerované PDF obsahuje:
    a **Cena/j po slevě**, pokud má faktura aspoň jednu položku se slevou z ceníkové ceny.
    Položka bez ceníkové ceny nebo s přirážkou ukáže jen výslednou cenu. U faktury s cenami
    včetně DPH jsou obě ceny bez DPH. Ceníková cena nemění částky dokladu ani export ISDOC
-   a POHODA.
+   a POHODA. Slevu lze zadat i přímo u řádku v editoru, viz
+   [§ 15.9.3](15_Faktura_editor.md#1593-polozky).
 7. **Sumář** - mezisoučet, sleva, rozpis DPH, **CELKEM**.
 8. **Přepočet do CZK** (EUR a cizí měna) - u českého odběratele kurz ČNB a tabulka
    základů a DPH v CZK; u zahraničního odběratele pouze česká DPH v CZK, pokud na

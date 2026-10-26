@@ -22383,7 +22383,9 @@
     "line_discount": {
       "hint_discount": "Ceník {price} · sleva {pct} %",
       "hint_markup": "Ceník {price} · přirážka {pct} %",
-      "title": "Ceníková cena karty před slevou. Ruční změna ceny ji zachová a sleva se přepočítá. Na PDF ji rozepíše volba v Nastavení."
+      "column": "Sleva %",
+      "input_hint": "Sleva z ceníkové ceny řádku, 0 až 100 %. Přepočte cenu za jednotku. Řádek bez ceníkové ceny ji převezme z aktuální ceny.",
+      "title": "Ceníková cena před slevou. Ruční změna ceny ji zachová a sleva se přepočítá. Na PDF ji rozepíše volba v Nastavení."
     },
     "price_list_requires_context": "Před vložením z ceníku vyberte zákazníka a měnu dokladu.",
     "asset_sale": {
@@ -24868,7 +24870,7 @@
     "invoice_pdf_show_issued_by": "Tisknout na faktuře, kdo ji vystavil",
     "invoice_pdf_show_issued_by_hint": "Na PDF přibude řádek „Vystavil“ se jménem uživatele, který doklad vystavil. Starší doklady bez tohoto údaje ukážou autora dokladu. U už vystavených dokladů se řádek objeví až po přegenerování PDF.",
     "invoice_pdf_line_discount": "Na PDF faktury rozepsat slevu z ceníkové ceny",
-    "invoice_pdf_line_discount_hint": "U položky se slevou vytiskne sloupce Cena/j před slevou, Sleva a Cena/j po slevě. Jen když má faktura aspoň jednu takovou položku, přirážka se nerozepisuje. Ceníkovou cenu doplní nacenění skladové karty.",
+    "invoice_pdf_line_discount_hint": "U položky se slevou vytiskne sloupce Cena/j před slevou, Sleva a Cena/j po slevě. Jen když má faktura aspoň jednu takovou položku, přirážka se nerozepisuje. Ceníkovou cenu doplní nacenění skladové karty. Editor faktury pak u položky nabídne pole Sleva %.",
     "default_hourly_rate": "Výchozí hodinová sazba",
     "auto_send_reminders": "Posílat automatické upomínky",
     "auto_send_reminders_hint": "Když je vypnuto, cron nebude posílat automatické upomínky pro tohoto dodavatele. Ruční odeslání (jednotlivé i hromadné) funguje vždy.",

@@ -93,7 +93,7 @@ final class MeAction
             $cacheKey = 'me:suppliers:' . ($allowed === [] ? 'all' : implode(',', $allowed))
                 . ':' . ($ossSelect === 'oss_enabled' ? '1' : '0') . ':client-ai'
                 . ':' . ($simplifiedSelect === 'simplified_hide_customer_default' ? '1' : '0')
-                . ':legal-form';
+                . ':legal-form:line-discount';
             $suppliers = (array) $this->cache->remember(
                 EntityCache::GROUP_SUPPLIER,
                 $cacheKey,
@@ -106,6 +106,7 @@ final class MeAction
                                 is_vat_payer, is_identified, taxpayer_type,
                                 default_payment_due_days, default_payment_due_unit, default_prices_include_vat, default_rounding_mode,
                                 allow_refund_invoices, auto_send_reminders, payment_thanks_enabled, payment_thanks_default_checked,
+                                invoice_pdf_show_line_discount,
                                 ' . $simplifiedSelect . ',
                                 accounting_mode, accounting_enabled, payroll_enabled, stock_enabled, dimensions_enabled, fiscal_year_start_month, ' . $ossSelect . ',
                                 ai_provider, ai_data_region, ai_eu_residency_required, client_ai_extraction_enabled, '
@@ -182,6 +183,8 @@ final class MeAction
             // Zjednodušený doklad (migrace 2037), editor podle ní předvyplní „netisknout
             // odběratele" při zaškrtnutí zjednodušeného dokladu.
             $s['simplified_hide_customer_default'] = (bool) ($s['simplified_hide_customer_default'] ?? false);
+            // Rozpis slevy z ceníku na PDF (migrace 2035), editor podle ní ukáže u řádku pole „Sleva %".
+            $s['invoice_pdf_show_line_discount'] = (bool) ($s['invoice_pdf_show_line_discount'] ?? false);
             // Per-faktura přepínač upomínek v editoru se skryje, když dodavatel auto-upomínky nemá.
             $s['auto_send_reminders']      = (bool) ($s['auto_send_reminders'] ?? true);
             // Děkovný e-mail (issue #57) — UI v mark-paid modalu podle nich zobrazí checkbox.

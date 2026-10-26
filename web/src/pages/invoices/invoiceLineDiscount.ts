@@ -2,8 +2,8 @@
  * Ceníková cena a sleva řádku faktury (migrace 2035).
  *
  * `list_unit_price` je cena za jednotku před slevou ve stejném základu jako
- * `unit_price_without_vat`. Editor ji ukládá při nacenění skladové karty a ruční
- * změna ceny ji nechá být, procento se jen přepočítá. Rozhodné procento počítá
+ * `unit_price_without_vat`. Editor ji ukládá při nacenění skladové karty a při
+ * zadání slevy u řádku. Ruční změna ceny ji nechá být, procento se jen přepočítá. Rozhodné procento počítá
  * server (`LineDiscount::percent`), tady je jen náhled pro řádek editoru.
  */
 
@@ -32,4 +32,43 @@ export function quotedListPrice(line: { list_unit_price?: string | number | null
 /** Ceníková cena karty vybrané bez nacenění: standardní cena bez akce. */
 export function legacyListPrice(si: { sale_price_without_vat: string | null }): number | null {
   return quotedListPrice({ list_unit_price: si.sale_price_without_vat })
+}
+
+function roundTo(value: number, decimals: number): number {
+  const factor = 10 ** decimals
+  return Math.round((value + Number.EPSILON * Math.sign(value)) * factor) / factor
+}
+
+/** Hodnota pole „Sleva %" u řádku: kladná sleva z ceníku na dvě místa, jinak null (bez ceníku, shoda, přirážka). */
+export function lineDiscountInputValue(listPrice: number | string | null | undefined, unitPrice: number | string | null | undefined): number | null {
+  const pct = lineDiscountPct(listPrice, unitPrice)
+  return pct !== null && pct > 0 ? roundTo(pct, 2) : null
+}
+
+/** Zadaná sleva: 0 až 100 (prázdné = 0), desetinná čárka i tečka, na dvě místa. null = neplatný vstup. */
+export function parseLineDiscountInput(raw: string): number | null {
+  const text = raw.trim().replace(',', '.')
+  if (text === '') return 0
+  if (!/^\d+(\.\d+)?$/.test(text)) return null
+  const pct = roundTo(Number(text), 2)
+  return pct <= 100 ? pct : null
+}
+
+/**
+ * Sleva v % zadaná u řádku: cena = ceníková × (1 − sleva / 100), zaokrouhlená na
+ * `decimals` míst jako ruční cena řádku. Bez ceníkové ceny se jí stane aktuální cena
+ * řádku. null = nic se nemění (bez ceníku a bez kladné ceny, nebo nulová sleva bez ceníku).
+ */
+export function applyLineDiscount(
+  row: { list_unit_price?: number | string | null; unit_price_without_vat: number | string | null | undefined },
+  pct: number,
+  decimals = 2,
+): { list_unit_price: number; unit_price_without_vat: number } | null {
+  let list = toNumber(row.list_unit_price)
+  if (list === null || list <= 0) {
+    const current = toNumber(row.unit_price_without_vat)
+    if (current === null || current <= 0 || pct === 0) return null
+    list = current
+  }
+  return { list_unit_price: list, unit_price_without_vat: roundTo(list * (100 - pct) / 100, decimals) }
 }

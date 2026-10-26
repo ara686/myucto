@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { legacyListPrice, lineDiscountPct, quotedListPrice } from '@/pages/invoices/invoiceLineDiscount'
+import { applyLineDiscount, legacyListPrice, lineDiscountInputValue, lineDiscountPct, parseLineDiscountInput, quotedListPrice } from '@/pages/invoices/invoiceLineDiscount'
 
 describe('ceníková cena a sleva řádku faktury', () => {
   it('spočítá slevu stejně jako server (tři desetinná místa, půl nahoru)', () => {
@@ -25,5 +25,41 @@ describe('ceníková cena a sleva řádku faktury', () => {
     expect(quotedListPrice({})).toBeNull()
     expect(legacyListPrice({ sale_price_without_vat: '1000.00' })).toBe(1000)
     expect(legacyListPrice({ sale_price_without_vat: null })).toBeNull()
+  })
+})
+
+describe('sleva v % zadaná u řádku', () => {
+  it('cena po slevě z ceníkové ceny, zaokrouhlená jako cena řádku', () => {
+    expect(applyLineDiscount({ list_unit_price: 1000, unit_price_without_vat: 1000 }, 10)).toEqual({ list_unit_price: 1000, unit_price_without_vat: 900 })
+    expect(applyLineDiscount({ list_unit_price: '999.00', unit_price_without_vat: 999 }, 12.5)).toEqual({ list_unit_price: 999, unit_price_without_vat: 874.13 })
+    expect(applyLineDiscount({ list_unit_price: 1000, unit_price_without_vat: 900 }, 0)).toEqual({ list_unit_price: 1000, unit_price_without_vat: 1000 })
+    expect(applyLineDiscount({ list_unit_price: 1000, unit_price_without_vat: 900 }, 100)).toEqual({ list_unit_price: 1000, unit_price_without_vat: 0 })
+    expect(applyLineDiscount({ list_unit_price: 1, unit_price_without_vat: 1 }, 33.33, 6)).toEqual({ list_unit_price: 1, unit_price_without_vat: 0.6667 })
+  })
+
+  it('bez ceníkové ceny se jí stane aktuální cena řádku', () => {
+    expect(applyLineDiscount({ list_unit_price: null, unit_price_without_vat: '500' }, 10)).toEqual({ list_unit_price: 500, unit_price_without_vat: 450 })
+    expect(applyLineDiscount({ unit_price_without_vat: 500 }, 0)).toBeNull()
+    expect(applyLineDiscount({ list_unit_price: null, unit_price_without_vat: 0 }, 10)).toBeNull()
+    expect(applyLineDiscount({ list_unit_price: null, unit_price_without_vat: -100 }, 10)).toBeNull()
+  })
+
+  it('vstup 0 až 100, desetinná čárka, víc míst se zaokrouhlí na dvě', () => {
+    expect(parseLineDiscountInput('10')).toBe(10)
+    expect(parseLineDiscountInput(' 12,5 ')).toBe(12.5)
+    expect(parseLineDiscountInput('12.345')).toBe(12.35)
+    expect(parseLineDiscountInput('')).toBe(0)
+    expect(parseLineDiscountInput('100')).toBe(100)
+    expect(parseLineDiscountInput('100.01')).toBeNull()
+    expect(parseLineDiscountInput('-5')).toBeNull()
+    expect(parseLineDiscountInput('abc')).toBeNull()
+  })
+
+  it('pole ukáže slevu z ceníku na dvě místa, přirážku a shodu prázdné', () => {
+    expect(lineDiscountInputValue(1000, 900)).toBe(10)
+    expect(lineDiscountInputValue(300, 100)).toBe(66.67)
+    expect(lineDiscountInputValue(1000, 1050)).toBeNull()
+    expect(lineDiscountInputValue(1000, 1000)).toBeNull()
+    expect(lineDiscountInputValue(null, 1000)).toBeNull()
   })
 })

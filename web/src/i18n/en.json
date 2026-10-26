@@ -22383,7 +22383,9 @@
     "line_discount": {
       "hint_discount": "List {price} · discount {pct} %",
       "hint_markup": "List {price} · markup {pct} %",
-      "title": "List price of the stock card before discount. A manual price change keeps it and the discount is recalculated. The PDF itemises it when the option in Settings is on."
+      "column": "Disc. %",
+      "input_hint": "Discount from the list price of the line, 0 to 100 %. Recalculates the unit price. A line without a list price takes it from the current price.",
+      "title": "List price before discount. A manual price change keeps it and the discount is recalculated. The PDF itemises it when the option in Settings is on."
     },
     "price_list_requires_context": "Select a customer and document currency before inserting a price list item.",
     "asset_sale": {
@@ -24868,7 +24870,7 @@
     "invoice_pdf_show_issued_by": "Print who issued the invoice",
     "invoice_pdf_show_issued_by_hint": "The PDF gets an “Issued by” line with the name of the user who issued the document. Older documents without this record show the document's author. On already issued documents the line appears only after their PDF is regenerated.",
     "invoice_pdf_line_discount": "Show the discount from the list price on the invoice PDF",
-    "invoice_pdf_line_discount_hint": "Items with a discount get the columns Unit price before discount, Discount and Unit price after discount. Only when the invoice has at least one such item; a markup is not itemised. The list price comes from pricing the stock card.",
+    "invoice_pdf_line_discount_hint": "Items with a discount get the columns Unit price before discount, Discount and Unit price after discount. Only when the invoice has at least one such item; a markup is not itemised. The list price comes from pricing the stock card. The invoice editor then offers a Discount % field on each item.",
     "default_hourly_rate": "Default hourly rate",
     "auto_send_reminders": "Send automatic reminders",
     "auto_send_reminders_hint": "When off, the cron will not send automatic reminders for this supplier. Manual send (single + bulk) always works.",

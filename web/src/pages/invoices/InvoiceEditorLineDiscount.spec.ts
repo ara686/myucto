@@ -34,12 +34,14 @@ type Vm = {
   quoteStockRows: (rows: Row[], mode: 'select' | 'unit_change' | 'context') => Promise<boolean>
   onStockSelect: (rowIndex: number, itemId: number | null) => void
   lineDiscountHint: (row: Row) => string | null
+  setLineDiscount: (row: Row, raw: string) => void
+  loaded: boolean
 }
 
-async function mountEditor() {
+async function mountEditor(showLineDiscount = false) {
   const pinia = createPinia()
   setActivePinia(pinia)
-  useSupplierStore().setAvailable([{ id: 1, is_vat_payer: true, stock_enabled: true } as SupplierBrief], 1, true)
+  useSupplierStore().setAvailable([{ id: 1, is_vat_payer: true, stock_enabled: true, invoice_pdf_show_line_discount: showLineDiscount } as SupplierBrief], 1, true)
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/invoices/new', component: InvoiceEditor }] })
   await router.push('/invoices/new')
   await router.isReady()
@@ -80,6 +82,41 @@ describe('InvoiceEditor: ceníková cena řádku', () => {
     vm.form.items[0].list_unit_price = 1000
     vm.onStockSelect(0, null)
     expect(vm.form.items[0].list_unit_price).toBeNull()
+    wrapper.unmount()
+  })
+})
+
+describe('InvoiceEditor: sleva v % zadaná u řádku', () => {
+  it('bez volby firmy se pole neukáže', async () => {
+    const { wrapper, vm } = await mountEditor(false)
+    vm.loaded = true
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('table').exists()).toBe(true)
+    expect(wrapper.find('[data-test="line-discount-input"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('sleva přepočte cenu z ceníkové, ruční cena přepočte zobrazenou slevu', async () => {
+    const { wrapper, vm } = await mountEditor(true)
+    vm.loaded = true
+    const row = vm.form.items[0]
+    const input = () => wrapper.find('[data-test="line-discount-input"]').element as HTMLInputElement
+
+    // Řádek bez ceníkové ceny: aktuální cena se stane ceníkovou.
+    vm.setLineDiscount(row, '10')
+    expect(row.list_unit_price).toBe(1000)
+    expect(row.unit_price_without_vat).toBe(900)
+    await wrapper.vm.$nextTick()
+    expect(input().value).toBe('10')
+
+    row.unit_price_without_vat = 875
+    await wrapper.vm.$nextTick()
+    expect(input().value).toBe('12,5')
+    expect(row.list_unit_price).toBe(1000)
+
+    // Neplatná sleva řádek nemění.
+    vm.setLineDiscount(row, '150')
+    expect(row.unit_price_without_vat).toBe(875)
     wrapper.unmount()
   })
 })

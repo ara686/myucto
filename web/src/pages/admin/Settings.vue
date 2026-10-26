@@ -49,6 +49,7 @@ function syncSupplierStore(s: Supplier) {
     default_rounding_mode: s.default_rounding_mode ?? 'auto',
     allow_refund_invoices: s.allow_refund_invoices ?? false,
     simplified_hide_customer_default: s.simplified_hide_customer_default ?? false,
+    invoice_pdf_show_line_discount: s.invoice_pdf_show_line_discount ?? false,
     default_note_below_items_enabled: s.default_note_below_items_enabled ?? false,
     default_note_below_items_cs: s.default_note_below_items_cs ?? null,
     default_note_below_items_en: s.default_note_below_items_en ?? null,

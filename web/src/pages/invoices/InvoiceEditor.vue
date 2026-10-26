@@ -43,7 +43,7 @@ import { defaultNoteFor, noteAfterLanguageChange } from '@/pages/invoices/invoic
 import StockDescriptionField from '@/components/ui/StockDescriptionField.vue'
 import InvoiceTrackingPicker from './InvoiceTrackingPicker.vue'
 import { isReturnRow, preselectFromSearch, takenByOtherRows, trackingChoices, trackingKey, type TrackingChoice, type TrackingMode, type TrackingUnit } from './invoiceTracking'
-import { legacyListPrice, lineDiscountPct, quotedListPrice } from './invoiceLineDiscount'
+import { applyLineDiscount, legacyListPrice, lineDiscountInputValue, lineDiscountPct, parseLineDiscountInput, quotedListPrice } from './invoiceLineDiscount'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import ClientFormModal from '@/components/modals/ClientFormModal.vue'
 import ProjectFormModal from '@/components/modals/ProjectFormModal.vue'
@@ -767,6 +767,30 @@ function lineDiscountHint(item: InvoiceItem): string | null {
     pct: formatNumber(Math.abs(pct), { maximumFractionDigits: 2 }),
   }
   return pct > 0 ? t('invoice.line_discount.hint_discount', params) : t('invoice.line_discount.hint_markup', params)
+}
+
+// Sleva v % zadávaná u řádku. Jen s volbou firmy „rozepsat slevu na PDF", bez ní se editor nemění.
+const showLineDiscountInput = computed(() => supplierStore.currentSupplier?.invoice_pdf_show_line_discount === true)
+const lineDiscountCols = computed(() => (showLineDiscountInput.value ? 1 : 0))
+
+function lineDiscountInput(item: InvoiceItem): string {
+  const pct = lineDiscountInputValue(item.list_unit_price, item.unit_price_without_vat)
+  return pct === null ? '' : formatNumber(pct, { maximumFractionDigits: 2 })
+}
+
+/** Zadaná sleva přecení řádek z ceníkové ceny; neplatný vstup řádek nemění. */
+function setLineDiscount(item: InvoiceItem, raw: string): void {
+  const pct = parseLineDiscountInput(raw)
+  const next = pct === null ? null : applyLineDiscount(item, pct, isTimeItem(item) ? 6 : 2)
+  if (!next) return
+  item.list_unit_price = next.list_unit_price
+  item.unit_price_without_vat = next.unit_price_without_vat
+}
+
+function onLineDiscountChange(item: InvoiceItem, event: Event): void {
+  const input = event.target as HTMLInputElement
+  setLineDiscount(item, input.value)
+  input.value = lineDiscountInput(item)
 }
 
 /** Badge zdroje ceny, jen dokud je v řádku automaticky doplněná cena. */
@@ -3098,6 +3122,7 @@ useWindowTitle(
                    vidět vybraná jednotka. -->
               <th class="px-3 py-2 text-left font-medium w-20">{{ t('invoice.items_table.unit') }}</th>
               <th class="px-3 py-2 text-right font-medium w-32">{{ unitPriceHeaderLabel }}</th>
+              <th v-if="showLineDiscountInput" class="px-3 py-2 text-right font-medium w-20">{{ t('invoice.line_discount.column') }}</th>
               <th v-if="supplierIsVatPayer" class="px-3 py-2 text-center font-medium w-24">{{ t('invoice.totals.vat') }}</th>
               <th class="px-3 py-2 text-right font-medium w-32">{{ supplierIsVatPayer ? t('invoice.items_table.total_incl_vat') : nonPayerTotalLabel }}</th>
               <th class="px-3 py-2" :class="ossAvailable ? 'w-24' : 'w-12'"></th>
@@ -3111,7 +3136,7 @@ useWindowTitle(
                 <button type="button" @click="moveUp(i)" :disabled="i === 0" class="block w-5 h-4 hover:text-neutral-700 disabled:opacity-30">▲</button>
                 <button type="button" @click="moveDown(i)" :disabled="i === form.items.length - 1" class="block w-5 h-4 hover:text-neutral-700 disabled:opacity-30">▼</button>
               </td>
-              <td :colspan="supplierIsVatPayer ? 6 : 5" class="px-3 py-2">
+              <td :colspan="(supplierIsVatPayer ? 6 : 5) + lineDiscountCols" class="px-3 py-2">
                 <textarea v-model="item.description" rows="1" data-row-input="inv-text"
                   :placeholder="t('invoice.text_row_placeholder')" :title="t('invoice.text_row_hint')" :aria-label="t('invoice.text_row')"
                   class="w-full min-h-9 px-2 py-1.5 border border-neutral-300 rounded text-sm font-medium bg-surface resize-y" />
@@ -3218,6 +3243,11 @@ useWindowTitle(
                 <p v-if="lineDiscountHint(item)" data-test="line-discount-hint" :title="t('invoice.line_discount.title')"
                   class="mt-1 text-xs text-neutral-500 text-right">{{ lineDiscountHint(item) }}</p>
               </td>
+              <td v-if="showLineDiscountInput" class="px-3 py-2">
+                <input :value="lineDiscountInput(item)" @change="onLineDiscountChange(item, $event)" type="text" inputmode="decimal"
+                  placeholder="0" data-test="line-discount-input" :aria-label="t('invoice.line_discount.column')" :title="t('invoice.line_discount.input_hint')"
+                  class="w-full h-9 px-2 border border-neutral-300 rounded text-right font-mono text-sm" />
+              </td>
               <td v-if="supplierIsVatPayer" class="px-3 py-2">
                 <select v-model.number="item.vat_rate_id" class="w-full h-9 px-1 border border-neutral-300 rounded text-sm bg-surface">
                   <option v-for="r in vatRatesForItem(item)" :key="r.id" :value="r.id">{{ vatRateLabel(r) }}</option>
@@ -3242,7 +3272,7 @@ useWindowTitle(
             </tr>
             <tr v-if="assetSaleMode && assetSaleAvailable && !isTextItem(item)" :class="['border-t-0!', itemHasBothNegative(item) ? 'bg-danger-50' : '']">
               <td></td>
-              <td :colspan="supplierIsVatPayer ? 7 : 6" class="px-3 pb-2">
+              <td :colspan="(supplierIsVatPayer ? 7 : 6) + lineDiscountCols" class="px-3 pb-2">
                 <div class="flex items-center gap-2">
                   <span class="shrink-0 text-xs text-neutral-500">{{ t('invoice.asset_sale.card') }}</span>
                   <div class="w-96 max-w-full">
@@ -3267,7 +3297,7 @@ useWindowTitle(
             </tr>
             <tr v-if="docDims.enabled.value && !isTextItem(item) && docDims.isItemOpen(item)" :class="['border-t-0!', itemHasBothNegative(item) ? 'bg-danger-50' : '']">
               <td></td>
-              <td :colspan="supplierIsVatPayer ? 7 : 6" class="px-3 pb-2">
+              <td :colspan="(supplierIsVatPayer ? 7 : 6) + lineDiscountCols" class="px-3 pb-2">
                 <div class="flex items-center gap-2">
                   <span class="shrink-0 text-xs text-neutral-500">{{ t('dimensions.items_title') }}</span>
                   <DimensionFields class="flex-1 flex-nowrap!" compact teleport
@@ -3279,7 +3309,7 @@ useWindowTitle(
             </tr>
             <tr v-if="item.oss_applicable && !isTextItem(item)" :class="['border-t-0!', itemHasBothNegative(item) ? 'bg-danger-50' : '']">
               <td></td>
-              <td :colspan="supplierIsVatPayer ? 7 : 6" class="px-3 pb-2">
+              <td :colspan="(supplierIsVatPayer ? 7 : 6) + lineDiscountCols" class="px-3 pb-2">
                 <div class="flex flex-nowrap items-center gap-1.5 overflow-x-auto text-xs">
                   <!-- teleport: nabídka by se v `overflow-x-auto` řádku ořízla (stejný důvod jako u prodeje majetku výše) -->
                   <div class="w-44 shrink-0" :title="t('invoice.oss.country')">
@@ -3332,7 +3362,7 @@ useWindowTitle(
               </td>
             </tr>
             </template>
-            <EmptyState v-if="form.items.length === 0" :colspan="supplierIsVatPayer ? 8 : 7" dense icon="doc"
+            <EmptyState v-if="form.items.length === 0" :colspan="(supplierIsVatPayer ? 8 : 7) + lineDiscountCols" dense icon="doc"
               :title="t('invoice.no_items')" :cta="t('invoice.add_first')" @action="addItem" />
           </tbody>
         </table>
@@ -3520,13 +3550,19 @@ useWindowTitle(
                 </select>
               </div>
             </div>
-            <div :class="supplierIsVatPayer ? 'grid grid-cols-2 gap-2' : ''">
+            <div :class="supplierIsVatPayer || showLineDiscountInput ? 'grid grid-cols-2 gap-2' : ''">
               <div>
                 <label class="block text-xs font-medium text-neutral-600 mb-1">{{ unitPriceHeaderLabel }}</label>
                 <input v-model="item.unit_price_without_vat" v-math="isTimeItem(item) ? 6 : 2" type="text" inputmode="decimal"
                   :class="['w-full h-10 px-3 border rounded text-right font-mono text-sm', itemHasBothNegative(item) ? 'border-danger-400' : 'border-neutral-300']" />
                 <p v-if="lineDiscountHint(item)" data-test="line-discount-hint" :title="t('invoice.line_discount.title')"
                   class="mt-1 text-xs text-neutral-500 text-right">{{ lineDiscountHint(item) }}</p>
+              </div>
+              <div v-if="showLineDiscountInput">
+                <label class="block text-xs font-medium text-neutral-600 mb-1">{{ t('invoice.line_discount.column') }}</label>
+                <input :value="lineDiscountInput(item)" @change="onLineDiscountChange(item, $event)" type="text" inputmode="decimal"
+                  placeholder="0" data-test="line-discount-input" :title="t('invoice.line_discount.input_hint')"
+                  class="w-full h-10 px-3 border border-neutral-300 rounded text-right font-mono text-sm" />
               </div>
               <div v-if="supplierIsVatPayer">
                 <label class="block text-xs font-medium text-neutral-600 mb-1">{{ t('invoice.totals.vat') }}</label>
