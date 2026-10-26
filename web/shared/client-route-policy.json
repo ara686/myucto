@@ -2,6 +2,7 @@
   "routes": [
     { "name": "home", "path_pattern": "^/$", "kind": "client_redirect", "redirect_to": "/portal" },
 
+    { "name": "portal-mcp", "path_pattern": "^/portal/mcp/?$", "kind": "self_service" },
     { "name": "portal", "path_pattern": "^/portal/?$", "kind": "permission", "permission": "profile", "access": "read" },
     { "name": "portal-document-requests", "path_pattern": "^/portal/document-requests/?$", "kind": "permission", "permission": "documents.submit", "access": "read" },
     { "name": "portal-purchase-invoice-submissions", "path_pattern": "^/portal/purchase-invoice-submissions/?$", "kind": "permission", "permission": "documents.submit", "access": "read" },
@@ -10,6 +11,8 @@
     { "name": "admin-codebooks", "path_pattern": "^/admin/codebooks/?$", "kind": "permission", "permission": "settings.company", "access": "read" },
     { "name": "admin-approvals", "path_pattern": "^/admin/approvals/?$", "kind": "permission", "permission": "invoices.approval", "access": "read" },
     { "name": "admin-support", "path_pattern": "^/admin/support/?$", "kind": "permission", "permission": "profile", "access": "read" },
+
+    { "name": "reports-submissions", "path_pattern": "^/reports/submissions/?$", "kind": "permission", "permission": "reports.submissions", "access": "read" },
 
     { "name": "bank-statements", "path_pattern": "^/bank/?$", "kind": "permission", "permission": "bank", "access": "read" },
     { "name": "bank-detail", "path_pattern": "^/bank/[0-9]+/?$", "kind": "permission", "permission": "bank", "access": "read" },

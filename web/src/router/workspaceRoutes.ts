@@ -5,6 +5,7 @@ export function createWorkspaceRoutes(): RouteRecordRaw[] {
   return [
       { path: '',                       name: 'home',           component: () => import('@/pages/Dashboard.vue') },
       // Klientský portál (Epic F6) — domov role client, náhled pro všechny role.
+      { path: 'portal/mcp', name: 'portal-mcp', component: () => import('@/pages/portal/ClientMcp.vue') },
       { path: 'portal',                 name: 'portal',         component: () => import('@/pages/portal/PortalDashboard.vue'), meta: {  } },
       // Vyžádání chybějících dokladů (Fáze F, audit 2026-07) — klientský portál.
       { path: 'portal/document-requests', name: 'portal-document-requests', component: () => import('@/pages/portal/DocumentRequests.vue'), meta: {  } },

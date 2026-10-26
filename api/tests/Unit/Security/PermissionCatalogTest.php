@@ -286,4 +286,13 @@ final class PermissionCatalogTest extends TestCase
         self::assertFalse(\MyInvoice\Security\RequestAuthorization::canChangeFiledVatPeriod($request($accountant)),
             'Podané období DPH mění jen správce.');
     }
+    public function testClientMcpPermissionIsOptInAndDoesNotElevateLegacyAccountant(): void
+    {
+        $catalog = new \MyInvoice\Security\PermissionCatalog();
+        self::assertArrayNotHasKey('profile.mcp', $catalog->legacyPreset('client'));
+        self::assertArrayNotHasKey('profile.mcp', $catalog->legacyPreset('accountant'));
+        self::assertSame(1, $catalog->legacyPreset('accountant')['profile.tokens']);
+        self::assertTrue($catalog->allowsRoleType('profile.mcp', 'client'));
+    }
+
 }

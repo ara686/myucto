@@ -6,7 +6,7 @@ namespace MyInvoice\Security;
 
 final class PermissionCatalog
 {
-    public const VERSION = '2026-10-eet-v1';
+    public const VERSION = '2026-10-eet-client-tax-submissions-mcp-v1';
 
     /** @var list<string> */
     private const GROUPS = [
@@ -116,7 +116,9 @@ final class PermissionCatalog
             ['tax_evidence.export', 'tax_evidence', 'Exportovat daňovou evidenci', $staffOnly],
             ['reports', 'reports', 'Daně a výkazy', $staffOnly],
             ['reports.finalize', 'reports', 'Finalizovat výkaz', $staffOnly],
-            ['reports.submit', 'reports', 'Elektronicky podat', $staffOnly],
+            ['reports.submissions', 'reports', 'Připravená podání DPH, KH a SH', $clientOnly],
+            ['reports.submit', 'reports', 'Elektronicky podat', $both],
+            ['reports.submissions.manage', 'reports', 'Spravovat nastavení daňových podání', $staffOnly],
             ['reports.reopen', 'reports', 'Znovu otevřít výkaz', $staffOnly],
             ['reports.export', 'reports', 'Exportovat výkaz', $staffOnly],
             ['payroll', 'payroll', 'Mzdy', $staffOnly],
@@ -189,6 +191,7 @@ final class PermissionCatalog
             ['utilities.archives', 'utilities', 'ZIP archivy', $staffOnly],
             ['profile', 'profile', 'Osobní profil', $both],
             ['profile.tokens', 'profile', 'API tokeny', $staffOnly],
+            ['profile.mcp', 'profile', 'Připojit AI asistenta (MCP)', $both],
         ];
 
         $definitions = [];
@@ -230,6 +233,8 @@ final class PermissionCatalog
     {
         if ($systemKey === 'accountant') {
             $none = [
+                // MCP zápis je opt-in; účetní zachová dosavadní čtecí přístup přes profile.tokens.
+                'profile.mcp',
                 // Neměnný originál je auditní stopa; trvalé vyřazení je zásah pro správce,
                 // který si ho může kterékoli roli přidělit v editoru rolí.
                 'documents.inbox.delete',

@@ -297,6 +297,12 @@ final class ApiScopeMiddleware implements MiddlewareInterface
         // RequestPath) — obojí musí platit přesně tam, kam router request doručí.
         $path   = RequestPath::normalize($request->getUri()->getPath());
         $method = strtoupper($request->getMethod());
+        $token = (array) $request->getAttribute(AuthMiddleware::ATTR_API_TOKEN, []);
+        if (!empty($token['mcp_client_surface']) && $path !== '/mcp'
+            && !(new \MyInvoice\Service\Tenant\ClientRoutePolicy())->allowsApiRequest($method, $path)) {
+            return Json::error($this->responseFactory->createResponse(403),
+                'token_endpoint_forbidden', 'Endpoint není součástí klientského MCP.', 403);
+        }
         if ($path === '/mcp') {
             return $handler->handle($request);
         }
