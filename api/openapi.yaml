@@ -47690,7 +47690,7 @@ components:
         pdf_logo_show_name: { type: boolean, description: "Zobrazit vedle loga v PDF i název dodavatele" }
         invoice_pdf_show_issued_by: { type: boolean, default: false, description: "Tisknout na PDF faktury řádek „Vystavil\" se jménem uživatele, který doklad vystavil (migrace 2032)." }
         invoice_pdf_monochrome: { type: boolean, default: false, description: "Úsporná černobílá faktura: PDF faktury a výkazu bez plných ploch, černý text, tenké čáry; nahrazuje akcentní barvu (migrace 2033)" }
-        invoice_pdf_compact_items: { type: boolean, default: false, description: "Kompaktní řádky položek na PDF faktury: menší odsazení a písmo, rozpis balení a sériová čísla na řádku popisu; víc položek na stranu (migrace 2194)." }
+        invoice_pdf_compact_items: { type: boolean, default: false, description: "Kompaktní řádky položek na PDF faktury: menší odsazení a písmo, rozpis balení a sériová čísla na řádku popisu; víc položek na stranu (migrace 2196)." }
         branding_profiles_enabled: { type: boolean, description: "Zapíná volbu brandingových profilů; výchozí hodnota je false." }
         default_branding_profile_id: { type: [integer, "null"], readOnly: true }
         auto_send_reminders: { type: boolean, description: "Automatické odesílání upomínek; u nově založené firmy je výchozí hodnota false." }
@@ -47870,7 +47870,7 @@ components:
         invoice_pdf_show_base_qty: { type: boolean, default: true, description: "Na PDF faktury doplnit k řádku v balení množství v základní jednotce karty („celkem 80 ks\"). Platí jen se zapnutým skladem (migrace 1832)." }
         invoice_pdf_show_issued_by: { type: boolean, default: false, description: "Tisknout na PDF faktury řádek „Vystavil\" se jménem uživatele, který doklad vystavil; starší doklady bez zápisu tisknou autora dokladu (migrace 2032)." }
         invoice_pdf_show_line_discount: { type: boolean, default: false, description: "Na PDF faktury rozepsat slevu z ceníkové ceny: sloupce „Cena/j před slevou | Sleva | Cena/j po slevě\". Jen když má aspoň jeden řádek slevu; přirážka se nerozepisuje (migrace 2035)." }
-        invoice_pdf_compact_items: { type: boolean, default: false, description: "Kompaktní řádky položek na PDF faktury: menší odsazení a písmo, rozpis balení a sériová čísla na řádku popisu; víc položek na stranu (migrace 2194)." }
+        invoice_pdf_compact_items: { type: boolean, default: false, description: "Kompaktní řádky položek na PDF faktury: menší odsazení a písmo, rozpis balení a sériová čísla na řádku popisu; víc položek na stranu (migrace 2196)." }
         invoice_number_format:
           type: [string, "null"]
           example: "{YY}{MM}{CCC}"

@@ -715,7 +715,7 @@ final class SettingsAction
             'invoice_pdf_show_issued_by',
             // Ceníková cena a sleva u položky na PDF faktury (migrace 2035), výchozí vypnuto.
             'invoice_pdf_show_line_discount',
-            // Kompaktní řádky položek na PDF faktury (migrace 2194), výchozí vypnuto.
+            // Kompaktní řádky položek na PDF faktury (migrace 2196), výchozí vypnuto.
             'invoice_pdf_compact_items',
             // Auto-post hook (A2, migrace 1035) — auto-zaúčtování FV po vystavení / PF po
             // přijetí; admin-only (jako ostatní účetní nastavení firmy), účinek jen v double_entry.
@@ -1668,7 +1668,7 @@ final class SettingsAction
         $row['invoice_pdf_show_issued_by'] = (bool) ($row['invoice_pdf_show_issued_by'] ?? false);
         // Ceníková cena a sleva u položky na PDF faktury (migrace 2035), výchozí vypnuto.
         $row['invoice_pdf_show_line_discount'] = (bool) ($row['invoice_pdf_show_line_discount'] ?? false);
-        // Kompaktní řádky položek na PDF faktury (migrace 2194), výchozí vypnuto.
+        // Kompaktní řádky položek na PDF faktury (migrace 2196), výchozí vypnuto.
         $row['invoice_pdf_compact_items'] = (bool) ($row['invoice_pdf_compact_items'] ?? false);
         // Auto-post hook (A2, migrace 1035) — opt-in auto-zaúčtování; FE gatuje na double_entry.
         $row['auto_post_invoices']       = (bool) ($row['auto_post_invoices'] ?? false);

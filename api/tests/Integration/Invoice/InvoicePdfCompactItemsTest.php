@@ -17,7 +17,7 @@ use Slim\Psr7\Factory\ServerRequestFactory;
 use Slim\Psr7\Response;
 
 /**
- * Kompaktní řádky položek na PDF faktury (`supplier.invoice_pdf_compact_items`, migrace 2194).
+ * Kompaktní řádky položek na PDF faktury (`supplier.invoice_pdf_compact_items`, migrace 2196).
  *
  * 1. Volba je ve výchozím stavu vypnutá, ukládá se přes nastavení firmy a týká se jen dané firmy.
  * 2. Bez volby má tabulka položek dnešní třídu a sekundární texty (sériová čísla,

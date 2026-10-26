@@ -203,7 +203,7 @@
 {% endif %}
 
 {# ─── POLOŽKY ─── #}
-{# Kompaktní řádky (volba firmy, migrace 2194): menší odsazení a písmo, víc řádků na stranu. #}
+{# Kompaktní řádky (volba firmy, migrace 2196): menší odsazení a písmo, víc řádků na stranu. #}
 {% set compact_items = supplier.invoice_pdf_compact_items|default(false) %}
 <table class="items{% if line_discount_columns|default(false) %} items-ld{% endif %}{% if compact_items %} items-compact{% endif %}">
   <thead>
