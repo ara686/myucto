@@ -569,6 +569,8 @@ final class StockHistoryImportLifecycleTest extends StockTestCase
         $applied = $this->applyAll($sid, $preview['id']);
         self::assertSame('completed', $applied['status']);
         self::assertSame(1, $applied['report']['invoice_unlinked_on_apply']);
+        self::assertSame([[6, 'V4', '2025004', 'own_stock']],
+            array_map(static fn (array $row): array => [$row['source_row'], $row['doc_number'], $row['invoice_number'], $row['reason']], $applied['report']['invoice_unlinked_on_apply_list']));
         $stmt = $this->db->pdo()->prepare('SELECT doc_number, invoice_id FROM stock_documents WHERE supplier_id = ? AND history_import_job_id IS NOT NULL AND doc_type = ? AND doc_number LIKE ? ORDER BY id');
         $stmt->execute([$sid, 'issue', 'V%']);
         self::assertSame([['V1', null], ['V2', null], ['V3', null], ['V4', null], ['V5', $old['id']]],

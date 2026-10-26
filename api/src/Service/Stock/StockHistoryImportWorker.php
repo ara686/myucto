@@ -545,7 +545,7 @@ final class StockHistoryImportWorker
     private function apply(int $supplierId, array $job): array
     {
         $this->assertCurrent($supplierId, $job);
-        $report = $job['report'] + ['phase' => 'documents', 'documents_created' => 0, 'fill_documents' => 0, 'valuation_cursor' => 0, 'settlement' => [], 'invoice_unlinked_on_apply' => 0];
+        $report = $job['report'] + ['phase' => 'documents', 'documents_created' => 0, 'fill_documents' => 0, 'valuation_cursor' => 0, 'settlement' => [], 'invoice_unlinked_on_apply' => 0, 'invoice_unlinked_on_apply_list' => []];
         $checkpoint = $job['checkpoint'];
         $done = false;
         if ($report['phase'] === 'documents') {
@@ -614,21 +614,27 @@ final class StockHistoryImportWorker
 
         // Faktura se od náhledu mohla změnit (vystavení, vlastní výdejka): vazbu ověří znovu.
         $invoiceIds = array_values(array_unique(array_filter(array_map(static fn (array $rows): ?int => $rows[0]['values']['invoice_id'], $groups))));
-        $linkable = [];
+        $problems = [];
         if ($invoiceIds !== []) {
             $stmt = $pdo->prepare(self::INVOICE_LINK_SQL . ' AND i.id IN (' . implode(',', array_fill(0, count($invoiceIds), '?')) . ')');
             $stmt->execute([$supplierId, ...$invoiceIds]);
             foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $invoice) {
-                $linkable[(int) $invoice['id']] = self::invoiceLinkProblem($invoice) === null;
+                $problems[(int) $invoice['id']] = self::invoiceLinkProblem($invoice);
             }
         }
 
         $now = (string) $pdo->query('SELECT NOW()')->fetchColumn();
         foreach ($groups as $rows) {
             $values = $rows[0]['values'];
-            if ($values['invoice_id'] !== null && !($linkable[$values['invoice_id']] ?? false)) {
+            $reason = $values['invoice_id'] === null ? null
+                : (array_key_exists($values['invoice_id'], $problems) ? $problems[$values['invoice_id']] : 'missing');
+            if ($reason !== null) {
                 $values['invoice_id'] = null;
                 $report['invoice_unlinked_on_apply']++;
+                if (count($report['invoice_unlinked_on_apply_list']) < self::REPORT_LIMIT) {
+                    $report['invoice_unlinked_on_apply_list'][] = ['source_row' => $rows[0]['source_row'], 'doc_number' => $values['doc_number'],
+                        'invoice_number' => $values['invoice_number'], 'reason' => $reason];
+                }
             }
             $fills = $profile['fill_negative'] ? self::fills($rows) : [];
             if ($fills !== []) {
