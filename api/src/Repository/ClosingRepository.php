@@ -1664,7 +1664,8 @@ final class ClosingRepository
             $supplierId, $asOf, $asOf,          // settled_offset
             $asOf, $asOf,                       // settled_imported
             $supplierId, $asOf, $asOf,          // settled_gopay
-            $supplierId, $asOf, $asOf,          // settled_manual
+            $supplierId, $asOf, $asOf,          // settled_manual (vazba bez částky)
+            $supplierId, $asOf, $asOf,          // settled_manual (rozpad řádků)
             $supplierId,                        // doc
             $supplierId, $asOf,                 // final SELECT
         ]);
@@ -1707,10 +1708,13 @@ final class ClosingRepository
                  GROUP BY stl.doc_id";
     }
 
-    /** Vyrovnání ručním zápisem navázaným na doklad — viz {@see LinkedManualSettlementSql}. */
+    /**
+     * Vyrovnání ručním zápisem navázaným na doklad nebo rozepsaným na doklady, viz
+     * {@see LinkedManualSettlementSql::settledSql}. Šest placeholderů (dvakrát firma, asOf, asOf).
+     */
     private static function linkedManualSettledSql(string $docType, string $accountPrefix, string $settleSide): string
     {
-        return LinkedManualSettlementSql::sql(
+        return LinkedManualSettlementSql::settledSql(
             $docType,
             $settleSide,
             LinkedManualSettlementSql::accountPrefixPredicate($accountPrefix),
@@ -1982,7 +1986,8 @@ final class ClosingRepository
             $supplierId,                        // settled_agreement
             $supplierId, $supplierId, $asOf, $asOf, // settled_advance (+ guard nad deníkem)
             $asOf, $asOf,                       // settled_advance (guard nad skupinou zaúčtování)
-            $supplierId, $asOf, $asOf,          // settled_manual
+            $supplierId, $asOf, $asOf,          // settled_manual (vazba bez částky)
+            $supplierId, $asOf, $asOf,          // settled_manual (rozpad řádků)
             $supplierId,                        // doc
             $supplierId, $asOf,                 // final SELECT
         ]);

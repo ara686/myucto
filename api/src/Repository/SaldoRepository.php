@@ -8,6 +8,7 @@ use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Service\Accounting\Activation\OpeningBalanceDocuments;
 use MyInvoice\Service\Accounting\DocumentPostingGroup;
 use MyInvoice\Support\Sql\CreditNoteRefundExpr;
+use MyInvoice\Support\Sql\JournalSettlementAllocationSql;
 use MyInvoice\Support\Sql\LinkedManualSettlementSql;
 use MyInvoice\Support\Sql\PurchaseSettledExpr;
 use PDO;
@@ -321,30 +322,103 @@ final class SaldoRepository
                           oi.partner_id, cl.company_name, oi.partner_name, oi.currency, oi.amount, paid.paid_sum
                 HAVING " . self::openFilterSql($booked, $ratio) . $order;
 
-        return $this->fetchDefinitiveOpenRows(
+        $map = static function (array $row): array {
+            $booked = round((float) $row['booked_signed'], 2);
+            $paid = (float) $row['paid_as_of'];
+            return [
+                'doc_type' => 'other_item',
+                'doc_id' => (int) $row['doc_id'],
+                'doc_no' => (string) $row['doc_no'],
+                'issue_date' => (string) $row['issue_date'],
+                'due_date' => (string) $row['due_date'],
+                'status' => (string) $row['status'],
+                'partner_id' => (int) $row['partner_id'],
+                'partner_name' => (string) $row['partner_name'],
+                'currency_code' => (string) $row['currency_code'],
+                'booked_signed' => $booked,
+                'foreign_signed' => $row['currency_code'] === 'CZK' ? 0.0
+                    : ($booked < 0 ? -1 : 1) * (float) $row['amount_foreign'],
+                'paid_ratio' => abs($booked) < 0.005 ? 0.0 : min(1.0, max(0.0, $paid / abs($booked))),
+            ];
+        };
+        $rows = $this->fetchDefinitiveOpenRows(
             $sql,
             static fn (string $pageSql): array => self::asOfParams($pageSql, $asOf),
-            function (array $row): array {
-                $booked = round((float) $row['booked_signed'], 2);
-                $paid = (float) $row['paid_as_of'];
-                return [
-                    'doc_type' => 'other_item',
-                    'doc_id' => (int) $row['doc_id'],
-                    'doc_no' => (string) $row['doc_no'],
-                    'issue_date' => (string) $row['issue_date'],
-                    'due_date' => (string) $row['due_date'],
-                    'status' => (string) $row['status'],
-                    'partner_id' => (int) $row['partner_id'],
-                    'partner_name' => (string) $row['partner_name'],
-                    'currency_code' => (string) $row['currency_code'],
-                    'booked_signed' => $booked,
-                    'foreign_signed' => $row['currency_code'] === 'CZK' ? 0.0
-                        : ($booked < 0 ? -1 : 1) * (float) $row['amount_foreign'],
-                    'paid_ratio' => abs($booked) < 0.005 ? 0.0 : min(1.0, max(0.0, $paid / abs($booked))),
-                ];
-            },
+            $map,
             $limit,
         );
+        return array_merge($rows, $this->fetchOriginOtherItems($supplierId, $accountId, $asOf, $partnerId, $dueBefore, $map));
+    }
+
+    /**
+     * Ostatní pohledávka / závazek založený ze zůstatku bez dokladu: předpisem není vlastní
+     * zápis položky, ale část řádku převzatého zápisu (`journal_settlement_allocations`
+     * druhu `origin`). Položka se neúčtuje, takže hlavní kniha ji nese jen tím původním
+     * řádkem a saldokonto tak zůstatek nezdvojí. Úhrady jako u ostatních položek
+     * (`other_item_allocations`), jen s bankovním či pokladním řádkem na tomtéž
+     * saldokontním účtu, protože zápis položky, podle kterého se účet jinak ověřuje, neexistuje.
+     *
+     * @param callable(array<string,mixed>):array<string,mixed> $map
+     * @return list<array<string,mixed>>
+     */
+    private function fetchOriginOtherItems(int $supplierId, int $accountId, string $asOf, ?int $partnerId, ?string $dueBefore, callable $map): array
+    {
+        $partnerFilter = $partnerId === null ? '' : ' AND oi.partner_id = ' . $partnerId;
+        $sql = "SELECT oi.id AS doc_id, COALESCE(oi.document_no, CONCAT('#', oi.id)) AS doc_no,
+                       oi.issued_on AS issue_date, oi.due_on AS due_date, oi.status,
+                       COALESCE(oi.partner_id, -CAST(oi.id AS SIGNED)) AS partner_id,
+                       COALESCE(cl.company_name, NULLIF(oi.partner_name, ''), 'Bez partnera') AS partner_name,
+                       oi.currency AS currency_code, oi.amount AS amount_foreign,
+                       ROUND(SUM(CASE WHEN l.side = 'debit' THEN ja.amount ELSE -ja.amount END), 2) AS booked_signed,
+                       COALESCE(paid.paid_sum, 0) AS paid_as_of
+                  FROM journal_settlement_allocations ja
+                  JOIN journal_entries e ON e.id = ja.entry_id AND e.supplier_id = ja.supplier_id
+                  " . JournalSettlementAllocationSql::lineJoin('ja', 'l') . "
+                  JOIN chart_of_accounts ca ON ca.id = l.account_id
+                  LEFT JOIN journal_entries rev ON rev.id = e.reversed_by
+                  JOIN other_items oi ON oi.id = ja.doc_id AND oi.supplier_id = ja.supplier_id
+                  LEFT JOIN clients cl ON cl.id = oi.partner_id AND cl.supplier_id = oi.supplier_id
+                  LEFT JOIN (
+                    SELECT a.other_item_id, SUM(a.amount) AS paid_sum
+                      FROM other_item_allocations a
+                      JOIN other_items payment_item ON payment_item.id = a.other_item_id
+                           AND payment_item.supplier_id = a.supplier_id
+                     WHERE a.supplier_id = {$supplierId}
+                       AND (a.reversed_on IS NULL OR a.reversed_on > ?)
+                       AND EXISTS (
+                           SELECT 1 FROM journal_entries pe
+                           JOIN journal_entry_lines pl ON pl.entry_id = pe.id AND pl.supplier_id = pe.supplier_id
+                           JOIN chart_of_accounts pca ON pca.id = pl.account_id
+                           LEFT JOIN journal_entries prev ON prev.id = pe.reversed_by
+                          WHERE pe.supplier_id = a.supplier_id
+                            AND pe.source_type = CASE WHEN a.bank_transaction_id IS NOT NULL THEN 'bank' ELSE 'cash' END
+                            AND pe.source_id = COALESCE(a.bank_transaction_id, a.cash_document_id)
+                            AND pe.posted_at IS NOT NULL AND pe.entry_date <= ?
+                            AND (pe.reversed_by IS NULL OR prev.entry_date > ?)
+                            AND pl.side = CASE WHEN payment_item.side = 'receivable' THEN 'credit' ELSE 'debit' END
+                            AND (pca.id = {$accountId} OR pca.parent_id = {$accountId})
+                       )
+                     GROUP BY a.other_item_id
+                  ) paid ON paid.other_item_id = oi.id
+                 WHERE ja.supplier_id = {$supplierId} AND ja.kind = 'origin' AND ja.doc_type = 'other_item'
+                   AND e.posted_at IS NOT NULL AND e.entry_date <= ?
+                   AND (e.reversed_by IS NULL OR rev.entry_date > ?)
+                   AND (ca.id = {$accountId} OR ca.parent_id = {$accountId})
+                   AND oi.deleted_at IS NULL AND oi.status IN ('confirmed', 'posted')
+                   {$partnerFilter}" . self::dueBeforeSql('oi', $dueBefore, 'due_on') . "
+                 GROUP BY oi.id, oi.document_no, oi.issued_on, oi.due_on, oi.status,
+                          oi.partner_id, cl.company_name, oi.partner_name, oi.currency, oi.amount, paid.paid_sum
+                 ORDER BY partner_name, oi.due_on, oi.id";
+        $stmt = $this->db->pdo()->prepare($sql);
+        $stmt->execute(self::asOfParams($sql, $asOf));
+        $out = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $item = $map($row);
+            if (self::settlementAmounts((float) $item['booked_signed'], (float) $item['paid_ratio'])['open']) {
+                $out[] = $item;
+            }
+        }
+        return $out;
     }
 
     /**
@@ -1475,7 +1549,7 @@ final class SaldoRepository
             "{$paidExpr} + {$advanceExpr}",
             "{$toPayExpr} + {$advanceExpr}",
         ) . ' END', $manualExpr, $bookedExpr);
-        $manualCte = LinkedManualSettlementSql::sql(
+        $manualCte = LinkedManualSettlementSql::settledSql(
             'invoice',
             'credit',
             LinkedManualSettlementSql::accountIdPredicate($accountId),
@@ -1798,7 +1872,7 @@ final class SaldoRepository
                      THEN 1 ELSE {$signalRatio} END";
         };
         $manualExpr = 'ROUND(COALESCE(man.settled, 0), 2)';
-        $manualCte = LinkedManualSettlementSql::sql(
+        $manualCte = LinkedManualSettlementSql::settledSql(
             'purchase_invoice',
             'debit',
             LinkedManualSettlementSql::accountIdPredicate($accountId),

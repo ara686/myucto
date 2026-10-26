@@ -22,7 +22,12 @@ namespace MyInvoice\Support\Sql;
  * zaúčtovaný po řádcích víc zápisy), vyrovnáním není: je to další část předpisu.
  * Agregace ho proto vynechává a předpis z něj skládají volající.
  *
- * Volají ji `ClosingRepository` (K3) a `SaldoRepository` (otevřené položky).
+ * Zápis s rozpadem na doklady téhož druhu (`journal_settlement_allocations`) se tu
+ * nepočítá: částky nese rozpad a {@see settledSql()} je přičítá zvlášť. Bez toho by se
+ * zápis navázaný na jediný doklad a zároveň rozepsaný započetl dvakrát.
+ *
+ * Volají ji `ClosingRepository` (K3) a `SaldoRepository` (otevřené položky), obojí přes
+ * {@see settledSql()}.
  */
 final class LinkedManualSettlementSql
 {
@@ -44,6 +49,30 @@ final class LinkedManualSettlementSql
         bool $currentRead = false,
     ): string {
         return self::projection($docType, $settleSide, $accountPredicate, $supplierExpr, $asOfExpr, $currentRead, false);
+    }
+
+    /**
+     * Vyrovnání dokladů ručními zápisy celkem: vazba bez částky ({@see sql()}) a rozpad
+     * řádků na doklady ({@see JournalSettlementAllocationSql::settledSql()}). Agregace
+     * `doc_id`, `settled`; placeholdery dvakrát za sebou v pořadí `$supplierExpr`,
+     * `$asOfExpr`, `$asOfExpr`.
+     *
+     * @param 'invoice'|'purchase_invoice' $docType
+     * @param 'credit'|'debit' $settleSide
+     */
+    public static function settledSql(
+        string $docType,
+        string $settleSide,
+        string $accountPredicate,
+        string $supplierExpr = '?',
+        string $asOfExpr = '?',
+        bool $currentRead = false,
+    ): string {
+        $linked = self::sql($docType, $settleSide, $accountPredicate, $supplierExpr, $asOfExpr, $currentRead);
+        $allocated = JournalSettlementAllocationSql::settledSql($docType, $accountPredicate, $supplierExpr, $asOfExpr, $currentRead);
+        return "SELECT s.doc_id, SUM(s.settled) AS settled
+                  FROM (({$linked}) UNION ALL ({$allocated})) s
+                 GROUP BY s.doc_id";
     }
 
     public static function membersSql(
@@ -98,8 +127,10 @@ final class LinkedManualSettlementSql
                         WHERE own.supplier_id = dl.supplier_id AND own.entry_id = dl.entry_id
                           AND own.doc_type = dl.doc_type AND own.doc_id = dl.doc_id{$lock}
                    )";
+        $allocated = JournalSettlementAllocationSql::noAllocationSql('dl.supplier_id', 'dl.entry_id', 'dl.doc_type', $currentRead);
         $tail = $members ? 'ORDER BY dl.doc_id, e.id, l.line_no, l.id' : "AND {$unique}
                    AND {$ownPosting}
+                   AND {$allocated}
                  GROUP BY dl.doc_id";
         $effective = $lifecycle ? '' : " AND e.entry_date <= {$asOfExpr}
                    AND (e.reversed_by IS NULL OR rev.entry_date > {$asOfExpr})";

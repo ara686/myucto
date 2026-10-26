@@ -812,6 +812,11 @@ final class RoutePermissionMap
         // Odhad daně do konce roku k výsledovce po účtech — čísla náhledu DPPO, proto
         // stejné právo jako přiznání (`reports`), ne obecné `accounting`.
         ['GET', '#^/api/accounting/reports/statement-accounts/tax-estimate$#', 'reports', AccessLevel::READ],
+        // Vyrovnání položky saldokonta je rozpis zápisu v deníku na doklady → stejné právo
+        // jako vazba zápisu na doklad. Založení ostatní položky ze zůstatku ověřuje Action
+        // navíc proti `other_items`.
+        ['GET', '#^/api/accounting/saldo-settlements(/|$)#', 'accounting', AccessLevel::READ],
+        ['*', '#^/api/accounting/saldo-settlements(/|$)#', 'accounting.journal.write', AccessLevel::WRITE],
         ['GET', '#^/api/accounting/journal(/|$)#', 'accounting', AccessLevel::READ],
         ['*', '#^/api/accounting/journal(/|$)#', 'accounting.journal.write', AccessLevel::WRITE],
         ['GET', '#^/api/accounting/other-items(/|$)#', 'other_items', AccessLevel::READ],

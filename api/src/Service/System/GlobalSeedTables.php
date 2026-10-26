@@ -400,6 +400,7 @@ final class GlobalSeedTables
         'accounting_securities_debt_events', 'accounting_securities_debt_lots',
         'journal_entries', 'journal_entry_attachments', 'journal_entry_document_links', 'journal_document_postings',
         'journal_entry_line_dimension_splits', 'journal_entry_line_dimensions', 'journal_entry_lines',
+        'journal_settlement_allocations',
         'journal_entry_notes', 'journal_integrity_findings', 'journal_line_pairing_items',
         'joint_allocation_batches', 'joint_allocation_cancellations', 'joint_allocation_source_claims',
         'joint_allocation_audit',

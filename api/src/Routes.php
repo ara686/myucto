@@ -2863,6 +2863,13 @@ final class Routes
             $g->get('/reports/dimension-cash-flow/export',        [\MyInvoice\Action\Accounting\Reports\DimensionCashFlowAction::class, 'export']);
             $g->get('/reports/saldo',                             [SaldoAction::class, 'get']);
             $g->get('/reports/saldo/export',                      [SaldoAction::class, 'export']);
+            // Vyrovnání položky saldokonta zápisem v deníku (rozpad řádku na doklady).
+            $g->get   ('/saldo-settlements/candidates',          [\MyInvoice\Action\Accounting\JournalSettlementAction::class, 'candidates']);
+            $g->get   ('/saldo-settlements/residual-lines',      [\MyInvoice\Action\Accounting\JournalSettlementAction::class, 'residualLines']);
+            $g->get   ('/saldo-settlements/suggestions',         [\MyInvoice\Action\Accounting\JournalSettlementAction::class, 'suggestions']);
+            $g->post  ('/saldo-settlements',                     [\MyInvoice\Action\Accounting\JournalSettlementAction::class, 'create']);
+            $g->post  ('/saldo-settlements/other-item',          [\MyInvoice\Action\Accounting\JournalSettlementAction::class, 'createOtherItem']);
+            $g->delete('/saldo-settlements/{id:[0-9]+}',         [\MyInvoice\Action\Accounting\JournalSettlementAction::class, 'delete']);
             // Kontrola souběhu se starým účetním programem (měsíční rekonciliace K1, K5–K13).
             $g->get   ('/parallel-run/sources',                            [\MyInvoice\Action\Accounting\ParallelRunAction::class, 'sources']);
             $g->get   ('/parallel-run/backups',                            [\MyInvoice\Action\Accounting\ParallelRunAction::class, 'backups']);

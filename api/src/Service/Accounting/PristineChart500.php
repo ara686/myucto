@@ -34,6 +34,7 @@ final class PristineChart500
         'invoice_settlements' => ['account_id'],
         'journal_entry_lines' => ['account_id'],
         'journal_line_pairings' => ['account_id'],
+        'journal_settlement_allocations' => ['account_id'],
         'nonprofit_membership_charge_operations' => ['receivable_account_id', 'revenue_account_id'],
     ];
 

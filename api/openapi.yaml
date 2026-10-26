@@ -14778,6 +14778,107 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
 
+  /api/v1/accounting/saldo-settlements/candidates:
+    get:
+      tags: [Accounting]
+      summary: Kandidáti z deníku pro vyrovnání otevřené položky saldokonta
+      description: |
+        Volné (nerozepsané) řádky ručních zápisů na tomtéž saldokontním účtu (vč. analytik)
+        do rozvahového dne, na straně, která saldo dokladu snižuje (vydaná faktura dal,
+        přijatá má dáti). Vynechá předpis dokladu, storno, červené storno a zápis, který
+        doklad vyrovnává už vazbou bez částky. Řazení: shoda volné částky se zbytkem
+        dokladu, číslo dokladu v textu zápisu (nebo vazba na doklad), partner, datum.
+        Doklad v cizí měně (`document.supported = false`) kandidáty nemá.
+      parameters:
+        - $ref: '#/components/parameters/SupplierIdHeader'
+        - { in: query, name: doc_type, required: true, schema: { type: string, enum: [invoice, purchase_invoice] } }
+        - { in: query, name: doc_id, required: true, schema: { type: integer } }
+        - { in: query, name: account, required: true, description: "Saldokontní účet položky", schema: { type: string, enum: ['311', '321', '315', '325'] } }
+        - { in: query, name: as_of, description: "Rozvahový den (default dnešek)", schema: { type: string, format: date } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  document:
+                    type: object
+                    properties:
+                      doc_type: { type: string, enum: [invoice, purchase_invoice] }
+                      doc_id: { type: integer }
+                      doc_no: { type: string }
+                      partner_id: { type: integer }
+                      partner_name: { type: string }
+                      currency_code: { type: string }
+                      remaining: { type: number, description: "Zbývá k vyrovnání v Kč podle saldokonta k as_of" }
+                      account: { type: object, properties: { id: { type: integer }, code: { type: string }, name: { type: string } } }
+                      side: { type: string, enum: [debit, credit] }
+                      supported: { type: boolean }
+                  allocations: { type: array, items: { $ref: '#/components/schemas/SaldoSettlementAllocation' } }
+                  items: { type: array, items: { $ref: '#/components/schemas/SaldoSettlementLine' } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
+  /api/v1/accounting/saldo-settlements/residual-lines:
+    get:
+      tags: [Accounting]
+      summary: Řádky zápisů bez dokladu na saldokontním účtu
+      description: |
+        Volné řádky ručních zápisů na saldokontním účtu (obě strany), ze kterých jde založit
+        ostatní pohledávku nebo závazek ze zůstatku bez dokladu. Nejvýš 100 řádků, nejnovější první.
+      parameters:
+        - $ref: '#/components/parameters/SupplierIdHeader'
+        - { in: query, name: account, required: true, schema: { type: string, enum: ['311', '321', '314', '324', '315', '325'] } }
+        - { in: query, name: as_of, schema: { type: string, format: date } }
+        - { in: query, name: q, description: "Hledaný text v popisu nebo čísle zápisu", schema: { type: string, maxLength: 100 } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/SaldoSettlementLine' } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
+  /api/v1/accounting/saldo-settlements/suggestions:
+    get:
+      tags: [Accounting]
+      summary: Návrh párování otevřených položek saldokonta se zápisy v deníku
+      description: |
+        Projde otevřené doklady saldokonta k rozvahovému dni a navrhne jen jisté shody:
+        číslo dokladu v textu zápisu (nebo vazba na doklad) a volná částka řádku rovná
+        zbytku dokladu (`doc_no_amount`), zápis jmenující víc dokladů jednoho partnera
+        přesně za jejich součet (`doc_no_sum`), jistý partner a právě jeden jeho doklad
+        s touto částkou (`partner_amount`), případně součet všech jeho otevřených dokladů
+        (`partner_sum`). Řádek i doklad jsou nejvýš v jednom návrhu. Nejvýš 500 návrhů
+        (`truncated`).
+      parameters:
+        - $ref: '#/components/parameters/SupplierIdHeader'
+        - { in: query, name: period_id, required: true, schema: { type: integer } }
+        - { in: query, name: as_of, schema: { type: string, format: date } }
+        - { in: query, name: account, schema: { type: string, enum: [all, '311', '321', '315', '325'], default: all } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  as_of: { type: string, format: date }
+                  truncated: { type: boolean }
+                  items: { type: array, items: { $ref: '#/components/schemas/SaldoSettlementSuggestion' } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
   /api/v1/accounting/reports/document-completeness:
     get:
       tags: [Accounting]
@@ -33644,6 +33745,75 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
 
   schemas:
+    SaldoSettlementLine:
+      type: object
+      description: Řádek ručního zápisu v deníku s volnou (nerozepsanou) částkou v Kč.
+      properties:
+        line_id: { type: integer }
+        entry_id: { type: integer }
+        line_no: { type: integer }
+        account_id: { type: integer }
+        account_code: { type: string }
+        side: { type: string, enum: [debit, credit] }
+        entry_date: { type: string, format: date }
+        document_no: { type: string, nullable: true }
+        description: { type: string, nullable: true }
+        line_amount: { type: number }
+        free_amount: { type: number }
+        links:
+          type: array
+          items: { type: object, properties: { doc_type: { type: string, enum: [invoice, purchase_invoice] }, doc_id: { type: integer } } }
+        amount_match: { type: boolean }
+        doc_match: { type: boolean }
+        partner_match: { type: boolean }
+    SaldoSettlementAllocation:
+      type: object
+      description: |
+        Část řádku zápisu přiřazená dokladu. `settlement` vyrovnává doklad k datu zápisu,
+        `origin` je předpis ostatní položky založené ze zůstatku bez dokladu.
+      properties:
+        id: { type: integer }
+        entry_id: { type: integer }
+        line_no: { type: integer }
+        line_id: { type: integer, nullable: true }
+        account_id: { type: integer }
+        account_code: { type: string }
+        kind: { type: string, enum: [settlement, origin] }
+        doc_type: { type: string, enum: [invoice, purchase_invoice, other_item] }
+        doc_id: { type: integer }
+        amount: { type: number }
+        entry_date: { type: string, format: date }
+        document_no: { type: string, nullable: true }
+        description: { type: string, nullable: true }
+        created_by: { type: integer, nullable: true }
+        created_at: { type: string }
+    SaldoSettlementSuggestion:
+      type: object
+      properties:
+        key: { type: string }
+        reason: { type: string, enum: [doc_no_amount, doc_no_sum, partner_amount, partner_sum] }
+        account: { type: object, properties: { id: { type: integer }, code: { type: string } } }
+        partner_name: { type: string }
+        line:
+          type: object
+          properties:
+            line_id: { type: integer }
+            entry_id: { type: integer }
+            entry_date: { type: string, format: date }
+            document_no: { type: string, nullable: true }
+            description: { type: string, nullable: true }
+            account_code: { type: string }
+            free_amount: { type: number }
+        allocations:
+          type: array
+          items:
+            type: object
+            properties:
+              doc_type: { type: string, enum: [invoice, purchase_invoice] }
+              doc_id: { type: integer }
+              doc_no: { type: string }
+              remaining: { type: number }
+              amount: { type: number }
     InvoicePaymentEetContext:
       type: object
       description: |

@@ -53,6 +53,34 @@ final class OtherItemService
         return $this->get($supplierId, $id);
     }
 
+    /**
+     * Položka ze zůstatku bez dokladu: předpis už je v deníku (řádek převzatého nebo
+     * interního zápisu), proto se položka NEúčtuje. Vzniká rovnou potvrzená, s číslem
+     * z řady a bez vlastního zápisu; saldokonto ji čte z rozpadu řádku
+     * (`journal_settlement_allocations` druhu `origin`), který zakládá volající
+     * ({@see JournalSettlementService::createOtherItem}) v téže transakci. Storno takové
+     * položky (`reverse`) ji jen zruší, žádný protizápis nevzniká.
+     *
+     * Účet položky nese účet řádku. Strana se řídí stranou řádku, ne druhem účtu: přeplatek
+     * na 311 je závazek vedený na účtu pohledávek a saldokonto ho musí odečíst.
+     */
+    public function createFromJournalLine(int $supplierId, array $input, ?int $userId): array
+    {
+        $pdo = $this->db->pdo();
+        if (!$pdo->inTransaction()) {
+            throw new \LogicException('OtherItemService::createFromJournalLine vyžaduje transakci.');
+        }
+        $data = $this->normalize($supplierId, $input);
+        $id = $this->items->insert($supplierId, $data, $userId);
+        $number = $this->series->next(
+            $supplierId,
+            $data['side'] === 'receivable' ? 'other_receivable' : 'other_payable',
+            (int) substr((string) $data['issued_on'], 0, 4),
+        );
+        $this->items->setPosted($supplierId, $id, 'confirmed', $number, null);
+        return $this->get($supplierId, $id);
+    }
+
     public function update(int $supplierId, int $id, array $input, ?int $userId): array
     {
         $pdo = $this->db->pdo();
