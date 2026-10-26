@@ -4283,6 +4283,15 @@ final class Routes
             $g->get   ('/opening-import/jobs/{id:[0-9]+}/items', [\MyInvoice\Action\Eshop\CatalogJobAction::class, 'items']);
             $g->post  ('/opening-import/jobs/{id:[0-9]+}/{operation:retry|cancel}', [\MyInvoice\Action\Eshop\CatalogJobAction::class, 'change']);
 
+            $g->get   ('/history-import',               [\MyInvoice\Action\Stock\StockHistoryImportAction::class, 'status']);
+            $g->post  ('/history-import/sources',       [\MyInvoice\Action\Stock\StockHistoryImportAction::class, 'upload']);
+            $g->get   ('/history-import/sources/{id:[0-9]+}/sample', [\MyInvoice\Action\Stock\StockHistoryImportAction::class, 'sample']);
+            $g->post  ('/history-import/preview',       [\MyInvoice\Action\Stock\StockHistoryImportAction::class, 'preview']);
+            $g->post  ('/history-import/{id:[0-9]+}/apply', [\MyInvoice\Action\Stock\StockHistoryImportAction::class, 'apply']);
+            $g->get   ('/history-import/jobs/{id:[0-9]+}', [\MyInvoice\Action\Eshop\CatalogJobAction::class, 'get']);
+            $g->get   ('/history-import/jobs/{id:[0-9]+}/items', [\MyInvoice\Action\Eshop\CatalogJobAction::class, 'items']);
+            $g->post  ('/history-import/jobs/{id:[0-9]+}/{operation:retry|cancel}', [\MyInvoice\Action\Eshop\CatalogJobAction::class, 'change']);
+
             $g->get   ('/fulfillment/tasks',                                      [\MyInvoice\Action\Stock\FulfillmentAction::class, 'list']);
             $g->post  ('/fulfillment/tasks',                                      [\MyInvoice\Action\Stock\FulfillmentAction::class, 'create']);
             $g->get   ('/fulfillment/tasks/{id:[0-9]+}',                          [\MyInvoice\Action\Stock\FulfillmentAction::class, 'get']);

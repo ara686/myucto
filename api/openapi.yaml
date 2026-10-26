@@ -22148,6 +22148,156 @@ paths:
         '200': { description: Aktualizovaný stav, content: { application/json: { schema: { $ref: '#/components/schemas/CatalogJob' } } } }
         '409': { description: Operace není dostupná v aktuálním stavu }
 
+  /api/v1/stock/history-import:
+    parameters:
+    - $ref: '#/components/parameters/SupplierIdHeader'
+    get:
+      tags: [Stock]
+      summary: Stav převzaté historie skladových dokladů
+      description: Datum, do kterého je převzatá historie uzamčená, poslední aktivní import a nejvyšší počet řádků souboru.
+      responses:
+        '200':
+          description: Stav importu historie
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  locked_until: { type: [string, 'null'], format: date }
+                  active: { oneOf: [{ $ref: '#/components/schemas/CatalogJob' }, { type: 'null' }] }
+                  max_rows: { type: integer }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v1/stock/history-import/sources:
+    parameters:
+    - $ref: '#/components/parameters/SupplierIdHeader'
+    post:
+      tags: [Stock]
+      summary: Nahraje CSV nebo XLSX s historickými skladovými doklady
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties: { file: { type: string, format: binary } }
+      responses:
+        '201': { description: Uložený zdroj importu, content: { application/json: { schema: { type: object } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { description: Neplatný soubor }
+
+  /api/v1/stock/history-import/sources/{id}/sample:
+    parameters:
+    - $ref: '#/components/parameters/SupplierIdHeader'
+    - { in: path, name: id, required: true, schema: { type: integer, minimum: 1 } }
+    get:
+      tags: [Stock]
+      summary: Vrátí hlavičku a prvních pět řádků importu historie
+      parameters:
+      - { in: query, name: encoding, schema: { type: string, enum: [UTF-8, Windows-1250, ISO-8859-2] } }
+      - { in: query, name: delimiter, schema: { type: string } }
+      - { in: query, name: sheet, schema: { type: integer, minimum: 0 } }
+      responses:
+        '200': { description: Vzorek, povinná a volitelná mapovací pole, content: { application/json: { schema: { type: object } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/stock/history-import/preview:
+    parameters:
+    - $ref: '#/components/parameters/SupplierIdHeader'
+    post:
+      tags: [Stock]
+      summary: Zařadí úplnou validaci historických dokladů na pozadí
+      description: |
+        Bez `cutover_date` jde o režim „historie je živý stav“ (jen pro firmu bez skladových dokladů).
+        S `cutover_date` historie končí den před ním a uzavře ji vyrovnávací výdejka; doklady od data přechodu se nemění.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source_id, config]
+              properties:
+                source_id: { type: integer, minimum: 1 }
+                config:
+                  type: object
+                  required: [source_key, mapping]
+                  properties:
+                    source_key: { type: string, pattern: '^[a-z0-9][a-z0-9_.-]{0,99}$' }
+                    cutover_date: { type: [string, 'null'], format: date }
+                    mapping:
+                      type: object
+                      required: [doc_number, doc_type, doc_date, warehouse, sku, quantity]
+                      additionalProperties: { type: [string, 'null'] }
+                    number_prefixes:
+                      type: object
+                      description: Předpona čísla dokladu podle typu (receipt, issue, transfer, surplus, shortage), nejvýš 10 znaků.
+                      additionalProperties: { type: string, maxLength: 10 }
+                    fill_negative: { type: boolean, default: false, description: Doplnit technické příjemky v okamžiku záporného stavu. }
+                    reader: { type: object }
+      responses:
+        '202': { description: Trvalá validační úloha, content: { application/json: { schema: { $ref: '#/components/schemas/CatalogJob' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Firma už má aktivní import historie }
+        '422': { description: Neplatný profil nebo režim neodpovídá skladovým dokladům firmy }
+
+  /api/v1/stock/history-import/{id}/apply:
+    parameters:
+    - $ref: '#/components/parameters/SupplierIdHeader'
+    - { in: path, name: id, required: true, schema: { type: integer, minimum: 1 }, description: ID dokončeného náhledu }
+    post:
+      tags: [Stock]
+      summary: Zařadí převzetí historických dokladů na pozadí
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                confirm_closed_periods: { type: boolean, description: Vědomé potvrzení dokladů v uzavřeném účetním období. }
+      responses:
+        '202': { description: Trvalá aplikační úloha, content: { application/json: { schema: { $ref: '#/components/schemas/CatalogJob' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Náhled není dokončený, obsahuje chybu nebo zápor, chybí potvrzení uzavřeného období nebo firma už má aktivní import }
+
+  /api/v1/stock/history-import/jobs/{id}:
+    parameters:
+    - $ref: '#/components/parameters/SupplierIdHeader'
+    - { in: path, name: id, required: true, schema: { type: integer, minimum: 1 } }
+    get:
+      tags: [Stock]
+      summary: Stav importu historie skladu
+      responses:
+        '200': { description: Stav a progress, content: { application/json: { schema: { $ref: '#/components/schemas/CatalogJob' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/stock/history-import/jobs/{id}/items:
+    parameters:
+    - $ref: '#/components/parameters/SupplierIdHeader'
+    - { in: path, name: id, required: true, schema: { type: integer, minimum: 1 } }
+    get:
+      tags: [Stock]
+      summary: Položkový report importu historie skladu
+      parameters:
+      - { in: query, name: page, schema: { type: integer, minimum: 1 } }
+      - { in: query, name: limit, schema: { type: integer, minimum: 1, maximum: 500 } }
+      responses:
+        '200': { description: Položky a stránkování, content: { application/json: { schema: { type: object } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/stock/history-import/jobs/{id}/{operation}:
+    parameters:
+    - $ref: '#/components/parameters/SupplierIdHeader'
+    - { in: path, name: id, required: true, schema: { type: integer, minimum: 1 } }
+    - { in: path, name: operation, required: true, schema: { type: string, enum: [retry, cancel] } }
+    post:
+      tags: [Stock]
+      summary: Pokračuje v importu historie nebo zastaví další dávky
+      responses:
+        '200': { description: Aktualizovaný stav, content: { application/json: { schema: { $ref: '#/components/schemas/CatalogJob' } } } }
+        '409': { description: Operace není dostupná v aktuálním stavu }
+
   /api/v1/stock/documents:
     parameters:
     - $ref: '#/components/parameters/SupplierIdHeader'
@@ -41413,6 +41563,7 @@ components:
         purchase_invoice_id: { type: [integer, 'null'], format: int64 }
         purchase_order_id: { type: [integer, 'null'], format: int64 }
         stock_take_id: { type: [integer, 'null'], format: int64 }
+        history_import_job_id: { type: [integer, 'null'], format: int64, readOnly: true, description: Úloha importu historie, která doklad převzala. }
         journal_entry_id: { type: [integer, 'null'], format: int64 }
         reversal_document_id: { type: [integer, 'null'], format: int64 }
         status: { type: string, enum: [draft, posted, reversed] }

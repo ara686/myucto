@@ -155,10 +155,11 @@ final class CatalogJobAction
     private function present(array $job): array
     {
         $job['stock_take_id'] = $job['input']['stock_take_id'] ?? null;
-        if (in_array($job['kind'], ['price_matrix_preview', 'catalog_import_stage', 'stock_opening_import_stage'], true)) {
+        if (in_array($job['kind'], ['price_matrix_preview', 'catalog_import_stage', 'stock_opening_import_stage', 'stock_history_import_stage'], true)) {
             $applyKind = match ($job['kind']) {
                 'price_matrix_preview' => 'price_matrix_apply',
                 'catalog_import_stage' => 'catalog_import_apply',
+                'stock_history_import_stage' => 'stock_history_import_apply',
                 default => 'stock_opening_import_apply',
             };
             $stmt = $this->db->pdo()->prepare('SELECT id FROM catalog_jobs WHERE supplier_id = ? AND kind = ?

@@ -1096,7 +1096,8 @@
         "2192_journal_settlement_allocations.sql",
         "2193_internal_documents.sql",
         "2194_eet_delegation.sql",
-        "2195_advance_deduction_settlement.sql"
+        "2195_advance_deduction_settlement.sql",
+        "2197_stock_history_import.sql"
     ],
     "tables": {
         "abra_flexi_connections": {
@@ -24029,6 +24030,7 @@
                 "doc_date": "date NOT NULL",
                 "doc_number": "varchar(30) NULL DEFAULT NULL",
                 "doc_type": "enum('receipt','issue','transfer') NOT NULL",
+                "history_import_job_id": "bigint(20) unsigned NULL DEFAULT NULL",
                 "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
                 "invoice_id": "bigint(20) unsigned NULL DEFAULT NULL",
                 "journal_entry_id": "bigint(20) unsigned NULL DEFAULT NULL",
@@ -24048,6 +24050,7 @@
                 "PRIMARY": "UNIQUE BTREE (id)",
                 "fk_sd_entry": "BTREE (journal_entry_id)",
                 "fk_sd_wh_to": "BTREE (warehouse_to_id)",
+                "idx_sd_history_import": "BTREE (supplier_id, history_import_job_id, doc_date)",
                 "idx_sd_invoice": "BTREE (invoice_id)",
                 "idx_sd_pinvoice": "BTREE (purchase_invoice_id)",
                 "idx_sd_po": "BTREE (purchase_order_id)",
@@ -25700,6 +25703,7 @@
                 "simplified_number_format": "varchar(60) NULL DEFAULT NULL",
                 "stock_auto_issue": "tinyint(1) NOT NULL DEFAULT 1",
                 "stock_enabled": "tinyint(1) NOT NULL DEFAULT 0",
+                "stock_history_locked_until": "date NULL DEFAULT NULL",
                 "stock_in_transit_from": "enum('sent','confirmed') NOT NULL DEFAULT 'sent'",
                 "stock_method": "enum('B','A') NOT NULL DEFAULT 'B'",
                 "stock_order_price_tolerance_pct": "decimal(5,2) NOT NULL DEFAULT 5.00",

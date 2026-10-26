@@ -277,6 +277,7 @@ final class StockDocumentService
 
         // 2b) Zámek účetního období (jen double_entry; tax_evidence řeší doc-lock jinde).
         $this->guardPeriodOpen($supplierId, $docDate);
+        $this->guardHistoryUnlocked($supplierId, $docDate);
 
         // 2c) Otevřená inventura na dotčených skladech blokuje pohyby (A13).
         $this->warehouses->lockForStockOperation($supplierId, array_filter([$warehouseId, $warehouseToId]));
@@ -399,6 +400,7 @@ final class StockDocumentService
             // Guardy shodné s post: období (storno v uzavřeném období → 409),
             // otevřená inventura na dotčených skladech.
             $this->guardPeriodOpen($supplierId, $docDate);
+            $this->guardHistoryUnlocked($supplierId, $docDate);
             $this->warehouses->lockForStockOperation($supplierId, array_filter([$counterWh, $counterWhTo]));
             $this->guardNoOpenStockTake($supplierId, $counterWh, $counterWhTo);
 
@@ -689,6 +691,26 @@ final class StockDocumentService
                 'Doklad spadá do uzavřeného účetního období — proveď korekci dokladem k dnešnímu datu.',
                 409,
                 ['doc_date' => $docDate, 'period_status' => (string) $period['status']],
+            );
+        }
+    }
+
+    /**
+     * Převzatá historie skladu (import z jiného programu) je uzavřená: doklad s datem do
+     * jejího posledního dne by ji přecenil a rozbil vyrovnání se stavem, ze kterého firma
+     * pokračuje. Platí i pro storno převzatého dokladu, ten se vrací jen celým importem.
+     */
+    private function guardHistoryUnlocked(int $supplierId, string $docDate): void
+    {
+        $stmt = $this->db->pdo()->prepare('SELECT stock_history_locked_until FROM supplier WHERE id = ?');
+        $stmt->execute([$supplierId]);
+        $lockedUntil = $stmt->fetchColumn();
+        if (is_string($lockedUntil) && $docDate <= $lockedUntil) {
+            throw new StockException(
+                'stock_history_locked',
+                'Doklad spadá do převzaté historie skladu (do ' . $lockedUntil . '). Opravu proveďte dokladem s pozdějším datem.',
+                409,
+                ['doc_date' => $docDate, 'locked_until' => $lockedUntil],
             );
         }
     }
