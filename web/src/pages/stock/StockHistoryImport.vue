@@ -9,6 +9,7 @@ import {
 import type { OpeningImportJobItems, OpeningImportSource } from '@/api/openingStockImport'
 import type { CatalogJob } from '@/api/catalogJobs'
 import CatalogJobProgress from '@/components/stock/CatalogJobProgress.vue'
+import DateInput from '@/components/ui/DateInput.vue'
 import { btnFilled, btnOutline, ICONS } from '@/components/ui/buttonStyles'
 import { useAuthStore } from '@/stores/auth'
 import { useSupplierStore } from '@/stores/supplier'
@@ -37,6 +38,7 @@ const reportLoading = ref(false)
 const sampleLoading = ref(false)
 const loading = ref(false)
 const error = ref('')
+const previewForm = ref<HTMLFormElement | null>(null)
 const liveMode = ref(false)
 const confirmClosed = ref(false)
 const applyNeedsConfirm = ref(false)
@@ -230,6 +232,7 @@ async function showJob(nextJob: CatalogJob, context: RequestContext) {
 
 async function createPreview() {
   if (!formValid.value || loading.value) return
+  if (!previewForm.value?.reportValidity()) return
   const sourceId = source.value!.id
   const context = captureContext('preview')
   loading.value = true
@@ -443,15 +446,15 @@ onBeforeUnmount(() => { generation++; stopPolling() })
       <p v-if="!auth.isCompanyAdminRole" class="w-full text-xs text-neutral-500">{{ t('stock.history_import.rollback_admin_only') }}</p>
     </section>
 
-    <section v-if="!job && !activeImport && orphanId === null && status" class="min-w-0 space-y-5 rounded-xl border border-neutral-200 bg-surface p-5 shadow-sm">
+    <form v-if="!job && !activeImport && orphanId === null && status" ref="previewForm" class="min-w-0 space-y-5 rounded-xl border border-neutral-200 bg-surface p-5 shadow-sm" @submit.prevent="createPreview">
       <fieldset class="space-y-2 text-sm">
         <legend class="font-medium">{{ t('stock.history_import.mode') }}</legend>
         <label class="flex items-start gap-2"><input v-model="liveMode" type="radio" :value="false" data-test="mode-cutover" class="mt-1" /><span><span class="font-medium">{{ t('stock.history_import.mode_cutover') }}</span><span class="block text-neutral-500">{{ t('stock.history_import.mode_cutover_hint') }}</span></span></label>
         <label class="flex items-start gap-2" :class="{ 'opacity-50': hasDocuments }"><input v-model="liveMode" type="radio" :value="true" data-test="mode-live" :disabled="hasDocuments" class="mt-1" /><span><span class="font-medium">{{ t('stock.history_import.mode_live') }}</span><span class="block text-neutral-500">{{ hasDocuments ? t('stock.history_import.mode_live_blocked', { date: formatDate(status.first_document_date) }) : t('stock.history_import.mode_live_hint') }}</span></span></label>
       </fieldset>
       <div class="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2">
-        <label v-if="!liveMode" class="block text-sm"><span class="font-medium">{{ t('stock.history_import.cutover_date') }}</span><input v-model="config.cutover_date" data-test="cutover-date" type="date" :max="cutoverMax" class="input mt-1 w-full" /><span class="mt-1 block text-xs text-neutral-500">{{ t('stock.history_import.cutover_hint') }}</span></label>
-        <label class="block text-sm"><span class="font-medium">{{ t('stock.history_import.source_key') }}</span><input v-model.trim="config.source_key" data-test="source-key" class="input mt-1 w-full" placeholder="stary-sklad" /></label>
+        <label v-if="!liveMode" class="block text-sm"><span class="font-medium">{{ t('stock.history_import.cutover_date') }}</span><DateInput v-model="config.cutover_date" data-test="cutover-date" :max="cutoverMax" class="form-input mt-1 w-full" /><span class="mt-1 block text-xs text-neutral-500">{{ t('stock.history_import.cutover_hint') }}</span></label>
+        <label class="block text-sm"><span class="font-medium">{{ t('stock.history_import.source_key') }}</span><input v-model.trim="config.source_key" data-test="source-key" class="form-input mt-1 w-full" placeholder="stary-sklad" /></label>
       </div>
       <label class="block rounded-lg border-2 border-dashed border-neutral-300 p-6 text-center cursor-pointer">
         <svg class="mx-auto h-6 w-6 text-primary-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path :d="ICONS.upload" /></svg>
@@ -460,9 +463,9 @@ onBeforeUnmount(() => { generation++; stopPolling() })
       </label>
       <div v-if="source" class="space-y-3 rounded-lg border border-neutral-200 bg-neutral-50 p-4">
         <div class="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-3">
-          <label class="text-sm"><span class="font-medium">{{ t('stock.opening_import.encoding') }}</span><select v-model="config.reader.encoding" class="input mt-1 w-full"><option value="UTF-8">UTF-8</option><option value="Windows-1250">Windows-1250</option><option value="ISO-8859-2">ISO-8859-2</option></select></label>
-          <label class="text-sm"><span class="font-medium">{{ t('stock.opening_import.delimiter') }}</span><select v-model="config.reader.delimiter" class="input mt-1 w-full"><option value=";">;</option><option value=",">,</option><option :value="'\t'">{{ t('stock.opening_import.tab') }}</option><option value="|">|</option></select></label>
-          <label class="text-sm"><span class="font-medium">{{ t('stock.opening_import.sheet') }}</span><input v-model.number="config.reader.sheet" type="number" min="0" class="input mt-1 w-full" /></label>
+          <label class="text-sm"><span class="font-medium">{{ t('stock.opening_import.encoding') }}</span><select v-model="config.reader.encoding" class="form-select mt-1 w-full"><option value="UTF-8">UTF-8</option><option value="Windows-1250">Windows-1250</option><option value="ISO-8859-2">ISO-8859-2</option></select></label>
+          <label class="text-sm"><span class="font-medium">{{ t('stock.opening_import.delimiter') }}</span><select v-model="config.reader.delimiter" class="form-select mt-1 w-full"><option value=";">;</option><option value=",">,</option><option :value="'\t'">{{ t('stock.opening_import.tab') }}</option><option value="|">|</option></select></label>
+          <label class="text-sm"><span class="font-medium">{{ t('stock.opening_import.sheet') }}</span><input v-model.number="config.reader.sheet" type="number" min="0" class="form-input mt-1 w-full" /></label>
         </div>
         <div class="flex flex-wrap items-center justify-between gap-3">
           <p class="text-xs text-neutral-500">{{ t('stock.opening_import.reader_hint') }}</p>
@@ -471,18 +474,18 @@ onBeforeUnmount(() => { generation++; stopPolling() })
       </div>
       <div v-if="sample" class="space-y-4">
         <div class="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <label v-for="field in mappedFields" :key="field" class="text-sm"><span class="font-medium">{{ t(`stock.history_import.fields.${field}`) }}<span v-if="sample.fields.includes(field)" class="text-danger-600"> *</span></span><select v-model="config.mapping[field]" :data-test="`map-${field}`" class="input mt-1 w-full"><option value="">{{ sample.fields.includes(field) ? t('stock.opening_import.select') : t('stock.history_import.not_mapped') }}</option><option v-for="header in sample.header" :key="header" :value="header">{{ header }}</option></select></label>
+          <label v-for="field in mappedFields" :key="field" class="text-sm"><span class="font-medium">{{ t(`stock.history_import.fields.${field}`) }}<span v-if="sample.fields.includes(field)" class="text-danger-600"> *</span></span><select v-model="config.mapping[field]" :data-test="`map-${field}`" class="form-select mt-1 w-full"><option value="">{{ sample.fields.includes(field) ? t('stock.opening_import.select') : t('stock.history_import.not_mapped') }}</option><option v-for="header in sample.header" :key="header" :value="header">{{ header }}</option></select></label>
         </div>
         <div class="overflow-x-auto rounded-lg border border-neutral-200"><table class="min-w-full text-xs"><thead class="bg-neutral-50"><tr><th v-for="header in sample.header" :key="header" class="px-3 py-2 text-left">{{ header }}</th></tr></thead><tbody><tr v-for="(row, index) in sample.rows" :key="index" class="border-t border-neutral-200"><td v-for="(cell, cellIndex) in row" :key="cellIndex" class="px-3 py-2">{{ cell }}</td></tr></tbody></table></div>
         <details class="rounded-lg border border-neutral-200 p-4 text-sm">
           <summary class="cursor-pointer font-medium">{{ t('stock.history_import.prefixes') }}</summary>
           <p class="mt-2 text-xs text-neutral-500">{{ t('stock.history_import.prefixes_hint') }}</p>
-          <div class="mt-3 grid min-w-0 grid-cols-2 gap-3 sm:grid-cols-5"><label v-for="type in TYPES" :key="type" class="text-xs"><span class="font-medium">{{ t(`stock.history_import.types.${type}`) }}</span><input v-model.trim="config.number_prefixes[type]" maxlength="10" class="input mt-1 w-full" /></label></div>
+          <div class="mt-3 grid min-w-0 grid-cols-2 gap-3 sm:grid-cols-5"><label v-for="type in TYPES" :key="type" class="text-xs"><span class="font-medium">{{ t(`stock.history_import.types.${type}`) }}</span><input v-model.trim="config.number_prefixes[type]" maxlength="10" class="form-input mt-1 w-full" /></label></div>
         </details>
         <label class="flex items-start gap-2 text-sm"><input v-model="config.fill_negative" type="checkbox" data-test="fill-negative" class="mt-1" /><span><span class="font-medium">{{ t('stock.history_import.fill_negative') }}</span><span class="block text-neutral-500">{{ t('stock.history_import.fill_negative_hint') }}</span></span></label>
       </div>
       <div class="flex flex-wrap justify-end gap-2"><button type="button" data-test="create-preview" :disabled="!formValid || loading" :class="btnFilled('primary')" @click="createPreview"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path :d="ICONS.eye" /></svg>{{ t('stock.history_import.preview') }}</button></div>
-    </section>
+    </form>
 
     <section v-if="job" class="min-w-0 space-y-4 rounded-xl border border-neutral-200 bg-surface p-5 shadow-sm">
       <p class="text-sm font-medium">{{ t(`stock.history_import.job_kind.${job.kind === ROLLBACK_KIND ? 'rollback' : job.kind === APPLY_KIND ? 'apply' : 'preview'}`) }}</p>

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, shallowMount } from '@vue/test-utils'
 import StockHistoryImport from '../StockHistoryImport.vue'
+import DateInput from '@/components/ui/DateInput.vue'
 
 const mocks = vi.hoisted(() => ({
   status: vi.fn(), upload: vi.fn(), sample: vi.fn(), preview: vi.fn(), job: vi.fn(), items: vi.fn(),
@@ -20,7 +21,10 @@ vi.mock('@/stores/supplier', async () => {
   mocks.supplierStore = reactive({ currentSupplierId: 1 })
   return { useSupplierStore: () => mocks.supplierStore }
 })
-vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
+vi.mock('vue-i18n', async () => {
+  const { ref } = await import('vue')
+  return { useI18n: () => ({ t: (key: string) => key, locale: ref('cs') }) }
+})
 vi.mock('@/composables/useFormat', () => ({
   formatDate: (value: string | null | undefined) => value ?? '—',
   formatNumber: (value: number) => String(value),
@@ -38,8 +42,9 @@ const stage = { id: 41, supplier_id: 1, kind: 'stock_history_import_stage', inpu
     lines: 3, date_from: '2020-01-02', date_to: '2020-02-01', negative_count: 0, negatives: [], closed_period_documents: 0 } }
 const emptyItems = { items: [], pagination: { page: 1, limit: 50, total: 0, pages: 0 } }
 
-function mountPage() {
+function mountPage(realDateInput = false) {
   return shallowMount(StockHistoryImport, { global: { stubs: {
+    DateInput: !realDateInput,
     RouterLink: true,
     CatalogJobProgress: { name: 'CatalogJobProgress', props: ['job', 'canCancel'], emits: ['cancel'], template: '<div data-test="progress">{{ job.kind }}</div>' },
   } } })
@@ -67,6 +72,29 @@ beforeEach(() => {
 afterEach(() => vi.clearAllMocks())
 
 describe('StockHistoryImport', () => {
+  it.each(['31. 2. 2020', '2. 1. 2021'])('blocks invalid or over-limit cutover text %s before preview', async value => {
+    mocks.preview.mockResolvedValue(stage)
+    mocks.job.mockResolvedValue(stage)
+    const wrapper = mountPage(true)
+    await flushPromises()
+    await uploadFile(wrapper)
+    await wrapper.get('[data-test="source-key"]').setValue('stary-sklad')
+    const date = wrapper.getComponent(DateInput)
+    const text = date.get<HTMLInputElement>('input[type="text"]')
+    await text.trigger('focus')
+    await text.setValue(value)
+    expect(date.props('modelValue')).toBe(value === '31. 2. 2020' ? '2021-01-01' : '2021-01-02')
+    expect(text.element.checkValidity()).toBe(false)
+    await wrapper.get('[data-test="create-preview"]').trigger('click')
+    await flushPromises()
+    expect(mocks.preview).not.toHaveBeenCalled()
+    await text.setValue('1. 1. 2020')
+    await wrapper.get('[data-test="create-preview"]').trigger('click')
+    await flushPromises()
+    expect(mocks.preview).toHaveBeenCalledWith(7, expect.objectContaining({ cutover_date: '2020-01-01' }))
+    wrapper.unmount()
+  })
+
   it.each(['upload', 'preview', 'apply', 'report'] as const)('releases the new company after a pending %s and ignores its late response', async operation => {
     let resolve!: (value: any) => void
     const pending = new Promise<any>(done => { resolve = done })
@@ -98,7 +126,7 @@ describe('StockHistoryImport', () => {
     mocks.supplierStore.currentSupplierId = 2
     await flushPromises()
     expect(wrapper.get('input[type="file"]').attributes('disabled')).toBeUndefined()
-    expect((wrapper.get('[data-test="cutover-date"]').element as HTMLInputElement).value).toBe('2022-02-01')
+    expect(wrapper.getComponent(DateInput).props('modelValue')).toBe('2022-02-01')
     if (operation === 'report') {
       const next = { ...stage, id: 62, supplier_id: 2 }
       mocks.preview.mockResolvedValueOnce(next)
@@ -147,7 +175,7 @@ describe('StockHistoryImport', () => {
     mocks.job.mockResolvedValue({ ...stage, status: 'queued' })
     const wrapper = mountPage()
     await flushPromises()
-    expect((wrapper.get('[data-test="cutover-date"]').element as HTMLInputElement).value).toBe('2021-01-01')
+    expect(wrapper.getComponent(DateInput).props('modelValue')).toBe('2021-01-01')
     expect(wrapper.get('[data-test="mode-live"]').attributes('disabled')).toBeDefined()
 
     await uploadFile(wrapper)

@@ -14576,6 +14576,7 @@
       "tab_receipts": "Příjemky",
       "tab_issues": "Výdejky",
       "tab_transfers": "Převodky",
+      "tab_import": "Import",
       "new_receipt": "Nová příjemka",
       "new_issue": "Nová výdejka",
       "new_transfer": "Nová převodka",
@@ -26261,7 +26262,8 @@
       "settings": "Nastavení firmy",
       "utilities": "Nástroje",
       "profile": "Osobní profil",
-      "property": "Registr SVJ"
+      "property": "Registr SVJ",
+      "eet": "EET"
     },
     "items": []
   },

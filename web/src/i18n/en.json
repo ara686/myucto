@@ -14576,6 +14576,7 @@
       "tab_receipts": "Receipts",
       "tab_issues": "Issues",
       "tab_transfers": "Transfers",
+      "tab_import": "Import",
       "new_receipt": "New goods receipt",
       "new_issue": "New goods issue",
       "new_transfer": "New transfer",
@@ -26261,7 +26262,8 @@
       "settings": "Company settings",
       "utilities": "Utilities",
       "profile": "Personal profile",
-      "property": "Property registry"
+      "property": "Property registry",
+      "eet": "EET"
     },
     "items": []
   },
