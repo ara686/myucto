@@ -798,6 +798,37 @@ final class SyntheticPohodaExport
             . self::entry('Banka', 'BAN0010111', 'Kurzový rozdíl', 10, '563000', '311001', '2026-02-21'));
     }
 
+    /** Poskytnuté zálohy minulého roku ({@see withPreviousYearAdvances()}), předpis bez DPH 1 000 + 500. */
+    public const PREVIOUS_ADVANCES = ['25ZP0001', '25ZP0002'];
+    public const PREVIOUS_ADVANCES_BASE = 1500.0;
+
+    /**
+     * Agenda z {@see write()} se dvěma poskytnutými zálohami minulého roku, které POHODA
+     * převedla do agendy (uhrazené v prosinci 2025, bez DDKP v exportu): 25ZP0001 1 000 + 210
+     * a 25ZP0002 500 + 105 (Dodavatel Test). Počáteční stav 314 je `$opening314` (proti 701,
+     * otevírací zápis zůstává vyrovnaný přes 411).
+     */
+    public static function withPreviousYearAdvances(string $agendaDir, float $opening314): void
+    {
+        $advance = static fn (string $number, string $vs, string $date, float $base, float $vat): string =>
+            '<lst:invoice version="2.0"><inv:invoiceHeader><inv:invoiceType>receivedAdvanceInvoice</inv:invoiceType><inv:number><typ:numberRequested>' . $number . '</typ:numberRequested></inv:number>'
+            . '<inv:symVar>' . $vs . '</inv:symVar><inv:originalDocument>' . $vs . '</inv:originalDocument><inv:date>' . $date . '</inv:date><inv:dateTax>' . $date . '</inv:dateTax>'
+            . '<inv:dateAccounting>' . $date . '</inv:dateAccounting><inv:dateDue>' . $date . '</inv:dateDue>'
+            . '<inv:classificationVAT><typ:ids>PN</typ:ids></inv:classificationVAT><inv:text>Záloha ' . $number . '</inv:text>'
+            . self::partner('inv', 'Dodavatel Test s.r.o.', self::VENDOR_ICO, 'CZ' . self::VENDOR_ICO)
+            . '<inv:paymentType><typ:paymentType>draft</typ:paymentType></inv:paymentType>'
+            . '<inv:liquidation><typ:amountHome>0</typ:amountHome><typ:date>' . date('Y-m-d', (int) strtotime($date . ' +5 days')) . '</typ:date></inv:liquidation></inv:invoiceHeader>'
+            . self::summary('inv', $base, $vat) . '</lst:invoice>';
+        self::append($agendaDir . '/02_uctova_osnova.xml', '</lst:listAccount>', '<lst:itemAccount id="314001" code="314001" name="Poskytnuté zálohy"/>');
+        self::file($agendaDir . '/23_faktury_receivedAdvanceInvoice.xml', '<lst:listInvoice version="2.0" state="ok">'
+            . $advance(self::PREVIOUS_ADVANCES[0], '2025901', '2025-11-10', 1000, 210)
+            . $advance(self::PREVIOUS_ADVANCES[1], '2025902', '2025-12-01', 500, 105)
+            . '</lst:listInvoice>');
+        self::append($agendaDir . '/01_ucetni_denik.xml', '</lst:accountancy>',
+            self::entry('Počáteční stavy účtů', 'ZAV', 'Počáteční stav účtu', $opening314, '314001', '701000', '2026-01-01')
+            . self::entry('Počáteční stavy účtů', 'ZAV', 'Počáteční stav účtu', $opening314, '701000', '411000', '2026-01-01'));
+    }
+
     private static function append(string $file, string $closing, string $xml): void
     {
         $content = (string) file_get_contents($file);
