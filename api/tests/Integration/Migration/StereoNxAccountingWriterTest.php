@@ -185,6 +185,57 @@ final class StereoNxAccountingWriterTest extends TestCase
         self::assertSame($before, $this->snapshot());
     }
 
+    public function testNativeTaxFlagsPreserveDeductibilityOfExpenseAndRevenueAccounts(): void
+    {
+        $tables = SyntheticStereoNxAccountingTables::tables();
+        foreach ([['501', 'N', true], ['501001', 'N', false], ['602', 'V', true], ['602001', 'V', false]] as [$code, $type, $tax]) {
+            $tables['Lrozvrh'][] = ['Ucet' => $code, 'Nazev' => 'Syntetický účet ' . $code,
+                'TypUctu' => $type, 'Danovy' => $tax];
+        }
+        $backup = $this->backup(tables: $tables);
+        $decoded = array_column(iterator_to_array($backup->rows('Lrozvrh'), false), 'Danovy', 'Ucet');
+        foreach (['501' => true, '501001' => false, '602' => true, '602001' => false] as $code => $expected) {
+            self::assertSame($expected, $decoded[$code], 'Native tax flag of synthetic account ' . $code);
+        }
+        $prepared = $this->writer->prepare($backup);
+        self::assertTrue($prepared['ok'], json_encode($prepared['errors'], JSON_UNESCAPED_UNICODE));
+        $this->writer->write($prepared, $this->supplierId, $this->userId);
+        $query = $this->db->pdo()->prepare("SELECT account_code, tax_deductibility FROM chart_of_accounts
+            WHERE supplier_id = ? AND account_code IN ('501', '501001', '602', '602001') ORDER BY account_code");
+        $query->execute([$this->supplierId]);
+        self::assertSame([
+            ['account_code' => '501', 'tax_deductibility' => 'deductible'],
+            ['account_code' => '501001', 'tax_deductibility' => 'non_deductible'],
+            ['account_code' => '602', 'tax_deductibility' => 'deductible'],
+            ['account_code' => '602001', 'tax_deductibility' => 'non_deductible'],
+        ], $query->fetchAll(PDO::FETCH_ASSOC));
+    }
+
+    public function testNativeNullTaxFlagStillBlocksChartImport(): void
+    {
+        $tables = SyntheticStereoNxAccountingTables::tables();
+        $tables['Lrozvrh'][] = ['Ucet' => '501', 'Nazev' => 'Syntetický účet s neurčeným příznakem',
+            'TypUctu' => 'N', 'Danovy' => null];
+        $backup = $this->backup(tables: $tables);
+        $decoded = array_column(iterator_to_array($backup->rows('Lrozvrh'), false), 'Danovy', 'Ucet');
+        self::assertNull($decoded['501']);
+        $prepared = $this->writer->prepare($backup);
+        self::assertFalse($prepared['ok']);
+        $invalidFlags = array_values(array_filter($prepared['errors'],
+            static fn (array $error): bool => $error['code'] === 'chart_tax_flag_invalid'));
+        self::assertCount(1, $invalidFlags);
+        self::assertSame(1, $invalidFlags[0]['count']);
+        self::assertCount(1, $prepared['errors']);
+        $before = $this->snapshot();
+        try {
+            $this->writer->write($prepared, $this->supplierId, $this->userId);
+            self::fail('An unknown tax flag must prevent chart import.');
+        } catch (StereoNxException $e) {
+            self::assertSame('accounting_source_invalid', $e->errorCode);
+        }
+        self::assertSame($before, $this->snapshot());
+    }
+
     public function testNegativeRedStornoKeepsOriginalSidesAndUsesSignedAmounts(): void
     {
         $prepared = $this->writer->prepare($this->backup(1250.50, -50.25));

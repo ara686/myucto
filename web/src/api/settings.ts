@@ -184,6 +184,34 @@ export interface VatRegistrationCheck {
   application_deadline_basis: 'statutory' | 'informative' | null
 }
 
+export type AccountingDecree = '500' | '501' | '502' | '503' | '504' | '325' | '410'
+
+export type AccountingFramework = 'cz_500' | 'cz_504'
+
+export interface AccountingFrameworkHistoryEntry {
+  id: number
+  effective_from: string
+  accounting_framework: AccountingFramework
+  created_at: string
+  created_by: number | null
+}
+
+/** Doporučení účetního rámce podle právní formy; rozhoduje výhradně server. */
+export interface AccountingProfileRecommendation {
+  entity_profile: 'nonprofit' | 'svj' | 'unknown'
+  accounting_framework: 'cz_504' | null
+  public_benefit_taxpayer: boolean | null
+}
+
+export interface AccountingFrameworkState {
+  id: number
+  readonly accounting_profile_recommendation?: AccountingProfileRecommendation
+  accounting_framework?: AccountingFramework
+  accounting_framework_history?: AccountingFrameworkHistoryEntry[]
+  tax_accounting_decree_effective?: AccountingDecree
+  tax_accounting_decree_is_derived?: boolean
+}
+
 export interface Supplier {
   id: number
   company_name: string
@@ -197,9 +225,15 @@ export interface Supplier {
   country_name_en?: string
   ic: string | null
   dic: string | null
+  legal_form?: string | null
+  readonly accounting_profile_recommendation?: AccountingProfileRecommendation
   is_vat_payer: boolean
   vat_status_effective_from?: string
   vat_status_history?: VatStatusHistoryEntry[]
+  accounting_framework?: AccountingFramework
+  accounting_framework_history?: AccountingFrameworkHistoryEntry[]
+  tax_accounting_decree_effective?: AccountingDecree
+  tax_accounting_decree_is_derived?: boolean
   /** Identifikovaná osoba (§ 6g–6l ZDPH, issue #94) — neplátce v tuzemsku
    *  s přeshraničními povinnostmi. Nelze kombinovat s is_vat_payer. */
   is_identified: boolean
@@ -249,8 +283,9 @@ export interface Supplier {
    * Platí pro všechny formáty importu, ne jen AI extrakci.
    */
   purchase_import_received_at: 'issue_date' | 'import_date'
-  logo_path: string | null
-  signature_path: string | null
+  /** Interní cesty; server je posílá jen s `settings.branding` (zápis). UI čte `has_email_logo`. */
+  logo_path?: string | null
+  signature_path?: string | null
   pohoda_account_code: string | null
   pohoda_centre_code: string | null
   pohoda_activity_code: string | null
@@ -291,6 +326,7 @@ export interface Supplier {
   payment_thanks_auto_send: boolean
   payment_thanks_default_checked: boolean
   payment_thanks_attach_paid_pdf: boolean
+  payment_thanks_max_age_days: number // 0 = bez omezení stáří platby (migrace 2073)
   // Kopie odchozích e-mailů dodavateli (migrace 0102). Klíč chybí / objekt null
   // = typ jede dle cfg fallbacku (cfg_self_copy_fallback níže).
   self_copy?: Partial<Record<SelfCopyType, SelfCopyMode>> | null
@@ -367,11 +403,13 @@ export interface Supplier {
   opr_jmeno?: string | null
   opr_prijmeni?: string | null
   opr_postaveni?: string | null
-  // Přehled OSVČ pro ČSSZ XML (Fáze 3)
+  // Přehled OSVČ pro ČSSZ XML (Fáze 3). Osobní identifikátory chodí jen s právem
+  // `settings.company.write`; bez něj klíče v odpovědi chybí.
   cssz_vsdp?: string | null
   cssz_ossz_code?: string | null
   health_insurance_number?: string | null
   // AI extrakční brána (Epic F7) — non-secret volby (secrety jen přes /ai/credentials).
+  // Server je posílá jen s `settings.ai_provider`; stránka Integrace je čte z vlastního endpointu.
   client_ai_extraction_enabled?: boolean
   client_ai_extraction_monthly_limit?: number
   ai_provider?: 'anthropic' | 'azure_openai' | 'openai' | 'gemini' | 'ollama'
@@ -908,11 +946,14 @@ export interface CertificateVaultUploadPayload {
   shareWithOtherSuppliers?: boolean
   /** Jen do firem, kde uživatel ještě nemá platný certifikát. */
   shareOnlyWithoutValid?: boolean
+  /** Starý certifikát, který nový nahradí ve všech firmách (má přednost před sdílením). */
+  replaceCredentialId?: number | null
 }
 
 export type CertificateVaultSharingStatus =
   | 'enabled'
   | 'already_enabled'
+  | 'replaced'
   | 'skipped_has_valid'
   | 'skipped_no_permission'
 
@@ -920,10 +961,14 @@ export interface CertificateVaultSharingResult {
   supplier_id: number
   name: string
   status: CertificateVaultSharingStatus
+  /** Jen u náhrady: kolik míst firmy se přepojilo ze starého certifikátu. */
+  replaced?: { data_box: number; signing_profiles: number; payroll: number }
 }
 
 export type CertificateVaultUploadResult = CertificateVaultItem & {
   supplier_sharing?: CertificateVaultSharingResult[]
+  /** Certifikát se uložil, ale náhrada starého neproběhla. */
+  supplier_sharing_error?: string
 }
 
 export interface CertificateVaultDeleteResult {
@@ -1034,6 +1079,11 @@ export interface PdfSignatureOutputSettingsBatchResult {
 export const settingsApi = {
   getSupplier: () => api.get<Supplier>('/settings/supplier').then(r => r.data),
   updateSupplier: (payload: Partial<Supplier>) => api.put<Supplier>('/settings/supplier', payload).then(r => r.data),
+  updateAccountingFramework: (id: number, framework: AccountingFramework, effectiveFrom: string) =>
+    api.put<Supplier>(`/suppliers/${id}`, {
+      accounting_framework: framework,
+      accounting_framework_effective_from: effectiveFrom,
+    }).then(r => r.data),
   /**
    * Nastaví počítadlo tak, aby PŘÍŠTÍ doklad daného typu dostal číslo `nextNumber` —
    * navázání na rozjetou řadu při přechodu z jiného software. Ukládá se mimo
@@ -1223,7 +1273,9 @@ export const settingsApi = {
     data.append('label', payload.label)
     data.append('pfx_password', payload.password)
     appendStepUpProof(data, payload.proof)
-    if (payload.shareWithOtherSuppliers) {
+    if (payload.replaceCredentialId) {
+      data.append('replace_credential_id', String(payload.replaceCredentialId))
+    } else if (payload.shareWithOtherSuppliers) {
       data.append('share_with_other_suppliers', '1')
       data.append('share_only_without_valid', payload.shareOnlyWithoutValid ? '1' : '0')
     }
@@ -1235,9 +1287,15 @@ export const settingsApi = {
     api.delete<CertificateVaultDeleteResult>(`/settings/certificates/${id}`, {
       data: stepUpProofBody(proof),
     }).then(r => r.data),
-  shareCertificateWithOtherSuppliers: (id: number, onlyWithoutValid: boolean, proof: EpoStepUpProof) =>
+  shareCertificateWithOtherSuppliers: (
+    id: number,
+    onlyWithoutValid: boolean,
+    proof: EpoStepUpProof,
+    replaceCredentialId: number | null = null,
+  ) =>
     api.post<{ supplier_sharing: CertificateVaultSharingResult[] }>(`/settings/certificates/${id}/share`, {
       share_only_without_valid: onlyWithoutValid,
+      ...(replaceCredentialId ? { replace_credential_id: replaceCredentialId } : {}),
       ...stepUpProofBody(proof),
     }).then(r => r.data.supplier_sharing),
   getSigningSettings: () =>

@@ -17,6 +17,7 @@ import OtherItemSourceContext from './OtherItemSourceContext.vue'
 import RepostModal from './RepostModal.vue'
 import WorkspaceTeleport from '@/components/workspace/WorkspaceTeleport.vue'
 import type { JournalPostingSource } from '@/api/accounting'
+import type { EntityType } from '@/api/documents'
 
 /**
  * Obsah rozbaleného zápisu deníku (rozpad na účty, Souvisí, přílohy, akce).
@@ -69,7 +70,18 @@ const repostOpen = ref(false)
 // hlásí potomci, jakmile si data dotáhnou — sekce se pak otevře sama.
 const extrasCount = ref(0)
 const documentCount = ref(0)
-const extrasTotal = computed(() => extrasCount.value + documentCount.value)
+const sourceDocumentCount = ref(0)
+const extrasTotal = computed(() => extrasCount.value + documentCount.value + sourceDocumentCount.value)
+
+// Dokument připojený k dokladu nebo pohybu (účtenka k platbě kartou) patří i k jeho
+// zápisu. Deník ho ukáže jen ke čtení, připojuje a odpojuje se u zdroje.
+const SOURCE_ENTITY_TYPES: Record<string, EntityType> = {
+  invoice: 'invoice',
+  purchase_invoice: 'purchase_invoice',
+  bank: 'bank_transaction',
+  cash: 'cash_document',
+}
+const sourceEntityType = computed(() => props.detail.source_id ? SOURCE_ENTITY_TYPES[props.detail.source_type] ?? null : null)
 
 // Uložené dimenze řádků se propíšou do načteného detailu, ať štítky v rozpadu sedí.
 function onLineDimensionsSaved(byLine: Record<number, Record<number, number>>, splits: Record<number, DimensionSplits> = {}) {
@@ -104,6 +116,9 @@ function onLineDimensionsSaved(byLine: Record<number, Record<number, number>>, s
         @count="n => extrasCount = n" />
       <LinkedDocumentsPanel entity-type="journal_entry" :entity-id="detail.id" collapsible
         @count="n => documentCount = n" />
+      <LinkedDocumentsPanel v-if="sourceEntityType" :key="`source-docs-${detail.id}`"
+        :entity-type="sourceEntityType" :entity-id="Number(detail.source_id)" collapsible readonly
+        :title="t('accounting.journal.source_documents')" @count="n => sourceDocumentCount = n" />
     </CollapsibleSection>
     <div class="flex flex-wrap items-center justify-between gap-3 mt-4 pt-3 border-t border-neutral-200">
       <div class="text-xs text-neutral-500">

@@ -103,7 +103,7 @@ DPH lze zapnout jen u účelů **Prodej** a **Nákup**. U úhrad faktur, převod
 2. Vyberte fakturu. Partner (dodavatel s IČ a DIČ) se předvyplní. Částka je uzamčená: přijatou fakturu hradíte vždy v **plné zbývající výši**.
 3. Klikněte na **Vystavit**.
 
-**Vratka od dodavatele (příjem):** Klikněte na **Příjem**, zvolte účel **Úhrada přijaté faktury**, vyberte fakturu, na které už úhrada visí, zadejte vrácenou částku (libovolnou, nejvýše uhrazenou) a doklad vystavte.
+**Vratka od dodavatele (příjem):** Klikněte na **Příjem**, zvolte účel **Úhrada přijaté faktury**, vyberte fakturu, na které už úhrada visí, zadejte vrácenou částku (libovolnou, nejvýše uhrazenou) a doklad vystavte. Když vratku později stornujete nebo smažete a zbývající úhrady kryjí celou fakturu, faktura je znovu uhrazená s datem poslední zbývající úhrady, stejně jako po zrušení spárování bankovní vratky ([§ 29](29_Banka.md)).
 
 **Jak poznáte, že je hotovo:** Faktura je označená jako uhrazená a doklad je v seznamu se stavem **Vystaven**. U zálohové faktury se plátci DPH navíc připraví koncept daňového dokladu k přijaté platbě.
 

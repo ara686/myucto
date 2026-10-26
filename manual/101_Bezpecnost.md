@@ -39,8 +39,12 @@ Kapitolu otevřete, když:
 
 ## 101.2 Než začnete
 
-- Pro TOTP potřebujete autentikátor v mobilu (Google Authenticator, Authy,
-  Microsoft Authenticator, 1Password, Bitwarden).
+- Pro TOTP potřebujete autentikátor v mobilu. Doporučujeme
+  [Proton Authenticator](https://proton.me/authenticator) nebo
+  [Ente Auth](https://ente.com/auth/), případně
+  [Google Authenticator](https://support.google.com/accounts/answer/1066447)
+  nebo [Microsoft Authenticator](https://support.microsoft.com/cs-cz/authenticator/download-microsoft-authenticator).
+  Funguje i 1Password nebo Bitwarden.
 - Pro přístupový klíč potřebujete prohlížeč a zařízení s podporou passkeys.
   Aplikace musí běžet na stabilní HTTPS adrese (`app.url`).
 - Při přidání druhého faktoru vás aplikace požádá o nové ověření: aktuální
@@ -316,8 +320,8 @@ TOTP = time-based one-time password (RFC 6238).
    hesla se tu počítají do stejné ochrany proti hádání jako při přihlášení,
    takže po opakovaných chybách se účet na 15 minut zamkne i pro login.
 2. Aplikace ukáže **QR kód** + textový **secret key**.
-3. V mobilu otevřete **autentikátor** (Google Authenticator, Authy, Microsoft
-   Authenticator, 1Password, Bitwarden) → Přidat účet → Sken QR kódu.
+3. V mobilu otevřete **autentikátor** (Proton Authenticator, Ente Auth,
+   Google Authenticator, Microsoft Authenticator, 1Password, Bitwarden) → Přidat účet → Sken QR kódu.
 4. Aplikace začne generovat 6-cifrené kódy každých 30 sekund.
 5. Zadejte aktuální kód do MyÚčta a klikněte na **Aktivovat TOTP**.
 
@@ -398,12 +402,28 @@ Kam se klíč uloží, vybírá prohlížeč při registraci; aplikace to neří
 nezjistí zpětně. Máte-li jediný klíč a ten je vázaný na zařízení, mějte jako
 zálohu buď druhý klíč, nebo aktivní TOTP.
 
+Hned po registraci aplikace požádá o jedno zkušební ověření novým klíčem.
+Některé správce klíčů registraci projdou, ale ověření pak vracejí neplatné;
+takový klíč aplikace rovnou odebere a vyzve vás, abyste ho uložili jinam nebo
+si zapnuli TOTP. Platí to i při prvním nastavení účtu z uvítacího e-mailu: když
+klíč neprojde, zůstanete na obrazovce nastavení ověření a vyberete jiný klíč
+nebo TOTP. Zavřete-li systémový dialog, klíč zůstane uložený jako
+neověřený a do 15 minut od registrace ho můžete vyzkoušet tlačítkem
+**Vyzkoušet** v seznamu klíčů.
+
 ##### Záložní jednorázové kódy
 
 **Profil → Přístupové klíče → Záložní kódy.** Sada deseti kódů ve tvaru
 `ABCDE-FGHJK`; každý funguje **právě jednou**. Zadávají se na přihlašovací
-stránce místo passkey i TOTP (odkaz „Nemám klíč ani autentikátor“) a potvrdí se
-jimi i odebrání ztraceného klíče.
+stránce místo passkey i TOTP (odkaz „Nemám klíč ani autentikátor“). Po přihlášení
+jimi potvrdíte i obnovu faktoru: na stránce **Přístupové klíče** odkaz „Klíč
+nefunguje? Použít záložní kód“ zpřístupní odebrání klíče i přidání nového a na
+stránce **2FA / TOTP** stejný odkaz zapnutí TOTP. To se hodí, když správce klíčů
+vrací neplatné ověření a nový klíč by skončil v témže správci. Kód se spotřebuje,
+i když operaci nedokončíte.
+
+Odebrat **poslední** silný faktor nejde ani záložním kódem, pokud je MFA povinné.
+Nejdřív zapněte TOTP nebo přidejte nový klíč, teprve potom starý klíč odeberte.
 
 Server ukládá jen SHA-256 kódu, takže **sadu jde zobrazit jedinkrát** - při
 vygenerování. Uložte ji mimo počítač, ze kterého se přihlašujete: tisk, trezor,
@@ -417,7 +437,11 @@ Co kód schválně **ne**umí, aby zůstal záchranou a nestal se trvalým fakto
   by vás jinak zamkla ven (`allowed_mfa_methods = ['passkey']` + ztracený klíč).
 
 Použití kódu se zapisuje do activity logu (`auth.recovery_code_login`,
-`auth.recovery_code_used`) i s IP a počtem zbývajících kódů.
+`auth.recovery_code_used`) i s IP a počtem zbývajících kódů. Neúspěšné ověření
+přístupovým klíčem zapisuje `auth.passkey_step_up_failed` (při přihlášení
+`auth.login_failed`) s kategorií důvodu, např. `assertion_invalid` s hláškou
+validátoru nebo `unknown_credential`, podle které se dá dohledat, proč klíč
+neprošel.
 
 ##### Rescue na serveru
 
@@ -430,8 +454,12 @@ php api/bin/reset-mfa.php vas@email.cz
 
 Skript vypne TOTP, odvolá všechny passkeys, zruší důvěryhodná zařízení,
 čekající OTP, WebAuthn flow, step-up proofy i **záložní kódy** a invaliduje
-všechny session uživatele. Stejný skript lze spustit také přes alias
-`reset-2fa.php`.
+všechny session uživatele. Zruší také všechny **API tokeny a MCP připojení**
+uživatele a vypíše jejich počet; integrace je po obnově účtu potřeba napojit
+novým tokenem. Stejný skript lze spustit také přes alias `reset-2fa.php`.
+
+Běžná změna hesla ani obnova zapomenutého hesla API tokeny neruší: tokeny slouží
+integracím, které na hesle nezávisí. Spravují a ruší se samostatně v aplikaci.
 
 ##### Docker
 
@@ -1005,11 +1033,11 @@ příkaz vypíše sloupce, ve kterých zůstala hodnota shodná s originálem
 > MyInvoice zůstávají plně funkční včetně zápisu. Komerční moduly se skryjí
 > i pro čtení a API, jejich data ale zůstávají beze změny ve vlastní databázi
 > a po obnovení licence se znovu zpřístupní. Detail v
-> [105. Licence a aktivace](105_Licence_a_aktivace.md).
+> [104. Licence a aktivace](104_Licence_a_aktivace.md).
 
 ## 101.12 Související kapitoly
 
 - [Přihlášení](08_Prihlaseni.md)
 - [Nastavení](96_Nastaveni.md)
-- [Licence a aktivace](105_Licence_a_aktivace.md)
+- [Licence a aktivace](104_Licence_a_aktivace.md)
 - [Řešení problémů](999_Reseni_problemu.md)

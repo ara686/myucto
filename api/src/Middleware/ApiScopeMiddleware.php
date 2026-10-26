@@ -49,6 +49,14 @@ final class ApiScopeMiddleware implements MiddlewareInterface
      * @var list<string>
      */
     private const BEARER_ALLOWED = [
+        '#^/api/property/catalog/unit-legal-roles(/[0-9]+)?$#',
+        '#^/api/property/catalog/openings$#',
+        '#^/api/property/catalog/service-settlements(/[0-9]+(/current)?)?$#',
+        '#^/api/property/catalog/service-lifecycles(/(?:[0-9]+|reconciliation))?$#',
+        '#^/api/property/catalog/funds/(operations|balances)$#',
+        '#^/api/property/catalog/payments/(card|operations|history|reconciliation(/parties)?|saldo)$#',
+        '#^/api/property/catalog/charges/(components|versions(/[0-9]+)?|issues(/[0-9]+)?)$#',
+        '#^/api/property/catalog/(profile|summary|houses|units|services)$#',
         // Systémové + dokumentace + connection-test
         '#^/api/health$#',
         '#^/api/version$#',
@@ -86,6 +94,18 @@ final class ApiScopeMiddleware implements MiddlewareInterface
         '#^/api/catalog/exports/[0-9]+/download$#',
         '#^/api/catalog/changes$#',
         '#^/api/price-list-items(/|$)#',
+        // EET a mobilní aplikace: čtení evidence (Domů, Tržby, detail tržby) a se scope
+        // `read_write` přijetí platby, QR záměr, opakování, oprava a rychlá účtenka.
+        // Nastavení, jednotky, zařízení, certifikáty, diagnostika a export zůstávají
+        // jen pro webovou relaci; XML pokusů token nedostane ani v detailu záznamu
+        // (RequestAuthorization::canViewEetAttemptXml).
+        '#^/api/eet/(summary|queue|capabilities)$#',
+        '#^/api/eet/records(/[0-9]+)?$#',
+        '#^/api/eet/records/[0-9]+/(retry|corrections(/preview)?)$#',
+        '#^/api/eet/payments(/preview)?$#',
+        '#^/api/eet/payments/[0-9a-f-]{36}$#',
+        '#^/api/eet/payment-intents(/[0-9a-f-]{36}/(confirm|cancel))?$#',
+        '#^/api/mobile/receipts$#',
         // Mzdy - pouze úzký personální a vstupní kontrakt. Uzávěrky, schválení
         // běhů, platby, dokumenty a podání nemají v allowlistu žádnou cestu.
         '#^/api/payroll/people$#',
@@ -149,9 +169,18 @@ final class ApiScopeMiddleware implements MiddlewareInterface
      * @var list<string>
      */
     private const BEARER_SESSION_ONLY = [
+        '#^/api/accounting/periods/[0-9]+/nonprofit-tax/drafts?(/|$)#',
+        '#^/api/accounting/nonprofit-dppo(/|$)#',
+        '#^/api/accounting/nonprofit-membership(/|$)#',
+        '#^/api/accounting/periods/[0-9]+/nonprofit-membership/reconciliation$#',
+        '#^/api/accounting/nonprofit-(funding|capital)(/|$)#',
+        '#^/api/accounting/periods/[0-9]+/nonprofit-(funding|capital)/choices$#',
+        '#^/api/accounting/periods/[0-9]+/nonprofit-legal-profile(/|$)#',
+        '#^/api/accounting/nonprofit-tax-savings(/|$)#',
         '#^/api/eshop/bulk(/|$)#',
         '#^/api/accounting/payroll(/|$)#',
         '#^/api/accounting/reports/payroll-sheet$#',
+        '#^/api/accounting/periods/[0-9]+/closing/(asset-reserve|legal-provisions)/workspace$#',
         // Přečíslování přijatých dokladů přepisuje čísla i v deníku — jen účetní v aplikaci.
         '#^/api/purchase-invoices/renumber$#',
     ];
@@ -172,11 +201,17 @@ final class ApiScopeMiddleware implements MiddlewareInterface
      * @var list<string>
      */
     private const BEARER_READ_ONLY = [
+        '#^/api/property(/|$)#',
         // Účetní mutace, které historicky leží mimo /api/accounting. Široký
         // allowlist faktur a banky je nesmí omylem zpřístupnit read_write PAT.
         '#^/api/invoices/[0-9]+/book$#',
         '#^/api/invoices/[0-9]+/rebuild-snapshots$#',
         '#^/api/bank-transactions/[0-9]+/(post|unpost)$#',
+        // Měnové účty nesou bankovní spojení firmy (číslo účtu, IBAN, BIC), které
+        // se tiskne na faktury a do QR platby. Token je smí jen číst; změnu
+        // příjemce plateb dělá správce ve webovém rozhraní (openapi: mutace jen přes UI).
+        '#^/api/settings/currencies(/|$)#',
+        '#^/api/bank-transactions/[0-9]+/unmatch$#',
         '#^/api/accounting(/|$)#',
         '#^/api/reports(/|$)#',
         '#^/api/tax(/|$)#',

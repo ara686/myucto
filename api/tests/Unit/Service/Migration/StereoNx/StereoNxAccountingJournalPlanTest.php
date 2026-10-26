@@ -45,6 +45,24 @@ final class StereoNxAccountingJournalPlanTest extends TestCase
         self::assertSame('2026-02-03', $plan['entries'][0]['date']);
     }
 
+    public function testUnusedNativeNullTaxBreakdownPreservesExactAccountingPosting(): void
+    {
+        $withZero = self::plan([self::row()]);
+        $withNull = self::plan([self::row(['DPH' => null])]);
+        self::assertTrue($withNull['ok'], json_encode($withNull['blockers']));
+        self::assertSame($withZero['entries'], $withNull['entries']);
+        self::assertSame($withZero['summary'], $withNull['summary']);
+    }
+
+    public function testMissingTaxFieldDoesNotMasqueradeAsAnUnusedNativeNull(): void
+    {
+        $row = self::row();
+        unset($row['DPH']);
+        $plan = self::plan([$row]);
+        self::assertFalse($plan['ok']);
+        self::assertContains('journal_tax_amount_invalid', array_column($plan['blockers'], 'code'));
+    }
+
     public function testSplitPostingUsesOrderAsPartOfIdentity(): void
     {
         $plan = self::plan([self::row(), self::row(['Poradi' => 2, 'Celkem' => 100.0])]);

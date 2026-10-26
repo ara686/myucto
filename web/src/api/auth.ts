@@ -77,6 +77,9 @@ export interface SupplierBrief {
   payment_thanks_default_checked: boolean
   /** Režim účetnictví (Epic F1). 'double_entry' zpřístupní účetní UI (deník, osnova, období). */
   accounting_mode?: 'tax_evidence' | 'double_entry'
+  accounting_framework?: 'cz_500' | 'cz_504'
+  /** Profil podle právní formy (`LegalFormProfileRecommendation`); `undefined` = starší backend. */
+  entity_profile?: 'nonprofit' | 'svj' | 'unknown'
   /** Měsíc začátku účetního roku (1 = kalendářní rok, 2–12 = hospodářský rok; migrace 2003). */
   fiscal_year_start_month?: number
   /** Skladová evidence (Epic SKLAD) — gate sekce Sklad v menu + editorů. Funguje nezávisle na accounting_mode. */
@@ -211,6 +214,11 @@ export interface DomainLoginStart {
   expires_in: number
 }
 
+export interface DomainLoginConfirmation {
+  target_hostname: string
+  supplier_name: string
+}
+
 export interface PasskeyCredential {
   id: number
   label: string
@@ -321,11 +329,20 @@ export const authApi = {
       handoff_path: handoffPath || undefined,
     }).then((r) => r.data),
 
-  domainLoginAuthorize: (requestToken: string, state: string, csrf?: string) =>
+  domainLoginAuthorize: (requestToken: string, state: string, csrf?: string, confirmed = false) =>
     api.post<{ redirect_url: string }>('/auth/domain-login/authorize', {
       request_token: requestToken,
       state,
+      ...(confirmed ? { confirmed: true } : {}),
     }, csrfHeaders(csrf)).then((r) => r.data),
+
+  /** Cíl čekajícího předání pro potvrzovací obrazovku. Kód nevydá. */
+  domainLoginPreview: (requestToken: string, state: string, csrf?: string) =>
+    api.post<{ confirmation: DomainLoginConfirmation }>('/auth/domain-login/authorize', {
+      request_token: requestToken,
+      state,
+      preview: true,
+    }, csrfHeaders(csrf)).then((r) => r.data.confirmation),
 
   domainLoginExchange: (requestToken: string, code: string, state: string, codeVerifier: string) =>
     api.post<{ csrf_token: string; return_path: string; supplier_id: number }>('/auth/domain-login/exchange', {
@@ -412,6 +429,12 @@ export const authApi = {
     api.patch<{ credential: PasskeyCredential }>(`/auth/webauthn/credentials/${id}`, { label }).then(r => r.data.credential),
   passkeyRevoke: (id: number, stepUpToken: string) =>
     api.delete(`/auth/webauthn/credentials/${id}`, { data: { step_up_token: stepUpToken } }),
+  passkeyTestOptions: (id: number) =>
+    api.post<WebAuthnFlow>(`/auth/webauthn/credentials/${id}/test/options`).then(r => r.data),
+  passkeyTestVerify: (id: number, flowToken: string, credential: Record<string, any>) =>
+    api.post<{ verified: true }>(`/auth/webauthn/credentials/${id}/test/verify`, {
+      flow_token: flowToken, credential,
+    }).then(r => r.data),
   passkeyStepUpOptions: (operation: string) =>
     api.post<WebAuthnFlow>('/auth/webauthn/step-up/options', { operation }).then(r => r.data),
   passkeyStepUpVerify: (flowToken: string, operation: string, credential: Record<string, any>) =>

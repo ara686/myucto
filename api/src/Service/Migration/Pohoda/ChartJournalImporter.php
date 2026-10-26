@@ -46,7 +46,7 @@ final class ChartJournalImporter
     {
         $p = $ctx->protocol;
         if ($this->accounts->count($ctx->supplierId) === 0) {
-            $p->setCount(self::STEP_CHART, 'seeded', $this->seeder->seedForSupplier($ctx->supplierId));
+            $p->setCount(self::STEP_CHART, 'seeded', $this->seeder->seedForSupplier($ctx->supplierId, $this->periods->findByYear($ctx->supplierId, $ctx->year())['starts_on'] ?? $ctx->calendar->periodStart($ctx->year())));
         }
 
         $names = [];
@@ -87,6 +87,9 @@ final class ChartJournalImporter
             }
             if (isset($ctx->accountIds[$target])) {
                 $p->count(self::STEP_CHART, 'existing');
+                continue;
+            }
+            if ($ctx->skipsNew(self::STEP_CHART)) {
                 continue;
             }
             $synthetic = substr($target, 0, 3);
@@ -176,6 +179,9 @@ final class ChartJournalImporter
                         $stats['relocated']++;
                     }
                 }
+                continue;
+            }
+            if ($ctx->skipsNew(self::STEP_JOURNAL)) {
                 continue;
             }
             $isOpening = $groupKey === PohodaJournal::OPENING_KEY;

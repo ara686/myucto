@@ -108,7 +108,9 @@ v sekci **Originální PDF od dodavatele**.
 4. U položek vyberte **Druh nákladu** (**Služba**, **Materiál**, **Drobný majetek**, **Drobný nehmotný majetek**,
    **Dlouhodobý majetek**). Šipka za druhem nákladu rozbalí podrobnosti položky: **Nákladový účet** a **Členění DPH**.
    Do výkazů DPH jde členění položky. Liší-li se od hlavičky, je to u položky vidět a u hlavičky se nabídne
-   **Použít na všechny položky**; změna hlavičky sama položky nepřepíše.
+   **Použít na všechny položky**; změna hlavičky sama položky nepřepíše. Je-li doklad **Bez nároku na odpočet**,
+   ukazuje položka u kódu „bez nároku podle hlavičky" a do DPH nejde; kód s nárokem (40, 41) u ní editor označí jako
+   rozpor. Má-li hlavička kód bez nároku (42, Mimo předmět), převezme ho každá položka bez vlastního kódu.
 5. V boxu **Rekapitulace DPH** zkontrolujte základ a daň za každou sazbu. Pokud doklad dodavatele
    uvádí kvůli zaokrouhlení jiné částky, přepište je podle dokladu.
 6. V detailu klikněte na **Označit jako přijaté**.
@@ -123,7 +125,7 @@ upravit bez administrátorského zásahu.
 ## 23.5 Krok za krokem: zpracovat příchozí doklady
 
 1. Otevřete `Nákup → Příchozí doklady`.
-2. Doklady do fronty dostanete z klientského portálu, e-mailem nebo je nahrajete sami tlačítkem **Nahrát do fronty**.
+2. Doklady do fronty dostanete z klientského portálu, e-mailem nebo je nahrajete sami tlačítkem **Nahrát do fronty**. Na telefonu a tabletu je vedle něj tlačítko **Vyfotit**: vyfotí doklad fotoaparátem, v prohlížeči ho zmenší (delší strana nejvýš 1 200 px, zhruba do 150 kB), ukáže náhled a po potvrzení ho nahraje stejně jako ostatní soubory. Stejné tlačítko je u nahrání přílohy v editoru nové přijaté faktury.
 3. U dokladu zvolte, jak ho zpracovat: vytěžit přes ISDOC nebo AI, přepsat ručně, odmítnout, nebo klienta požádat o náhradu.
 4. Patří-li doklad jiné vaší firmě, klikněte na **Přesunout do …** u navržené firmy, nebo na **Přesunout do jiné firmy** a firmu vyberte.
 5. Pro více dokladů najednou je zaškrtněte a použijte hromadnou akci, například **Vytěžit označené**.
@@ -216,8 +218,13 @@ Tento postup je pro správce. Dodavatelé vám posílají PDF e-mailem nebo mát
 |---|---|---|
 | Doklad nejde zaúčtovat, přechod na **Zaúčtovaná** je zablokovaný | Chybí DUZP | Doplňte DUZP v editoru a zkuste to znovu |
 | Doklad s volbou **Krácený koeficientem (§76)** nejde zaúčtovat ani zahrnout do přiznání | Není nastavený zálohový koeficient pro daný rok | Požádejte administrátora nebo účetní o nastavení koeficientu, viz [Výkazy DPH](41_Vykazy_DPH.md#41138-kraceny-odpocet-76-koeficient) |
-| Při vytěžení se objeví hláška s číslem existující faktury, nová faktura nevznikla | Faktura od stejného dodavatele se stejným číslem a datem už existuje | Ověřte existující fakturu, nebo doklad ve frontě odmítněte |
+| Při vytěžení se objeví hláška s číslem existující faktury, nová faktura nevznikla | Faktura od stejného dodavatele se stejným číslem a datem už existuje a není stornovaná | Ověřte existující fakturu, nebo doklad ve frontě odmítněte. Stornovaný doklad vytěžení ani skenování neblokuje |
 | Při uložení se aplikace ptá, zda doklad uložit i se stejným číslem | Od dodavatele už máte doklad se stejným číslem a datem vystavení | Jde-li o další platbu téhož dokladu, například platebního kalendáře energií, potvrďte uložení. Jinak číslo opravte, ochrana proti omylu tím zůstává |
+| Hláška, že faktura se stejným číslem už existuje, ale je stornovaná | Doklad jste dříve stornovali | Původní doklad obnovte v jeho detailu akcí **Vrátit ze storna** (odkaz je v hlášce), nebo uložte nový doklad přesto, viz [§ 23.11.25](#231125-vratit-ze-storna-a-stejne-cislo-dokladu) |
+| Detail ukazuje jiný nárok na odpočet, než je v hlavičce | Doklad má rozpis DPH a do přiznání jde nárok z rozpisu | Sjednoťte hlavičku s rozpisem, nebo opravte rozpis akcí **Změnit DPH zařazení**, viz [§ 23.11.24](#231124-oprava-dph-zarazeni-bez-storna) |
+| Uložení odmítne změnu nároku s hláškou o rozpisu DPH | Rozpis má části s různým nárokem a změnu hlavičky nejde jednoznačně promítnout | Upravte nárok přímo v rozpisu DPH |
+| Hláška „Období odpočtu dokladu už bylo podáno" | Doklad patří do období, za které je podané přiznání k DPH nebo kontrolní hlášení | Změnu provede jen správce firmy s výslovným potvrzením; opravu vykažte opravným nebo dodatečným tvrzením |
+| **Upravit (force)** nabídne volbu režimu | Doklad je zaúčtovaný v uzavřeném účetním období | Zvolte **Opravit a přeúčtovat do běžného období**, nebo **Jen poznámky** |
 | Upozornění **Doklad nese DPH, ale nemá klasifikaci** | Sazba, kterou český číselník nezná (například německých 19 %), nebo dodavatel s neurčenou zemí | Zkontrolujte sazby na řádcích a vyberte klasifikaci DPH ručně |
 | Po uložení varování, že se kurz nepřenačetl | Kurz zadal člověk, přišel z importu, nebo je ČNB nedostupná | Zkontrolujte kurz a případně ho znovu načtěte tlačítkem **Načíst z ČNB** |
 | Upozornění na kombinaci reverse charge a omezeného nároku při zaúčtování | Taková kombinace se automaticky nezaúčtuje | Zaúčtujte doklad ručním zápisem v deníku |
@@ -328,13 +335,22 @@ Neobsahuje pevnou výchozí částku. Pravidlo samo nemění fakturu. Úhrady fa
 | **Přijatá** | Doklad potvrzený jako platný, visí na nezaplacených | Označit jako zaúčtovanou, uhrazenou, stornovat |
 | **Zaúčtovaná** | Předaná účetní nebo do účetnictví | Označit jako uhrazenou, stornovat |
 | **Uhrazená** | Zaplaceno ručně nebo automaticky z bankovního výpisu | Konečný stav |
-| **Stornovaná** | Stornovaný doklad, ponechaný pro audit | Konečný stav |
+| **Stornovaná** | Stornovaný doklad, ponechaný pro audit | Vrátit ze storna |
 
-Smazat jde **jen koncept**. Pro pozdější stavy použijte **Stornovat**, zachová auditní stopu.
+Smazat jde **jen koncept**. Pro pozdější stavy použijte **Stornovat**, zachová auditní stopu. Omylem stornovaný doklad
+obnovíte v detailu akcí **Vrátit ze storna**, doklad se vrátí do stavu **Přijatá** (viz
+[§ 23.11.25](#231125-vratit-ze-storna-a-stejne-cislo-dokladu)).
 
 Z konceptu je k dispozici **Označit jako přijaté** a **Stornovat**, z přijaté **Označit jako zaúčtované**, **Označit jako uhrazené**
 a **Stornovat**, ze zaúčtované **Označit jako uhrazené** a **Stornovat**. Tlačítko **Upravit** je dostupné jen u konceptu.
-Po označení jako přijatá je doklad neměnný (kromě administrátorského zásahu u přijaté).
+Po označení jako přijatá je doklad neměnný, kromě dvou zásahů:
+
+- **Upravit (force)** pod nabídkou Pokročilé, jen pro správce firmy, upraví celý doklad. Je-li doklad zaúčtovaný
+  v uzavřeném účetním období, nabídne volbu režimu: **Opravit a přeúčtovat do běžného období** (původní zápis se stornuje
+  a opravený doklad se zaúčtuje do aktuálního otevřeného období, čísla uzavřeného roku zůstanou) nebo **Jen poznámky**
+  (smí se změnit jen poznámky a jazyk). Zvolený režim editor připomíná nad formulářem.
+- **Změnit DPH zařazení** opraví jen nárok na odpočet a členění DPH, i u zaúčtovaného dokladu a bez storna. Má ho
+  i účetní, viz [§ 23.11.24](#231124-oprava-dph-zarazeni-bez-storna).
 
 Stav **Zaúčtovaná** a zaúčtování do deníku jsou dvě různé věci. Přechod na stav **Zaúčtovaná** je jen pracovní značka
 (doklad je hotový, předán dál). Skutečné zaúčtování do podvojného účetnictví, tedy vznik zápisu v
@@ -670,6 +686,13 @@ Při zaúčtování aplikace vytvoří jeden závazek 321 za celý doklad, ale j
 kombinace podnikatelské služby a osobní spotřeby společníka se zaúčtuje jako `518 + 343 + 355 / 321`. Účetní alokace nejsou
 dostupné u dokladů s reverse charge.
 
+**Rozpis má přednost před hlavičkou.** Do přiznání a kontrolního hlášení jde nárok na odpočet z jednotlivých částí
+rozpisu, hlavička ani položky o něm nerozhodují. Detail proto v kartě **Daňové zařazení** ukazuje nárok **podle rozpisu
+DPH**, u rozpisu s různým nárokem **Smíšený** se základem a daní každé části, a upozorní, když se nárok v hlavičce
+od rozpisu liší. Změníte-li v editoru nárok v hlavičce, promítne se do rozpisu jen tehdy, když měl celý rozpis stejný
+nárok jako hlavička. Rozpis s různým nárokem upravte přímo v rozpisu (nebo akcí **Změnit DPH zařazení**), uložení
+samotné hlavičky aplikace odmítne. Doklad se sám nemění, dokud ho neupravíte.
+
 > [!WARNING]
 > **Druh výdaje a alokace DPH jsou dvě různé věci.** Druh se volí na položce podle toho, co bylo nakoupeno. Alokace
 > rozděluje částku jedné sazby mezi podnikatelské, osobní a nedaňové použití a současně určuje nárok na odpočet. U více
@@ -861,7 +884,9 @@ Po uložení nebo přechodu na detail vidíte:
   648, u cizí měny 663. Stav ani datum úhrady faktury se nemění, zbytek na 321 se tím vyrovná. Stejnou akci nabízí
   i částečně uhrazená faktura,
 - kartu **Daňové zařazení** s přehledem údajů přímo rozhodujících o DPH: reverse charge, plátcovství dodavatele a nárok
-  na odpočet včetně procenta u kráceného. Typ dokladu, klasifikaci DPH (kód i popis), daňovou uznatelnost, dlouhodobý
+  na odpočet včetně procenta u kráceného. Nárok je ten, se kterým doklad opravdu jde do přiznání: u dokladu s rozpisem DPH
+  podle rozpisu (u smíšeného rozpisu i po částech). Rozpor mezi hlavičkou, rozpisem a položkami karta vypíše jako
+  upozornění. U položek je u kódu vidět, když je přebíjí hlavička bez nároku nebo rozpis DPH. Typ dokladu, klasifikaci DPH (kód i popis), daňovou uznatelnost, dlouhodobý
   majetek, kategorii nákladu a zakázku najdete ve sbalené sekci **Zaúčtování** spolu s kontací dokladu. Tato klasifikace je
   dostupná i před vznikem účetního zápisu. Sekce navíc ukazuje **nákladové pravidlo**, podle kterého se druh nákladu a účet
   určily (viz [§ 23.11.19](#231119-nakladove-pravidlo-a-preuctovani)). Ceny včetně DPH najdete v kartě Měna, u data přijetí
@@ -1085,6 +1110,20 @@ V seznamu Přijaté faktury klikněte na **Nascanovat inbox**:
 
 Okno po skončení zobrazí přehled: vytvořeno, přeskočeno, chyby a detail po souborech.
 
+**Automatický sken cronem** (`api/bin/cron-scan-purchase-inbox.php`) potřebuje jednoznačnou vlastní firmu inboxu.
+V instalaci s více firmami nastavte v sekci `purchase_invoice` klíč `cron_supplier_id` na kladné ID existující
+firmy. Toto nastavení platí pouze pro automatický sken; ruční **Nascanovat inbox** importuje do firmy vybrané v UI.
+`inbox_dir` je společný pro celou instalaci a podadresáře nerozdělují doklady mezi firmy.
+
+Pokud `cron_supplier_id` chybí nebo je `null`, použije cron výslovně nastavené `app.default_supplier_id`,
+ale jen pokud je `app.scan_all_suppliers` vypnuté. Jinak automaticky vybere jedinou firmu v databázi
+(bez ohledu na její ID). Bez firem sken přeskočí. U více firem bez nastaveného vlastníka importuje dál do firmy 1
+(případně do firmy s nejnižším ID) a v přehledu cron úlohy ukáže varování, že vlastníka je potřeba nastavit.
+`app.scan_all_suppliers` nezpůsobí sken společného inboxu za všechny firmy: s `cron_supplier_id` se skenuje
+jen určená firma. Neplatné nebo neexistující explicitní ID se hlásí jako chyba a nepřepne sken na jinou firmu.
+Selhání celého skenu se v přehledu cron úlohy zaznamenává jako neúspěšný běh. Soubor, který se nepodařilo
+naimportovat, se ukáže v seznamu nenaimportovaných položek, ale běh kvůli němu chybou nekončí.
+
 Pokud se u spárované dvojice nepodaří v textu PDF najít variabilní symbol z ISDOC **a** zároveň nesedí ani celková částka,
 doklad i příloha přesto vzniknou, ale report u nich ukáže **varování**, že PDF možná patří k jiné faktuře. Skenovaný obraz
 bez textové vrstvy se neověřuje (nemá čím), takže u něj varování nikdy nevyskočí.
@@ -1120,11 +1159,51 @@ Akce s přijatými fakturami jsou logované v aktivním logu (`Systém → Log`)
 - `purchase_invoice.our_pdf_downloaded`
 - `purchase_invoice.isdoc_exported` / `pohoda_exported`
 - `purchase_invoice.inbox_scanned`
+- `purchase_invoice.vat_treatment_changed` (oprava DPH zařazení se stavem před a po)
 
 ### 23.11.23 REST API
 
 Všechny operace jsou dostupné i přes REST API (`/api/v1/purchase-invoices/*`), viz [Swagger UI](/api/docs) nebo
 [Redoc](/api/reference). Token musí mít pro změny rozsah `read_write`.
+
+### 23.11.24 Oprava DPH zařazení bez storna
+
+Akce **Změnit DPH zařazení** v detailu opraví u přijatého, zaplaceného i zaúčtovaného dokladu jen to, co rozhoduje o DPH:
+
+- **Nárok na odpočet** v hlavičce (a procento u poměrného),
+- **klasifikaci DPH** hlavičky a jednotlivých položek,
+- **nárok na odpočet částí rozpisu DPH**, má-li ho doklad.
+
+Částky, data ani dodavatel se nemění a doklad se nestornuje. Akci vidí správce firmy a role s oprávněním **Změnit DPH
+zařazení přijaté faktury** (výchozí účetní ho má). Stornovaný doklad opravit nejde, nejdřív ho vraťte ze storna.
+
+Co se stane po uložení:
+
+- **Zaúčtovaný doklad v otevřeném období** se přeúčtuje na místě, zápis v deníku zůstane týž (například DPH z účtu 343
+  přejde do nákladu, když nárok změníte na **Bez nároku**).
+- **Zaúčtovaný doklad v uzavřeném období** nebo k datu, ke kterému je účetnictví uzamčené, opraví jen správce a jen
+  s volbou storna a přeúčtování: původní zápis se stornuje a opravený doklad se zaúčtuje do aktuálního otevřeného období.
+- **Doklad v podaném období DPH** (období odpočtu, za které je podané přiznání k DPH nebo kontrolní hlášení): změnu, která
+  se promítne do evidence DPH, provede jen správce a musí ji výslovně potvrdit. Opravu pak vykažte opravným nebo
+  dodatečným tvrzením (viz [Výkazy DPH](41_Vykazy_DPH.md#415-krok-za-krokem-oprava-uz-podaneho-priznani-nebo-hlaseni)).
+  Stejná ochrana platí pro vynucenou úpravu a pro členění DPH položek v kontrolním okně.
+
+Každá provedená oprava se zapíše do historie dokladu se stavem před a po (`purchase_invoice.vat_treatment_changed`).
+
+### 23.11.25 Vrátit ze storna a stejné číslo dokladu
+
+Stornovaný doklad zůstává v evidenci kvůli auditní stopě. Pokud jste ho stornovali omylem, otevřete jeho detail a použijte
+akci **Vrátit ze storna**: doklad se vrátí do stavu **Přijatá** a dál s ním pracujete jako dřív.
+
+Číslo dokladu dodavatele s datem vystavení drží i stornovaný doklad. Když zadáte ručně fakturu se stejným číslem a datem,
+aplikace řekne, že shodný doklad existuje a je stornovaný, a nabídne:
+
+- **Uložit přesto** - vznikne nový doklad se stejným číslem,
+- odkaz na stornovaný doklad, kde ho můžete **Vrátit ze storna** místo zakládání nového.
+
+Při vytěžení (AI import), skenování složky a zpracování příchozích dokladů se stornovaný doklad za duplikát nepovažuje: ze
+stejného souboru nebo se stejným číslem vznikne nový doklad. Nestornovaný doklad se stejným souborem nebo číslem a datem
+import dál zastaví a ukáže jeho číslo.
 
 ## 23.12 Související kapitoly
 

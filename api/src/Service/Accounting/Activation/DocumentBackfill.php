@@ -7,6 +7,7 @@ namespace MyInvoice\Service\Accounting\Activation;
 use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Repository\AccountingPeriodRepository;
 use MyInvoice\Service\Accounting\ChartOfAccountsSeeder;
+use MyInvoice\Service\Accounting\DocumentPostingGroup;
 use MyInvoice\Service\Accounting\PostingException;
 use MyInvoice\Service\Accounting\PostingService;
 use MyInvoice\Service\Accounting\TakenOverRecord;
@@ -94,11 +95,7 @@ final class DocumentBackfill
                         )"
                     : '')
                 . ($onlyUnposted
-                    ? " AND NOT EXISTS (
-                            SELECT 1 FROM journal_entries je
-                             WHERE je.supplier_id = i.supplier_id AND je.source_type = 'invoice'
-                               AND je.source_id = i.id AND je.reversed_by IS NULL
-                        )"
+                    ? ' AND NOT ' . DocumentPostingGroup::activePostingExistsSql("'invoice'", 'i.id', 'i.supplier_id', false)
                     : '') . "
            ORDER BY entry_date, i.id"
         );
@@ -123,11 +120,7 @@ final class DocumentBackfill
                         )"
                     : '')
                 . ($onlyUnposted
-                    ? " AND NOT EXISTS (
-                            SELECT 1 FROM journal_entries je
-                             WHERE je.supplier_id = pi.supplier_id AND je.source_type = 'purchase_invoice'
-                               AND je.source_id = pi.id AND je.reversed_by IS NULL
-                        )"
+                    ? ' AND NOT ' . DocumentPostingGroup::activePostingExistsSql("'purchase_invoice'", 'pi.id', 'pi.supplier_id', false)
                     : '') . "
            ORDER BY entry_date, pi.id"
         );
@@ -151,8 +144,7 @@ final class DocumentBackfill
         $cancelled = false;
         $processed = 0;
         $existsStmt = $pdo->prepare(
-            'SELECT id FROM journal_entries
-              WHERE supplier_id = ? AND source_type = ? AND source_id = ? AND reversed_by IS NULL LIMIT 1'
+            'SELECT ' . DocumentPostingGroup::activePostingExistsSql('?', '?', '?', false)
         );
         $ensuredYears = [];
 
@@ -164,7 +156,7 @@ final class DocumentBackfill
 
         $process = function (string $sourceType, array $doc) use (
             &$stats, &$skipReasons, &$documentIssues, &$processed, &$ensuredYears, &$cancelled,
-            $supplierId, $dryRun, $asDrafts, $isCancelled, $existsStmt, $pdo, $emit, $report
+            $supplierId, $dryRun, $asDrafts, $isCancelled, $existsStmt, $pdo, $emit, $report, $onlyUnposted
         ): void {
             if ($isCancelled !== null && $isCancelled()) {
                 $cancelled = true;
@@ -177,11 +169,11 @@ final class DocumentBackfill
 
             try {
                 $lines = $sourceType === 'invoice'
-                    ? $this->posting->buildFromInvoice($supplierId, $id)
-                    : $this->posting->buildFromPurchaseInvoice($supplierId, $id);
+                    ? $this->posting->buildFromInvoice($supplierId, $id, ['entry_date' => $entryDate])
+                    : $this->posting->buildFromPurchaseInvoice($supplierId, $id, ['entry_date' => $entryDate]);
                 PostingService::assertBalanced($lines);
-                $existsStmt->execute([$supplierId, $sourceType, $id]);
-                $wasThere = $existsStmt->fetchColumn() !== false;
+                $existsStmt->execute([$supplierId, $sourceType, $id, $supplierId, $sourceType, $id]);
+                $wasThere = (bool) $existsStmt->fetchColumn();
 
                 if ($dryRun) {
                     $balance = PostingService::balanceCents($lines);
@@ -201,6 +193,9 @@ final class DocumentBackfill
                     'entry_date' => $entryDate,
                     'document_date' => $doc['issue_date'] ?? null,
                     'posted' => !$asDrafts,
+                    // Doúčtování převzatý předpis ve skupině nepřepisuje. Průvodce aktivací
+                    // přepisuje jako dřív; rozdělenou skupinu nahlásí jako chybu dokladu.
+                    'posting_group_idempotent' => $onlyUnposted,
                 ]);
 
                 if (!$asDrafts) {
@@ -311,9 +306,7 @@ final class DocumentBackfill
     private function takenOverCount(array $invoiceBind, array $bind, string $dateWhere, array $invoiceTypePlaceholders, bool $onlyUnposted): array
     {
         $unposted = static fn (string $type, string $alias): string => $onlyUnposted
-            ? " AND NOT EXISTS (SELECT 1 FROM journal_entries je
-                                 WHERE je.supplier_id = {$alias}.supplier_id AND je.source_type = '{$type}'
-                                   AND je.source_id = {$alias}.id AND je.reversed_by IS NULL)"
+            ? ' AND NOT ' . DocumentPostingGroup::activePostingExistsSql("'{$type}'", "{$alias}.id", "{$alias}.supplier_id", false)
             : '';
         $pdo = $this->db->pdo();
         $invoices = $pdo->prepare(

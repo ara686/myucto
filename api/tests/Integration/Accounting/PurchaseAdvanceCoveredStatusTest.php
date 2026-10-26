@@ -120,6 +120,27 @@ final class PurchaseAdvanceCoveredStatusTest extends BankPostingTestCase
         self::assertSame(['received', null], $this->state($final));
     }
 
+    /** Záloha krytá zápočtem dobropisu: datum úhrady = datum zápočtu, i na konečné faktuře. */
+    public function testAdvanceCoveredByCreditNoteOffsetTakesOffsetDate(): void
+    {
+        $vendor  = $this->client('Dodavatel zápočet dobropisu');
+        $advance = $this->purchaseInvoice('ZPF-STAV-8', $vendor, 1210.00, 'advance');
+        $this->markPaid($advance, self::YEAR . '-06-23');
+        $final  = $this->finalPurchase('PF-STAV-8', $vendor, $advance);
+        $credit = $this->purchaseInvoice('DPF-STAV-8', $vendor, -1210.00, 'credit_note');
+        $this->db->pdo()->prepare("INSERT INTO credit_note_offsets
+            (supplier_id, doc_type, invoice_id, credit_note_id, amount, offset_on, created_by)
+            VALUES (?, 'purchase_invoice', ?, ?, 1210.00, ?, ?)")
+            ->execute([$this->supplierId, $advance, $credit, self::YEAR . '-06-25', $this->userId]);
+
+        $status = $this->container->get(AdvanceCoveredPaidStatus::class);
+        self::assertSame(self::YEAR . '-06-25', $status->lastPaymentDate($this->supplierId, $advance));
+        $status->afterPaymentsChanged($this->supplierId, [$advance]);
+
+        self::assertSame(['paid', self::YEAR . '-06-25'], $this->state($advance));
+        self::assertSame(['paid', self::YEAR . '-06-25'], $this->state($final));
+    }
+
     /** Faktura s doplatkem nad zálohu se zálohou samotnou neuzavírá. */
     public function testFinalWithRemainderIsNotClosedByAdvance(): void
     {

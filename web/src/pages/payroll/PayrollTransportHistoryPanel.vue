@@ -64,6 +64,7 @@ import ProductionSendConfirmDialog from '@/components/payroll/ProductionSendConf
 import PayrollSubmissionManualAcceptance from '@/components/payroll/PayrollSubmissionManualAcceptance.vue'
 import PayrollPossiblyDeliveredNotice from '@/components/payroll/PayrollPossiblyDeliveredNotice.vue'
 import { useProductionSendConfirm } from '@/composables/useProductionSendConfirm'
+import { useWindowRefresh } from '@/composables/useWindowRefresh'
 import { isTestEnvironmentRejection, useSubmissionEnvironment } from '@/composables/useSubmissionEnvironment'
 import { jmhzBlockerLabel } from './jmhzBlockerRemediation'
 import JmhzProtocolErrorRemediation from './JmhzProtocolErrorRemediation.vue'
@@ -972,16 +973,23 @@ function useVariableSymbol(value: string) {
  */
 let loadSequence = 0
 
-async function load() {
+/**
+ * `silent` = obnova na pozadí po změně v jiném okně: seznam zůstane vidět,
+ * hlášky poslední akce zůstanou a chyba se jen předá dál, ať se obnova zkusí
+ * při dalším návratu do okna.
+ */
+async function load(silent = false) {
   const sequence = ++loadSequence
   const requestedEnvironment = requestEnvironment.value
-  loading.value = true
-  loadError.value = ''
-  actionError.value = ''
-  success.value = ''
-  // Zapamatovaný rozpad chyb platí pro protokoly, které právě mizí z obrazovky
-  // — po znovunačtení (jiná stránka, nový import) by mohl patřit něčemu jinému.
-  resetProtocolErrors()
+  if (!silent) {
+    loading.value = true
+    loadError.value = ''
+    actionError.value = ''
+    success.value = ''
+    // Zapamatovaný rozpad chyb platí pro protokoly, které právě mizí z obrazovky
+    // — po znovunačtení (jiná stránka, nový import) by mohl patřit něčemu jinému.
+    resetProtocolErrors()
+  }
   try {
     // Obě strany přehledu se načítají naráz a SELHÁNÍ KTERÉKOLI Z NICH je
     // selhání celku. Ukázat jen jednu polovinu a druhou tiše vynechat by
@@ -1010,6 +1018,7 @@ async function load() {
     filterYears.value = history.years ?? []
     imported.value = protocols.protocols ?? []
     importedTotal.value = protocols.total ?? 0
+    loadError.value = ''
   } catch (exception: unknown) {
     if (sequence !== loadSequence) return
     // Odmítnutý test (server je mimo vývoj, i když klient měl starý stav) není
@@ -1020,6 +1029,7 @@ async function load() {
       environment.value = 'production'
       return
     }
+    if (silent) throw exception
     // Stav zůstává NEZNÁMÝ, ne prázdný — šablona podle `loadError` skryje
     // prázdný stav i seznam, aby se selhání nedalo přečíst jako „nic neodešlo".
     attempts.value = []
@@ -1034,7 +1044,7 @@ async function load() {
       t('payroll.submissions.transport.load_failed'),
     )
   } finally {
-    if (sequence === loadSequence) loading.value = false
+    if (sequence === loadSequence && !silent) loading.value = false
   }
   if (sequence !== loadSequence) return
   // Roky zná až odpověď serveru, takže předvolba přijde po prvním načtení
@@ -1564,8 +1574,12 @@ watch(environment, () => {
   void loadVariableSymbols()
 })
 
-onMounted(load)
+onMounted(() => load())
 onMounted(loadVariableSymbols)
+// Podání odeslané v jiném okně (měsíční přehled, fronta, datová schránka)
+// patří do Odesláno; rozepsané storno, oprava ani výmaz se nepřepisují.
+useWindowRefresh('*', () => load(true), () => !busy.value && cancellingId.value === null
+  && correctingId.value === null && correctionPreparationId.value === null && deletingId.value === null)
 </script>
 
 <template>
@@ -1609,7 +1623,7 @@ onMounted(loadVariableSymbols)
             data-test="transport-reload"
             :class="btnOutline('neutral')"
             :disabled="busy"
-            @click="load"
+            @click="load()"
           >
             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
               <path :d="ICONS.cycle" />
@@ -1999,7 +2013,7 @@ onMounted(loadVariableSymbols)
                 :submission-status="entry.group.submissionStatus"
                 :summary="manualAcceptances[entry.group.submissionId] ?? null"
                 :can-write="canWrite"
-                @accepted="load"
+                @accepted="load()"
               />
               <span
                 v-if="entry.replacement"

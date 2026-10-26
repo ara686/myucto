@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { computed, defineComponent, h, provide, ref } from 'vue'
+import { computed, defineComponent, h, KeepAlive, provide, ref } from 'vue'
 import { windowContextKey } from '@/workspace/windowContext'
-import { useWindowRefresh } from '../useWindowRefresh'
+import { useWindowRefresh, type WindowRefreshResources } from '../useWindowRefresh'
 
 vi.mock('@/workspace/supplierContext', () => ({ getWindowSupplierScope: () => ({ supplierId: 123, windowId: 'window-test' }) }))
 
@@ -13,6 +13,10 @@ afterEach(() => {
 })
 
 function open(activeInitially = true) {
+  return openWith(['invoices', 'clients'], activeInitially)
+}
+
+function openWith(resources: WindowRefreshResources, activeInitially = true) {
   const active = ref(activeInitially)
   const editing = ref(false)
   const refresh = vi.fn().mockResolvedValue(undefined)
@@ -20,7 +24,7 @@ function open(activeInitially = true) {
   let pending = ref(false)
   const Child = defineComponent({
     setup() {
-      pending = useWindowRefresh(['invoices', 'clients'], refresh, () => !editing.value).pending
+      pending = useWindowRefresh(resources, refresh, () => !editing.value).pending
       return () => h('input', { value: draft.value, onInput: (event: Event) => { draft.value = (event.target as HTMLInputElement).value } })
     },
   })
@@ -104,6 +108,79 @@ describe('retained window data refresh', () => {
     complete()
     await flushPromises()
     expect(refresh).toHaveBeenCalledTimes(2)
+  })
+
+  it('refreshes a wildcard window after a change in any agenda', async () => {
+    const { active, refresh } = openWith('*', false)
+    changed('payroll')
+    await flushPromises()
+    expect(refresh).not.toHaveBeenCalled()
+    active.value = true
+    await flushPromises()
+    expect(refresh).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not refresh when the window is shown again without any change', async () => {
+    const { active, refresh } = openWith('*', false)
+    active.value = true
+    await flushPromises()
+    active.value = false
+    await flushPromises()
+    active.value = true
+    await flushPromises()
+    expect(refresh).not.toHaveBeenCalled()
+  })
+
+  it('observes the DOM only while a refresh waits for a modal', async () => {
+    const observe = vi.spyOn(MutationObserver.prototype, 'observe')
+    const disconnect = vi.spyOn(MutationObserver.prototype, 'disconnect')
+    try {
+      const { refresh } = openWith('*')
+      await flushPromises()
+      expect(observe).not.toHaveBeenCalled()
+      const dialog = document.createElement('div')
+      dialog.setAttribute('aria-modal', 'true')
+      document.body.append(dialog)
+      changed('payroll')
+      await flushPromises()
+      expect(observe).toHaveBeenCalledTimes(1)
+      dialog.remove()
+      await flushPromises()
+      expect(refresh).toHaveBeenCalledTimes(1)
+      expect(disconnect).toHaveBeenCalled()
+    } finally {
+      observe.mockRestore()
+      disconnect.mockRestore()
+    }
+  })
+
+  it('waits for KeepAlive activation of a cached tab', async () => {
+    const refresh = vi.fn().mockResolvedValue(undefined)
+    const shown = ref(true)
+    const Tab = defineComponent({
+      setup() {
+        useWindowRefresh('*', refresh)
+        return () => h('div', 'tab')
+      },
+    })
+    const wrapper = mount(defineComponent({
+      setup() {
+        provide(windowContextKey, {
+          active: computed(() => true), paneId: computed(() => 'primary' as const), root: document.body, portal: document.body,
+        })
+        return () => h(KeepAlive, null, [shown.value ? h(Tab) : h('span')])
+      },
+    }), { attachTo: document.body })
+    wrappers.push(wrapper)
+    await flushPromises()
+    shown.value = false
+    await flushPromises()
+    changed('payroll')
+    await flushPromises()
+    expect(refresh).not.toHaveBeenCalled()
+    shown.value = true
+    await flushPromises()
+    expect(refresh).toHaveBeenCalledTimes(1)
   })
 
   it('stops listening after the retained window is evicted', async () => {

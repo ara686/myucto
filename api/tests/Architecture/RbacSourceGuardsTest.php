@@ -100,6 +100,22 @@ final class RbacSourceGuardsTest extends TestCase
         }
     }
 
+    /**
+     * Oprava DPH zařazení přijaté faktury a podané období DPH se rozhodují helpery
+     * RequestAuthorization, ne vlastní kontrolou na správce.
+     */
+    public function testPurchaseVatTreatmentUsesPermissionHelpers(): void
+    {
+        $src = dirname(__DIR__, 2) . '/src/Action/PurchaseInvoice';
+        $action = SourceCorpus::read($src . '/ChangePurchaseInvoiceVatTreatmentAction.php');
+        self::assertStringContainsString('RequestAuthorization::canChangePurchaseVatTreatment($request)', $action);
+        self::assertStringContainsString('RequestAuthorization::canRepostPurchaseVatTreatment($request)', $action);
+        self::assertStringContainsString('RequestAuthorization::canChangeFiledVatPeriod($request)', $action);
+        self::assertStringNotContainsString('isCompanyAdmin(', $action);
+        $kinds = SourceCorpus::read($src . '/SetPurchaseInvoiceExpenseKindsAction.php');
+        self::assertStringContainsString('RequestAuthorization::canChangeFiledVatPeriod($request)', $kinds);
+    }
+
     public function testFrontendDoesNotAuthorizeByLegacyRoleName(): void
     {
         $src = dirname(__DIR__, 3) . '/web/src';

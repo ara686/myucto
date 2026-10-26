@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MyInvoice\Service\PurchaseInvoice;
 
 use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Service\Accounting\DocumentPostingGroup;
 use MyInvoice\Service\Accounting\TakenOverRecord;
 use MyInvoice\Service\Bank\FxPaymentSettlement;
 use MyInvoice\Support\Sql\PurchaseSettledExpr;
@@ -235,30 +236,57 @@ final class AdvanceCoveredPaidStatus
         return $rows;
     }
 
-    /** Datum poslední evidované úhrady přijatého dokladu (banka, pokladna, zápočty). */
+    /** Datum poslední evidované úhrady přijatého dokladu ze všech kanálů PurchaseSettledExpr. */
     public function lastPaymentDate(int $supplierId, int $id): ?string
     {
-        $stmt = $this->db->pdo()->prepare(
-            "SELECT MAX(d) FROM (
-                SELECT DATE(bt.posted_at) AS d
-                  FROM payment_matches pm
-                  JOIN bank_transactions bt ON bt.id = pm.bank_transaction_id
-                 WHERE pm.supplier_id = ? AND pm.purchase_invoice_id = ?
-                UNION ALL
-                SELECT cd.issue_date FROM cash_documents cd
-                 WHERE cd.supplier_id = ? AND cd.purchase_invoice_id = ? AND cd.status = 'posted' AND cd.doc_type = 'out'
-                UNION ALL
-                SELECT oa.agreement_date FROM offset_agreement_items oi
-                  JOIN offset_agreements oa ON oa.id = oi.agreement_id AND oa.status = 'confirmed'
-                 WHERE oi.supplier_id = ? AND oi.doc_type = 'purchase_invoice' AND oi.doc_id = ?
-                UNION ALL
-                SELECT s.settled_on FROM invoice_settlements s
-                 WHERE s.supplier_id = ? AND s.doc_type = 'purchase_invoice' AND s.doc_id = ? AND s.status = 'confirmed'
-             ) x"
-        );
-        $stmt->execute([$supplierId, $id, $supplierId, $id, $supplierId, $id, $supplierId, $id]);
-        $d = $stmt->fetchColumn();
-        return $d === false || $d === null ? null : substr((string) $d, 0, 10);
+        return $this->lastPaymentDates($supplierId, [$id])[$id] ?? null;
+    }
+
+    /**
+     * Stejný zdroj data pro jednotlivý doklad i rozdělenou bankovní úhradu. Datum úhrady
+     * kladného dokladu nese jen odchozí platba: příchozí vratka úhradu snižuje, stejně
+     * jako pokladní příjmový doklad, který se tu nepočítá.
+     *
+     * @param list<int> $ids
+     * @return array<int,string>
+     */
+    public function lastPaymentDates(int $supplierId, array $ids): array
+    {
+        $dates = [];
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids), static fn (int $id): bool => $id > 0)));
+        foreach (array_chunk($ids, 200) as $chunk) {
+            $placeholders = implode(',', array_fill(0, count($chunk), '?'));
+            $stmt = $this->db->pdo()->prepare(
+                "SELECT doc_id, MAX(d) AS paid_on FROM (
+                    SELECT pm.purchase_invoice_id AS doc_id, DATE(bt.posted_at) AS d
+                      FROM payment_matches pm
+                      JOIN bank_transactions bt ON bt.id = pm.bank_transaction_id AND bt.amount < 0
+                     WHERE pm.supplier_id = ? AND pm.purchase_invoice_id IN ($placeholders)
+                    UNION ALL
+                    SELECT cd.purchase_invoice_id, cd.issue_date FROM cash_documents cd
+                     WHERE cd.supplier_id = ? AND cd.purchase_invoice_id IN ($placeholders)
+                       AND cd.status = 'posted' AND cd.doc_type = 'out'
+                    UNION ALL
+                    SELECT oi.doc_id, oa.agreement_date FROM offset_agreement_items oi
+                      JOIN offset_agreements oa ON oa.id = oi.agreement_id AND oa.status = 'confirmed'
+                     WHERE oi.supplier_id = ? AND oi.doc_type = 'purchase_invoice' AND oi.doc_id IN ($placeholders)
+                    UNION ALL
+                    SELECT s.doc_id, s.settled_on FROM invoice_settlements s
+                     WHERE s.supplier_id = ? AND s.doc_type = 'purchase_invoice' AND s.doc_id IN ($placeholders)
+                       AND s.status = 'confirmed'
+                    UNION ALL
+                    SELECT cno.invoice_id, cno.offset_on FROM credit_note_offsets cno
+                     WHERE cno.supplier_id = ? AND cno.doc_type = 'purchase_invoice' AND cno.invoice_id IN ($placeholders)
+                 ) x GROUP BY doc_id"
+            );
+            $params = [];
+            for ($i = 0; $i < 5; $i++) array_push($params, $supplierId, ...$chunk);
+            $stmt->execute($params);
+            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                if ($row['paid_on'] !== null) $dates[(int) $row['doc_id']] = substr((string) $row['paid_on'], 0, 10);
+            }
+        }
+        return $dates;
     }
 
     /** @return array{document_kind:string, advance_purchase_invoice_id:?int}|null */
@@ -293,12 +321,6 @@ final class AdvanceCoveredPaidStatus
 
     private function hasLivePosting(int $supplierId, int $id): bool
     {
-        $stmt = $this->db->pdo()->prepare(
-            "SELECT 1 FROM journal_entries
-              WHERE supplier_id = ? AND source_type = 'purchase_invoice' AND source_id = ?
-                AND posted_at IS NOT NULL AND reversed_by IS NULL LIMIT 1"
-        );
-        $stmt->execute([$supplierId, $id]);
-        return $stmt->fetchColumn() !== false;
+        return (new DocumentPostingGroup($this->db))->hasActive($supplierId, 'purchase_invoice', $id);
     }
 }

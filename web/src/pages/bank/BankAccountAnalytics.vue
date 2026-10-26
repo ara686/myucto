@@ -170,7 +170,7 @@ onMounted(load)
     <template v-else>
       <div class="bg-surface border border-neutral-200 rounded-lg shadow-sm overflow-hidden">
         <div class="overflow-x-auto">
-          <table class="w-full text-xs">
+          <table class="w-full text-sm">
             <thead class="bg-neutral-50 text-neutral-500">
               <tr>
                 <th class="px-3 py-2 text-left font-medium">{{ t('bank.analytics.col.account') }}</th>
@@ -192,12 +192,12 @@ onMounted(load)
                 <td class="px-3 py-2">
                   <input v-model="drafts[a.id].label" type="text" maxlength="120" :disabled="!canWrite"
                          :placeholder="t('bank.analytics.label_placeholder')"
-                         class="w-44 h-8 px-2 border border-neutral-300 rounded-md text-xs bg-surface disabled:bg-neutral-50" />
+                         class="w-44 h-8 px-2 border border-neutral-300 rounded-md text-sm bg-surface disabled:bg-neutral-50" />
                 </td>
                 <td class="px-3 py-2">
                   <span v-if="a.kind === 'credit_card'" class="whitespace-nowrap">{{ t('bank.analytics.kinds.credit_card') }}</span>
                   <select v-else v-model="drafts[a.id].kind" :disabled="!canWrite"
-                          class="h-8 px-2 border border-neutral-300 rounded-md text-xs bg-surface disabled:bg-neutral-50">
+                          class="h-8 px-2 border border-neutral-300 rounded-md text-sm bg-surface disabled:bg-neutral-50">
                     <option v-for="k in KINDS" :key="k" :value="k">{{ t(`bank.analytics.kinds.${k}`) }}</option>
                   </select>
                 </td>
@@ -210,7 +210,7 @@ onMounted(load)
                       <span class="text-neutral-400">{{ BANK_PREFIX }}</span>
                       <input v-model="drafts[a.id].analytic_suffix" type="text" maxlength="6" :disabled="!canWrite"
                              placeholder="—"
-                             class="w-20 h-8 px-2 border border-neutral-300 rounded-md text-xs bg-surface font-mono disabled:bg-neutral-50" />
+                             class="w-20 h-8 px-2 border border-neutral-300 rounded-md text-sm bg-surface font-mono disabled:bg-neutral-50" />
                     </div>
                     <span v-if="drafts[a.id].analytic_suffix" class="text-neutral-500 whitespace-nowrap">
                       = {{ BANK_PREFIX + drafts[a.id].analytic_suffix }}
@@ -220,7 +220,7 @@ onMounted(load)
                 <td class="px-3 py-2">
                   <input v-model="drafts[a.id].document_series" type="text" maxlength="10" :disabled="!canWrite"
                          placeholder="BCR"
-                         class="w-24 h-8 px-2 border border-neutral-300 rounded-md text-xs bg-surface font-mono uppercase disabled:bg-neutral-50" />
+                         class="w-24 h-8 px-2 border border-neutral-300 rounded-md text-sm bg-surface font-mono uppercase disabled:bg-neutral-50" />
                 </td>
                 <td class="px-3 py-2 text-center">
                   <input v-model="drafts[a.id].is_active" type="checkbox" :disabled="!canWrite || a.kind === 'credit_card'"

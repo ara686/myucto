@@ -22,6 +22,7 @@ final class StereoNxAccountingPayments
     /** @return array<string,mixed> */
     public function prepare(StereoNxBackup $backup, ?FiscalCalendar $calendar = null): array
     {
+        $backup->assertBankAccountSeriesReady();
         $calendar ??= FiscalCalendar::calendar();
         $available = array_flip($backup->tableNames());
         $read = static function (string $name) use ($backup, $available): array {
@@ -29,6 +30,7 @@ final class StereoNxAccountingPayments
         };
         $accountsBySeries = [];
         foreach ($read('LFirmaUc') as $row) {
+            if (trim((string) ($row['DoklRada'] ?? '')) === '') continue;
             $series = self::required($row, 'DoklRada');
             if (isset($accountsBySeries[$series])) throw new StereoNxException('bank_account_duplicate', 'Bankovní řada nemá jednoznačný účet.');
             $accountsBySeries[$series] = [
@@ -42,30 +44,26 @@ final class StereoNxAccountingPayments
         $warnings = [];
         $statements = [];
         $statementByPhysical = [];
-        $statementSkipReason = [];
         $sourceDates = [];
         $usedAccounts = [];
         $skippedStatements = 0;
         $skippedAccountStatements = 0;
         foreach ($read('CBanka') as $row) {
-            $series = self::required($row, 'DoklRada');
+            $series = trim((string) ($row['DoklRada'] ?? ''));
             $statementDate = self::date($row, 'KdyVystaveno');
             $sourceDates[] = $statementDate;
+            if (!isset($accountsBySeries[$series])) {
+                $skippedAccountStatements++;
+                continue;
+            }
             $year = (string) $calendar->fiscalYearOfDate($statementDate);
             $physical = self::key([$year, $series, self::required($row, 'DoklCislo')]);
             $key = self::key([$year, $series, self::required($row, 'DoklCislo')]);
             if (isset($statementByPhysical[$physical])) {
                 throw new StereoNxException('bank_statement_identity', 'Bankovní výpis nemá jednoznačnou identitu.');
             }
-            if (!isset($accountsBySeries[$series])) {
-                $statementByPhysical[$physical] = null;
-                $statementSkipReason[$physical] = 'account';
-                $skippedAccountStatements++;
-                continue;
-            }
             if (!self::domesticRate($row)) {
                 $statementByPhysical[$physical] = null;
-                $statementSkipReason[$physical] = 'currency';
                 $skippedStatements++;
                 continue;
             }
@@ -91,22 +89,32 @@ final class StereoNxAccountingPayments
         $bank = [];
         $cash = [];
         $linked = [];
+        $excludedPaymentGroups = [];
         $reviews = [];
         $skippedBank = 0;
         $skippedBankCurrency = 0;
         $skippedBankAccount = 0;
         foreach ($read('CBankap') as $row) {
-            $physical = self::key([(string) $calendar->fiscalYearOfDate(self::date($row, 'KdyUcPripad')),
+            $movementDate = self::date($row, 'KdyUcPripad');
+            $sourceDates[] = $movementDate;
+            $series = trim((string) ($row['DoklRada'] ?? ''));
+            if (!isset($accountsBySeries[$series])) {
+                if (($bare = self::optionalDocumentKey($row)) !== null) $excludedPaymentGroups[$bare] = true;
+                $skippedBankAccount++;
+                $skippedBank++;
+                continue;
+            }
+            $physical = self::key([(string) $calendar->fiscalYearOfDate($movementDate),
                 self::required($row, 'DoklRada'), self::required($row, 'DoklCislo')]);
-            $sourceDates[] = self::date($row, 'KdyUcPripad');
             $statementKey = $statementByPhysical[$physical] ?? null;
             if ($statementKey === null) {
-                if (($statementSkipReason[$physical] ?? null) === 'account') $skippedBankAccount++;
-                else $skippedBankCurrency++;
+                if (($bare = self::optionalDocumentKey($row)) !== null) $excludedPaymentGroups[$bare] = true;
+                $skippedBankCurrency++;
                 $skippedBank++;
                 continue;
             }
             if (!self::domesticMovement($row)) {
+                if (($bare = self::optionalDocumentKey($row)) !== null) $excludedPaymentGroups[$bare] = true;
                 $skippedBankCurrency++;
                 $skippedBank++;
                 continue;
@@ -147,6 +155,7 @@ final class StereoNxAccountingPayments
                 continue;
             }
             if (!self::domesticMovement($row)) {
+                if (($bare = self::optionalDocumentKey($row)) !== null) $excludedPaymentGroups[$bare] = true;
                 $key = self::movementKey($row, false, $calendar);
                 $reviews['cash-skipped:' . $key] = ['kind' => 'cash', 'source_key' => $key,
                     'document_no' => self::first($row, ['Doklad', 'DokladS']),
@@ -166,23 +175,58 @@ final class StereoNxAccountingPayments
         }
 
         $payments = [];
-        $linkedTotals = [];
-        foreach ($linked as $candidate) $linkedTotals[$candidate['bare']] = ($linkedTotals[$candidate['bare']] ?? 0) + abs($candidate['amount_cents']);
+        $headers = [];
+        foreach (['VF' => 'Svfh', 'PF' => 'SPFH'] as $agenda => $table) {
+            foreach ($read($table) as $header) {
+                $bare = self::documentKey($header);
+                $headers[$agenda][$bare] = array_key_exists($bare, $headers[$agenda] ?? []) ? null : $header;
+            }
+        }
+        $groups = [];
+        foreach ($linked as $candidate) $groups[$candidate['bare']][] = $candidate;
+        $verifiedGroups = [];
+        foreach ($groups as $bare => $candidates) {
+            if (isset($excludedPaymentGroups[$bare])) continue;
+            $source = $receivables[$bare] ?? null;
+            $control = $controls[$bare] ?? null;
+            $agenda = strtoupper(trim((string) ($source['Agenda'] ?? '')));
+            $header = $headers[$agenda][$bare] ?? null;
+            $direction = $source['SmerPlatby'] ?? null;
+            if (!is_array($source) || !is_array($control) || !is_array($header)
+                || !in_array($agenda, ['VF', 'PF'], true)
+                || !in_array($direction, ['P', 'V'], true)
+                || ($control['SmerPlatby'] ?? null) !== $direction
+                || ($header['SmerPlatby'] ?? ($agenda === 'VF' ? 'P' : 'V')) !== $direction
+                || !in_array(trim((string) ($source['Mena'] ?? '')), ['Kč', 'CZK'], true)
+                || !in_array(trim((string) ($control['Mena'] ?? '')), ['Kč', 'CZK'], true)
+                || !in_array(trim((string) ($header['Mena'] ?? '')), ['Kč', 'CZK'], true)) continue;
+            try {
+                $documentTotal = self::cents($header['Celkem'] ?? null);
+                $paid = self::cents($source['Uhrazeno'] ?? null);
+                if ($documentTotal === 0 || self::cents($source['Celkem'] ?? null) !== $documentTotal
+                    || $calendar->fiscalYearOfDate(self::date($source, 'KdyVystaveno'))
+                        !== $calendar->fiscalYearOfDate(self::date($header, 'KdyVyhotUD'))) continue;
+            } catch (StereoNxException) {
+                continue;
+            }
+            // Cílové zůstatky měří úhradu vůči absolutní hodnotě dokladu: záporný
+            // dobropis se splácí kladně, vratka úhrady běžné faktury záporně.
+            $sign = $documentTotal < 0 ? -1 : 1;
+            $total = 0;
+            foreach ($candidates as $candidate) {
+                // Stejně jako StereoNxPaymentReconciliation ověřujeme směr celé skupiny
+                // a čistý součet. Cash a invoice_payments neumí záporné úhrady.
+                if ($candidate['direction'] !== $direction || ($candidate['amount_cents'] * $sign < 0
+                    && ($candidate['type'] === 'cash' || $agenda !== 'PF'))) continue 2;
+                $total += $candidate['amount_cents'];
+            }
+            if ($total === $paid) $verifiedGroups[$bare] = $sign;
+        }
         foreach ($linked as $candidate) {
             $bare = $candidate['bare'];
             $source = $receivables[$bare] ?? null;
-            $control = $controls[$bare] ?? null;
-            $currency = trim((string) ($source['Mena'] ?? ''));
             $agenda = strtoupper(trim((string) ($source['Agenda'] ?? '')));
-            $direction = $source['SmerPlatby'] ?? null;
-            $verified = is_array($source) && is_array($control)
-                && in_array($currency, ['Kč', 'CZK'], true)
-                && in_array($agenda, ['VF', 'PF'], true)
-                && $direction === $candidate['direction']
-                && ($control['SmerPlatby'] ?? null) === $direction
-                && in_array(trim((string) ($control['Mena'] ?? '')), ['Kč', 'CZK'], true)
-                && $linkedTotals[$bare] === self::cents($source['Uhrazeno'] ?? null);
-            if (!$verified) {
+            if (!isset($verifiedGroups[$bare])) {
                 $reason = is_array($source) && $agenda !== '' && !in_array($agenda, ['VF', 'PF'], true)
                     ? 'payment_agenda_not_imported' : 'pending_reconciliation';
                 $reviews[$candidate['type'] . ':' . $candidate['key']] = ['kind' => $candidate['type'],
@@ -199,7 +243,8 @@ final class StereoNxAccountingPayments
                 self::required($source, 'DoklSRada'), self::required($source, 'DoklSCislo')]);
             $kind = $agenda === 'VF' ? 'issued' : 'purchase';
             $payments[] = ['movement_key' => $candidate['key'], 'movement_type' => $candidate['type'],
-                'document_key' => $docKey, 'document_kind' => $kind, 'amount' => $candidate['amount_cents'] / 100];
+                'document_key' => $docKey, 'document_kind' => $kind,
+                'amount' => $candidate['amount_cents'] * $verifiedGroups[$bare] / 100];
             if ($candidate['type'] === 'cash') {
                 $cash[$candidate['key']]['requires_draft'] = false;
                 $cash[$candidate['key']]['review_codes'] = [];
@@ -217,9 +262,9 @@ final class StereoNxAccountingPayments
                 'message' => 'Cizoměnové bankovní záznamy bez kódu měny nebyly převedeny.',
                 'count' => $skippedStatements + $skippedBankCurrency];
         }
-        if ($skippedAccountStatements > 0) {
+        if ($skippedAccountStatements > 0 || $skippedBankAccount > 0) {
             $warnings[] = ['level' => 'warning', 'code' => 'bank_account_unresolved',
-                'message' => 'Bankovní výpis bez jednoznačné vazby na vlastní účet nebyl převeden.',
+                'message' => 'Bankovní výpisy a pohyby bez jednoznačné vazby na vlastní účet nebyly převedeny.',
                 'count' => $skippedAccountStatements + $skippedBankAccount];
         }
         if ($skippedCash > 0) {
@@ -301,7 +346,8 @@ final class StereoNxAccountingPayments
         $direction = $row['SmerPlatby'] ?? null;
         if (!in_array($direction, ['P', 'V'], true)) throw new StereoNxException('movement_direction', 'Neznámý směr peněžního pohybu.');
         $amount = self::cents($row['Castka'] ?? null) / 100;
-        if ($amount <= 0) throw new StereoNxException('movement_amount', 'Peněžní pohyb nemá kladnou zdrojovou částku.');
+        if ($amount == 0.0) throw new StereoNxException('movement_amount', 'Peněžní pohyb má nulovou zdrojovou částku.');
+        // Záporný výdaj je vratka výdaje; znaménko zdroje se nesmí zahodit.
         return ['source_key' => $key, 'amount' => $direction === 'P' ? $amount : -$amount,
             'date' => self::date($row, 'KdyUcPripad'), 'description' => trim((string) ($row['Text'] ?? '')),
             'variable_symbol' => trim((string) ($row['VarSym'] ?? '')), 'currency' => 'CZK'];

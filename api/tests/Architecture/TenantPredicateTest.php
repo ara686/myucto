@@ -408,6 +408,8 @@ final class TenantPredicateTest extends TestCase
         'LedgerInvariantService.php::ledgerIsEmpty' => 'invariant nad deníkem celé instance (viz docblock služby)',
         'LedgerInvariantService.php::i25AccumulatedNotAboveInputPrice' => 'invariant nad veškerým majetkem instance',
         'ActivityLogHashChain.php::verify' => 'hash chain auditního logu je jeden pro celou instanci',
+        'ActivityLogHashChain.php::prune' => 'retence spravovaného provozu promazává jediný hash chain celé instance',
+        'ActivityLogHashChain.php::lastIdCreatedBefore' => 'hledá hranici retence v jediném hash chainu celé instance',
         'AnonymizationService.php::resealAuditChain' => 'znovu zapečetí jediný hash chain celé anonymizované kopie instance',
         // Vrací POUZE bool „existuje někde práce?", žádná data nepřecházejí mezi
         // tenanty. Protějšek AiWorker::run(), který stejně tak jede přes všechny
@@ -416,8 +418,8 @@ final class TenantPredicateTest extends TestCase
         // přestala by pouštět práci ostatním.
         'CronPreflight.php::hasAiWork' => 'instance-wide brána cronu, vrací jen bool',
         // Tentýž případ jako hasAiWork: vrací POUZE bool „má tahle instalace kde
-        // číst poštu?". Dodavatele vybírá až samotná úloha podle
-        // `app.scan_all_suppliers` — cron žádný uživatelský kontext nemá.
+        // číst poštu?". Dodavatele vybírá až samotná úloha podle zapnutých
+        // schránek — cron žádný uživatelský kontext nemá.
         // Zúžení na jednu firmu by bránu rozbilo: instalace skenující všechny
         // dodavatele by přestala skenovat ty ostatní.
         'CronPreflight.php::hasBankEmailNoticeAccounts' => 'instance-wide brána cronu, vrací jen bool',

@@ -36,6 +36,9 @@ final class StatementImporter
         // Pravidla pohybů v daňové evidenci (issue #140) — ignorovat / zařadit v peněžním
         // deníku. Nullable a mimo daňovou evidenci no-op.
         private readonly ?\MyInvoice\Service\TaxEvidence\TaxEvidenceBankRules $taxEvidenceRules = null,
+        // Návrhy úhrad jednotek SVJ do fronty k potvrzení. Firma bez profilu SVJ
+        // skončí po jediném čtení profilu; nic se neúčtuje ani nepotvrzuje.
+        private readonly ?\MyInvoice\Service\Property\Payments\BankProposalService $propertyProposals = null,
     ) {}
 
     /**
@@ -122,7 +125,10 @@ final class StatementImporter
         if ($pdo->inTransaction()) {
             throw new \LogicException('Connected import requires its own transaction.');
         }
-        $accountQuery = $pdo->prepare('SELECT account_number, iban, code, bank_code FROM currencies WHERE id = ? AND supplier_id = ?' . ($requireActive ? ' AND is_active = 1' : ''));
+        // Příznak profilu SVJ se čte v tomtéž dotazu na účet, aby import firmy bez SVJ
+        // neměl kvůli návrhům úhrad jednotek ani jeden dotaz navíc.
+        $propertyFlag = $this->propertyProposals === null ? '' : ', ' . \MyInvoice\Service\Property\Payments\BankProposalService::profileFlagSql('currencies.supplier_id') . ' AS property_profile';
+        $accountQuery = $pdo->prepare('SELECT account_number, iban, code, bank_code' . $propertyFlag . ' FROM currencies WHERE id = ? AND supplier_id = ?' . ($requireActive ? ' AND is_active = 1' : ''));
         $accountQuery->execute([$currencyId, $supplierId]);
         $account = $accountQuery->fetch(PDO::FETCH_ASSOC);
         if (!$account || !AccountNumberNormalizer::matchesAny(
@@ -145,7 +151,7 @@ final class StatementImporter
                 $parsed['header']['account_number'] = trim((string) $account['account_number']);
             }
             $touched = new StatementImportTransactions();
-            $result = $this->persist($parsed, $content, $fileName, $userId, $currencyId, $source, true, $touched, $reconciliationConfirmations, $supplierId, $ignoreDecision);
+            $result = $this->persist($parsed, $content, $fileName, $userId, $currencyId, $source, true, $touched, $reconciliationConfirmations, $supplierId, $ignoreDecision, $requireActive);
             $scope = $pdo->prepare("SELECT id FROM bank_statements WHERE id = ? AND supplier_id = ? AND source = ? AND currency = ? AND COALESCE(bank_code, '') = ?");
             $scope->execute([$result['statement_id'], $supplierId, $source, $account['code'], $account['bank_code'] ?? '']);
             if ($scope->fetchColumn() === false) {
@@ -213,6 +219,9 @@ final class StatementImporter
             $this->payrollSettlements?->recognizeForSupplier($supplierId, $userId);
         } catch (\Throwable) {
         }
+        if ((int) ($account['property_profile'] ?? 0) === 1) {
+            $this->proposePropertyPayments($supplierId, $touched->toProcess());
+        }
         // Až po párování: pravidla berou jen pohyby, které nenašly doklad.
         try {
             $this->taxEvidenceRules?->apply($supplierId, null, $userId);
@@ -252,7 +261,7 @@ final class StatementImporter
      * @param string $rawBytes Originální bajty souboru — hashují se pro dedup a ukládají
      *   se buď do file_content (source='gpc') nebo pdf_content (source='pdf').
      */
-    private function persist(array $parsed, string $rawBytes, string $fileName, ?int $userId, ?int $currencyId, string $source, bool $deferProcessing = false, ?StatementImportTransactions $touched = null, array $reconciliationConfirmations = [], ?int $supplierId = null, ?array $ignoreDecision = null): array
+    private function persist(array $parsed, string $rawBytes, string $fileName, ?int $userId, ?int $currencyId, string $source, bool $deferProcessing = false, ?StatementImportTransactions $touched = null, array $reconciliationConfirmations = [], ?int $supplierId = null, ?array $ignoreDecision = null, bool $connectedFeed = false): array
     {
         $touched ??= new StatementImportTransactions();
         $hash = hash('sha256', $rawBytes);
@@ -413,6 +422,14 @@ final class StatementImporter
             'INSERT INTO bank_transaction_imports (statement_id, bank_transaction_id, import_fingerprint, supplier_id, original_statement_id)
              SELECT ?, ?, ?, bs.supplier_id, bs.id FROM bank_transactions bt JOIN bank_statements bs ON bs.id = bt.statement_id WHERE bt.id = ?'
         ) : null;
+        // Jen tam, kde se stažení skládají do měsíčního výpisu: samostatně zobrazený výpis
+        // musí obsahovat všechny své pohyby, i ty z dřívějšího stažení.
+        $ownFingerprint = $connectedFeed && $linkImport !== null && $statementSupplierId !== null
+            && (new BankApiMonthlyStatements($pdo))->aggregatesMonthly(
+                $statementSupplierId, (string) $h['account_number'], (string) ($accountBankCode ?? ''), (string) ($account['code'] ?? ''),
+            )
+            ? $pdo->prepare('SELECT import_fingerprint FROM bank_transactions WHERE id = ?')
+            : null;
 
         $matched = 0;
         $inserted = 0;
@@ -434,7 +451,9 @@ final class StatementImporter
             }
             if ($duplicateId !== false) {
                 $touched->linked((int) $duplicateId);
-                $this->linkImport($linkImport, $aliasMap, $statementId, (int) $duplicateId, $fingerprint);
+                if (!$this->isRepeatedDownload($ownFingerprint, $aliasMap, (int) $duplicateId, $fingerprint)) {
+                    $this->linkImport($linkImport, $aliasMap, $statementId, (int) $duplicateId, $fingerprint);
+                }
                 $skipped++;
                 continue;
             }
@@ -446,8 +465,10 @@ final class StatementImporter
                     break;
                 }
             }
-            if ($alreadyStored) {
+            if ($alreadyStored && !$this->isRepeatedDownload($ownFingerprint, $aliasMap, (int) $duplicateId, $fingerprint)) {
                 $this->linkImport($linkImport, $aliasMap, $statementId, (int) $duplicateId, $fingerprint);
+            }
+            if ($alreadyStored) {
                 $skipped++;
                 continue;
             }
@@ -506,6 +527,7 @@ final class StatementImporter
             } catch (\Throwable) {
                 // Rozpoznání mzdových úhrad je nadstavba — nesmí shodit import výpisu.
             }
+            $this->proposePropertyPayments($statementSupplierId, $touched->toProcess());
         }
 
         // Rozdíl „řádků v souboru" × „založených pohybů" se nesmí ztratit v tichu: přesně
@@ -640,6 +662,29 @@ final class StatementImporter
         return $out;
     }
 
+    /**
+     * Stáhla automatická synchronizace pohyb znovu? Stahuje okno s překryvem
+     * (`BankConnectionService::OVERLAP_DAYS`), takže skoro každý pohyb dostane několikrát.
+     * Když pohyb tenhle otisk už nese nebo ho má převedený, vazba nic nového nedokládá:
+     * stažení je skrytý podklad měsíčního výpisu a ten pohyb už obsahuje. Vazba by se
+     * jen opakovala u každého stažení (na jedné instanci 600 tis. řádků za týden).
+     * Pohyb poznaný jen přes jiného kandidáta otisku vazbu dostane, ta převede hlavní otisk.
+     *
+     * @param array<string,array<int,true>> $aliasMap
+     */
+    private function isRepeatedDownload(?\PDOStatement $ownFingerprint, array $aliasMap, int $transactionId, string $fingerprint): bool
+    {
+        if ($ownFingerprint === null) {
+            return false;
+        }
+        if (isset($aliasMap[$fingerprint][$transactionId])) {
+            return true;
+        }
+        $ownFingerprint->execute([$transactionId]);
+
+        return (string) $ownFingerprint->fetchColumn() === $fingerprint;
+    }
+
     /** @param array<string,array<int,true>> $aliasMap MĚNÍ SE */
     private function linkImport(?\PDOStatement $linkImport, array &$aliasMap, int $statementId, int $transactionId, string $fingerprint): void
     {
@@ -649,6 +694,22 @@ final class StatementImporter
         $linkImport->execute([$statementId, $transactionId, $fingerprint, $transactionId]);
         if ($linkImport->rowCount() > 0) {
             $aliasMap[$fingerprint][$transactionId] = true;
+        }
+    }
+
+    /**
+     * Návrhy úhrad jednotek SVJ po spárování. Nadstavba importu: chyba návrhu výpis
+     * neshodí, pohyby zůstanou k ručnímu párování.
+     *
+     * @param list<int> $transactionIds
+     */
+    private function proposePropertyPayments(?int $supplierId, array $transactionIds): void
+    {
+        if ($this->propertyProposals === null) return;
+        try {
+            $this->propertyProposals->afterImport($supplierId, $transactionIds);
+        } catch (\Throwable $e) {
+            $this->logger?->warning('Návrhy úhrad jednotek SVJ selhaly: ' . $e->getMessage());
         }
     }
 

@@ -22,6 +22,7 @@ import SearchableSelect from '@/components/ui/SearchableSelect.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import SupplierDomainsSettings from '@/components/settings/SupplierDomainsSettings.vue'
 import InvoiceCounterField from '@/components/settings/InvoiceCounterField.vue'
+import AccountingFrameworkSettings from '@/components/settings/AccountingFrameworkSettings.vue'
 import { appIsoDate } from '@/utils/date'
 import DateInput from '@/components/ui/DateInput.vue'
 
@@ -63,6 +64,25 @@ function syncSupplierStore(s: Supplier) {
 
 const supplier = ref<Supplier | null>(null)
 const loading = ref(true)
+const isDecreeDerived = computed(() => {
+  const s = supplier.value
+  const mode = s?.accounting_mode ?? 'tax_evidence'
+  if (mode !== originalAccountingMode.value) return mode === 'double_entry'
+  return s?.tax_accounting_decree_is_derived ?? mode === 'double_entry'
+})
+const displayedAccountingDecree = computed(() => {
+  const s = supplier.value
+  if (s?.tax_accounting_decree_is_derived && s.tax_accounting_decree_effective) return s.tax_accounting_decree_effective
+  return s?.accounting_framework === 'cz_504' ? '504' : '500'
+})
+
+function updateAccountingFramework(state: Pick<Supplier, 'id' | 'accounting_framework' | 'accounting_framework_history' | 'tax_accounting_decree_effective' | 'tax_accounting_decree_is_derived'>) {
+  if (!supplier.value || supplier.value.id !== state.id) return
+  supplier.value.accounting_framework = state.accounting_framework
+  supplier.value.accounting_framework_history = state.accounting_framework_history
+  supplier.value.tax_accounting_decree_effective = state.tax_accounting_decree_effective
+  supplier.value.tax_accounting_decree_is_derived = state.tax_accounting_decree_is_derived
+}
 
 // Přiznání k dani z příjmů — číselníky odpovídají PHP SSOT
 // (MyInvoice\Service\Tax\Return\TaxpayerTypeCodebook, migrace 1782). Popisky
@@ -594,6 +614,7 @@ async function saveSupplier() {
       payment_thanks_auto_send: supplier.value.payment_thanks_auto_send,
       payment_thanks_default_checked: supplier.value.payment_thanks_default_checked,
       payment_thanks_attach_paid_pdf: supplier.value.payment_thanks_attach_paid_pdf,
+      payment_thanks_max_age_days: supplier.value.payment_thanks_max_age_days,
       self_copy: supplier.value.self_copy ?? null,
       auto_generate_recurring: supplier.value.auto_generate_recurring,
       embed_isdoc: supplier.value.embed_isdoc,
@@ -678,16 +699,20 @@ async function saveSupplier() {
       opr_jmeno: (supplier.value as any).opr_jmeno ?? null,
       opr_prijmeni: (supplier.value as any).opr_prijmeni ?? null,
       opr_postaveni: (supplier.value as any).opr_postaveni ?? null,
-      cssz_vsdp: (supplier.value as any).cssz_vsdp ?? null,
-      cssz_ossz_code: (supplier.value as any).cssz_ossz_code ?? null,
-      health_insurance_number: (supplier.value as any).health_insurance_number ?? null,
+      // Osobní identifikátory chodí jen s právem měnit nastavení firmy; bez nich je
+      // neposílat, jinak by uložení přepsalo uloženou hodnotu prázdnou.
+      ...('health_insurance_number' in supplier.value ? {
+        cssz_vsdp: (supplier.value as any).cssz_vsdp ?? null,
+        cssz_ossz_code: (supplier.value as any).cssz_ossz_code ?? null,
+        health_insurance_number: (supplier.value as any).health_insurance_number ?? null,
+      } : {}),
       // Vědomé příznaky poplatníka pro přiznání k dani z příjmů (migrace 1782).
       // Prázdný typ poplatníka se posílá jako '' → backend uloží NULL (= neurčeno),
       // což je jiný stav než výslovně potvrzená „1".
       epo_taxpayer_code: (supplier.value as any).epo_taxpayer_code ?? '',
       tax_entity_status: (supplier.value as any).tax_entity_status ?? 'normal',
       tax_entity_status_date: (supplier.value as any).tax_entity_status_date ?? null,
-      tax_accounting_decree: (supplier.value as any).tax_accounting_decree ?? '500',
+      ...(isDecreeDerived.value ? {} : { tax_accounting_decree: supplier.value.tax_accounting_decree ?? '500' }),
       ...((supplier.value.fiscal_year_start_month ?? 1) !== originalFiscalStartMonth.value
         ? { fiscal_year_start_month: supplier.value.fiscal_year_start_month ?? 1 }
         : {}),
@@ -1286,6 +1311,15 @@ async function confirmTaxRepDelete() {
                 <input v-model="supplier.payment_thanks_auto_send" type="checkbox" class="rounded border-neutral-300 text-primary-600" />
                 {{ t('settings.payment_thanks_auto_send') }}
               </label>
+              <div v-if="supplier.payment_thanks_auto_send" class="ml-6">
+                <label class="flex flex-wrap items-center gap-2 text-sm">
+                  {{ t('settings.payment_thanks_max_age_days') }}
+                  <input v-model.number="supplier.payment_thanks_max_age_days" type="number" min="0" max="365"
+                         class="w-24 h-10 px-3 border border-neutral-300 rounded-md text-sm font-mono" />
+                  <span class="text-neutral-500">{{ t('settings.reminder_days_unit') }}</span>
+                </label>
+                <p class="text-xs text-neutral-500 mt-1">{{ t('settings.payment_thanks_max_age_days_hint') }}</p>
+              </div>
               <label class="flex items-center gap-2 text-sm">
                 <input v-model="supplier.payment_thanks_default_checked" type="checkbox" class="rounded border-neutral-300 text-primary-600" />
                 {{ t('settings.payment_thanks_default_checked') }}
@@ -1618,6 +1652,13 @@ async function confirmTaxRepDelete() {
           </p>
         </div>
       </section>
+
+      <AccountingFrameworkSettings
+        v-if="supplier.accounting_enabled !== false && supplier.accounting_mode === 'double_entry'"
+        :supplier="supplier"
+        :can-change="auth.hasCommercialFeatures"
+        @updated="updateAccountingFramework"
+      />
 
       <section class="bg-surface border border-neutral-200 rounded-lg p-5 shadow-sm">
         <h2 class="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-4">{{ t('settings.payroll_enabled.title') }}</h2>
@@ -1957,15 +1998,22 @@ async function confirmTaxRepDelete() {
                     </option>
                   </select>
                   <p class="text-xs text-neutral-500 mt-1">{{ t('settings.fiscal_year_start.hint') }}</p>
+                  <p class="text-xs text-neutral-500 mt-1" data-test="first-period-start-hint">
+                    {{ t('settings.fiscal_year_start.first_period_hint') }}
+                    <RouterLink to="/accounting/periods" class="text-primary-600 hover:underline">{{ t('settings.fiscal_year_start.first_period_link') }}</RouterLink>
+                  </p>
                 </div>
                 <div v-if="supplier.taxpayer_type !== 'fo'">
                   <label class="block text-xs font-medium text-neutral-700 mb-1">{{ t('settings.income_tax_profile.accounting_decree') }}</label>
-                  <select v-model="(supplier as any).tax_accounting_decree" class="w-full h-9 px-3 border border-neutral-300 rounded-md bg-surface text-sm">
+                  <p v-if="isDecreeDerived" data-test="derived-accounting-decree" class="text-sm">
+                    {{ displayedAccountingDecree }} - {{ t('settings.income_tax_profile.accounting_decree_' + displayedAccountingDecree) }}
+                  </p>
+                  <select v-else v-model="supplier.tax_accounting_decree" class="w-full h-9 px-3 border border-neutral-300 rounded-md bg-surface text-sm">
                     <option v-for="decree in ACCOUNTING_DECREES" :key="decree" :value="decree">
                       {{ decree }} - {{ t('settings.income_tax_profile.accounting_decree_' + decree) }}
                     </option>
                   </select>
-                  <p class="text-xs text-neutral-500 mt-1">{{ t('settings.income_tax_profile.accounting_decree_hint') }}</p>
+                  <p class="text-xs text-neutral-500 mt-1">{{ t(isDecreeDerived ? 'settings.income_tax_profile.accounting_decree_derived_hint' : 'settings.income_tax_profile.accounting_decree_hint') }}</p>
                 </div>
                 <div>
                   <label class="block text-xs font-medium text-neutral-700 mb-1">{{ t('settings.income_tax_profile.entity_status') }}</label>
@@ -2204,7 +2252,9 @@ async function confirmTaxRepDelete() {
                  kanonickým zdrojem mzdový modul — ale jen dokud běží: s vypnutými Mzdami by
                  VS zaměstnavatele neměl kde bydlet, a detekce odvodů v bance i šablony
                  pravidel pak čtou zpátky tahle pole. -->
-            <template v-if="!employerIdentifiersInPayroll">
+            <!-- Server identifikátory posílá jen tomu, kdo smí nastavení firmy měnit
+                 (SupplierResponseFields); bez nich se blok nezobrazí prázdný. -->
+            <template v-if="!employerIdentifiersInPayroll && 'health_insurance_number' in supplier">
               <div>
                 <label class="block text-xs font-medium text-neutral-700 mb-1">
                   {{ supplier.taxpayer_type === 'po' ? t('settings.cssz_vsdp_employer') : t('settings.cssz_vsdp') }}

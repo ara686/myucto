@@ -89,6 +89,44 @@ final class AbraAccountingImporterTest extends TestCase
         return (int) $stmt->fetchColumn();
     }
 
+    public function test504IntervalInsideImportedYearBlocksBeforeAnyMutation(): void
+    {
+        $pdo = $this->db->pdo();
+        $pdo->prepare("INSERT INTO supplier_accounting_frameworks (supplier_id, effective_from, accounting_framework) VALUES (?, '2025-01-01', 'cz_500'), (?, '2025-06-01', 'cz_504'), (?, '2025-09-01', 'cz_500')")
+            ->execute([$this->supplier, $this->supplier, $this->supplier]);
+        $snapshot = $this->snapshot();
+        $snapshot['_meta']['source_oss'] = ['eu' => true, 'valid_from' => '2025-01-01'];
+        $before = $this->frameworkGateState();
+        $report = $this->transfer($snapshot);
+        self::assertSame($before, $this->frameworkGateState(), 'Unsupported framework must not write documents, settings or import maps.');
+        self::assertTrue($report['blocked']);
+        self::assertContains('accounting_framework_import_unsupported', $report['warnings']);
+    }
+
+    public function test500ImportedYearIsIndependentOfLater504Framework(): void
+    {
+        $this->db->pdo()->prepare("INSERT INTO supplier_accounting_frameworks (supplier_id, effective_from, accounting_framework) VALUES (?, '2026-01-01', 'cz_504')")->execute([$this->supplier]);
+        $report = $this->transfer($this->snapshot());
+        self::assertFalse($report['blocked'], json_encode($report));
+        self::assertSame(0, $report['failed']);
+        self::assertSame(3, $this->countRows('journal_entries'));
+        self::assertSame(1, $this->countRows('invoices'));
+    }
+
+    private function frameworkGateState(): array
+    {
+        $stmt = $this->db->pdo()->prepare('SELECT * FROM supplier WHERE id = ?');
+        $stmt->execute([$this->supplier]);
+        $state = ['supplier' => $stmt->fetch(\PDO::FETCH_ASSOC)];
+        foreach (['accounting_periods', 'chart_of_accounts', 'journal_entries', 'invoices', 'purchase_invoices', 'clients',
+            'bank_statements', 'cash_documents', 'abra_flexi_import_map', 'activity_log'] as $table) {
+            $stmt = $this->db->pdo()->prepare('SELECT * FROM ' . $table . ' WHERE supplier_id = ?');
+            $stmt->execute([$this->supplier]);
+            $state[$table] = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+        }
+        return $state;
+    }
+
     public function testPaymentLinkCursorOnlyUsesNumericMappedLinksForSelectedSupplier(): void
     {
         $runs = new AbraImportRepository($this->db);

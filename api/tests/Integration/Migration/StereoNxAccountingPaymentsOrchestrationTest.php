@@ -129,6 +129,65 @@ final class StereoNxAccountingPaymentsOrchestrationTest extends TestCase
         self::assertFalse($checked['criteria']['total']['K1']);
     }
 
+    public function testNegativeExpensesPreserveCreditSettlementReversalAndRedStornoLinks(): void
+    {
+        $tables = self::tables();
+        foreach (['ZaklDPHz', 'DPHz', 'Celkem'] as $field) $tables['SPFH'][0][$field] *= -1;
+        $tables['SPFH'][0]['TypDokladu'] = 'D';
+        $tables['CBankap'][1]['Castka'] = $tables['CBankap'][1]['CastkaVlastni'] = -121.0;
+        $tables['Cpz'][1]['Celkem'] = $tables['Cpz'][1]['Uhrazeno'] = -121.0;
+        $tables['CBankap'][] = array_replace($tables['CBankap'][2],
+            ['Klic' => 6, 'Castka' => -21.0, 'CastkaVlastni' => -21.0]);
+        $tables['Cpz'][2]['Uhrazeno'] = 79.0;
+        $tables['Cpz'][2]['UhrazenoVse'] = false;
+        foreach ([1, 2, 5] as $index) {
+            $row = $tables['CBankap'][$index];
+            $tables['Cdenik'][] = array_replace($tables['Cdenik'][2], [
+                'Agenda' => 'B', 'DoklRada' => 'B', 'DoklCislo' => 1, 'Klic' => $row['Klic'],
+                'Poradi' => 0, 'KdyUcPripad' => '2025-03-15', 'Rok' => 2025, 'Mesic' => 3,
+                'UcetMD' => '321', 'UcetD' => '221kb', 'Celkem' => $row['Castka'],
+            ]);
+        }
+        $backup = $this->backup($tables);
+        $before = $this->snapshot();
+        $dry = $this->importer->run($backup, $this->supplierId, $this->userId, true, true);
+        self::assertTrue($dry['ok'], json_encode($dry['errors']));
+        self::assertSame($before, $this->snapshot());
+        $actual = $this->importer->run($backup, $this->supplierId, $this->userId, false, true);
+        self::assertTrue($actual['ok'], json_encode($actual['errors']));
+        self::assertSame(4, $actual['written']['payments']);
+        $pdo = $this->db->pdo();
+        $query = $pdo->prepare('SELECT pm.amount, bt.amount AS bank_amount, pi.paid_amount_invoice_ccy AS paid
+            FROM payment_matches pm JOIN bank_transactions bt ON bt.id=pm.bank_transaction_id
+            JOIN purchase_invoices pi ON pi.id=pm.purchase_invoice_id
+            WHERE pm.supplier_id=? ORDER BY bt.id');
+        $query->execute([$this->supplierId]);
+        self::assertSame([
+            ['amount' => '121.00', 'bank_amount' => '121.00', 'paid' => '121.0000'],
+            ['amount' => '100.00', 'bank_amount' => '-100.00', 'paid' => '79.0000'],
+            ['amount' => '21.00', 'bank_amount' => '21.00', 'paid' => '79.0000'],
+        ], $query->fetchAll(\PDO::FETCH_ASSOC));
+        $lines = $pdo->prepare("SELECT a.account_code, l.side, l.signed_amount
+            FROM journal_entry_lines l JOIN journal_entries e ON e.id=l.entry_id
+            JOIN chart_of_accounts a ON a.id=l.account_id
+            JOIN bank_transactions bt ON bt.id=e.source_id AND e.source_type='bank'
+            JOIN payment_matches pm ON pm.bank_transaction_id=bt.id AND pm.supplier_id=e.supplier_id
+            WHERE e.supplier_id=? AND l.is_red_storno=1 ORDER BY bt.id, l.side");
+        $lines->execute([$this->supplierId]);
+        self::assertSame([
+            ['account_code' => '321', 'side' => 'debit', 'signed_amount' => '-121.00'],
+            ['account_code' => '221kb', 'side' => 'credit', 'signed_amount' => '-121.00'],
+            ['account_code' => '321', 'side' => 'debit', 'signed_amount' => '-21.00'],
+            ['account_code' => '221kb', 'side' => 'credit', 'signed_amount' => '-21.00'],
+        ], $lines->fetchAll(\PDO::FETCH_ASSOC));
+        self::assertTrue($actual['reconciliation'][0]['ok']);
+        $after = $this->snapshot();
+        $repeat = $this->importer->run($backup, $this->supplierId, $this->userId, false, true);
+        self::assertTrue($repeat['ok'], json_encode($repeat['errors']));
+        self::assertSame(0, $repeat['written']['payments']);
+        self::assertSame($after, $this->snapshot());
+    }
+
     public function testHistoricalPayrollSharesDryRunTransactionAndDoesNotPostAgain(): void
     {
         $this->assertHistoricalPayroll(false);

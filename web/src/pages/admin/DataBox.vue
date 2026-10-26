@@ -50,6 +50,7 @@ import { apiErrorMessage } from '@/api/errors'
 import { formatUtcDateTime } from '@/composables/useFormat'
 import { useAutoSlug } from '@/composables/useAutoSlug'
 import { useToast } from '@/composables/useToast'
+import { useWindowRefresh } from '@/composables/useWindowRefresh'
 import { useSupplierStore } from '@/stores/supplier'
 import { ICONS, btnFilled, btnOutline, btnOutlineSm } from '@/components/ui/buttonStyles'
 import EmptyState from '@/components/ui/EmptyState.vue'
@@ -658,6 +659,16 @@ async function loadAll() {
     if (linked !== null && certCredentialId.value === null) {
       certCredentialId.value = linked
       certSource.value = 'vault'
+    }
+    // Firma bez uloženého přístupu: certifikát povolený z trezoru se rovnou
+    // předvybere, ať se u každé z desítek firem nemusí vybírat znovu.
+    const hasCredential = creds.some(c => c.environment === environment.value)
+    if (!hasCredential && certCredentialId.value === null) {
+      const preferred = shared.find(c => c.valid_now && !c.expired) ?? shared.find(c => !c.expired) ?? null
+      if (preferred) {
+        certCredentialId.value = preferred.id
+        certSource.value = 'vault'
+      }
     }
     recipients.value = recips
     outbox.value = out.items
@@ -1711,6 +1722,29 @@ const outboxNeedsAttention = computed(() => outbox.value.some(row =>
 
 onUnmounted(clearMobileStatusTimer)
 onUnmounted(clearReceiptsTimer)
+
+/*
+ * Tichá obnova po změně v jiném okně: mzdové nebo daňové podání odeslané
+ * jinde přidá zprávu do odchozích, doručenka do příchozích. Obnovují se jen
+ * seznamy, ne přístup ani nastavení, takže rozepsané přihlášení zůstane.
+ * Během odesílání a jiných akcí se čeká, ať se řádek nepřepíše pod rukama.
+ */
+async function refreshLists() {
+  const [out, inb, unmatched] = await Promise.all([
+    dataBoxApi.outbox(environment.value, outboxPageSize, outboxOffset.value, outboxYear.value, outboxMonth.value),
+    dataBoxApi.browseInbox(environment.value, inboxBrowseParams()),
+    dataBoxApi.unmatchedReceipts(environment.value).catch(() => [] as InboxMessage[]),
+  ])
+  outbox.value = out.items
+  outboxTotal.value = out.total
+  outboxYears.value = out.years ?? []
+  applyInboxResult(inb)
+  unmatchedReceipts.value = unmatched
+  await loadNotices()
+}
+
+useWindowRefresh('*', refreshLists, () => !loading.value && !saving.value && !inboxLoading.value
+  && !receiptsBusy.value && !assignBusy.value && busyId.value === null && sendOpenFor.value === null)
 </script>
 
 <template>
@@ -1882,6 +1916,13 @@ onUnmounted(clearReceiptsTimer)
               <span>{{ t('databox.access.certificateFromFile') }}</span>
             </label>
           </div>
+          <p
+            v-if="sharedCertificates.length === 0"
+            class="mt-2 text-xs text-warning-700"
+            data-test="databox-shared-certificate-unavailable"
+          >
+            {{ t('databox.access.sharedCertificateEmpty') }}
+          </p>
         </fieldset>
 
         <div v-if="certSource === 'vault'" class="mt-3 grid gap-3 sm:grid-cols-2">
@@ -1898,11 +1939,8 @@ onUnmounted(clearReceiptsTimer)
               </option>
             </select>
           </label>
-          <p v-if="sharedCertificates.length === 0" class="text-sm text-neutral-500 sm:col-span-2">
-            {{ t('databox.access.sharedCertificateEmpty') }}
-          </p>
           <div
-            v-else-if="selectedSharedCertificate"
+            v-if="selectedSharedCertificate"
             class="text-xs text-neutral-500 sm:col-span-2"
             data-test="databox-shared-certificate-detail"
           >

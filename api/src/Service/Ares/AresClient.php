@@ -20,6 +20,9 @@ use Psr\Log\LoggerInterface;
  */
 final class AresClient
 {
+    /** Verze výkladu registrací DPH, sdílená i s cache výsledků VIES odvozených z ARES. */
+    public const int NORMALIZATION_VERSION = 2;
+
     public function __construct(
         private readonly Config $config,
         private readonly Connection $db,
@@ -89,6 +92,16 @@ final class AresClient
     {
         $sidlo = $raw['sidlo'] ?? [];
         $regs  = $raw['seznamRegistraci'] ?? [];
+        $individualVatActive = ($regs['stavZdrojeDph'] ?? '') === 'AKTIVNI';
+        $groupVatActive = ($regs['stavZdrojeSkDph'] ?? '') === 'AKTIVNI';
+        $dic = (string) ($raw['dic'] ?? '');
+        if ($groupVatActive) {
+            $groupDic = trim((string) ($raw['dicSkDph'] ?? ''));
+            // Člen skupiny používá pro DPH její DIČ, vlastní může zůstat v ARES
+            // i po zániku individuální registrace. Chybějící DIČ skupiny nenahrazujeme
+            // neaktivním vlastním DIČ; aktivní skupina přesto dokládá plátcovství.
+            $dic = $groupDic !== '' || !$individualVatActive ? $groupDic : $dic;
+        }
 
         // Skládáme ulici z částí
         $street = trim((string) ($sidlo['nazevUlice'] ?? ''));
@@ -109,12 +122,12 @@ final class AresClient
         return [
             'company_name' => (string) ($raw['obchodniJmeno'] ?? ''),
             'ic'           => (string) ($raw['ico'] ?? ''),
-            'dic'          => (string) ($raw['dic'] ?? ''),
+            'dic'          => $dic,
             'street'       => $street,
             'city'         => (string) ($sidlo['nazevObce'] ?? ''),
             'zip'          => $psc,
             'country_iso2' => (string) ($sidlo['kodStatu'] ?? 'CZ'),
-            'is_vat_payer' => ($regs['stavZdrojeDph'] ?? '') === 'AKTIVNI',
+            'is_vat_payer' => $individualVatActive || $groupVatActive,
             'date_active'  => (string) ($raw['datumVzniku'] ?? ''),
             'legal_form'   => (string) ($raw['pravniForma'] ?? ''),
             // Číslo popisné / orientační zvlášť (pro EPO VetaP). cisloOrientacni může mít písmeno.
@@ -240,11 +253,21 @@ final class AresClient
             return null;
         }
         $data = json_decode((string) $row, true);
-        return is_array($data) ? $data : null;
+        if (!is_array($data)) {
+            return null;
+        }
+        // Starý normalizovaný payload zahodil dicSkDph i stavZdrojeSkDph, nelze
+        // ho lokálně opravit. Při výpadku vrátí lookup nezjištěno, nikoli neplátce.
+        if (($data['found'] ?? false) && ($data['normalization_version'] ?? null) !== self::NORMALIZATION_VERSION) {
+            return null;
+        }
+        unset($data['normalization_version']);
+        return $data;
     }
 
     private function cache(string $ico, array $payload): void
     {
+        $payload['normalization_version'] = self::NORMALIZATION_VERSION;
         $stmt = $this->db->pdo()->prepare(
             'INSERT INTO ares_cache (ic, payload) VALUES (?, ?)
              ON DUPLICATE KEY UPDATE payload = VALUES(payload), fetched_at = NOW()'

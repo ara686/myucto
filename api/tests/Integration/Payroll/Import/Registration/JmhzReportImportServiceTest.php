@@ -141,7 +141,7 @@ final class JmhzReportImportServiceTest extends TestCase
             'gross_minor' => 4_000_000,
             'tax_base_minor' => 4_000_000,
             'advance_tax_minor' => 216_300,
-            'bonus_minor' => 0,
+            'bonus_minor' => null,
             'social_base_minor' => 4_000_000,
             'worked_hours' => '168.000',
             'average_hourly_minor' => 23_810,

@@ -74,6 +74,20 @@ final class DynamicRolesMigrationRuntimeTest extends TestCase
             $stmt->execute([(int) $roles[$systemKey]]);
             self::assertSame($staffPermissions, $stmt->fetchAll(PDO::FETCH_COLUMN), $systemKey);
         }
+        $propertyPermissions = $db->query("SELECT r.system_key,rp.permission_key,rp.access_level FROM roles r JOIN role_permissions rp ON rp.role_id=r.id WHERE rp.permission_key LIKE 'property%' ORDER BY r.system_key,rp.permission_key")->fetchAll(PDO::FETCH_ASSOC);
+        $expectedProperty = [];
+        foreach (['accountant', 'admin', 'admin_plus', 'readonly'] as $systemKey) {
+            $preset = in_array($systemKey, ['admin', 'admin_plus'], true)
+                ? array_fill_keys($staffPermissions, 2)
+                : (new PermissionCatalog())->legacyPreset($systemKey);
+            foreach ($preset as $key => $level) {
+                if (str_starts_with($key, 'property')) $expectedProperty[$systemKey . ':' . $key] = $level;
+            }
+        }
+        $actualProperty = [];
+        foreach ($propertyPermissions as $permission) $actualProperty[$permission['system_key'] . ':' . $permission['permission_key']] = (int) $permission['access_level'];
+        ksort($expectedProperty);
+        self::assertSame($expectedProperty, $actualProperty);
 
         $templateDefaults = (int) $db->query('SELECT COUNT(*) FROM bank_rule_template_defaults')->fetchColumn();
         self::assertGreaterThan(0, $templateDefaults);
@@ -110,12 +124,23 @@ final class DynamicRolesMigrationRuntimeTest extends TestCase
         $permissionCount = (int) $db->query(
             'SELECT COUNT(*) FROM role_permissions WHERE role_id = ' . (int) $roles['accountant']
         )->fetchColumn();
+        $db->prepare("UPDATE role_permissions SET access_level=0 WHERE role_id=? AND permission_key='property.registry.confirm'")->execute([(int) $roles['admin']]);
+        $db->prepare("UPDATE role_permissions SET access_level=0 WHERE role_id=? AND permission_key='property.charges.confirm'")->execute([(int) $roles['admin']]);
+        $db->prepare("UPDATE role_permissions SET access_level=0 WHERE role_id=? AND permission_key='property.charges.reverse'")->execute([(int) $roles['admin']]);
+        $db->prepare("UPDATE role_permissions SET access_level=0 WHERE role_id=? AND permission_key='property.funds.post'")->execute([(int) $roles['admin']]);
+        $db->prepare("UPDATE role_permissions SET access_level=0 WHERE role_id=? AND permission_key='property.funds.reverse'")->execute([(int) $roles['admin']]);
         $db->exec(
             "DELETE FROM migrations WHERE filename IN (
                 '1074_dynamic_roles_permissions.sql',
                 '1747_predefined_admin_roles.sql',
                 '1748_bank_rule_templates_tenant_scope.sql',
-                '2014_client_ai_extraction.sql'
+                '2014_client_ai_extraction.sql',
+                '2084_property_registry.sql',
+                '2085_property_charge_versions.sql',
+                '2086_property_charge_issuance.sql',
+                '2090_property_payment_permissions.sql',
+                '2095_property_opening.sql',
+                '2109_property_funds_role_defaults.sql'
             )"
         );
         $this->runMigrator();
@@ -128,6 +153,27 @@ final class DynamicRolesMigrationRuntimeTest extends TestCase
         )->fetchColumn());
         self::assertSame(6, (int) $db->query('SELECT COUNT(*) FROM roles')->fetchColumn());
         self::assertSame(1, (int) $db->query('SELECT client_ai_extraction_enabled FROM supplier WHERE id = ' . $this->supplierA)->fetchColumn());
+        self::assertSame(0, (int) $db->query("SELECT access_level FROM role_permissions WHERE role_id=" . (int) $roles['admin'] . " AND permission_key='property.registry.confirm'")->fetchColumn());
+        self::assertSame(0, (int) $db->query("SELECT access_level FROM role_permissions WHERE role_id=" . (int) $roles['admin'] . " AND permission_key='property.charges.confirm'")->fetchColumn());
+        self::assertSame(0, (int) $db->query("SELECT access_level FROM role_permissions WHERE role_id=" . (int) $roles['admin'] . " AND permission_key='property.charges.reverse'")->fetchColumn());
+        self::assertSame(1, (int) $db->query("SELECT COUNT(*) FROM role_permissions WHERE role_id=" . (int) $roles['admin'] . " AND permission_key='property.funds.post'")->fetchColumn());
+        self::assertSame(0, (int) $db->query("SELECT access_level FROM role_permissions WHERE role_id=" . (int) $roles['admin'] . " AND permission_key='property.funds.post'")->fetchColumn());
+        self::assertSame(0, (int) $db->query("SELECT access_level FROM role_permissions WHERE role_id=" . (int) $roles['admin'] . " AND permission_key='property.funds.reverse'")->fetchColumn());
+
+        $db->prepare("DELETE FROM role_permissions WHERE role_id=? AND permission_key='property.funds.post'")->execute([(int) $roles['admin']]);
+        $db->exec("DELETE FROM migrations WHERE filename='2109_property_funds_role_defaults.sql'");
+        $this->runMigrator();
+
+        self::assertSame(0, (int) $db->query("SELECT COUNT(*) FROM role_permissions WHERE role_id=" . (int) $roles['admin'] . " AND permission_key='property.funds.post'")->fetchColumn());
+        self::assertSame(0, (int) $db->query("SELECT access_level FROM role_permissions WHERE role_id=" . (int) $roles['admin'] . " AND permission_key='property.funds.reverse'")->fetchColumn());
+
+        $settlements = "SELECT COUNT(*) FROM role_permissions WHERE role_id=" . (int) $roles['accountant'] . " AND permission_key='property.settlements.manage'";
+        self::assertSame(1, (int) $db->query($settlements)->fetchColumn());
+        $db->prepare("DELETE FROM role_permissions WHERE role_id=? AND permission_key='property.settlements.manage'")->execute([(int) $roles['accountant']]);
+        $db->exec("DELETE FROM migrations WHERE filename='2097_property_service_settlement_permissions.sql'");
+        $this->runMigrator();
+        self::assertSame(0, (int) $db->query($settlements)->fetchColumn(), 'Opakovaný běh 2046 nesmí vrátit odebrané právo.');
+        self::assertSame(1, (int) $db->query("SELECT COUNT(*) FROM role_permissions WHERE role_id=" . (int) $roles['accountant'] . " AND permission_key='property.settlements.post'")->fetchColumn());
     }
 
     private function createLegacyParentTables(PDO $db): void
@@ -165,6 +211,9 @@ final class DynamicRolesMigrationRuntimeTest extends TestCase
                 CONSTRAINT fk_usersup_supplier FOREIGN KEY (supplier_id) REFERENCES supplier(id) ON DELETE CASCADE",
             'documents' => 'id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY',
             'bank_transactions' => 'id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY',
+            'cash_documents' => 'id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY',
+            'journal_entry_lines' => 'id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY',
+            'accounting_periods' => 'id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, supplier_id INT UNSIGNED NOT NULL, UNIQUE KEY uq_period_tenant (supplier_id,id)',
             'purchase_invoices' => 'id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, supplier_id INT UNSIGNED NOT NULL',
             'document_requests' => 'id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, purchase_invoice_id BIGINT UNSIGNED NULL',
             'warehouses' => 'id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, is_active TINYINT(1) NOT NULL DEFAULT 1',
@@ -178,7 +227,10 @@ final class DynamicRolesMigrationRuntimeTest extends TestCase
             'stock_media' => 'supplier_id INT UNSIGNED NOT NULL, stock_item_id BIGINT UNSIGNED NOT NULL',
             'stock_levels' => 'supplier_id INT UNSIGNED NOT NULL, stock_item_id BIGINT UNSIGNED NOT NULL',
             'dimension_types' => 'id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY',
-            'dimension_values' => 'id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY',
+            'dimension_values' => 'id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, supplier_id INT UNSIGNED NULL',
+            'clients' => 'id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, supplier_id INT UNSIGNED NOT NULL',
+            'journal_entries' => "id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, supplier_id INT UNSIGNED NOT NULL,
+                source_type ENUM('manual') NOT NULL DEFAULT 'manual'",
             'payroll_employees' => "id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
                 supplier_id INT UNSIGNED NOT NULL, UNIQUE KEY uq_payroll_employee_supplier_id (supplier_id, id)",
             'external_entity_map' => "id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -284,9 +336,21 @@ final class DynamicRolesMigrationRuntimeTest extends TestCase
                 '1962_payroll_personnel_file.sql',
                 '2014_client_ai_extraction.sql',
                 '2015_client_bank_permissions.sql',
+                '2084_property_registry.sql',
+                '2085_property_charge_versions.sql',
+                '2086_property_charge_issuance.sql',
+                '2087_unit_payments.sql',
                 '2038_invoice_edit_issued_permission.sql',
+                '2090_property_payment_permissions.sql',
+                '2094_property_receivable_permissions.sql',
+                '2095_property_opening.sql',
+                '2097_property_service_settlement_permissions.sql',
                 '2056_price_list_role_permissions.sql',
                 '2057_operational_settings_role_permissions.sql',
+                '2075_purchase_invoice_vat_treatment_permission.sql',
+                '2109_property_funds_role_defaults.sql',
+                '2118_property_service_unwind_permission.sql',
+                '2183_eet_role_permissions.sql',
             ]),
         ];
         $env = getenv();

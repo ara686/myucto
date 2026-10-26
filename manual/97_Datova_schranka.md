@@ -78,7 +78,7 @@ omezený počet pokusů a po vypršení jej musíte zahájit znovu. SMS kód se 
 
 **Systémový certifikát firmy:**
 
-1. V části **Systémový certifikát firmy** zvolte **Vybrat ze sdíleného trezoru** (certifikát nahraný v `Systém → E-maily a certifikáty`, záložka **Certifikáty a elektronické podpisy**, a povolený pro firmu), nebo **Nahrát soubor** (PFX/P12).
+1. V části **Systémový certifikát firmy** zvolte **Vybrat ze sdíleného trezoru** (certifikát nahraný v `Systém → E-maily a certifikáty`, záložka **Certifikáty a elektronické podpisy**, a povolený pro firmu), nebo **Nahrát soubor** (PFX/P12). Pokud firma ještě nemá uložený přístup a pro firmu je v trezoru povolený platný certifikát, aplikace ho předvybere sama. Když pro firmu v trezoru žádný certifikát povolený není, volba z trezoru nejde zvolit a pod ní se zobrazí vysvětlení.
 2. Vyplňte **Označení**, **ID naší datové schránky** a **Heslo k certifikátu**.
 3. Uložte. Přístup můžete odstranit tlačítkem **Smazat přístup**.
 

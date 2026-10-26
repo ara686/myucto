@@ -31,6 +31,24 @@ final class PermissionCatalogTest extends TestCase
         }
     }
 
+    public static function disallowedRequestGrants(): array
+    {
+        return [
+            'client accounting' => ['client', 'accounting'],
+            'client lifecycle' => ['client', 'property.settlements.post'],
+            'staff client portal' => ['staff', 'documents.submit'],
+            'unknown permission' => ['staff', 'synthetic.unknown.permission'],
+        ];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('disallowedRequestGrants')]
+    public function testBrowserChecksRejectCatalogDisallowedGrants(string $type, string $key): void
+    {
+        $request = (new \Slim\Psr7\Factory\ServerRequestFactory())->createServerRequest('POST', '/')
+            ->withAttribute('auth.effective_role', new EffectiveRole(99, 'Synthetic inconsistent role', $type, true, [$key => 2]));
+        self::assertFalse(\MyInvoice\Security\RequestAuthorization::allows($request, $key, AccessLevel::WRITE));
+    }
+
     public function testPriceListCanBeDelegatedWithoutGivingItToClientsByDefault(): void
     {
         $catalog = new PermissionCatalog();
@@ -232,5 +250,40 @@ final class PermissionCatalogTest extends TestCase
             'invoices.edit_issued' => AccessLevel::WRITE->value,
             'accounting.journal.post' => AccessLevel::WRITE->value,
         ])));
+    }
+
+    /**
+     * Oprava DPH zařazení přijaté faktury je běžná práce účetní: výchozí účetní právo má,
+     * jen pro čtení a klient ne. Přeúčtování zaúčtovaného dokladu chce navíc právo zaúčtovat.
+     */
+    public function testPurchaseVatTreatmentBelongsToAccountant(): void
+    {
+        $catalog = new PermissionCatalog();
+        self::assertSame(['staff'], $catalog->all()['purchase_invoices.vat_treatment']['role_types']);
+        self::assertSame(AccessLevel::WRITE->value, $catalog->legacyPreset('accountant')['purchase_invoices.vat_treatment'] ?? null);
+        self::assertArrayNotHasKey('purchase_invoices.vat_treatment', $catalog->legacyPreset('readonly'));
+        self::assertArrayNotHasKey('purchase_invoices.vat_treatment', $catalog->legacyPreset('client'));
+
+        $request = static fn (EffectiveRole $role) => (new \Slim\Psr7\Factory\ServerRequestFactory())
+            ->createServerRequest('POST', '/')
+            ->withAttribute('auth.effective_role', $role);
+        $can = static fn (EffectiveRole $role): bool
+            => \MyInvoice\Security\RequestAuthorization::canChangePurchaseVatTreatment($request($role));
+        $canRepost = static fn (EffectiveRole $role): bool
+            => \MyInvoice\Security\RequestAuthorization::canRepostPurchaseVatTreatment($request($role));
+
+        $accountant = new EffectiveRole(4, 'Účetní', 'staff', true, $catalog->legacyPreset('accountant'), 'accountant');
+        self::assertTrue($can(new EffectiveRole(2, 'Admin', 'staff', true, [], 'admin')));
+        self::assertTrue($can($accountant));
+        self::assertTrue($canRepost($accountant));
+        self::assertFalse($can(new EffectiveRole(5, 'Jen čtení', 'staff', true, $catalog->legacyPreset('readonly'), 'readonly')));
+        self::assertFalse($can(new EffectiveRole(6, 'Klient', 'client', true, [
+            'purchase_invoices.vat_treatment' => AccessLevel::WRITE->value,
+        ])), 'Klientská role právo nedostane ani poškozeným řádkem.');
+        self::assertFalse($canRepost(new EffectiveRole(7, 'Jen DPH zařazení', 'staff', true, [
+            'purchase_invoices.vat_treatment' => AccessLevel::WRITE->value,
+        ])), 'Přeúčtování chce i právo zaúčtovat.');
+        self::assertFalse(\MyInvoice\Security\RequestAuthorization::canChangeFiledVatPeriod($request($accountant)),
+            'Podané období DPH mění jen správce.');
     }
 }

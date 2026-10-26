@@ -229,6 +229,7 @@ final class BankEmailNoticeScanner
             }
             $this->repo->updateScanStatus($supplierId, $accountId, 'ok', null);
         } catch (\Throwable $e) {
+            $summary['errors']++;
             $summary['error'] = $e->getMessage();
             $this->repo->updateScanStatus($supplierId, $accountId, 'error', $e->getMessage());
         }

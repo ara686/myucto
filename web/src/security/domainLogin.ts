@@ -1,8 +1,9 @@
-import { authApi } from '@/api/auth'
+import { authApi, type DomainLoginConfirmation } from '@/api/auth'
 import { canonicalDomainLoginHandoffPath } from '@/security/clientRoutePolicy'
 
 const TARGET_KEY = 'myinvoice.domain_login.target'
 const CANONICAL_KEY = 'myinvoice.domain_login.canonical'
+const CONFIRMATION_REQUIRED = 'domain_login_confirmation_required'
 const TERMINAL_AUTHORIZATION_ERRORS = ['invalid_domain_login_request', 'canonical_origin_required', 'forbidden_supplier'] as const
 type TerminalAuthorizationCode = typeof TERMINAL_AUTHORIZATION_ERRORS[number]
 interface TerminalAuthorizationError { code: TerminalAuthorizationCode; message: string; status: number }
@@ -22,6 +23,8 @@ interface CanonicalState {
   previousOwnedCsrf?: string
   redirectUrl?: string
   terminalError?: TerminalAuthorizationError
+  /** Uživatel předání tohoto požadavku výslovně potvrdil. */
+  confirmed?: boolean
 }
 
 function base64Url(bytes: Uint8Array): string {
@@ -131,6 +134,46 @@ export function advanceCanonicalDomainLoginSession(previousCsrf: string, csrf: s
   }
 }
 
+/**
+ * Předání existujícího přihlášení z canonical adresy potřebuje výslovné
+ * potvrzení. Implicitní je jen u session, kterou vytvořilo přihlášení v rámci
+ * tohoto toku (`ownedCsrf`); i tu ale server odmítne, pokud je starší než
+ * požadavek, a pak se potvrzení vyžádá dodatečně.
+ */
+export function needsCanonicalDomainLoginConfirmation(): boolean {
+  const pending = readCanonical()
+  return !!pending && !pending.redirectUrl && !pending.terminalError && !pending.ownedCsrf && !pending.confirmed
+}
+
+export function confirmPendingDomainLogin(): void {
+  const pending = readCanonical()
+  if (pending && !pending.redirectUrl && !pending.terminalError) saveCanonical({ ...pending, confirmed: true })
+}
+
+export function isDomainLoginConfirmationRequired(error: unknown): boolean {
+  return (error as { response?: { data?: { error?: { code?: string } } } })?.response?.data?.error?.code === CONFIRMATION_REQUIRED
+}
+
+/** Cílový hostname a firma čekajícího předání. Kód se tím nevydává. */
+export async function previewPendingDomainLogin(): Promise<DomainLoginConfirmation | null> {
+  const pending = readCanonical()
+  if (!pending || pending.redirectUrl || pending.terminalError) return null
+  try {
+    return await authApi.domainLoginPreview(pending.requestToken, pending.state, pending.ownedCsrf)
+  } catch (error: any) {
+    // Neplatný nebo cizí požadavek se nedá potvrdit. Bez vlastní dočasné
+    // session není co uklízet, takže se rovnou zahodí.
+    if (TERMINAL_AUTHORIZATION_ERRORS.includes(error?.response?.data?.error?.code) && !pending.ownedCsrf) {
+      clearCanonicalDomainLogin()
+    }
+    throw error
+  }
+}
+
+function confirmationRequiredError(): unknown {
+  return { response: { status: 409, data: { error: { code: CONFIRMATION_REQUIRED, message: '' } } } }
+}
+
 let authorization: Promise<boolean> | null = null
 
 export function authorizePendingDomainLogin(): Promise<boolean> {
@@ -147,8 +190,15 @@ async function authorizeAndCleanup(): Promise<boolean> {
   let pending = readCanonical()
   if (!pending) return false
   if (!pending.redirectUrl && !pending.terminalError) {
+    // Cizí (dříve vzniklou) session nikdy nepředáváme bez kliknutí uživatele.
+    if (!pending.ownedCsrf && !pending.confirmed) throw confirmationRequiredError()
     try {
-      const result = await authApi.domainLoginAuthorize(pending.requestToken, pending.state, pending.ownedCsrf)
+      const result = await authApi.domainLoginAuthorize(
+        pending.requestToken,
+        pending.state,
+        pending.ownedCsrf,
+        pending.confirmed === true,
+      )
       pending = { ...pending, redirectUrl: result.redirect_url }
       // Issuing a code is one-shot. Persist it before cleanup so a failed logout
       // can be retried after a reload without authorizing the request twice.
@@ -255,6 +305,7 @@ function readCanonical(): CanonicalState | null {
         && typeof value.terminalError.message === 'string' && typeof value.terminalError.status === 'number'
         ? { terminalError: value.terminalError } : {}),
       ...(isDomainLoginCallbackUrl(value.redirectUrl) ? { redirectUrl: value.redirectUrl } : {}),
+      ...(value.confirmed === true ? { confirmed: true } : {}),
     }
   } catch {
     return null

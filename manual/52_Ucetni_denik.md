@@ -133,6 +133,10 @@ Přeúčtování změní jen kontaci. DPH se jím nemění, daňový režim se o
 
 **Jak poznáte, že je hotovo:** Zápis má novou kontaci. V otevřeném období se přepsal na místě, v uzavřeném nebo zamčeném vznikl storno a nový zápis. Oba zůstanou v deníku kvůli auditu.
 
+Doklad převzatý z jiného programu má skupinu jednoho nebo více vlastních účetních zápisů, například zvlášť základ a DPH. Tato skupina je oddělená od informativních vazeb **Souvisí**. Opakované automatické zaúčtování převzatou skupinu nepřepisuje. Při **Přeúčtování** dialog vypíše všechny její členy a předvyplní řádky, které jsou právě v deníku. Po potvrzení vzniknou protizápisy ke všem původním členům a jeden nový předpis. Úhrady a pouze související zápisy zůstanou zachované. Změní-li se některý člen během otevřeného dialogu, obnovte náhled. Storno nebo smazání zdrojového dokladu rovněž zruší celou skupinu zaúčtování.
+
+Po ručním stornu jednoho člena zůstává doklad zaúčtovaný, dokud má skupina alespoň jeden aktivní zaúčtovaný zápis. Kontroly integrity a doúčtování proto neoznačují takový doklad za nezaúčtovaný. Automatická reklasifikace nebo dorovnání zúčtování zálohy rozdělenou skupinu nepřepíše po jednom členu; opravu proveďte přes **Přeúčtovat** na detailu celého dokladu.
+
 ## 52.9 Krok za krokem: doúčtování dokladů z jiného systému
 
 Automatika účtování se spouští při vzniku dokladu. Doklad, který už v systému leží (například naimportovaný z jiného systému), jí neprojde nikdy. Takové doklady zaúčtujete takto:
@@ -1049,9 +1053,11 @@ vedle odkazu **Otevřít v deníku** tlačítko **Přeúčtovat** (admin/účetn
   pohybu vedle **Zrušit zaúčtování**),
 - v účetním deníku v rozbaleném zápisu kteréhokoli z těchto dokladů, vedle **Stornovat**.
 
-Dialog ukáže **řádky zápisu, který v deníku opravdu je** - ne nový návrh - a nechá je
-změnit, smazat i doplnit. Zápis musí zůstat vyrovnaný (Σ MD = Σ Dal). Co se stane po
-potvrzení, řekne dialog dopředu a rozhoduje o tom stav účetního období:
+Dialog ukáže **řádky zápisu, který v deníku opravdu je**, a nechá je změnit, smazat
+i doplnit. U převzaté skupiny zobrazí všechny její členy a předvyplní jejich
+stávající řádky; potvrzení stornuje celou původní skupinu a zapíše nový předpis,
+i když skupina obsahuje jen jediný zápis. Zápis musí zůstat vyrovnaný (Σ MD = Σ Dal).
+U běžného zápisu rozhoduje o způsobu přeúčtování stav účetního období:
 
 | Stav období | Co se stane |
 |---|---|

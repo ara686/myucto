@@ -22,6 +22,7 @@ use MyInvoice\Service\Accounting\PostingException;
 use MyInvoice\Service\Accounting\RetentionGuard;
 use MyInvoice\Service\Accounting\RetentionViolationException;
 use MyInvoice\Service\ActivityLogger;
+use MyInvoice\Service\Eet\EetHistoryGuard;
 use MyInvoice\Service\Invoice\VarsymbolGenerator;
 use MyInvoice\Service\IpMatcher;
 use MyInvoice\Service\Pdf\InvoicePdfRenderer;
@@ -72,6 +73,7 @@ final class DeleteInvoiceAction
         private readonly StockIssueService $stockIssue,
         private readonly RetentionGuard $retention,
         private readonly DocumentJournalPurge $journalPurge,
+        private readonly EetHistoryGuard $eetHistory,
     ) {}
 
     public function __invoke(Request $request, Response $response, array $args): Response
@@ -126,6 +128,16 @@ final class DeleteInvoiceAction
         );
         $children->execute([$id]);
         $childRows = $children->fetchAll(\PDO::FETCH_ASSOC);
+
+        // EET-07: doklad s platební událostí nebo evidovanou tržbou jde jen stornovat
+        // (i admin s ?force=1); fiskální historie musí zůstat navázaná na doklad.
+        $eetConflict = $this->eetHistory->invoiceConflict(
+            $supplierId,
+            [$id, ...array_map(static fn (array $row): int => (int) $row['id'], $childRows)],
+        );
+        if ($eetConflict !== null) {
+            return Json::error($response, EetHistoryGuard::ERROR_CODE, $eetConflict, 409);
+        }
 
         $forceDelete = ($request->getQueryParams()['force'] ?? '') === '1'
             && RequestAuthorization::isCompanyAdmin($request);
@@ -371,9 +383,9 @@ final class DeleteInvoiceAction
         $stmt = $this->db->pdo()->prepare(
             "SELECT EXISTS(SELECT 1 FROM invoices
                             WHERE supplier_id = ? AND id IN ($place) AND booked_at IS NOT NULL)
-                 OR EXISTS(SELECT 1 FROM journal_entries
-                            WHERE supplier_id = ? AND source_type = 'invoice' AND source_id IN ($place)
-                              AND posted_at IS NOT NULL AND reversed_by IS NULL)"
+                 OR EXISTS(SELECT 1 FROM invoices d
+                            WHERE d.supplier_id = ? AND d.id IN ($place)
+                              AND " . \MyInvoice\Service\Accounting\DocumentPostingGroup::activePostingExistsSql("'invoice'", 'd.id', 'd.supplier_id') . ')'
         );
         $stmt->execute(array_merge([$supplierId], $invoiceIds, [$supplierId], $invoiceIds));
 

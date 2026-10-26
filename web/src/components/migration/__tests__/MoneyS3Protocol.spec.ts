@@ -52,6 +52,23 @@ function run(overrides: Partial<NonNullable<MoneyS3Run['protocol']>> = {}, statu
 }
 
 describe('MoneyS3Protocol', () => {
+  it('hides empty document reconciliation while preserving the year, checks and journal differences', () => {
+    const wrapper = mount(MoneyS3Protocol, { props: { run: run({ reconciliation: [{
+      year: 2026, period_id: 1, ok: true,
+      checks: [{ key: 'turnover_balanced', ok: true }],
+      journal_diffs: [{ account: '518', myucto: [0, 100, 100], money: [0, 100, 100] }],
+      money_report: null, documents: [],
+    }] }) } })
+    const year = wrapper.get('[data-testid="reconciliation-2026"]')
+    expect(year.text()).toContain('money_s3.protocol.year')
+    expect(year.text()).toContain('money_s3.protocol.ok')
+    expect(year.text()).toContain('money_s3.checks.turnover_balanced')
+    expect(year.text()).toContain('518')
+    expect(year.text()).not.toContain('money_s3.protocol.documents_title')
+    expect(year.text()).not.toContain('money_s3.protocol.col_documents')
+    expect(year.text()).not.toContain('money_s3.protocol.col_journal')
+  })
+
   it('ukáže kroky, zprávy, rekonciliaci, uzávěrku a osiřelé doklady', () => {
     const wrapper = mount(MoneyS3Protocol, { props: { run: run() } })
     const text = wrapper.text()
@@ -62,6 +79,8 @@ describe('MoneyS3Protocol', () => {
     expect(text).toContain('money_s3.closing_status.closed')
     expect(text).toContain('FP25099')
     expect(text).toContain('money_s3.protocol.automation_after')
+    expect(text).toContain('money_s3.protocol.documents_title')
+    expect(text).toContain('money_s3.protocol.col_documents')
   })
 
   it('rozdíl po účtech vypíše i s hodnotami MyÚčta a Money', () => {

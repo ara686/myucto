@@ -6,15 +6,23 @@
 [![Vue 3](https://img.shields.io/badge/Vue-3-4FC08D?logo=vuedotjs&logoColor=white)](https://vuejs.org/)
 [![Docker](https://img.shields.io/badge/Docker-multi--arch-2496ED?logo=docker&logoColor=white)](https://github.com/radekhulan/myucto/pkgs/container/myucto)
 
-> **MyÚčto.cz je nástupcem open-source systému
-> [MyInvoice](https://github.com/radekhulan/myinvoice), známého také z
-> [myinvoice.cz](https://myinvoice.cz/). Veškeré funkce MyInvoice zůstávají
-> v MyÚčto navždy zdarma a plně použitelné i bez aktivní licence.**
+> [!CAUTION]
+> ## ⚠️ Zdrojové kódy jsou veřejné, ale MyÚčto.cz NENÍ open-source
 >
-> Komerční licence přidává podvojné účetnictví, účetní nástroje a uzávěrky,
-> sklad a napojení e-shopu, evidenci majetku, EPO podání a archív a rozšířené
-> opravy DPH (§ 74b, § 43, § 46 a § 79). Celý rozsah lze prvních 60 dní
-> bezplatně vyzkoušet.
+> **Kromě menší části převzaté z projektu MyInvoice pod licencí MIT podléhá
+> MyÚčto.cz komerční licenci.**
+>
+> **Bez zakoupené komerční licence NENÍ dovoleno tyto zdrojové kódy používat,
+> kopírovat, upravovat ani z nich vytvářet odvozená díla pro jakékoli použití
+> mimo samotný produkt MyÚčto.cz.** Veřejně dostupný kód není udělením licence.
+> Podrobnosti uvádí článek 3 souboru [LICENCE.txt](LICENCE.txt), o komerční
+> licenci se domluvíte přes [myucto.cz](https://myucto.cz/).
+
+Bezplatná část MyÚčto zůstává navždy zdarma a plně použitelná i bez aktivní
+licence. Komerční licence přidává podvojné účetnictví, účetní nástroje
+a uzávěrky, sklad a napojení e-shopu, evidenci majetku, EPO podání a archív
+a rozšířené opravy DPH (§ 74b, § 43, § 46 a § 79). Celý rozsah lze prvních
+60 dní bezplatně vyzkoušet.
 
 ### Účetnictví od dokladu po uzávěrku. Vaše data, vaše servery.
 
@@ -69,7 +77,7 @@ Každý modul má vlastní kapitolu manuálu — odkazy vedou na detail.
 | **Mzdy a personalistika** | [Karty zaměstnanců](manual/86_Zamestnanci.md) s více pracovními vztahy a souběhy, [mzdové složky](manual/91_Mzdove_slozky_a_vstupy.md), [absence a dovolená](manual/76_Absence_a_dovolena.md), [docházka a směny](manual/77_Dochazka_a_smeny.md), [mzdové běhy](manual/80_Mzdove_behy.md), [srážky a exekuce](manual/88_Srazky_a_exekuce.md), [roční zúčtování](manual/84_Rocni_zuctovani.md), [podání a hlášení](manual/85_Podani_a_hlaseni.md), [shoda účtování mezd](manual/81_Shoda_uctovani_mezd.md). |
 | **Majetek a sklad** | Karty majetku a odpisy, skladové karty a pohyby, inventura, automatická výdejka při fakturaci, napojení e-shopu. |
 | **Reporting a portál** | Přehled tržeb, nákladů, pohledávek a cash-flow, [klientský portál](manual/50_Pruvodce_ucetniho.md), responzivní rozhraní, role admin / účetní / klient / pouze pro čtení. |
-| **Více firem a API** | [Neomezený počet firemních agend](manual/95_Multi_supplier.md) v jedné instalaci, [REST API v1](manual/104_API.md) s osobními tokeny a scopes. |
+| **Více firem a API** | [Neomezený počet firemních agend](manual/95_Multi_supplier.md) v jedné instalaci, [REST API v1](manual/103_API.md) s osobními tokeny a scopes. |
 
 ![Vydané faktury](manual/img/08_faktury_list.webp)
 
@@ -268,7 +276,7 @@ postup v [SECURITY.md](SECURITY.md).
 Veřejné REST API v1 používá osobní přístupové tokeny, které lze omezit na čtení
 nebo zápis, konkrétní firmu a dobu platnosti. Určené pro integrace s e-shopy,
 CRM, BI a automatizačními platformami. OpenAPI specifikace:
-[api/openapi.yaml](api/openapi.yaml), postup: [kapitola REST API](manual/104_API.md).
+[api/openapi.yaml](api/openapi.yaml), postup: [kapitola REST API](manual/103_API.md).
 
 ## Technologický základ
 

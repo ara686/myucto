@@ -6,6 +6,8 @@ namespace MyInvoice\Service\Migration\StereoNx;
 
 use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Infrastructure\Database\TransactionFailure;
+use MyInvoice\Service\Accounting\AccountingFrameworkException;
+use MyInvoice\Service\Accounting\AccountingFrameworkImportGuard;
 use MyInvoice\Service\Accounting\FiscalCalendar;
 use MyInvoice\Service\Migration\Pohoda\PartnerImporter;
 use MyInvoice\Service\Migration\MoneyS3\AccountingUnitSwitch;
@@ -43,6 +45,8 @@ final class StereoNxAccountingImporter
             'review_movements' => [], 'movement_review_reasons' => []];
         try {
             StereoNxCompanyCompatibility::assertAccountingMode($backup->companyIdentity(), 'double_entry');
+            $backup->assertBankAccountSeriesReady();
+            array_push($report['warnings'], ...$backup->bankAccountSeriesWarnings());
             $inventory = $backup->inventory();
             foreach ($inventory as $table) {
                 if ($table['status'] !== 'ok') {
@@ -143,6 +147,15 @@ final class StereoNxAccountingImporter
                 $report['date_bounds'] = ['from' => min($dates), 'to' => max($dates)];
             }
 
+            $frameworkGuard = new AccountingFrameworkImportGuard($this->db);
+            // Záloha bez datovaných účetních záznamů se převádí jako dřív; rámec se pak
+            // ověří k dnešku, ke kterému writer zakládá osnovu.
+            $hasDates = !empty($report['date_bounds']['from']) && !empty($report['date_bounds']['to']);
+            $today = date('Y-m-d');
+            $frameworkPeriods = $hasDates
+                ? $frameworkGuard->periodsForDates($supplierId, $report['date_bounds']['from'], $report['date_bounds']['to'])
+                : $frameworkGuard->periodsForDates($supplierId, $today, $today);
+            $frameworkGuard->assertCz500Periods($supplierId, $frameworkPeriods);
             $lastPayroll = $plans['payroll']['last_source_period'] ?? null;
             $lastData = isset($report['date_bounds']['to']) ? substr($report['date_bounds']['to'], 0, 7) : null;
             if ($lastPayroll !== null) {
@@ -154,6 +167,7 @@ final class StereoNxAccountingImporter
             if ($nested) $pdo->exec('SAVEPOINT stereo_nx_accounting');
             else $pdo->beginTransaction();
             try {
+                $frameworkGuard->assertCz500Periods($supplierId, $frameworkPeriods, true);
                 $lock = $pdo->prepare('SELECT ic, accounting_mode, is_vat_payer FROM supplier WHERE id = ? FOR UPDATE');
                 $lock->execute([$supplierId]);
                 $supplier = $lock->fetch(PDO::FETCH_ASSOC);
@@ -248,7 +262,7 @@ final class StereoNxAccountingImporter
                 } elseif ($pdo->inTransaction()) $pdo->rollBack();
                 throw $e;
             }
-        } catch (StereoNxException $e) {
+        } catch (StereoNxException | AccountingFrameworkException $e) {
             $report['written'] = [];
             $report['errors'][] = ['level' => 'error', 'code' => $e->errorCode, 'message' => $e->getMessage()];
         } catch (Throwable $e) {

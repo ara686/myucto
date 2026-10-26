@@ -793,7 +793,21 @@ zálohy, výběr firmy, zkoušku nanečisto a potvrzení importu. Rozsah převod
 režim neodhaduje. Označení "EU" bez konkrétního státu volbou pro prázdnou zemi
 protistrany určeno není. Vyplněné firemní údaje ze zálohy nejsou předem označené.
 Převzetí údajů používá oprávnění ke správě firmy a při souběžné změně vyžádá nový
-náhled. IČO, režim účetnictví a plátcovství se tím nemění.
+náhled. IČO, režim účetnictví a plátcovství se tím nemění. Převod nebyl ověřen
+pro neziskové organizace a SVJ; průvodce je výrazně upozorní a účetní převod do
+období vedeného podle vyhlášky 504 odmítne.
+
+Pokud vlastnímu bankovnímu účtu chybí dokladová řada, průvodce na to upozorní
+při výběru firmy. Obsahuje-li záloha jediný účet a jedinou řadu bankovních
+výpisů, nabídne jejich přiřazení k výslovnému potvrzení. Potvrzení platí jen
+pro převod; původní zálohu nemění a přiřazení zůstane uvedené v protokolu.
+Změna této volby vyžaduje novou zkoušku nanečisto. Při více možných účtech,
+řadách nebo rozporném nastavení se vazba neodhaduje: doplňte správné řady
+účtů ve Stereo NX a nahrajte novou zálohu.
+U podvojného účetnictví výpis bez odpovídajícího vlastního účtu, včetně
+výpisu s prázdnou řadou, převod ostatních dat nezastaví. Výpis a jeho pohyby
+se nepřevedou a protokol je uvede s upozorněním. Duplicitní řada vlastních
+účtů převod blokuje; přiřazení řady jedinému účtu stále vyžaduje potvrzení.
 
 Zkouška i převod běží na pozadí, průvodce průběžně ukazuje stav a druhý převod
 téže firmy se nespustí, dokud první neskončí. Název ZIPu nemusí odpovídat všem
@@ -802,6 +816,24 @@ dokladů; zkouška nanečisto ani neúspěšný převod ji nemažou. Pokud odstr
 selže, import zůstává dokončený a zálohu lze odstranit ze seznamu. Převod zálohu
 pouze čte, původní data ani instalaci Stereo NX nemění.
 
+Souhrn zkoušky i importu zobrazuje počty v tabulkách. U podporovaných agend
+porovnáte sloupce **Ve zdroji**, **K převodu**, **Nepřevedeno** a **Ke kontrole**;
+pomlčka označuje údaj, který report neuvádí. Další počty jsou rozepsané podle
+kroku převodu. Řádky, jejichž všechny uvedené počty jsou nulové, jsou skryté
+a zobrazíte je volbou **Zobrazit vše**. Pomlčka skrytí řádku nebrání. Důvody
+nepřevedení a upozornění zůstávají ve zprávách protokolu.
+Období obsažené v záloze se zobrazuje ve formátu data podle jazyka aplikace.
+Prázdná tabulka kontroly dokladů proti deníku se nezobrazuje; výsledky ostatních
+kontrol rekonciliace zůstávají uvedené.
+
+Tlačítkem **Stáhnout protokol PDF** uložíte výsledek dokončené zkoušky nebo
+importu, včetně neúspěšného běhu. PDF obsahuje všechny uvedené počty včetně nul,
+zprávy, důvody ruční kontroly a rekonciliaci; není omezené filtrem tabulky.
+Protokol zůstává dostupný i po odstranění nahraného ZIPu. Zkouška nanečisto
+v PDF zřetelně označuje plánovaný zápis, nikoli vytvořené záznamy.
+Uložený protokol je součástí exportu instance a jeho obnovy. Smazáním úlohy
+ze seznamu se odstraní také její uložený protokol.
+
 #### 21.9.15.1 Daňová evidence
 
 Převádí se adresář, vydané faktury s položkami, přijaté faktury, bankovní výpisy
@@ -809,6 +841,11 @@ a pohyby, pokladní pohyby, vazby úhrad a zařazení do peněžního deníku. P
 deník ve zdroji slouží ke kontrole fyzických pohybů, nevytváří druhou sadu plateb.
 Přijaté faktury bez položek dostanou položky podle uložené rekapitulace sazeb DPH
 s původním popisem. Samovyměřená daň se nepřičítá k částce splatné dodavateli.
+
+Prázdné nepoužité sazby v rekapitulaci nevytvářejí položky. Nevyplněné
+zaokrouhlení lze převzít jako nulové jen při přesné shodě vypočteného součtu
+s celkem dokladu. Chybějící částka použité sazby nebo povinný celkový součet
+nadále vyžaduje opravu zdroje.
 
 Doklady s neurčenými příznaky DPH nebo cen, neurčenou protistranou či zemí,
 nesouladem kontrolní evidence nebo neověřeným datem se převezmou jako
@@ -852,6 +889,19 @@ faktur se zachovají při úplné shodě s rekapitulací DPH. Neověřené typy,
 záloh a daňové členění zůstávají konceptem s konkrétním důvodem kontroly; nejde
 automaticky o stornované doklady.
 
+Záporné bankovní výdaje zachovávají svůj finanční dopad a vazbu na původní
+kontace. U přijatých dokladů se rozlišuje úhrada záporného dokladu a snížení
+dřívější úhrady běžné faktury; kontrola saldokonta používá čistý součet včetně
+vratek. Záporné snížení úhrady vydané faktury nebo pokladní úhrady zůstává
+spolu s ostatními úhradami téhož dokladu k ruční kontrole.
+
+Automatické párování úhrad vyžaduje také jednoznačnou hlavičku příslušné
+vydané nebo přijaté faktury ve stejném účetním roce a shodu součtu celé skupiny
+plateb se zdrojovou uhrazenou částkou. Samotná shoda jedné platby nestačí.
+Pokud se tyto podklady neshodují nebo část skupiny nelze převést, zůstane
+celá skupina k ruční kontrole. Týká se to i úhrad zálohových dokladů;
+neověřená část skupiny se automaticky nespáruje.
+
 Cizoměnové faktury s doloženou měnou a kurzem se převezmou; neověřené členění DPH
 zůstává konceptem. Potřebné měny musí existovat v Nastavení měn cílové firmy.
 Zdrojový účetní deník neobsahuje cizoměnové částky, proto se přebírá v CZK. Před
@@ -865,6 +915,16 @@ Převod zahrnuje také podporované karty dlouhodobého a drobného majetku,
 historické odpisy, karty zaměstnanců a pracovní vztahy, sklady, skladové karty
 a vozidla. Tyto evidence nevytvářejí další účetní zápisy vedle převzatého
 deníku. Dostupnost některých evidencí závisí na zapnutých modulech cílové firmy.
+
+U nehmotného majetku pořízeného od roku 2021 lze převzít také zdrojový způsob
+daňového odpisování **M** a účetní způsob **R**, pokud úplný měsíční účetní plán
+přesně odpovídá daňovým odpisům po zdaňovacích obdobích cílové firmy. Nestačí
+samotné označení metody: převod ověřuje částky, návaznost měsíců, uplatněné
+odpisy a jejich shodu s kartou. Technické zhodnocení se touto cestou nepřevádí.
+Uplatněné odpisy zůstanou v počátečních oprávkách bez dalšího účtování historie.
+Budoucí odpisy pokračují přesnými částkami zdrojového plánu, včetně odlišné
+částky posledního měsíce. Neověřený nebo nepodporovaný plán se nepřevezme
+a protokol vysvětlí důvod.
 
 Ověřené historické mzdy standardního hlavního pracovního poměru se přebírají do
 `Mzdy → Importy → Převzaté mzdy` se zdrojem Stereo NX. Přenáší se měsíční hrubá
@@ -950,6 +1010,15 @@ včetně oblastí mimo rozsah. Potvrďte cílovou firmu a klikněte na
 **Importovat do aktuální firmy**. Cílem je firma vybraná v přepínači aplikace;
 změna firmy zruší výběr souboru i výsledek kontroly. Potřebujete právo zápisu
 pro import, účetní deník a nastavení firmy.
+
+Nese-li export účetnictví (účtovou osnovu, účetní období nebo deník), musí
+cílová firma vést po celou dobu stejný účetní rámec jako zdrojová firma
+(vyhláška 500, nebo 504 u neziskových organizací). Jinak kontrola nanečisto
+převod odmítne s datem, od kterého se rámce liší. Export bez historie rámce
+se posuzuje jako celý vedený podle vyhlášky 500. Evidence členů a příspěvků,
+dotací, kapitálu a podklady daně z příjmů neziskové organizace se nepřenášejí.
+Převod pro neziskové organizace nebyl ověřen a průvodce u nich ukáže výrazné
+upozornění; před převodem kontaktujte podporu.
 
 Průvodce přijímá ZIP do **2 GiB**, nahrává jej po částech a používá stejný
 importér jako CLI. Vybraná data a přílohy mají společný limit **64 MiB / 100 000

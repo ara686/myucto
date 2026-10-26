@@ -16,6 +16,7 @@ vi.mock('@/api/reports', () => ({ reportsApi: {
   dphTrend: vi.fn().mockResolvedValue([]), dphDraftsPrediction: vi.fn().mockResolvedValue(null),
 } }))
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ user: { id: 11 }, canRead: m.canRead }) }))
+vi.mock('@/api/vatClearing', () => ({ vatClearingApi: { status: vi.fn().mockResolvedValue(null) } }))
 vi.mock('@/stores/supplier', () => ({ useSupplierStore: () => ({ currentSupplierId: 7 }) }))
 vi.mock('@/composables/useYearOptions', () => ({ useYearOptions: () => [2026, 2025] }))
 vi.mock('vue-i18n', async (original) => ({ ...await original<typeof import('vue-i18n')>(), useI18n: () => ({ t: (key: string) => key, locale: { value: 'cs' } }) }))
@@ -39,6 +40,9 @@ const options = { global: {
   plugins: [createRouter({ history: createMemoryHistory(), routes: [
     { path: '/', component: { template: '<div />' } },
     { path: '/reports/dph-book', component: { template: '<div />' } },
+    { path: '/purchase-invoices/:id', name: 'purchase-invoice-detail', component: { template: '<div />' } },
+    { path: '/invoices/:id', name: 'invoice-detail', component: { template: '<div />' } },
+    { path: '/accounting/journal', name: 'accounting-journal', component: { template: '<div />' } },
   ] })],
   stubs: { PendingApprovalVatNotice: true, DateInput: true, PaginationBar: true, WorkspaceTeleport: { template: '<div><slot /></div>' } },
 } }
@@ -62,6 +66,25 @@ beforeEach(() => {
 })
 
 describe('links from VAT reports to the book', () => {
+  it('otevře doklady z blokujícího nálezu, vysvětleného posunu i informativního nálezu', async () => {
+    m.canRead.mockReturnValue(true)
+    const doc = { invoice_id: 42, doc_number: 'TEST-42', source: 'purchase', declared: -210, counter: 0, difference: 210 }
+    m.dphPreview.mockResolvedValue({ ...dphResult(), cross_check: [
+      { check: 'account_343_vs_return', blocking: true, severity: 'mismatch', label: '343', note: '', declared: -210, counter: 0, difference: 210, documents: [doc] },
+      { check: 'account_343_vs_return', blocking: false, severity: 'info', label: '343', note: '', declared: -210, counter: 0, difference: 210,
+        documents: [{ ...doc, invoice_id: 43, doc_number: 'TEST-43', source: 'manual', doc_type: 'journal_entry' }] },
+      { check: 'draft_advance_tax_documents', blocking: false, severity: 'info', label: 'Draft', note: '', declared: 0, counter: 210, difference: -210,
+        documents: [{ ...doc, invoice_id: 44, doc_number: 'TEST-44', source: 'sale' }] },
+    ] })
+    const wrapper = mount(DphReport, options)
+    await flushPromises()
+    const links = wrapper.findAll('li a[data-workspace-open="beside"]')
+    expect(links.map(link => link.attributes('href'))).toEqual(['/purchase-invoices/42', '/accounting/journal?entry_id=43', '/invoices/44'])
+    await links[0]!.trigger('click', { button: 0 })
+    expect(m.openBeside).toHaveBeenCalledExactlyOnceWith({ name: 'purchase-invoice-detail', params: { id: 42 } })
+    wrapper.unmount()
+  })
+
   it('places an overflow menu in the last column of both DPH tables and opens its real quarterly link beside', async () => {
     const wrapper = mount(DphReport, options)
     await flushPromises()

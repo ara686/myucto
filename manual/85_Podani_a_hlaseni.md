@@ -247,18 +247,23 @@ pojištěný aspoň jeden zaměstnanec.
 2. Nahoře vidíte akční kartu s řádkem za každou pojišťovnu. Klikněte na
    **Připravit a odeslat** (nebo vše najednou na záložce **Měsíc**
    tlačítkem **Připravit a odeslat vše**).
-3. Zprávy se zařadí do odchozí fronty datové schránky. Odešlete je podle
-   způsobu přihlášení:
-   - s Mobilním klíčem odejdou všechny jedním potvrzením v mobilu,
-   - přes odesílací bránu schvalujete každý koncept zvlášť tlačítkem
-     **Schválit koncept v datovce** (s pořadím, například 1/3),
-   - bez brány i Mobilního klíče zůstanou zprávy ve frontě datové schránky
-     k ručnímu odeslání (`Mzdy → Datová schránka`, záložka
-     **Odchozí podání**).
+3. Zprávy se zařadí do odchozí fronty datové schránky a pod tlačítkem se
+   ukáže výběr, jak se k datové schránce přihlásíte. Všechny zprávy odejdou
+   jedním přihlášením, každá do schránky své pojišťovny:
+   - **Mobilní klíč eGovernmentu**: jedno potvrzení v mobilu,
+   - **Jméno a heslo**: údaje zadáte jednou pro všechny zprávy, heslo se
+     neukládá,
+   - **Jméno, heslo a SMS kód**: jeden SMS kód pro všechny zprávy,
+   - **Systémový certifikát** firmy: po vědomém potvrzení,
+   - **Odesílací brána** schvaluje v datové schránce každý koncept zvlášť,
+     proto se nabízí jen u jedné zprávy; u více zpráv zvolte jiný způsob.
 4. Klikněte na **Načíst doručenky**, pokud se doručenky nedotáhly samy.
 
 Jednotlivou pojišťovnu můžete podat i z její karty pod akční kartou
 tlačítkem **Podat datovkou**, soubor stáhnete tlačítkem **Stáhnout PDF/XML**.
+Více pojišťoven najednou odešlete tak, že na kartách zaškrtnete
+**Vybrat k hromadnému odeslání** a kliknete na **Odeslat vybraná podání
+datovou schránkou**; nabídne se tentýž výběr způsobu přihlášení.
 
 **Jak poznáte, že je hotovo:** Řádek pojišťovny na záložce **Měsíc** ukazuje
 **Doručeno** a karta pojišťovny **Podáno** s datem. Přehled je podaný
@@ -696,20 +701,22 @@ měsíce, které jde připravit nebo odeslat. Nepřipravené se nejdřív připr
 pak se v ostrém prostředí ukáže jedno potvrzení se seznamem *co → komu →
 jakou cestou*. Po potvrzení:
 
-- **JMHZ** odejde přes VREP ČSSZ (podepsané certifikátem) hned. Hlášení, které
+- **JMHZ** odejde přes VREP ČSSZ (podepsané certifikátem) hned, pokud je pro
+  firmu a prostředí zvolený podpisový certifikát. Bez něj odejde datovou
+  schránkou a odpověď ČSSZ se k podání spáruje sama. Když jsou připravené obě
+  cesty, vyberete u řádku v poli **Odeslat přes**, výchozí je VREP. Hlášení, které
   obsahuje pracovní vztah s právě přijatou změnou údajů zaměstnance (A3), se
   ale nepřipraví dřív než 48 hodin po jejím přijetí; data se do systémů ČSSZ
   propisují později a dřív odeslané hlášení by ČSSZ mohla zamítnout (chyba
   243). Hláška uvede, od kdy to jde.
-- **Přehledy o platbě** všem pojišťovnám a **hromadná oznámení** se zařadí do
-  odchozí fronty datové schránky. S Mobilním klíčem je odešle **jedno
-  potvrzení v mobilu**; každá zpráva jde do schránky své pojišťovny. Když jedna
-  zpráva selže, ostatní odejdou a chyba se ukáže u jejího řádku.
-- U **odesílací brány** se každý koncept schvaluje v datové schránce zvlášť
-  (tlačítko **Schválit koncept v datovce** s pořadím, například 1/3); jednou
-  autorizací pro všechny zprávy odesílá jen Mobilní klíč.
-- Bez brány i Mobilního klíče zůstanou zprávy ve frontě datové schránky
-  k ručnímu odeslání.
+- **Přehledy o platbě** všem pojišťovnám, **hromadná oznámení** a JMHZ
+  posílané datovkou se zařadí do odchozí fronty datové schránky. Nad seznamem
+  se pak ukáže výběr způsobu přihlášení (Mobilní klíč, jméno a heslo, jméno,
+  heslo a SMS kód, systémový certifikát) a **jedním přihlášením** odejdou
+  všechny zprávy; každá jde do schránky svého úřadu nebo pojišťovny. Když
+  jedna zpráva selže, ostatní odejdou a chyba se ukáže u jejího řádku.
+- **Odesílací brána** schvaluje v datové schránce každý koncept zvlášť, proto
+  se nabízí, jen když odchází jediná zpráva.
 
 Kontrola slevy po lhůtě (kontrola 290) se při přípravě ptá u konkrétního
 řádku a čeká na vědomé potvrzení. Druhé řádné JMHZ za týž měsíc aplikace
@@ -841,6 +848,16 @@ selhalo 3.“) a jmenovitý seznam toho, co neprošlo, i s důvodem. Jednotlivé
 podání jde poslat i samostatně tlačítkem **Odeslat** na řádku. Potvrzení
 o převzetí není potvrzení o přijetí; výsledek zpracování se dotahuje
 samostatně a najdete ho na záložce **Odesláno**.
+
+**Kudy podání odejde.** JMHZ jde přes VREP ČSSZ i datovou schránkou. VREP
+potřebuje zvolený podpisový certifikát; když chybí, odejde hlášení datovou
+schránkou a u řádku to stojí. Když jsou připravené obě cesty, vyberete ji
+v poli **Odeslat přes** (výchozí je VREP). Podání odeslaná datovou schránkou
+se zařadí do její odchozí fronty a fronta hned nabídne výběr způsobu
+přihlášení (Mobilní klíč, jméno a heslo, jméno, heslo a SMS kód, systémový
+certifikát, u jediné zprávy i odesílací bránu); vybraná podání odejdou jedním
+přihlášením. Zpráva, která v odchozí frontě datové schránky čeká na
+přihlášení, má u řádku tlačítko **Odeslat datovkou**.
 
 **Proč podání nejde odeslat.** Fronta ukazuje i podání, která odeslat nejde,
 a u každého uvádí důvod: typicky že podání ještě není zmrazené, že už bylo

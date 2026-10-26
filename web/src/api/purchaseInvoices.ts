@@ -233,6 +233,38 @@ export interface VendorSnapshot {
 /** Nárok na odpočet DPH: plný / bez nároku / krácený (poměrný §75, viz vat_deduction_percent). */
 export type VatDeduction = 'full' | 'none' | 'proportional' | 'reduced'
 
+export type PurchaseVatTreatmentWarning =
+  | 'header_differs_from_allocations'
+  | 'items_claim_code_without_header_claim'
+  | 'header_no_claim_code_with_claim_items'
+
+export type PurchaseVatItemState = 'allocations' | 'no_claim_header' | 'no_claim_code' | 'claim' | 'unclassified'
+
+/**
+ * Režim vynucené úpravy zaúčtovaného dokladu v uzavřeném období: `reconcile` = storno
+ * a nový zápis v běžném období, `notes_only` = jen neúčetní pole (poznámky, jazyk).
+ */
+export type PurchaseForceMode = 'reconcile' | 'notes_only'
+
+/** Tělo opravy DPH zařazení — posílají se jen změněné klíče. */
+export interface PurchaseVatTreatmentPayload {
+  vat_deduction?: VatDeduction
+  vat_deduction_percent?: number
+  vat_classification_code?: string | null
+  items?: { id: number; vat_classification_code: string }[]
+  vat_allocations?: { id: number; vat_deduction: VatDeduction; vat_deduction_percent?: number; vat_classification_code?: string | null }[]
+  confirm_filed_period?: boolean
+}
+
+/** Skutečný nárok na odpočet dokladu (SSOT PurchaseVatTreatment na serveru). */
+export interface PurchaseVatTreatment {
+  source: 'header' | 'allocations'
+  effective: VatDeduction | 'mixed'
+  parts: { vat_deduction: VatDeduction; vat_deduction_percent: number; base_amount: number; vat_amount: number }[]
+  items: { id: number; effective_code: string | null; state: PurchaseVatItemState }[]
+  warnings: PurchaseVatTreatmentWarning[]
+}
+
 /** Stručné shrnutí navázané přijaté faktury (záloha ↔ vyúčtovací). */
 export interface PurchaseInvoiceBrief {
   id: number
@@ -534,6 +566,8 @@ export interface PurchaseInvoice {
   vat_overrides: PurchaseVatOverride[] | null
   /** Volitelné rozdělení rekapitulace DPH na účetní a odpočtové režimy. */
   vat_allocations: PurchaseVatAllocation[]
+  /** Nárok a členění, se kterými doklad do evidence DPH opravdu jde (rozpis má přednost před hlavičkou). */
+  vat_treatment?: PurchaseVatTreatment
   // Related
   items: PurchaseInvoiceItem[]
   vat_breakdown: PurchaseVatBreakdownRow[]
@@ -897,10 +931,15 @@ export const purchaseInvoicesApi = {
     ).then(r => r.data)
   },
 
-  update: (id: number, payload: PurchaseInvoicePayload, force = false) =>
+  /**
+   * `forceMode` je povinný u vynucené úpravy zaúčtovaného dokladu v uzavřeném období
+   * (server jinak vrací 422 force_mode_required).
+   */
+  update: (id: number, payload: PurchaseInvoicePayload, force = false, forceMode?: PurchaseForceMode) =>
     api.put<PurchaseInvoice>(
-      `/purchase-invoices/${id}${force ? '?force=1' : ''}`,
+      `/purchase-invoices/${id}`,
       payload,
+      { params: { ...(force ? { force: 1 } : {}), ...(force && forceMode ? { force_mode: forceMode } : {}) } },
     ).then(r => r.data),
   delete: (id: number, force = false) =>
     api.delete<{ ok: boolean; pdf_deleted?: boolean }>(
@@ -925,6 +964,18 @@ export const purchaseInvoicesApi = {
   dismissExtractionWarning: (id: number, section?: string) =>
     api.post<PurchaseInvoice>(`/purchase-invoices/${id}/dismiss-extraction-warning`, section ? { section } : undefined)
       .then(r => r.data),
+
+  /**
+   * Oprava DPH zařazení (nárok na odpočet, klasifikace hlavičky, položek a rozpisu) bez
+   * storna, i u zaúčtovaného dokladu. `force` přebije uzavřené období (správce),
+   * `forceMode: 'reconcile'` stornuje a přeúčtuje zápis do běžného období.
+   */
+  changeVatTreatment: (id: number, payload: PurchaseVatTreatmentPayload, opts: { force?: boolean; forceMode?: 'reconcile' } = {}) =>
+    api.post<PurchaseInvoice & { _repost?: { entry_id: number }; _reconcile?: { new_entry_id: number } }>(
+      `/purchase-invoices/${id}/vat-treatment`,
+      payload,
+      { params: { ...(opts.force ? { force: 1 } : {}), ...(opts.forceMode ? { force_mode: opts.forceMode } : {}) } },
+    ).then(r => r.data),
 
   /** Druh nákladu po položkách — kontrolní okno po AI importu, i u zaplaceného dokladu. */
   setExpenseKinds: (id: number, items: { id: number; expense_kind: ExpenseKind | null; expense_account_code?: string | null; vat_classification_code?: string }[]) =>
@@ -1001,8 +1052,8 @@ export const purchaseInvoicesApi = {
 
   activity: (id: number) =>
     api.get<Array<{
-      id: number; user_id: number | null; user_email: string | null; user_name: string | null;
-      action: string; payload: Record<string, unknown> | null; ip: string | null; created_at: string;
+      id: number; user_id: number | null; user_name: string | null;
+      action: string; payload: Record<string, unknown> | null; created_at: string;
     }>>(`/purchase-invoices/${id}/activity`).then(r => r.data),
 
   pdfUrl: (id: number, inline = false) => {

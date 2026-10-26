@@ -215,6 +215,53 @@ final class ClosingDeferredRevenueAccrualTest extends TestCase
         self::assertEqualsWithDelta(0.0, $this->balance384AsOf('2092-12-31'), 0.005, '384 se jednoletým předplatným rozpustí celý.');
     }
 
+    /** Faktura rozúčtovaná rovnou na 384 nese odklad sama, uzávěrka ji neodkládá podruhé. */
+    public function testPreviewSkipsInvoiceAlreadyPostedTo384(): void
+    {
+        $invoiceId = $this->invoice('20910010', 36600.00, self::YEAR . '-07-01');
+        $this->item($invoiceId, 36600.00, '2091-07-01', '2092-06-30');
+        $this->posting->postDocument($this->supplierId, 'invoice', $invoiceId, [
+            ['account_code' => '311', 'side' => 'debit', 'amount' => 36600.00],
+            ['account_code' => '602', 'side' => 'credit', 'amount' => 18400.00],
+            ['account_code' => '384', 'side' => 'credit', 'amount' => 18200.00],
+        ], ['entry_date' => self::YEAR . '-07-01', 'posted' => true, 'posted_by' => $this->userId, 'user_id' => $this->userId]);
+        $plain = $this->invoice('20910011', 36600.00, self::YEAR . '-07-01');
+        $this->item($plain, 36600.00, '2091-07-01', '2092-06-30');
+        $this->postInvoice($plain, 36600.00, self::YEAR . '-07-01');
+
+        $preview = $this->closing->deferredRevenueAccrualPreview($this->supplierId, $this->periodId);
+        self::assertCount(1, $preview['items'], 'Odloží se jen faktura zaúčtovaná na výnos.');
+        self::assertSame($plain, $preview['items'][0]['invoice_id']);
+        self::assertEqualsWithDelta(18200.00, (float) $preview['total'], 0.001);
+    }
+
+    /**
+     * Výnos odložený mimo uzávěrku (faktura rozúčtovaná rovnou na 384, rozpuštění ručním
+     * zápisem v N+1) openNext nerozpouští podruhé.
+     */
+    public function testDeferralPostedOutsideClosingIsNotReleasedAgainOnOpenNext(): void
+    {
+        $this->periods->create($this->supplierId, self::YEAR + 1, (self::YEAR + 1) . '-01-01', (self::YEAR + 1) . '-12-31');
+        $invoiceId = $this->invoice('20910009', 36600.00, self::YEAR . '-07-01');
+        $this->item($invoiceId, 36600.00, '2091-07-01', '2092-06-30');
+        $this->posting->postDocument($this->supplierId, 'invoice', $invoiceId, [
+            ['account_code' => '311', 'side' => 'debit', 'amount' => 36600.00],
+            ['account_code' => '602', 'side' => 'credit', 'amount' => 18400.00],
+            ['account_code' => '384', 'side' => 'credit', 'amount' => 18200.00],
+        ], ['entry_date' => self::YEAR . '-07-01', 'posted' => true, 'posted_by' => $this->userId, 'user_id' => $this->userId]);
+        $this->posting->postDocument($this->supplierId, 'manual', null, [
+            ['account_code' => '384', 'side' => 'debit', 'amount' => 18200.00],
+            ['account_code' => '602', 'side' => 'credit', 'amount' => 18200.00],
+        ], ['entry_date' => '2092-06-30', 'description' => 'Rozpuštění VPO', 'posted' => true, 'posted_by' => $this->userId, 'user_id' => $this->userId]);
+
+        $this->driveCloseWithAccrual(false);
+        $this->closing->closeBooks($this->supplierId, $this->periodId, $this->rv(), $this->meta());
+        $open = $this->closing->openNext($this->supplierId, $this->periodId, $this->rv(), $this->meta());
+
+        self::assertNull($open['deferred_revenue_release_entry_id'], 'Odklad mimo uzávěrku se rozpouští mimo openNext.');
+        self::assertEqualsWithDelta(0.0, $this->balance384AsOf('2092-12-31'), 0.005, '384 se nesmí rozpustit dvakrát.');
+    }
+
     public function testPriorReleaseProjectionCountsRevenueAsNegativeCost(): void
     {
         $invoiceId = $this->invoice('20910008', 36600.00, self::YEAR . '-07-01');
@@ -283,7 +330,7 @@ final class ClosingDeferredRevenueAccrualTest extends TestCase
         return round((float) $stmt->fetchColumn(), 2);
     }
 
-    private function driveCloseWithAccrual(): void
+    private function driveCloseWithAccrual(bool $runAccrual = true): void
     {
         $sid = $this->supplierId;
         $pid = $this->periodId;
@@ -292,7 +339,9 @@ final class ClosingDeferredRevenueAccrualTest extends TestCase
         $this->closing->confirmStep($sid, $pid, 'depreciation', 'skipped', null, $this->rv(), $this->meta());
         $this->closing->runFxRevaluation($sid, $pid, [], $this->rv(), $this->meta());
         $this->closing->confirmStep($sid, $pid, 'estimates', 'skipped', null, $this->rv(), $this->meta());
-        $this->closing->runDeferredRevenueAccrual($sid, $pid, $this->rv(), $this->meta());
+        if ($runAccrual) {
+            $this->closing->runDeferredRevenueAccrual($sid, $pid, $this->rv(), $this->meta());
+        }
         $this->closing->confirmStep($sid, $pid, 'deferrals', 'done', null, $this->rv(), $this->meta());
         $this->closing->confirmStep($sid, $pid, 'provisions', 'skipped', null, $this->rv(), $this->meta());
         $this->closing->confirmStep($sid, $pid, 'income_tax', 'skipped', null, $this->rv(), $this->meta());

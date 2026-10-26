@@ -163,9 +163,10 @@ final class BankIgnoreNoteTest extends TestCase
         $sqlite->exec('INSERT INTO bank_statements VALUES (2, 0)');
         $sqlite->exec('CREATE TABLE activity_log (supplier_id, user_id, action, entity_type, entity_id, payload, ip, user_agent)');
 
-        $sqlite->exec('CREATE TABLE invoice_payments (id INTEGER, source TEXT, bank_transaction_id INTEGER, tax_document_invoice_id INTEGER)');
+        $sqlite->exec('CREATE TABLE invoice_payments (id INTEGER, invoice_id INTEGER, source TEXT, bank_transaction_id INTEGER, tax_document_invoice_id INTEGER)');
         $sqlite->exec('CREATE TABLE invoices (id INTEGER, status TEXT)');
         $sqlite->exec('CREATE TABLE payment_matches (bank_transaction_id INTEGER, supplier_id INTEGER, purchase_invoice_id INTEGER, invoice_id INTEGER)');
+        $sqlite->exec('CREATE TABLE journal_entries (supplier_id INTEGER, source_type TEXT, source_id INTEGER, reversed_by INTEGER, posted_at TEXT)');
 
         // MariaDB ownership SQL is covered separately; all writes execute against SQLite.
         $scope = $this->createStub(\PDOStatement::class);
@@ -202,6 +203,8 @@ final class BankIgnoreNoteTest extends TestCase
             $posting,
             // Zrušení párování se politiky automatiky neptá (jen předběžná kontrola smazání výpisu).
             (new \ReflectionClass(\MyInvoice\Service\Accounting\AutoPostingPolicyService::class))->newInstanceWithoutConstructor(),
+            new \MyInvoice\Service\PurchaseInvoice\PurchasePaidStatusRestore($db, new \MyInvoice\Service\PurchaseInvoice\AdvanceCoveredPaidStatus($db)),
+            new ActivityLogger($db),
         ));
         $matchReflection = new \ReflectionClass(\MyInvoice\Service\Bank\Match\MatchSuggestionService::class);
         $reflection->getProperty('matchV2')->setValue($action, $matchReflection->newInstanceWithoutConstructor());

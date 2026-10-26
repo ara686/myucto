@@ -843,7 +843,87 @@ odeslání ke schválení a jeho zrušení patří ke změně stavu přijaté fa
 ### 114.11.16 Převod z Money S3
 
 Převod z Money S3 dimenze zapne a středisko i zakázku z deníku Money převede na
-dimenze. Podrobnosti v kapitole [Přechod z Money S3](103_Prechod_z_Money_S3.md).
+dimenze. Podrobnosti v kapitole [Přechod z Money S3](106_Prechod_z_Money_S3.md).
+
+### 114.11.17 Systémové dimenze a původ přiřazení
+
+Systémový typ má vlastní identitu nezávislou na názvu a kódu vlastního typu.
+Vlastní typ se stejným kódem se automaticky nepřevádí. Příprava rámce 504
+rozlišuje činnost (hlavní nebo hospodářskou), druh činnosti a předběžné daňové
+zařazení. Rámec 504 zatím nelze v nastavení firmy aktivovat. Předběžné daňové
+zařazení samo nepotvrzuje daňové posouzení ani nárok na osvobození a systém
+automaticky nevybírá hlavní činnost ani předmět daně.
+
+Označení **Systémová dimenze** znamená, že typ nelze odstranit ani vypnout.
+Označení **Vestavěná hodnota** označuje pevný význam, který nelze přejmenovat,
+přesunout, vyřadit ani smazat. Odpovědnou osobu a poznámky lze upravit.
+Název a význam použité systémové
+hodnoty, její kód a zařazení do stromu zůstávají zachované i v otevřeném období.
+Pro nový význam je nutná nová hodnota. Provozní poznámky a odpovědnou osobu lze
+měnit. Vlastní druh činnosti lze ukončit a později znovu zpřístupnit, jeho
+historické částky a název zůstávají v sestavách. Na nový účetní řádek ukončenou
+hodnotu nelze přiřadit. Dosavadní přiřazení lze ponechat beze změny a storno je
+převezme z původního zápisu. Pevné systémové hodnoty nelze
+přejmenovat ani ukončit. Tato přísnější pravidla nemění správu vlastních dimenzí.
+
+Přiřazení uchovává známý původ hodnoty, například přímý výběr, výchozí hodnotu
+klienta, zakázky nebo produktu, konkrétní účetní pravidlo či účetní modul. Kopie a
+storno zachovají původ převzatého přiřazení. U starších přiřazení bez doloženého
+původu zůstává původ neznámý; opětovné uložení stejné hodnoty jej nedoplňuje
+odhadem.
+
+Povinné systémové dimenze rámce 504 platí také pro systémové účetní zdroje.
+U závěrky a otevření se kontrolují rozvahové řádky. Nezávislé procentní rozpady
+více systémových os na jednom řádku se odmítnou, protože neurčují jejich
+společné kombinace.
+
+### 114.11.18 Společné alokace
+
+Stránka **Účetní nástroje → Společné alokace** zachovává doložené společné
+kombinace činnosti, druhu činnosti, předběžného daňového zařazení a případných
+dalších dimenzí. Přeúčtování patří do otevřeného a nezamčeného období rámce 504.
+Zdroj může pocházet i z uzavřeného období stejného rámce; jeho účetní zápis se
+nepřepisuje.
+
+1. Založte klíč s kódem, názvem, vysvětlením a účinností. Datum **Do** je první
+   den, kdy verze již neplatí. Verze jsou neměnné a jejich intervaly se nesmějí
+   překrývat. Pro opravu ve stejném intervalu založte nový klíč.
+2. Zadejte celé společné kombinace dimenzí. U váženého rozdělení doložte hodiny,
+   plochu, výnosy nebo pevný poměr. Pokud více nezávislých procentních rozpadů
+   nedokládá jejich vzájemnou souvislost, použijte režim přesných částek a
+   doložte částku každé kombinace u každého zdrojového řádku. U cizí měny se
+   zadávají také částky v měně dokladu. Samotné souhlasící procentní součty
+   neurčují společné kombinace.
+3. Vyberte datum přeúčtování, vyhledejte zdrojové řádky a připravte náhled.
+   Prohlédněte kompenzaci původního zařazení i cílové řádky. Částky se rozdělí
+   přesně na haléře; nevzniká výchozí hlavní činnost ani automaticky zvolený
+   předmět daně.
+4. Vyplňte důvod a potvrďte zaúčtování. Aplikace znovu ověří aktuální zdroje,
+   klíč, otevřené období a shodu náhledu. Změněný podklad vyžaduje nový náhled.
+
+Při tvorbě váženého klíče lze načíst **Návrh vah podle výnosů**. Zdrojové
+období je samostatné a oba jeho krajní dny jsou zahrnuté. Návrh sčítá
+zaúčtované výnosové řádky po celých trojicích systémových dimenzí, včetně
+účetního účinku storen. Technický uzávěrkový převod ani jeho storno do
+výnosů nevstupují. Chybějící členění, nezávislé procentní rozpady, záporné
+váhy nebo více než 200 kombinací převzetí návrhu zablokují.
+
+Načtení návrhu formulář nemění. Tlačítko **Převzít návrh do formuláře**
+nahradí kombinace a nastaví podklad Výnosy; platnost klíče a vysvětlení
+ponechá. Převzetí vyžaduje vážený režim bez dalších dimenzí. Zkontrolujte
+vhodnost poměru a doplňte vysvětlení, potom verzi samostatně uložte.
+Návrh nepotvrzuje daňovou ani právní správnost zvoleného rozdělení.
+
+Historie obsahuje neměnné podklady, odkaz do deníku, audit a případné storno.
+Použitý zdroj ani vytvořený alokační zápis nelze ručně změnit či smazat.
+Zrušení alokace vyžaduje datum v otevřeném období a důvod. Vytvoří přesný
+protizápis a uvolní zdrojové řádky pro nové doložené rozdělení. Opakování stejné
+operace nevytváří další zápis. Předběžné daňové zařazení nenahrazuje potvrzené
+daňové posouzení.
+
+Náhled a historii může číst uživatel s právem číst účetnictví. Klíče,
+zaúčtování a storno vyžadují právo zápisu a přihlášení přes web. Veřejné API
+a MCP poskytují čtení klíčů, zdrojů a historie v rozsahu dostupné firmy.
 
 ## 114.12 Související kapitoly
 
@@ -851,4 +931,4 @@ dimenze. Podrobnosti v kapitole [Přechod z Money S3](103_Prechod_z_Money_S3.md)
 - [Přijaté faktury](23_Prijate_faktury.md) - schvalování a dimenze na přijatých dokladech
 - [AI extrakce](25_AI_extrakce.md) - dimenze při vytěžení dokladů
 - [Majetek](28_Majetek.md) - dimenze karet majetku
-- [Přechod z Money S3](103_Prechod_z_Money_S3.md) - převod středisek a zakázek
+- [Přechod z Money S3](106_Prechod_z_Money_S3.md) - převod středisek a zakázek

@@ -6,6 +6,7 @@ import { resolve } from 'node:path'
 import ts from 'typescript'
 import { canUsePurchaseAiExtraction } from '@/security/purchaseAiExtraction'
 import { OPERATIONAL_SETTINGS_KEYS } from '@/security/permissions'
+import { hasFrameworkScope } from '@/security/frameworkScope'
 
 type NavSection = { key: string; items: { to: string; label: string }[] }
 type Role = 'superadmin' | 'admin' | 'accountant' | 'client'
@@ -17,7 +18,7 @@ const profiles = {
   client: { isSuperadmin: false, isClientRole: true, isCompanyAdminRole: false, isAccountantRole: false },
 }
 
-const layout = readFileSync(resolve(process.cwd(), 'src/components/layout/AppLayout.vue'), 'utf8')
+const layout = readFileSync(resolve(__dirname, '../AppLayout.vue'), 'utf8')
 const source = ts.createSourceFile('AppLayout.ts', layout.slice(layout.indexOf('>') + 1, layout.indexOf('</script>')), ts.ScriptTarget.Latest, true)
 const required = new Set(['navSections', 'accountantFirst', 'navPermission', 'filterNavigation', 'canExtractPurchase'])
 const declarations = source.statements.filter(statement => {
@@ -40,10 +41,10 @@ function renderNavigation(role: Role, permissionOverrides: Record<string, boolea
     isManagedInstallation: false, isDemo: false, can, canRead: can, canWrite: can,
   }
   const evaluate = new Function('computed', 'auth', 'supplierStore', 'clientExperience', 't', 'ICONS',
-    'approvalCount', 'accountantSigningProfilesEnabled', 'hostingAttention', 'automationStore', 'canUsePurchaseAiExtraction', 'OPERATIONAL_SETTINGS_KEYS', `${navigationCode}\nreturn navSections;`)
+    'approvalCount', 'accountantSigningProfilesEnabled', 'hostingAttention', 'automationStore', 'canUsePurchaseAiExtraction', 'OPERATIONAL_SETTINGS_KEYS', 'hasFrameworkScope', `${navigationCode}\nreturn navSections;`)
   const sections = evaluate(computed, auth, { currentSupplier: { accounting_mode: 'double_entry', accounting_enabled: true } },
     ref(auth.isClientRole), (key: string) => key, new Proxy({}, { get: (_, key) => String(key) }),
-    { pending: ref(0) }, ref(false), ref(null), { actionable: 0 }, canUsePurchaseAiExtraction, OPERATIONAL_SETTINGS_KEYS) as ComputedRef<NavSection[]>
+    { pending: ref(0) }, ref(false), ref(null), { actionable: 0 }, canUsePurchaseAiExtraction, OPERATIONAL_SETTINGS_KEYS, hasFrameworkScope) as ComputedRef<NavSection[]>
   return mount(defineComponent({
     setup: () => () => h('nav', sections.value.map(section => h('section', { 'data-section': section.key },
       section.items.map(item => h('a', { href: item.to }, item.label))))),

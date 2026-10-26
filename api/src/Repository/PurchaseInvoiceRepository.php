@@ -12,6 +12,8 @@ use MyInvoice\Service\Invoice\TimeBilling;
 use MyInvoice\Service\License\CommercialFeatureAccess;
 use MyInvoice\Service\PurchaseInvoice\ExtractionReviewSync;
 use MyInvoice\Service\PurchaseInvoice\PurchaseNumberSeries;
+use MyInvoice\Service\PurchaseInvoice\PurchaseVatTreatment;
+use MyInvoice\Service\PurchaseInvoice\VendorNumberDuplicates;
 use MyInvoice\Service\Validation\PurchaseInvoiceValidation;
 use MyInvoice\Support\ExchangeRateSources;
 use MyInvoice\Support\PaymentMethods;
@@ -95,6 +97,12 @@ final class PurchaseInvoiceRepository
         $row['items'] = $this->itemsFor($id);
         $row['vat_breakdown'] = $this->buildVatBreakdown($row['items']);
         $row['vat_allocations'] = $this->vatAllocationsFor($id, $supplierId);
+        // Nárok a členění, se kterými doklad do evidence DPH opravdu jde (rozpis má přednost
+        // před hlavičkou) — detail i editor je ukazují místo samotné hodnoty v hlavičce.
+        $row['vat_treatment'] = PurchaseVatTreatment::summarize(
+            $row,
+            \MyInvoice\Service\Report\VatLedgerService::classificationMapFor($this->db->pdo(), $supplierId),
+        );
         $row['totals'] = [
             'without_vat'         => $row['total_without_vat'],
             'vat'                 => $row['total_vat'],
@@ -1194,6 +1202,26 @@ final class PurchaseInvoiceRepository
      *   - varsymbol je volitelný — pokud chybí, vygeneruje se až při přechodu na received
      *   - vendor_snapshot je povinné (uložíme aktuální vendor data jako immutable)
      */
+    /**
+     * Nárok na odpočet podle plátcovství ODBĚRATELE (firmy) k datu plnění. Neplátce
+     * odpočet neuplatní, takže tuzemský doklad bez přenesení daňové povinnosti nese
+     * vždy `none`, i když volající poslal výchozí `full` podle dodavatele (issue #246).
+     *
+     * @param array<string,mixed> $data
+     */
+    private static function tenantVatDeduction(\PDO $pdo, int $supplierId, array $data, string $vatDeduction): string
+    {
+        if ($vatDeduction === 'none' || !empty($data['reverse_charge'])) {
+            return $vatDeduction;
+        }
+        $date = (string) (($data['tax_date'] ?? null) ?: ($data['issue_date'] ?? ''));
+        if ($date === '') {
+            return $vatDeduction;
+        }
+
+        return VatStatusService::flagsAt($pdo, $supplierId, $date)['is_vat_payer'] ? $vatDeduction : 'none';
+    }
+
     public function createDraft(array $data, int $userId, int $supplierId): int
     {
         $pdo = $this->db->pdo();
@@ -1227,6 +1255,7 @@ final class PurchaseInvoiceRepository
         $vatDeduction = array_key_exists('vat_deduction', $data)
             ? (in_array($data['vat_deduction'], ['full', 'none', 'proportional', 'reduced'], true) ? (string) $data['vat_deduction'] : 'full')
             : PurchaseInvoiceValidation::defaultVatDeduction($vendorIsVatPayer === null ? null : $vendorIsVatPayer === 1, $data);
+        $vatDeduction = self::tenantVatDeduction($pdo, $supplierId, $data, $vatDeduction);
 
         // Výchozí kategorie nákladu dodavatele — aplikuje se, pokud volající kategorii
         // explicitně neurčil. Platí pro manuální zadání i pro všechny importy
@@ -1703,6 +1732,19 @@ final class PurchaseInvoiceRepository
      */
     public function updateDraft(int $id, array $data, int $supplierId, bool $requireUnbooked = false): bool
     {
+        $guard = new \MyInvoice\Service\Accounting\Dimension\DimensionPeriodGuard($this->db);
+        return $guard->transaction(function () use ($guard, $id, $data, $supplierId, $requireUnbooked): bool {
+            if (array_key_exists('document_kind', $data) || array_key_exists('parent_purchase_invoice_id', $data)) {
+                $guard->lockPeriods($supplierId);
+                $blocker = $this->postedCreditClassificationBlocker($id, $supplierId, $data);
+                if ($blocker !== null) throw new \InvalidArgumentException($blocker);
+            }
+            return $this->updateDraftLocked($id, $data, $supplierId, $requireUnbooked);
+        });
+    }
+
+    private function updateDraftLocked(int $id, array $data, int $supplierId, bool $requireUnbooked): bool
+    {
         $hasVarsymbol = array_key_exists('varsymbol', $data);
         $manualVarsymbol = null;
         if ($hasVarsymbol) {
@@ -1901,7 +1943,12 @@ final class PurchaseInvoiceRepository
             isset($data['paid_amount_invoice_ccy']) ? (float) $data['paid_amount_invoice_ccy'] : null,
             isset($data['exchange_diff_base']) ? (float) $data['exchange_diff_base'] : null,
             isset($data['vat_classification_code']) ? (string) $data['vat_classification_code'] : null,
-            in_array($data['vat_deduction'] ?? 'full', ['full', 'none', 'proportional', 'reduced'], true) ? (string) ($data['vat_deduction'] ?? 'full') : 'full',
+            self::tenantVatDeduction(
+                $this->db->pdo(),
+                $supplierId,
+                $data,
+                in_array($data['vat_deduction'] ?? 'full', ['full', 'none', 'proportional', 'reduced'], true) ? (string) ($data['vat_deduction'] ?? 'full') : 'full',
+            ),
             max(0.0, min(100.0, (float) ($data['vat_deduction_percent'] ?? 100))),
             (array_key_exists('tax_deductible', $data) && !$data['tax_deductible']) ? 0 : 1,
             !empty($data['is_fixed_asset']) ? 1 : 0,
@@ -2001,7 +2048,7 @@ final class PurchaseInvoiceRepository
         //   EU vendor s 0% → '24e' (přijetí služby z EU, ř.5) — typický pro Microsoft Ireland apod.
         //   non-EU vendor s 0% → '24' (přijetí služby ze 3. země, ř.12) — Anthropic, GitHub apod.
         $metaStmt = $pdo->prepare(
-            'SELECT pi.supplier_id, pi.reverse_charge, co.iso2,
+            'SELECT pi.supplier_id, pi.reverse_charge, pi.vat_classification_code, co.iso2,
                     COALESCE(pi.tax_date, pi.issue_date) AS doc_date
                FROM purchase_invoices pi
                JOIN clients c     ON c.id  = pi.vendor_id
@@ -2009,9 +2056,25 @@ final class PurchaseInvoiceRepository
               WHERE pi.id = ?'
         );
         $metaStmt->execute([$purchaseInvoiceId]);
-        $meta = $metaStmt->fetch(PDO::FETCH_ASSOC) ?: ['supplier_id' => 0, 'reverse_charge' => 0, 'iso2' => 'CZ', 'doc_date' => null];
+        $meta = $metaStmt->fetch(PDO::FETCH_ASSOC) ?: ['supplier_id' => 0, 'reverse_charge' => 0, 'vat_classification_code' => null, 'iso2' => 'CZ', 'doc_date' => null];
         $reverseCharge = (bool) $meta['reverse_charge'];
         $countryIso = (string) ($meta['iso2'] ?? 'CZ');
+
+        // Hlavička s kódem „bez nároku" (42, „mimo" a jejich per-tenant obdoby) je vědomé
+        // rozhodnutí o celém dokladu. Položka bez vlastního kódu ho převezme; jinak by jí
+        // výchozí kód podle sazby (40/41) uplatnil odpočet, který hlavička odepírá.
+        // Kód s nárokem se nepřebírá: hlavička je u něj jen dominantní kód řádků a 12%
+        // položka pod hlavičkou 40 by skončila na ř. 40 místo ř. 41.
+        $headerNoClaimCode = null;
+        $headerCode = trim((string) ($meta['vat_classification_code'] ?? ''));
+        if (!$reverseCharge && $headerCode !== '' && (int) $meta['supplier_id'] > 0
+            && PurchaseVatTreatment::isNoClaimCode(
+                $headerCode,
+                \MyInvoice\Service\Report\VatLedgerService::classificationMapFor($pdo, (int) $meta['supplier_id']),
+            )
+        ) {
+            $headerNoClaimCode = $headerCode;
+        }
 
         // Skladová karta na řádku (volitelná, Epic SKLAD/ESHOP) — jen NAZNAČUJE
         // kartu pro předvyplnění příjemkového wizardu; skutečný pohyb dělá až
@@ -2076,7 +2139,7 @@ final class PurchaseInvoiceRepository
             // faktura NEDORAZILA do výkazů (VatClassificationMapper SKIPNE code=NULL).
             $code = $item['vat_classification_code'] ?? null;
             if ($code === null) {
-                $code = self::defaultClassificationCode(
+                $code = $headerNoClaimCode ?? self::defaultClassificationCode(
                     $rate,
                     $reverseCharge,
                     $countryIso,
@@ -2505,6 +2568,14 @@ final class PurchaseInvoiceRepository
      */
     public function setStatus(int $id, string $newStatus, int $supplierId, ?string $paidDate = null, ?int $bookedBy = null, bool $requireUnbooked = false): bool
     {
+        if ($newStatus === 'received' && !$this->db->pdo()->inTransaction()) {
+            // Odemykání musí sdílet transakci s current-read kontrolou předpisu.
+            return \MyInvoice\Infrastructure\Database\TransactionFailure::retrying($this->db->pdo(), fn (): bool =>
+                (new \MyInvoice\Service\Accounting\Dimension\DimensionPeriodGuard($this->db))->transaction(
+                    fn (): bool => $this->setStatus($id, $newStatus, $supplierId, $paidDate, $bookedBy, $requireUnbooked),
+                ),
+            );
+        }
         if (!in_array($newStatus, ['draft', 'received', 'booked', 'paid', 'cancelled'], true)) {
             throw new \InvalidArgumentException("Invalid status: $newStatus");
         }
@@ -2554,14 +2625,9 @@ final class PurchaseInvoiceRepository
     /** Aktivní posted zápis k PF (posted_at NOT NULL, reversed_by NULL) — drží zámek. */
     private function hasActivePostedEntry(int $id, int $supplierId): bool
     {
-        $stmt = $this->db->pdo()->prepare(
-            "SELECT 1 FROM journal_entries
-              WHERE supplier_id = ? AND source_type = 'purchase_invoice' AND source_id = ?
-                AND posted_at IS NOT NULL AND reversed_by IS NULL
-              LIMIT 1"
-        );
-        $stmt->execute([$supplierId, $id]);
-        return $stmt->fetchColumn() !== false;
+        // Bez zámku období: příjem konceptu PF nesmí čekat na běžící uzávěrku.
+        return (new \MyInvoice\Service\Accounting\DocumentPostingGroup($this->db))
+            ->hasActive($supplierId, 'purchase_invoice', $id);
     }
 
     /**
@@ -2685,14 +2751,7 @@ final class PurchaseInvoiceRepository
      */
     public function unlinkAdvance(int $finalId, int $supplierId): void
     {
-        $posted = $this->db->pdo()->prepare(
-            "SELECT 1 FROM journal_entries
-              WHERE supplier_id = ? AND source_type = 'purchase_invoice' AND source_id = ?
-                AND posted_at IS NOT NULL AND reversed_by IS NULL
-              LIMIT 1"
-        );
-        $posted->execute([$supplierId, $finalId]);
-        if ($posted->fetchColumn() !== false) {
+        if ($this->hasActivePostedEntry($finalId, $supplierId)) {
             throw new \RuntimeException(
                 'Zaúčtovanou fakturu nelze odpojit od zálohy — zúčtování zálohy je součástí '
                 . 'účetního zápisu. Nejdřív zápis stornuj, teprve pak vazbu zruš.'
@@ -3435,6 +3494,31 @@ final class PurchaseInvoiceRepository
 
     public function updateDocumentKind(int $id, int $supplierId, string $kind): ?string
     {
+        $guard = new \MyInvoice\Service\Accounting\Dimension\DimensionPeriodGuard($this->db);
+        return $guard->transaction(function () use ($guard, $id, $supplierId, $kind): ?string {
+            $guard->lockPeriods($supplierId);
+            $blocker = $this->postedCreditClassificationBlocker($id, $supplierId, ['document_kind' => $kind]);
+            return $blocker ?? $this->updateDocumentKindLocked($id, $supplierId, $kind);
+        });
+    }
+
+    private function postedCreditClassificationBlocker(int $id, int $supplierId, array $data): ?string
+    {
+        $q = $this->db->pdo()->prepare('SELECT document_kind, parent_purchase_invoice_id FROM purchase_invoices WHERE supplier_id = ? AND id = ? FOR UPDATE');
+        $q->execute([$supplierId, $id]);
+        $row = $q->fetch(PDO::FETCH_ASSOC);
+        if ($row === false) return null;
+        $kind = array_key_exists('document_kind', $data) ? (string) ($data['document_kind'] ?? 'invoice') : $row['document_kind'];
+        if (!in_array($kind, ['invoice', 'receipt', 'credit_note', 'advance', 'tax_document'], true)) $kind = 'invoice';
+        $parent = array_key_exists('parent_purchase_invoice_id', $data) ? (($data['parent_purchase_invoice_id'] ?? null) ? (int) $data['parent_purchase_invoice_id'] : null) : ($row['parent_purchase_invoice_id'] === null ? null : (int) $row['parent_purchase_invoice_id']);
+        if ($kind !== 'credit_note' && $row['document_kind'] !== 'credit_note') return null;
+        if ($kind === $row['document_kind'] && $parent === ($row['parent_purchase_invoice_id'] === null ? null : (int) $row['parent_purchase_invoice_id'])) return null;
+        if (!$this->hasActivePostedEntry($id, $supplierId)) return null;
+        return 'Druh ani vazbu dobropisu nelze měnit, dokud má doklad zaúčtovaný zápis. Nejprve proveďte řízené storno.';
+    }
+
+    private function updateDocumentKindLocked(int $id, int $supplierId, string $kind): ?string
+    {
         $allowed = ['invoice', 'receipt', 'credit_note', 'advance'];
         if (!in_array($kind, $allowed, true)) {
             return 'Neplatný typ dokladu.';
@@ -3513,10 +3597,13 @@ final class PurchaseInvoiceRepository
     /**
      * Vrátí ID faktury s daným pdf_hash u tenanta, nebo null. Pro dedup při PDF uploadu / inbox scanu.
      */
-    public function findIdByPdfHash(int $supplierId, string $sha256): ?int
+    public function findIdByPdfHash(int $supplierId, string $sha256, bool $activeOnly = false): ?int
     {
+        // `$activeOnly`: stornovaný doklad dedup importu neblokuje — storno znamená „tenhle
+        // doklad neplatí", takže znovu nahraný originál má vzniknout jako nový doklad.
         $stmt = $this->db->pdo()->prepare(
-            'SELECT id FROM purchase_invoices WHERE supplier_id = ? AND pdf_hash = ? LIMIT 1'
+            'SELECT id FROM purchase_invoices WHERE supplier_id = ? AND pdf_hash = ?'
+                . ($activeOnly ? " AND status <> 'cancelled'" : '') . ' LIMIT 1'
         );
         $stmt->execute([$supplierId, $sha256]);
         $id = $stmt->fetchColumn();
@@ -3531,10 +3618,11 @@ final class PurchaseInvoiceRepository
      * cesty by opakovaný sken téhož souboru pokaždé znovu prošel celým importem (nový
      * doklad sice neodmítl unikátní klíč, ale report ho počítal jako `created`).
      */
-    public function findIdBySourceHash(int $supplierId, string $sha256): ?int
+    public function findIdBySourceHash(int $supplierId, string $sha256, bool $activeOnly = false): ?int
     {
         $stmt = $this->db->pdo()->prepare(
-            'SELECT id FROM purchase_invoices WHERE supplier_id = ? AND source_hash = ? LIMIT 1'
+            'SELECT id FROM purchase_invoices WHERE supplier_id = ? AND source_hash = ?'
+                . ($activeOnly ? " AND status <> 'cancelled'" : '') . ' LIMIT 1'
         );
         $stmt->execute([$supplierId, $sha256]);
         $id = $stmt->fetchColumn();
@@ -3547,17 +3635,30 @@ final class PurchaseInvoiceRepository
      * tím detekuje "tahle faktura už je v systému" před voláním createDraft (které by
      * jinak hodilo SQLSTATE 23000 duplicate key).
      */
-    public function findIdByVendorInvoice(int $supplierId, int $vendorId, string $vendorInvoiceNumber, string $issueDate): ?int
+    public function findIdByVendorInvoice(int $supplierId, int $vendorId, string $vendorInvoiceNumber, string $issueDate, bool $activeOnly = false): ?int
     {
+        // `$activeOnly` viz findIdByPdfHash(); unikátní klíč stornovaný doklad dál drží,
+        // nový proto dostane další pořadí ({@see importDuplicateSeq()}).
         $stmt = $this->db->pdo()->prepare(
             'SELECT id FROM purchase_invoices
               WHERE supplier_id = ? AND vendor_id = ?
-                AND vendor_invoice_number = ? AND issue_date = ?
+                AND vendor_invoice_number = ? AND issue_date = ?'
+                . ($activeOnly ? " AND status <> 'cancelled'" : '') . '
               LIMIT 1'
         );
         $stmt->execute([$supplierId, $vendorId, $vendorInvoiceNumber, $issueDate]);
         $id = $stmt->fetchColumn();
         return $id === false ? null : (int) $id;
+    }
+
+    /**
+     * Pořadí `vendor_number_seq` pro importovaný doklad, jehož číslo a datum už nese jen
+     * stornovaný doklad téhož dodavatele (0 = shoda neexistuje). Import (AI, ISDOC, fronta)
+     * se ptá jen na nestornované duplikáty, unikátní klíč ale drží i storno.
+     */
+    public function importDuplicateSeq(int $supplierId, int $vendorId, string $vendorInvoiceNumber, string $issueDate): int
+    {
+        return VendorNumberDuplicates::nextSeq($this->db->pdo(), $supplierId, $vendorId, $vendorInvoiceNumber, $issueDate);
     }
 
     /**

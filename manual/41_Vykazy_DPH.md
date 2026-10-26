@@ -405,6 +405,8 @@ Jakmile bylo přiznání za dané období aspoň jednou v archivu označeno jako
 
 Sekce se zobrazí jen tehdy, když za dané období už bylo přiznání v archivu označeno jako odeslané (řádné, opravné nebo dodatečné). U období, které ještě podané nebylo, fronta nedává smysl.
 
+Doklady v podaném období (přiznání k DPH nebo kontrolní hlášení označené jako podané) jsou chráněné i proti změně. U vydané faktury mění částky, data a položky jen správce firmy. U přijaté faktury platí totéž pro každou změnu, která se promítne do evidence DPH: vynucenou úpravu, členění DPH položek i **Změnit DPH zařazení**; rozhoduje období odpočtu dokladu. Správce musí změnu DPH zařazení v podaném období navíc výslovně potvrdit. Každou takovou změnu je potřeba vykázat opravným nebo dodatečným tvrzením (viz [§ 41.5](#415-krok-za-krokem-oprava-uz-podaneho-priznani-nebo-hlaseni)).
+
 > [!TIP]
 > Fronta je jen podklad pro rozhodnutí, nic sama nevynucuje. Pokud se v ní doklad objeví, zvažte, zda je rozdíl významný natolik, že je potřeba podat dodatečné přiznání (viz [§ 41.5](#415-krok-za-krokem-oprava-uz-podaneho-priznani-nebo-hlaseni)), nebo zda stačí ho promítnout až do dalšího řádného období.
 
@@ -431,9 +433,11 @@ Pokud vše sedí, na stránce se nic nezobrazí. Jinak se nad kartami objeví č
 
 - popis, čeho se rozdíl týká (např. "DPHDP3 ř.1+2 a KH A.4 + A.5"),
 - konkrétní částku z obou stran a rozdíl v Kč,
-- je-li možné rozdíl přiřadit ke konkrétním dokladům, seznam dokladů (číslo dokladu a částka na obou stranách). U rozdílu proti souhrnnému hlášení je i vysvětlení pravděpodobné příčiny (chybějící DIČ odběratele, plnění zařazené jako EU, ale na tuzemské nebo ne-EU zemi apod.).
+- je-li možné rozdíl přiřadit ke konkrétním dokladům, seznam dokladů (číslo dokladu a částka na obou stranách). Kliknutím na číslo otevřete detail vedle přiznání; **Shift+klik** jej otevře v pravém panelu. Ruční účetní zápis vede na konkrétní zápis v deníku. Pokud byl původní převzatý doklad smazán, historický rozdíl rovněž odkazuje na existující účetní zápis. Odkaz se zobrazuje podle oprávnění ke čtení příslušné agendy. U rozdílu proti souhrnnému hlášení je i vysvětlení pravděpodobné příčiny (chybějící DIČ odběratele, plnění zařazené jako EU, ale na tuzemské nebo ne-EU zemi apod.).
 
 U kontroly účtu 343 rozpis navíc u každého rozdílového dokladu vysvětlí, zda jde o časový posun odpočtu podle § 73 ZDPH, odlišnou částku, chybějící řádek 343, nebo zápis bez protějšku v přiznání. Typický časový posun vznikne, když je předpis zaúčtovaný k DUZP na konci měsíce, ale přijatý doklad dorazí až v následujícím měsíci. Pokud celý rozdíl vysvětlují pouze časové posuny, zobrazí se neutrální informace **Rozdíl obratu 343 je vysvětlen časovým posunem podle § 73 ZDPH** s čísly dokladů a přiznání můžete stáhnout bez potvrzování nesouladu. Nevysvětlený zbytek nad toleranci zůstává červený a blokující.
+
+U dokladů převzatých z jiného účetního programu kontrola přiřadí i samostatný zápis DPH, pokud je převzatý zápis jednoznačně navázaný na doklad. Obyčejná ruční vazba mezi zápisem a dokladem sama o sobě původ DPH neurčuje. Doklad ponechaný po převodu jako koncept do přiznání nevstupuje; jeho případné zaúčtování na účtu 343 proto zůstává rozdílem ke kontrole.
 
 > [!WARNING]
 > Tlačítko **Stáhnout XML** se při nalezeném rozdílu úplně nezablokuje, ale vyžádá potvrzení: zobrazí se dialog, že se přiznání rozchází s kontrolním nebo souhrnným hlášením, nebo s obratem účtu 343, a že finanční úřad páruje podání strojově. Teprve po potvrzení se XML stáhne. Tahle vědomá volba se spolu s celým rozpisem rozdílu zapíše do auditní stopy.
@@ -598,7 +602,9 @@ Pokud na fakturu ani řádek kód nevyberete, doplní ho systém sám. Rozhoduje
 - u přijatých dokladů navíc plátcovství vaší firmy k datu dokladu a povaha plnění (poplatek orgánu veřejné moci, viz níže),
 - u nulové sazby do zahraničí měrná jednotka položky: časová (h, den, měsíc) znamená službu, fyzikální míra nebo balení (kg, l, m², paleta) zboží. Jednotka `ks` je neutrální a rozhodne statistický výchozí stav (služba).
 
-U přijatých dokladů přiřazuje kód jediné místo, a to ukládání řádků. Hlavička dokladu ho jen přebírá z dominantního řádku, sama nikdy nerozhoduje. Ručně zvolený kód na hlavičce zůstává. Výkazy čtou kód z řádku a teprve pak z hlavičky.
+U přijatých dokladů přiřazuje kód jediné místo, a to ukládání řádků. Hlavička dokladu ho jen přebírá z dominantního řádku, sama nikdy nerozhoduje. Ručně zvolený kód na hlavičce zůstává. Výkazy čtou kód z řádku a teprve pak z hlavičky. Výjimkou je kód bez nároku na odpočet v hlavičce (`42`, `mimo` a vlastní kódy bez řádku přiznání a oddílu KH): řádek bez vlastního kódu ho při uložení převezme, místo aby dostal `40` nebo `41` a uplatnil odpočet, který hlavička odepírá. Kód s nárokem se z hlavičky nepřebírá, protože by 12% řádek pod hlavičkou `40` skončil na ř. 40.
+
+Má-li přijatý doklad **rozpis DPH** (rozdělení odpočtu a zaúčtování, viz [Přijaté faktury](23_Prijate_faktury.md#ucetni-alokace-casti-dokladu)), bere přiznání i kontrolní hlášení nárok na odpočet a kód z částí rozpisu, hlavička ani položky o nich nerozhodují. Detail dokladu proto ukazuje nárok podle rozpisu a upozorní, když se hlavička od rozpisu liší.
 
 Hodnoty se berou z číselníku klasifikací platného k DUZP dokladu, takže po změně sazby dostanou starší doklady starou klasifikaci a nové novou.
 

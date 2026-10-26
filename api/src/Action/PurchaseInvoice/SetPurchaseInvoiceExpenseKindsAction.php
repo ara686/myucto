@@ -22,6 +22,7 @@ use MyInvoice\Service\Accounting\UnbalancedEntryException;
 use MyInvoice\Service\ActivityLogger;
 use MyInvoice\Service\IpMatcher;
 use MyInvoice\Service\PurchaseInvoice\ExtractionReviewSync;
+use MyInvoice\Service\Vat\PurchaseFiledVatPeriod;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
@@ -66,6 +67,7 @@ final class SetPurchaseInvoiceExpenseKindsAction
         private readonly IpMatcher $ipMatcher,
         private readonly ExtractionReviewSync $reviewSync,
         private readonly ChartOfAccountsRepository $accounts,
+        private readonly PurchaseFiledVatPeriod $filedPeriods,
     ) {}
 
     public function __invoke(Request $request, Response $response, array $args): Response
@@ -171,6 +173,13 @@ final class SetPurchaseInvoiceExpenseKindsAction
         if ($changes === [] && $vatChanges === []) {
             $this->reviewSync->afterItemsChanged($supplierId, $id);
             return Json::ok($response, $this->repo->find($id, $supplierId) ?? $existing);
+        }
+        // Členění DPH položky mění evidenci DPH. V podaném období ho delegovaná role nezmění,
+        // stejně jako vynucenou úpravou nebo opravou DPH zařazení ({@see PurchaseFiledVatPeriod}).
+        if ($vatChanges !== [] && $status !== 'draft'
+            && !RequestAuthorization::canChangeFiledVatPeriod($request)
+            && ($filed = $this->filedPeriods->describe($supplierId, $id)) !== null) {
+            return Json::error($response, 'period_filed', PurchaseFiledVatPeriod::message($filed), 409);
         }
 
         $user = (array) $request->getAttribute(AuthMiddleware::ATTR_USER, []);

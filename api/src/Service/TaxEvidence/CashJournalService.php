@@ -652,6 +652,10 @@ final class CashJournalService
      * Součet řádků úhrad a oprav za všechny roky tak dá rozdělení podle faktury minus
      * dobropis, stejně jako by se úhrady přerozdělily zpětně.
      *
+     * Přeplatek (#247) se tu dělí celou úhradou: zápočet nesmí převýšit nezaplacený zbytek
+     * faktury (CreditNoteOffsetService), takže úhrady před zápočtem fakturu nepřeplácejí ani
+     * po něm a krytá je celá jejich částka.
+     *
      * @param array<string,mixed> $r
      * @param array<string,mixed> $batch podklady načtené dávkou ({@see batch()})
      * @return array{alloc:array<string,float>, bucket:string, base:float, vat:float, unclassified:bool, blocking:bool}
@@ -723,7 +727,7 @@ final class CashJournalService
             // níž — DPH z osvobozené faktury je průběžná položka státu, ne příjem poplatníka.
             // Bez toho by „z toho vyloučeno" bylo brutto, kdežto TaxProfileRepository
             // ::annualExemptIncome() vedle toho hlásí netto.
-            $exemptBase = $this->prorateBase($amount, $r['inv_vat'] ?? null, $r['inv_with_vat'] ?? null, $isVatPayer);
+            $exemptBase = $this->invoiceIncomeBase($amount, $r, $isVatPayer);
             $exemptVat  = round($amount - $exemptBase, 2);
             $alloc = ['income_exempt' => round($sign * $exemptBase, 2)];
             if ($exemptVat != 0.0) {
@@ -741,7 +745,7 @@ final class CashJournalService
             ];
         }
 
-        $base = $this->prorateBase($amount, $r['inv_vat'] ?? null, $r['inv_with_vat'] ?? null, $isVatPayer);
+        $base = $this->invoiceIncomeBase($amount, $r, $isVatPayer);
         $vat  = round($amount - $base, 2);
         $alloc = ['income_taxable' => round($sign * $base, 2)];
         if ($vat != 0.0) {
@@ -792,6 +796,9 @@ final class CashJournalService
             (string) $r['movement_date'],
             null,
             isset($batch['purchase_offsets']) ? ($batch['purchase_offsets'][(int) $r['purchase_invoice_id']] ?? []) : null,
+            // #247: konkrétní úhrada, podle které kalkulátor pozná přeplatek faktury.
+            // Ručně zaplacená faktura (noha C2) platí amount_to_pay, které brutto nepřesáhne.
+            $r['source_type'] === 'cash' ? ['type' => 'cash', 'id' => (int) $r['source_id']] : null,
         );
         $vat  = round($sign * ($amount - $base), 2);
         $base = round($sign * $base, 2);
@@ -975,6 +982,29 @@ final class CashJournalService
     }
 
     /**
+     * #247: základ příjmu z úhrady vydané faktury. Poměrem DPH faktury se dělí jen část,
+     * která fakturu hradí; přeplatek nad dosud neuhrazené brutto (`inv_overpaid`, v CZK se
+     * znaménkem částky řádku, spočítá CashJournalRepository::ipCoverageSql) DPH nenese
+     * a celý zůstává v základu. Řádek, který konkrétní úhradu nezná (vratka k dobropisu
+     * bez vazby, GoPay vratka), nemá `inv_overpaid` a dělí se poměrem celý jako dosud.
+     *
+     * @param array<string,mixed> $r
+     */
+    private function invoiceIncomeBase(float $amount, array $r, bool $isVatPayer): float
+    {
+        $overpaid = $r['inv_overpaid'] ?? null;
+        if ($overpaid === null || (float) $overpaid == 0.0) {
+            return $this->prorateBase($amount, $r['inv_vat'] ?? null, $r['inv_with_vat'] ?? null, $isVatPayer);
+        }
+        $overpaid = (float) $overpaid;
+        $covered = round($amount - $overpaid, 2);
+        return round(
+            $this->prorateBase($covered, $r['inv_vat'] ?? null, $r['inv_with_vat'] ?? null, $isVatPayer) + $overpaid,
+            2,
+        );
+    }
+
+    /**
      * R7: z uhrazeného brutto se vyloučí pouze evidovaná DPH; zaokrouhlení patří do základu.
      *
      * Poměr DPH platí i pro dobropis: ten má DPH i brutto záporné, poměr je tedy stejný
@@ -1013,7 +1043,7 @@ final class CashJournalService
         // R7 proratu. Je to přijatelné pro pohyby BEZ faktury (nezná se DPH rozpad); u pohybu
         // s vazbou by měl uživatel spíš opravit klasifikaci dokladu než override.
         if ($bucket === 'income_taxable' && ($r['invoice_id'] ?? null) !== null) {
-            $base = $this->prorateBase($amount, $r['inv_vat'] ?? null, $r['inv_with_vat'] ?? null, $isVatPayer);
+            $base = $this->invoiceIncomeBase($amount, $r, $isVatPayer);
             return $this->single($bucket, $base, $bucket, $base, round($amount - $base, 2));
         }
         if ($bucket === 'expense_taxable' && ($r['purchase_invoice_id'] ?? null) !== null) {

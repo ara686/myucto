@@ -3212,6 +3212,10 @@ export interface PayrollSubmissionQueueItem {
     mode: PayrollSubmissionDispatchMode
     /** Druhý rovnocenný kanál, když existuje (JMHZ jde VREP i datovkou). */
     alternate_mode: PayrollSubmissionDispatchMode | null
+    /** Kudy podání odejde bez volby: primární, je-li připravený, jinak alternativní. */
+    default_mode: PayrollSubmissionDispatchMode
+    /** Připravené kanály, mezi kterými účetní volí (VREP jen se zvoleným certifikátem). */
+    modes: PayrollSubmissionDispatchMode[]
     dispatchable: boolean
     /** Celá věta, proč odeslat nejde. Vyplněná právě když `dispatchable` je `false`. */
     blocked_reason: string | null
@@ -3441,6 +3445,8 @@ export interface PayrollMonthlyChecklistItem {
   dispatchable: boolean
   /** Kudy podání odejde frontou; `null` u řádků bez podání. */
   dispatch_mode: PayrollSubmissionDispatchMode | null
+  /** Připravené kanály, mezi kterými účetní volí; výchozí je `dispatch_mode`. */
+  dispatch_modes?: PayrollSubmissionDispatchMode[]
   dispatch: PayrollMonthlyChecklistDispatch | null
   /** Splněno doručením do schránky úřadu, který výsledek neposílá (PPZ, HOZ). */
   fulfilled_by_delivery: boolean
@@ -6844,7 +6850,8 @@ export interface PayrollRunResultPerson {
 export interface PayrollRunResultSnapshot {
   totals?: {
     cash_payable_minor?: number
-    enforcement_withheld_minor?: number
+    /** `null`, když volající nemá právo `payroll.enforcement`. */
+    enforcement_withheld_minor?: number | null
     payable_after_enforcement_minor?: number
   }
   people?: PayrollRunResultPerson[]
@@ -7121,6 +7128,7 @@ export interface PayrollDependantClaim {
   other_caregiver_given_name: string | null
   other_caregiver_family_name: string | null
   other_caregiver_birth_date: string | null
+  other_caregiver_birth_number_masked: string | null
   effective_from: string
   effective_to: string | null
   superseded_by_id: number | null
@@ -7188,6 +7196,8 @@ export interface PayrollDependantClaimPayload {
   other_caregiver_given_name: string | null
   other_caregiver_family_name: string | null
   other_caregiver_birth_date: string | null
+  /** Prázdné (null) ponechá uložené rodné číslo beze změny. */
+  other_caregiver_birth_number?: string | null
   ztp_p: boolean
   effective_from: string
   effective_to: string | null
@@ -8288,7 +8298,7 @@ export const payrollApi = {
    */
   dispatchSubmissionBatch: (
     environment: PayrollRegzelEnvironment,
-    items: { submission_id: number; idempotency_key: string }[],
+    items: { submission_id: number; idempotency_key: string; mode?: PayrollSubmissionDispatchMode }[],
   ) =>
     api.post<PayrollSubmissionQueueBatchResult>(
       '/payroll/submissions/queue/dispatch',

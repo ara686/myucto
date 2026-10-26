@@ -161,6 +161,51 @@ final class ClosingPrepaidExpenseAccrualTest extends TestCase
         self::assertEqualsWithDelta(22459.02, (float) $preview['total'], 0.001);
     }
 
+    public function testPreviewDefersInvoicePostedToExpenseOnce(): void
+    {
+        $pi = $this->purchase('PF-2091-ALLIANZ', 36600.00, self::YEAR . '-11-15');
+        $this->item($pi, 36600.00, '2091-07-01', '2092-06-30', '548');
+        $this->postPurchaseExpense($pi, '548', 36600.00, self::YEAR . '-11-15');
+
+        $preview = $this->closing->prepaidExpenseAccrualPreview($this->supplierId, $this->periodId);
+        self::assertCount(1, $preview['items']);
+        self::assertEqualsWithDelta(18200.00, (float) $preview['total'], 0.001);
+    }
+
+    /** Faktura rozúčtovaná rovnou na 381 nese odklad sama, uzávěrka ji neodkládá podruhé. */
+    public function testPreviewSkipsInvoiceAlreadyPostedTo381(): void
+    {
+        $pi = $this->purchase('PF-2091-SPLIT', 36600.00, self::YEAR . '-11-15');
+        $this->item($pi, 36600.00, '2091-07-01', '2092-06-30', '548');
+        $this->posting->postDocument($this->supplierId, 'purchase_invoice', $pi, [
+            ['account_code' => '548', 'side' => 'debit', 'amount' => 18400.00],
+            ['account_code' => '381', 'side' => 'debit', 'amount' => 18200.00],
+            ['account_code' => '321', 'side' => 'credit', 'amount' => 36600.00],
+        ], ['entry_date' => self::YEAR . '-11-15', 'posted' => true, 'posted_by' => $this->userId, 'user_id' => $this->userId]);
+
+        $preview = $this->closing->prepaidExpenseAccrualPreview($this->supplierId, $this->periodId);
+        self::assertSame([], $preview['items']);
+        self::assertEqualsWithDelta(0.0, (float) $preview['total'], 0.001);
+    }
+
+    /** Odklad ručním interním dokladem připojeným k faktuře se neodkládá podruhé. */
+    public function testPreviewSkipsInvoiceWithLinkedManualDeferral(): void
+    {
+        $pi = $this->purchase('PF-2091-MANUAL', 36600.00, self::YEAR . '-11-15');
+        $this->item($pi, 36600.00, '2091-07-01', '2092-06-30', '548');
+        $this->postPurchaseExpense($pi, '548', 36600.00, self::YEAR . '-11-15');
+        $manualId = $this->posting->postDocument($this->supplierId, 'manual', null, [
+            ['account_code' => '381', 'side' => 'debit', 'amount' => 18200.00],
+            ['account_code' => '548', 'side' => 'credit', 'amount' => 18200.00],
+        ], ['entry_date' => self::ENDS_ON, 'description' => 'Náklady příštích období', 'posted' => true, 'posted_by' => $this->userId, 'user_id' => $this->userId]);
+        $this->db->pdo()->prepare(
+            'INSERT INTO journal_entry_document_links (supplier_id, entry_id, doc_type, doc_id) VALUES (?, ?, "purchase_invoice", ?)'
+        )->execute([$this->supplierId, $manualId, $pi]);
+
+        $preview = $this->closing->prepaidExpenseAccrualPreview($this->supplierId, $this->periodId);
+        self::assertSame([], $preview['items']);
+    }
+
     // ── zaúčtování — podvojnost, idempotence, mazání ───────────────────────────
 
     public function testRunPostsDoubleEntry381Over5xxAndIsIdempotent(): void
@@ -218,6 +263,57 @@ final class ClosingPrepaidExpenseAccrualTest extends TestCase
         self::assertEqualsWithDelta(18200.00, $this->sideAmount($lines, '548', 'debit'), 0.001);
         self::assertEqualsWithDelta(18200.00, $this->sideAmount($lines, '381', 'credit'), 0.001);
         self::assertSame((self::YEAR + 1) . '-01-01', (string) $release['entry_date']);
+        self::assertEqualsWithDelta(0.0, $this->balance381AsOf('2092-12-31'), 0.005, 'Jednoleté rozlišení se rozpustí jednou a celé.');
+    }
+
+    /**
+     * Odklad zaúčtovaný mimo uzávěrku (faktura rozúčtovaná rovnou na 381, rozpuštění ručním
+     * interním dokladem v N+1, typicky převzatá data) openNext nerozpouští podruhé.
+     */
+    public function testDeferralPostedOutsideClosingIsNotReleasedAgainOnOpenNext(): void
+    {
+        $this->periods->create($this->supplierId, self::YEAR + 1, (self::YEAR + 1) . '-01-01', (self::YEAR + 1) . '-12-31');
+        $pi = $this->purchase('PF-2091-SPLIT', 36600.00, self::YEAR . '-11-15');
+        $this->item($pi, 36600.00, '2091-07-01', '2092-06-30', '548');
+        $this->posting->postDocument($this->supplierId, 'purchase_invoice', $pi, [
+            ['account_code' => '548', 'side' => 'debit', 'amount' => 18400.00],
+            ['account_code' => '381', 'side' => 'debit', 'amount' => 18200.00],
+            ['account_code' => '321', 'side' => 'credit', 'amount' => 36600.00],
+        ], ['entry_date' => self::YEAR . '-11-15', 'posted' => true, 'posted_by' => $this->userId, 'user_id' => $this->userId]);
+        $this->posting->postDocument($this->supplierId, 'manual', null, [
+            ['account_code' => '548', 'side' => 'debit', 'amount' => 18200.00],
+            ['account_code' => '381', 'side' => 'credit', 'amount' => 18200.00],
+        ], ['entry_date' => '2092-06-30', 'description' => 'Rozpuštění NPO', 'posted' => true, 'posted_by' => $this->userId, 'user_id' => $this->userId]);
+
+        $this->driveCloseWithAccrual(false);
+        $this->closing->closeBooks($this->supplierId, $this->periodId, $this->rv(), $this->meta());
+        $open = $this->closing->openNext($this->supplierId, $this->periodId, $this->rv(), $this->meta());
+
+        self::assertNull($open['prepaid_expense_release_entry_id'], 'Odklad mimo uzávěrku se rozpouští mimo openNext.');
+        self::assertEqualsWithDelta(0.0, $this->balance381AsOf('2092-12-31'), 0.005, '381 se nesmí rozpustit dvakrát.');
+    }
+
+    /**
+     * Faktura z cílového období N+1 nebyla v N odložena, její náklad je v N+1 celý.
+     * openNext rozpustí jen odklad z N.
+     */
+    public function testInvoiceFromTargetPeriodIsNotReleasedOnOpenNext(): void
+    {
+        $this->periods->create($this->supplierId, self::YEAR + 1, (self::YEAR + 1) . '-01-01', (self::YEAR + 1) . '-12-31');
+        $pi = $this->purchase('PF-2091-ALLIANZ', 36600.00, self::YEAR . '-11-15');
+        $this->item($pi, 36600.00, '2091-07-01', '2092-06-30', '548');
+        $this->postPurchaseExpense($pi, '548', 36600.00, self::YEAR . '-11-15');
+        $later = $this->purchase('PF-2092-PARK', 36500.00, '2092-03-01');
+        $this->item($later, 36500.00, '2092-03-01', '2093-02-28', '518');
+        $this->postPurchaseExpense($later, '518', 36500.00, '2092-03-01');
+
+        $this->driveCloseWithAccrual();
+        $this->closing->closeBooks($this->supplierId, $this->periodId, $this->rv(), $this->meta());
+        $open = $this->closing->openNext($this->supplierId, $this->periodId, $this->rv(), $this->meta());
+
+        $lines = $this->entryLines((int) $open['prepaid_expense_release_entry_id']);
+        self::assertEqualsWithDelta(18200.00, $this->sideAmount($lines, '381', 'credit'), 0.001);
+        self::assertEqualsWithDelta(0.0, $this->sideAmount($lines, '518', 'debit'), 0.001, 'Náklad faktury z N+1 už v N+1 je.');
     }
 
     /**
@@ -348,7 +444,7 @@ final class ClosingPrepaidExpenseAccrualTest extends TestCase
     }
 
     /** start → precheck → povinné kroky, se zaúčtovaným rozlišením v kroku deferrals. */
-    private function driveCloseWithAccrual(): void
+    private function driveCloseWithAccrual(bool $runAccrual = true): void
     {
         $sid = $this->supplierId;
         $pid = $this->periodId;
@@ -357,7 +453,9 @@ final class ClosingPrepaidExpenseAccrualTest extends TestCase
         $this->closing->confirmStep($sid, $pid, 'depreciation', 'skipped', null, $this->rv(), $this->meta());
         $this->closing->runFxRevaluation($sid, $pid, [], $this->rv(), $this->meta());
         $this->closing->confirmStep($sid, $pid, 'estimates', 'skipped', null, $this->rv(), $this->meta());
-        $this->closing->runPrepaidExpenseAccrual($sid, $pid, $this->rv(), $this->meta());
+        if ($runAccrual) {
+            $this->closing->runPrepaidExpenseAccrual($sid, $pid, $this->rv(), $this->meta());
+        }
         $this->closing->confirmStep($sid, $pid, 'deferrals', 'done', null, $this->rv(), $this->meta());
         $this->closing->confirmStep($sid, $pid, 'provisions', 'skipped', null, $this->rv(), $this->meta());
         $this->closing->confirmStep($sid, $pid, 'income_tax', 'skipped', null, $this->rv(), $this->meta());

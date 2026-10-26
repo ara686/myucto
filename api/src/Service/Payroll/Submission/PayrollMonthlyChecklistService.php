@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace MyInvoice\Service\Payroll\Submission;
 
+use MyInvoice\Repository\Payroll\PayrollSigningProfileRepository;
 use MyInvoice\Repository\Payroll\PayrollSubmissionRepository;
 use MyInvoice\Service\Payroll\Deadline\PayrollDeadlineOverviewService;
 use MyInvoice\Service\Payroll\Submission\Eldp\EldpStatementService;
@@ -101,6 +102,7 @@ final readonly class PayrollMonthlyChecklistService
         private PayrollMonthlyAgendaDutyService $agendaDuties,
         private ?JmhzPredecessorGapService $predecessorGaps = null,
         private ?PayrollAwaitingRunDutyService $awaitingRuns = null,
+        private ?PayrollSigningProfileRepository $signingProfiles = null,
     ) {}
 
     /**
@@ -134,6 +136,7 @@ final readonly class PayrollMonthlyChecklistService
         // Uživatel jde dovnitř kvůli osobnímu profilu Mobilního klíče — kdo si
         // ho uložil, odesílá datovkou, i když firma nemá vyplněné ID schránky.
         $transport = $this->transportAvailability->resolve($supplierId, $environment, $userId);
+        $signingReady = $this->signingProfiles?->find($supplierId, $environment) !== null;
 
         // JEDEN dotaz do evidence povinností pro OBA prameny, které z ní
         // žijí: `submissionRows()` z něj vypíše, co existuje, a agendové
@@ -163,10 +166,10 @@ final readonly class PayrollMonthlyChecklistService
         );
 
         $items = [
-            ...$this->submissionRows($registered, $transport, $outboxes),
+            ...$this->submissionRows($registered, $transport, $outboxes, $environment, $signingReady),
             ...array_map(
                 static fn (array $row): array => $row + ['outside_period' => true],
-                $this->submissionRows($outsideHoz, $transport, $outboxes),
+                $this->submissionRows($outsideHoz, $transport, $outboxes, $environment, $signingReady),
             ),
             ...$this->agendaDutyRows($supplierId, $period, $registered, $transport),
             ...$this->deadlineRows($supplierId, $environment, $periodStart, $periodEnd),
@@ -181,6 +184,7 @@ final readonly class PayrollMonthlyChecklistService
                 'submission_id' => null,
                 'dispatchable' => false,
                 'dispatch_mode' => null,
+                'dispatch_modes' => [],
                 'dispatch' => null,
                 'fulfilled_by_delivery' => false,
             ],
@@ -321,9 +325,17 @@ final readonly class PayrollMonthlyChecklistService
         array $registered,
         array $transport,
         array $outboxes = [],
+        string $environment = 'production',
+        bool $signingReady = false,
     ): array {
         $rows = [];
+        $gate = new PayrollDispatchGate();
         foreach ($registered as $row) {
+            $channels = $gate->channels(
+                (new PayrollDispatchCapabilityCatalog())->forAgenda((string) $row['agenda_code']),
+                $environment,
+                $signingReady,
+            );
             $assessment = $this->assessments->assess(
                 $row['earliest_submission_on'],
                 $row['due_on'],
@@ -351,6 +363,10 @@ final readonly class PayrollMonthlyChecklistService
                     $outbox,
                     $description['channel'],
                 );
+            } elseif (str_starts_with($channels['default'], 'vrep_')) {
+                // JMHZ odejde frontou přes VREP, když je zvolený podpisový
+                // certifikát — sloupec „Jakou cestou" nesmí tvrdit datovku.
+                $description['channel'] = ['label' => 'VREP ČSSZ (podpisový certifikát)', 'note' => ''];
             }
             if ($dispatched && !$done) {
                 $description['action'] = [
@@ -376,11 +392,11 @@ final readonly class PayrollMonthlyChecklistService
                     && (new PayrollDispatchCapabilityCatalog())
                         ->forAgenda((string) $row['agenda_code'])
                         ->isDispatchable(),
-                // Kudy podání odejde frontou (VREP u JMHZ, datová schránka
-                // u PPZ/HOZ) — pro potvrzení „co → komu → jakou cestou".
-                'dispatch_mode' => (new PayrollDispatchCapabilityCatalog())
-                    ->forAgenda((string) $row['agenda_code'])
-                    ->mode,
+                // Kudy podání odejde frontou ve výchozím stavu a mezi čím
+                // může účetní volit ({@see PayrollDispatchGate::channels()}) —
+                // pro potvrzení „co → komu → jakou cestou".
+                'dispatch_mode' => $channels['default'],
+                'dispatch_modes' => $channels['modes'],
                 'dispatch' => self::dispatchSummary($outbox),
                 'fulfilled_by_delivery' => $done
                     && in_array($deliveryProof, ['delivered', 'receipt'], true)
@@ -898,8 +914,6 @@ final readonly class PayrollMonthlyChecklistService
         string $tabPath,
         array $transport,
     ): array {
-        $sendable = $transport['automatic'] || $transport['channel'] === 'mobile_key';
-
         return [
             'document' => ['format' => $format, 'note' => ''],
             'recipient' => ['label' => $recipient, 'note' => ''],
@@ -907,19 +921,16 @@ final readonly class PayrollMonthlyChecklistService
                 'label' => match ($transport['channel']) {
                     'gateway' => 'datová schránka — odesílací brána',
                     'mobile_key' => 'datová schránka — Mobilní klíč',
-                    default => 'datová schránka — ručně',
+                    default => 'datová schránka',
                 },
-                'note' => '',
+                // Odeslat datovkou jde vždy: jménem a heslem nebo SMS kódem
+                // se účetní přihlásí bez čehokoli uloženého. Brána a uložený
+                // profil Mobilního klíče jsou jen pohodlnější cesty.
+                'note' => $transport['automatic'] || $transport['channel'] === 'mobile_key'
+                    ? ''
+                    : 'Způsob přihlášení k datové schránce zvolíte při odeslání.',
             ],
-            'action' => $sendable
-                ? ['kind' => 'send', 'label' => 'Odeslat', 'path' => $tabPath, 'reason' => null]
-                : [
-                    'kind' => 'manual',
-                    'label' => 'Otevřít podání',
-                    'path' => $tabPath,
-                    'reason' => 'Firma nemá nastavenou odesílací bránu ani doloženou datovou schránku pro '
-                        . 'Mobilní klíč — stáhněte připravenou zprávu z detailu podání a odešlete ji ručně.',
-                ],
+            'action' => ['kind' => 'send', 'label' => 'Odeslat', 'path' => $tabPath, 'reason' => null],
             'tab_path' => $tabPath,
         ];
     }

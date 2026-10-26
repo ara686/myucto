@@ -36,6 +36,177 @@ final class StereoNxAccountingPaymentsTest extends TestCase
         self::assertTrue($plan['records']['cash_transactions'][0]['requires_draft']);
     }
 
+    public function testBankExpenseReversalKeepsSignedPaymentAndReconcilesNetPaidAmount(): void
+    {
+        $tables = self::tables();
+        $reversal = array_replace($tables['CBankap'][1], ['Klic' => 6, 'Castka' => -21.0, 'CastkaVlastni' => -21.0]);
+        $tables['CBankap'][] = $reversal;
+        $tables['Cpz'][1]['Uhrazeno'] = 100.0;
+        $tables['Cpz'][1]['UhrazenoVse'] = false;
+        $path = $this->archive($tables);
+        try {
+            $module = (new \ReflectionClass(StereoNxAccountingPayments::class))->newInstanceWithoutConstructor();
+            $plan = $module->prepare(StereoNxBackup::open($path, 0));
+        } finally {
+            @unlink($path);
+        }
+        self::assertEquals(21.0, $plan['records']['bank_transactions'][5]['amount']);
+        $payments = array_values(array_filter($plan['records']['payments'],
+            static fn (array $payment): bool => $payment['document_key'] === '["2025","PF","1"]'));
+        self::assertEquals([121.0, -21.0], array_column($payments, 'amount'));
+        self::assertSame('["2025","B","1","6"]', $payments[1]['movement_key']);
+        $reconciliation = \MyInvoice\Service\Migration\StereoNx\StereoNxPaymentReconciliation::check(
+            $tables['Cpz'], $tables['CBankap'], $tables['CPokl']);
+        self::assertTrue($reconciliation['ok']);
+    }
+
+    public function testAbsolutePaymentTotalCannotVerifyExpenseReversal(): void
+    {
+        $tables = self::tables();
+        $tables['CBankap'][] = array_replace($tables['CBankap'][1],
+            ['Klic' => 6, 'Castka' => -21.0, 'CastkaVlastni' => -21.0]);
+        $tables['Cpz'][1]['Uhrazeno'] = 142.0;
+        $path = $this->archive($tables);
+        try {
+            $module = (new \ReflectionClass(StereoNxAccountingPayments::class))->newInstanceWithoutConstructor();
+            $plan = $module->prepare(StereoNxBackup::open($path, 0));
+        } finally {
+            @unlink($path);
+        }
+        self::assertSame([], array_values(array_filter($plan['records']['payments'],
+            static fn (array $payment): bool => $payment['document_key'] === '["2025","PF","1"]')));
+        self::assertSame(3, $plan['counts']['requires_review']);
+    }
+
+    public function testNegativePurchaseSettlementPaysNegativeDocumentWithoutLosingBankSign(): void
+    {
+        $tables = self::tables();
+        foreach (['ZaklDPHz', 'DPHz', 'Celkem'] as $field) $tables['SPFH'][0][$field] *= -1;
+        $tables['CBankap'][1]['Castka'] = $tables['CBankap'][1]['CastkaVlastni'] = -121.0;
+        $tables['Cpz'][1]['Celkem'] = $tables['Cpz'][1]['Uhrazeno'] = -121.0;
+        $path = $this->archive($tables);
+        try {
+            $module = (new \ReflectionClass(StereoNxAccountingPayments::class))->newInstanceWithoutConstructor();
+            $plan = $module->prepare(StereoNxBackup::open($path, 0));
+        } finally {
+            @unlink($path);
+        }
+        self::assertEquals(121.0, $plan['records']['bank_transactions'][1]['amount']);
+        self::assertEquals(121.0, $plan['records']['payments'][1]['amount']);
+        self::assertSame('purchase', $plan['records']['payments'][1]['document_kind']);
+    }
+
+    public function testPaymentNormalizationRequiresMatchingImportedDocument(): void
+    {
+        foreach (['sign', 'total', 'direction', 'missing'] as $case) {
+            $tables = self::tables();
+            foreach ($tables['SPFH'] as &$header) $header['SmerPlatby'] = 'V';
+            unset($header);
+            $tables['CBankap'][1]['Castka'] = $tables['CBankap'][1]['CastkaVlastni'] = -121.0;
+            $tables['CBankap'][] = array_replace($tables['CBankap'][1],
+                ['Klic' => 6, 'Castka' => 21.0, 'CastkaVlastni' => 21.0]);
+            $tables['Cpz'][1]['Celkem'] = -121.0;
+            $tables['Cpz'][1]['Uhrazeno'] = -100.0;
+            if ($case !== 'sign') $tables['SPFH'][0]['Celkem'] = -121.0;
+            if ($case === 'total') $tables['SPFH'][0]['Celkem'] = -120.0;
+            if ($case === 'direction') $tables['SPFH'][0]['SmerPlatby'] = 'P';
+            if ($case === 'missing') unset($tables['SPFH'][0]);
+            $path = $this->archive($tables);
+            try {
+                $module = (new \ReflectionClass(StereoNxAccountingPayments::class))->newInstanceWithoutConstructor();
+                $plan = $module->prepare(StereoNxBackup::open($path, 0));
+            } finally {
+                @unlink($path);
+            }
+            self::assertSame([], array_values(array_filter($plan['records']['payments'],
+                static fn (array $payment): bool => $payment['document_key'] === '["2025","PF","1"]')), $case);
+            self::assertSame(3, $plan['counts']['requires_review'], $case);
+        }
+    }
+
+    public function testDirectionMismatchKeepsEntirePaymentGroupForReview(): void
+    {
+        $tables = self::tables();
+        $tables['CBankap'][] = array_replace($tables['CBankap'][1],
+            ['Klic' => 6, 'Castka' => -21.0, 'CastkaVlastni' => -21.0, 'SmerPlatby' => 'P']);
+        $tables['Cpz'][1]['Uhrazeno'] = 100.0;
+        $path = $this->archive($tables);
+        try {
+            $module = (new \ReflectionClass(StereoNxAccountingPayments::class))->newInstanceWithoutConstructor();
+            $plan = $module->prepare(StereoNxBackup::open($path, 0));
+        } finally {
+            @unlink($path);
+        }
+        self::assertSame([], array_values(array_filter($plan['records']['payments'],
+            static fn (array $payment): bool => $payment['document_key'] === '["2025","PF","1"]')));
+        self::assertSame(3, $plan['counts']['requires_review']);
+    }
+
+    public function testSkippedForeignMovementPreventsPartialPaymentGroup(): void
+    {
+        $tables = self::tables();
+        $tables['CBankap'][] = array_replace($tables['CBankap'][1],
+            ['Klic' => 6, 'Castka' => -21.0, 'CastkaVlastni' => -525.0, 'Kurz' => 25.0]);
+        $path = $this->archive($tables);
+        try {
+            $module = (new \ReflectionClass(StereoNxAccountingPayments::class))->newInstanceWithoutConstructor();
+            $plan = $module->prepare(StereoNxBackup::open($path, 0));
+        } finally {
+            @unlink($path);
+        }
+        self::assertSame([], array_values(array_filter($plan['records']['payments'],
+            static fn (array $payment): bool => $payment['document_key'] === '["2025","PF","1"]')));
+        self::assertSame(1, $plan['counts']['skipped_bank_transactions']);
+        self::assertSame(2, $plan['counts']['requires_review']);
+    }
+
+    public function testInvalidReceivableTotalKeepsGroupForReview(): void
+    {
+        foreach (['domestic', 'foreign', 'unsupported_agenda'] as $case) {
+            $tables = self::tables();
+            $tables['Cpz'][1]['Celkem'] = null;
+            if ($case === 'foreign') $tables['Cpz'][1]['Mena'] = 'EUR';
+            if ($case === 'unsupported_agenda') $tables['Cpz'][1]['Agenda'] = 'PZ';
+            $path = $this->archive($tables);
+            try {
+                $module = (new \ReflectionClass(StereoNxAccountingPayments::class))->newInstanceWithoutConstructor();
+                $plan = $module->prepare(StereoNxBackup::open($path, 0));
+            } finally {
+                @unlink($path);
+            }
+            self::assertSame([], array_values(array_filter($plan['records']['payments'],
+                static fn (array $payment): bool => $payment['document_key'] === '["2025","PF","1"]')), $case);
+            self::assertSame(2, $plan['counts']['requires_review'], $case);
+        }
+    }
+
+    public function testUnsupportedReversalKeepsWholePaymentGroupForReview(): void
+    {
+        foreach (['issued_bank', 'purchase_cash'] as $case) {
+            $tables = self::tables();
+            $index = $case === 'issued_bank' ? 0 : 1;
+            $reversal = array_replace($tables['CBankap'][$index],
+                ['Klic' => 6, 'Castka' => -21.0, 'CastkaVlastni' => -21.0]);
+            if ($case === 'issued_bank') $tables['CBankap'][] = $reversal;
+            else $tables['CPokl'][] = array_replace($reversal,
+                ['DoklRada' => 'P', 'DoklCislo' => 2, 'Doklad' => 'P-2']);
+            $tables['Cpz'][$index]['Uhrazeno'] = 100.0;
+            $path = $this->archive($tables);
+            try {
+                $module = (new \ReflectionClass(StereoNxAccountingPayments::class))->newInstanceWithoutConstructor();
+                $plan = $module->prepare(StereoNxBackup::open($path, 0));
+            } finally {
+                @unlink($path);
+            }
+            $documentKey = $case === 'issued_bank' ? '["2025","VF","1"]' : '["2025","PF","1"]';
+            self::assertSame([], array_values(array_filter($plan['records']['payments'],
+                static fn (array $payment): bool => $payment['document_key'] === $documentKey)), $case);
+            self::assertSame(3, $plan['counts']['requires_review'], $case);
+            if ($case === 'issued_bank') self::assertEquals(-21.0, $plan['records']['bank_transactions'][5]['amount']);
+            else self::assertTrue($plan['records']['cash_transactions'][1]['requires_draft']);
+        }
+    }
+
     public function testSkipsForeignMovementWhenSourceOmitsCurrencyCode(): void
     {
         $tables = self::tables();

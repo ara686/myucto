@@ -49,25 +49,33 @@ final class DimensionFilter
      * firmy na haléř a řádek hodnoty ve výsledovce po dimenzi na výsledovku
      * filtrovanou na tutéž hodnotu.
      *
+     * Odvozená tabulka s UNION ALL se materializuje celá a datum zápisu z vnějšího
+     * dotazu se do ní nepropíše. Volající proto předá interval dat zápisu, který jeho
+     * sestava čte (`$from` null = od počátku historie, `$to` včetně), a každá větev jde
+     * po indexu (supplier_id, entry_date) zápisu místo celého deníku firmy.
+     *
      * @return array{0:string,1:list<int|string>}
      */
-    public function lineSource(int $supplierId, string $alias): array
+    public function lineSource(int $supplierId, string $alias, ?string $from, string $to): array
     {
         $cols = 'fl.id, fl.entry_id, fl.supplier_id, fl.account_id, fl.side, %1$s AS amount, (CASE WHEN fl.is_red_storno = 1 THEN -(%1$s) ELSE %1$s END) AS signed_amount, fl.cost_center, fl.line_no';
+        $entryJoin = ' JOIN journal_entries fe ON fe.supplier_id = fl.supplier_id AND fe.id = fl.entry_id';
+        $entrySql = ' AND fe.supplier_id = ?' . ($from !== null ? ' AND fe.entry_date >= ?' : '') . ' AND fe.entry_date <= ?';
+        $entryParams = $from !== null ? [$supplierId, $from, $to] : [$supplierId, $to];
         $marks = implode(',', array_fill(0, count($this->valueIds), '?'));
         $sql = 'SELECT ' . sprintf($cols, 'fl.amount') . "
                   FROM journal_entry_line_dimensions fd
-                  JOIN journal_entry_lines fl ON fl.id = fd.line_id
-                 WHERE fd.dimension_type_id = ? AND fd.dimension_value_id IN ({$marks}) AND fl.supplier_id = ?";
-        $params = [$this->typeId, ...$this->valueIds, $supplierId];
+                  JOIN journal_entry_lines fl ON fl.id = fd.line_id{$entryJoin}
+                 WHERE fd.dimension_type_id = ? AND fd.dimension_value_id IN ({$marks}) AND fl.supplier_id = ?{$entrySql}";
+        $params = [$this->typeId, ...$this->valueIds, $supplierId, ...$entryParams];
         if ($this->costCenterCodes !== []) {
             [$ccSql, $ccParams] = $this->costCenterCondition('fl');
             $sql .= ' UNION ALL SELECT ' . sprintf($cols, 'fl.amount') . "
-                  FROM journal_entry_lines fl
-                 WHERE fl.supplier_id = ? AND {$ccSql}";
-            array_push($params, $supplierId, ...$ccParams);
+                  FROM journal_entry_lines fl{$entryJoin}
+                 WHERE fl.supplier_id = ?{$entrySql} AND {$ccSql}";
+            array_push($params, $supplierId, ...$entryParams, ...$ccParams);
         }
-        [$shareSql, $shareParams] = DimensionSplitAllocation::lineShareSql($this->typeId, $this->valueIds, $supplierId);
+        [$shareSql, $shareParams] = DimensionSplitAllocation::lineShareSql($this->typeId, $this->valueIds, $supplierId, [$from, $to]);
         $sql .= ' UNION ALL SELECT ' . sprintf($cols, 'fs.amount') . "
                   FROM ({$shareSql}) fs
                   JOIN journal_entry_lines fl ON fl.id = fs.line_id

@@ -12,6 +12,7 @@ export type DphCrossCheck343Reason = 'timing_73' | 'value_mismatch' | 'missing_e
 
 export interface DphCrossCheckDocument {
   invoice_id: number
+  doc_type?: 'invoice' | 'purchase_invoice' | 'cash' | 'journal_entry'
   doc_number: string | null
   source: string
   declared: number
@@ -435,6 +436,7 @@ export const CLOSING_PACKAGE_REQUIRED_PARTS: ClosingPackagePart[] = [
 ]
 
 export interface ClosingPackagePreview {
+  accounting_framework?: 'cz_504'
   period_id: number
   fiscal_year: number
   counts: Record<ClosingPackagePart, number>

@@ -125,14 +125,19 @@ final class JmhzAuditRelationshipMatrixTest extends TestCase
         self::assertSame([], $failed343);
     }
 
-    public function testStatutoryBranchKeepsZeroDanBonusWithDeclaration(): void
+    /**
+     * Nulový bonus se nevykazuje ani s prohlášením: PAMICA ho v hlášeních,
+     * která ČSSZ přijala, vynechává a přítomný element ČSSZ bere za vyplněný.
+     */
+    public function testStatutoryBranchOmitsZeroDanBonusWithDeclaration(): void
     {
         $result = (new JmhzScenario1XmlValidator())->dryRun(
             $this->resolutionFor($this->statutoryPayload(declarationSigned: true)),
             $this->envelope(),
         );
 
-        self::assertStringContainsString('<form:danBonus>0</form:danBonus>', $result['xml']);
+        self::assertStringContainsString('<form:prohlaseniPoplatnika>true</form:prohlaseniPoplatnika>', $result['xml']);
+        self::assertStringNotContainsString('<form:danBonus>', $result['xml']);
     }
 
     /**

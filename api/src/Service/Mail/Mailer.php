@@ -75,6 +75,7 @@ final class Mailer
         private readonly ?SentMailAppenderInterface $sentMailImap = null,
         ?MailRateLimiter $rateLimiter = null,
         private readonly ?InvoiceIsdocAttachments $invoiceIsdoc = null,
+        private readonly ?\MyInvoice\Service\ActivityLogger $activity = null,
     ) {
         // ⚠️ Vědomě NENÍ promoted readonly property: PHP-DI optional class-param
         // nevyplní, takže by tu při ručním bindingu v Bootstrapu zůstal null a
@@ -662,6 +663,7 @@ final class Mailer
                     // Zpráva JE doručená, selhalo jen uložení kopie do IMAP —
                     // opakovat by znamenalo poslat ji příjemci podruhé.
                     $this->outbox()->markSent($item['id'], $now);
+                    $this->logDeferredPaymentThanks($item, true, null);
                     $report['sent']++;
                     continue;
                 } catch (\Throwable $e) {
@@ -672,6 +674,7 @@ final class Mailer
                         $e->getMessage(),
                         $item['attempts'],
                     );
+                    $this->logDeferredPaymentThanks($item, false, $e->getMessage());
                     $report['failed']++;
                     continue;
                 }
@@ -690,6 +693,7 @@ final class Mailer
                 }
 
                 $this->outbox()->markSent($item['id'], $now);
+                $this->logDeferredPaymentThanks($item, true, (string) ($result['smtp_response'] ?? ''));
                 $report['sent']++;
             }
         } finally {
@@ -697,6 +701,32 @@ final class Mailer
         }
 
         return $report;
+    }
+
+    /**
+     * Poděkování za úhradu zbrzděné limitem se v aktivitě faktury objevilo jen jako
+     * „ve frontě" — skutečné doručení nebo selhání z fronty se k faktuře dopisuje tady.
+     *
+     * @param array{template:string, payload:array<string,mixed>} $item
+     */
+    private function logDeferredPaymentThanks(array $item, bool $sent, ?string $detail): void
+    {
+        $invoiceId = (int) ($item['payload']['vars']['invoice']['id'] ?? 0);
+        if ($this->activity === null || $item['template'] !== 'invoice_payment_thanks' || $invoiceId <= 0) {
+            return;
+        }
+        $this->activity->log(
+            $sent ? 'invoice.payment_thanks_sent' : 'invoice.payment_thanks_failed',
+            isset($item['payload']['user_id']) ? (int) $item['payload']['user_id'] : null,
+            'invoice',
+            $invoiceId,
+            [
+                'varsymbol'  => $item['payload']['vars']['invoice']['varsymbol'] ?? null,
+                'recipients' => array_values((array) ($item['payload']['to'] ?? [])),
+                'deferred'   => true,
+                $sent ? 'smtp_response' : 'reason' => $detail,
+            ],
+        );
     }
 
     private function drainDeferredIfCli(DateTimeImmutable $now): void

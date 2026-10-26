@@ -142,6 +142,8 @@ Stav a poznámka se aktualizují přímo v seznamu a nastavený filtr zůstane z
 
 **Jak poznáte, že je hotovo:** Transakce je znovu ve stavu **Nespárováno**. Platba vzniklá párováním se z faktury odebrala a stav faktury se přepočítal ze zbývajících plateb. Faktura, kterou kryje jiná platba, zůstává zaplacená, jinak se vrátí na předchozí stav (vystaveno). Zaúčtovaný pohyb se stornoval.
 
+Pokud zrušíte spárování příchozí vratky k běžné přijaté faktuře, zbývající úhrada se zvýší. Kryjí-li zbývající platby nebo zápočty celou částku k úhradě, otevřená faktura se označí jako uhrazená s datem poslední zbývající odchozí úhrady nebo zápočtu. Koncepty, stornované faktury, faktury převzaté z jiného programu a ručně nastavený stav uhrazeno se tím nemění. Faktura, kterou jste ručně vrátili ze stavu uhrazeno, zůstane neuhrazená, dokud ji sami znovu neoznačíte.
+
 > [!WARNING]
 > V uzavřeném nebo zamčeném období storno nejde provést a párování zůstane beze změny. Nejdřív období otevřete, nebo počkejte na účetní.
 
@@ -626,7 +628,7 @@ Kromě ručního nahrání GPC/ABO nebo PDF ([§ 29.3](#293-krok-za-krokem-nahra
 | **Fio banka** (ČR i SR) | 2010, 8330 | API token vázaný na konkrétní účet | ano | ano |
 | **ČSOB** | 0300 | CEB Business Connector: číslo smlouvy + komunikační certifikát | ano | ano |
 | **Raiffeisenbank** | 5500 | Premium API: Client ID + certifikát | ano | ano |
-| **Česká spořitelna** | 0800 | Premium Accounts API v3: OAuth2 Authorization Code | ano | ne (zatím neimplementováno) |
+| **Česká spořitelna** | 0800 | Premium Accounts API v3 + Premium Payments API v1: OAuth2 Authorization Code | ano | ano, tuzemské CZK se souhlasem `siblings.payments`, podpis v George ([§ 30.11.5.2](30_Bankovni_ucty.md#301152-ceska-sporitelna-0800)) |
 | **Banka CREDITAS** | 2250 | Bearer token, volitelně mTLS certifikát | ano | ano |
 | **MONETA Money Bank** | 0600 | MONETA API: token z Internet Banky | ano | ano |
 
@@ -634,7 +636,7 @@ Přehled bank se v sekci zobrazuje vždy; v seznamu účtů pod ním se nabízí
 
 #### 29.13.20.2 Co napojení dělá s pohyby
 
-Stažené pohyby se slučují do **jednoho měsíčního výpisu** pro danou firmu, účet, kód banky a měnu, ať banka posílá data jako API odpověď, nebo jako GPC (Fio, výpisy KB). Opakované načtení stejného období doplní tentýž výpis, překrývající se pohyby se nezapočítají podruhé a stažení bez nového pohybu nezaloží další řádek v přehledu. Každé stažení zůstává jako podklad měsíce v detailu výpisu. Dál se s nimi pracuje úplně stejně jako s nahraným GPC: párování na faktury ([§ 29.13.8](#29138-rucni-parovani-pravidla-a-nesparovane-platby)), automatické zaúčtování v podvojném účetnictví ([§ 29.13.13](#291313-automaticke-zauctovani-sparovanych-plateb-jen-podvojne-ucetnictvi)) i pravidla pro opakované platby. Pokud pro tentýž účet a měsíc později nahrajete úplný GPC, nahradí API přehled jako hlavní výpis a zachová párování i zaúčtování ([§ 30.11.4](30_Bankovni_ucty.md#30114-prime-napojeni-spolecna-pravidla)).
+Stažené pohyby se slučují do **jednoho měsíčního výpisu** pro danou firmu, účet, kód banky a měnu, ať banka posílá data jako API odpověď, nebo jako GPC (výpisy KB). Opakované načtení stejného období doplní tentýž výpis, překrývající se pohyby se nezapočítají podruhé a stažení bez nového pohybu nezaloží další řádek v přehledu. Každé stažení zůstává jako podklad měsíce v detailu výpisu. Dál se s nimi pracuje úplně stejně jako s nahraným GPC: párování na faktury ([§ 29.13.8](#29138-rucni-parovani-pravidla-a-nesparovane-platby)), automatické zaúčtování v podvojném účetnictví ([§ 29.13.13](#291313-automaticke-zauctovani-sparovanych-plateb-jen-podvojne-ucetnictvi)) i pravidla pro opakované platby. Pokud pro tentýž účet a měsíc později nahrajete úplný GPC, nahradí API přehled jako hlavní výpis a zachová párování i zaúčtování ([§ 30.11.4](30_Bankovni_ucty.md#30114-prime-napojeni-spolecna-pravidla)).
 
 Načítání má bezpečnostní meze:
 
@@ -647,7 +649,7 @@ Načítání má bezpečnostní meze:
 
 U ČSOB tlačítko **Načíst výpisy a avíza** i automatická synchronizace načítají denní výpisy GPC a průběžná avíza BBF. V CEB musí být povolené vytváření a stahování obou formátů. Datum filtru se vztahuje k vytvoření souboru v bance. Avízo doplní pohyb a dostupný průběžný zůstatek; následný výpis pohyby potvrdí a doplní chybějící historii bez zdvojení již propojených plateb. Pokud se pohyb nedá jednoznačně ztotožnit, je potřeba zkontrolovat případnou duplicitu. Samotný známý zůstatek avíza nenahrazuje chybějící počáteční stav pro export GPC.
 
-Ruční tlačítko **Načíst pohyby** u účtu není jediná cesta: cron `cmd/cron-bank-connections.{sh,cmd}` (spouští `php api/bin/cron-bank-connections.php`) projde všechny aktivní napojení se zadanými přístupovými údaji a zavolá pro každé automatické pokračování posledního načtení. Pokud žádné napojení není aktivní, běh se přeskočí. Cron neřeší nic navíc oproti manuálnímu tlačítku, jen ho spouští za vás pravidelně, typicky **každých 15 minut** (`*/15 * * * *`). Nastavení plánovače je v [playbooku automatizačních skriptů](../cmd/README.md).
+Ruční tlačítko **Načíst pohyby** u účtu není jediná cesta: cron `cmd/cron-bank-connections.{sh,cmd}` (spouští `php api/bin/cron-bank-connections.php`) projde všechny aktivní napojení se zadanými přístupovými údaji a zavolá pro každé automatické pokračování posledního načtení. Pokud žádné napojení není aktivní, běh se přeskočí. Pohyby načítá stejně jako manuální tlačítko, jen ho spouští za vás pravidelně, typicky **každých 15 minut** (`*/15 * * * *`). Navíc zjišťuje u České spořitelny stav dávek, které čekají na podpis nebo provedení (viz [§ 30.11.6](30_Bankovni_ucty.md#30116-odeslani-prikazu-do-banky-pravidla)); dotaz na stav nic nezakládá ani neposílá znovu. Nastavení plánovače je v [playbooku automatizačních skriptů](../cmd/README.md).
 
 Některé banky omezují, jak často lze pohyby stahovat. **KB+** povoluje stažení nezměněných dat nejvýš jednou za 61 minut, jinak dotaz odmítne. Cron proto napojení KB+ zavolá až po uplynutí 61 minut od posledního pokusu a mezitím ho přeskočí. Nové pohyby z KB+ se tak v aplikaci objeví nejpozději zhruba za hodinu. Když banka dotaz kvůli četnosti odmítne, napojení se neoznačí jako chybné a další běh to zkusí znovu. Ruční tlačítko **Načíst pohyby** tímto odstupem omezené není.
 

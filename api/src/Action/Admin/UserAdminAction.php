@@ -26,7 +26,7 @@ final class UserAdminAction
     private const DISPOSABLE_USER_TABLES = [
         'api_tokens', 'bank_oauth_sessions', 'crm_action_item_dismissals',
         'login_otps', 'mcp_oauth_codes', 'mcp_oauth_grants',
-        'mfa_recovery_codes', 'mfa_step_up_proofs', 'password_resets',
+        'mfa_recovery_codes', 'mfa_step_up_proofs', 'oauth_sessions', 'password_resets',
         'saved_filters', 'sessions', 'trusted_devices', 'user_preferences',
         'user_suppliers', 'webauthn_ceremonies', 'webauthn_credentials',
     ];

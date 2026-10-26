@@ -28,6 +28,7 @@ final class PohodaImportRepository extends AbstractMigrationImportRepository
     public const KIND_BANK_TRANSACTION = 'bank_transaction';
     public const KIND_PAYMENT = 'payment';
     public const KIND_OTHER_ITEM = 'other_item';
+    public const KIND_TAX_ADVANCE = 'tax_advance';
     /**
      * Úhrada, kterou převod odvodil u pohybu bez zápisu v deníku POHODY
      * ({@see \MyInvoice\Service\Migration\Pohoda\UnbookedBankPayments}): `tx|id pohybu` => payment_matches.id.

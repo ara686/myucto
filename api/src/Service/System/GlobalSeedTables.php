@@ -84,7 +84,7 @@ final class GlobalSeedTables
         'roles'                       => 'system_key IS NULL',
         // Předdefinované role zůstávají i se změněnými granty. Značky brání jejich
         // opětovnému rozšíření při přehrání migrací; ostatní metadata reset dál čistí.
-        'app_meta'                    => "k NOT IN ('rbac_price_list_defaults_initialized', 'rbac_operational_settings_initialized')",
+        'app_meta'                    => "k NOT IN ('rbac_price_list_defaults_initialized', 'rbac_operational_settings_initialized', 'rbac_property_funds_defaults_initialized')",
     ];
 
     /**
@@ -190,7 +190,7 @@ final class GlobalSeedTables
         // se uživatel s vynuceným MFA po resetu nepřihlásil.
         'users', 'sessions', 'trusted_devices', 'login_otps',
         'webauthn_credentials', 'mfa_recovery_codes', 'totp_used_steps',
-        'user_preferences', 'saved_filters',
+        'user_preferences', 'saved_filters', 'user_favorites',
         // Dynamické role a per-firma override zůstávají spolu s uživateli.
         'roles', 'role_permissions', 'user_suppliers',
         // Identita firmy, skupiny firem, přihlašovací domény, měny, číslování dokladů.
@@ -220,6 +220,8 @@ final class GlobalSeedTables
         'supplier_bank_accounts', 'payment_cards', 'credit_card_accounts',
         'credit_card_settings', 'card_clearing_settings',
         'bank_connections', 'bank_oauth_clients', 'bank_oauth_sessions',
+        // Nastavení EET: jednotky z DIS+, pokladní zařízení (čítač řady jde dál) a certifikáty.
+        'eet_settings', 'eet_settings_history', 'eet_units', 'eet_devices', 'eet_certificates',
         // Napojení e-shopů a platebních bran (přístupy a mapování, ne stažená data).
         // Kurzory synchronizace (integration_*_state) se mažou, aby se data stáhla znovu.
         'integration_connections', 'external_bank_account_mappings',
@@ -243,8 +245,9 @@ final class GlobalSeedTables
         // nebo změny režimu. Režim v čase a účetní období jsou konfigurace firmy; bez
         // období by firma po resetu neměla kam účtovat. Hraniční: kategorie účetní
         // jednotky je zmrazená k období, které zůstává, proto zůstává s ním.
-        'supplier_accounting_modes', 'accounting_periods', 'entity_category_history',
-        'chart_of_accounts', 'accounting_supplier_settings', 'accounting_document_series',
+        'supplier_accounting_modes', 'supplier_accounting_frameworks',
+        'accounting_periods', 'entity_category_history',
+        'accounting_account_definition_history', 'chart_of_accounts', 'accounting_supplier_settings', 'accounting_document_series',
         'accounting_fixed_exchange_rates',
         'auto_posting_policy', 'expense_classification_rules', 'posting_rules',
         'journal_entry_templates', 'journal_entry_template_lines',
@@ -252,6 +255,7 @@ final class GlobalSeedTables
         'statement_account_overrides', 'statement_function_map',
         'cost_centers', 'dimension_types', 'dimension_values', 'dimension_account_rules',
         'dimension_account_map',
+        'joint_allocation_keys', 'joint_allocation_key_versions',
         // Per-supplier číselníky.
         'expense_categories', 'revenue_categories', 'trip_categories',
         // Předvolby AI (ztlumené zdroje návrhů), ne návrhy samotné.
@@ -309,6 +313,36 @@ final class GlobalSeedTables
      * @var list<string>
      */
     public const RESET_KEEP_USERS_SUPPLIER_WIPES = [
+        ...\MyInvoice\Service\Nonprofit\Membership\MembershipUseGuard::TABLES,
+        ...\MyInvoice\Service\Property\Funds\FundingUseGuard::TABLES,
+        ...\MyInvoice\Service\Accounting\Conversion\FrameworkConversionResetCleanup::TABLES,
+        \MyInvoice\Service\Anonymization\ServiceLifecycleCloneScrubber::COMMANDS, ...\MyInvoice\Service\Anonymization\ServiceLifecycleCloneScrubber::TABLES,
+        ...\MyInvoice\Repository\Property\Services\Settlement\SettlementDossierRepository::TABLES, ...\MyInvoice\Service\Property\Services\Settlement\SettlementUseGuard::TABLES,
+        ...\MyInvoice\Service\Nonprofit\Capital\CapitalRepository::TABLES,
+        ...\MyInvoice\Repository\Nonprofit\FundingRepository::TABLES,
+        'nonprofit_tax_assessments',
+        'nonprofit_tax_assessment_gift_elections', 'nonprofit_tax_assessment_funding_usage', 'nonprofit_tax_assessment_funding_members',
+        'nonprofit_tax_snapshot_chunks', 'nonprofit_tax_snapshot_manifests', 'nonprofit_tax_snapshot_manifest_chunks',
+        'nonprofit_tax_drafts', 'nonprofit_tax_draft_activities', 'nonprofit_tax_draft_decisions',
+        'nonprofit_tax_draft_funding_pools', 'nonprofit_tax_draft_funding_members', 'nonprofit_tax_draft_funding_links',
+        'nonprofit_tax_calculation_chunks', 'nonprofit_tax_calculation_manifests', 'nonprofit_tax_calculation_manifest_chunks',
+        'nonprofit_tax_source_evidence_chunks', 'nonprofit_tax_source_evidence_manifests', 'nonprofit_tax_source_evidence_manifest_chunks',
+        'nonprofit_dppo_acceptances',
+        'nonprofit_legal_profiles', 'nonprofit_tax_saving_sources', 'nonprofit_tax_saving_commands', 'nonprofit_tax_saving_events', 'nonprofit_tax_saving_cost_bindings',
+        'property_module_profiles', 'property_objects', 'property_revisions', 'property_revision_groups',
+        'property_revision_members', 'property_revision_roles', 'property_revision_identifiers',
+        'property_revision_services', 'property_audit',
+        'unit_charge_components', 'unit_charge_versions', 'unit_charge_rates', 'unit_charge_audit',
+        'unit_charge_batches', 'unit_charges', 'unit_charge_lines', 'unit_charge_parties',
+        'unit_charge_notices', 'unit_charge_adjustments', 'unit_charge_evidence_events', 'unit_charge_issue_audit',
+        'unit_payment_sources', 'unit_payment_operations', 'unit_claim_accessory_receipts', 'unit_payment_allocations',
+        'unit_credit_lots', 'unit_credit_parties', 'unit_credit_reservations', 'unit_credit_events', 'unit_payment_audit',
+        'unit_payment_debts', 'unit_payment_debt_lines', 'unit_payment_corrections', 'unit_payment_correction_anchors', 'unit_payment_reliefs',
+        'property_opening_batches', 'property_opening_heads', 'property_opening_items', 'property_opening_components', 'property_opening_parties', 'property_opening_states', 'property_opening_case_links', 'property_opening_recipients',
+        'property_claim_party_events', 'property_claim_party_event_debts', 'property_claim_party_members', 'property_party_claim_keys', 'property_debt_certificates',
+        'unit_payment_workflows', 'unit_payment_workflow_operations', 'unit_payment_source_revisions', 'unit_payment_source_heads',
+        'unit_payment_exports', 'unit_payment_export_items', 'unit_payment_bank_proposals',
+        'property_service_policy_versions', 'property_service_settlement_objections', 'anonymized_clone_submission_provenance',
         'accounting_archives', 'accounting_backfill_jobs', 'accounting_balance_inventory',
         'accounting_balance_inventory_items', 'accounting_closing_steps', 'accounting_corrections',
         'accounting_opening_balances', 'accounting_receivable_provisions',
@@ -325,13 +359,16 @@ final class GlobalSeedTables
         'automation_recommendation_snapshots',
         'bank_api_evidence_months', 'bank_api_months', 'bank_connector_cooldowns', 'bank_counterparty_map',
         'bank_counterparty_observations', 'bank_email_attachment_ingests', 'bank_email_processed_messages',
-        'bank_match_audit', 'bank_match_suggestions', 'bank_payment_order_submissions',
+        'bank_match_audit', 'bank_match_suggestions', 'bank_payment_order_submissions', 'bank_payment_submission_items',
         'bank_posting_suggestions', 'bank_statements', 'bank_transaction_imports', 'bank_transactions',
         'bank_notice_ignore_transfers',
         'bank_transfer_matches',
+        'odometer_source_accounts', 'odometer_source_cars',
         'cars',
         'cash_document_vat_lines', 'cash_documents', 'cash_journal_notes', 'cash_registers',
         'catalog_job_items', 'catalog_job_lanes', 'catalog_jobs',
+        'eet_attempts', 'eet_records', 'payment_event_allocations', 'payment_events',
+        'quick_receipts', 'receipt_links',
         'client_bank_accounts', 'client_email_contacts', 'client_revenue_cache',
         'clients',
         'credit_note_offsets',
@@ -358,9 +395,13 @@ final class GlobalSeedTables
         'invoice_pdfs', 'invoice_settlements',
         'invoices',
         'isds_gateway_sessions',
-        'journal_entries', 'journal_entry_attachments', 'journal_entry_document_links',
+        'accounting_securities_debt_commands', 'accounting_securities_debt_claims', 'accounting_securities_debt_fx_carries',
+        'accounting_securities_debt_events', 'accounting_securities_debt_lots',
+        'journal_entries', 'journal_entry_attachments', 'journal_entry_document_links', 'journal_document_postings',
         'journal_entry_line_dimension_splits', 'journal_entry_line_dimensions', 'journal_entry_lines',
         'journal_entry_notes', 'journal_integrity_findings', 'journal_line_pairing_items',
+        'joint_allocation_batches', 'joint_allocation_cancellations', 'joint_allocation_source_claims',
+        'joint_allocation_audit',
         'journal_line_pairings',
         'logbook_fuel_scans',
         'login_attempts',
@@ -368,6 +409,7 @@ final class GlobalSeedTables
         'mcp_oauth_codes',
         'manufacturers',
         'mfa_step_up_proofs',
+        'oauth_sessions',
         'migration_batch_items', 'migration_parallel_checks',
         'money_s3_import_map', 'money_s3_imports',
         'monthly_report_sends',
@@ -378,6 +420,7 @@ final class GlobalSeedTables
         'other_item_schedule_occurrences', 'other_item_schedules', 'other_items',
         'password_resets',
         'payment_matches', 'payment_order_items', 'payment_orders',
+        'purchase_advance_deductions',
         'payroll_absences', 'payroll_annual_document_batch_attempts', 'payroll_annual_document_batch_items',
         'payroll_annual_document_batches', 'payroll_annual_document_revisions',
         'payroll_annual_document_sources', 'payroll_annual_settlement_certificates',

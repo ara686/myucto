@@ -157,6 +157,45 @@ final class PortfolioMembershipTest extends TestCase
         self::assertFalse($this->portfolio->userCanAccess($userId, true, 0));
     }
 
+    /**
+     * Token vázaný na firmu A nesmí přes přehled firem ani měsíční kontrolu číst
+     * další firmy svého vlastníka, ať je to člen více firem, nebo globální admin.
+     */
+    public function testBoundTokenSeesOnlyItsCompany(): void
+    {
+        $userId = $this->mkUser('accountant');
+        $this->assign($userId, [$this->supplierA, $this->supplierB]);
+        $now = new \DateTimeImmutable();
+
+        $ids = static fn (array $res): array => array_map(static fn (array $c) => $c['supplier_id'], $res['companies']);
+        self::assertSame([$this->supplierA], $ids($this->portfolio->overview($userId, false, $now, $this->supplierA)));
+        self::assertSame([$this->supplierA], $ids($this->portfolio->overview(0, true, $now, $this->supplierA)));
+        self::assertTrue($this->portfolio->userCanAccess($userId, false, $this->supplierA, $this->supplierA));
+        self::assertFalse($this->portfolio->userCanAccess($userId, false, $this->supplierB, $this->supplierA));
+        self::assertFalse($this->portfolio->userCanAccess($userId, true, $this->supplierB, $this->supplierA));
+
+        // Bez vazby (webová relace) vidí člen dál obě své firmy.
+        $unbound = $ids($this->portfolio->overview($userId, false, $now));
+        self::assertContains($this->supplierA, $unbound);
+        self::assertContains($this->supplierB, $unbound);
+    }
+
+    public function testBoundTokenRequestIsNarrowedInAction(): void
+    {
+        $action = Bootstrap::buildContainer()->get(\MyInvoice\Action\Portfolio\PortfolioAction::class);
+        $request = (new \Slim\Psr7\Factory\ServerRequestFactory())
+            ->createServerRequest('GET', '/api/portfolio/overview')
+            ->withAttribute(\MyInvoice\Middleware\AuthMiddleware::ATTR_USER, ['id' => 0, 'role' => 'admin'])
+            ->withAttribute(\MyInvoice\Middleware\AuthMiddleware::ATTR_METHOD, 'bearer')
+            ->withAttribute(\MyInvoice\Middleware\AuthMiddleware::ATTR_API_TOKEN, ['scope' => 'read', 'supplier_id' => $this->supplierA]);
+
+        $overview = json_decode((string) $action->overview($request, new \Slim\Psr7\Response())->getBody(), true);
+        self::assertSame([$this->supplierA], array_column($overview['companies'], 'supplier_id'));
+
+        $foreign = $action->monthlyCheck($request, new \Slim\Psr7\Response(), ['supplierId' => (string) $this->supplierB]);
+        self::assertSame(404, $foreign->getStatusCode());
+    }
+
     public function testUserWithoutMembershipSeesNoCompanies(): void
     {
         $userId = $this->mkUser('accountant');

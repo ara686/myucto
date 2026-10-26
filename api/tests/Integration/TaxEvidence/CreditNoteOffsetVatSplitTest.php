@@ -398,6 +398,34 @@ final class CreditNoteOffsetVatSplitTest extends CashJournalTestCase
     }
 
     /**
+     * Úhrada zbytku po zápočtu s přeplatkem (#247): krytá část se dělí poměrem zbytku (faktura
+     * minus dobropis), přeplatek nad zbytek DPH nenese a jde celý do daňové části. DPH úhrady
+     * je proto přesně DPH zbytku. Ruční úhrada přijaté faktury platí přesně zbytek, přeplatit
+     * ho nejde.
+     *
+     * @param array{invoice:list<array{0:int,1:float,2:float}>,credit_note:list<array{0:int,1:float,2:float}>,by_rate:array<int,array{0:float,1:float}>,payment:array{0:float,1:float}} $shape
+     */
+    #[DataProvider('partialCases')]
+    public function testOverpaidRemainderCarriesOnlyRemainderVat(string $side, string $instrument, array $shape): void
+    {
+        $issued = $side === 'issued';
+        $invoiceId = $this->document($issued, $shape['invoice'], false);
+        $this->offset($issued, $invoiceId, $this->document($issued, $shape['credit_note'], true));
+
+        [$taxable, $vat] = $shape['payment'];
+        $this->pay($issued, $instrument, $invoiceId, round($taxable + $vat + 0.50, 2));
+
+        $res = $this->fullYear($this->supplierId, true);
+        $bucket = $issued ? 'prijem' : 'vydaj';
+        self::assertSame(1, $this->countRows($res), 'v deníku je jen úhrada zbytku');
+        self::assertEqualsWithDelta($taxable + 0.50, $res['totals'][$bucket . '_danovy'], 0.005,
+            'daňová část = daňová část zbytku + celý přeplatek');
+        self::assertEqualsWithDelta($vat, $res['totals'][$bucket . '_nedanovy'], 0.005,
+            'DPH = DPH zbytku, přeplatek DPH nenese');
+        self::assertEqualsWithDelta(0.0, $res['totals']['nezarazeno'], 0.005);
+    }
+
+    /**
      * Zápočet v dalším roce nesmí změnit deník roku úhrady (ten může mít dokončenou uzávěrku
      * a podané přiznání). Oprava padne do roku zápočtu a součet obou let sedí na fakturu minus
      * dobropis. Zrušením zápočtu oprava zmizí a rok úhrady se ani tehdy nepohne.
@@ -686,9 +714,11 @@ final class CreditNoteOffsetVatSplitTest extends CashJournalTestCase
                 $tx = $this->bankTx($this->statement($this->supplierId, $this->accountA), $amount, ['posted_at' => $date]);
                 $this->invoicePayment($this->supplierId, $invoiceId, $amount, 'bank', $tx, $date);
             } elseif ($instrument === 'cash') {
-                // Pokladní úhrada zapíše pokladní doklad i platbu faktury (source = cash).
-                $this->cashDoc('in', 'invoice_payment', $amount, ['invoice_id' => $invoiceId], null, $date);
-                $this->invoicePayment($this->supplierId, $invoiceId, $amount, 'cash', null, $date);
+                // Pokladní úhrada zapíše pokladní doklad i platbu faktury (source = cash) a doklad
+                // na ni odkáže; podle té vazby deník pozná, jakou část faktury doklad hradí.
+                $cashId = $this->cashDoc('in', 'invoice_payment', $amount, ['invoice_id' => $invoiceId], null, $date);
+                $paymentId = $this->invoicePayment($this->supplierId, $invoiceId, $amount, 'cash', null, $date);
+                $this->db->pdo()->prepare('UPDATE cash_documents SET invoice_payment_id = ? WHERE id = ?')->execute([$paymentId, $cashId]);
             } else {
                 $this->invoicePayment($this->supplierId, $invoiceId, $amount, 'manual', null, $date);
             }

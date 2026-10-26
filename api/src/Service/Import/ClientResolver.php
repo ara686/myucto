@@ -175,6 +175,12 @@ final class ClientResolver
         // dřívější placeholder 'unknown@import.local' vypadal jako reálná adresa.
         $email = trim((string) ($parsedClient['email'] ?? '')) ?: null;
 
+        // Aktivní skupina DPH bez DIČ skupiny v ARES: plátce je doložený, DIČ vezmeme
+        // z dokladu (DIČ k DPH má přednost). Bez toho by vznikla karta plátce bez DIČ.
+        if ($aresData !== null && ($aresData['dic'] ?? '') === '' && !empty($aresData['is_vat_payer'])) {
+            $aresData['dic'] = trim((string) ($parsedClient['vat_dic'] ?? '')) ?: (trim((string) ($parsedClient['dic'] ?? '')) ?: null);
+        }
+
         $data = [
             'company_name' => $aresData['company_name']
                 ?? $viesData['company_name']

@@ -19,6 +19,7 @@ import {
   type VatDeduction,
   type PurchaseVatAllocation,
   type AiPostingSuggestion,
+  type PurchaseForceMode,
 } from '@/api/purchaseInvoices'
 import {
   portalPurchaseInvoiceSubmissionsApi,
@@ -34,6 +35,7 @@ import { stockApi, type StockItemSearchResult } from '@/api/stock'
 import { expenseCategoriesApi, type ExpenseCategory } from '@/api/expenseCategories'
 import { projectsApi, type Project } from '@/api/projects'
 import { vatClassificationsApi, type VatClassification } from '@/api/vatClassifications'
+import { headerDiffersFromAllocations, itemConflictsWithHeader, itemVatState, type HeaderVat } from './purchaseVatTreatment'
 import { settingsApi } from '@/api/settings'
 import { usePaneDom } from '@/composables/usePaneDom'
 import AutomationBadge from '@/components/automation/AutomationBadge.vue'
@@ -56,6 +58,8 @@ import VendorPicker from '@/components/purchase/VendorPicker.vue'
 import ClientFormModal from '@/components/modals/ClientFormModal.vue'
 import { clientsApi, type Client } from '@/api/clients'
 import PdfDropzone from '@/components/purchase/PdfDropzone.vue'
+import CapturePhotoButton from '@/components/upload/CapturePhotoButton.vue'
+import PurchaseForceModeDialog from '@/components/purchase/PurchaseForceModeDialog.vue'
 import DocumentSidePreview from '@/components/documents/DocumentSidePreview.vue'
 import PaymentCurrencyBlock from '@/components/purchase/PaymentCurrencyBlock.vue'
 import ExchangeRateInput from '@/components/purchase/ExchangeRateInput.vue'
@@ -963,8 +967,23 @@ function itemClassDiffers(it: PurchaseInvoiceItem): boolean {
   const header = form.value.vat_classification_code
   return !!it.vat_classification_code && !!header && it.vat_classification_code !== header
 }
+// Skutečný stav položky v evidenci DPH (zrcadlo serverového PurchaseVatTreatment):
+// hlavička „bez nároku" nebo rozpis DPH rozhodují i o položce s kódem odpočtu.
+const headerVat = computed<HeaderVat>(() => ({
+  vat_deduction: form.value.vat_deduction,
+  vat_deduction_percent: Number(form.value.vat_deduction_percent ?? 100),
+  vat_classification_code: form.value.vat_classification_code,
+}))
+function itemVat(it: PurchaseInvoiceItem) {
+  return itemVatState(it.vat_classification_code, headerVat.value, vatAllocations.value.length > 0, vatClassifications.value)
+}
+function itemVatConflict(it: PurchaseInvoiceItem): boolean {
+  return itemConflictsWithHeader(it.vat_classification_code, headerVat.value, vatAllocations.value.length > 0, vatClassifications.value)
+}
+const itemsConflictWithHeader = computed(() => form.value.items.some(itemVatConflict))
+const headerDiffersFromRozpis = computed(() => headerDiffersFromAllocations(headerVat.value, vatAllocations.value))
 function itemDetailsFilled(it: PurchaseInvoiceItem): boolean {
-  return (showItemAccount.value && !!it.expense_account_code) || itemClassDiffers(it)
+  return (showItemAccount.value && !!it.expense_account_code) || itemClassDiffers(it) || itemVatConflict(it)
 }
 function toggleItemDetails(it: PurchaseInvoiceItem) {
   if (itemDetailsOpen.has(it)) itemDetailsOpen.delete(it)
@@ -1418,6 +1437,19 @@ async function onReplacePdf() {
 // Vědomě potvrzená shoda čísla dokladu u dodavatele (např. platby platebního kalendáře).
 let allowDuplicateNumber = false
 
+// Režim vynucené úpravy v uzavřeném období — z detailu přes `?force_mode=`, nebo zvolený
+// v dialogu, když ho server vyžádá (422 force_mode_required).
+const forceMode = ref<PurchaseForceMode | null>(
+  ['reconcile', 'notes_only'].includes(String(route.query.force_mode ?? '')) ? route.query.force_mode as PurchaseForceMode : null,
+)
+const forceModeDialogOpen = ref(false)
+const duplicateCancelledId = ref<number | null>(null)
+async function onForceModeChosen(mode: PurchaseForceMode) {
+  forceMode.value = mode
+  forceModeDialogOpen.value = false
+  await submit()
+}
+
 async function submit() {
   if (blockDemoMutation()) return
   if (submitting.value) return
@@ -1428,6 +1460,7 @@ async function submit() {
   }
   submitting.value = true
   error.value = ''
+  duplicateCancelledId.value = null
   fieldErrors.value = {}
   syncAllAllocationResiduals()
   if (allocationInvalid.value) {
@@ -1521,7 +1554,7 @@ async function submit() {
     if (isEdit.value && invoiceId.value) {
       // Force flag z URL query (?force=1) — pro admin edit received/booked faktur
       const force = String(route.query.force ?? '') === '1'
-      inv = await purchaseInvoicesApi.update(invoiceId.value, payload, force)
+      inv = await purchaseInvoicesApi.update(invoiceId.value, payload, force, forceMode.value ?? undefined)
     } else {
       inv = await purchaseInvoicesApi.create(payload)
     }
@@ -1564,8 +1597,18 @@ async function submit() {
     router.push(`/purchase-invoices/${inv.id}`)
   } catch (e: any) {
     const data = e?.response?.data?.error
+    // Zaúčtovaný doklad v uzavřeném období: server chce zvolený režim úpravy (B11).
+    if (data?.code === 'force_mode_required' && String(route.query.force ?? '') === '1') {
+      forceModeDialogOpen.value = true
+      return
+    }
+    // Shoda jen se stornovaným dokladem: jiný text a v chybě odkaz na „Vrátit ze storna".
+    duplicateCancelledId.value = data?.code === 'vendor_invoice_duplicate' && data?.cancelled_duplicate_id
+      ? Number(data.cancelled_duplicate_id) : null
     if (data?.code === 'vendor_invoice_duplicate' && data?.can_confirm && !allowDuplicateNumber
-      && window.confirm(t('purchase_invoice.duplicate_number_confirm', { message: apiErrorMessage(e) }))) {
+      && window.confirm(t(duplicateCancelledId.value
+        ? 'purchase_invoice.duplicate_number_confirm_cancelled'
+        : 'purchase_invoice.duplicate_number_confirm', { message: apiErrorMessage(e) }))) {
       allowDuplicateNumber = true
       submitting.value = false
       try {
@@ -1614,7 +1657,15 @@ useWindowTitle(
 
     <div v-if="error" data-error-banner class="p-3 bg-danger-50 border border-danger-500/40 text-danger-600 rounded-md text-sm">
       {{ error }}
+      <RouterLink v-if="duplicateCancelledId" :to="`/purchase-invoices/${duplicateCancelledId}`"
+        class="block mt-1 font-medium underline" data-test="duplicate-cancelled-link">
+        {{ t('purchase_invoice.duplicate_cancelled_open') }}
+      </RouterLink>
     </div>
+    <div v-if="forceMode" class="p-3 bg-warning-50 border border-warning-500/40 text-warning-700 rounded-md text-sm" data-test="force-mode-banner">
+      {{ t(`purchase_invoice.force_mode.banner_${forceMode}`) }}
+    </div>
+    <PurchaseForceModeDialog v-if="forceModeDialogOpen" @close="forceModeDialogOpen = false" @choose="onForceModeChosen" />
 
     <!-- AI extraction warning — žluté upozornění, pokud backend zaznamenal podezřelou neshodu
          mezi sumou řádků a AI-vráceným totalem (typicky: subtotal čten jako item). -->
@@ -1679,6 +1730,7 @@ useWindowTitle(
       <!-- DRAG & DROP PDF (jen nahoře u nové faktury, schovaný po prvním interaction) -->
       <div v-if="!isEdit && !submissionId && dropzoneVisible" class="bg-surface border border-neutral-200 rounded-lg p-5 shadow-sm">
         <PdfDropzone accept-structured :uploading="pdfUploading" @file-dropped="onPdfDropped" @error="onPdfError" />
+        <div class="mt-2 flex flex-wrap gap-2"><CapturePhotoButton :disabled="pdfUploading" @captured="onPdfDropped" /></div>
         <p class="text-xs text-neutral-500 mt-2">
           {{ t('purchase_invoice.extraction.ai_pending') }}
         </p>
@@ -1836,6 +1888,7 @@ useWindowTitle(
       <!-- Replace dropzone když user vybere replace -->
       <div v-else-if="isEdit && dropzoneVisible" class="bg-surface border border-neutral-200 rounded-lg p-5 shadow-sm">
         <PdfDropzone :uploading="pdfUploading" @file-dropped="onPdfDropped" @error="onPdfError" />
+        <div class="mt-2 flex flex-wrap gap-2"><CapturePhotoButton :disabled="pdfUploading" @captured="onPdfDropped" /></div>
       </div>
 
       <!-- Box 1: Hlavička — vendor + typ + čísla + datumy + měna -->
@@ -2202,14 +2255,23 @@ useWindowTitle(
                     <select v-model="it.vat_classification_code" :aria-label="t('purchase_invoice.items.vat_classification')"
                       data-test="item-vat-classification"
                       class="w-72 h-8 px-1 border rounded bg-surface text-sm text-neutral-900"
-                      :class="itemClassDiffers(it) ? 'border-warning-500' : 'border-neutral-300'">
+                      :class="itemClassDiffers(it) || itemVatConflict(it) ? 'border-warning-500' : 'border-neutral-300'">
                       <option :value="null">{{ t('purchase_invoice.items.vat_classification_auto') }}</option>
                       <option v-for="vc in vatClassifications" :key="vc.id" :value="vc.code">
                         {{ vc.code }} - {{ vc.label.length > 50 ? vc.label.slice(0, 50) + '…' : vc.label }}
                       </option>
                     </select>
                   </label>
-                  <span v-if="itemClassDiffers(it)" class="text-xs text-warning-700">
+                  <span v-if="itemVatConflict(it)" class="text-xs text-warning-700" data-test="item-vat-conflict">
+                    {{ t('purchase_invoice.items.vat_state_conflict', { code: itemVat(it).effectiveCode ?? '' }) }}
+                  </span>
+                  <span v-else-if="itemVat(it).state === 'allocations'" class="text-xs text-neutral-500" data-test="item-vat-state">
+                    {{ t('purchase_invoice.items.vat_state_allocations') }}
+                  </span>
+                  <span v-else-if="itemVat(it).state === 'no_claim_header'" class="text-xs text-neutral-500" data-test="item-vat-state">
+                    {{ t('purchase_invoice.items.vat_state_no_claim_header', { code: itemVat(it).effectiveCode ?? '—' }) }}
+                  </span>
+                  <span v-else-if="itemClassDiffers(it)" class="text-xs text-warning-700">
                     {{ t('purchase_invoice.items.vat_classification_differs', { code: form.vat_classification_code }) }}
                   </span>
                   <span v-else-if="it.vat_classification_code && it.vat_classification_code === form.vat_classification_code" class="text-xs text-neutral-500">
@@ -2342,14 +2404,23 @@ useWindowTitle(
                   {{ t('purchase_invoice.items.vat_classification') }}
                   <select v-model="it.vat_classification_code" :aria-label="t('purchase_invoice.items.vat_classification')"
                     class="mt-1 w-full h-10 px-2 border rounded bg-surface text-sm"
-                    :class="itemClassDiffers(it) ? 'border-warning-500' : 'border-neutral-300'">
+                    :class="itemClassDiffers(it) || itemVatConflict(it) ? 'border-warning-500' : 'border-neutral-300'">
                     <option :value="null">{{ t('purchase_invoice.items.vat_classification_auto') }}</option>
                     <option v-for="vc in vatClassifications" :key="vc.id" :value="vc.code">
                       {{ vc.code }} - {{ vc.label.length > 40 ? vc.label.slice(0, 40) + '…' : vc.label }}
                     </option>
                   </select>
                 </label>
-                <p v-if="itemClassDiffers(it)" class="mt-1 text-xs text-warning-700">
+                <p v-if="itemVatConflict(it)" class="mt-1 text-xs text-warning-700">
+                  {{ t('purchase_invoice.items.vat_state_conflict', { code: itemVat(it).effectiveCode ?? '' }) }}
+                </p>
+                <p v-else-if="itemVat(it).state === 'allocations'" class="mt-1 text-xs text-neutral-500">
+                  {{ t('purchase_invoice.items.vat_state_allocations') }}
+                </p>
+                <p v-else-if="itemVat(it).state === 'no_claim_header'" class="mt-1 text-xs text-neutral-500">
+                  {{ t('purchase_invoice.items.vat_state_no_claim_header', { code: itemVat(it).effectiveCode ?? '—' }) }}
+                </p>
+                <p v-else-if="itemClassDiffers(it)" class="mt-1 text-xs text-warning-700">
                   {{ t('purchase_invoice.items.vat_classification_differs', { code: form.vat_classification_code }) }}
                 </p>
                 <p v-else-if="it.vat_classification_code && it.vat_classification_code === form.vat_classification_code" class="mt-1 text-xs text-neutral-500">
@@ -2651,6 +2722,9 @@ useWindowTitle(
                 {{ t('purchase_invoice.classification.apply_to_items') }}
               </button>
             </div>
+            <p v-if="itemsConflictWithHeader" class="mt-1 text-xs text-warning-700" data-test="items-conflict-with-header">
+              {{ t('purchase_invoice.classification.items_conflict_with_header') }}
+            </p>
             <button type="button" class="mt-1 text-xs text-primary-600 hover:underline" :aria-expanded="vatClassHintOpen"
               data-test="vat-classification-hint-toggle" @click="vatClassHintOpen = !vatClassHintOpen">
               {{ vatClassHintOpen ? t('purchase_invoice.classification.vat_classification_less') : t('purchase_invoice.classification.vat_classification_more') }}
@@ -2677,6 +2751,9 @@ useWindowTitle(
               {{ t('purchase_invoice.vat_deduction_reduced_hint') }}
             </p>
             <p v-else class="text-xs text-neutral-500 mt-1">{{ t('purchase_invoice.classification.vat_deduction_hint') }}</p>
+            <p v-if="headerDiffersFromRozpis" class="text-xs text-warning-700 mt-1" data-test="header-differs-from-allocations">
+              {{ t('purchase_invoice.vat_treatment.header_differs_editor') }}
+            </p>
           </div>
           <div>
             <label class="inline-flex items-center gap-2 text-sm mt-6" :title="t('purchase_invoice.classification.tax_deductible_hint')">

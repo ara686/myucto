@@ -104,9 +104,13 @@ final class StereoNxAccountingJournalPlan
                 $blockers[] = ['code' => 'journal_total_out_of_range', 'key' => $key];
                 continue;
             }
-            if (!is_int($row['DPH'] ?? null) && !is_float($row['DPH'] ?? null)) {
+            // Účetní kontace přebíráme celé podle MD/Dal a Celkem. Výslovné NULL
+            // znamená nepoužitý samostatný rozpad DPH, nikoli chybějící kontaci daně.
+            $taxAmount = $row['DPH'] ?? null;
+            if (!array_key_exists('DPH', $row)
+                || ($taxAmount !== null && !is_int($taxAmount) && !is_float($taxAmount))) {
                 $blockers[] = ['code' => 'journal_tax_amount_invalid', 'key' => $key];
-            } elseif (!is_finite((float) $row['DPH']) || abs((float) $row['DPH']) >= 0.005) {
+            } elseif ($taxAmount !== null && (!is_finite((float) $taxAmount) || abs((float) $taxAmount) >= 0.005)) {
                 $blockers[] = ['code' => 'journal_tax_amount_unverified', 'key' => $key];
             }
             $debit += $cents;

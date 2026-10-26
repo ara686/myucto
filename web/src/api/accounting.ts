@@ -1078,6 +1078,9 @@ export interface CashFlowBreakdownRow {
  * konstrukčně. Když nesedí, je vada v datech, ne ve výkazu.
  */
 export interface Section18Statements {
+  accounting_framework?: 'cz_504'
+  available?: boolean
+  reason?: string
   cash_flow: {
     period: ReportPeriod
     opening: number
@@ -1094,7 +1097,7 @@ export interface Section18Statements {
       financing: CashFlowBreakdownRow[]
       unclassified: CashFlowBreakdownRow[]
     }
-  }
+  } | null
   equity: {
     period: ReportPeriod
     rows: Array<{
@@ -1107,8 +1110,8 @@ export interface Section18Statements {
     }>
     totals: { opening: number; increase: number; decrease: number; closing: number }
     reconciles: boolean
-  }
-  category: string
+  } | null
+  category?: string
   /** Povinnost sestavit oba přehledy (velká/střední ÚJ nebo povinný audit). */
   required: boolean
 }
@@ -1348,6 +1351,53 @@ export interface StatementRow {
   amount: number
   prev_amount: number
   accounts: StatementRowAccount[]
+}
+
+export interface Statement504Component {
+  key: string
+  label: string
+  start?: number | null
+  end?: number | null
+  main?: number
+  economic?: number
+  total?: number
+}
+
+export interface Statement504Row {
+  row_code: string
+  display_code: string
+  label: string
+  adis_sentence: 'UR' | 'US' | 'UT'
+  adis_row: number
+  start?: number | null
+  end?: number | null
+  main?: number
+  economic?: number
+  total?: number
+  components?: Statement504Component[]
+}
+
+export interface Statement504Report {
+  accounting_framework: 'cz_504'
+  statement_type: 'balance_sheet' | 'income_statement' | 'account_view'
+  version_code: string
+  as_of: string
+  scope?: EffectiveScope
+  entity: StatementEntity
+  period: ReportPeriod
+  dimension?: ReportDimensionFilter | null
+  view_kind?: 'management'
+  deferred_tax_method?: { enabled: true; version: '504-deferred-own-v1'; reference: string; disclosure: string; faithful_image_reason: string; standard_departure_reason: string; presentation_reason: string; first_adoption: boolean; first_adoption_reason?: string }
+  assets?: Statement504Row[]
+  liabilities?: Statement504Row[]
+  rows?: Statement504Row[]
+  profit_loss?: Statement504Row[]
+  balances?: { account_id: number; code: string; name: string; account_type: string; opening_debit_balance: number; closing_debit_balance: number }[]
+  checks: Record<string, number | boolean>
+}
+
+export function isStatement504(value: object): value is Statement504Report {
+  return 'accounting_framework' in value && value.accounting_framework === 'cz_504'
 }
 
 export interface BalanceSheetReport {
@@ -1759,7 +1809,7 @@ export const POSTING_ERROR_CODES = [
   'ddkp_reverse_charge_unsupported',
   // Přeúčtování: datum je zamčené (§35 soft-close) resp. storno i oprava by padly
   // na jiné datum než původní zápis a uživatel to ještě nepotvrdil.
-  'date_locked', 'repost_date_shift_confirmation_required',
+  'date_locked', 'repost_date_shift_confirmation_required', 'version_conflict',
 ] as const
 
 /** Vrátí i18n klíč pro hlášku k chybovému kódu zaúčtování (fallback = generic). */
@@ -1908,7 +1958,9 @@ export interface RepostPlan {
   needs_reversal: boolean
   target_date: string | null
   date_shifted: boolean
-  reason_code: 'period_not_open' | 'date_locked' | 'entry_reversed' | 'tax_neutral_rewrite' | null
+  reason_code: 'period_not_open' | 'date_locked' | 'entry_reversed' | 'tax_neutral_rewrite' | 'posting_group' | null
+  posting_entries?: Array<{ id: number; entry_date: string; row_version: number }>
+  suggested_lines?: RepostPlan['lines']
   /** Zamčené datum v otevřeném roce: přesun mezi účty téže třídy bez daňového dopadu se přepíše na místě. */
   tax_neutral_available: boolean
   /** Proč opravené řádky nejdou přepsat na místě (jen u plánu počítaného nad řádky). */
@@ -1924,6 +1976,7 @@ export interface RepostResult {
   strategy: 'replace' | 'reverse'
   entry_id: number
   reversal_entry_id: number | null
+  reversal_entry_ids?: number[]
   entry_date: string
   date_shifted: boolean
   items_synced: number
@@ -1933,6 +1986,7 @@ export interface RepostPayload {
   lines: Array<{ account_code: string; side: 'debit' | 'credit'; amount: number; is_red_storno?: boolean }>
   description?: string | null
   confirm_date_shift?: boolean
+  expected_posting_entries?: Array<{ id: number; row_version: number }>
   /** Dimenze dokladu uložené v téže transakci (bez `items` zůstanou dimenze položek). */
   dimensions?: { header: Record<number, number>; items?: Record<number, Record<number, number>> }
 }
@@ -2014,6 +2068,9 @@ export const accountingApi = {
     api.post<AccountingPeriod>('/accounting/periods', payload).then(r => r.data),
   setPeriodStatus: (id: number, status: PeriodStatus) =>
     api.post<AccountingPeriod>(`/accounting/periods/${id}/status`, { status }).then(r => r.data),
+  /** Začátek prvního účetního období (firma vzniklá v průběhu roku, § 3 ZoÚ). */
+  updatePeriodStart: (id: number, startsOn: string, rowVersion: number) =>
+    api.patch<AccountingPeriod>(`/accounting/periods/${id}`, { starts_on: startsOn, row_version: rowVersion }).then(r => r.data),
 
   // Deník
   listJournal: (filters?: JournalFilters) => {
@@ -2294,12 +2351,12 @@ export const accountingApi = {
   applyPairingSuggestions: (accountId: number, payload: { as_of: string; days: number; pairs?: number[][] }) =>
     api.post<{ created: number }>(`/accounting/open-items/${accountId}/suggestions/apply`, payload).then(r => r.data),
   getBalanceSheet: (params: StatementParams) =>
-    api.get<BalanceSheetReport>('/accounting/reports/balance-sheet', { params }).then(r => r.data),
+    api.get<BalanceSheetReport | Statement504Report>('/accounting/reports/balance-sheet', { params }).then(r => r.data),
   getIncomeStatement: (params: StatementParams) =>
-    api.get<IncomeStatementReport>('/accounting/reports/income-statement', { params }).then(r => r.data),
+    api.get<IncomeStatementReport | Statement504Report>('/accounting/reports/income-statement', { params }).then(r => r.data),
   /** Rozvaha a výsledovka po účtech s hospodářským výsledkem (zůstatky před uzávěrkou). */
   getStatementAccounts: (params: Omit<StatementParams, 'scope'>) =>
-    api.get<StatementAccountsReport>('/accounting/reports/statement-accounts', { params }).then(r => r.data),
+    api.get<StatementAccountsReport | Statement504Report>('/accounting/reports/statement-accounts', { params }).then(r => r.data),
   /** Odhad do konce otevřeného roku (náhled DPPO, uzávěrka, odpisy, zálohy) — samostatný request. */
   getYearEndTaxEstimate: (periodId: number) =>
     api.get<YearEndTaxEstimate>('/accounting/reports/statement-accounts/tax-estimate', { params: { period_id: periodId } }).then(r => r.data),

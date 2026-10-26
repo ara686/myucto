@@ -12,6 +12,7 @@ use MyInvoice\Repository\StockLevelRepository;
 use MyInvoice\Repository\StockItemCustomerPriceRepository;
 use MyInvoice\Repository\StockPackagingUnitRepository;
 use MyInvoice\Repository\StockTrackingRepository;
+use MyInvoice\Service\Eet\EetStoredValueCalculator;
 use MyInvoice\Service\Stock\StockItemPackagingService;
 use MyInvoice\Security\AccessLevel;
 use MyInvoice\Security\ClientStockItemPolicy;
@@ -289,8 +290,13 @@ final class StockItemAction
         if ($accountErr !== null) {
             return $accountErr;
         }
+        [$eetKind, $eetKindErr] = self::eetItemKind($response, $body);
+        if ($eetKindErr !== null) {
+            return $eetKindErr;
+        }
         $id = $this->items->insert($supplierId, $data);
         if (!RequestAuthorization::isClientType($request)) $this->items->updatePostingAccounts($supplierId, $id, $accounts);
+        if ($eetKind !== null) $this->items->updateEetItemKind($supplierId, $id, $eetKind);
         $this->log($request, 'stock.item_created', $id, ['sku' => $data['sku']]);
         return Json::ok($response, $this->visibleItem($request, $this->items->find($supplierId, $id)), 201);
     }
@@ -350,12 +356,17 @@ final class StockItemAction
         if ($accountErr !== null) {
             return $accountErr;
         }
+        [$eetKind, $eetKindErr] = self::eetItemKind($response, $body);
+        if ($eetKindErr !== null) {
+            return $eetKindErr;
+        }
         $expectedVersion = RequestAuthorization::isClientType($request) ? (int) ($body['row_version'] ?? 0) : null;
         if (!$this->items->update($supplierId, $id, $data, $expectedVersion)) {
             return Json::error($response, 'version_conflict', 'Skladová karta se změnila; načtěte ji znovu.', 409);
         }
         if (!RequestAuthorization::isClientType($request)) $this->items->updatePostingAccounts($supplierId, $id, $accounts);
-        $this->log($request, 'stock.item_updated', $id, ['sku' => $data['sku']] + $accounts);
+        if ($eetKind !== null) $this->items->updateEetItemKind($supplierId, $id, $eetKind);
+        $this->log($request, 'stock.item_updated', $id, ['sku' => $data['sku']] + $accounts + ($eetKind !== null ? ['eet_item_kind' => $eetKind] : []));
         return Json::ok($response, $this->visibleItem($request, $this->items->find($supplierId, $id)));
     }
 
@@ -663,6 +674,26 @@ final class StockItemAction
      * @param array<string,mixed>|null $existing
      * @return array{0:array<string,mixed>, 1:?Response}
      */
+    /**
+     * Druh položky pro EET z těla (`eet_item_kind`), null = beze změny. Klientská role
+     * pole poslat nesmí (ClientStockItemPolicy ho mezi provozní údaje nepouští).
+     *
+     * @param array<string,mixed> $body
+     * @return array{0:?string, 1:?Response}
+     */
+    private static function eetItemKind(Response $response, array $body): array
+    {
+        if (!array_key_exists('eet_item_kind', $body) || $body['eet_item_kind'] === null) {
+            return [null, null];
+        }
+        $kind = $body['eet_item_kind'];
+        if (!is_string($kind) || !in_array($kind, EetStoredValueCalculator::ITEM_KINDS, true)) {
+            return [null, Json::error($response, 'validation_failed',
+                "eet_item_kind musí být 'standard', 'specific_voucher' nebo 'stored_value'.", 400)];
+        }
+        return [$kind, null];
+    }
+
     private function validate(Response $response, array $body, ?array $existing = null): array
     {
         $name = trim((string) ($body['name'] ?? $existing['name'] ?? ''));

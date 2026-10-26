@@ -1096,6 +1096,40 @@ export const dataBoxApi = {
       environment,
     }).then(r => r.data),
 
+  /** Dávka jménem a heslem: jedno zadání údajů pro všechna vybraná podání. */
+  passwordSendBatch: (outboxIds: number[], environment: string, username: string, password: string) =>
+    api.post<{ results: MobileKeyBatchItemResult[] }>('/submissions/outbox/password-send-batch', {
+      outbox_ids: outboxIds,
+      environment,
+      username,
+      password,
+    }).then(r => r.data.results),
+
+  /** Dávka systémovým certifikátem; `authorized` je vědomé potvrzení za celou dávku. */
+  certificateSendBatch: (outboxIds: number[], environment: string) =>
+    api.post<{ results: MobileKeyBatchItemResult[] }>('/submissions/outbox/certificate-send-batch', {
+      outbox_ids: outboxIds,
+      environment,
+      authorized: true,
+    }).then(r => r.data.results),
+
+  /** SMS kód pro dávku; přihlášení není vázané na jedno podání. */
+  smsSendStartBatch: (environment: string, username: string, password: string) =>
+    api.post<SmsInboxStart>('/submissions/outbox/sms/start-batch', {
+      environment,
+      username,
+      password,
+    }).then(r => r.data),
+
+  /** Ověří SMS kód a v jedné relaci odešle všechna vybraná podání. */
+  smsSendCompleteBatch: (outboxIds: number[], environment: string, flowToken: string, smsCode: string) =>
+    api.post<{ results: MobileKeyBatchItemResult[] }>('/submissions/outbox/sms/complete-batch', {
+      outbox_ids: outboxIds,
+      environment,
+      flow_token: flowToken,
+      sms_code: smsCode,
+    }).then(r => r.data.results),
+
   /**
    * Dodejky ke VŠEM odeslaným zprávám, které je ještě nemají, v jednom
    * přihlášení certifikátem.

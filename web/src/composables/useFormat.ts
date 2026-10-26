@@ -43,6 +43,14 @@ export function formatMoney(value: number | null | undefined, currency: string =
 }
 
 /**
+ * Částka zaokrouhlená na celé jednotky měny, bez haléřů. Pro statistiky a KPI;
+ * seznamy a tabulky jednotlivých dokladů zůstávají na `formatMoney` (zarovnání sloupců).
+ */
+export function formatMoneyWhole(value: number | null | undefined, currency: string = 'CZK'): string {
+  return formatMoney(value, currency, 0)
+}
+
+/**
  * Peníze uložené v setinách (minor units) — tak je drží celý mzdový modul
  * i banka, aby se na částkách nikdy neprojevila plovoucí čárka.
  *

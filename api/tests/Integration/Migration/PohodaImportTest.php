@@ -110,6 +110,8 @@ final class PohodaImportTest extends TestCase
         self::assertSame(1, $this->rows('invoices', $supplierId, "status = 'paid' AND total_with_vat = 1210.00"));
         self::assertSame(1, $this->rows('purchase_invoices', $supplierId, "status = 'paid' AND total_with_vat = 605.00 AND vendor_invoice_number = 'D-2026-7'"));
         self::assertSame(2, $this->rows('payment_matches', $supplierId));
+        // Úhrada vydané faktury je i evidovanou platbou - z ní saldokonto počítá uhrazenou část.
+        self::assertSame(1, $this->rows('invoice_payments', $supplierId, "amount = 1210.00 AND currency = 'CZK' AND source = 'bank' AND bank_transaction_id IS NOT NULL"));
         self::assertSame(1, $this->rows('journal_entries', $supplierId, "source_type = 'invoice' AND source_id IS NOT NULL"));
         self::assertSame(2, $this->rows('clients', $supplierId));
 
@@ -151,6 +153,54 @@ final class PohodaImportTest extends TestCase
         self::assertSame(1, $link['previous_period'] ?? 0, $this->explain($again));
         self::assertArrayNotHasKey('orphans', $link, $this->explain($again));
         self::assertSame('completed', $again->status(), $this->explain($again));
+        self::assertSame(1, $this->rows('invoice_payments', $supplierId));
+
+        // Firma převedená dřívější verzí platbu nemá; opakovaný převod ji doplní k už
+        // spárované úhradě a nic dalšího nemění.
+        $this->db->pdo()->prepare('DELETE FROM invoice_payments WHERE supplier_id = ?')->execute([$supplierId]);
+        $repair = $this->importer->run($supplierId, $this->userId, $export, false);
+        self::assertFalse($repair->hasErrors(), $this->explain($repair));
+        self::assertSame(1, $this->rows('invoice_payments', $supplierId, "amount = 1210.00 AND source = 'bank'"));
+        self::assertSame($before, $this->snapshot($supplierId));
+    }
+
+    /**
+     * Opravný převod vazeb: firma se po převodu účtuje v MyÚčtu, takže řádný opakovaný převod
+     * odmítne rozjetý deník. Opravný převod projde novější export, nový doklad (26PF0002) ani
+     * zápis nezaloží, vlastní zápis uživatele nechá být a chybějící úhrady převzatých faktur
+     * dopočítá znovu.
+     */
+    public function testRelinkRestoresPaymentsWithoutCreatingNewRecords(): void
+    {
+        $supplierId = $this->supplier();
+        $first = $this->importer->run($supplierId, $this->userId, PohodaExport::open(SyntheticPohodaExport::write($this->tmp . '/a')), false);
+        self::assertFalse($first->hasErrors(), $this->explain($first));
+        $payments = $this->rows('invoice_payments', $supplierId);
+        self::assertGreaterThan(0, $payments);
+        $purchases = $this->rows('purchase_invoices', $supplierId);
+
+        $periodId = (int) $this->db->pdo()->query("SELECT id FROM accounting_periods WHERE supplier_id = {$supplierId} ORDER BY starts_on DESC LIMIT 1")->fetchColumn();
+        $account = static fn (\PDO $pdo, string $code): int => (int) $pdo->query("SELECT id FROM chart_of_accounts WHERE supplier_id = {$supplierId} AND account_code = '{$code}'")->fetchColumn();
+        $pdo = $this->db->pdo();
+        $pdo->prepare("INSERT INTO journal_entries (supplier_id, period_id, entry_date, description, source_type, posted_at) VALUES (?, ?, ?, 'Vlastní zápis v MyÚčtu', 'manual', NOW())")
+            ->execute([$supplierId, $periodId, SyntheticPohodaExport::YEAR . '-11-30']);
+        $entryId = (int) $pdo->lastInsertId();
+        $pdo->prepare("INSERT INTO journal_entry_lines (entry_id, supplier_id, account_id, side, amount, line_no) VALUES (?, ?, ?, 'debit', 100, 1), (?, ?, ?, 'credit', 100, 2)")
+            ->execute([$entryId, $supplierId, $account($pdo, '518000') ?: $account($pdo, '518'), $entryId, $supplierId, $account($pdo, '321001') ?: $account($pdo, '321')]);
+        $entries = $this->rows('journal_entries', $supplierId);
+        $pdo->prepare('DELETE FROM invoice_payments WHERE supplier_id = ?')->execute([$supplierId]);
+
+        $newer = PohodaExport::open(SyntheticPohodaExport::write($this->tmp . '/b', true));
+        $refused = $this->importer->run($supplierId, $this->userId, $newer, false);
+        self::assertTrue($refused->hasErrors(), 'Řádný převod do rozjetého deníku nesmí projít.');
+
+        $relink = $this->importer->run($supplierId, $this->userId, $newer, false, relinkOnly: true);
+        self::assertFalse($relink->hasErrors(), $this->explain($relink));
+        self::assertSame($entries, $this->rows('journal_entries', $supplierId), 'Opravný převod nezakládá zápisy.');
+        self::assertSame($purchases, $this->rows('purchase_invoices', $supplierId), 'Novější doklad z POHODY se nepřidá.');
+        self::assertGreaterThan(0, self::stepCounts($relink, 'purchase_invoices')['relink_skipped'] ?? 0, $this->explain($relink));
+        self::assertSame(1, $this->rows('journal_entries', $supplierId, "id = {$entryId}"), 'Vlastní zápis uživatele zůstává.');
+        self::assertSame($payments, $this->rows('invoice_payments', $supplierId), 'Úhrady převzatých faktur se dopočítají znovu.');
     }
 
     public function testUnknownDocumentTypesWarnAndKeepImportingKnownDocuments(): void
@@ -203,6 +253,55 @@ final class PohodaImportTest extends TestCase
         self::assertSame(2, $this->rows('other_items', $supplierId));
         self::assertSame(8, $this->rows('journal_entries', $supplierId));
         self::assertSame(2, $this->rows('pohoda_import_map', $supplierId, "kind = 'other_item'"));
+    }
+
+    public function testSettledOtherItemKeepsBankPaymentsAndPayrollLiabilityStaysInModule(): void
+    {
+        $supplierId = $this->supplier();
+        $dir = SyntheticPohodaExport::write($this->tmp);
+        SyntheticPohodaExport::withOtherItems($dir, true);
+        $export = PohodaExport::open($dir);
+
+        $first = $this->importer->run($supplierId, $this->userId, $export, false);
+        self::assertFalse($first->hasErrors(), $this->explain($first));
+        self::assertSame(4, $this->rows('other_items', $supplierId));
+        self::assertSame(0, $this->rows('other_items', $supplierId, "document_no IN ('26OZM0001', '26OZD0001', '26OZD0002')"));
+        $counts = self::stepCounts($first, 'other_items');
+        // Odvod na 336 a doplatek daně na 341 vlastní mzdový a daňový modul.
+        self::assertSame(2, $counts['payroll_or_tax'] ?? 0);
+        self::assertSame(1, $counts['created_unposted'] ?? 0);
+        self::assertSame(1, $counts['tax_advances'] ?? 0);
+
+        $pdo = $this->db->pdo();
+        // Evidenční závazek bez zaúčtování: potvrzený bez vlastního zápisu, deník se nemění,
+        // úhrada z banky je přiřazená.
+        $unposted = $pdo->query("SELECT id, status, journal_entry_id, account_code FROM other_items WHERE supplier_id = {$supplierId} AND document_no = '26OZB0001'")->fetch(\PDO::FETCH_ASSOC);
+        self::assertSame(['confirmed', null, '364.000'], [$unposted['status'], $unposted['journal_entry_id'], $unposted['account_code']]);
+        self::assertSame('400.00', (string) $pdo->query("SELECT SUM(amount) FROM other_item_allocations WHERE other_item_id = {$unposted['id']}")->fetchColumn());
+        self::assertSame(0, $this->rows('journal_entries', $supplierId, "source_type = 'other_item' AND source_id = {$unposted['id']}"));
+
+        // Záloha na daň: předpis daňového modulu uhrazený spárovaným pohybem.
+        $advance = $pdo->query("SELECT taxpayer_type, period_year, seq_no, amount, due_date, status, paid_source, matched_transaction_id
+            FROM tax_advance_schedules WHERE supplier_id = {$supplierId}")->fetchAll(\PDO::FETCH_ASSOC);
+        self::assertCount(1, $advance);
+        self::assertSame(['2026', '1', '1000.00', '2026-03-16', 'paid', 'bank'],
+            [(string) $advance[0]['period_year'], (string) $advance[0]['seq_no'], (string) $advance[0]['amount'],
+             $advance[0]['due_date'], $advance[0]['status'], $advance[0]['paid_source']]);
+        self::assertNotNull($advance[0]['matched_transaction_id']);
+
+        $settled = (int) $pdo->query("SELECT id FROM other_items WHERE supplier_id = {$supplierId} AND document_no = '26OZ0002'")->fetchColumn();
+        self::assertSame(2, $this->rows('other_item_allocations', $supplierId, "other_item_id = {$settled} AND reversed_on IS NULL"));
+        self::assertSame('300.00', (string) $pdo->query("SELECT SUM(amount) FROM other_item_allocations WHERE other_item_id = {$settled}")->fetchColumn());
+        // Alokovaný pohyb je vyřízený alokací, převod ho neoznačí jako zaúčtovaný bez dokladu.
+        self::assertSame(0, $this->rows('other_item_allocations', $supplierId,
+            "EXISTS (SELECT 1 FROM bank_transactions t WHERE t.id = other_item_allocations.bank_transaction_id AND t.match_status <> 'unmatched')"));
+        self::assertSame(1, $this->rows('other_items', $supplierId, "document_no = '26OZ0002' AND partner_id IS NOT NULL"));
+
+        $again = $this->importer->run($supplierId, $this->userId, $export, false);
+        self::assertFalse($again->hasErrors(), $this->explain($again));
+        self::assertSame(4, $this->rows('other_items', $supplierId));
+        self::assertSame(3, $this->rows('other_item_allocations', $supplierId));
+        self::assertSame(1, $this->rows('tax_advance_schedules', $supplierId));
     }
 
     /** @return array<string,int|float> */
@@ -485,10 +584,11 @@ final class PohodaImportTest extends TestCase
         self::assertNotNull($year, json_encode($plan['accounting']));
         self::assertEqualsWithDelta(45000.0, (float) $year['amount'], 0.005, 'Duben až prosinec 2026 po 5 000 Kč.');
 
-        // Drobný majetek: karta navázaná na převedenou přijatou fakturu i s položkou, vyřazená karta bez dokladu.
+        // Drobný majetek: karta navázaná na převedenou přijatou fakturu i s položkou, vyřazená karta bez dokladu
+        // a dvě karty bez odkazu navázané cenou za kus na jednu položku se 2 ks.
         $counts = self::stepCounts($protocol, 'small_assets');
         ksort($counts);
-        self::assertSame(['created' => 3, 'linked' => 2, 'matched_by_amount' => 1, 'no_document' => 1], $counts, $this->explain($protocol));
+        self::assertSame(['created' => 4, 'linked' => 3, 'matched_by_amount' => 2, 'no_document' => 1], $counts, $this->explain($protocol));
         $small = $this->db->pdo()->prepare(
             'SELECT s.inventory_number, s.status, s.disposed_at, s.quantity, s.price, s.location, s.document_ref, s.purchase_invoice_item_id,
                     pi.vendor_invoice_number
@@ -496,20 +596,32 @@ final class PohodaImportTest extends TestCase
               WHERE s.supplier_id = ? ORDER BY s.inventory_number'
         );
         $small->execute([$supplierId]);
-        [$drill, $chairs, $tools] = $small->fetchAll(\PDO::FETCH_ASSOC);
-        self::assertSame(['DM0003', 'D-2026-8', 'D-2026-8'], [$tools['inventory_number'], $tools['document_ref'], $tools['vendor_invoice_number']]);
-        self::assertNotNull($tools['purchase_invoice_item_id'], 'Karta bez odkazu se naváže podle data a částky.');
+        [$drill, $chairs, $monitor, $monitor2] = $small->fetchAll(\PDO::FETCH_ASSOC);
+        self::assertSame(['DM0003', 'D-2026-8', 'D-2026-8'], [$monitor['inventory_number'], $monitor['document_ref'], $monitor['vendor_invoice_number']]);
+        self::assertNotNull($monitor['purchase_invoice_item_id'], 'Karta bez odkazu se naváže podle data a ceny za kus.');
+        self::assertSame($monitor['purchase_invoice_item_id'], $monitor2['purchase_invoice_item_id'], 'Položka se 2 ks nese dvě karty.');
+        // Položka s kartou je náklad na drobný majetek - obrat drobného majetku sedí na evidenci.
+        $kinds = $this->db->pdo()->prepare('SELECT id, expense_kind FROM purchase_invoice_items WHERE id IN (?, ?)');
+        $kinds->execute([$monitor['purchase_invoice_item_id'], $drill['purchase_invoice_item_id']]);
+        self::assertSame(['small_asset'], array_values(array_unique($kinds->fetchAll(\PDO::FETCH_KEY_PAIR))));
         self::assertSame(['DM0001', 'in_use', 'Dílna', '26PF0001', 'D-2026-7'],
             [$drill['inventory_number'], $drill['status'], $drill['location'], $drill['document_ref'], $drill['vendor_invoice_number']]);
         self::assertNotNull($drill['purchase_invoice_item_id'], 'Karta je navázaná i na položku faktury.');
         self::assertSame(['DM0002', 'disposed', '2026-02-01', '2.000', '3000.00', null],
             [$chairs['inventory_number'], $chairs['status'], $chairs['disposed_at'], (string) $chairs['quantity'], (string) $chairs['price'], $chairs['document_ref']]);
 
+        // Karta, kterou dřívější převod na doklad nenavázal, se při opakovaném převodu dohledá.
+        $this->db->pdo()->prepare("UPDATE small_assets SET purchase_invoice_id = NULL, purchase_invoice_item_id = NULL WHERE supplier_id = ? AND inventory_number = 'DM0004'")
+            ->execute([$supplierId]);
+
         $again = $this->importer->run($supplierId, $this->userId, $export, false);
         self::assertSame(1, self::stepCounts($again, 'assets')['existing'] ?? 0, $this->explain($again));
-        self::assertSame(3, self::stepCounts($again, 'small_assets')['existing'] ?? 0, $this->explain($again));
+        self::assertSame(4, self::stepCounts($again, 'small_assets')['existing'] ?? 0, $this->explain($again));
+        $relinked = $this->db->pdo()->prepare("SELECT purchase_invoice_item_id FROM small_assets WHERE supplier_id = ? AND inventory_number = 'DM0004'");
+        $relinked->execute([$supplierId]);
+        self::assertSame((string) $monitor['purchase_invoice_item_id'], (string) $relinked->fetchColumn());
         self::assertSame(1, $this->rows('assets', $supplierId));
-        self::assertSame(3, $this->rows('small_assets', $supplierId));
+        self::assertSame(4, $this->rows('small_assets', $supplierId));
     }
 
     /**

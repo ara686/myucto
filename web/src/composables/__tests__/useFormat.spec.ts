@@ -6,6 +6,7 @@ import {
   formatCompactNumber,
   formatDateTime,
   formatMoneyMinor,
+  formatMoneyWhole,
   formatNumber,
   formatPercent,
   formatPeriod,
@@ -109,6 +110,16 @@ describe('formatUtcDateTime', () => {
   it('interpretuje databázový timestamp jako UTC okamžik', () => {
     expect(formatUtcDateTime('2026-08-26 22:06:48'))
       .toBe(formatDateTime('2026-08-26T22:06:48Z'))
+  })
+})
+
+describe('formatMoneyWhole', () => {
+  it('zaokrouhlí na celé jednotky bez haléřů a chybějící částku nevydává za nulu', () => {
+    i18n.global.locale.value = 'cs'
+    expect(formatMoneyWhole(1234.56)).toBe('1 235 Kč')
+    expect(formatMoneyWhole(1000)).toBe('1 000 Kč')
+    expect(formatMoneyWhole(12.5, 'EUR')).toBe('13 €')
+    expect(formatMoneyWhole(null)).toBe('—')
   })
 })
 

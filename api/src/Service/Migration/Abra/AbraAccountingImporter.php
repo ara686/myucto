@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace MyInvoice\Service\Migration\Abra;
 
 use MyInvoice\Infrastructure\Database\Connection;
-use MyInvoice\Infrastructure\Database\TableStatistics;
 use MyInvoice\Infrastructure\Database\TransactionFailure;
+use MyInvoice\Service\Accounting\AccountingFrameworkImportGuard;
+use MyInvoice\Service\Accounting\AccountingFrameworkException;
+use MyInvoice\Infrastructure\Database\TableStatistics;
 use MyInvoice\Repository\AbraImportRepository;
 use MyInvoice\Repository\AccountingPeriodRepository;
 use MyInvoice\Repository\ChartOfAccountsRepository;
@@ -217,6 +219,12 @@ final class AbraAccountingImporter
             }
         }
 
+        try {
+            (new AccountingFrameworkImportGuard($this->db))->assertCz500Periods($supplierId, $periods);
+        } catch (AccountingFrameworkException $e) {
+            $blockers[] = $e->errorCode;
+        }
+
         return [
             'ok' => $blockers === [],
             'blockers' => array_values(array_unique($blockers)),
@@ -252,6 +260,7 @@ final class AbraAccountingImporter
         $nested = $pdo->inTransaction();
         try {
             $nested ? $pdo->exec('SAVEPOINT abra_accounting_import') : $pdo->beginTransaction();
+            (new AccountingFrameworkImportGuard($this->db))->assertCz500Periods($supplierId, $preflight['periods'], true);
             $this->checkCancelled($cancelled);
             $sourceOss = $snapshot['_meta']['source_oss'] ?? [];
             if (is_array($sourceOss)) (new AbraOssSettingsImporter($this->db))->apply($supplierId, $sourceOss);
@@ -277,6 +286,9 @@ final class AbraAccountingImporter
             $documentDone = 0;
             $documentTargets = [];
             $settlementFloors = [];
+            $openingDocuments = [];
+            $purchaseItems = [];
+            $firstYear = min($years);
             $vatProjection = is_array($snapshot['_meta']['vat_projection'] ?? null)
                 ? $snapshot['_meta']['vat_projection'] : [];
             $progress('documents', 0, $documentTotal);
@@ -294,6 +306,21 @@ final class AbraAccountingImporter
                             $settlementFloors[$target['type'] . '|' . $target['id']] = [
                                 'amount' => $plan['paid_total'], 'date' => $plan['paid_at'],
                             ];
+                        }
+                        if ($target === null) {
+                            continue;
+                        }
+                        // Doklad minulého roku je v deníku jen počátečním stavem účtu.
+                        if ($plan['year'] < $firstYear && !$plan['source_cancelled']) {
+                            $openingDocuments[] = ['type' => $target['type'], 'id' => $target['id'],
+                                'account' => (string) ($plan['settlement_account'] ?? ''),
+                                'kind' => $plan['kind'] === 'purchase' ? (string) $plan['document_kind'] : (string) $plan['invoice_type']];
+                        }
+                        if ($plan['kind'] === 'purchase') {
+                            foreach ($plan['items'] as $item) {
+                                $purchaseItems[(string) $item['source_key']] = ['final' => $plan['source_key'],
+                                    'base' => $item['base_czk'] ?? null, 'total' => $item['total_czk'] ?? null];
+                            }
                         }
                     }
                     $documentDone += count($chunk);
@@ -345,6 +372,8 @@ final class AbraAccountingImporter
             $this->writeLinks($supplierId, $userId, $linkRows, $documentTargets, $movementTargets,
                 $report, $progress, $cancelled);
             $this->restoreSourceSettlements($supplierId, $settlementFloors);
+            $this->writeDocumentRelations($supplierId, $userId, $snapshot, $firstYear, $openingDocuments,
+                $purchaseItems, $documentTargets, $settlementFloors, $journalPlans, $journalTargets, $report);
             $this->markUnverifiedBankMovements($supplierId, $report, $cancelled);
 
             $report['reconciliation'] = $this->reconcile($supplierId, $snapshot, $years, $preflight['periods'], $journalPlans, $journalTargets,
@@ -436,11 +465,45 @@ final class AbraAccountingImporter
                     . ' at ' . basename($e->getFile()) . ':' . $e->getLine());
                 $report['failed']++;
                 $report['blocked'] = true;
-                if ($e instanceof AbraException) $report['warnings'][] = $e->errorCode;
+                if ($e instanceof AbraException || $e instanceof AccountingFrameworkException) $report['warnings'][] = $e->errorCode;
                 $report['warnings'][] = 'import_failed';
             }
         }
         return $this->finish($report);
+    }
+
+    /**
+     * Vazby dokladů pro saldokonto: doklady počátečních stavů, dobropisy, čerpání záloh
+     * a vyrovnání interním dokladem ({@see AbraDocumentRelationLinker}).
+     *
+     * @param list<array{type:string,id:int,account:string,kind:string}> $openingDocuments
+     * @param array<string,array{final:string,base:?float,total:?float}> $purchaseItems
+     * @param array<string,array{type:string,id:int}> $documentTargets
+     * @param array<string,array{amount:float,date:?string}> $settlementFloors
+     * @param list<array<string,mixed>> $journalPlans
+     * @param array<string,int> $journalTargets
+     * @param array<string,mixed> $report
+     */
+    private function writeDocumentRelations(int $supplierId, int $userId, array $snapshot, int $firstYear,
+        array $openingDocuments, array $purchaseItems, array $documentTargets, array $settlementFloors,
+        array $journalPlans, array $journalTargets, array &$report): void
+    {
+        $linker = new AbraDocumentRelationLinker($this->db, $this->imports);
+        $user = $userId > 0 ? $userId : null;
+        $linker->linkOpeningDocuments($supplierId, $user, $firstYear, $openingDocuments, $report);
+        $links = AbraDocumentRelationLinker::links($snapshot);
+        $linker->linkCreditNotes($supplierId, $user, $links, $documentTargets, $settlementFloors, $report);
+        $linker->linkAdvanceDeductions($supplierId, $user, $links, $documentTargets, $purchaseItems, $report);
+        $internalEntries = [];
+        foreach ($journalPlans as $plan) {
+            $relation = $plan['document_relation'];
+            if (is_array($relation) && in_array($relation['evidence'] ?? '', ['interni-doklad', 'vzajemny-zapocet'], true)
+                && ($relation['key'] ?? '') !== '' && isset($journalTargets[$plan['source_key']])
+                && $plan['source_type'] === 'manual') {
+                $internalEntries[$relation['evidence'] . '|' . $relation['key']][] = (int) $journalTargets[$plan['source_key']];
+            }
+        }
+        $linker->linkInternalSettlements($supplierId, $user, $links, $documentTargets, $internalEntries, $report);
     }
 
     /** @param array<string,array{amount:float,date:?string}> $floors */
@@ -1499,6 +1562,13 @@ final class AbraAccountingImporter
             }
             if ($plan['amount'] < 0.005) {
                 $report['warnings'][] = 'zero_amount_link_skipped';
+                $this->skipped($report, 'document_links');
+                continue;
+            }
+            if ($plan['link_type'] === 'typVazbyDokl.vazbaZDD') {
+                // ZDD je daňový doklad k platbě zálohy, kterou nese záloha (`uhradaZALOHY`).
+                // Spárovaný by tutéž platbu započetl podruhé; k záloze ho váže
+                // AbraDocumentRelationLinker.
                 $this->skipped($report, 'document_links');
                 continue;
             }

@@ -339,6 +339,8 @@ final class ReportXlsxExporter
      */
     public function balanceSheet(array $data, string $unit = 'czk'): array
     {
+        if (Statement504Presentation::accepts($data)) return (new Statement504XlsxExporter())->export($data, $unit, 'balance');
+        StatementExportPolicy::assertSupported($data);
         $thousands = $unit === 'thousands';
         if ($thousands) {
             foreach ($data['assets'] ?? [] as $i => $row) {
@@ -480,7 +482,7 @@ final class ReportXlsxExporter
             $r = $head2 + 1;
             foreach ($rows as $row) {
                 $sheet->setCellValueExplicit([1, $r], (string) $row['account_code'], DataType::TYPE_STRING);
-                $sheet->setCellValue([2, $r], (string) $row['name']);
+                $sheet->setCellValueExplicit([2, $r], (string) $row['name'], DataType::TYPE_STRING);
                 $sheet->setCellValue([3, $r], (float) $row['amount']);
                 $r++;
             }
@@ -518,7 +520,7 @@ final class ReportXlsxExporter
         $r = $head + 1;
         foreach ($data['rows'] ?? [] as $row) {
             $sheet->setCellValueExplicit([1, $r], (string) $row['account_code'], DataType::TYPE_STRING);
-            $sheet->setCellValue([2, $r], (string) $row['name']);
+            $sheet->setCellValueExplicit([2, $r], (string) $row['name'], DataType::TYPE_STRING);
             $sheet->setCellValue([3, $r], (float) $row['opening']);
             $sheet->setCellValue([4, $r], (float) $row['increase']);
             $sheet->setCellValue([5, $r], (float) $row['decrease']);
@@ -550,6 +552,8 @@ final class ReportXlsxExporter
      */
     public function incomeStatement(array $data, string $unit = 'czk'): array
     {
+        if (Statement504Presentation::accepts($data)) return (new Statement504XlsxExporter())->export($data, $unit, 'profit_loss');
+        StatementExportPolicy::assertSupported($data);
         $thousands = $unit === 'thousands';
         if ($thousands) {
             foreach ($data['rows'] ?? [] as $i => $row) {
@@ -636,6 +640,8 @@ final class ReportXlsxExporter
      */
     public function accountView(array $data, string $part, string $unit = 'czk'): array
     {
+        if (Statement504Presentation::accepts($data)) return (new Statement504XlsxExporter())->export($data, $unit, $part);
+        StatementExportPolicy::assertSupported($data);
         $thousands = $unit === 'thousands';
         $amount = fn (float|int $v): float|int => $thousands ? $this->toThousands($v) : (float) $v;
 

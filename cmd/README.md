@@ -57,6 +57,7 @@ má vždy přednost před oběma.
 | `cron-backup-personnel.{cmd,sh}` | ZIP personálních spisů zaměstnanců (`storage/payroll-personnel/`) do `storage/backup/{dbname}-personnel-YYYY-MM-DD.zip`, stejná retention. Záměrně oddělené od mzdové zálohy i od Dokumentů (soukromá data). Soubory jsou šifrované klíčem zaměstnance, obnovují se spolu s dumpem databáze, pro člověka přikládá `MANIFEST.csv` |
 | `cron-bank-scan.{cmd,sh}` | Auto-import nových GPC výpisů z `private/bank-incoming/` + matching plateb na faktury |
 | `cron-bank-connections.{cmd,sh}` | Načtení výpisů a pohybů z aktivních přímých bankovních konektorů do společného importu a párování; ČSOB současně kontroluje výpisy GPC a průběžná avíza BBF, opakované pohyby deduplikuje |
+| `cron-logbook-odometer-source.{cmd,sh}` | Denní stav tachometru z aut napojených na zdroj automatického stavu tachometru (BMW CarData, …) do Knihy jízd (podklad pro km k doplnění); zároveň udržuje přihlášení u služby, které by jinak propadlo (BMW po 14 dnech) |
 | `cron-bank-email-notices.{cmd,sh}` | IMAP polling bankovních e-mailových avíz, parsování plateb a matching na faktury (konfigurace v **Admin → Bankovní účty**) |
 | `cron-scan-purchase-inbox.{cmd,sh}` | Import nových přijatých dokladů z nastaveného inbox adresáře |
 | `cron-payment-thanks.{cmd,sh}` | Každou minutu zpracuje poděkování za potvrzené úhrady a odložené e-maily; během otevřené účetní transakce se nic neodesílá |
@@ -64,6 +65,7 @@ má vždy přednost před oběma.
 | `cron-send-approval-reminders.{cmd,sh}` | Upomínky zákazníkům, kteří neschválili výkaz víceprací (`--days=N`, `--dry-run`) |
 | `cron-purchase-approval-reminders.{cmd,sh}` | Připomínky schvalovatelům přijatých dokladů (schvalování manažerem střediska; `--days=N`, `--dry-run`) |
 | `cron-document-request-reminders.{cmd,sh}` | Upomínky na nevyřízené požadavky na dodání dokladů |
+| `cron-eet-dispatch.{cmd,sh}` | Záložní odesílání evidence tržeb EET: čekající záznamy, opakování dočasných chyb s backoffem, záznamy po doplnění certifikátu; běží i bez komerční licence (`--limit=N`) |
 | `cron-epo-status.{cmd,sh}` | Bezpečné vyzvedávání dodejek a stavů přímých EPO podání s řízeným odstupem; původní podání nikdy neopakuje |
 | `cron-jmhz-poll.{cmd,sh}` | Dotažení protokolu ČSSZ k měsíčnímu hlášení a uzavření transakce u VREP; neúspěšný dotaz nikdy neuzavře podání (`--limit=N`) |
 | `cron-jmhz-source-monitor.{cmd,ps1,sh}` | Denní read-only sledování veřejných indexů dokumentace JMHZ MPSV/ČSSZ, aktualit, struktur EPO a stránek ČSSZ „Definice e-Podání" (NEMPRI, HZUPN, ELDP, REGZEC). Do **Systém → Plánované úlohy** ukládá konkrétní nový/změněný dokument, starou a novou verzi, URL a hash; nikdy samo neaktualizuje číselník (`--dry-run`) |
@@ -149,6 +151,7 @@ při přidání nové citlivé cesty rozšiř seznam v něm i tady.
 | `cron-backup-personnel` | 1× denně | 02:45 (po mzdách) |
 | `cron-bank-scan` | každých 15–30 minut | `*/30 * * * *` |
 | `cron-bank-connections` | každých 15 minut (jen když je zapnutý aspoň jeden konektor; KB+ se sám stahuje nejvýš jednou za 61 minut) | `*/15 * * * *` |
+| `cron-logbook-odometer-source` | 1× denně (jen když je napojené aspoň jedno auto) | 03:30 |
 | `cron-bank-email-notices` | každých 30 minut (jen když je zapnutá aspoň jedna IMAP schránka) | `*/30 * * * *` |
 | `cron-scan-purchase-inbox` | každých 10 minut | `*/10 * * * *` |
 | `cron-payment-thanks` | každou minutu | `* * * * *` |
@@ -156,6 +159,7 @@ při přidání nové citlivé cesty rozšiř seznam v něm i tady.
 | `cron-send-approval-reminders` | 1× denně (pracovní dny) | 09:15, Po–Pá |
 | `cron-purchase-approval-reminders` | 1× denně (pracovní dny) | 09:20, Po–Pá |
 | `cron-document-request-reminders` | 1× denně (pracovní dny) | 09:30, Po–Pá |
+| `cron-eet-dispatch` | každou minutu (kritická úloha, zákonná lhůta 48 h; bez otevřených záznamů skončí hned) | `* * * * *` |
 | `cron-epo-status` | každou minutu; jednotlivé pokusy mají vlastní backoff | `* * * * *` |
 | `cron-jmhz-poll` | každých 10 minut; odstup dotazů si řídí sám ledger pokusů | `*/10 * * * *` |
 | `cron-jmhz-source-monitor` | 1× denně; jen kontroluje veřejné podklady a vypíše diff, nic neaktualizuje | 07:00 |
@@ -245,6 +249,7 @@ schtasks /create /tn "MyUcto BackupPayroll" /tr "C:\inetpub\wwwroot\myucto.cz\cm
 schtasks /create /tn "MyUcto BackupPersonnel" /tr "C:\inetpub\wwwroot\myucto.cz\cmd\cron-backup-personnel.cmd" /sc daily /st 02:45 /ru SYSTEM
 schtasks /create /tn "MyUcto BankScan"  /tr "C:\inetpub\wwwroot\myucto.cz\cmd\cron-bank-scan.cmd"      /sc minute /mo 30 /ru SYSTEM
 schtasks /create /tn "MyUcto BankConnections" /tr "C:\inetpub\wwwroot\myucto.cz\cmd\cron-bank-connections.cmd" /sc minute /mo 15 /ru SYSTEM
+schtasks /create /tn "MyUcto OdometerSource" /tr "C:\inetpub\wwwroot\myucto.cz\cmd\cron-logbook-odometer-source.cmd" /sc daily /st 03:30 /ru SYSTEM
 schtasks /create /tn "MyUcto BankEmailNotices" /tr "C:\inetpub\wwwroot\myucto.cz\cmd\cron-bank-email-notices.cmd" /sc minute /mo 30 /ru SYSTEM
 schtasks /create /tn "MyUcto PurchaseInbox" /tr "C:\inetpub\wwwroot\myucto.cz\cmd\cron-scan-purchase-inbox.cmd" /sc minute /mo 10 /ru SYSTEM
 schtasks /create /tn "MyUcto PaymentThanks" /tr "C:\inetpub\wwwroot\myucto.cz\cmd\cron-payment-thanks.cmd" /sc minute /mo 1 /ru SYSTEM
@@ -252,6 +257,7 @@ schtasks /create /tn "MyUcto Reminders" /tr "C:\inetpub\wwwroot\myucto.cz\cmd\cr
 schtasks /create /tn "MyUcto ApprovalReminders" /tr "C:\inetpub\wwwroot\myucto.cz\cmd\cron-send-approval-reminders.cmd" /sc weekly /d MON,TUE,WED,THU,FRI /st 09:15 /ru SYSTEM
 schtasks /create /tn "MyUcto PurchaseApprovalReminders" /tr "C:\inetpub\wwwroot\myucto.cz\cmd\cron-purchase-approval-reminders.cmd" /sc weekly /d MON,TUE,WED,THU,FRI /st 09:20 /ru SYSTEM
 schtasks /create /tn "MyUcto DocumentRequestReminders" /tr "C:\inetpub\wwwroot\myucto.cz\cmd\cron-document-request-reminders.cmd" /sc weekly /d MON,TUE,WED,THU,FRI /st 09:30 /ru SYSTEM
+schtasks /create /tn "MyUcto EetDispatch" /tr "C:\inetpub\wwwroot\myucto.cz\cmd\cron-eet-dispatch.cmd" /sc minute /mo 1 /ru SYSTEM
 schtasks /create /tn "MyUcto EpoStatus" /tr "C:\inetpub\wwwroot\myucto.cz\cmd\cron-epo-status.cmd" /sc minute /mo 1 /ru SYSTEM
 schtasks /create /tn "MyUcto JmhzPoll"  /tr "C:\inetpub\wwwroot\myucto.cz\cmd\cron-jmhz-poll.cmd" /sc minute /mo 10 /ru SYSTEM
 schtasks /create /tn "MyUcto JmhzSourceMonitor" /tr "C:\inetpub\wwwroot\myucto.cz\cmd\cron-jmhz-source-monitor.cmd" /sc daily /st 07:00 /ru SYSTEM
@@ -317,6 +323,7 @@ Edituj `crontab -e` (nebo `/etc/cron.d/myucto`):
  45  2  *   *   *    /var/www/myucto.cz/cmd/cron-backup-personnel.sh
 */30 *  *   *   *    /var/www/myucto.cz/cmd/cron-bank-scan.sh
 */15 *  *   *   *    /var/www/myucto.cz/cmd/cron-bank-connections.sh
+ 30  3  *   *   *    /var/www/myucto.cz/cmd/cron-logbook-odometer-source.sh
 */30 *  *   *   *    /var/www/myucto.cz/cmd/cron-bank-email-notices.sh
 */10 *  *   *   *    /var/www/myucto.cz/cmd/cron-scan-purchase-inbox.sh
  *  *  *   *   *    /var/www/myucto.cz/cmd/cron-payment-thanks.sh
@@ -324,6 +331,7 @@ Edituj `crontab -e` (nebo `/etc/cron.d/myucto`):
  15  9  *   *   1-5  /var/www/myucto.cz/cmd/cron-send-approval-reminders.sh
  20  9  *   *   1-5  /var/www/myucto.cz/cmd/cron-purchase-approval-reminders.sh
  30  9  *   *   1-5  /var/www/myucto.cz/cmd/cron-document-request-reminders.sh
+  *  *  *   *   *    /var/www/myucto.cz/cmd/cron-eet-dispatch.sh
   *  *  *   *   *    /var/www/myucto.cz/cmd/cron-epo-status.sh
 */10 *  *   *   *    /var/www/myucto.cz/cmd/cron-jmhz-poll.sh
   0  7  *   *   *    /var/www/myucto.cz/cmd/cron-jmhz-source-monitor.sh

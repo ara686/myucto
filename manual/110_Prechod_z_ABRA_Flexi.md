@@ -19,7 +19,14 @@
 1. **Cílová firma.** V MyÚčtu zvolte firmu, do které se bude převádět. Musí
    vést podvojné účetnictví a IČO musí odpovídat zdrojové firmě v ABRA Flexi.
    Cílové účetní období nesmí být uzavřené a datum počátečního stavu nesmí
-   spadat do uzamčeného období.
+   spadat do uzamčeného období. Převod účetnictví je podporován jen pro celé
+   vybrané období vedené podle vyhlášky 500. Pokud do něj zasahuje rámec 504,
+   převod se odmítne před změnou dokladů, nastavení nebo mapování importu.
+   Rozhoduje historický rámec vybraného období, nikoli dnešní nastavení firmy.
+   Převod nebyl ověřen pro neziskové organizace a SVJ. Je-li cílová firma
+   podle právní formy nezisková organizace nebo SVJ, nebo vedla-li někdy
+   účetnictví podle vyhlášky 504, ukáže průvodce výrazné upozornění. Před
+   převodem pak kontaktujte podporu.
 2. **Oprávnění.** Stránka vyžaduje oprávnění pro zápis importů (`utilities.import`).
 3. **Přístup do ABRA Flexi** (co připravíte ve starém programu):
    - HTTPS adresu konkrétní účetní firmy z webového rozhraní ABRA Flexi.

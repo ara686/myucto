@@ -323,6 +323,44 @@ final class EpoSigningCredentialRepository
         return $row !== false ? $this->normalizeSecret($row) : null;
     }
 
+    /**
+     * Právě platné certifikáty z trezoru vlastníka i s firmami, kde jsou povolené.
+     * Jen veřejná metadata, šifrovaný obsah se nečte.
+     *
+     * @return list<array{id:int,label:string,subject_dn:string,valid_from:string,valid_to:string,supplier_ids:list<int>}>
+     */
+    public function listValidOwnedWithSuppliers(int $ownerUserId): array
+    {
+        $stmt = $this->db->pdo()->prepare(
+            'SELECT c.id, c.label, c.subject_dn, c.valid_from, c.valid_to, cs.supplier_id
+               FROM epo_signing_credentials c
+               LEFT JOIN epo_signing_credential_suppliers cs ON cs.credential_id = c.id
+              WHERE c.owner_user_id = ? AND c.deleted_at IS NULL
+                AND c.valid_from <= ? AND c.valid_to >= ?
+              ORDER BY c.valid_to DESC, c.id DESC'
+        );
+        // Čas z PHP, ne NOW(): platnost se ukládá i vyhodnocuje v časové zóně PHP.
+        $now = date('Y-m-d H:i:s');
+        $stmt->execute([$ownerUserId, $now, $now]);
+        $out = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
+            $id = (int) $row['id'];
+            $out[$id] ??= [
+                'id' => $id,
+                'label' => (string) $row['label'],
+                'subject_dn' => (string) ($row['subject_dn'] ?? ''),
+                'valid_from' => (string) $row['valid_from'],
+                'valid_to' => (string) $row['valid_to'],
+                'supplier_ids' => [],
+            ];
+            if ($row['supplier_id'] !== null) {
+                $out[$id]['supplier_ids'][] = (int) $row['supplier_id'];
+            }
+        }
+
+        return array_values($out);
+    }
+
     /** Povolil vlastník certifikátu jeho použití pro tuhle firmu? */
     public function isEnabledForSupplier(int $credentialId, int $supplierId): bool
     {

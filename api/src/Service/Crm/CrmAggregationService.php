@@ -1293,6 +1293,33 @@ final class CrmAggregationService
             ];
         }
 
+        // 1b. Avíza, která se nepodařilo rozparsovat. Pohyb se do evidence vůbec
+        // nedostal, takže nechybí jen v párování — nevidí ho ani kontrola „platba bez
+        // dokladu" a v součtu výpisu po něm nezůstane stopa. Dosud se o tom uživatel
+        // dozvěděl jen z červeného řádku v seznamu avíz, kam se ale nedívá, dokud něco
+        // nehledá. Typická příčina je šablona banky, kterou parser nezná (chybějící
+        // variabilní symbol, jiný formát datumu), takže to samo nezmizí.
+        // Seznam avíz je záložka jen pro správu bankovních účtů, ostatním by odkaz nic neukázal.
+        // Odložení „historická" se váže na konkrétní zprávy (snímek v snapshotCurrentIds),
+        // nově propadlé avízo se tak objeví i poté, co uživatel ty starší odklidil.
+        $noticeIds = $canManageBankConnections ? $this->filterByDismissal(
+            $this->unprocessedBankNoticeIds($supplierId, $today), $dismissals, 'bank_notice_unprocessed',
+        ) : [];
+        $noticeCount = count($noticeIds);
+        if ($noticeCount > 0) {
+            $items[] = [
+                'type'      => 'bank_notice_unprocessed',
+                'severity'  => 'high',
+                'title'     => '',
+                'title_key' => 'crm.action_items.bank_notice_unprocessed_title',
+                'hint'      => '',
+                // Hint se v widgetu překládá bez parametrů, počet ukazuje `count`.
+                'hint_key'  => 'crm.action_items.bank_notice_unprocessed',
+                'link'      => '/bank?tab=email',
+                'count'     => $noticeCount,
+            ];
+        }
+
         // 2. Recurring s next_run_date v <= 3 dnech (nové faktury k vystavení)
         $stmt = $pdo->prepare(
             "SELECT id FROM recurring_invoice_templates
@@ -1800,6 +1827,9 @@ final class CrmAggregationService
             'items' => $items,
             'total' => count($items),
             'dismissed_count' => count($dismissals),
+            // Klientské položky (např. instalace na plochu) server nevytváří, jejich odložení
+            // si ale drží tady; klient podle tohoto seznamu pozná, že je nemá nabízet.
+            'dismissed_types' => array_keys($dismissals),
         ];
     }
 
@@ -3039,7 +3069,7 @@ final class CrmAggregationService
         $validTypes = ['overdue_invoices', 'bank_unmatched', 'recurring_due', 'overdue_payables',
             'purchase_drafts', 'unbooked_documents', 'journal_integrity', 'tax_deadline', 'kh_deadline',
             'shv_deadline', 'churn_risk', 'dppo_balance_due', 'tax_advance_due',
-            'purchase_approvals_pending', 'purchase_approvals_rejected'];
+            'purchase_approvals_pending', 'purchase_approvals_rejected', 'bank_notice_unprocessed', 'pwa_install'];
         $validModes = ['day', 'week', 'forever', 'historical'];
         if (!in_array($itemType, $validTypes, true)) {
             throw new \InvalidArgumentException("Invalid item_type: {$itemType}");
@@ -3205,6 +3235,8 @@ final class CrmAggregationService
                 );
                 $stmt->execute([$supplierId, $today]);
                 break;
+            case 'bank_notice_unprocessed':
+                return $this->unprocessedBankNoticeIds($supplierId, $today);
             case 'tax_deadline':
             case 'kh_deadline':
             case 'shv_deadline':
@@ -3212,6 +3244,25 @@ final class CrmAggregationService
             default:
                 return [];
         }
+        return array_map('intval', $stmt->fetchAll(\PDO::FETCH_COLUMN));
+    }
+
+    /**
+     * Avíza za posledních 180 dnů, která parser nepřečetl (`parse_failed`). Starší
+     * zprávu, kterou nikdo půl roku neřešil, už položka nenabízí.
+     *
+     * @return list<int>
+     */
+    private function unprocessedBankNoticeIds(int $supplierId, string $today): array
+    {
+        $stmt = $this->db->pdo()->prepare(
+            "SELECT id FROM bank_email_processed_messages
+              WHERE supplier_id = ?
+                AND status = 'parse_failed'
+                AND message_date >= DATE_SUB(?, INTERVAL 180 DAY)
+              ORDER BY id DESC"
+        );
+        $stmt->execute([$supplierId, $today]);
         return array_map('intval', $stmt->fetchAll(\PDO::FETCH_COLUMN));
     }
 

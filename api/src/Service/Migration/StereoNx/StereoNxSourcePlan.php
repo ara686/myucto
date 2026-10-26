@@ -45,6 +45,7 @@ final class StereoNxSourcePlan
     /** @return array<string,mixed> */
     public static function build(StereoNxBackup $backup, bool $blankCountryIsCz = false): array
     {
+        $backup->assertBankAccountSeriesReady();
         $inventory = $backup->inventory();
         $supportedPopulated = [
             'CBanka', 'CBankap', 'Cdenik', 'CPokl', 'Cpz', 'CPZZ', 'SPFH', 'Spfp', 'Svfh', 'Svfp', 'ZAZPVDPH',
@@ -368,10 +369,11 @@ final class StereoNxSourcePlan
             $base = 0;
             $tax = 0;
             foreach (['z', 's', 't'] as $slot) {
+                if (StereoNxRecapAmounts::isUnusedBucket($header, $slot)) continue;
                 $base += self::cents($header['ZaklDPH' . $slot] ?? null);
                 $tax += self::cents($header['DPH' . $slot] ?? null);
             }
-            $base += self::cents($header['BezDane'] ?? null);
+            if (!StereoNxRecapAmounts::isUnusedBucket($header, '0')) $base += self::cents($header['BezDane'] ?? null);
             if ($base !== $registered['base'] || $tax !== $registered['tax']
                 || ($registered['date_mismatch'] ?? false)) {
                 $doc['review_codes'][] = 'vat_register_mismatch';
@@ -383,6 +385,8 @@ final class StereoNxSourcePlan
         $accounts = [];
         $accountBySeries = [];
         foreach ($tables['LFirmaUc'] as $row) {
+            // Účet bez řady a bez navázaných výpisů nevytváří peněžní pohyby.
+            if (trim((string) ($row['DoklRada'] ?? '')) === '') continue;
             $key = self::nonempty($row, 'DoklRada');
             if (isset($accounts[$key])) throw new StereoNxException('bank_account_duplicate', 'Bankovní řada nemá jednoznačný účet.');
             $accounts[$key] = ['source_key' => $key, 'row' => $row,
@@ -453,6 +457,8 @@ final class StereoNxSourcePlan
                 }
                 $direction = $row['SmerPlatby'] ?? null;
                 if (!in_array($direction, ['P', 'V'], true)) throw new StereoNxException('movement_direction', 'Neznámý směr pohybu.');
+                // Daňová evidence odvozuje daňové sloupce z pohybů; záporné částky
+                // zde vyžadují vlastní ověření. Účetní převod zachovává původní kontace.
                 if (self::cents($row['Castka'] ?? null) < 0) throw new StereoNxException('movement_negative_amount', 'Směr a částka peněžního pohybu nejsou jednoznačné.');
                 if ($type === 'bank' && trim((string) ($row['MenaCizi'] ?? '')) !== '') {
                     throw new StereoNxException('bank_foreign_currency', 'Cizoměnový bankovní pohyb vyžaduje samostatné mapování.');
@@ -538,8 +544,11 @@ final class StereoNxSourcePlan
             $value = $header[$field] ?? null;
             if ((!is_int($value) && !is_float($value)) || (float) $value !== 1.0) return false;
         }
-        foreach (['Zalohy', 'BezDane', 'ZaklDPHz', 'DPHz', 'ZaklDPHs', 'DPHs',
-            'ZaklDPHt', 'DPHt', 'Zaokrouhleni'] as $field) {
+        foreach (['z', 's', 't', '0'] as $slot) {
+            if (!StereoNxRecapAmounts::isUnusedBucket($header, $slot)) return false;
+        }
+        // Bez položek nelze NULL zaokrouhlení nezávisle doložit součtem; zůstává povinné.
+        foreach (['Zalohy', 'Zaokrouhleni'] as $field) {
             $value = $header[$field] ?? null;
             if ((!is_int($value) && !is_float($value)) || (float) $value !== 0.0) return false;
         }

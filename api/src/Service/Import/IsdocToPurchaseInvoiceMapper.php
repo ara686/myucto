@@ -182,11 +182,13 @@ final class IsdocToPurchaseInvoiceMapper
 
         // Dedup guard — pokud (supplier, vendor, vendor_invoice_number, issue_date) tuple
         // už v systému je, vrátíme existující ID místo házení SQL duplicate key error.
+        // Stornovaný doklad neblokuje: nový vznikne s dalším pořadím čísla dodavatele.
         $existingId = $this->repo->findIdByVendorInvoice(
             $supplierId,
             $resolved['id'],
             (string) $payload['vendor_invoice_number'],
             (string) $payload['issue_date'],
+            activeOnly: true,
         );
         if ($existingId !== null) {
             return [
@@ -196,6 +198,9 @@ final class IsdocToPurchaseInvoiceMapper
                 'duplicate'           => true,
             ];
         }
+        $payload['vendor_number_seq'] = $this->repo->importDuplicateSeq(
+            $supplierId, $resolved['id'], (string) $payload['vendor_invoice_number'], (string) $payload['issue_date'],
+        );
 
         $id = $this->repo->createDraft($payload, $userId, $supplierId);
         // Soubor bez čitelného data vystavení i DUZP → datum přijetí je NÁHRADA. Ať to

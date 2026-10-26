@@ -108,7 +108,11 @@ final class TaxSubmissionAction
             // Mzdová vyúčtování mají vlastní záložku pod Mzdami; bez `scope`
             // zůstává společný archiv beze změny.
             'scope_form_codes' => $scope === 'payroll' ? TaxStatementService::FORMS : null,
-            'excluded_form_codes' => $scope === 'tax' ? TaxStatementService::FORMS : null,
+            // Mzdová vyúčtování nesou mzdové údaje (u firmy s jedním zaměstnancem
+            // přímo jeho), takže je obecné `reports` bez `payroll.reports` nevidí.
+            'excluded_form_codes' => $scope === 'tax' || !self::canSeePayrollForms($request)
+                ? TaxStatementService::FORMS
+                : null,
         ];
 
         // Obohacení běží až nad stránkou, ne nad celým archivem.
@@ -134,6 +138,23 @@ final class TaxSubmissionAction
      * Cesta o typu výkazu nic neví, takže licenční middleware to rozhodnout
      * nemůže; archiv je společný pro bezplatné i placené výkazy.
      */
+    private static function canSeePayrollForms(Request $request): bool
+    {
+        return RequestAuthorization::allows($request, 'payroll.reports', AccessLevel::READ);
+    }
+
+    /**
+     * Mzdové vyúčtování bez `payroll.reports` se tváří jako neexistující,
+     * stejně jako v seznamu, ze kterého je vynechané.
+     *
+     * @param array<string,mixed> $row
+     */
+    private static function hiddenPayrollForm(array $row, Request $request): bool
+    {
+        return in_array(strtolower((string) ($row['form_code'] ?? '')), TaxStatementService::FORMS, true)
+            && !self::canSeePayrollForms($request);
+    }
+
     private function deniedByLicense(array $row, Response $response): ?Response
     {
         if (TaxSubmissionAccess::isFreeForm($row['form_code'] ?? null) || $this->commercial->isAvailable()) {
@@ -154,9 +175,15 @@ final class TaxSubmissionAction
         }
         $supplierId = SupplierGuard::currentId($request);
         $row = $this->repo->find((int) ($args['id'] ?? 0), $supplierId);
-        if ($row === null) return Json::error($response, 'not_found', 'Záznam nenalezen.', 404);
+        if ($row === null || self::hiddenPayrollForm($row, $request)) {
+            return Json::error($response, 'not_found', 'Záznam nenalezen.', 404);
+        }
         if (($denied = $this->deniedByLicense($row, $response)) !== null) return $denied;
         $row = $this->epo->enrich([$row], $supplierId)[0];
+        // Celé XML je totéž, co stažení, které vyžaduje `reports.export`.
+        if (!RequestAuthorization::allows($request, 'reports.export', AccessLevel::READ)) {
+            unset($row['xml_content']);
+        }
         return Json::ok($response, $row);
     }
 
@@ -168,7 +195,9 @@ final class TaxSubmissionAction
         }
         $supplierId = SupplierGuard::currentId($request);
         $row = $this->repo->find((int) ($args['id'] ?? 0), $supplierId);
-        if ($row === null) return Json::error($response, 'not_found', 'Záznam nenalezen.', 404);
+        if ($row === null || self::hiddenPayrollForm($row, $request)) {
+            return Json::error($response, 'not_found', 'Záznam nenalezen.', 404);
+        }
         if (($denied = $this->deniedByLicense($row, $response)) !== null) return $denied;
         return Json::ok($response, $this->vatPayment->forSubmission($row, $this->db->pdo()));
     }
@@ -180,7 +209,9 @@ final class TaxSubmissionAction
         }
         $supplierId = SupplierGuard::currentId($request);
         $row = $this->repo->find((int) ($args['id'] ?? 0), $supplierId);
-        if ($row === null) return Json::error($response, 'not_found', 'Záznam nenalezen.', 404);
+        if ($row === null || self::hiddenPayrollForm($row, $request)) {
+            return Json::error($response, 'not_found', 'Záznam nenalezen.', 404);
+        }
 
         if (($denied = $this->deniedByLicense($row, $response)) !== null) return $denied;
 

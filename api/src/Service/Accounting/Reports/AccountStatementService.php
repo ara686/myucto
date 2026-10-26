@@ -29,7 +29,7 @@ final class AccountStatementService
      */
     public function build(int $supplierId, int $accountId, string $from, string $to, int $page, int $perPage, bool $afterClosing = false): array
     {
-        $account = $this->accounts->findById($supplierId, $accountId);
+        $account = $this->accounts->findById($supplierId, $accountId, $to);
         if ($account === null) {
             throw new ReportException('account_not_found', 'Účet #' . $accountId . ' neexistuje.', 404);
         }

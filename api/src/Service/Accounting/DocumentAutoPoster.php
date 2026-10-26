@@ -47,10 +47,12 @@ final class DocumentAutoPoster
 
     /**
      * Zaúčtuje jeden doklad a označí ho jako zaúčtovaný (booked_at/booked_by).
-     * Idempotentní (PostingService dedupuje přes source_type+source_id).
+     * Idempotentní (PostingService dedupuje přes source_type+source_id). Převzatý
+     * předpis ve skupině ponechá jen s `posting_group_idempotent`; jinak ho přepíše
+     * nebo odmítne stejně jako PostingService::postDocument().
      *
      * @param 'invoice'|'purchase_invoice' $sourceType
-     * @param array{user_id?:?int, posted_by?:?int, ip?:?string, user_agent?:?string, entry_date?:?string} $meta
+     * @param array{user_id?:?int, posted_by?:?int, ip?:?string, user_agent?:?string, entry_date?:?string, posting_group_idempotent?:bool} $meta
      * @return int id účetního zápisu
      *
      * @throws PostingException|UnbalancedEntryException při nemožnosti zaúčtovat
@@ -65,8 +67,9 @@ final class DocumentAutoPoster
         }
 
         $lines = $sourceType === 'invoice'
-            ? $this->posting->buildFromInvoice($supplierId, $docId)
+            ? $this->posting->buildFromInvoice($supplierId, $docId, ['entry_date' => $meta['entry_date'] ?? $docDate])
             : $this->posting->buildFromPurchaseInvoice($supplierId, $docId, array_filter([
+                'entry_date' => $meta['entry_date'] ?? $docDate,
                 'debit_account_code' => $this->aiOverrides->debitOverrideForPurchase($supplierId, $docId),
             ], static fn (mixed $value): bool => $value !== null));
 
@@ -113,6 +116,28 @@ final class DocumentAutoPoster
         if (!$this->isPostableKind($supplierId, $sourceType, $docId)) {
             return;
         }
+        // Přijetí konceptu z převodu nesmí znovu klasifikovat ani přepisovat
+        // předpis, který již existuje v převzatém deníku (základ + samostatná DPH).
+        // Čte se bez zámku období: hook běží v transakci vystavení/přijetí, kterou
+        // nesmí blokovat. PostingService skupinu ověří znovu pod zámkem.
+        try {
+            $group = (new DocumentPostingGroup($this->db))->active($supplierId, $sourceType, $docId);
+            if (DocumentPostingGroup::hasOwnedEntries($group)) {
+                return;
+            }
+        } catch (\Throwable $e) {
+            $this->activity->log(
+                'accounting.auto_post_failed',
+                $userId,
+                $sourceType,
+                $docId,
+                ['error_code' => 'internal', 'message' => $e->getMessage()],
+                $ip,
+                $userAgent,
+                $supplierId,
+            );
+            return;
+        }
 
         // Před zaúčtováním doplnit JISTOU klasifikaci nákladu na položky, které ji nemají.
         // Bez tohoto kroku čte purchaseExpenseWeights() prázdné sloupce a celý řádek spadne
@@ -141,6 +166,7 @@ final class DocumentAutoPoster
                 'posted_by'  => $userId,
                 'ip'         => $ip,
                 'user_agent' => $userAgent,
+                'posting_group_idempotent' => true,
             ], $userId);
             $this->activity->log(
                 'accounting.auto_posted',

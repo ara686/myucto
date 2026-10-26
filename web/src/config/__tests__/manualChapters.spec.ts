@@ -36,7 +36,7 @@ describe('contextual manual for application menu', () => {
     ['/reports/invoice-series-completeness', '46_Ucetni_kontroly_a_inventarizace'],
     ['/reports/vat-coefficient', '41_Vykazy_DPH'],
     ['/reports/s46', '41_Vykazy_DPH'],
-    ['/hosting', '105_Licence_a_aktivace'],
+    ['/hosting', '104_Licence_a_aktivace'],
     ['/admin/databox', '97_Datova_schranka'],
     ['/admin/isds-gateway', '98_Odesilaci_brana_ISDS'],
     ['/isds-gateway/callback', '98_Odesilaci_brana_ISDS'],
