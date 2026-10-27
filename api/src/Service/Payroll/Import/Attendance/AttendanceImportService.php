@@ -142,7 +142,7 @@ final class AttendanceImportService
 
         return self::public($this->compute($supplierId, $periodStart, $files, $read, $validated, $profileComponents, $profileMeta))
             + [
-                'upgrade_available' => self::sampleUpgrade($modifiedSamples),
+                'upgrade_available' => self::sampleUpgrade($modifiedSamples, $profileMeta['id']),
                 'source_checks' => $this->sourceChecks($supplierId, $periodStart, $files, $read['sheets']),
             ];
     }
@@ -731,35 +731,41 @@ final class AttendanceImportService
     }
 
     /**
-     * Znovu založí vzorový profil GIRITON, třeba po omylem smazaném. Vzor vznikne
-     * v aktuální verzi a dál se sám aktualizuje; existující vzor se vrátí beze
-     * změny. Obsadil-li jeho název vlastní profil, dostane vzor příponu.
+     * Znovu založí vestavěný vzor (GIRITON, MyÚčto), třeba po omylem smazaném.
+     * Vzor vznikne v aktuální verzi a dál se sám aktualizuje; existující vzor
+     * téhož klíče se vrátí beze změny. Obsadil-li jeho název vlastní profil,
+     * dostane vzor příponu.
      *
      * @return array{profile:array<string,mixed>,restored:bool}
      */
-    public function restoreSampleProfile(int $supplierId, ?int $userId): array
+    public function restoreSampleProfile(int $supplierId, ?int $userId, string $sampleKey = AttendanceSampleProfiles::GIRITON): array
     {
+        if (!AttendanceSampleProfiles::isKey($sampleKey)) {
+            throw new \InvalidArgumentException('Neznámý vzor profilu mapování.');
+        }
         $existing = $this->profiles->list($supplierId, AttendanceMeaning::SOURCE_SYSTEM);
         foreach ($existing as $profile) {
-            if (!empty($profile['is_sample'])) {
+            if (!empty($profile['is_sample']) && $profile['sample_key'] === $sampleKey) {
                 return ['profile' => $profile, 'restored' => false];
             }
         }
         $taken = array_map(static fn (array $profile): string => mb_strtolower((string) $profile['name'], 'UTF-8'), $existing);
-        $name = AttendanceSampleProfile::NAME;
+        $base = AttendanceSampleProfiles::name($sampleKey);
+        $name = $base;
         for ($suffix = 2; in_array(mb_strtolower($name, 'UTF-8'), $taken, true); ++$suffix) {
-            $name = AttendanceSampleProfile::NAME . " ({$suffix})";
+            $name = $base . " ({$suffix})";
         }
         $profile = $this->profiles->save(
             $supplierId,
             AttendanceMeaning::SOURCE_SYSTEM,
             null,
             $name,
-            AttendanceSampleProfile::rules(),
+            AttendanceSampleProfiles::rules($sampleKey),
             $userId,
-            AttendanceSampleProfile::components(),
+            AttendanceSampleProfiles::components($sampleKey),
             true,
-            AttendanceSampleProfile::VERSION,
+            AttendanceSampleProfiles::version($sampleKey),
+            $sampleKey,
         ) ?? throw new \RuntimeException('Vzorový profil se nepodařilo založit.');
 
         return ['profile' => $profile, 'restored' => true];
@@ -855,52 +861,68 @@ final class AttendanceImportService
     }
 
     /**
-     * Založí vzor firmě, která ho ještě nedostala, a nedotčený starší vzor
-     * převede na aktuální verzi.
+     * Založí firmě vestavěné vzory, které ještě nedostala, a nedotčené starší
+     * vzory převede na aktuální verzi — každý vzor podle svého klíče.
      *
-     * @return list<array{id:int,name:string,sample_version:?int}> upravené vzory starší verze
+     * @return list<array{id:int,name:string,sample_key:string,sample_version:?int}> upravené vzory starší verze
      */
     private function ensureSampleProfile(int $supplierId): array
     {
-        $this->profiles->seedSampleOnce(
-            $supplierId,
-            AttendanceMeaning::SOURCE_SYSTEM,
-            AttendanceSampleProfile::NAME,
-            AttendanceSampleProfile::rules(),
-            AttendanceSampleProfile::components(),
-            AttendanceSampleProfile::VERSION,
-        );
+        $modified = [];
+        foreach (AttendanceSampleProfiles::keys() as $key) {
+            $this->profiles->seedSampleOnce(
+                $supplierId,
+                AttendanceMeaning::SOURCE_SYSTEM,
+                $key,
+                AttendanceSampleProfiles::name($key),
+                AttendanceSampleProfiles::rules($key),
+                AttendanceSampleProfiles::components($key),
+                AttendanceSampleProfiles::version($key),
+            );
+            array_push($modified, ...$this->profiles->upgradeSample(
+                $supplierId,
+                AttendanceMeaning::SOURCE_SYSTEM,
+                $key,
+                AttendanceSampleProfiles::version($key),
+                AttendanceSampleProfiles::rules($key),
+                AttendanceSampleProfiles::components($key),
+            ));
+        }
 
-        return $this->profiles->upgradeSample(
-            $supplierId,
-            AttendanceMeaning::SOURCE_SYSTEM,
-            AttendanceSampleProfile::VERSION,
-            AttendanceSampleProfile::rules(),
-            AttendanceSampleProfile::components(),
-        );
+        return $modified;
     }
 
     /**
      * Nabídka nové verze vzoru pro upravený profil. Nese i pravidla a složky
      * vzoru: uloží-li je účetní do profilu (běžné uložení profilu), vzor se
-     * při dalším načtení označí jako aktuální.
+     * při dalším načtení označí jako aktuální. Přednost má vzor, podle kterého
+     * náhled právě počítal.
      *
-     * @param list<array{id:int,name:string,sample_version:?int}> $modified
+     * @param list<array{id:int,name:string,sample_key:string,sample_version:?int}> $modified
      * @return array<string,mixed>|null
      */
-    private static function sampleUpgrade(array $modified): ?array
+    private static function sampleUpgrade(array $modified, ?int $usedProfileId = null): ?array
     {
         if ($modified === []) {
             return null;
         }
+        $offer = $modified[0];
+        foreach ($modified as $candidate) {
+            if ($candidate['id'] === $usedProfileId) {
+                $offer = $candidate;
+                break;
+            }
+        }
+        $key = $offer['sample_key'];
 
         return [
-            'profile_id' => $modified[0]['id'],
-            'name' => $modified[0]['name'],
-            'version' => $modified[0]['sample_version'],
-            'latest_version' => AttendanceSampleProfile::VERSION,
-            'rules' => AttendanceSampleProfile::rules(),
-            'components' => AttendanceSampleProfile::components(),
+            'profile_id' => $offer['id'],
+            'name' => $offer['name'],
+            'sample_key' => $key,
+            'version' => $offer['sample_version'],
+            'latest_version' => AttendanceSampleProfiles::version($key),
+            'rules' => AttendanceSampleProfiles::rules($key),
+            'components' => AttendanceSampleProfiles::components($key),
         ];
     }
 

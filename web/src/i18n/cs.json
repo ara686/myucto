@@ -33706,6 +33706,11 @@
       "open_person": "Otevřít kartu osoby"
     },
     "sample_badge": "Vzor",
+    "template": {
+      "download": "Stáhnout šablonu XLSX",
+      "hint": "Prázdná šablona pro Vzor MyÚčto: jeden řádek = osoba za měsíc, s ukázkovými řádky a návodem. Vyplněnou ji nahrajte do importu docházky.",
+      "failed": "Šablonu se nepodařilo stáhnout."
+    },
     "profiles_load_failed": "Profily mapování se nepodařilo načíst. Import docházky může pokračovat s automatickým návrhem podle hlaviček.",
     "relation_types": {
       "employment": "Pracovní poměr",
@@ -34090,6 +34095,7 @@
       "position": "Pozice",
       "weekly_hours": "Týdenní úvazek",
       "start_end_note": "Nástup / ukončení",
+      "start_date": "Datum nástupu",
       "monthly_wage": "Měsíční mzda (mzdový výměr)",
       "worked_hours": "Odpracováno",
       "overtime_hours": "Přesčas",
@@ -34486,6 +34492,7 @@
       "state_dirty": "Neuložené změny",
       "updated_at": "Upraveno {date}",
       "sample_hint": "Ukázkový profil pro docházkový systém GIRITON, který dostane každá firma. Upravte ho podle svých souborů, nebo si ho duplikujte a upravujte kopii.",
+      "sample_hint_myucto": "Obecný ukázkový profil pro podklady ze šablony XLSX MyÚčto (list Podklady, jeden řádek = osoba za měsíc). Hodí se pro firmy bez docházkového systému, třeba s brigádníky na DPP a DPČ. Neznámé sloupce ignoruje.",
       "upgrade_badge": "Nová verze vzoru",
       "upgrade_title": "K dispozici je nová verze vzoru",
       "upgrade_hint": "Profil vznikl ze starší verze vzoru a upravili jste ho, proto se sám neaktualizoval. Aktualizace nahradí pravidla a složky profilu novou verzí vzoru a vlastní úpravy se ztratí. Chcete-li je zachovat, profil nejdřív duplikujte.",
@@ -34507,6 +34514,8 @@
       "duplicated": "Vznikla kopie profilu. Upravte název a uložte ji.",
       "restore_sample": "Obnovit vzor GIRITON",
       "restore_sample_hint": "Znovu založí vzorový profil GIRITON v aktuální verzi, třeba po omylem smazaném.",
+      "restore_sample_myucto": "Obnovit vzor MyÚčto",
+      "restore_sample_myucto_hint": "Znovu založí obecný Vzor MyÚčto v aktuální verzi, třeba po omylem smazaném.",
       "sample_restored": "Vzor „{name}“ byl obnoven.",
       "sample_exists": "Vzor „{name}“ ve firmě už je.",
       "sample_restore_failed": "Vzor se nepodařilo obnovit.",

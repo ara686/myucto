@@ -188,6 +188,8 @@ final class PayrollEnumContractTest extends TestCase
             => 'const:MyInvoice\Service\Payroll\Import\Attendance\AttendanceMeaning::ALL',
         'payrollImports.ts::AttendanceMatchStatus'
             => 'const:MyInvoice\Service\Payroll\Import\Attendance\AttendanceMeaning::MATCH_STATUSES',
+        'payrollImports.ts::AttendanceSampleKey'
+            => 'const:MyInvoice\Service\Payroll\Import\Attendance\AttendanceSampleProfiles::KEYS',
         'payrollImports.ts::AttendanceProfileComponentKind'
             => 'const:MyInvoice\Service\Payroll\Import\Attendance\AttendanceProfileComponents::KINDS',
         'payrollImports.ts::PohodaOicRowStatus'

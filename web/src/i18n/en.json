@@ -33706,6 +33706,11 @@
       "open_person": "Open person card"
     },
     "sample_badge": "Sample",
+    "template": {
+      "download": "Download XLSX template",
+      "hint": "Blank template for the MyÚčto sample: one row = one person per month, with sample rows and instructions. Upload it filled in to the attendance import.",
+      "failed": "The template could not be downloaded."
+    },
     "profiles_load_failed": "Mapping profiles could not be loaded. The attendance import can continue with the automatic suggestion from headers.",
     "relation_types": {
       "employment": "Employment",
@@ -34090,6 +34095,7 @@
       "position": "Position",
       "weekly_hours": "Weekly hours",
       "start_end_note": "Start / end",
+      "start_date": "Start date",
       "monthly_wage": "Monthly wage (wage assessment)",
       "worked_hours": "Worked",
       "overtime_hours": "Overtime",
@@ -34486,6 +34492,7 @@
       "state_dirty": "Unsaved changes",
       "updated_at": "Updated {date}",
       "sample_hint": "Sample profile for the GIRITON attendance system that every company gets. Adjust it to your files, or duplicate it and edit the copy.",
+      "sample_hint_myucto": "General sample profile for data from the MyÚčto XLSX template (sheet Podklady, one row = one person per month). Suits companies without an attendance system, e.g. with temporary workers on DPP and DPČ agreements. Unknown columns are ignored.",
       "upgrade_badge": "New sample version",
       "upgrade_title": "A new sample version is available",
       "upgrade_hint": "The profile was created from an older sample version and you edited it, so it was not updated automatically. Updating replaces the profile rules and components with the new sample version and your own changes are lost. To keep them, duplicate the profile first.",
@@ -34507,6 +34514,8 @@
       "duplicated": "A copy of the profile was created. Adjust its name and save it.",
       "restore_sample": "Restore GIRITON sample",
       "restore_sample_hint": "Creates the GIRITON sample profile again in the current version, e.g. after it was deleted by mistake.",
+      "restore_sample_myucto": "Restore MyÚčto sample",
+      "restore_sample_myucto_hint": "Creates the general MyÚčto sample profile again in the current version, e.g. after it was deleted by mistake.",
       "sample_restored": "Sample “{name}” was restored.",
       "sample_exists": "Sample “{name}” already exists in the company.",
       "sample_restore_failed": "The sample could not be restored.",

@@ -12,6 +12,7 @@ import type {
   AttendanceProfileComponentKind,
   AttendanceProfileExport,
   AttendanceRule,
+  AttendanceSampleKey,
   AttendanceSheet,
   AttendanceSourceChecks,
   AttendanceUnit,
@@ -366,7 +367,7 @@ export const ATTENDANCE_MEANING_GROUPS: { key: string; meanings: AttendanceMeani
     meanings: [
       'person_name', 'personal_number', 'birth_number', 'birth_date', 'health_insurer_code',
       'relation_label', 'department', 'cost_center', 'position', 'weekly_hours', 'start_end_note',
-      'monthly_wage',
+      'start_date', 'monthly_wage',
     ],
   },
   {
@@ -402,7 +403,7 @@ export const AUTO_COMPONENT_CODE = '*'
 
 const TEXT_MEANINGS = new Set<AttendanceMeaning>([
   'person_name', 'personal_number', 'birth_number', 'birth_date', 'health_insurer_code', 'relation_label',
-  'department', 'cost_center', 'position', 'start_end_note', 'monthly_wage',
+  'department', 'cost_center', 'position', 'start_end_note', 'start_date', 'monthly_wage',
 ])
 const MONEY_MEANINGS = new Set<AttendanceMeaning>([
   'component', 'net_meal_deduction', 'net_other_deduction', 'reference_gross', 'reference_net',
@@ -544,6 +545,22 @@ export function duplicateDraft(draft: ProfileDraft, name: string): ProfileDraft 
     rules: draft.rules.map(rule => ({ ...rule, uid: nextUid('rule') })),
     components: draft.components.map(component => ({ ...component, uid: nextUid('component') })),
   }
+}
+
+export const ATTENDANCE_SAMPLE_KEYS: AttendanceSampleKey[] = ['giriton', 'myucto']
+/** Název souboru šablony, pokud ho server v hlavičce nepošle. */
+export const ATTENDANCE_TEMPLATE_FILENAME = 'podklady-mzdy-myucto.xlsx'
+
+/** Klíč vzoru profilu; vzor ze serveru bez klíčů je GIRITON (jediný vzor té doby). */
+export function profileSampleKey(profile: AttendanceProfile | null | undefined): AttendanceSampleKey | null {
+  if (!profile?.is_sample) return null
+  return profile.sample_key ?? 'giriton'
+}
+
+/** Vestavěné vzory, které firma nemá (smazala je) — ty jde obnovit. */
+export function missingSampleKeys(profiles: AttendanceProfile[]): AttendanceSampleKey[] {
+  const present = new Set(profiles.map(profileSampleKey))
+  return ATTENDANCE_SAMPLE_KEYS.filter(key => !present.has(key))
 }
 
 /**
