@@ -8005,10 +8005,13 @@ export const payrollApi = {
       '/payroll/employments/bulk-closure/preview',
       payload,
     ).then(response => response.data.preview),
-  bulkClosureApply: (items: PayrollBulkClosureCommand[]) =>
+  bulkClosureApply: (
+    items: PayrollBulkClosureCommand[],
+    criteria: { inactivity_months: number, archive_after_months: number },
+  ) =>
     api.post<{ result: PayrollBulkClosureResult }>(
       '/payroll/employments/bulk-closure/apply',
-      { items },
+      { items, ...criteria },
     ).then(response => response.data.result),
   foreignPermits: (employeeId: number, asOf?: string) =>
     api.get<{ permits: PayrollForeignPermitView }>(

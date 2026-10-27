@@ -100,7 +100,7 @@ describe('PayrollBulkClosureDialog', () => {
       { employment_id: 11, action: 'end', effective_on: '2026-06-30', row_version: 1 },
       { employment_id: 13, action: 'end', effective_on: '2026-05-31', row_version: 1 },
       { employment_id: 14, action: 'archive', effective_on: '2026-10-15', row_version: 3 },
-    ])
+    ], { inactivity_months: 3, archive_after_months: 12 })
     expect(wrapper.get('[data-test="bulk-closure-applied"]').text()).toBe('2')
     expect(wrapper.get('[data-test="bulk-closure-failed"]').text()).toContain('Nečinná dohoda')
     expect(wrapper.get('[data-test="bulk-closure-failed"]').text()).toContain('Vztah mezitím změnil někdo jiný.')

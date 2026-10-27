@@ -128,7 +128,10 @@ async function apply() {
       action: item.action,
       effective_on: dates[item.employment_id] ?? item.proposed_on,
       row_version: item.row_version,
-    })))
+    })), {
+      inactivity_months: preview.value.inactivity_months,
+      archive_after_months: preview.value.archive_after_months,
+    })
     result.value = response
     confirming.value = false
     toast.success(t('payroll.bulk_closure.applied_toast', { count: response.counts.applied }))

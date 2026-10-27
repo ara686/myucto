@@ -190,6 +190,24 @@ final class PayrollEmploymentBulkClosureTest extends TestCase
         ], $this->userId, null, null, self::TODAY);
     }
 
+    public function testApplyRefusesEmploymentThatIsNotACandidate(): void
+    {
+        // Běžící dohoda s nedávnou prací kandidátem není; uplynulá dohoda je, ale k ukončení, ne archivaci.
+        $running = $this->employment($this->supplierId, 'Běžící Dohoda', 'dpp', '2026-01-01', null);
+        $this->input($running, '2026-10-01', 50_000);
+        $expired = $this->employment($this->supplierId, 'Uplynulá Jinak', 'dpp', '2026-01-01', '2026-06-30');
+
+        $result = $this->bulk->apply($this->supplierId, [
+            ['employment_id' => $running, 'action' => 'end', 'effective_on' => self::TODAY, 'row_version' => 1],
+            ['employment_id' => $expired, 'action' => 'archive', 'effective_on' => self::TODAY, 'row_version' => 1],
+        ], $this->userId, null, null, self::TODAY);
+
+        self::assertSame(['applied' => 0, 'failed' => 2], $result['counts']);
+        self::assertSame(['not_candidate', 'not_candidate'], array_column($result['failed'], 'code'));
+        self::assertSame('active', $this->state($running)['status']);
+        self::assertSame('active', $this->state($expired)['status']);
+    }
+
     public function testLimitPerRequest(): void
     {
         $items = [];

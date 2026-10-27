@@ -71,6 +71,9 @@ final class PayrollEmploymentBulkClosureAction
                 $this->userId($request),
                 $this->clientIp($request),
                 $request->getHeaderLine('User-Agent'),
+                null,
+                $this->months($body, 'inactivity_months', 3),
+                $this->months($body, 'archive_after_months', 12),
             );
         } catch (\InvalidArgumentException $exception) {
             return $this->invalid($response, $exception->getMessage());

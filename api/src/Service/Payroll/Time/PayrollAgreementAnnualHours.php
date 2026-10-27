@@ -117,18 +117,23 @@ final class PayrollAgreementAnnualHours
      */
     public function employeesNearLimit(int $supplierId, int $year): array
     {
+        // Jen dohody, které v roce trvaly; archiv starších let do součtu nic nepřinese.
         $statement = $this->db->pdo()->prepare(
             "SELECT DISTINCT employee_id
                FROM payroll_employments
               WHERE supplier_id = ?
-                AND relation_type = 'dpp'",
+                AND relation_type = 'dpp'
+                AND COALESCE(actual_start_date, start_date) <= ?
+                AND (end_date IS NULL OR end_date >= ?)",
         );
-        $statement->execute([$supplierId]);
+        $statement->execute([$supplierId, sprintf('%04d-12-31', $year), sprintf('%04d-01-01', $year)]);
         $employeeIds = array_map('intval', $statement->fetchAll(PDO::FETCH_COLUMN));
         $result = [];
-        foreach ($this->yearSummaries($supplierId, $employeeIds, $year) as $employeeId => $summary) {
-            if ($summary['status'] !== self::STATUS_OK) {
-                $result[] = $employeeId;
+        foreach (array_chunk($employeeIds, 500) as $chunk) {
+            foreach ($this->yearSummaries($supplierId, $chunk, $year) as $employeeId => $summary) {
+                if ($summary['status'] !== self::STATUS_OK) {
+                    $result[] = $employeeId;
+                }
             }
         }
 

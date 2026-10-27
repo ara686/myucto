@@ -202,9 +202,17 @@ final class PayrollEmploymentBulkClosure
         ?string $ip,
         ?string $userAgent,
         ?string $today = null,
+        int $inactivityMonths = 3,
+        int $archiveAfterMonths = 12,
     ): array {
         $today = $this->today($today);
         $commands = $this->commands($items, $today);
+        // Pravidla náhledu platí i pro zápis: vztah, který kandidátem není (nebo má
+        // jinou akci), se hromadně neukončí, ani kdyby ho klient poslal.
+        $candidates = [];
+        foreach ($this->preview($supplierId, $inactivityMonths, $archiveAfterMonths, $today)['items'] as $candidate) {
+            $candidates[(int) $candidate['employment_id']] = (string) $candidate['action'];
+        }
         $activity = $this->activityFor(
             $supplierId,
             array_values(array_map(
@@ -217,6 +225,14 @@ final class PayrollEmploymentBulkClosure
         $failed = [];
         foreach ($commands as $command) {
             $employmentId = $command['employment_id'];
+            if (($candidates[$employmentId] ?? null) !== $command['action']) {
+                $failed[] = [
+                    'employment_id' => $employmentId,
+                    'code' => 'not_candidate',
+                    'message' => 'Vztah už mezi navrženými k hromadnému ukončení není. Načtěte náhled znovu.',
+                ];
+                continue;
+            }
             if ($command['action'] === 'end' && isset($activity[$employmentId])) {
                 $blocked = $this->blocker($activity[$employmentId], $command['effective_on']);
                 if ($blocked !== null) {
