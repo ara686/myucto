@@ -3544,6 +3544,7 @@
         "tax_declaration_not_signed_summary": "Nepodepsané prohlášení poplatníka k dani",
         "time_month_missing": "Chybí schválená pracovní doba",
         "employment_without_inputs": "Pracovní vztah bez mzdových vstupů",
+        "dpp_annual_hours_approaching": "Dohoda o provedení práce se blíží limitu 300 hodin",
         "recurring_component_without_input": "Pravidelná mzdová složka bez vstupu"
       }
     },

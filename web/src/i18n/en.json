@@ -3544,6 +3544,7 @@
         "tax_declaration_not_signed_summary": "Unsigned taxpayer declaration",
         "time_month_missing": "Approved working time missing",
         "employment_without_inputs": "Employment without payroll inputs",
+        "dpp_annual_hours_approaching": "Agreement to perform work approaching the 300-hour limit",
         "recurring_component_without_input": "Recurring payroll component without input"
       }
     },
