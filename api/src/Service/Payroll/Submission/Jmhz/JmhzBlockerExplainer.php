@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MyInvoice\Service\Payroll\Submission\Jmhz;
 
+use MyInvoice\Repository\Payroll\PayrollPeopleRepository;
+
 final class JmhzBlockerExplainer
 {
     /** Nálezy, u kterých účetní potřebuje vědět, KTERÁ pole hlášení se jich týkají. */
@@ -274,8 +276,43 @@ final class JmhzBlockerExplainer
             . 'schvalte a hlášení připravte znovu.',
     ];
 
-    /** @param list<JmhzScenario1Blocker> $blockers */
-    public static function describe(array $blockers): string
+    /** Kolik jmen se u jednoho nálezu vypíše, než zbytek nahradí „a další N". */
+    private const MAX_NAMED = 10;
+
+    /**
+     * Totéž co {@see describe()}, jen s konkrétními jmény dotčených osob
+     * a vztahů. Hláška „Dotčeno: 1 zaměstnanec" bez jména posílala účetní
+     * procházet ručně stovky brigádníků, aby našla toho jednoho.
+     *
+     * @param list<JmhzScenario1Blocker> $blockers
+     */
+    public static function describeNamed(
+        array $blockers,
+        PayrollPeopleRepository $people,
+        int $supplierId,
+    ): string {
+        $ids = ['employment' => [], 'person' => []];
+        foreach ($blockers as $blocker) {
+            if ($blocker->entityId === null) {
+                continue;
+            }
+            $type = $blocker->entityType === 'employee' ? 'person' : $blocker->entityType;
+            if (isset($ids[$type])) {
+                $ids[$type][] = $blocker->entityId;
+            }
+        }
+
+        return self::describe($blockers, [
+            'employment' => $people->employmentLabels($supplierId, $ids['employment']),
+            'person' => $people->personLabels($supplierId, $ids['person']),
+        ]);
+    }
+
+    /**
+     * @param list<JmhzScenario1Blocker> $blockers
+     * @param array<string,array<int,string>> $labels popisky podle druhu entity a id
+     */
+    public static function describe(array $blockers, array $labels = []): string
     {
         if ($blockers === []) {
             return 'Důvod blokace nebyl uveden. Obnovte test JMHZ a zkuste jej znovu.';
@@ -308,7 +345,7 @@ final class JmhzBlockerExplainer
                 : '';
             $descriptions[] = $reason . ' '
                 . $fields
-                . self::affected($group['entities'])
+                . self::affected($group['entities'], $labels)
                 . ' ' . $action;
         }
 
@@ -361,12 +398,29 @@ final class JmhzBlockerExplainer
         };
     }
 
-    /** @param array<string,array<string,true>> $entitiesByType */
-    private static function affected(array $entitiesByType): string
+    /**
+     * @param array<string,array<string,true>> $entitiesByType
+     * @param array<string,array<int,string>> $labels
+     */
+    private static function affected(array $entitiesByType, array $labels = []): string
     {
         $parts = [];
         foreach ($entitiesByType as $entityType => $entities) {
-            $parts[] = self::counted((string) $entityType, count($entities));
+            $type = $entityType === 'employee' ? 'person' : (string) $entityType;
+            $names = [];
+            foreach (array_keys($entities) as $key) {
+                $name = ctype_digit((string) $key) ? ($labels[$type][(int) $key] ?? null) : null;
+                if ($name !== null && $name !== '') {
+                    $names[] = $name;
+                }
+            }
+            $named = '';
+            if ($names !== []) {
+                $rest = count($names) - self::MAX_NAMED;
+                $named = ' (' . implode(', ', array_slice($names, 0, self::MAX_NAMED))
+                    . ($rest > 0 ? " a další {$rest}" : '') . ')';
+            }
+            $parts[] = self::counted((string) $entityType, count($entities)) . $named;
         }
 
         return 'Dotčeno: ' . implode(', ', $parts) . '.';

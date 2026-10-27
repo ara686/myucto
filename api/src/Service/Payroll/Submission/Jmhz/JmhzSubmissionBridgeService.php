@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MyInvoice\Service\Payroll\Submission\Jmhz;
 
 use MyInvoice\Repository\Payroll\JmhzDeferralRepository;
+use MyInvoice\Repository\Payroll\PayrollPeopleRepository;
 use MyInvoice\Repository\Payroll\PayrollSubmissionRepository;
 use MyInvoice\Service\Payroll\Import\Jmhz\JmhzExternalSubmissionStore;
 use MyInvoice\Service\Payroll\Ruleset\CanonicalJson;
@@ -91,6 +92,8 @@ final readonly class JmhzSubmissionBridgeService
          * Volitelný stejně jako historie podání předchozím programem.
          */
         private ?PayrollRegistrationChangeSettlement $registrationSettlement = null,
+        /** Jména dotčených osob v hlášce o blokaci; bez něj zůstane jen počet. */
+        private ?PayrollPeopleRepository $people = null,
     ) {}
 
     /**
@@ -206,7 +209,9 @@ final readonly class JmhzSubmissionBridgeService
             throw new JmhzXmlException(
                 'jmhz_submission_preparation_blocked',
                 'Příprava JMHZ není úplná, podání se nezakládá: '
-                    . JmhzBlockerExplainer::describe($resolution->blockers),
+                    . ($this->people === null
+                        ? JmhzBlockerExplainer::describe($resolution->blockers)
+                        : JmhzBlockerExplainer::describeNamed($resolution->blockers, $this->people, $supplierId)),
             );
         }
         $document = $resolution->requireResolvedDocument();

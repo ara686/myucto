@@ -230,6 +230,9 @@ final class Bootstrap
                 )->constructorParameter(
                     'registrationSettlement',
                     \DI\get(\MyInvoice\Service\Payroll\Submission\Registration\PayrollRegistrationChangeSettlement::class),
+                )->constructorParameter(
+                    'people',
+                    \DI\get(\MyInvoice\Repository\Payroll\PayrollPeopleRepository::class),
                 ),
             // Nepodané hlášení JMHZ za převzatý měsíc (Q15-17) — nepovinné kvůli
             // jednotkovým testům přehledů, v aplikaci se předává výslovně.

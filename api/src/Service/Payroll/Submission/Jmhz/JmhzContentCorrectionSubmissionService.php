@@ -456,7 +456,8 @@ final readonly class JmhzContentCorrectionSubmissionService
             throw new JmhzXmlException(
                 'jmhz_content_correction_preparation_blocked',
                 'Opravu nelze sestavit - nález leží na vybraném vztahu nebo v pojistné části '
-                    . 'a souhrnu: ' . JmhzBlockerExplainer::describe($resolution->blockers),
+                    . 'a souhrnu: '
+                    . JmhzBlockerExplainer::describeNamed($resolution->blockers, $this->people, $supplierId),
             );
         }
         $document = $resolution->requireResolvedDocument();

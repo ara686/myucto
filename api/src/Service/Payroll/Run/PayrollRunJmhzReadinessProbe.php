@@ -56,6 +56,7 @@ final class PayrollRunJmhzReadinessProbe
         private readonly Connection $db,
         private readonly JmhzPreparationSnapshotService $preparation,
         private readonly PayrollComponentJmhzMappingDefaults $mappingDefaults,
+        private readonly PayrollPeopleRepository $people,
     ) {}
 
     /**
@@ -421,30 +422,6 @@ final class PayrollRunJmhzReadinessProbe
      */
     public function employmentLabels(int $supplierId, array $ids): array
     {
-        if ($ids === []) {
-            return [];
-        }
-        $placeholders = implode(',', array_fill(0, count($ids), '?'));
-        $stmt = $this->db->pdo()->prepare(
-            'SELECT employment.id, employment.code,
-                    ' . PayrollPeopleRepository::fullNameExpression() . ' AS full_name
-               FROM payroll_employments employment
-               JOIN payroll_employees employee
-                 ON employee.id = employment.employee_id
-                AND employee.supplier_id = employment.supplier_id
-              WHERE employment.supplier_id = ?
-                AND employment.id IN (' . $placeholders . ')',
-        );
-        $stmt->execute([$supplierId, ...$ids]);
-
-        $labels = [];
-        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
-            $code = (string) ($row['code'] ?? '');
-            $labels[(int) $row['id']] = $code === ''
-                ? (string) $row['full_name']
-                : sprintf('%s (%s)', (string) $row['full_name'], $code);
-        }
-
-        return $labels;
+        return $this->people->employmentLabels($supplierId, $ids);
     }
 }

@@ -426,6 +426,65 @@ final class PayrollPeopleRepository
     }
 
     /**
+     * Popisky vztahů „Jméno (kód)" pro nálezy a hlášky. Jediné místo, odkud je
+     * berou předběžná kontrola běhu, potlačení varování i blokace JMHZ — jinak
+     * by se každá kopie po změně jména nebo kódu rozešla s ostatními.
+     *
+     * @param list<int> $ids
+     * @return array<int,string>
+     */
+    public function employmentLabels(int $supplierId, array $ids): array
+    {
+        $labels = [];
+        foreach (array_chunk(array_values(array_unique($ids)), 500) as $chunk) {
+            $placeholders = implode(',', array_fill(0, count($chunk), '?'));
+            $stmt = $this->db->pdo()->prepare(
+                'SELECT employment.id, employment.code,
+                        ' . self::fullNameExpression() . ' AS full_name
+                   FROM payroll_employments employment
+                   JOIN payroll_employees employee
+                     ON employee.id = employment.employee_id
+                    AND employee.supplier_id = employment.supplier_id
+                  WHERE employment.supplier_id = ? AND employment.id IN (' . $placeholders . ')'
+            );
+            $stmt->execute([$supplierId, ...$chunk]);
+            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                $code = (string) ($row['code'] ?? '');
+                $labels[(int) $row['id']] = $code === ''
+                    ? (string) $row['full_name']
+                    : sprintf('%s (%s)', (string) $row['full_name'], $code);
+            }
+        }
+
+        return $labels;
+    }
+
+    /**
+     * Účinná jména osob podle id zaměstnance.
+     *
+     * @param list<int> $ids
+     * @return array<int,string>
+     */
+    public function personLabels(int $supplierId, array $ids): array
+    {
+        $labels = [];
+        foreach (array_chunk(array_values(array_unique($ids)), 500) as $chunk) {
+            $placeholders = implode(',', array_fill(0, count($chunk), '?'));
+            $stmt = $this->db->pdo()->prepare(
+                'SELECT employee.id, ' . self::fullNameExpression() . ' AS full_name
+                   FROM payroll_employees employee
+                  WHERE employee.supplier_id = ? AND employee.id IN (' . $placeholders . ')'
+            );
+            $stmt->execute([$supplierId, ...$chunk]);
+            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                $labels[(int) $row['id']] = (string) $row['full_name'];
+            }
+        }
+
+        return $labels;
+    }
+
+    /**
      * Zdroj řádků seznamu. Sdílí ho výpis i počítadlo, aby obě cesty vážily
      * tytéž osoby stejnými výrazy. Nese jeden parametr — firmu v poddotazu
      * pracovních vztahů.
