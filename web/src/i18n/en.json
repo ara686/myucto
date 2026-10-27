@@ -5493,7 +5493,15 @@
         "all": "All",
         "needs_setup": "Setup required",
         "needs_data": "Data to add",
-        "blocking_data": "Blocks filing"
+        "blocking_data": "Blocks filing",
+        "dpp_hours_limit": "DPP near the 300 h limit"
+      },
+      "dpp_hours": {
+        "label": "DPP {hours} / {limit} h",
+        "title_ok": "Worked on DPP agreements in {year}: {hours} h of {limit} h. {remaining} h remaining.",
+        "title_approaching": "Approaching the limit: worked on DPP agreements in {year}: {hours} h of {limit} h. {remaining} h remaining.",
+        "title_exceeded": "Limit exceeded: worked on DPP agreements in {year}: {hours} h, more than {limit} h. Work above the limit cannot be done under a DPP.",
+        "takeover": "Including {hours} h taken over from the previous system."
       },
       "create": {
         "action": "Add employee",

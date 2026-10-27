@@ -200,7 +200,8 @@ bez odpracovaných hodin návrh zastaví. Návrh z převzatých mezd se hromadn�
 nezakládá: zkontrolujte ho a schvalte u každého vztahu zvlášť.
 
 Kontrola mzdového běhu sečte za osobu odpracované hodiny všech jejích DPP
-v roce včetně převzatých hodin. Po překročení 300 hodin přidá varování
+v roce včetně převzatých hodin. Od 240 hodin upozorní, že se osoba blíží
+limitu, a po překročení 300 hodin přidá varování
 s počtem hodin, podílem převzatých a odkazem na podmínky vztahu. Výpočet
 nezastaví, odpracovanou práci je potřeba zaplatit; smluvní vztah je ale nutné
 upravit.

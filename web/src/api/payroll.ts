@@ -194,6 +194,19 @@ export interface PayrollPersonEmploymentRef {
   is_primary: boolean
 }
 
+export type PayrollAgreementAnnualHoursStatus = 'ok' | 'approaching' | 'exceeded'
+
+/** Roční součet hodin na DPP (SSOT na serveru: PayrollAgreementAnnualHours). */
+export interface PayrollAgreementAnnualHours {
+  year: number
+  total_minutes: number
+  takeover_minutes: number
+  limit_minutes: number
+  warning_minutes: number
+  remaining_minutes: number
+  status: PayrollAgreementAnnualHoursStatus
+}
+
 export interface PayrollPersonListItem {
   id: number
   full_name: string
@@ -219,6 +232,11 @@ export interface PayrollPersonListItem {
    */
   data_gaps: PayrollPersonDataGap[]
   data_gap_counts: PayrollPersonDataGapCounts
+  /**
+   * Hodiny na DPP v aktuálním roce proti limitu 300 h (§ 75 ZP). `null` nebo
+   * chybí, když osoba dohodu o provedení práce nemá.
+   */
+  dpp_annual_hours?: PayrollAgreementAnnualHours | null
   can_delete: boolean
   delete_blocker: PayrollDeleteBlocker | null
   delete_cascade: PayrollDeleteCascade
@@ -501,6 +519,7 @@ export type PayrollPeopleFilter =
   | 'needs_setup'
   | 'needs_data'
   | 'blocking_data'
+  | 'dpp_hours_limit'
 
 /** Osoba v rozbalovací nabídce — jen to, čím se dá vybrat. */
 export interface PayrollPersonOption {
