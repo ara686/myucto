@@ -40,7 +40,97 @@ final class PayrollAgreementAnnualHours
     /** 300 hodin v minutách. */
     public const LIMIT_MINUTES = 300 * 60;
 
+    /**
+     * Podíl ročního limitu, od kterého se hlásí, že se osoba k limitu blíží.
+     * Varování předem dává účetní čas upravit smluvní vztah dřív, než brigádník
+     * limit překročí a práce nad něj už na DPP nepůjde.
+     */
+    public const WARNING_PERCENT = 80;
+
+    /** 240 hodin v minutách — práh varování „blíží se limitu". */
+    public const WARNING_MINUTES = self::LIMIT_MINUTES * self::WARNING_PERCENT / 100;
+
+    public const STATUS_OK = 'ok';
+    public const STATUS_APPROACHING = 'approaching';
+    public const STATUS_EXCEEDED = 'exceeded';
+
     public function __construct(private readonly Connection $db) {}
+
+    /**
+     * Zařazení ročního součtu: přesně 300 h je ještě v limitu, varování předem
+     * platí od prahu včetně.
+     */
+    public static function status(int $totalMinutes): string
+    {
+        return match (true) {
+            $totalMinutes > self::LIMIT_MINUTES => self::STATUS_EXCEEDED,
+            $totalMinutes >= self::WARNING_MINUTES => self::STATUS_APPROACHING,
+            default => self::STATUS_OK,
+        };
+    }
+
+    /**
+     * @param array{own_minutes:int,takeover_minutes:int,total_minutes:int} $hours
+     * @return array{year:int,total_minutes:int,takeover_minutes:int,limit_minutes:int,warning_minutes:int,remaining_minutes:int,status:string}
+     */
+    public static function summary(int $year, array $hours): array
+    {
+        $total = $hours['total_minutes'];
+
+        return [
+            'year' => $year,
+            'total_minutes' => $total,
+            'takeover_minutes' => $hours['takeover_minutes'],
+            'limit_minutes' => self::LIMIT_MINUTES,
+            'warning_minutes' => self::WARNING_MINUTES,
+            'remaining_minutes' => max(0, self::LIMIT_MINUTES - $total),
+            'status' => self::status($total),
+        ];
+    }
+
+    /**
+     * Přehled za celý kalendářní rok po osobách (seznam lidí a karta osoby).
+     * Dva dávkové dotazy bez ohledu na počet osob.
+     *
+     * @param list<int> $employeeIds
+     * @return array<int,array{year:int,total_minutes:int,takeover_minutes:int,limit_minutes:int,warning_minutes:int,remaining_minutes:int,status:string}>
+     */
+    public function yearSummaries(int $supplierId, array $employeeIds, int $year): array
+    {
+        $result = [];
+        foreach ($this->yearToDate($supplierId, $employeeIds, sprintf('%04d-12-01', $year)) as $employeeId => $hours) {
+            $result[$employeeId] = self::summary($year, $hours);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Osoby s dohodou o provedení práce, které v roce dosáhly prahu varování
+     * nebo limit překročily. Součet se bere z {@see self::yearToDate()}, aby
+     * filtr seznamu nemohl tvrdit něco jiného než značka u osoby.
+     *
+     * @return list<int>
+     */
+    public function employeesNearLimit(int $supplierId, int $year): array
+    {
+        $statement = $this->db->pdo()->prepare(
+            "SELECT DISTINCT employee_id
+               FROM payroll_employments
+              WHERE supplier_id = ?
+                AND relation_type = 'dpp'",
+        );
+        $statement->execute([$supplierId]);
+        $employeeIds = array_map('intval', $statement->fetchAll(PDO::FETCH_COLUMN));
+        $result = [];
+        foreach ($this->yearSummaries($supplierId, $employeeIds, $year) as $employeeId => $summary) {
+            if ($summary['status'] !== self::STATUS_OK) {
+                $result[] = $employeeId;
+            }
+        }
+
+        return $result;
+    }
 
     /**
      * Odpracované minuty na DPP za rok do konce `$periodStart` včetně, podle osob.
@@ -140,7 +230,9 @@ final class PayrollAgreementAnnualHours
     }
 
     /**
-     * Varování pro DPP vztahy běhu, jejichž osoba limit v roce překročila.
+     * Varování pro DPP vztahy běhu, jejichž osoba limit v roce překročila
+     * (`dpp_annual_hours_exceeded`) nebo dosáhla prahu {@see self::WARNING_MINUTES}
+     * (`dpp_annual_hours_approaching`). Ani jedno výpočet nezastaví.
      *
      * @param list<array<string,mixed>> $employments řádky běhu s `employment_id`,
      *        `employee_id`, `relation_type` a `full_name`
@@ -165,15 +257,17 @@ final class PayrollAgreementAnnualHours
             $employeeId = (int) $row['employee_id'];
             $employmentId = (int) $row['employment_id'];
             $total = $hours[$employeeId]['total_minutes'] ?? 0;
-            if ($total <= self::LIMIT_MINUTES) {
+            $status = self::status($total);
+            if ($status === self::STATUS_OK) {
                 continue;
             }
             $validations[] = new PayrollRunValidation(
                 'warning',
-                'dpp_annual_hours_exceeded',
+                self::validationCode($status),
                 'employment',
                 $employmentId,
-                self::message(
+                self::statusMessage(
+                    $status,
                     (string) ($row['full_name'] ?? ''),
                     (int) substr($periodStart, 0, 4),
                     $total,
@@ -184,6 +278,45 @@ final class PayrollAgreementAnnualHours
         }
 
         return $validations;
+    }
+
+    public static function validationCode(string $status): string
+    {
+        return $status === self::STATUS_EXCEEDED
+            ? 'dpp_annual_hours_exceeded'
+            : 'dpp_annual_hours_approaching';
+    }
+
+    /** Text nálezu podle zařazení; pro `ok` prázdný řetězec. */
+    public static function statusMessage(
+        string $status,
+        string $name,
+        int $year,
+        int $totalMinutes,
+        int $takeoverMinutes,
+    ): string {
+        return match ($status) {
+            self::STATUS_EXCEEDED => self::message($name, $year, $totalMinutes, $takeoverMinutes),
+            self::STATUS_APPROACHING => self::approachingMessage($name, $year, $totalMinutes, $takeoverMinutes),
+            default => '',
+        };
+    }
+
+    public static function approachingMessage(string $name, int $year, int $totalMinutes, int $takeoverMinutes): string
+    {
+        return sprintf(
+            '%s: na dohodách o provedení práce má v roce %d odpracováno %s h%s z 300 h, které § 75 zákoníku '
+                . 'práce u téhož zaměstnavatele dovoluje (práh upozornění %d %%). Zbývá %s h. Naplánujte '
+                . 'další práci tak, aby limit nepřekročil(a), nebo včas upravte smluvní vztah v kartě zaměstnance.',
+            $name === '' ? 'Zaměstnanec' : $name,
+            $year,
+            self::hours($totalMinutes),
+            $takeoverMinutes > 0
+                ? sprintf(' (z toho %s h převzatých z předchozího programu)', self::hours($takeoverMinutes))
+                : '',
+            self::WARNING_PERCENT,
+            self::hours(max(0, self::LIMIT_MINUTES - $totalMinutes)),
+        );
     }
 
     public static function message(string $name, int $year, int $totalMinutes, int $takeoverMinutes): string

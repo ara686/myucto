@@ -417,9 +417,20 @@ osoby k datu nástupu týmž uložením, takže nemůže vzniknout karta bez ní
 kód pojišťovny celé založení odmítne.
 
 Toolbar nad seznamem hledá podle jména nebo osobního čísla (stačí jeho část)
-a přepíná zobrazení **Aktivní**, **Všichni**, **Mám doplnit údaje** a **Brání
-podání**. Hledání i stránkování běží na serveru po 25 osobách, takže se stejně
-pracuje s deseti i pěti sty zaměstnanci. Na telefonu se tabulka mění na karty.
+a přepíná zobrazení **Aktivní**, **Všichni**, **Mám doplnit údaje**, **Brání
+podání** a **DPP u limitu 300 h**. Hledání i stránkování běží na serveru po 25
+osobách, takže se stejně pracuje s deseti i pěti sty zaměstnanci. Na telefonu
+se tabulka mění na karty.
+
+**Hodiny na DPP.** U osoby s dohodou o provedení práce ukazuje seznam i hlavička
+karty osoby značku **DPP 245 / 300 h**: kolik hodin osoba v aktuálním
+kalendářním roce odpracovala na všech svých DPP u firmy, včetně hodin převzatých
+z předchozího programu. Tooltip doplní, kolik hodin zbývá. Značka je šedá pod
+prahem upozornění, oranžová od 240 hodin (80 % limitu) a červená po překročení
+300 hodin. Zobrazení **DPP u limitu 300 h** vybere jen osoby od prahu
+upozornění výš, takže stovky brigádníků projdete najednou. Hodiny jsou tytéž,
+které poměřuje kontrola mzdového běhu ([§ 77.9.6](77_Dochazka_a_smeny.md#7796-rozsah-dohod-o-provedeni-prace-a-o-pracovni-cinnosti)):
+odpracované hodiny ze schválené docházky a převzaté hodiny.
 
 Seznam ukazuje stav osoby, další krok k dokončení karty, počet a druh vztahů
 a původní vztah převzatý z Mzdové rekapitulace. Akce v řádku odpovídá

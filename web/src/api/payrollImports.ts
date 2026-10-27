@@ -1,5 +1,6 @@
 import { api } from './client'
 import { downloadApiFile } from '@/utils/downloadFile'
+import type { PayrollAgreementAnnualHours } from './payroll'
 
 /** Soubor přenášený v JSON těle; obsah je base64 bez prefixu `data:`. */
 export interface ImportFilePayload {
@@ -465,6 +466,7 @@ export interface AttendanceEmploymentOption {
   label: string
   code: string
   status: string
+  relation_type?: string
 }
 
 export type AttendanceMatchStatus = 'linked' | 'matched' | 'ambiguous' | 'not_found'
@@ -529,6 +531,8 @@ export interface AttendancePerson {
   components: AttendanceComponentValue[]
   deductions?: AttendanceDeductionValue[]
   reference: { gross_minor: number | null; net_minor: number | null; hours: string | null }
+  /** Roční hodiny na DPP po započtení importované docházky; jen u osob přiřazených na DPP. */
+  dpp_annual_hours?: PayrollAgreementAnnualHours & { imported_minutes: number }
   warnings: string[]
 }
 

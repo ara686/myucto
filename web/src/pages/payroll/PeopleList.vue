@@ -47,6 +47,7 @@ import PayrollPersonPensionRequestsPanel from './PayrollPersonPensionRequestsPan
 import PayrollPersonStatutoryEvidencePanel from './PayrollPersonStatutoryEvidencePanel.vue'
 import PayrollPersonForeignPermitPanel from './PayrollPersonForeignPermitPanel.vue'
 import PersonDataGapBadge from './PersonDataGapBadge.vue'
+import DppAnnualHoursBadge from './DppAnnualHoursBadge.vue'
 import PersonDataGapSummary from './PersonDataGapSummary.vue'
 import { employmentCodeLabel, isValidPersonalNumber, personalNumberLabel, todayIso } from './employmentLifecycleUi'
 import {
@@ -162,6 +163,7 @@ const filterOptions = computed(() => [
   { value: 'all' as const, label: t('payroll.people.filters.all') },
   { value: 'needs_data' as const, label: t('payroll.people.filters.needs_data') },
   { value: 'blocking_data' as const, label: t('payroll.people.filters.blocking_data') },
+  { value: 'dpp_hours_limit' as const, label: t('payroll.people.filters.dpp_hours_limit') },
 ])
 const relationOptions = computed(() => relationTypes.map(type => ({
   value: type,
@@ -1814,6 +1816,11 @@ onMounted(async () => {
                 test-id="person-header-data-gap"
                 @open="gap => openDataGap(selectedSummary!.id, gap)"
               />
+              <DppAnnualHoursBadge
+                v-if="selectedSummary?.dpp_annual_hours"
+                :hours="selectedSummary.dpp_annual_hours"
+                test-id="person-header-dpp-hours"
+              />
               <span class="text-neutral-500" data-test="person-header-employments">
                 {{ t('payroll.people.header_employments', { count: selectedEmploymentCount }, selectedEmploymentCount) }}
               </span>
@@ -2137,6 +2144,12 @@ onMounted(async () => {
                         :test-id="`person-data-gap-${person.id}`"
                         @open="gap => openDataGap(person.id, gap)"
                       />
+                      <DppAnnualHoursBadge
+                        v-if="person.dpp_annual_hours"
+                        class="relative z-10"
+                        :hours="person.dpp_annual_hours"
+                        :test-id="`person-dpp-hours-${person.id}`"
+                      />
                     </div>
                   </td>
                   <td v-if="tbl.isVisible('relations')" class="px-4 py-3 text-neutral-600">{{ person.relation_types.map(relationLabel).join(', ') }}</td>
@@ -2198,6 +2211,11 @@ onMounted(async () => {
                   :counts="person.data_gap_counts ?? null"
                   :test-id="`person-data-gap-mobile-${person.id}`"
                   @open="gap => openDataGap(person.id, gap)"
+                />
+                <DppAnnualHoursBadge
+                  v-if="person.dpp_annual_hours"
+                  :hours="person.dpp_annual_hours"
+                  :test-id="`person-dpp-hours-mobile-${person.id}`"
                 />
               </div>
             </div>

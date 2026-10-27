@@ -26823,9 +26823,11 @@ paths:
             `needs_setup` je starší, užší pohled (pětice podmínek uložení
             profilu). `needs_data` = osobě chybí cokoli z katalogu zákonných
             údajů, `blocking_data` = chybí něco, bez čeho měsíc neprojde.
+            `dpp_hours_limit` = osoby, které na DPP v aktuálním roce dosáhly
+            prahu upozornění nebo překročily limit 300 h.
           schema:
             type: string
-            enum: [all, active, needs_setup, needs_data, blocking_data]
+            enum: [all, active, needs_setup, needs_data, blocking_data, dpp_hours_limit]
             default: active
         - { name: q, in: query, description: Hledání podle jména, schema: { type: string, maxLength: 100 } }
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
@@ -42381,6 +42383,28 @@ components:
           properties:
             blocking: { type: integer, minimum: 0 }
             advisory: { type: integer, minimum: 0 }
+        dpp_annual_hours:
+          description: |
+            Odpracované hodiny na dohodách o provedení práce v aktuálním
+            kalendářním roce proti limitu 300 h (§ 75 zákoníku práce), včetně
+            hodin převzatých z předchozího programu. `null`, když osoba DPP nemá.
+            `approaching` = dosažen práh upozornění (`warning_minutes`),
+            `exceeded` = limit překročen.
+          oneOf:
+            - type: 'null'
+            - { $ref: '#/components/schemas/PayrollAgreementAnnualHours' }
+
+    PayrollAgreementAnnualHours:
+      type: object
+      required: [year, total_minutes, takeover_minutes, limit_minutes, warning_minutes, remaining_minutes, status]
+      properties:
+        year: { type: integer }
+        total_minutes: { type: integer, minimum: 0 }
+        takeover_minutes: { type: integer, minimum: 0 }
+        limit_minutes: { type: integer, minimum: 0 }
+        warning_minutes: { type: integer, minimum: 0 }
+        remaining_minutes: { type: integer, minimum: 0 }
+        status: { type: string, enum: [ok, approaching, exceeded] }
 
     PayrollPersonDataGap:
       type: object

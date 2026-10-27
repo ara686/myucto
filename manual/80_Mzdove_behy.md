@@ -485,7 +485,8 @@ jednotlivě i celou skupinu. Skrytí i obnovení se zapisují do auditního logu
 Skrývat a obnovovat smí uživatel s právem schvalovat mzdové běhy.
 
 Skrýt nejde blokující chyby, varování s výjimkou ani překročení zákonných
-limitů (dohoda o provedení práce nad 300 hodin, průměr dohody o pracovní
+limitů (dohoda o provedení práce nad 300 hodin i upozornění na blížící se
+limit od 240 hodin, průměr dohody o pracovní
 činnosti, přesčasy, exekuce, sleva na pojistném).
 
 ### 80.11.12 Převzaté měsíce roku přechodu

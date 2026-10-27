@@ -5614,7 +5614,15 @@
         "all": "Všichni",
         "needs_setup": "K doplnění",
         "needs_data": "Mám doplnit údaje",
-        "blocking_data": "Brání podání"
+        "blocking_data": "Brání podání",
+        "dpp_hours_limit": "DPP u limitu 300 h"
+      },
+      "dpp_hours": {
+        "label": "DPP {hours} / {limit} h",
+        "title_ok": "Na DPP odpracováno v roce {year} celkem {hours} h z {limit} h. Zbývá {remaining} h.",
+        "title_approaching": "Blíží se limitu: na DPP odpracováno v roce {year} celkem {hours} h z {limit} h. Zbývá {remaining} h.",
+        "title_exceeded": "Limit překročen: na DPP odpracováno v roce {year} celkem {hours} h, víc než {limit} h. Práce nad limit už na DPP nejde.",
+        "takeover": "Z toho {hours} h převzato z předchozího programu."
       },
       "create": {
         "action": "Přidat zaměstnance",

@@ -135,6 +135,7 @@ jako dohodnutý a limity nařízeného přesčasu se na něj nevztahují.
 | Upozornění na limit přesčasu | Překročeno 8 hodin v týdnu, 150 hodin v roce nebo průměr ve vyrovnávacím období | Upravte rozvrh, případně zapište **Souhlas s přesčasem**. Výplatu to nezastaví. |
 | Upozornění u náhradního volna | Je zapsaná jen absence, nebo jen vazba na den přesčasu | Doplňte druhou stranu ([§ 77.6](#776-krok-za-krokem-nahradni-volno-za-prescas)). |
 | Upozornění na rozsah DPP nebo DPČ | Překročeno 300 hodin DPP v roce, nebo průměr DPČ | Upravte rozsah práce nebo smluvní vztah. Výplatu to nezastaví. |
+| Upozornění, že se DPP blíží limitu | Osoba má na DPP v roce 240 hodin a víc (80 % limitu) | Naplánujte zbývající hodiny, nebo včas upravte smluvní vztah. Výplatu to nezastaví. |
 | Import odmítl soubor | Vzorec, makro, vložený soubor, externí propojení, nebo překročené limity | Uložte tabulku jen se statickými hodnotami a v limitech ([§ 77.9.2](#7792-bezpecnost-a-limity-xlsx)). |
 
 Časté chyby: plánovaná směna považovaná za odpracovanou dobu, dvojí započtení
@@ -432,6 +433,17 @@ Překročení se u revize běhu objeví jako upozornění se jménem, obdobím
 a průměrem a s odkazem na podmínky vztahu. Výpočet ani schválení nezastaví:
 odpracovanou práci je potřeba zaplatit, jen je třeba upravit rozsah práce
 nebo smluvní vztah.
+
+U DPP hlásí aplikace i to, že se osoba k limitu **blíží**. Od **240 hodin**
+(80 % limitu) přidá kontrola mzdového běhu upozornění se jménem, počtem
+odpracovaných a zbývajících hodin, dokud osoba 300 hodin nepřekročí; přesně
+300 hodin je ještě v limitu. Upozornění je jen informace, výpočet nezastaví
+a v kontrole připravenosti běhu nic neblokuje. Totéž hlásí náhled importu
+docházky: k dosavadním hodinám roku do konce předchozího měsíce přičte
+odpracované hodiny z importovaného souboru a u osob přiřazených na DPP vypíše
+upozornění při dosažení prahu nebo překročení limitu. Přehled po osobách je
+v seznamu zaměstnanců ([§ 86](86_Zamestnanci.md)), včetně zobrazení
+**DPP u limitu 300 h**.
 
 ## 77.10 Související kapitoly
 
