@@ -1500,9 +1500,10 @@ final class AttendanceImportService
 
     /**
      * Roční limit DPP (§ 75 ZP) s odpracovanými hodinami z importovaného měsíce.
-     * Dosavadní součet bere {@see PayrollAgreementAnnualHours::yearToDate()} do
-     * konce předchozího měsíce; importovaný měsíc se do něj nepočítá, protože
-     * dávka jeho pracovní souhrn teprve zapíše nebo přepíše.
+     * Součet za celý rok bere {@see PayrollAgreementAnnualHours::yearWithoutMonth()}
+     * bez uloženého souhrnu importovaných vztahů za importovaný měsíc, protože
+     * dávka ho teprve zapíše nebo přepíše. Pozdější měsíce (import staršího
+     * měsíce) i jiná dohoda téže osoby za týž měsíc se tak počítají.
      *
      * @param list<array<string,mixed>> $persons
      * @param list<array<string,mixed>> $options
@@ -1514,17 +1515,21 @@ final class AttendanceImportService
         if ($employeeIds === []) {
             return $persons;
         }
-        $year = (int) substr($periodStart, 0, 4);
-        $month = (int) substr($periodStart, 5, 2);
-        $prior = $month > 1
-            ? (new PayrollAgreementAnnualHours($this->db))->yearToDate(
-                $supplierId,
-                $employeeIds,
-                sprintf('%04d-%02d-01', $year, $month - 1),
-            )
-            : [];
+        $agreements = self::agreementEmploymentIds($options);
+        $employmentIds = [];
+        foreach ($persons as $person) {
+            if (self::agreementEmployeeId($person, $agreements) !== null) {
+                $employmentIds[(int) $person['match']['employment_id']] = true;
+            }
+        }
+        $stored = (new PayrollAgreementAnnualHours($this->db))->yearWithoutMonth(
+            $supplierId,
+            $employeeIds,
+            $periodStart,
+            array_keys($employmentIds),
+        );
 
-        return self::annotateAgreementHours($persons, $options, $prior, $year);
+        return self::annotateAgreementHours($persons, $options, $stored, (int) substr($periodStart, 0, 4));
     }
 
     /**
@@ -1533,7 +1538,8 @@ final class AttendanceImportService
      *
      * @param list<array<string,mixed>> $persons
      * @param list<array<string,mixed>> $options volby vztahů s `employment_id` a `relation_type`
-     * @param array<int,array{own_minutes:int,takeover_minutes:int,total_minutes:int}> $prior
+     * @param array<int,array{own_minutes:int,takeover_minutes:int,total_minutes:int}> $prior roční součet
+     *        bez uloženého souhrnu importovaných vztahů za importovaný měsíc
      * @return list<array<string,mixed>>
      */
     public static function annotateAgreementHours(array $persons, array $options, array $prior, int $year): array
