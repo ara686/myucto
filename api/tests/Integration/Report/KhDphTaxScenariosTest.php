@@ -2414,9 +2414,10 @@ final class KhDphTaxScenariosTest extends TestCase
     }
 
     /**
-     * Ř. 43 (odpočet ze samovyměření) EPO kontroluje proti součtu ř. 3–13 TAK, JAK JSOU
-     * VYPLNĚNÉ, tedy zaokrouhlených na celé Kč (propustná chyba č. 90). Hlášený případ:
-     * ř. 5 = 50 646 a ř. 12 = 539, ale ř. 43 = round(51 185,53) = 51 186.
+     * Ř. 43 (odpočet ze samovyměření) je ve výši daně přiznané na ř. 3–13 TAK, JAK JSOU
+     * VYPLNĚNÉ, tedy zaokrouhlených na celé Kč (§ 72 odst. 2, § 73 odst. 1 písm. b) ZDPH).
+     * Hlášený případ: ř. 5 = 50 646 a ř. 12 = 539, aplikace dřív dávala ř. 43 =
+     * round(51 185,53) = 51 186.
      */
     public function testSelfAssessmentDeductionEqualsSumOfRoundedOutputLines(): void
     {
@@ -2446,6 +2447,40 @@ final class KhDphTaxScenariosTest extends TestCase
         $this->assertSame((string) $dp->Veta6['dan_zocelk'], (string) $dp->Veta6['odp_zocelk'],
             'samovyměření se musí vyrušit (ř. 62 = ř. 63)');
         $this->assertFalse(isset($dp->Veta6['dano_da']), 'žádná vlastní daň z pouhého samovyměření');
+        $this->assertSame([], array_values(array_filter(
+            $res['warnings'],
+            static fn (string $w): bool => str_starts_with($w, 'Ř. 43'),
+        )), 'ze základu vyjde totéž (243 740 × 21 % = 51 185), EPO nic nevytkne');
+    }
+
+    /**
+     * #264: ř. 3 = 5 158 / 1 083 a ř. 5 = 107 / 22. Odpočet zůstává 1 105 (přiznaná daň),
+     * EPO ze základu počítá 5 265 × 21 % = 1 106 a vytkne propustnou chybu. Náhled to
+     * řekne předem a hodnotu nemění.
+     */
+    public function testSelfAssessmentDeductionWarnsAboutEpoBaseRecalculation(): void
+    {
+        $d = fn (int $day) => sprintf('%04d-%02d-%02d', self::YEAR, self::MONTH, $day);
+        $goods = $this->client('DE zboží zaokrouhlení', $this->deId, 'DE123456781', vendor: true);
+        $service = $this->client('DE služba zaokrouhlení 264', $this->deId, 'DE123456782', vendor: true);
+        $this->purchase('P-2099-2641', $goods, '23', true, 'invoice', $d(10), $d(10), [[5157.60, 0, 21]]);
+        $this->purchase('P-2099-2642', $service, '24e', false, 'invoice', $d(10), $d(10), [[106.80, 0, 21]]);
+
+        $res = $this->dph->build($this->supplierId, self::YEAR, self::MONTH, 'monthly');
+        $dp = (new \SimpleXMLElement($res['xml']))->DPHDP3;
+        $this->assertSame('1083', (string) $dp->Veta1['dan_pzb23']);
+        $this->assertSame('22', (string) $dp->Veta1['dan_psl23_e']);
+        $this->assertSame('5265', (string) $dp->Veta4['nar_zdp23']);
+        $this->assertSame('1105', (string) $dp->Veta4['od_zdp23'], 'odpočet = přiznaná daň, ne 21 % ze základu');
+
+        $notes = array_values(array_filter(
+            $res['warnings'],
+            static fn (string $w): bool => str_starts_with($w, 'Ř. 43'),
+        ));
+        $this->assertCount(1, $notes);
+        $this->assertStringContainsString('1 105 Kč', $notes[0]);
+        $this->assertStringContainsString('5 265 Kč × 21 % = 1 106 Kč', $notes[0]);
+        $this->assertStringContainsString('propustnou', $notes[0]);
     }
 
     /**
