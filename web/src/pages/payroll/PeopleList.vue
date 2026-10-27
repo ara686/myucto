@@ -61,6 +61,7 @@ import DateInput from '@/components/ui/DateInput.vue'
 import PayrollHealthInsurerBulkDialog from '@/components/payroll/PayrollHealthInsurerBulkDialog.vue'
 import PayrollStatutoryBulkDefaultsDialog from '@/components/payroll/PayrollStatutoryBulkDefaultsDialog.vue'
 import PayrollWorkplaceBulkFillDialog from '@/components/payroll/PayrollWorkplaceBulkFillDialog.vue'
+import PayrollBulkClosureDialog from '@/components/payroll/PayrollBulkClosureDialog.vue'
 import { payrollWorkingPeriod } from './payrollComponentsUi'
 import { providePersonCardSave } from './personCardSave'
 
@@ -121,6 +122,9 @@ const canCreatePerson = computed(() => auth.canWrite('payroll.person.write'))
 const statutoryBulkOpen = ref(false)
 const statutoryBulkEffectiveOn = `${payrollWorkingPeriod()}-01`
 const workplaceBulkOpen = ref(false)
+const bulkClosureOpen = ref(false)
+// Počet vztahů k ukončení na tlačítku; výpadek náhledu tlačítko neschová.
+const bulkClosureCount = ref<number | null>(null)
 // Po importu hlášení JMHZ (nenese pojišťovnu) sem vede proklik `?bulk=health_insurer`.
 const healthInsurerBulkOpen = ref(route.query.bulk === 'health_insurer')
 const canWriteEmployment = computed(() => auth.canWrite('payroll.employment.write'))
@@ -1367,8 +1371,24 @@ watch(() => [route.query.person, route.query.panel, route.query.new, route.query
  */
 const payrollStartPeriod = ref<string | null>(null)
 
+async function loadBulkClosureCount() {
+  if (!canWriteEmployment.value) return
+  try {
+    const preview = await payrollApi.bulkClosurePreview()
+    bulkClosureCount.value = preview.summary.expired + preview.summary.inactive - preview.summary.blocked
+  } catch {
+    bulkClosureCount.value = null
+  }
+}
+
+function onBulkClosureApplied() {
+  void load()
+  void loadBulkClosureCount()
+}
+
 onMounted(async () => {
   await load()
+  void loadBulkClosureCount()
   await openFromQuery()
   const panel = Array.isArray(route.query.panel) ? route.query.panel[0] : route.query.panel
   if (typeof panel === 'string' && panel !== '') await focusPanel(panel)
@@ -1662,6 +1682,17 @@ onMounted(async () => {
             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path :d="ICONS.pin" /></svg>
             {{ t('payroll.people.workplace_bulk_action') }}
           </button>
+          <button
+            v-if="canWriteEmployment"
+            type="button"
+            class="whitespace-nowrap"
+            :class="btnOutline('warning')"
+            data-test="bulk-closure-open"
+            @click="bulkClosureOpen = true"
+          >
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path :d="ICONS.archive" /></svg>
+            {{ bulkClosureCount ? t('payroll.bulk_closure.open_count', { count: bulkClosureCount }) : t('payroll.bulk_closure.open') }}
+          </button>
           <RouterLink
             :to="{ name: 'payroll-quick-inputs' }"
             class="whitespace-nowrap"
@@ -1697,6 +1728,12 @@ onMounted(async () => {
       :employment-ids="null"
       @close="workplaceBulkOpen = false"
       @applied="load"
+    />
+
+    <PayrollBulkClosureDialog
+      v-if="bulkClosureOpen"
+      @close="bulkClosureOpen = false"
+      @applied="onBulkClosureApplied"
     />
 
     <div v-if="editing && loadingDetailId !== null" class="h-24 animate-pulse rounded-lg bg-neutral-100" />

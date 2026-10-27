@@ -3396,6 +3396,64 @@
       "failed_title": "Could not be filled in ({count})",
       "recalculate_notice": "The payroll run for which you filled in the workplace needs to be recalculated and approved as a new revision for the new value to be reflected in the report."
     },
+    "bulk_closure": {
+      "open": "End finished agreements",
+      "open_count": "End finished agreements ({count})",
+      "title": "End finished agreements",
+      "intro": "Preview of relationships that are no longer running according to their agreed end or to payroll. Each selected relationship is ended exactly as with the button on its card, including the exit checklist (deregistration, exit documents). Nothing changes until you confirm the selection.",
+      "inactivity_months": "Without activity (months)",
+      "archive_after_months": "Archive after (months)",
+      "reload": "Load preview",
+      "retry": "Try again",
+      "load_failed": "The preview could not be loaded.",
+      "apply_failed": "The bulk ending could not be completed.",
+      "empty": "No relationship to end or archive.",
+      "summary_blocked": "Needs review",
+      "groups": {
+        "expired": {
+          "summary": "Agreed end has passed",
+          "title": "Agreed end has passed",
+          "hint": "Active relationships whose agreed end has already passed. They will be ended as of the agreed end date."
+        },
+        "inactive": {
+          "summary": "Agreements without activity",
+          "title": "Agreements without activity",
+          "hint": "DPP and DPČ agreements without an agreed end that have no payroll input or attendance in the last {months} months. They will be ended as of the last day of the month of their last activity."
+        },
+        "archive": {
+          "summary": "To archive",
+          "title": "Ended relationships to archive",
+          "hint": "Relationships ended more than {months} months ago. Archiving only tidies up the list and can be undone."
+        }
+      },
+      "detail": {
+        "expired": "Agreed end {date}",
+        "inactive": "Last activity {period}",
+        "never_active": "No payroll input or attendance",
+        "archive": "Ended {date}"
+      },
+      "blocked": {
+        "activity_after_end": "Has payroll input or attendance after the end date ({period}). Check the end date.",
+        "settled_after_end": "Has settled payroll after the end date ({period}). Check the end date."
+      },
+      "select_all": "Select all",
+      "end_on": "End as of",
+      "archive_on": "Archive as of {date}",
+      "nothing_selected": "Select at least one relationship.",
+      "too_many": "At most {max} relationships can be processed at once.",
+      "date_required": "Fill in a date for every selected relationship.",
+      "apply": "Continue ({count})",
+      "confirm_text": "{end} relationships will be ended and {archive} archived. Continue?",
+      "confirm_apply": "Confirm",
+      "back": "Back to selection",
+      "applied_toast": "Relationships processed: {count}.",
+      "result_title": "Result",
+      "result": {
+        "applied": "Done",
+        "failed": "Failed"
+      },
+      "failed_title": "Failed ({count})"
+    },
     "warning_suppressions": {
       "title": "Hidden warnings",
       "intro": "Warnings you permanently hid on a payroll run. They are not counted in run checks or their totals until you restore them. Blocking errors cannot be hidden.",
