@@ -121,6 +121,18 @@ v [§ 76.11.1](#76111-prumerny-a-pravdepodobny-vydelek).
 **Jak poznáte, že je hotovo:** Průměr má stav **Schválený snapshot** a ve
 formuláři nové absence se nabízí v poli **Schválený průměr za hodinu**.
 
+**Kdy průměr založit:** před zahájením mzdového běhu za měsíc, ve kterém se
+podává měsíční hlášení. Schválený průměr se zmrazí s ostatními vstupy běhu
+(pole 10345 hlášení); schválený až po výpočtu revize hlášení nevidí a oprava
+stojí opravnou revizi. Kontrola před během proto upozorní **Chybí průměr pro
+JMHZ** se jmény zaměstnanců a odkazem na hromadné vypočtení průměrů. Upozornění
+běh nezastavuje.
+
+Průměr jde založit jen na čtvrtletí, ve kterém pracovní vztah trval. Vztah,
+který začíná po konci čtvrtletí nebo skončil před jeho začátkem, aplikace
+odmítne a hromadné založení ho přeskočí. Průměr tak nevznikne omylem na jiném
+vztahu téže osoby.
+
 ## 76.5 Krok za krokem: dovolená
 
 **Na začátku roku určete nárok:**

@@ -604,6 +604,26 @@ final readonly class JmhzPreparationSnapshotService
                 if (!is_array($inputRows) || !array_is_list($inputRows)) {
                     continue;
                 }
+                /*
+                 * Chybějící schválený průměr (10345) se dřív ukázal až u zmrazení
+                 * hlášení, tedy po schválení revize. Stejně jako zmrazení ho tu
+                 * nežádáme u měsíce bez příjmu (nulový formulář, viz
+                 * JmhzZeroReportProfile); jinak průměr patří do snímku vstupů.
+                 */
+                if ($employmentId > 0
+                    && ($entry['average_earning'] ?? null) === null
+                    && !JmhzZeroReportProfile::isMonthWithoutIncome(array_map(
+                        static fn (mixed $row): mixed => is_array($row) ? ($row['amount_minor'] ?? null) : null,
+                        $inputRows,
+                    ))
+                ) {
+                    $issues[] = [
+                        'code' => 'jmhz_average_hourly_earning_missing',
+                        'entity_type' => 'employment',
+                        'entity_id' => $employmentId,
+                        'attribute_ids' => ['10345'],
+                    ];
+                }
                 foreach ($inputRows as $inputRow) {
                     $component = is_array($inputRow) ? ($inputRow['component'] ?? null) : null;
                     if (!is_array($component) || !is_int($component['component_id'] ?? null)) {

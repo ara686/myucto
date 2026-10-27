@@ -124,7 +124,7 @@ final class PayrollRunJmhzReadinessProbe
                     'impact' => $classification['impact'],
                     'scope' => $classification['scope'],
                     'message' => '',
-                    'remediation_path' => self::remediationPath($code),
+                    'remediation_path' => self::remediationPath($code, null, $periodStart),
                     'count' => 0,
                     'entity_total' => 0,
                     'entities' => [],
@@ -139,7 +139,7 @@ final class PayrollRunJmhzReadinessProbe
                     'entity_id' => $issue['entity_id'],
                     'label' => $label,
                     'message' => self::message($issue['code'], $label === null ? [] : [$label], 1),
-                    'remediation_path' => self::remediationPath($issue['code'], $issue['entity_id']),
+                    'remediation_path' => self::remediationPath($issue['code'], $issue['entity_id'], $periodStart),
                 ];
                 if ($label !== null && !in_array($label, $groups[$code]['labels'], true)) {
                     $groups[$code]['labels'][] = $label;
@@ -323,14 +323,37 @@ final class PayrollRunJmhzReadinessProbe
                 . 'mzdový běh ale běží dál.',
                 $named !== '' ? $named : $count . '× pracovní vztah',
             ),
+            'jmhz_average_hourly_earning_missing' => sprintf(
+                'Chybí průměr pro JMHZ: %s. Měsíční hlášení v poli 10345 požaduje '
+                . 'schválený průměrný hodinový výdělek za čtvrtletí období. Otevřete '
+                . 'Mzdy → Absence a průměry → Průměrný výdělek a v části „Hromadné '
+                . 'vypočtení průměrů za čtvrtletí" průměry vypočtěte a schvalte, '
+                . 'a to PŘED zamknutím vstupů a výpočtem. Schválený později se do '
+                . 'zmrazených vstupů revize nedostane a oprava stojí opravnou revizi. '
+                . 'Mzdový běh tím omezený není.',
+                $named !== '' ? $named : $count . '× pracovní vztah',
+            ),
             default => JmhzBlockerExplainer::guidance($code)
                 . ($named === '' ? '' : ' Týká se: ' . $named . '.')
                 . ' Otevřete Mzdová podání → JMHZ a spusťte test hlášení. Mzdový běh tím není omezený.',
         };
     }
 
-    private static function remediationPath(string $code, ?int $entityId = null): ?string
+    private static function remediationPath(string $code, ?int $entityId = null, ?string $periodStart = null): ?string
     {
+        if ($code === 'jmhz_average_hourly_earning_missing') {
+            // Záložka „Průměrný výdělek" s hromadným výpočtem za čtvrtletí období.
+            $query = ['tab' => 'averages'];
+            if ($periodStart !== null && preg_match('/^(\d{4})-(\d{2})-/', $periodStart, $m) === 1) {
+                $query['year'] = (int) $m[1];
+                $query['quarter'] = intdiv((int) $m[2] - 1, 3) + 1;
+            }
+            if ($entityId !== null) {
+                $query['employment'] = $entityId;
+            }
+
+            return '/payroll/absences?' . http_build_query($query);
+        }
         if (in_array($code, [
             'jmhz_identity_missing',
             'jmhz_identity_oic_missing',

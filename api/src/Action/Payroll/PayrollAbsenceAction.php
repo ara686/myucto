@@ -773,6 +773,15 @@ final class PayrollAbsenceAction
         }
         try {
             $data = $this->validator->average($this->body($request));
+            $mismatch = $this->averages->quarterMismatch(
+                $this->currentSupplierId($request),
+                $data['employment_id'],
+                $data['applicable_year'],
+                $data['applicable_quarter'],
+            );
+            if ($mismatch !== null) {
+                throw new \InvalidArgumentException($mismatch);
+            }
             $applicationDate = sprintf(
                 '%04d-%02d-01',
                 $data['applicable_year'],
