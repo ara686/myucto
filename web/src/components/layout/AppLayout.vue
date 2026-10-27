@@ -854,7 +854,7 @@ const navSections = computed<NavSection[]>(() => {
           { to: '/admin/tax-constants', label: t('codebooks.tab_tax_constants'), icon: ICONS.tax_optimizer },
         ] : []),
         ...((isAdmin || isAdminPlus) ? [{ to: '/admin/suppliers', label: t('nav.suppliers'), icon: ICONS.suppliers }] : []),
-        ...(isAdmin && !auth.isManagedInstallation ? [{ to: '/instance-admin', label: t('instance_admin.title'), icon: ICONS.cron }] : []),
+        ...(isAdmin && !auth.isManagedInstallation ? [{ to: '/admin/instance', label: t('instance_admin.title'), icon: ICONS.cron }] : []),
         ...(isAdmin ? [
           { to: '/admin/users',        label: t('nav.users'),      icon: ICONS.users },
           { to: '/admin/roles',        label: t('nav.roles'),      icon: ICONS.approvals },
