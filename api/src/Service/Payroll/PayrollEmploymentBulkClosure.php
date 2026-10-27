@@ -257,6 +257,17 @@ final class PayrollEmploymentBulkClosure
                 $failed[] = ['employment_id' => $employmentId, 'code' => 'invalid_transition', 'message' => $exception->getMessage()];
             } catch (\InvalidArgumentException $exception) {
                 $failed[] = ['employment_id' => $employmentId, 'code' => 'validation_failed', 'message' => $exception->getMessage()];
+            } catch (\PDOException|\RuntimeException $exception) {
+                // Přechod běží ve vlastní transakci a při chybě ji sám vrátí. Uvnitř cizí
+                // transakce chybu nespolkneme, opakování řeší její vlastník.
+                if ($this->db->pdo()->inTransaction()) {
+                    throw $exception;
+                }
+                $failed[] = [
+                    'employment_id' => $employmentId,
+                    'code' => 'transition_failed',
+                    'message' => 'Vztah se nepodařilo ukončit, zkuste to znovu.',
+                ];
             }
         }
 

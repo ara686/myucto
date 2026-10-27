@@ -273,7 +273,7 @@ final class PayrollTaxDeclarationBulkSign
                 'effective_from' => $from,
                 'effective_to' => $assessment['effective_to'],
             ]];
-        } catch (\Exception $exception) {
+        } catch (\Throwable $exception) {
             // Odvolaná transakce (1020/1213) savepoint nemá. Vlastní transakce osoby
             // je tím vrácená, cizí musí dostat její vlastník.
             if (!TransactionFailure::rollbackIfAborted($this->db->pdo(), $exception)) {

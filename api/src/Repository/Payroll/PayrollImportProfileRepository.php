@@ -30,7 +30,7 @@ final class PayrollImportProfileRepository
         'myucto' => 'payroll_attendance_myucto_sample_seeded_at',
     ];
 
-    /** Vzory založené před zavedením klíčů jsou GIRITON (migrace 2208). */
+    /** Vzory založené před zavedením klíčů jsou GIRITON (migrace 2206). */
     private const LEGACY_SAMPLE_KEY = 'giriton';
 
     public function __construct(private readonly Connection $db)

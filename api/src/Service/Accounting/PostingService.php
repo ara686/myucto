@@ -1766,6 +1766,12 @@ final class PostingService
                 (string) $pi['issue_date'],
                 $receivedAt,
             );
+            // Kniha DPH tuzemské řádky bez nároku vyřadí a u § 75 je zkrátí, samovyměření
+            // ale nechá celé. Pro zápis je proto doklad z položek a z knihy jen samovyměřená daň.
+            if ($isRc && in_array($vatDeduction, ['none', 'proportional'], true)) {
+                [$net, $itemVat] = $this->purchaseItemTotals($purchaseInvoiceId, $rate);
+                $vat = round($itemVat + $selfAssessedVat, 2);
+            }
         } else {
             [$net, $vat] = $this->purchaseItemTotals($purchaseInvoiceId, $rate);
             $selfAssessedVat = 0.0;

@@ -1803,6 +1803,28 @@ final class PostingServiceTest extends TestCase
         self::assertEqualsWithDelta(1000.00, $byAccount['321']['credit'], 0.001);
     }
 
+    /**
+     * Smíšený doklad: řádek § 92a (samovyměření) a tuzemský řádek s daní dodavatele,
+     * celý bez nároku. Celá daň dodavatele i samovyměřená daň jsou nákladem.
+     */
+    public function testPurchaseInvoiceMixedRcWithoutDeductionPostsSupplierVatIntoExpense(): void
+    {
+        $purchaseId = $this->rcPurchaseWithDeduction('PF-2099-RCMIX', 'none', 100.00);
+        $this->db->pdo()->prepare(
+            'UPDATE purchase_invoices SET total_without_vat = 1500.00, total_vat = 105.00, total_with_vat = 1605.00 WHERE id = ?'
+        )->execute([$purchaseId]);
+        $this->insertItem('purchase_invoice_items', 'purchase_invoice_id', $purchaseId, 500.00, 105.00, 21.00);
+        $this->db->pdo()->prepare(
+            "UPDATE purchase_invoice_items SET vat_classification_code = '40' WHERE purchase_invoice_id = ? AND total_vat > 0"
+        )->execute([$purchaseId]);
+
+        $byAccount = $this->postedPurchaseByAccount($purchaseId);
+        self::assertEqualsWithDelta(1815.00, $byAccount['518']['debit'], 0.001);
+        self::assertArrayNotHasKey('343.100', $byAccount);
+        self::assertEqualsWithDelta(210.00, $byAccount['343.200']['credit'], 0.001);
+        self::assertEqualsWithDelta(1605.00, $byAccount['321']['credit'], 0.001);
+    }
+
     private function rcPurchaseWithDeduction(string $number, string $deduction, float $percent): int
     {
         $vendor = $this->client('Dodavatel RC ' . $deduction, false, true);
