@@ -6,6 +6,8 @@ import { ref, computed, onMounted } from 'vue'
 import { tokensApi, type ApiToken, type ApiLogEntry } from '@/api/tokens'
 import { useToast } from '@/composables/useToast'
 import EmptyState from '@/components/ui/EmptyState.vue'
+import McpConnectionGuide from '@/components/mcp/McpConnectionGuide.vue'
+import McpServerAddress from '@/components/mcp/McpServerAddress.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
@@ -1189,66 +1191,11 @@ npm install</pre>
           </div>
         </div>
       </div>
-      <div class="bg-surface border border-neutral-200 rounded-lg shadow-sm p-5 mb-4">
-        <h2 class="text-lg font-semibold mb-1">{{ t('mcp_server_page.connection.remote_title') }}</h2>
-        <p class="text-sm text-neutral-700 mb-4">{{ t('mcp_server_page.connection.remote_intro') }}</p>
-        <div class="flex flex-wrap items-center gap-3">
-          <div class="min-w-0">
-            <div class="text-xs text-neutral-500 mb-1">{{ t('mcp_server_page.connection.remote_url_label') }}</div>
-            <code class="block px-3 py-2 bg-neutral-100 rounded font-mono text-sm break-all">{{ remoteUrl }}</code>
-          </div>
-          <button type="button" @click="copy(remoteUrl)"
-            class="cursor-pointer inline-flex items-center gap-2 h-9 px-3 bg-primary-600 hover:bg-primary-700 text-white rounded-md text-sm font-medium whitespace-nowrap">
-            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-              <rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" />
-            </svg>
-            {{ t('mcp_server_page.connection.copy_url') }}
-          </button>
-        </div>
-        <p class="text-xs text-neutral-500 mt-3">{{ t('mcp_server_page.connection.url_requirement') }}</p>
-      </div>
+      <McpServerAddress class="mb-4" :endpoint="remoteUrl"
+        :description="t('mcp_server_page.connection.remote_intro')"
+        :hint="t('mcp_server_page.connection.url_requirement')" @copy="copy" />
 
-      <div class="bg-surface border border-neutral-200 rounded-lg shadow-sm p-5 mb-4">
-        <h2 class="text-lg font-semibold mb-3">{{ t('mcp_server_page.connection.how_to_title') }}</h2>
-        <ol class="list-decimal pl-5 space-y-2 text-sm text-neutral-700">
-          <li>{{ t('mcp_server_page.connection.step_copy') }}</li>
-          <li>{{ t('mcp_server_page.connection.step_add') }}</li>
-          <li>{{ t('mcp_server_page.connection.step_authorize') }}</li>
-          <li>{{ t('mcp_server_page.connection.step_verify') }}</li>
-        </ol>
-        <p class="mt-3 rounded-md bg-primary-50 border border-primary-600/40 px-3 py-2 text-sm text-primary-700">
-          {{ t('mcp_server_page.connection.no_pat') }}
-        </p>
-      </div>
-
-      <div class="grid gap-4 md:grid-cols-2 mb-4">
-        <div class="bg-surface border border-neutral-200 rounded-lg shadow-sm p-5">
-          <h3 class="font-semibold mb-2">ChatGPT</h3>
-          <ol class="list-decimal pl-5 space-y-2 text-sm text-neutral-700">
-            <li>{{ t('mcp_server_page.connection.chatgpt_1') }}</li>
-            <li>{{ t('mcp_server_page.connection.chatgpt_2') }}</li>
-            <li>{{ t('mcp_server_page.connection.chatgpt_3') }}</li>
-          </ol>
-          <p class="mt-3 rounded-md bg-warning-50 border border-warning-500/40 px-3 py-2 text-sm text-warning-700">
-            {{ t('mcp_server_page.connection.chatgpt_mobile') }}
-          </p>
-        </div>
-        <div class="bg-surface border border-neutral-200 rounded-lg shadow-sm p-5">
-          <h3 class="font-semibold mb-2">{{ t('mcp_server_page.connection.claude_title') }}</h3>
-          <ol class="list-decimal pl-5 space-y-2 text-sm text-neutral-700">
-            <li>{{ t('mcp_server_page.connection.claude_1') }}</li>
-            <li>{{ t('mcp_server_page.connection.claude_2') }}</li>
-            <li>{{ t('mcp_server_page.connection.claude_3') }}</li>
-          </ol>
-          <p class="mt-3 rounded-md bg-success-50 border border-success-500/40 px-3 py-2 text-sm text-success-700">
-            {{ t('mcp_server_page.connection.claude_mobile') }}
-          </p>
-          <a href="https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp"
-            target="_blank" rel="noopener noreferrer" class="mt-2 inline-block text-xs text-primary-600 hover:underline">
-            {{ t('mcp_server_page.connection.provider_guide') }} →
-          </a>
-        </div>
-      </div>
+      <McpConnectionGuide class="mb-4" />
 
       <div class="bg-surface border border-neutral-200 rounded-lg shadow-sm p-5 mb-4 text-sm text-neutral-700">
         <h2 class="text-lg font-semibold mb-2">{{ t('mcp_server_page.connection.permissions_title') }}</h2>

@@ -5,6 +5,9 @@ import { api } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import { useToast } from '@/composables/useToast'
 import { formatDateTime } from '@/composables/useFormat'
+import { btnOutline } from '@/components/ui/buttonStyles'
+import McpConnectionGuide from '@/components/mcp/McpConnectionGuide.vue'
+import McpServerAddress from '@/components/mcp/McpServerAddress.vue'
 
 interface Grant {
   id: number
@@ -47,9 +50,9 @@ async function load() {
   }
 }
 
-async function copyEndpoint() {
+async function copyEndpoint(address: string) {
   try {
-    await navigator.clipboard.writeText(endpoint.value)
+    await navigator.clipboard.writeText(address)
     toast.success(t('client_mcp.copied'))
   } catch {
     toast.error(t('client_mcp.copy_error'))
@@ -77,34 +80,29 @@ onActivated(() => { if (mounted) void load() })
 <template>
   <div class="space-y-6">
     <h1 class="text-2xl font-semibold">{{ t('client_mcp.title') }}</h1>
-    <p class="text-neutral-600 dark:text-neutral-400">{{ t('client_mcp.description') }}</p>
-    <p v-if="error" role="alert" class="rounded-xl bg-danger-50 p-4 text-danger-700">{{ error }}</p>
-    <section class="rounded-xl border border-neutral-200 bg-white p-5 dark:border-neutral-700 dark:bg-neutral-900">
+    <p class="text-neutral-600">{{ t('client_mcp.description') }}</p>
+    <p v-if="error" role="alert" class="rounded-xl bg-danger-50 p-4 text-neutral-900">{{ error }}</p>
+    <section class="rounded-xl border border-neutral-200 bg-surface p-5">
       <h2 class="mb-3 text-lg font-semibold">{{ t('client_mcp.connect') }}</h2>
       <p v-if="!enabled">{{ t('client_mcp.disabled') }}</p>
       <p v-else-if="!canConnect">{{ t('client_mcp.permission_required') }}</p>
-      <template v-else>
-        <p class="mb-4">{{ t('client_mcp.instructions') }}</p>
-        <div class="flex flex-wrap items-center gap-3">
-          <code class="break-all rounded-lg bg-neutral-100 p-3 dark:bg-neutral-800">{{ endpoint }}</code>
-          <button type="button" class="inline-flex items-center gap-2 whitespace-nowrap rounded-lg bg-primary-600 px-4 py-2 text-white hover:bg-primary-700" @click="copyEndpoint">
-            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><path d="M9 5H5v14h10v-4M9 5V3h10v12H9V5Z" /></svg>
-            {{ t('client_mcp.copy') }}
-          </button>
-        </div>
-      </template>
+      <p v-else>{{ t('client_mcp.instructions') }}</p>
     </section>
-    <section class="rounded-xl border border-neutral-200 bg-white p-5 dark:border-neutral-700 dark:bg-neutral-900">
+    <McpServerAddress v-if="endpoint" :endpoint="endpoint"
+      :hint="auth.domainContext?.locked !== true ? t('client_mcp.canonical_endpoint_hint') : undefined"
+      @copy="copyEndpoint" />
+    <McpConnectionGuide client-domain />
+    <section class="rounded-xl border border-neutral-200 bg-surface p-5">
       <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h2 class="text-lg font-semibold">{{ t('client_mcp.connections') }}</h2>
-        <button type="button" :disabled="loading" class="inline-flex items-center gap-2 whitespace-nowrap rounded-lg border border-neutral-300 px-3 py-2 text-neutral-700 hover:bg-neutral-100 disabled:opacity-50 dark:text-neutral-200 dark:hover:bg-neutral-800" @click="load">
+        <button type="button" :disabled="loading" :class="btnOutline('neutral')" @click="load">
           <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6 7a7 7 0 0 1 12-1l2 2M4 16l2 2a7 7 0 0 0 12-1" /></svg>
           {{ t('client_mcp.refresh') }}
         </button>
       </div>
       <p v-if="loading" role="status">{{ t('client_mcp.loading') }}</p>
       <p v-else-if="grants.length === 0">{{ t('client_mcp.empty') }}</p>
-      <ul v-else class="divide-y divide-neutral-200 dark:divide-neutral-700">
+      <ul v-else class="divide-y divide-neutral-200">
         <li v-for="grant in grants" :key="grant.id" class="flex flex-wrap items-center justify-between gap-3 py-4">
           <div class="min-w-0 space-y-1">
             <p class="font-medium">{{ grant.client_name }}</p>
@@ -112,7 +110,7 @@ onActivated(() => { if (mounted) void load() })
             <p class="text-sm">{{ t(grant.scope === 'read_write' ? 'client_mcp.read_write' : 'client_mcp.read') }} · {{ t(grant.is_active ? 'client_mcp.active' : 'client_mcp.inactive') }}</p>
             <p class="text-sm text-neutral-500">{{ t('client_mcp.last_used', { date: grant.last_used_at ? formatDateTime(grant.last_used_at) : t('client_mcp.never') }) }}</p>
           </div>
-          <button v-if="grant.is_active" type="button" :disabled="revoking !== null" class="inline-flex items-center gap-2 whitespace-nowrap rounded-lg border border-danger-300 px-3 py-2 text-danger-700 hover:bg-danger-50 disabled:opacity-50" @click="revoke(grant)">
+          <button v-if="grant.is_active" type="button" :disabled="revoking !== null" :class="btnOutline('danger')" @click="revoke(grant)">
             <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
             {{ t('client_mcp.revoke') }}
           </button>

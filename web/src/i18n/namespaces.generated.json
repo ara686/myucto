@@ -230,7 +230,8 @@
       "time_billing"
     ],
     "portal-mcp": [
-      "client_mcp"
+      "client_mcp",
+      "mcp_server_page"
     ],
     "portal": [
       "portal",
@@ -1332,6 +1333,7 @@
       "api_tokens"
     ],
     "profile-mcp-server": [
+      "client_mcp",
       "mcp_server_page"
     ]
   }
