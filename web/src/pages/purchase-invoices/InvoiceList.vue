@@ -809,6 +809,14 @@ function rowLockedForMe(inv: PurchaseInvoiceListItem): boolean {
   return auth.isClientRole && !!inv.locked?.is_locked
 }
 
+function kindOf(id: number): string | null {
+  for (const g of groups.value) {
+    const f = g.invoices.find(i => i.id === id)
+    if (f) return f.document_kind
+  }
+  return null
+}
+
 function lockedById(id: number): boolean {
   for (const g of groups.value) {
     const f = g.invoices.find(i => i.id === id)
@@ -826,7 +834,8 @@ const draftsSelected     = computed(() => selectedIds.value.filter(id => statusO
 const markReceivedSelected = computed(() => selectedIds.value.filter(id => statusOf(id) === 'draft' && !lockedById(id)))
 const markPayableSelected = computed(() => selectedIds.value.filter(id => {
   const s = statusOf(id)
-  return (s === 'received' || s === 'booked') && !lockedById(id)
+  // DDKP se neplatí, úhrada patří na zálohu.
+  return (s === 'received' || s === 'booked') && !lockedById(id) && kindOf(id) !== 'tax_document'
 }))
 const cancellableSelected = computed(() => selectedIds.value.filter(id => {
   const s = statusOf(id); return s && s !== 'cancelled'

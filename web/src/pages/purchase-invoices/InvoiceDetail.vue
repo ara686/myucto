@@ -586,6 +586,8 @@ const allowedTransitions = computed<PurchaseInvoiceStatus[]>(() => {
     case 'cancelled': targets = ['received']; break                  // un-cancel
     default:          targets = []
   }
+  // DDKP (§ 28 ZDPH) se neplatí, úhrada patří na zálohu (BE 409 tax_document_not_payable).
+  if (invoice.value.document_kind === 'tax_document') targets = targets.filter(s => s !== 'paid')
   // Client (F6): whitelist cílů received ⇄ paid — booked/cancelled jsou pro klienta
   // VŽDY 403 forbidden_transition; na zamčeném dokladu žádné přechody.
   if (auth.isClientRole) {
