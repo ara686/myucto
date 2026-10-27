@@ -11905,6 +11905,14 @@
       }
     },
     "jmhz_gate": {
+      "freeze_blockers": {
+        "title": "The report cannot be frozen because these details are missing",
+        "hint": "For each employee you can jump straight to the field to fix. After saving, use Back to JMHZ preparation to return.",
+        "fix": "Fix",
+        "fix_for": "Fix: {label}",
+        "no_name": "Unnamed"
+      },
+      "return_to_jmhz": "Back to JMHZ preparation",
       "unlabelled": "Finding without a description. Run the report test again; if it stays, contact support.",
       "remediation": {
         "employment_terms": "Open employment terms",

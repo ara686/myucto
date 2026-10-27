@@ -212,6 +212,7 @@ final readonly class JmhzSubmissionBridgeService
                     . ($this->people === null
                         ? JmhzBlockerExplainer::describe($resolution->blockers)
                         : JmhzBlockerExplainer::describeNamed($resolution->blockers, $this->people, $supplierId)),
+                JmhzBlockerRemediationPath::payload($resolution->blockers, $this->people, $supplierId),
             );
         }
         $document = $resolution->requireResolvedDocument();

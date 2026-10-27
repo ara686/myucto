@@ -11905,6 +11905,14 @@
       }
     },
     "jmhz_gate": {
+      "freeze_blockers": {
+        "title": "Hlášení nejde zmrazit, protože chybí tyto údaje",
+        "hint": "U každého zaměstnance se můžete rovnou prokliknout na pole k opravě. Po uložení se vrátíte tlačítkem Zpět na přípravu JMHZ.",
+        "fix": "Opravit",
+        "fix_for": "Opravit: {label}",
+        "no_name": "Bez jména"
+      },
+      "return_to_jmhz": "Zpět na přípravu JMHZ",
       "unlabelled": "Nález bez popisu. Spusťte test hlášení znovu; pokud zůstane, kontaktujte podporu.",
       "remediation": {
         "employment_terms": "Otevřít podmínky vztahu",

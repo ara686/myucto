@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { useI18n } from 'vue-i18n'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter, type LocationQueryRaw } from 'vue-router'
 import { apiErrorMessage } from '@/api/errors'
+import PayrollJmhzReturnBar from './PayrollJmhzReturnBar.vue'
 import {
   payrollApi,
   type PayrollEmployment,
@@ -1380,6 +1381,7 @@ onMounted(async () => {
 
 <template>
   <div class="space-y-6">
+    <PayrollJmhzReturnBar />
     <!--
       Zakládání zaměstnance schová seznam stejně jako editace osoby.
       Formulář se sice kreslil nad seznamem, ale „Přidat zaměstnance" je

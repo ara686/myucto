@@ -1400,6 +1400,36 @@ final class JmhzSubmissionBridgeServiceTest extends TestCase
         self::assertSame(0, $this->countRows('payroll_submission_artifacts'));
     }
 
+    public function testBlockedPreparationCarriesStructuredBlockersWithPath(): void
+    {
+        $bridge = $this->bridge(new JmhzScenario1Resolution(null, [
+            new JmhzScenario1Blocker('jmhz_annual_request_source_missing', 'person', 11, ['10319']),
+            new JmhzScenario1Blocker('jmhz_average_hourly_earning_missing', 'employment', 22),
+        ]));
+
+        try {
+            $bridge->bridge(
+                $this->supplierId,
+                self::PREPARATION_ID,
+                $this->registerObligation(),
+                self::ENVIRONMENT,
+                $this->userId,
+            );
+            self::fail('Blokovaná příprava nesmí založit podání.');
+        } catch (JmhzXmlException $exception) {
+            self::assertCount(2, $exception->blockers);
+            [$annual, $average] = $exception->blockers;
+            self::assertSame('jmhz_annual_request_source_missing', $annual['code']);
+            self::assertSame('/payroll/annual-settlement?person=11', $annual['remediation_path']);
+            self::assertArrayHasKey('label', $annual);
+            self::assertSame(
+                '/payroll/absences?employment=22&tab=averages',
+                $average['remediation_path'],
+            );
+            self::assertSame('Chybí ověřený průměrný hodinový výdělek.', $average['reason']);
+        }
+    }
+
     /**
      * XSD by tohle podání pustilo — rozvaha PVPOJ nesedí až na úrovni katalogu
      * kontrol. Zmrazit ho by znamenalo jen odsunout zamítnutí blíž ke lhůtě.

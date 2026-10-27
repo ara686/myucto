@@ -221,6 +221,12 @@ Lhůta: 20. den následujícího měsíce (na pracovní den se posouvá).
 9. Aplikace se ČSSZ na výsledek doptává sama. Stav sledujte na záložce
    **Odesláno**.
 
+Nejde-li hlášení při odeslání nebo zmrazení připravit, aplikace pod chybou
+vypíše nálezy seskupené podle důvodu a u každého jméno zaměstnance. Tlačítko
+**Opravit** otevře přímo pole, které chybí (karta zaměstnance, roční zúčtování,
+průměry). Na stránce otevřené tímto odkazem je nahoře tlačítko **Zpět na
+přípravu JMHZ**, které vás vrátí tam, kde jste skončili.
+
 **Jak poznáte, že je hotovo:** Na záložce **Odesláno** má podání za období
 štítek **Přijato** a v panelu **Zákonné termíny** je JMHZ za měsíc **Splněno**.
 Stav **Odesláno** ani **Čeká na výsledek** ještě nestačí, rozhoduje ověřený

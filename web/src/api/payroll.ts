@@ -4316,6 +4316,14 @@ export interface PayrollJmhzXmlDryRunBlocker {
   deferrable?: boolean
 }
 
+/** Nález blokace zmrazení hlášení se jménem a odkazem na opravu. */
+export interface PayrollJmhzFreezeBlocker extends PayrollJmhzXmlDryRunBlocker {
+  /** Jméno zaměstnance nebo pracovního vztahu; `null` u nálezu bez osoby. */
+  label: string | null
+  /** Cesta v aplikaci, kde se údaj opravuje; `null` = není kam jít. */
+  remediation_path: string | null
+}
+
 /** Vztahy vynechané z hlášení (odložené) a co to znamená pro kontroly. */
 export interface PayrollJmhzDryRunDeferred {
   purpose: 'deferral' | 'correction_scope'
