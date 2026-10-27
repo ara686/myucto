@@ -4919,6 +4919,17 @@
       "subtitle": "Výpočet daně a roční zúčtování záloh a daňového zvýhodnění podle § 38ch zákona o daních z příjmů.",
       "year": "Zdaňovací období",
       "reload": "Obnovit",
+      "bulk_request": {
+        "select_page": "Vybrat vše na stránce",
+        "select_person": "Vybrat osobu {name}",
+        "selected": "Vybráno: {count}",
+        "clear": "Zrušit výběr",
+        "set_not_requested": "Nastavit: nepožádal",
+        "set_requested": "Nastavit: požádal",
+        "confirm": "Nastavit stav žádosti „{status}“ za rok {year} vybraným zaměstnancům ({count})? Změní se jen stav žádosti, ostatní evidence zůstane.",
+        "done": "Stav žádosti nastaven. Založeno: {created}, změněno: {updated}.",
+        "failed": "Hromadné nastavení stavu žádosti se nepodařilo."
+      },
       "bulk": {
         "action": "Provést zúčtování všem žadatelům",
         "running": "Zúčtování žadatelů běží…",

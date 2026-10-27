@@ -4919,6 +4919,17 @@
       "subtitle": "Annual settlement of tax advances and the child tax benefit under Section 38ch of the Czech Income Tax Act.",
       "year": "Tax year",
       "reload": "Reload",
+      "bulk_request": {
+        "select_page": "Select all on page",
+        "select_person": "Select {name}",
+        "selected": "Selected: {count}",
+        "clear": "Clear selection",
+        "set_not_requested": "Set: did not request",
+        "set_requested": "Set: requested",
+        "confirm": "Set the request status to \"{status}\" for {year} for the selected employees ({count})? Only the request status changes, other records stay as they are.",
+        "done": "Request status set. Created: {created}, updated: {updated}.",
+        "failed": "Bulk update of the request status failed."
+      },
       "bulk": {
         "action": "Settle all requesters",
         "running": "Settling requesters…",

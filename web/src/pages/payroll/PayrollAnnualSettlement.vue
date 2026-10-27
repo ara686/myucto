@@ -35,7 +35,7 @@ import {
 import { apiErrorMessage } from '@/api/errors'
 import { useAuthStore } from '@/stores/auth'
 import { useToast } from '@/composables/useToast'
-import { btnOutline, disabledTitle, BTN_DISABLED_NOTE, ICONS } from '@/components/ui/buttonStyles'
+import { btnFilledSm, btnOutline, btnOutlineSm, disabledTitle, BTN_DISABLED_NOTE, ICONS } from '@/components/ui/buttonStyles'
 import ActionBar, { type ActionItem } from '@/components/ui/ActionBar.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import PaginationBar from '@/components/ui/PaginationBar.vue'
@@ -608,6 +608,62 @@ async function settle(): Promise<void> {
 }
 
 /**
+ * Hromadné nastavení stavu žádosti (typicky „nepožádal" u stovek brigádníků,
+ * u kterých měsíční JMHZ potřebuje odpověď). Výběr drží ID napříč stránkami;
+ * mění se jen stav žádosti, ostatní evidence zůstává.
+ */
+const bulkSelected = ref<Set<number>>(new Set())
+const bulkRequestSaving = ref(false)
+const allOnPageSelected = computed(() =>
+  items.value.length > 0 && items.value.every(item => bulkSelected.value.has(item.employee_id)))
+
+function toggleBulkPerson(employeeId: number): void {
+  const next = new Set(bulkSelected.value)
+  if (!next.delete(employeeId)) next.add(employeeId)
+  bulkSelected.value = next
+}
+
+function toggleBulkPage(): void {
+  const next = new Set(bulkSelected.value)
+  const everySelected = allOnPageSelected.value
+  for (const item of items.value) {
+    if (everySelected) next.delete(item.employee_id)
+    else next.add(item.employee_id)
+  }
+  bulkSelected.value = next
+}
+
+async function bulkSetRequestStatus(status: 'requested' | 'not_requested'): Promise<void> {
+  if (bulkRequestSaving.value || bulkSelected.value.size === 0) return
+  const count = bulkSelected.value.size
+  const label = t(`payroll.annual_settlement.request_status_options.${status}`)
+  if (!window.confirm(t('payroll.annual_settlement.bulk_request.confirm', {
+    count,
+    status: label,
+    year: year.value,
+  }))) return
+  bulkRequestSaving.value = true
+  try {
+    const response = await payrollApi.bulkSetAnnualSettlementRequestStatus(
+      year.value,
+      [...bulkSelected.value],
+      status,
+    )
+    toast.success(t('payroll.annual_settlement.bulk_request.done', {
+      created: response.created,
+      updated: response.updated,
+    }))
+    bulkSelected.value = new Set()
+    await load()
+    if (selectedEmployeeId.value !== null) await select(selectedEmployeeId.value)
+  } catch (error) {
+    toast.error(apiErrorMessage(error, t('payroll.annual_settlement.bulk_request.failed')))
+  } finally {
+    bulkRequestSaving.value = false
+  }
+}
+
+/**
  * Hromadné roční zúčtování všech žadatelů.
  *
  * Nejde po jednom z prohlížeče, ale přes serverovou frontu ročních dokumentů:
@@ -776,6 +832,7 @@ watch(year, () => {
   certificates.value = []
   document.value = null
   offset.value = 0
+  bulkSelected.value = new Set()
   dismissBulk()
   void load()
 })
@@ -1004,6 +1061,57 @@ onMounted(async () => {
 
     <div class="grid gap-6 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
       <section class="rounded-lg border border-neutral-200 bg-surface">
+        <div
+          v-if="!loading && items.length > 0 && canWrite"
+          class="flex flex-wrap items-center gap-2 border-b border-neutral-200 px-4 py-2"
+          data-test="annual-settlement-bulk-request-bar"
+        >
+          <label class="inline-flex items-center gap-2 text-xs text-neutral-600">
+            <input
+              type="checkbox"
+              :checked="allOnPageSelected"
+              data-test="annual-settlement-select-all"
+              @change="toggleBulkPage"
+            >
+            {{ t('payroll.annual_settlement.bulk_request.select_page') }}
+          </label>
+          <template v-if="bulkSelected.size > 0">
+            <span class="text-xs font-medium text-neutral-700" data-test="annual-settlement-bulk-request-count">
+              {{ t('payroll.annual_settlement.bulk_request.selected', { count: bulkSelected.size }) }}
+            </span>
+            <button
+              type="button"
+              data-test="annual-settlement-bulk-not-requested"
+              :class="[btnFilledSm('warning'), 'whitespace-nowrap']"
+              :disabled="bulkRequestSaving"
+              @click="bulkSetRequestStatus('not_requested')"
+            >
+              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path :d="ICONS.x" />
+              </svg>
+              {{ t('payroll.annual_settlement.bulk_request.set_not_requested') }}
+            </button>
+            <button
+              type="button"
+              data-test="annual-settlement-bulk-requested"
+              :class="[btnFilledSm('success'), 'whitespace-nowrap']"
+              :disabled="bulkRequestSaving"
+              @click="bulkSetRequestStatus('requested')"
+            >
+              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path :d="ICONS.check" />
+              </svg>
+              {{ t('payroll.annual_settlement.bulk_request.set_requested') }}
+            </button>
+            <button
+              type="button"
+              :class="[btnOutlineSm('neutral'), 'whitespace-nowrap']"
+              @click="bulkSelected = new Set()"
+            >
+              {{ t('payroll.annual_settlement.bulk_request.clear') }}
+            </button>
+          </template>
+        </div>
         <div v-if="loading" class="p-6 text-sm text-neutral-500">…</div>
         <EmptyState
           v-else-if="loadFailed && items.length === 0"
@@ -1021,11 +1129,20 @@ onMounted(async () => {
           :message="t('payroll.annual_settlement.no_employees_description')"
         />
         <ul v-else class="divide-y divide-neutral-200">
-          <li v-for="item in items" :key="item.employee_id">
+          <li v-for="item in items" :key="item.employee_id" class="flex items-center">
+            <input
+              v-if="canWrite"
+              type="checkbox"
+              class="ml-4 shrink-0"
+              :checked="bulkSelected.has(item.employee_id)"
+              :aria-label="t('payroll.annual_settlement.bulk_request.select_person', { name: item.employee_name })"
+              data-test="annual-settlement-person-check"
+              @change="toggleBulkPerson(item.employee_id)"
+            >
             <button
               type="button"
               data-test="annual-settlement-person"
-              class="cursor-pointer flex w-full flex-wrap items-center justify-between gap-2 px-4 py-3 text-left transition-colors hover:bg-neutral-50"
+              class="cursor-pointer flex min-w-0 flex-1 flex-wrap items-center justify-between gap-2 px-4 py-3 text-left transition-colors hover:bg-neutral-50"
               :class="item.employee_id === selectedEmployeeId ? 'bg-primary-50' : ''"
               @click="select(item.employee_id)"
             >

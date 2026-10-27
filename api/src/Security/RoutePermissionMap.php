@@ -546,6 +546,7 @@ final class RoutePermissionMap
         ['GET', '#^/api/payroll/annual-settlements/[0-9]{4}$#', 'payroll.documents', AccessLevel::READ],
         ['GET', '#^/api/payroll/annual-settlements/[0-9]{4}/people/[0-9]+$#', 'payroll.documents', AccessLevel::READ],
         ['PUT', '#^/api/payroll/annual-settlements/[0-9]{4}/people/[0-9]+/request$#', 'payroll.documents', AccessLevel::WRITE],
+        ['PUT', '#^/api/payroll/annual-settlements/[0-9]{4}/requests/bulk$#', 'payroll.documents', AccessLevel::WRITE],
         // Zadání potvrzení od jiného plátce je taky `payroll.approve`: ta čísla
         // jdou přímo do úhrnu, ze kterého vychází přeplatek, takže kdo je smí
         // zadat, ten rozhoduje o penězích stejně jako ten, kdo zúčtování provede.

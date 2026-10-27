@@ -1411,6 +1411,10 @@ final class Routes
                 [PayrollAnnualSettlementAction::class, 'preview'],
             );
             $g->put(
+                '/annual-settlements/{year:[0-9]{4}}/requests/bulk',
+                [PayrollAnnualSettlementAction::class, 'saveRequestsBulk'],
+            );
+            $g->put(
                 '/annual-settlements/{year:[0-9]{4}}/people/{employeeId:[0-9]+}/request',
                 [PayrollAnnualSettlementAction::class, 'saveRequest'],
             );

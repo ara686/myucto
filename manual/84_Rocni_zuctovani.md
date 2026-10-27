@@ -78,6 +78,25 @@ ukazuje úhrn rozepsaný na tohoto a předchozí zaměstnavatele.
 **Jak poznáte, že je hotovo:** Zpráva ukáže „Zúčtováno: N, přeskočeno: N,
 selhalo: N“. Už zúčtované osoby se přeskočí.
 
+### Hromadné nastavení stavu žádosti
+
+Když potřebujete u mnoha lidí (typicky brigádníků) jen zapsat, že o roční
+zúčtování nepožádali, nemusíte otevírat každého zvlášť.
+
+1. V `Mzdy → Roční zúčtování` zvolte rok a případně zúžte seznam hledáním nebo stavem.
+2. Zaškrtněte zaměstnance, nebo použijte **Vybrat vše na stránce**. Výběr zůstane
+   zachovaný i při listování na další stránky.
+3. Klikněte na **Nastavit: nepožádal** (nebo **Nastavit: požádal**) a potvrďte.
+
+Změní se jen stav žádosti. Lidem, kteří žádost zatím nemají, se založí s ostatními
+údaji ve stavu „Neznámé“, u ostatních zůstává datum, doklad i další evidence beze
+změny. Stav „požádal“ nastavený hromadně nemá datum žádosti, takže zúčtování takové
+osoby neproběhne, dokud datum nedoplníte v jejím detailu. Hromadně lze zpracovat
+nejvýše 1000 lidí najednou.
+
+**Jak poznáte, že je hotovo:** Zpráva ukáže, kolik žádostí se založilo a kolik změnilo,
+a seznam vlevo ukazuje nový stav.
+
 ## 84.6 Když něco nejde
 
 <!-- cols: 30 34 36 -->

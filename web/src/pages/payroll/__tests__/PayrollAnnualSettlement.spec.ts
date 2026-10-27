@@ -7,6 +7,7 @@ const m = vi.hoisted(() => ({
   listAnnualSettlements: vi.fn(),
   previewAnnualSettlement: vi.fn(),
   saveAnnualSettlementRequest: vi.fn(),
+  bulkSetAnnualSettlementRequestStatus: vi.fn(),
   settleAnnualSettlement: vi.fn(),
   saveAnnualSettlementCertificates: vi.fn(),
   downloadDocument: vi.fn(),
@@ -33,6 +34,7 @@ vi.mock('@/api/payroll', () => ({
     listAnnualSettlements: m.listAnnualSettlements,
     previewAnnualSettlement: m.previewAnnualSettlement,
     saveAnnualSettlementRequest: m.saveAnnualSettlementRequest,
+    bulkSetAnnualSettlementRequestStatus: m.bulkSetAnnualSettlementRequestStatus,
     settleAnnualSettlement: m.settleAnnualSettlement,
     saveAnnualSettlementCertificates: m.saveAnnualSettlementCertificates,
     downloadDocument: m.downloadDocument,
@@ -699,6 +701,28 @@ describe('Roční zúčtování', () => {
         request_evidence_reference: 'synthetic',
       }),
     )
+  })
+
+  it('hromadně nastaví stav žádosti vybraným lidem a seznam znovu načte', async () => {
+    m.listAnnualSettlements.mockResolvedValue(
+      listResponse([person(), person({ employee_id: 8, employee_name: 'Druhá osoba' })]),
+    )
+    m.bulkSetAnnualSettlementRequestStatus.mockResolvedValue({ created: 1, updated: 1 })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const wrapper = mountPage()
+    await flushPromises()
+
+    await wrapper.get('[data-test="annual-settlement-select-all"]').setValue(true)
+    await wrapper.get('[data-test="annual-settlement-bulk-not-requested"]').trigger('click')
+    await flushPromises()
+
+    expect(m.bulkSetAnnualSettlementRequestStatus).toHaveBeenCalledWith(
+      defaultYear,
+      [7, 8],
+      'not_requested',
+    )
+    expect(m.success).toHaveBeenCalled()
+    expect(m.listAnnualSettlements).toHaveBeenCalledTimes(2)
   })
 
   /**

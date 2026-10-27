@@ -9338,6 +9338,15 @@ export const payrollApi = {
     api.get<PayrollAnnualSettlementPreview>(
       `/payroll/annual-settlements/${year}/people/${employeeId}`,
     ).then(response => response.data),
+  bulkSetAnnualSettlementRequestStatus: (
+    year: number,
+    employeeIds: number[],
+    requestStatus: 'requested' | 'not_requested',
+  ) =>
+    api.put<{ created: number, updated: number }>(
+      `/payroll/annual-settlements/${year}/requests/bulk`,
+      { employee_ids: employeeIds, request_status: requestStatus },
+    ).then(response => response.data),
   saveAnnualSettlementRequest: (
     year: number,
     employeeId: number,

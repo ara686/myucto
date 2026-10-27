@@ -36,6 +36,8 @@ final class PayrollAnnualSettlementAction
 {
     use PayrollActionSupport;
 
+    private const BULK_MAX_IDS = 1000;
+
     public function __construct(
         private readonly AnnualTaxSettlementService $settlements,
         private readonly PayrollAnnualSettlementRepository $repository,
@@ -341,6 +343,107 @@ final class PayrollAnnualSettlementAction
         return Json::ok($response, [
             'request' => $saved,
             'warnings' => $caregiverWarnings,
+        ]);
+    }
+
+    /**
+     * Hromadné nastavení stavu žádosti (typicky „nepožádal" u stovek brigádníků).
+     * Mění jen `request_status`; neznámé nebo cizí ID odmítne celou dávku (422).
+     *
+     * @param array<string,string> $args
+     */
+    public function saveRequestsBulk(
+        Request $request,
+        Response $response,
+        array $args,
+    ): Response {
+        if (!RequestAuthorization::isSessionAuth($request)) {
+            return Json::sessionRequired($response, 'Tento endpoint je dostupný pouze z přihlášené webové session.');
+        }
+        if (!$this->guard($request, $response, AccessLevel::WRITE, $error)) {
+            return $error;
+        }
+        $year = self::year($args);
+        if ($year === null) {
+            return self::invalid($response);
+        }
+        $body = $request->getParsedBody();
+        $body = is_array($body) ? $body : [];
+
+        $status = AnnualSettlementRequestStatus::tryFrom(
+            (string) ($body['request_status'] ?? ''),
+        );
+        if ($status === null || !in_array($status, [
+            AnnualSettlementRequestStatus::Requested,
+            AnnualSettlementRequestStatus::NotRequested,
+        ], true)) {
+            return Json::error(
+                $response,
+                'validation_failed',
+                'Hromadně lze nastavit jen stav „požádal" nebo „nepožádal".',
+                422,
+            );
+        }
+        $rawIds = $body['employee_ids'] ?? null;
+        if (!is_array($rawIds) || $rawIds === [] || count($rawIds) > self::BULK_MAX_IDS) {
+            return Json::error(
+                $response,
+                'validation_failed',
+                sprintf('Zadejte 1 až %d zaměstnanců.', self::BULK_MAX_IDS),
+                422,
+            );
+        }
+        $ids = [];
+        foreach ($rawIds as $id) {
+            if (is_string($id) && preg_match('/^[1-9][0-9]*$/D', $id) === 1) {
+                $id = (int) $id;
+            }
+            if (!is_int($id) || $id <= 0) {
+                return Json::error(
+                    $response,
+                    'validation_failed',
+                    'Seznam zaměstnanců obsahuje neplatné ID.',
+                    422,
+                );
+            }
+            $ids[] = $id;
+        }
+
+        $supplierId = $this->currentSupplierId($request);
+        $userId = $this->userId($request);
+        try {
+            $result = $this->repository->bulkSetRequestStatus(
+                $supplierId,
+                $year,
+                $ids,
+                $status->value,
+                $userId,
+            );
+        } catch (\InvalidArgumentException $exception) {
+            return Json::error($response, 'validation_failed', $exception->getMessage(), 422);
+        }
+
+        $this->activity->log(
+            'payroll.annual_settlement_requests_bulk_set',
+            $userId,
+            'payroll_annual_settlement',
+            null,
+            [
+                'tax_year' => $year,
+                'request_status' => $status->value,
+                'created' => $result['created'],
+                'updated' => $result['updated'],
+            ],
+            $this->ipMatcher->clientIpFromRequest(self::serverParams($request)),
+            $request->getHeaderLine('User-Agent'),
+            $supplierId,
+        );
+
+        return Json::ok($response, [
+            'tax_year' => $year,
+            'request_status' => $status->value,
+            'created' => $result['created'],
+            'updated' => $result['updated'],
         ]);
     }
 

@@ -198,6 +198,102 @@ final class PayrollAnnualSettlementRepository
         }
     }
 
+    /**
+     * Hromadně nastaví JEN stav žádosti o roční zúčtování.
+     *
+     * Lidem bez řádku založí žádost s ostatními poli ve výchozím `unknown`,
+     * u existujících přepíše pouze `request_status` a zvýší `row_version`.
+     * Datum ani doklad se nesahá: `requested` bez data je legitimní
+     * rozdělaná evidence, překážku provedení hlídá způsobilost.
+     *
+     * Cizí nebo neexistující ID celou dávku odmítne (`InvalidArgumentException`),
+     * aby se tiše neuložila jen její část.
+     *
+     * @param list<int> $employeeIds
+     * @return array{created:int,updated:int}
+     */
+    public function bulkSetRequestStatus(
+        int $supplierId,
+        int $taxYear,
+        array $employeeIds,
+        string $requestStatus,
+        ?int $actorUserId,
+    ): array {
+        $ids = array_values(array_unique(array_map('intval', $employeeIds)));
+        if ($ids === []) {
+            return ['created' => 0, 'updated' => 0];
+        }
+        $pdo = $this->db->pdo();
+        $ownsTransaction = !$pdo->inTransaction();
+        if ($ownsTransaction) {
+            $pdo->beginTransaction();
+        }
+
+        try {
+            $created = 0;
+            $updated = 0;
+            foreach (array_chunk($ids, 500) as $chunk) {
+                $placeholders = implode(', ', array_fill(0, count($chunk), '?'));
+
+                $known = $pdo->prepare(
+                    'SELECT COUNT(*) FROM payroll_employees
+                      WHERE supplier_id = ? AND id IN (' . $placeholders . ')'
+                );
+                $known->execute([$supplierId, ...$chunk]);
+                if ((int) $known->fetchColumn() !== count($chunk)) {
+                    throw new \InvalidArgumentException(
+                        'Některý ze zaměstnanců neexistuje nebo nepatří do této firmy.',
+                    );
+                }
+
+                $existing = $pdo->prepare(
+                    'SELECT COUNT(*) FROM payroll_annual_settlement_requests
+                      WHERE supplier_id = ? AND tax_year = ?
+                        AND employee_id IN (' . $placeholders . ')'
+                );
+                $existing->execute([$supplierId, $taxYear, ...$chunk]);
+                $existingCount = (int) $existing->fetchColumn();
+
+                $rows = implode(', ', array_fill(0, count($chunk), '(?, ?, ?, ?, ?, ?)'));
+                $params = [];
+                foreach ($chunk as $employeeId) {
+                    array_push(
+                        $params,
+                        $supplierId,
+                        $employeeId,
+                        $taxYear,
+                        $requestStatus,
+                        $actorUserId,
+                        $actorUserId,
+                    );
+                }
+                $pdo->prepare(
+                    'INSERT INTO payroll_annual_settlement_requests
+                        (supplier_id, employee_id, tax_year, request_status,
+                         created_by, updated_by)
+                     VALUES ' . $rows . '
+                     ON DUPLICATE KEY UPDATE
+                        request_status = VALUES(request_status),
+                        updated_by = VALUES(updated_by),
+                        row_version = row_version + 1'
+                )->execute($params);
+
+                $updated += $existingCount;
+                $created += count($chunk) - $existingCount;
+            }
+            if ($ownsTransaction) {
+                $pdo->commit();
+            }
+
+            return ['created' => $created, 'updated' => $updated];
+        } catch (\Throwable $exception) {
+            if ($ownsTransaction && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $exception;
+        }
+    }
+
     /** @return list<array<string,mixed>> */
     private function otherCaregiversForRequest(
         int $supplierId,
