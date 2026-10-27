@@ -914,6 +914,43 @@ export interface PayrollHealthInsurerBulkResult {
   failed: Array<{ employee_id: number, message: string }>
 }
 
+export type PayrollDeclarationSignState = 'ready' | 'already_signed' | 'period_frozen' | 'timeline_gap' | 'employee_not_found'
+
+export type PayrollDeclarationSignChange = 'add' | 'close_previous' | 'replace'
+
+export interface PayrollDeclarationSignPerson {
+  employee_id: number
+  full_name: string | null
+  state: PayrollDeclarationSignState
+  change: PayrollDeclarationSignChange | null
+  /** Stav prohlášení, které se podpisem ukončí nebo nahradí (`not-signed`, `unverified`, `signed`). */
+  current_status: string | null
+  effective_from: string | null
+  effective_to: string | null
+}
+
+export interface PayrollDeclarationSignPreview {
+  year: number
+  signed_on: string
+  /** `null` = celý rok je uzavřený schválenou mzdou. */
+  effective_from: string | null
+  effective_from_basis: 'year_start' | 'signing_month' | 'after_frozen_period'
+  frozen_through: string | null
+  summary: Record<'people' | PayrollDeclarationSignState, number>
+  ready_employee_ids: number[]
+  runs_to_recalculate: Array<{ id: number, period_start: string, status: string }>
+  people: PayrollDeclarationSignPerson[]
+}
+
+export interface PayrollDeclarationSignResult {
+  year: number
+  signed_on: string
+  counts: { applied: number, skipped: number, failed: number }
+  applied: Array<{ employee_id: number, change: PayrollDeclarationSignChange, effective_from: string, effective_to: string | null }>
+  skipped: Array<{ employee_id: number, reasons: string[] }>
+  failed: Array<{ employee_id: number, message: string }>
+}
+
 export interface PayrollWorkplaceBulkPreviewItem {
   employment_id: number
   employee_id: number
@@ -7915,6 +7952,17 @@ export const payrollApi = {
     api.post<{ result: PayrollHealthInsurerBulkResult }>(
       '/payroll/statutory-evidence/health-insurer-bulk/apply',
       { assignments },
+    ).then(response => response.data.result),
+  /** Náhled hromadného zápisu podepsaných prohlášení; `employee_ids: null` = osoby se vztahem v roce. */
+  declarationSignBulkPreview: (payload: { year: number, signed_on: string, employee_ids?: number[] | null }) =>
+    api.post<{ preview: PayrollDeclarationSignPreview }>(
+      '/payroll/statutory-evidence/declaration-signed-bulk/preview',
+      payload,
+    ).then(response => response.data.preview),
+  declarationSignBulkApply: (payload: { year: number, signed_on: string, employee_ids: number[] }) =>
+    api.post<{ result: PayrollDeclarationSignResult }>(
+      '/payroll/statutory-evidence/declaration-signed-bulk/apply',
+      payload,
     ).then(response => response.data.result),
   /** Náhled hromadného doplnění místa výkonu práce pro JMHZ; `employment_ids: null` = všechny vztahy. */
   workplaceBulkPreview: (payload: { period_start: string, employment_ids?: number[] | null }) =>

@@ -58,6 +58,7 @@ import ColumnPicker from '@/components/ui/ColumnPicker.vue'
 import DensityToggle from '@/components/ui/DensityToggle.vue'
 import { useTablePrefs, type ColumnDef } from '@/composables/useTablePrefs'
 import DateInput from '@/components/ui/DateInput.vue'
+import PayrollDeclarationSignBulkDialog from '@/components/payroll/PayrollDeclarationSignBulkDialog.vue'
 import PayrollHealthInsurerBulkDialog from '@/components/payroll/PayrollHealthInsurerBulkDialog.vue'
 import PayrollStatutoryBulkDefaultsDialog from '@/components/payroll/PayrollStatutoryBulkDefaultsDialog.vue'
 import PayrollWorkplaceBulkFillDialog from '@/components/payroll/PayrollWorkplaceBulkFillDialog.vue'
@@ -127,6 +128,13 @@ const bulkClosureOpen = ref(false)
 const bulkClosureCount = ref<number | null>(null)
 // Po importu hlášení JMHZ (nenese pojišťovnu) sem vede proklik `?bulk=health_insurer`.
 const healthInsurerBulkOpen = ref(route.query.bulk === 'health_insurer')
+// Z hromadného doplnění evidence (i na této stránce) vede proklik `?bulk=declaration_signed`.
+const declarationSignBulkOpen = ref(canCreatePerson.value && route.query.bulk === 'declaration_signed')
+watch(() => route.query.bulk, (bulk) => {
+  if (bulk !== 'declaration_signed' || !canCreatePerson.value) return
+  statutoryBulkOpen.value = false
+  declarationSignBulkOpen.value = true
+})
 const canWriteEmployment = computed(() => auth.canWrite('payroll.employment.write'))
 const canQuickEditPerson = computed(() =>
   auth.canWrite('payroll.person.write')
@@ -1661,6 +1669,17 @@ onMounted(async () => {
             {{ t('payroll.people.statutory_bulk_action') }}
           </button>
           <button
+            v-if="canCreatePerson"
+            type="button"
+            class="whitespace-nowrap"
+            :class="btnOutline('success')"
+            data-test="declaration-sign-bulk-open"
+            @click="declarationSignBulkOpen = true"
+          >
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path :d="ICONS.check" /></svg>
+            {{ t('payroll.people.declaration_sign_bulk_action') }}
+          </button>
+          <button
             v-if="canQuickEditPerson"
             type="button"
             class="whitespace-nowrap"
@@ -1712,6 +1731,12 @@ onMounted(async () => {
       :employee-ids="null"
       period-editable
       @close="statutoryBulkOpen = false"
+      @applied="load"
+    />
+
+    <PayrollDeclarationSignBulkDialog
+      v-if="declarationSignBulkOpen"
+      @close="declarationSignBulkOpen = false"
       @applied="load"
     />
 

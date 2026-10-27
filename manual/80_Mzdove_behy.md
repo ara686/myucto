@@ -148,7 +148,9 @@ pro JMHZ. Aplikace nabízí tři hromadné akce.
    nezapisuje.
 3. Chcete-li chybějící prohlášení zapsat jako nepodepsané, zaškrtněte
    **Zapsat chybějící prohlášení jako nepodepsané (N osob)**. Nejdřív si
-   přečtěte, komu by to přepnulo zdanění na srážkovou daň.
+   přečtěte, komu by to přepnulo zdanění na srážkovou daň. Podepsaná
+   prohlášení zapíšete odkazem **Podepsaná prohlášení hromadně**
+   ([§ 86.4.1](86_Zamestnanci.md#8641-podepsana-prohlaseni-hromadne)).
 4. Údaje uložte a pokračujte krokem, který nabídne dialog (**Spočítat mzdy**,
    **Obnovit podklady**, nová revize nebo **Vyžádat opravu**).
 

@@ -1653,6 +1653,15 @@ final class Routes
                 '/statutory-evidence/health-insurer-bulk/apply',
                 [\MyInvoice\Action\Payroll\PayrollHealthInsurerBulkAction::class, 'apply'],
             );
+            // Hromadný zápis podepsaných prohlášení poplatníka.
+            $g->post(
+                '/statutory-evidence/declaration-signed-bulk/preview',
+                [\MyInvoice\Action\Payroll\PayrollTaxDeclarationBulkSignAction::class, 'preview'],
+            );
+            $g->post(
+                '/statutory-evidence/declaration-signed-bulk/apply',
+                [\MyInvoice\Action\Payroll\PayrollTaxDeclarationBulkSignAction::class, 'apply'],
+            );
             // Hromadné doplnění místa výkonu práce (obec a stát pro JMHZ).
             $g->post(
                 '/employments/workplace-bulk/preview',
