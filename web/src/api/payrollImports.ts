@@ -581,6 +581,7 @@ export interface AttendanceWageChange {
 export interface AttendanceSampleUpgrade {
   profile_id: number
   name: string
+  sample_key?: AttendanceSampleKey
   version: number | null
   latest_version: number
   rules: AttendanceRule[]
@@ -772,12 +773,17 @@ export interface AttendanceBatchRow {
   source: string
 }
 
+/** Vestavěné vzory profilu: docházkový systém GIRITON a obecná šablona MyÚčto. */
+export type AttendanceSampleKey = 'giriton' | 'myucto'
+
 export interface AttendanceProfile {
   id: number
   name: string
   rules: AttendanceRule[]
   components: AttendanceProfileComponent[]
   is_sample: boolean
+  /** Ze kterého vzoru profil vznikl; `null` u vlastního profilu. Starší server klíč neposílá. */
+  sample_key?: AttendanceSampleKey | null
   /** Verze vzoru, ze které profil vznikl; `null` u vlastního profilu. */
   sample_version: number | null
   /** Seznam profilů: upravený vzor má novější verzi. Uložení profilu příznak nevrací. */
@@ -925,10 +931,14 @@ export const payrollImportsApi = {
   deleteAttendanceProfile: (id: number) =>
     api.delete<{ deleted: true }>(`/payroll/imports/attendance/profiles/${id}`)
       .then(response => response.data),
-  /** Obnoví vzorový profil GIRITON; `restored: false` = vzor ve firmě už je. */
-  restoreAttendanceSampleProfile: () =>
-    api.post<{ profile: AttendanceProfile; restored: boolean }>('/payroll/imports/attendance/profiles/sample')
-      .then(response => response.data),
+  /** Obnoví vestavěný vzor podle klíče; `restored: false` = vzor ve firmě už je. */
+  restoreAttendanceSampleProfile: (sampleKey: AttendanceSampleKey = 'giriton') =>
+    api.post<{ profile: AttendanceProfile; restored: boolean }>('/payroll/imports/attendance/profiles/sample', {
+      sample_key: sampleKey,
+    }).then(response => response.data),
+  /** Šablona XLSX pro Vzor MyÚčto (ukázkové řádky a list Návod). */
+  downloadAttendanceTemplate: (fallbackFilename: string) =>
+    downloadApiFile('/payroll/imports/attendance/template', fallbackFilename),
   copyAttendanceProfile: (id: number, targetSupplierId: number) =>
     api.post<{ profile: AttendanceProfile }>(`/payroll/imports/attendance/profiles/${id}/copy`, {
       target_supplier_id: targetSupplierId,

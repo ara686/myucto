@@ -12,6 +12,7 @@ import type {
   AttendanceProfileComponentKind,
   AttendanceProfileExport,
   AttendanceRule,
+  AttendanceSampleKey,
   AttendanceSheet,
   AttendanceSourceChecks,
   AttendanceUnit,
@@ -544,6 +545,22 @@ export function duplicateDraft(draft: ProfileDraft, name: string): ProfileDraft 
     rules: draft.rules.map(rule => ({ ...rule, uid: nextUid('rule') })),
     components: draft.components.map(component => ({ ...component, uid: nextUid('component') })),
   }
+}
+
+export const ATTENDANCE_SAMPLE_KEYS: AttendanceSampleKey[] = ['giriton', 'myucto']
+/** Název souboru šablony, pokud ho server v hlavičce nepošle. */
+export const ATTENDANCE_TEMPLATE_FILENAME = 'podklady-mzdy-myucto.xlsx'
+
+/** Klíč vzoru profilu; vzor ze serveru bez klíčů je GIRITON (jediný vzor té doby). */
+export function profileSampleKey(profile: AttendanceProfile | null | undefined): AttendanceSampleKey | null {
+  if (!profile?.is_sample) return null
+  return profile.sample_key ?? 'giriton'
+}
+
+/** Vestavěné vzory, které firma nemá (smazala je) — ty jde obnovit. */
+export function missingSampleKeys(profiles: AttendanceProfile[]): AttendanceSampleKey[] {
+  const present = new Set(profiles.map(profileSampleKey))
+  return ATTENDANCE_SAMPLE_KEYS.filter(key => !present.has(key))
 }
 
 /**

@@ -16,10 +16,13 @@ final class AttendanceSampleProfiles
     public const GIRITON = AttendanceSampleProfile::KEY;
     public const MYUCTO = AttendanceMyUctoSampleProfile::KEY;
 
+    /** Klient drží stejné hodnoty jako union `AttendanceSampleKey` (PayrollEnumContractTest). */
+    public const KEYS = [self::GIRITON, self::MYUCTO];
+
     /** @return list<string> */
     public static function keys(): array
     {
-        return [self::GIRITON, self::MYUCTO];
+        return self::KEYS;
     }
 
     public static function isKey(mixed $key): bool

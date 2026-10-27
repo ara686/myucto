@@ -784,7 +784,8 @@ termínů nepožadoval podruhé.
 Záložka **Docházka** převezme měsíční podklady z docházkového systému (např.
 GIRITON) nebo z tabulek z něj složených: hlavní sešit se seznamem, provozní
 sešity s hodinami a CSV s osobními čísly, ve formátu XLSX (všechny listy)
-a CSV. Vyžaduje oprávnění `payroll.inputs.write`.
+a CSV. Firma bez docházkového systému vyplní šablonu XLSX pro **Vzor MyÚčto**
+(viz níže). Vyžaduje oprávnění `payroll.inputs.write`.
 
 **Období a soubory.** Profil mapování se vybere podle počtu rozpoznaných
 sloupců; pod výběrem je vidět, který profil se použil, kolik sloupců rozpoznal
@@ -834,15 +835,42 @@ z víc vztahů se sečtou. Opakovaný import dohodu opraví, dokud se nepoužila
 schválené mzdě; potom ji nemění a jen to ohlásí. Předpokládá se uzavřená dohoda
 o srážkách se zaměstnancem (viz [Dohody o srážkách](87_Dohody_o_srazkach.md)).
 
-**Verze vzoru.** Vzorový profil GIRITON dostane každá firma a s novou verzí
-aplikace se aktualizuje sám, pokud jste ho neupravili. Upravený vzor se
+**Vzor MyÚčto a šablona XLSX.** Pro firmy bez docházkového systému, typicky
+s brigádníky na DPP a DPČ, je obecný **Vzor MyÚčto**. **Stáhnout šablonu XLSX**
+(v záložce **Docházka** a u Vzoru MyÚčto v **Mapování sloupců**) stáhne sešit
+s listem **Podklady**, kde je jeden řádek jedna osoba za měsíc, a listem
+**Návod** s popisem sloupců, formátů a kódů zdravotních pojišťoven. Dva ukázkové
+řádky smyšlených osob před importem smažte. Název listu ani hlavičky neměňte;
+šablona i pravidla vzoru vznikají z jednoho seznamu sloupců, takže vzor přečte
+každý sloupec šablony.
+
+| Skupina | Sloupce |
+|---|---|
+| Osoba | Osobní číslo, Příjmení a jméno (povinné), Rodné číslo, Datum narození, Zdravotní pojišťovna (kód), Druh vztahu (HPP, DPP, DPČ), Nástup, Týdenní úvazek, Měsíční mzda |
+| Hodiny | Odpracováno; z toho noc, víkend, svátek, přesčas; Dovolená, Nemoc, Lékař |
+| Peníze (Kč za měsíc) | Hodinová mzda celkem, Odměna, Mimořádná odměna, Srážka z čisté mzdy |
+
+Hodiny se zapisují desetinně (7,5) nebo jako čas v Excelu (7:30), v jednom
+sloupci vždy stejně; noc, víkend, svátek a přesčas jsou část odpracovaných
+hodin. Datum jako datum v Excelu nebo text „1. 6. 2026". **Druh vztahu** určí
+druh vztahu nově zakládané osoby, **Nástup** její den nástupu (bez něj první den
+měsíce). **Hodinová mzda celkem** jde na složku **Hodinová mzda podle
+docházky** (zařazení JMHZ 10329), **Odměna** na **Odměnu** z číselníku,
+**Mimořádná odměna** na vlastní složku vzoru (pravidelnost odměny pro JMHZ
+zařadí účetní jednou za firmu) a **Srážka z čisté mzdy** založí dohodu o srážce
+na daný měsíc. Sloupce, které vzor nezná, i ostatní listy sešitu se ignorují.
+
+**Verze vzoru.** Vzorové profily GIRITON a MyÚčto dostane každá firma, každý
+jednou, a s novou verzí aplikace se aktualizují samy, pokud jste je neupravili.
+Upravený vzor se
 nepřepíše: nese v **Mapování sloupců** štítek **Nová verze vzoru** a náhled
 upozorní odkazem **Otevřít mapování**. **Aktualizovat vzor** nahradí pravidla
 a složky novou verzí a profil uloží; vlastní úpravy se ztratí, proto si profil
 případně duplikujte. Pravidla nové verze posílá server s náhledem, tlačítko je
 proto aktivní po načtení náhledu docházky nebo zkoušce profilu na souborech.
-Smazaný vzor vrátí **Obnovit vzor GIRITON** nad seznamem profilů; vznikne
-v aktuální verzi a dál se aktualizuje sám.
+Smazaný vzor se sám nevrátí; obnoví ho **Obnovit vzor GIRITON**, resp.
+**Obnovit vzor MyÚčto** nad seznamem profilů. Vznikne v aktuální verzi a dál se
+aktualizuje sám.
 
 Hodnoty se nesčítají napříč listy; při stejném údaji ze dvou listů platí vyšší
 priorita a rozdíl je konflikt. Opakovaná hlavička v listu: platí první sloupec.
