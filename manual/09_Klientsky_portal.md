@@ -258,7 +258,7 @@ Tři karty vedle sebe:
 
 #### DPH a daňové termíny
 
-U plátců DPH ukazuje karta **DPH** aktuální **Období**, daň na výstupu, daň na vstupu, výslednou povinnost (nebo nadměrný odpočet) a **Termín podání**. U neplátců se zobrazí „Firma není plátce DPH." Karta **Daňové termíny** vypisuje termíny v okně 35 dní dopředu, barevně podle závažnosti (viz [Výkazy DPH](41_Vykazy_DPH.md)). Bez blízkých termínů ukáže „Žádné blízké termíny."
+U plátců DPH ukazuje karta **DPH** aktuální zdaňovací **Období** podle nastavení firmy: měsíc u měsíčního plátce a celé čtvrtletí u čtvrtletního plátce. Dále zobrazuje daň na výstupu, daň na vstupu, výslednou povinnost (nebo nadměrný odpočet) a **Termín podání**. U neplátců se zobrazí „Firma není plátce DPH." Karta **Daňové termíny** vypisuje termíny v okně 35 dní dopředu, barevně podle závažnosti (viz [Výkazy DPH](41_Vykazy_DPH.md)). Bez blízkých termínů ukáže „Žádné blízké termíny."
 
 #### Pruh „Účetní čeká na doklady"
 
