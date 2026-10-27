@@ -98,6 +98,8 @@ má stav **Aktivní** a v checklistu nástupu jsou registrace splněné.
 > [!TIP]
 > Víc lidí najednou doplníte tlačítky nad seznamem: **Doplnit výchozí zákonné
 > údaje**, **Zdravotní pojišťovny hromadně** a **Doplnit místo výkonu práce**.
+> Skončené dohody ukončíte najednou tlačítkem **Ukončit skončené dohody**
+> ([§ 86.9.1](#8691-hromadne-ukonceni-skoncenych-dohod)).
 
 ## 86.4 Krok za krokem: zákonná evidence osoby
 
@@ -268,6 +270,44 @@ checklistu jsou splněné a odhláška A2 je přijatá.
 
 Nenastoupil-li zaměstnanec vůbec, klikněte na **Označit nenástup** a podejte
 storno A8 nebo ukončení předregistrace P2.
+
+### 86.9.1 Hromadné ukončení skončených dohod
+
+Brigádníci na DPP a DPČ mívají krátké dohody. Aby seznam nezůstal plný lidí,
+kteří už nepracují, ukončíte skončené vztahy najednou tlačítkem **Ukončit
+skončené dohody** nad seznamem zaměstnanců. Číslo v závorce je počet vztahů,
+které aplikace navrhuje ukončit. Tlačítko vidí jen uživatel s právem měnit
+pracovní vztahy. Nic se neděje samo, vždy rozhodujete vy.
+
+1. Klikněte na **Ukončit skončené dohody**. Otevře se náhled ve třech skupinách:
+   - **Uplynul sjednaný konec**: aktivní nebo přerušený vztah (jakéhokoli druhu),
+     jehož sjednaný konec už uplynul. Navržené datum ukončení je sjednaný konec.
+   - **Dohody bez aktivity**: aktivní DPP nebo DPČ bez sjednaného konce, která
+     za zvolený počet měsíců (výchozí 3, včetně běžného měsíce) nemá žádný
+     nenulový mzdový vstup ani docházku. Navržené datum je poslední den měsíce
+     poslední aktivity, bez aktivity poslední den měsíce nástupu. Je-li už
+     zúčtovaný pozdější měsíc, navrhne se jeho poslední den, aby ukončení
+     neodporovalo odeslanému hlášení. Nulový vstup a nulový řádek mzdového běhu
+     se za aktivitu nepovažují.
+   - **Ukončené vztahy k archivaci**: vztahy ukončené před více než zvoleným
+     počtem měsíců (výchozí 12). Archivace jen odklidí vztah ze seznamu a jde
+     vrátit akcí **Vrátit z archivu**.
+2. Počet měsíců bez aktivity a počet měsíců před archivací změníte nahoře
+   a kliknete na **Načíst náhled**.
+3. Zkontrolujte výběr. U ukončení můžete změnit datum, ukončit lze jen k dnešku
+   nebo ke dni v minulosti. Vztah, který má po datu konce ještě mzdový vstup,
+   docházku nebo zúčtovanou mzdu, je označený **Vyžaduje kontrolu** a není
+   předvybraný. Datum konce u něj opravte, nebo ho ukončete ručně na kartě.
+4. Klikněte na **Pokračovat**, zkontrolujte souhrn a klikněte na **Potvrdit**.
+   Najednou lze zpracovat nejvýše 500 vztahů.
+5. Výsledek ukáže počet provedených a u každého vztahu, který se nepovedl,
+   důvod (například vztah mezitím změnil někdo jiný). Ostatní vztahy se tím
+   nezastaví.
+
+Každý vztah se ukončí stejně jako tlačítkem **Ukončit** na jeho kartě: projde
+stejnými kontrolami, zapíše se do časové osy a založí výstupní checklist.
+Odhlášku (A2, HOZ) a další kroky podle § 86.9 je potřeba vyřídit i u hromadně
+ukončených vztahů.
 
 ## 86.10 Krok za krokem: personální spis
 

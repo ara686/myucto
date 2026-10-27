@@ -958,6 +958,52 @@ export interface PayrollWorkplaceBulkResult {
   failed: Array<{ employment_id: number, message: string }>
 }
 
+export type PayrollBulkClosureGroup = 'expired' | 'inactive' | 'archive'
+export type PayrollBulkClosureAction = 'end' | 'archive'
+
+export interface PayrollBulkClosureItem {
+  employment_id: number
+  employee_id: number
+  full_name: string
+  employment_code: string
+  relation_type: PayrollRelationType
+  status: PayrollEmploymentStatus
+  row_version: number
+  group: PayrollBulkClosureGroup
+  action: PayrollBulkClosureAction
+  start_on: string | null
+  agreed_end_on: string | null
+  last_activity_period: string | null
+  last_settled_period: string | null
+  proposed_on: string
+  blocked_reason: 'activity_after_end' | 'settled_after_end' | null
+  blocked_period: string | null
+}
+
+export interface PayrollBulkClosurePreview {
+  as_of: string
+  inactivity_months: number
+  archive_after_months: number
+  activity_since: string
+  archive_before: string
+  max_items: number
+  summary: { expired: number, inactive: number, archive: number, blocked: number }
+  items: PayrollBulkClosureItem[]
+}
+
+export interface PayrollBulkClosureCommand {
+  employment_id: number
+  action: PayrollBulkClosureAction
+  effective_on: string
+  row_version: number
+}
+
+export interface PayrollBulkClosureResult {
+  counts: { applied: number, failed: number }
+  applied: Array<{ employment_id: number, status: PayrollEmploymentStatus, effective_on: string }>
+  failed: Array<{ employment_id: number, code: string, message: string }>
+}
+
 export type PayrollForeignPermitKind = 'residence' | 'work'
 export type PayrollForeignPermitStatus = 'future' | 'valid' | 'expiring' | 'expired' | 'superseded'
 
@@ -7885,6 +7931,17 @@ export const payrollApi = {
     api.post<{ result: PayrollWorkplaceBulkResult }>(
       '/payroll/employments/workplace-bulk/apply',
       payload,
+    ).then(response => response.data.result),
+  /** Náhled hromadného ukončení skončených dohod a archivace; nic nezapisuje. */
+  bulkClosurePreview: (payload: { inactivity_months?: number, archive_after_months?: number } = {}) =>
+    api.post<{ preview: PayrollBulkClosurePreview }>(
+      '/payroll/employments/bulk-closure/preview',
+      payload,
+    ).then(response => response.data.preview),
+  bulkClosureApply: (items: PayrollBulkClosureCommand[]) =>
+    api.post<{ result: PayrollBulkClosureResult }>(
+      '/payroll/employments/bulk-closure/apply',
+      { items },
     ).then(response => response.data.result),
   foreignPermits: (employeeId: number, asOf?: string) =>
     api.get<{ permits: PayrollForeignPermitView }>(

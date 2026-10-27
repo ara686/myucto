@@ -3396,6 +3396,64 @@
       "failed_title": "Nepovedlo se doplnit ({count})",
       "recalculate_notice": "Mzdový běh, u kterého jste pracoviště doplnili, je nutné znovu přepočítat a schválit novou revizi, aby se nová hodnota promítla do hlášení."
     },
+    "bulk_closure": {
+      "open": "Ukončit skončené dohody",
+      "open_count": "Ukončit skončené dohody ({count})",
+      "title": "Ukončit skončené dohody",
+      "intro": "Náhled vztahů, které už podle sjednaného konce nebo podle mezd neběží. Každý vybraný vztah se ukončí stejně jako tlačítkem na jeho kartě, včetně kontrolního seznamu odchodu (odhláška, výstupní doklady). Nic se nemění, dokud výběr nepotvrdíte.",
+      "inactivity_months": "Bez aktivity (měsíců)",
+      "archive_after_months": "Archivovat po (měsících)",
+      "reload": "Načíst náhled",
+      "retry": "Zkusit znovu",
+      "load_failed": "Náhled ukončení se nepodařilo načíst.",
+      "apply_failed": "Hromadné ukončení se nepodařilo provést.",
+      "empty": "Žádný vztah k ukončení ani k archivaci.",
+      "summary_blocked": "Vyžaduje kontrolu",
+      "groups": {
+        "expired": {
+          "summary": "Uplynul sjednaný konec",
+          "title": "Uplynul sjednaný konec",
+          "hint": "Aktivní vztahy, jejichž sjednaný konec už uplynul. Ukončí se k datu sjednaného konce."
+        },
+        "inactive": {
+          "summary": "Dohody bez aktivity",
+          "title": "Dohody bez aktivity",
+          "hint": "DPP a DPČ bez sjednaného konce, které za posledních {months} měsíců nemají mzdový vstup ani docházku. Ukončí se k poslednímu dni měsíce poslední aktivity."
+        },
+        "archive": {
+          "summary": "K archivaci",
+          "title": "Ukončené vztahy k archivaci",
+          "hint": "Vztahy ukončené před více než {months} měsíci. Archivace je jen úklid seznamu a jde vrátit."
+        }
+      },
+      "detail": {
+        "expired": "Sjednaný konec {date}",
+        "inactive": "Poslední aktivita {period}",
+        "never_active": "Bez mzdového vstupu i docházky",
+        "archive": "Ukončeno {date}"
+      },
+      "blocked": {
+        "activity_after_end": "Po datu konce má mzdový vstup nebo docházku ({period}). Zkontrolujte datum konce.",
+        "settled_after_end": "Po datu konce má zúčtovanou mzdu ({period}). Zkontrolujte datum konce."
+      },
+      "select_all": "Vybrat vše",
+      "end_on": "Ukončit k",
+      "archive_on": "Archivovat k {date}",
+      "nothing_selected": "Vyberte aspoň jeden vztah.",
+      "too_many": "Najednou lze zpracovat nejvýše {max} vztahů.",
+      "date_required": "U každého vybraného vztahu vyplňte datum.",
+      "apply": "Pokračovat ({count})",
+      "confirm_text": "Ukončí se {end} vztahů a archivuje {archive} vztahů. Pokračovat?",
+      "confirm_apply": "Potvrdit",
+      "back": "Zpět k výběru",
+      "applied_toast": "Zpracováno vztahů: {count}.",
+      "result_title": "Výsledek",
+      "result": {
+        "applied": "Provedeno",
+        "failed": "Nepovedlo se"
+      },
+      "failed_title": "Nepovedlo se ({count})"
+    },
     "warning_suppressions": {
       "title": "Skrytá varování",
       "intro": "Varování, která jste u mzdového běhu trvale skryli. Do kontrol běhu ani do jejich počtů se nepočítají, dokud je neobnovíte. Blokující chyby skrýt nejde.",

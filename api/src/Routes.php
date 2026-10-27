@@ -1662,6 +1662,15 @@ final class Routes
                 '/employments/workplace-bulk/apply',
                 [\MyInvoice\Action\Payroll\PayrollEmploymentWorkplaceBulkFillAction::class, 'apply'],
             );
+            // Hromadné ukončení skončených dohod a archivace dávno ukončených vztahů.
+            $g->post(
+                '/employments/bulk-closure/preview',
+                [\MyInvoice\Action\Payroll\PayrollEmploymentBulkClosureAction::class, 'preview'],
+            );
+            $g->post(
+                '/employments/bulk-closure/apply',
+                [\MyInvoice\Action\Payroll\PayrollEmploymentBulkClosureAction::class, 'apply'],
+            );
             $g->get(
                 '/people/{id:[0-9]+}/foreign-permits',
                 [PayrollForeignPermitAction::class, 'show'],
