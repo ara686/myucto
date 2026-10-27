@@ -40223,7 +40223,8 @@ components:
             status: { type: string, enum: [draft, confirmed, posted, reversed, cancelled] }
             document_no: { type: [string, 'null'] }
             amount_czk: { type: number }
-            paid_amount: { type: number }
+            settled_outside_amount: { type: number, description: Část uhrazená mimo banku a pokladnu (zápočet, interní doklad, stav úhrady převzatý z jiného programu). Je součástí paid_amount. }
+            paid_amount: { type: number, description: Alokované úhrady z banky a pokladny včetně settled_outside_amount. }
             remaining_amount: { type: number }
             journal_entry_id: { type: [integer, 'null'], format: int64 }
             reversal_entry_id: { type: [integer, 'null'], format: int64 }

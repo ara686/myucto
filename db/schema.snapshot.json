@@ -1107,7 +1107,8 @@
         "2203_readonly_seat_policy.sql",
         "2204_supplier_receipt_payable_account.sql",
         "2205_bank_rule_template_vat_refund.sql",
-        "2206_payroll_import_profile_sample_key.sql"
+        "2206_payroll_import_profile_sample_key.sql",
+        "2207_other_item_settled_outside.sql"
     ],
     "tables": {
         "abra_flexi_connections": {
@@ -10176,6 +10177,7 @@
                 "posted_at": "datetime NULL DEFAULT NULL",
                 "reversal_entry_id": "bigint(20) unsigned NULL DEFAULT NULL",
                 "row_version": "int(10) unsigned NOT NULL DEFAULT 1",
+                "settled_outside_amount": "decimal(14,2) NOT NULL DEFAULT 0.00",
                 "side": "enum('receivable','payable') NOT NULL",
                 "status": "enum('draft','confirmed','posted','reversed','cancelled') NOT NULL DEFAULT 'draft'",
                 "supplier_id": "int(10) unsigned NOT NULL",
@@ -10208,7 +10210,8 @@
             "checks": {
                 "chk_other_item_amount": "`amount` > 0",
                 "chk_other_item_currency": "`currency` regexp '^[A-Z]{3}$'",
-                "chk_other_item_rate": "`exchange_rate` is null or `exchange_rate` > 0"
+                "chk_other_item_rate": "`exchange_rate` is null or `exchange_rate` > 0",
+                "chk_other_item_settled_outside": "`settled_outside_amount` >= 0 and `settled_outside_amount` <= `amount`"
             }
         },
         "password_resets": {
