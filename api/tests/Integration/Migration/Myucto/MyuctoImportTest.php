@@ -75,7 +75,7 @@ final class MyuctoImportTest extends TestCase
             $this->pdo->prepare("INSERT INTO chart_of_accounts (supplier_id, account_code, name, account_type) VALUES (?, ?, 'Syntetický účet', ?)")->execute([$this->source, $code, $type]);
             $accounts[] = (int) $this->pdo->lastInsertId();
         }
-        $this->pdo->prepare("INSERT INTO journal_entries (supplier_id, period_id, entry_date, description, source_type, source_id) VALUES (?, ?, '2090-01-01', 'Syntetický zápis', 'invoice', ?)")->execute([$this->source, $period, $this->invoice]);
+        $this->pdo->prepare("INSERT INTO journal_entries (supplier_id, period_id, entry_date, description, source_type, source_id, posted_at) VALUES (?, ?, '2090-01-01', 'Syntetický zápis', 'invoice', ?, '2090-01-01 00:00:00')")->execute([$this->source, $period, $this->invoice]);
         $entry = (int) $this->pdo->lastInsertId();
         $this->pdo->prepare("INSERT INTO journal_document_postings (supplier_id, doc_type, doc_id, entry_id) VALUES (?, 'invoice', ?, ?)")
             ->execute([$this->source, $this->invoice, $entry]);
@@ -135,6 +135,10 @@ final class MyuctoImportTest extends TestCase
         self::assertSame($this->target, json_decode($row['supplier_snapshot'], true)['id']);
         $journal = $this->pdo->query('SELECT source_id FROM journal_entries WHERE supplier_id = ' . $this->target)->fetchColumn();
         self::assertSame((int) $row['id'], (int) $journal);
+        $untraced = $this->pdo->query("SELECT COUNT(*) FROM journal_entries e WHERE e.supplier_id = {$this->target}
+            AND e.posted_at IS NOT NULL AND NOT EXISTS (SELECT 1 FROM activity_log al
+                WHERE al.entity_type = 'journal_entry' AND al.entity_id = e.id AND al.action = 'accounting.posted')")->fetchColumn();
+        self::assertSame(0, (int) $untraced, 'Obnovený zaúčtovaný zápis musí mít auditní stopu (§ 33a, I28).');
         $posting = $this->pdo->query('SELECT jdp.doc_id, e.source_id FROM journal_document_postings jdp
             JOIN journal_entries e ON e.id=jdp.entry_id AND e.supplier_id=jdp.supplier_id
             WHERE jdp.supplier_id=' . $this->target)->fetch(PDO::FETCH_ASSOC);
@@ -152,6 +156,29 @@ final class MyuctoImportTest extends TestCase
         self::assertSame($before, $this->pdo->query('SELECT * FROM supplier WHERE id = ' . $this->target)->fetch(PDO::FETCH_ASSOC));
         $repeat = $this->importer->import($package, $this->target, $this->actor, 'synthetic-instance', false);
         self::assertSame([], $repeat['created']); self::assertSame(1, $repeat['existing']['invoices']); self::assertSame(1, $this->targetCount('invoices'));
+    }
+
+    public function testUnusedSetupPeriodOfNewCompanyIsReplacedByExportPeriods(): void
+    {
+        $this->pdo->prepare("INSERT INTO accounting_periods (supplier_id, fiscal_year, starts_on, ends_on, created_reason) VALUES (?, 2090, '2090-01-01', '2090-12-31', 'setup')")
+            ->execute([$this->target]);
+        $package = (new MyuctoExportReader())->read($this->archive);
+        $applied = $this->importer->import($package, $this->target, $this->actor, 'synthetic-instance', false);
+        self::assertSame([['fiscal_year' => 2090, 'starts_on' => '2090-01-01', 'ends_on' => '2090-12-31']], $applied['replaced_periods']);
+        self::assertSame(1, $applied['created']['accounting_periods']);
+        self::assertSame(1, $this->targetCount('accounting_periods'));
+        self::assertNull($this->pdo->query('SELECT created_reason FROM accounting_periods WHERE supplier_id = ' . $this->target)->fetchColumn());
+    }
+
+    public function testUsedTargetPeriodStillBlocksImport(): void
+    {
+        $this->pdo->prepare("INSERT INTO accounting_periods (supplier_id, fiscal_year, starts_on, ends_on, status, created_reason) VALUES (?, 2090, '2090-01-01', '2090-12-31', 'closed', 'setup')")
+            ->execute([$this->target]);
+        $package = (new MyuctoExportReader())->read($this->archive);
+        try { $this->importer->import($package, $this->target, $this->actor, 'synthetic-instance', false); self::fail('Použité období nesmí převod přepsat.'); }
+        catch (\RuntimeException $e) { self::assertStringContainsString('accounting_periods', $e->getMessage()); }
+        self::assertSame(0, $this->targetCount('invoices'));
+        self::assertSame('closed', $this->pdo->query('SELECT status FROM accounting_periods WHERE supplier_id = ' . $this->target)->fetchColumn());
     }
 
     public function testCrossTenantRowIsRejectedBeforeAnyWrite(): void
