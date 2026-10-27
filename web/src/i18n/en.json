@@ -20208,6 +20208,8 @@
       "vat_state_no_claim_header": "{code}, no deduction per the header - not in VAT",
       "vat_state_no_claim_header_short": "no deduction per the header",
       "vat_state_allocations": "VAT per the VAT split",
+      "expense_account_allocations": "The debit account is set by the accounting allocations in the VAT recap.",
+      "vat_deduction_allocations": "The VAT deduction is set by the accounting allocations in the VAT recap (mixed deduction). The VAT return and control statement use the allocation split.",
       "expense_kind_hint": "Drives the expense account: Service → 518, Material (incl. fuel) → 501, Small asset → 501 + asset record, Fixed asset → 042 and depreciation. Unspecified behaves as before (518).",
       "accrual_show": "Time accrual",
       "accrual_hide": "Hide time accrual",

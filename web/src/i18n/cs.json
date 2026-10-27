@@ -20208,6 +20208,8 @@
       "vat_state_no_claim_header": "{code}, bez nároku podle hlavičky - do DPH nejde",
       "vat_state_no_claim_header_short": "bez nároku podle hlavičky",
       "vat_state_allocations": "DPH podle rozpisu DPH",
+      "expense_account_allocations": "Účet MD určují účetní alokace v rekapitulaci DPH.",
+      "vat_deduction_allocations": "Nárok na odpočet určují účetní alokace v rekapitulaci DPH (smíšený nárok). Do přiznání a kontrolního hlášení jde rozpis z alokací.",
       "expense_kind_hint": "Řídí nákladový účet: Služba → 518, Materiál (vč. PHM) → 501, Drobný majetek → 501 + karta v evidenci, Dlouhodobý majetek → 042 a odpisy. Neurčeno se chová jako dosud (518).",
       "accrual_show": "Časové rozlišení",
       "accrual_hide": "Skrýt časové rozlišení",

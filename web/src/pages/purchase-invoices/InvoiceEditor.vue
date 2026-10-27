@@ -35,7 +35,7 @@ import { stockApi, type StockItemSearchResult } from '@/api/stock'
 import { expenseCategoriesApi, type ExpenseCategory } from '@/api/expenseCategories'
 import { projectsApi, type Project } from '@/api/projects'
 import { vatClassificationsApi, type VatClassification } from '@/api/vatClassifications'
-import { headerDiffersFromAllocations, itemConflictsWithHeader, itemVatState, type HeaderVat } from './purchaseVatTreatment'
+import { allocationsHaveMixedDeduction, headerDiffersFromAllocations, itemConflictsWithHeader, itemVatState, type HeaderVat } from './purchaseVatTreatment'
 import { settingsApi } from '@/api/settings'
 import { usePaneDom } from '@/composables/usePaneDom'
 import AutomationBadge from '@/components/automation/AutomationBadge.vue'
@@ -1151,6 +1151,7 @@ const computedRecap = computed(() => {
 const vatOverrides = ref<Record<string, { base: number; vat: number }>>({})
 const vatAllocations = ref<PurchaseVatAllocation[]>([])
 const hasVatAllocations = computed(() => vatAllocations.value.length > 0)
+const mixedAllocationDeduction = computed(() => allocationsHaveMixedDeduction(vatAllocations.value))
 
 function accountExists(code: string): boolean {
   return accountingAccounts.value.some(a => a.is_active && a.account_code === code)
@@ -1159,6 +1160,14 @@ function accountExists(code: string): boolean {
 function defaultAllocationAccount(usage: PurchaseVatAllocation['usage_type']): string {
   const candidates = usage === 'personal' ? ['355', '335'] : usage === 'non_deductible' ? ['513', '518'] : ['518']
   return candidates.find(accountExists) ?? candidates[0]
+}
+
+// Účet MD podnikatelské části: shodný nákladový účet všech položek dané sazby (po založení
+// alokací se účty položek do zápisu nepromítají), jinak výchozí účet.
+function businessAllocationAccount(rate: number): string {
+  const accounts = new Set(form.value.items.filter(it => itemVatRate(it) === Number(rate)).map(it => it.expense_account_code ?? null))
+  const [only] = [...accounts]
+  return accounts.size === 1 && only ? only : defaultAllocationAccount('business')
 }
 
 function startVatAllocations(): void {
@@ -1172,7 +1181,7 @@ function startVatAllocations(): void {
     vat_deduction: 'full',
     vat_deduction_percent: 100,
     tax_treatment: 'deductible',
-    account_code: defaultAllocationAccount('business'),
+    account_code: businessAllocationAccount(row.rate),
     vat_classification_code: form.value.vat_classification_code,
     order_index: index,
   }))
@@ -2240,16 +2249,21 @@ useWindowTitle(
             <tr v-if="itemDetailsOpen.has(it)" data-test="item-details-row">
               <td colspan="8" class="pb-2 pl-5 pr-3">
                 <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
-                  <label v-if="showItemAccount" class="flex items-center gap-2 text-xs text-neutral-500">
+                  <label v-if="showItemAccount" class="flex items-center gap-2 text-xs text-neutral-500"
+                    :title="hasVatAllocations ? t('purchase_invoice.items.expense_account_allocations') : undefined">
                     <span class="shrink-0">{{ t('purchase_invoice.items.expense_account') }}</span>
                     <select v-model="it.expense_account_code" :aria-label="t('purchase_invoice.items.expense_account')"
-                      class="w-64 h-8 px-1 border border-neutral-300 rounded bg-surface text-sm text-neutral-900">
+                      :disabled="hasVatAllocations" data-test="item-expense-account"
+                      class="w-64 h-8 px-1 border border-neutral-300 rounded bg-surface text-sm text-neutral-900 disabled:bg-neutral-100 disabled:text-neutral-500">
                       <option :value="null">{{ t('purchase_invoice.items.expense_account_default') }}</option>
                       <option v-if="it.expense_account_code && !accountsForExpenseKind(it.expense_kind).some(a => a.account_code === it.expense_account_code)"
                         :value="it.expense_account_code">{{ it.expense_account_code }}</option>
                       <option v-for="a in accountsForExpenseKind(it.expense_kind)" :key="a.id" :value="a.account_code">{{ a.account_code }} {{ a.name }}</option>
                     </select>
                   </label>
+                  <span v-if="showItemAccount && hasVatAllocations" class="text-xs text-neutral-500" data-test="item-account-allocations">
+                    {{ t('purchase_invoice.items.expense_account_allocations') }}
+                  </span>
                   <label class="flex items-center gap-2 text-xs text-neutral-500">
                     <span class="shrink-0">{{ t('purchase_invoice.items.vat_classification') }}</span>
                     <select v-model="it.vat_classification_code" :aria-label="t('purchase_invoice.items.vat_classification')"
@@ -2393,12 +2407,14 @@ useWindowTitle(
                 <label v-if="showItemAccount" class="mt-2 block text-xs text-neutral-600">
                   {{ t('purchase_invoice.items.expense_account') }}
                   <select v-model="it.expense_account_code" :aria-label="t('purchase_invoice.items.expense_account')"
-                    class="mt-1 w-full h-10 px-2 border border-neutral-300 rounded bg-surface text-sm">
+                    :disabled="hasVatAllocations"
+                    class="mt-1 w-full h-10 px-2 border border-neutral-300 rounded bg-surface text-sm disabled:bg-neutral-100 disabled:text-neutral-500">
                     <option :value="null">{{ t('purchase_invoice.items.expense_account_default') }}</option>
                     <option v-if="it.expense_account_code && !accountsForExpenseKind(it.expense_kind).some(a => a.account_code === it.expense_account_code)"
                       :value="it.expense_account_code">{{ it.expense_account_code }}</option>
                     <option v-for="a in accountsForExpenseKind(it.expense_kind)" :key="a.id" :value="a.account_code">{{ a.account_code }} {{ a.name }}</option>
                   </select>
+                  <span v-if="hasVatAllocations" class="mt-1 block text-xs text-neutral-500">{{ t('purchase_invoice.items.expense_account_allocations') }}</span>
                 </label>
                 <label class="mt-2 block text-xs text-neutral-600">
                   {{ t('purchase_invoice.items.vat_classification') }}
@@ -2733,13 +2749,17 @@ useWindowTitle(
           </div>
           <div>
             <label class="block text-xs text-neutral-500 mb-1">{{ t('purchase_invoice.classification.vat_deduction') }}</label>
-            <select v-model="form.vat_deduction" class="w-full h-10 px-3 border border-neutral-300 rounded-md bg-surface text-sm">
+            <select v-model="form.vat_deduction" :disabled="mixedAllocationDeduction" data-test="header-vat-deduction"
+              class="w-full h-10 px-3 border border-neutral-300 rounded-md bg-surface text-sm disabled:bg-neutral-100 disabled:text-neutral-500">
               <option value="full">{{ t('purchase_invoice.vat_deduction.full') }}</option>
               <option value="none">{{ t('purchase_invoice.vat_deduction.none') }}</option>
               <option value="proportional">{{ t('purchase_invoice.vat_deduction.proportional') }}</option>
               <option value="reduced">{{ t('purchase_invoice.vat_deduction.reduced') }}</option>
             </select>
-            <template v-if="form.vat_deduction === 'proportional'">
+            <p v-if="mixedAllocationDeduction" class="text-xs text-neutral-500 mt-1" data-test="header-vat-deduction-allocations">
+              {{ t('purchase_invoice.items.vat_deduction_allocations') }}
+            </p>
+            <template v-else-if="form.vat_deduction === 'proportional'">
               <div class="mt-2 flex items-center gap-2">
                 <input v-model.number="form.vat_deduction_percent" type="number" min="0" max="100" step="0.01"
                   class="w-24 h-10 px-3 border border-neutral-300 rounded-md bg-surface text-sm text-right" />
@@ -2751,7 +2771,7 @@ useWindowTitle(
               {{ t('purchase_invoice.vat_deduction_reduced_hint') }}
             </p>
             <p v-else class="text-xs text-neutral-500 mt-1">{{ t('purchase_invoice.classification.vat_deduction_hint') }}</p>
-            <p v-if="headerDiffersFromRozpis" class="text-xs text-warning-700 mt-1" data-test="header-differs-from-allocations">
+            <p v-if="headerDiffersFromRozpis && !mixedAllocationDeduction" class="text-xs text-warning-700 mt-1" data-test="header-differs-from-allocations">
               {{ t('purchase_invoice.vat_treatment.header_differs_editor') }}
             </p>
           </div>

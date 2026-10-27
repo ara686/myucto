@@ -105,7 +105,9 @@ final class PurchaseVatTreatment
             }
             $parts = array_values($groups);
             $effective = count($groups) === 1 ? $parts[0]['vat_deduction'] : 'mixed';
-            if (array_keys($groups) !== [$headerKey]) {
+            // Smíšený nárok hlavička vyjádřit neumí (editor ji v tu chvíli zamkne), takže
+            // nesoulad hlásí jen rozpis s jediným nárokem, který hlavička nenese.
+            if (count($groups) === 1 && array_keys($groups) !== [$headerKey]) {
                 $warnings[] = 'header_differs_from_allocations';
             }
             $items = array_map(static fn (array $it): array => [
