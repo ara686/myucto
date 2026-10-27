@@ -288,10 +288,20 @@ vůbec nezobrazí) jsou dva přepínače, ve výchozím stavu vypnuté:
 | **Automaticky účtovat vydané faktury** | Po vystavení faktury ji aplikace rovnou zaúčtuje do deníku, stejným mechanismem jako ruční tlačítko Zaúčtovat ([Faktura PDF](16_Faktura_PDF.md#16103-zauctovani-do-deniku)). |
 | **Automaticky účtovat přijaté faktury** | Po přechodu přijaté faktury na stav Přijatá ji aplikace rovnou zaúčtuje ([§ 23.11.18](23_Prijate_faktury.md#231118-zauctovani-do-deniku-a-tlacitko-zauctovat)). Na další přechody stavu (uhrazená, stornovaná…) auto-post nereaguje. |
 
+Pod přepínači je pole **Účet závazku pro účtenky / paragony**. Zadáte-li závazkový účet třídy 3 z účtové osnovy
+firmy (typicky **325** Ostatní závazky), zaúčtují se přijaté doklady druhu **Účtenka / paragon** na tento účet místo
+závazku z předkontace (321). Ručně zvolená předkontace s jiným závazkem má přednost. Prázdné pole znamená závazek
+z předkontace. Aplikace odmítne účet, který v osnově není nebo není závazkový (například 311 nebo 518).
+
+Úhrady přijatých dokladů z pokladny, banky, platby kartou i zápočty vždy vyrovnávají účet, na kterém závazek dokladu
+skutečně vznikl. Účtenka zaúčtovaná na 325 se tedy uhradí 325/211 nebo 325/221 a saldo zůstane na jednom účtu.
+Úhrada dokladu, který ještě není zaúčtovaný, jde na závazek z kontace úhrady (321), proto účtenku zaúčtujte dřív,
+než ji uhradíte. Nastavení platí pro nově zaúčtované doklady, už zaúčtované se nepřeúčtují.
+
 **Postup:**
 
 1. Otevřete `Firma → Nastavení`, záložku **Daně a účetnictví**, sekci **Daňové nastavení (EPO výkazy DPH/KH)**.
-2. Zapněte požadované přepínače.
+2. Zapněte požadované přepínače, případně vyplňte účet závazku pro účtenky.
 3. V boxu **Automatika účtování** zvolte preset (**Vypnuto**, **Jen návrhy**, **Asistovaná**, **Plná automatika**).
 4. Případně upravte jednotlivé typy operací na vypnuto / návrh / automaticky, nastavte **Denní limit automatiky (Kč)** a zapněte **Ranní přehled e-mailem**.
 5. Uložte nastavení.

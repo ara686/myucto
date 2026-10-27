@@ -1104,7 +1104,8 @@
         "2200_supplier_invoice_pdf_bank_in_footer.sql",
         "2201_stock_history_import.sql",
         "2202_cash_journal_offset_notes.sql",
-        "2203_readonly_seat_policy.sql"
+        "2203_readonly_seat_policy.sql",
+        "2204_supplier_receipt_payable_account.sql"
     ],
     "tables": {
         "abra_flexi_connections": {
@@ -25779,6 +25780,7 @@
                 "purchase_invoice_qr_include_due_date": "tinyint(1) NOT NULL DEFAULT 0",
                 "purchase_receipt_number_format": "varchar(60) NULL DEFAULT NULL",
                 "purchase_tax_document_number_format": "varchar(60) NULL DEFAULT NULL",
+                "receipt_payable_account_code": "varchar(10) NULL DEFAULT NULL",
                 "reminder_days_after_due": "int(11) NOT NULL DEFAULT 3",
                 "self_copy": "longtext NULL DEFAULT NULL COLLATE utf8mb4_bin",
                 "sest_email": "varchar(120) NULL DEFAULT NULL",

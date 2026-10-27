@@ -722,6 +722,8 @@ final class SettingsAction
             // Auto-post hook (A2, migrace 1035) — auto-zaúčtování FV po vystavení / PF po
             // přijetí; admin-only (jako ostatní účetní nastavení firmy), účinek jen v double_entry.
             'auto_post_invoices', 'auto_post_purchases',
+            // Účet závazku pro účtenky / paragony (migrace 2204), viz PurchasePayableAccount.
+            'receipt_payable_account_code',
             // F7 — AI provider selection (NON-secret; secrety `*_enc` jdou VÝHRADNĚ přes
             // AiProviderCredentialsAction, NIKDY tady — mustFix #11).
             'ai_provider', 'ai_data_region', 'ai_eu_residency_required', 'client_ai_extraction_enabled', 'client_ai_extraction_monthly_limit',
@@ -809,6 +811,15 @@ final class SettingsAction
             && !in_array($body['accounting_mode'], ['tax_evidence', 'double_entry'], true)
         ) {
             return Json::error($response, 'validation_failed', "accounting_mode musí být 'tax_evidence' nebo 'double_entry'.", 400);
+        }
+
+        if (array_key_exists('receipt_payable_account_code', $body)) {
+            try {
+                $body['receipt_payable_account_code'] = (new \MyInvoice\Service\Accounting\PurchasePayableAccount($this->db))
+                    ->validateReceiptSetting($id, $body['receipt_payable_account_code']);
+            } catch (\MyInvoice\Service\Accounting\PostingException $e) {
+                return Json::error($response, $e->errorCode, $e->getMessage(), 422, $e->context);
+            }
         }
 
         // Vědomé příznaky poplatníka (migrace 1782). CHECK constraint v DB by z cizí

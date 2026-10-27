@@ -24,6 +24,7 @@ use MyInvoice\Service\Accounting\OperationType;
 use MyInvoice\Service\Accounting\PolicyInput;
 use MyInvoice\Service\Accounting\PostingException;
 use MyInvoice\Service\Accounting\PostingService;
+use MyInvoice\Service\Accounting\PurchasePayableAccount;
 use MyInvoice\Service\Accounting\TakenOverRecord;
 use MyInvoice\Service\Payroll\Payment\PayrollBankEvidenceGuard;
 use MyInvoice\Service\Accounting\Card\CardClearingRegime;
@@ -1008,7 +1009,7 @@ final class BankPostingService
             $saldo = $this->predpisSaldo($supplierId, $this->predpis(
                 $supplierId, 'purchase_invoice', $purchaseId, true,
                 'Přijatá faktura #' . $purchaseId . ' nemá zaúčtovaný předpis.',
-            ), $payable);
+            ), $this->purchasePayable($supplierId, $purchaseId, $payable));
             $rate = $this->predpisFxRate($supplierId, $saldo, [
                 'exchange_rate' => $allocation['purchase_exchange_rate'] ?? null,
             ]);
@@ -1051,7 +1052,7 @@ final class BankPostingService
         $saldo = $this->predpisSaldo($supplierId, $this->predpis(
             $supplierId, 'purchase_invoice', $purchaseId, false,
             'Přijatá faktura #' . $purchaseId . ' nemá zaúčtovaný předpis.',
-        ), $payable);
+        ), $this->purchasePayable($supplierId, $purchaseId, $payable));
         $rate = $this->predpisFxRate($supplierId, $saldo, $purchase);
         $bankCzk = round(abs((float) $tx['amount']), 2);
         // Odúčtovat se smí jen ZBYTEK dokladu (bez tohoto pohybu) a jen když ho korunová
@@ -1159,7 +1160,16 @@ final class BankPostingService
         return $this->predpisSaldo($supplierId, $this->predpis(
             $supplierId, 'purchase_invoice', $pfId, false,
             'Přijatá faktura #' . $pfId . ' nemá zaúčtovaný předpis.',
-        ), $payable)['code'];
+        ), $this->purchasePayable($supplierId, $pfId, $payable))['code'];
+    }
+
+    /**
+     * Závazek přijatého dokladu, který úhrada odúčtuje: účet z jeho zápisu (např. 325
+     * u účtenky), jinak účet z kontace úhrady ({@see PurchasePayableAccount::forPayment}).
+     */
+    private function purchasePayable(int $supplierId, int $pfId, string $payable): string
+    {
+        return (new PurchasePayableAccount($this->db))->forPayment($supplierId, $pfId, $payable);
     }
 
     /**
@@ -1303,7 +1313,7 @@ final class BankPostingService
         }
         $this->predpis($supplierId, 'purchase_invoice', $pfId, true, 'Přijatý dobropis #' . $pfId . ' nemá zaúčtovaný předpis.');
         $rule = $this->postingRules->resolve($supplierId, 'payment.payable.bank');
-        return ($rule['debit_account_code'] ?? null) ?: '321';
+        return $this->purchasePayable($supplierId, $pfId, ($rule['debit_account_code'] ?? null) ?: '321');
     }
 
     private function outgoingIssuedRefundCounter(int $supplierId, int $invoiceId): string
@@ -1654,6 +1664,7 @@ final class BankPostingService
         if ((string) $pf['document_kind'] === 'advance') {
             throw new PostingException('fx_not_supported', 'Cizoměnová poskytnutá záloha se zatím neúčtuje automaticky.');
         }
+        $payable = $this->purchasePayable($supplierId, $pfId, $payable);
         $saldo = $this->predpisSaldo($supplierId, $this->predpis(
             $supplierId, 'purchase_invoice', $pfId, false,
             'Přijatá faktura #' . $pfId . ' nemá zaúčtovaný předpis.',

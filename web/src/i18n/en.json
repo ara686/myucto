@@ -25685,6 +25685,8 @@
     "auto_post_invoices_hint": "Post an invoice to the journal right after it is issued. A posting error won't block issuing — the invoice stays issued and you post it manually.",
     "auto_post_purchases": "Auto-post received invoices",
     "auto_post_purchases_hint": "Post a received invoice to the journal right after it is received. A posting error won't block it — you post the invoice manually.",
+    "receipt_payable_account": "Payable account for receipts",
+    "receipt_payable_account_hint": "For example 325 (other payables). Receipts are posted to this account instead of the payable from the posting rule, and their payments settle it. Leave empty to use the payable from the posting rule (321). A manually chosen posting rule with a different payable takes precedence.",
     "taxpayer_type": "Taxpayer type",
     "taxpayer_fo": "Individual (OSVČ)",
     "taxpayer_po": "Legal entity (Ltd., a.s.)",

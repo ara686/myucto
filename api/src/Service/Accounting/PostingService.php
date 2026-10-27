@@ -1791,7 +1791,7 @@ final class PostingService
         if (!$taxDeductible) {
             $expense = $this->nonDeductibleExpenseAccount($supplierId, $expense, $entryDate, $currentRead);
         }
-        $payable = $rule['credit_account_code'] ?? '321';
+        $payable = $this->purchasePayable($supplierId, $pi, $rule, $defaultKey);
         $cc = $opts['cost_center'] ?? null;
 
         $pct = max(0.0, min(100.0, (float) ($pi['vat_deduction_percent'] ?? 100))) / 100.0;
@@ -2556,12 +2556,36 @@ final class PostingService
             $allocatedCzk = round($allocatedCzk + $accountAmount + $deductibleVat, 2);
         }
 
-        $rule = $this->rules->resolve($supplierId, 'invoice.services.received');
-        $payable = $rule['credit_account_code'] ?? '321';
+        $rule = $this->rules->resolve($supplierId, self::DEFAULT_RECEIVED_RULE_KEY);
+        $payable = $this->purchasePayable($supplierId, $pi, $rule, self::DEFAULT_RECEIVED_RULE_KEY);
         $lines[] = $this->withForeign($this->line($payable, $payableSide, abs($totalCzk), $cc), $pi, $rate);
         $this->appendRounding($lines, $totalCzk, $allocatedCzk, $cc, !$isCreditNote);
         $this->appendAdvanceSettlementPurchase($supplierId, $pi, $lines);
         return $lines;
+    }
+
+    /**
+     * Závazek přijatého dokladu: účet z předkontace, u účtenky případně účet z nastavení
+     * firmy ({@see PurchasePayableAccount::forPosting}). Výchozí závazek se bere
+     * z výchozí předkontace téhož druhu dokladu, takže ruční předkontace s jiným
+     * závazkem zůstává beze změny.
+     *
+     * @param array<string,mixed> $pi
+     * @param array<string,mixed>|null $rule
+     */
+    private function purchasePayable(int $supplierId, array $pi, ?array $rule, string $defaultKey): string
+    {
+        $rulePayable = (string) ($rule['credit_account_code'] ?? PurchasePayableAccount::DEFAULT_PAYABLE);
+        if ((string) ($pi['document_kind'] ?? '') !== 'receipt') {
+            return $rulePayable;
+        }
+        $default = $this->rules->resolve($supplierId, $defaultKey);
+        return (new PurchasePayableAccount($this->db))->forPosting(
+            $supplierId,
+            $pi,
+            $rulePayable,
+            (string) ($default['credit_account_code'] ?? PurchasePayableAccount::DEFAULT_PAYABLE),
+        );
     }
 
     /** @return list<array<string,mixed>> */

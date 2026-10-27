@@ -371,7 +371,17 @@ final class InvoiceSettlementService
         $isAdvance = $this->repo->purchaseIsAdvance($supplierId, $docId);
         return $isAdvance
             ? $this->ruleAccount($supplierId, 'advance.paid.payment', 'debit', '314')
-            : $this->ruleAccount($supplierId, 'payment.payable.settlement', 'debit', '321');
+            : $this->purchasePayable($supplierId, $docId);
+    }
+
+    /** Závazek přijatého dokladu, na kterém doklad vznikl ({@see PurchasePayableAccount::forPayment}). */
+    private function purchasePayable(int $supplierId, int $docId): string
+    {
+        return (new PurchasePayableAccount($this->db))->forPayment(
+            $supplierId,
+            $docId,
+            $this->ruleAccount($supplierId, 'payment.payable.settlement', 'debit', '321'),
+        );
     }
 
     /** @return array<string,mixed> */
@@ -469,10 +479,10 @@ final class InvoiceSettlementService
                 sprintf('Částka zápočtu (%.2f %s) převyšuje zbytek k úhradě (%.2f %s).', $amount, $currency, $remaining, $currency),
             );
         }
-        // Zálohová PF visí na poskytnutých zálohách (314), běžná na 321.
+        // Zálohová PF visí na poskytnutých zálohách (314), běžná na svém závazku (321, 325 …).
         $counter = $pf['kind'] === 'advance'
             ? $this->ruleAccount($supplierId, 'advance.paid.payment', 'debit', '314')
-            : $this->ruleAccount($supplierId, 'payment.payable.settlement', 'debit', '321');
+            : $this->purchasePayable($supplierId, $docId);
         return [
             'number'          => $pf['number'],
             'doc_account'     => $counter,

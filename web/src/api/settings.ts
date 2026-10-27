@@ -361,6 +361,8 @@ export interface Supplier {
   // účinek jen v režimu double_entry.
   auto_post_invoices?: boolean
   auto_post_purchases?: boolean
+  /** Účet závazku pro účtenky / paragony (migrace 2204); null = závazek z předkontace (321). */
+  receipt_payable_account_code?: string | null
   // Tax settings pro EPO výkazy DPH/KH (migrace 0038, fáze 6)
   taxpayer_type?: 'fo' | 'po' | null
   vat_period?: 'monthly' | 'quarterly' | null

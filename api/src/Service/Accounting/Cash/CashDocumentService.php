@@ -15,6 +15,7 @@ use MyInvoice\Repository\TaxConstantsRepository;
 use MyInvoice\Service\Accounting\Closing\DocumentSeriesService;
 use MyInvoice\Service\Accounting\DocumentLockService;
 use MyInvoice\Service\Accounting\PostingService;
+use MyInvoice\Service\Accounting\PurchasePayableAccount;
 use MyInvoice\Service\Invoice\InvoiceMath;
 use MyInvoice\Service\Invoice\InvoicePaymentService;
 use MyInvoice\Service\Invoice\RefundDocument;
@@ -1294,7 +1295,8 @@ final class CashDocumentService
 
     /**
      * Úhrada přijaté faktury hotově: běžná PF → 321/211, zálohová PF (document_kind=advance)
-     * → poskytnutá záloha 314/211 (B5).
+     * → poskytnutá záloha 314/211 (B5). Závazek se bere z účtu, na kterém doklad vznikl
+     * ({@see PurchasePayableAccount::forPayment}), např. 325 u účtenky.
      *
      * @return list<array{account_code:string, side:string, amount:float}>
      */
@@ -1334,6 +1336,9 @@ final class CashDocumentService
                 ];
         }
         $payable = $this->ruleAccount($supplierId, 'payment.payable.cash', 'debit', '321');
+        if ($doc['purchase_invoice_id'] !== null) {
+            $payable = (new PurchasePayableAccount($this->db))->forPayment($supplierId, (int) $doc['purchase_invoice_id'], $payable);
+        }
         return $refund
             ? [
                 $this->line($cashAccount, 'debit', $total),

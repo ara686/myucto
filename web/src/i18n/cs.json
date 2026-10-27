@@ -25685,6 +25685,8 @@
     "auto_post_invoices_hint": "Po vystavení faktury ji rovnou zaúčtovat do deníku. Případná chyba zaúčtování vystavení nezablokuje - faktura zůstane vystavená a zaúčtujete ji ručně.",
     "auto_post_purchases": "Automaticky účtovat přijaté faktury",
     "auto_post_purchases_hint": "Po přijetí přijaté faktury ji rovnou zaúčtovat do deníku. Případná chyba zaúčtování přijetí nezablokuje - fakturu zaúčtujete ručně.",
+    "receipt_payable_account": "Účet závazku pro účtenky / paragony",
+    "receipt_payable_account_hint": "Například 325 (ostatní závazky). Účtenky se zaúčtují na tento účet místo závazku z předkontace a jejich úhrady ho vyrovnají. Prázdné pole = závazek z předkontace (321). Ručně zvolená předkontace s jiným závazkem má přednost.",
     "taxpayer_type": "Typ poplatníka",
     "taxpayer_fo": "Fyzická osoba (OSVČ)",
     "taxpayer_po": "Právnická osoba (s.r.o., a.s.)",

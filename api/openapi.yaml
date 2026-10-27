@@ -7014,6 +7014,8 @@ paths:
         nebo s platnou licencí, která odemyká účetnictví.
         `person_title` je nepovinný titul fyzické osoby (nejvýše 10 znaků po
         oříznutí okolních mezer); prázdný řetězec nebo `null` titul vymaže.
+        `receipt_payable_account_code` musí být aktivní závazkový účet třídy 3
+        z účtové osnovy firmy, jinak 422 `invalid_account`.
       requestBody:
         required: true
         content:
@@ -7034,6 +7036,11 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
         '409':
           description: Změnu blokuje stav účetního období, zaúčtované zápisy nebo dočasně probíhající zápis
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: Účet závazku pro účtenky (`receipt_payable_account_code`) není závazkový účet z osnovy firmy
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -47951,6 +47958,7 @@ components:
         data_box_type: { type: [string, "null"], enum: [FO, PFO, PO, OVM, null], description: "Druh datové schránky v ISDS; nesouvisí s typem poplatníka." }
         oss_enabled: { type: boolean }
         dimensions_enabled: { type: boolean, description: "Zapnutí dimenzí vyžaduje platnou licenci účetnictví nebo zkušební dobu. Vypnutí a uložení již zapnuté hodnoty ji nevyžaduje." }
+        receipt_payable_account_code: { type: [string, "null"], maxLength: 10, description: "Účet závazku pro účtenky a paragony (document_kind=receipt), např. 325. Musí být aktivní závazkový účet třídy 3 z osnovy firmy; prázdná hodnota nebo null = závazek z předkontace (321)." }
         oss_valid_from: { type: [string, "null"], format: date }
         oss_valid_to: { type: [string, "null"], format: date }
         oss_identification_country: { type: [string, "null"], minLength: 2, maxLength: 2 }
@@ -48115,6 +48123,7 @@ components:
           readOnly: true
           description: "Měsíční limit klientských pokusů o vytěžení přijatých dokladů. Počítá se každý platný upload předaný ke zpracování včetně neúspěchu, duplicity a strukturovaného dokladu. Nula jejich vytěžování blokuje."
         dimensions_enabled: { type: boolean, description: "Uložený příznak dimenzí. Dostupnost funkce navíc závisí na platné licenci účetnictví." }
+        receipt_payable_account_code: { type: [string, "null"], description: "Účet závazku pro účtenky a paragony (document_kind=receipt); null = závazek z předkontace (321). Úhrady odúčtují účet, na kterém závazek dokladu vznikl." }
         vat_status_history:
           type: array
           readOnly: true
