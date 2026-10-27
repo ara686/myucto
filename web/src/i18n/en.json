@@ -33961,6 +33961,7 @@
       "position": "Position",
       "weekly_hours": "Weekly hours",
       "start_end_note": "Start / end",
+      "start_date": "Start date",
       "monthly_wage": "Monthly wage (wage assessment)",
       "worked_hours": "Worked",
       "overtime_hours": "Overtime",

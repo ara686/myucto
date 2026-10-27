@@ -366,7 +366,7 @@ export const ATTENDANCE_MEANING_GROUPS: { key: string; meanings: AttendanceMeani
     meanings: [
       'person_name', 'personal_number', 'birth_number', 'birth_date', 'health_insurer_code',
       'relation_label', 'department', 'cost_center', 'position', 'weekly_hours', 'start_end_note',
-      'monthly_wage',
+      'start_date', 'monthly_wage',
     ],
   },
   {
@@ -402,7 +402,7 @@ export const AUTO_COMPONENT_CODE = '*'
 
 const TEXT_MEANINGS = new Set<AttendanceMeaning>([
   'person_name', 'personal_number', 'birth_number', 'birth_date', 'health_insurer_code', 'relation_label',
-  'department', 'cost_center', 'position', 'start_end_note', 'monthly_wage',
+  'department', 'cost_center', 'position', 'start_end_note', 'start_date', 'monthly_wage',
 ])
 const MONEY_MEANINGS = new Set<AttendanceMeaning>([
   'component', 'net_meal_deduction', 'net_other_deduction', 'reference_gross', 'reference_net',

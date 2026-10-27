@@ -46,6 +46,7 @@ final class AttendanceMeaning
         'position',
         'weekly_hours',
         'start_end_note',
+        'start_date',
         'monthly_wage',
     ];
 

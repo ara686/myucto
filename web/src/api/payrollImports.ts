@@ -384,7 +384,7 @@ export type AttendanceUnit = 'hours' | 'excel_duration' | 'amount' | 'text'
 export type AttendanceMeaning =
   | 'ignore' | 'person_name' | 'personal_number' | 'birth_number' | 'birth_date' | 'health_insurer_code'
   | 'relation_label'
-  | 'department' | 'cost_center' | 'position' | 'weekly_hours' | 'start_end_note' | 'monthly_wage'
+  | 'department' | 'cost_center' | 'position' | 'weekly_hours' | 'start_end_note' | 'start_date' | 'monthly_wage'
   | 'worked_hours' | 'overtime_hours' | 'night_hours' | 'weekend_hours' | 'holiday_work_hours'
   | 'afternoon_hours' | 'fund_hours'
   | 'vacation_hours' | 'holiday_hours' | 'sick_hours' | 'doctor_hours' | 'care_hours'

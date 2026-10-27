@@ -506,7 +506,7 @@ final class AnonymizationPolicy
         'payroll_generated_documents' => ['document_kind' => 'keep', 'file_sha256' => 'keep', 'idempotency_key_hash' => 'keep', 'manifest_json' => 'json', 'mime_type' => 'keep', 'renderer_version' => 'keep', 'revision_snapshot_hash' => 'keep', 'source_snapshot_hash' => 'keep', 'storage_key' => 'keep', 'suggested_filename' => 'file_name', 'template_version' => 'keep'],
         'payroll_identity_resolution_tasks' => ['reason_code' => 'keep', 'resolution_evidence_hash' => 'keep'],
         'payroll_import_links' => ['external_key' => 'text', 'source_system' => 'keep'],
-        'payroll_import_profiles' => ['components_json' => 'json', 'name' => 'text', 'rules_json' => 'json', 'sample_rules_sha256' => 'keep', 'source_system' => 'keep'],
+        'payroll_import_profiles' => ['components_json' => 'json', 'name' => 'text', 'rules_json' => 'json', 'sample_key' => 'keep', 'sample_rules_sha256' => 'keep', 'source_system' => 'keep'],
         'payroll_imported_jmhz_protocols' => ['correlation_reference' => 'keep', 'dedupe_key' => 'keep', 'payload_sha256' => 'keep', 'payload_xml' => 'text', 'protocol_dated_at' => 'keep', 'source_filename' => 'file_name', 'status_name' => 'keep', 'submission_guid' => 'keep', 'submitted_at' => 'keep', 'variable_symbol' => 'symbol'],
         'payroll_input_import_rows' => ['errors_json' => 'json', 'external_id' => 'text', 'normalized_payload' => 'json'],
         'payroll_input_imports' => ['content_hash' => 'keep', 'source_name' => 'file_name'],

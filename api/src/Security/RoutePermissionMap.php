@@ -606,9 +606,10 @@ final class RoutePermissionMap
         // Založení chybějících osob z podkladů je personální zápis, ne mzdový vstup.
         ['POST', '#^/api/payroll/imports/attendance/persons$#', 'payroll.person.write', AccessLevel::WRITE],
         // Profily mapování sloupců jsou nastavení firmy; číst je smí každý, kdo importuje.
-        ['POST', '#^/api/payroll/imports/attendance/profiles(?:/import|/[0-9]+/copy)?$#', 'payroll.settings', AccessLevel::WRITE],
+        ['POST', '#^/api/payroll/imports/attendance/profiles(?:/import|/sample|/[0-9]+/copy)?$#', 'payroll.settings', AccessLevel::WRITE],
         ['DELETE', '#^/api/payroll/imports/attendance/profiles/[0-9]+$#', 'payroll.settings', AccessLevel::WRITE],
-        ['GET', '#^/api/payroll/imports/attendance/(batches(?:/[0-9]+)?|profiles(?:/[0-9]+/export)?)$#', 'payroll.inputs.write', AccessLevel::READ],
+        // Šablona XLSX Vzoru MyÚčto je bez dat firmy; stáhne si ji každý, kdo importuje.
+        ['GET', '#^/api/payroll/imports/attendance/(batches(?:/[0-9]+)?|profiles(?:/[0-9]+/export)?|template)$#', 'payroll.inputs.write', AccessLevel::READ],
         ['POST', '#^/api/payroll/imports/attendance/(preview|apply)$#', 'payroll.inputs.write', AccessLevel::WRITE],
         ['GET', '#^/api/payroll/settings/activation$#', 'payroll.settings', AccessLevel::READ],
         ['*', '#^/api/payroll/settings/activation$#', 'payroll.settings', AccessLevel::WRITE],

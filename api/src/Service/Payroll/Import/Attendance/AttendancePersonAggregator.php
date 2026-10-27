@@ -331,6 +331,16 @@ final class AttendancePersonAggregator
             $person[$field] = $identity[$field] ?? null;
         }
         $person += AttendanceText::noteDates((string) ($identity['start_end_note'] ?? ''));
+        // Samostatný sloupec s datem nástupu má přednost před datem z poznámky.
+        $startDate = trim((string) ($identity['start_date'] ?? ''));
+        if ($startDate !== '') {
+            $start = self::isoDate($startDate);
+            if ($start === null) {
+                $warnings[] = "Datum nástupu „{$startDate}“ nejde přečíst. Zapište ho jako den. měsíc. rok.";
+            } else {
+                $person['start_on'] = $start;
+            }
+        }
 
         return $person + [
             'sources' => $sources,
@@ -471,7 +481,7 @@ final class AttendancePersonAggregator
                 }
             }
         }
-        if ($meaning === 'birth_date' && $cell->kind === AttendanceCell::NUMBER) {
+        if (($meaning === 'birth_date' || $meaning === 'start_date') && $cell->kind === AttendanceCell::NUMBER) {
             return self::excelDate((float) $cell->number) ?? '';
         }
         if ($cell->kind === AttendanceCell::ERROR) {
