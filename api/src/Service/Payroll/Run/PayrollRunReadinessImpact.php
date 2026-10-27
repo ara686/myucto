@@ -94,6 +94,10 @@ final class PayrollRunReadinessImpact
         // Poučení zaměstnance (§ 23d odst. 2) se zapisuje u záměru, do zmrazeného
         // snímku nevstupuje, takže se doplní kdykoli a nic to nestojí.
         'part_time_discount_employee_not_informed' => [self::IMPACT_ANYTIME, self::SCOPE_MONTHLY],
+        // § 75 ZP — DPP dosáhla prahu upozornění
+        // ({@see \MyInvoice\Service\Payroll\Time\PayrollAgreementAnnualHours::WARNING_PERCENT}). Nic se
+        // neopravuje, jde o výhled, aby se smluvní vztah stihl upravit předem.
+        'dpp_annual_hours_approaching' => [self::IMPACT_ANYTIME, self::SCOPE_MONTHLY],
         // Stav prohlášení vstupuje do zmrazeného snímku — podpis po zamknutí
         // znamená opravnou revizi. Je to ale rozhodnutý stav, ne chyba.
         'tax_declaration_not_signed_summary' => [self::IMPACT_REVISION, self::SCOPE_MONTHLY],

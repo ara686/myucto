@@ -21,6 +21,7 @@ use MyInvoice\Service\Payroll\PayrollModuleAccess;
 use MyInvoice\Service\Payroll\PayrollPersonCreateService;
 use MyInvoice\Service\Payroll\Security\PayrollEnforcementDisclosure;
 use MyInvoice\Service\Payroll\Security\PayrollIdentifierProbeGuard;
+use MyInvoice\Service\Payroll\Time\PayrollAgreementAnnualHours;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
@@ -39,6 +40,7 @@ final class PayrollPeopleAction
         private readonly IpMatcher $ipMatcher,
         private readonly PayrollEmployeeDeletionRepository $deletion,
         private readonly PayrollIdentifierProbeGuard $identifierProbes,
+        private readonly PayrollAgreementAnnualHours $agreementHours,
     ) {}
 
     public function list(Request $request, Response $response): Response
@@ -100,7 +102,18 @@ final class PayrollPeopleAction
         ));
         $offset = max(0, (int) ($query['offset'] ?? 0));
 
-        $page = $this->people->listForTenant($supplierId, $limit, $offset, $filter, $search);
+        $year = (int) date('Y');
+        $page = $this->people->listForTenant(
+            $supplierId,
+            $limit,
+            $offset,
+            $filter,
+            $search,
+            $filter === PayrollPeopleRepository::FILTER_DPP_HOURS_LIMIT
+                ? $this->agreementHours->employeesNearLimit($supplierId, $year)
+                : [],
+        );
+        $items = $this->withAgreementHours($supplierId, $page['items'], $year);
 
         // Klíč `items` zůstává, aby stávající volající nespadli; `total`/`limit`/
         // `offset` přibyly vedle něj, protože seznam už nemusí být úplný.
@@ -109,7 +122,7 @@ final class PayrollPeopleAction
         return Json::ok($response, [
             'items' => array_map(
                 static fn (array $person): array => self::disclosedPerson($person, $canSeeEnforcement),
-                $page['items'],
+                $items,
             ),
             'total' => $page['total'],
             'limit' => $limit,
@@ -136,10 +149,36 @@ final class PayrollPeopleAction
             return Json::error($response, 'not_found', 'Zaměstnanec nenalezen.', 404);
         }
 
+        [$person] = $this->withAgreementHours($this->currentSupplierId($request), [$person], (int) date('Y'));
+
         return Json::ok($response, ['person' => self::disclosedPerson(
             $person,
             PayrollEnforcementDisclosure::canSeeEnforcement($request),
         )]);
+    }
+
+    /**
+     * Roční hodiny na DPP (§ 75 ZP) k osobám, které dohodu o provedení práce
+     * mají; ostatní dostanou `null`. Jeden dávkový výpočet za celou stránku.
+     *
+     * @param list<array<string,mixed>> $people
+     * @return list<array<string,mixed>>
+     */
+    private function withAgreementHours(int $supplierId, array $people, int $year): array
+    {
+        $employeeIds = [];
+        foreach ($people as $person) {
+            if (in_array('dpp', (array) ($person['relation_types'] ?? []), true)) {
+                $employeeIds[] = (int) $person['id'];
+            }
+        }
+        $summaries = $this->agreementHours->yearSummaries($supplierId, $employeeIds, $year);
+
+        return array_map(static function (array $person) use ($summaries): array {
+            $person['dpp_annual_hours'] = $summaries[(int) $person['id']] ?? null;
+
+            return $person;
+        }, $people);
     }
 
     /**

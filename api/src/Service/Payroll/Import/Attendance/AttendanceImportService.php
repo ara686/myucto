@@ -29,6 +29,7 @@ use MyInvoice\Service\Payroll\PayrollEmploymentValidator;
 use MyInvoice\Service\Payroll\PayrollPersonCreateService;
 use MyInvoice\Service\Payroll\Security\PayrollSensitiveData;
 use MyInvoice\Service\Payroll\Security\PayrollSensitiveField;
+use MyInvoice\Service\Payroll\Time\PayrollAgreementAnnualHours;
 use MyInvoice\Service\Payroll\Time\PayrollTimeImportApprovalService;
 use MyInvoice\Service\Payroll\Time\PayrollTimeImportSummaryWriter;
 
@@ -1067,6 +1068,7 @@ final class AttendanceImportService
             }
         }
         unset($person);
+        $persons = $this->withAgreementHours($supplierId, $periodStart, $persons, $matched['options']);
 
         $codes = [];
         foreach ($mapped['sheets'] as $sheet) {
@@ -1472,6 +1474,134 @@ final class AttendanceImportService
     private static function czechDate(string $date): string
     {
         return (new \DateTimeImmutable($date))->format('j. n. Y');
+    }
+
+    /**
+     * Roční limit DPP (§ 75 ZP) s odpracovanými hodinami z importovaného měsíce.
+     * Dosavadní součet bere {@see PayrollAgreementAnnualHours::yearToDate()} do
+     * konce předchozího měsíce; importovaný měsíc se do něj nepočítá, protože
+     * dávka jeho pracovní souhrn teprve zapíše nebo přepíše.
+     *
+     * @param list<array<string,mixed>> $persons
+     * @param list<array<string,mixed>> $options
+     * @return list<array<string,mixed>>
+     */
+    private function withAgreementHours(int $supplierId, string $periodStart, array $persons, array $options): array
+    {
+        $employeeIds = array_keys(self::importedAgreementMillihours($persons, $options));
+        if ($employeeIds === []) {
+            return $persons;
+        }
+        $year = (int) substr($periodStart, 0, 4);
+        $month = (int) substr($periodStart, 5, 2);
+        $prior = $month > 1
+            ? (new PayrollAgreementAnnualHours($this->db))->yearToDate(
+                $supplierId,
+                $employeeIds,
+                sprintf('%04d-%02d-01', $year, $month - 1),
+            )
+            : [];
+
+        return self::annotateAgreementHours($persons, $options, $prior, $year);
+    }
+
+    /**
+     * Připíše k osobám přiřazeným na DPP roční součet po importu a při dosažení
+     * prahu nebo překročení limitu varování. Import nezastavuje.
+     *
+     * @param list<array<string,mixed>> $persons
+     * @param list<array<string,mixed>> $options volby vztahů s `employment_id` a `relation_type`
+     * @param array<int,array{own_minutes:int,takeover_minutes:int,total_minutes:int}> $prior
+     * @return list<array<string,mixed>>
+     */
+    public static function annotateAgreementHours(array $persons, array $options, array $prior, int $year): array
+    {
+        $imported = self::importedAgreementMillihours($persons, $options);
+        $agreements = self::agreementEmploymentIds($options);
+        foreach ($persons as &$person) {
+            $employeeId = self::agreementEmployeeId($person, $agreements);
+            if ($employeeId === null) {
+                continue;
+            }
+            $before = $prior[$employeeId] ?? ['own_minutes' => 0, 'takeover_minutes' => 0, 'total_minutes' => 0];
+            $importedMinutes = intdiv(($imported[$employeeId] ?? 0) * 60, 1000);
+            $summary = PayrollAgreementAnnualHours::summary($year, [
+                'own_minutes' => $before['own_minutes'] + $importedMinutes,
+                'takeover_minutes' => $before['takeover_minutes'],
+                'total_minutes' => $before['total_minutes'] + $importedMinutes,
+            ]);
+            $person['dpp_annual_hours'] = $summary + ['imported_minutes' => $importedMinutes];
+            if ($summary['status'] !== PayrollAgreementAnnualHours::STATUS_OK) {
+                $name = $person['match']['employee_name'] ?? null;
+                $person['warnings'][] = 'Se započtením této docházky: ' . PayrollAgreementAnnualHours::statusMessage(
+                    $summary['status'],
+                    is_string($name) && $name !== '' ? $name : (string) ($person['display_name'] ?? ''),
+                    $year,
+                    $summary['total_minutes'],
+                    $summary['takeover_minutes'],
+                );
+            }
+        }
+        unset($person);
+
+        return $persons;
+    }
+
+    /**
+     * Importované odpracované hodiny po osobách, jen u řádků přiřazených na DPP.
+     *
+     * @param list<array<string,mixed>> $persons
+     * @param list<array<string,mixed>> $options
+     * @return array<int,int> employee_id => tisíciny hodiny
+     */
+    private static function importedAgreementMillihours(array $persons, array $options): array
+    {
+        $agreements = self::agreementEmploymentIds($options);
+        $result = [];
+        foreach ($persons as $person) {
+            $employeeId = self::agreementEmployeeId($person, $agreements);
+            if ($employeeId === null) {
+                continue;
+            }
+            $worked = $person['_metrics']['worked_hours']['millihours'] ?? 0;
+            $result[$employeeId] = ($result[$employeeId] ?? 0) + (is_int($worked) ? $worked : 0);
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param array<string,mixed> $person
+     * @param array<int,true> $agreements ID vztahů DPP
+     */
+    private static function agreementEmployeeId(array $person, array $agreements): ?int
+    {
+        $match = is_array($person['match'] ?? null) ? $person['match'] : [];
+        if (!in_array($match['status'] ?? null, ['linked', 'matched'], true)
+            || !is_int($match['employment_id'] ?? null)
+            || !is_int($match['employee_id'] ?? null)
+            || !isset($agreements[$match['employment_id']])
+        ) {
+            return null;
+        }
+
+        return $match['employee_id'];
+    }
+
+    /**
+     * @param list<array<string,mixed>> $options
+     * @return array<int,true>
+     */
+    private static function agreementEmploymentIds(array $options): array
+    {
+        $result = [];
+        foreach ($options as $option) {
+            if (($option['relation_type'] ?? null) === 'dpp' && is_int($option['employment_id'] ?? null)) {
+                $result[$option['employment_id']] = true;
+            }
+        }
+
+        return $result;
     }
 
     /**

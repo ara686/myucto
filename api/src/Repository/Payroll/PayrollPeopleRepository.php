@@ -41,7 +41,16 @@ final class PayrollPeopleRepository
         'needs_setup',
         'needs_data',
         'blocking_data',
+        self::FILTER_DPP_HOURS_LIMIT,
     ];
+
+    /**
+     * Osoby, které na DPP v roce dosáhly prahu upozornění nebo překročily
+     * limit 300 h. Součet hodin SQL neumí (převzaté měsíce, hranice začátku
+     * vedení mezd), proto množinu osob dodává volající z
+     * {@see \MyInvoice\Service\Payroll\Time\PayrollAgreementAnnualHours::employeesNearLimit()}.
+     */
+    public const FILTER_DPP_HOURS_LIMIT = 'dpp_hours_limit';
 
     public const LIST_DEFAULT_FILTER = 'all';
 
@@ -64,6 +73,7 @@ final class PayrollPeopleRepository
      * stránku, pager by nabízel stránky, na kterých po zúžení nikdo není.
      * Neznámý filtr se chová jako `all`; na hraně HTTP ho odmítá akce.
      *
+     * @param list<int> $employeeIds množina osob pro filtr {@see self::FILTER_DPP_HOURS_LIMIT}
      * @return array{items: list<array<string,mixed>>, total: int}
      */
     public function listForTenant(
@@ -72,10 +82,11 @@ final class PayrollPeopleRepository
         int $offset = 0,
         string $filter = self::LIST_DEFAULT_FILTER,
         string $search = '',
+        array $employeeIds = [],
     ): array {
         $limit = max(1, min(self::LIST_MAX_LIMIT, $limit));
         $offset = max(0, $offset);
-        $narrowing = $this->narrowingClause($filter, $search);
+        $narrowing = $this->narrowingClause($filter, $search, $employeeIds);
 
         $countStmt = $this->db->pdo()->prepare(
             'SELECT COUNT(*) ' . self::fromClause()
@@ -115,9 +126,10 @@ final class PayrollPeopleRepository
      * dostaly ZAROVEŇ. Rozdělené by se dřív nebo později rozešly a pager by
      * hlásil jiné číslo, než kolik jde odklikat.
      *
+     * @param list<int> $employeeIds
      * @return array{sql: string, params: list<string>}
      */
-    private function narrowingClause(string $filter, string $search): array
+    private function narrowingClause(string $filter, string $search, array $employeeIds = []): array
     {
         $sql = '';
         $params = [];
@@ -132,6 +144,15 @@ final class PayrollPeopleRepository
             $sql .= ' AND ' . PayrollPersonDataGapCatalog::gapExpression(
                 PayrollPersonDataGapCatalog::SEVERITY_BLOCKING,
             );
+        } elseif ($filter === self::FILTER_DPP_HOURS_LIMIT) {
+            if ($employeeIds === []) {
+                $sql .= ' AND 1 = 0';
+            } else {
+                $sql .= ' AND employee.id IN (' . implode(', ', array_fill(0, count($employeeIds), '?')) . ')';
+                foreach ($employeeIds as $employeeId) {
+                    $params[] = (string) $employeeId;
+                }
+            }
         }
 
         $search = trim($search);
