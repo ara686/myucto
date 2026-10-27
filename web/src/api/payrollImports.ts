@@ -386,6 +386,7 @@ export type AttendanceMeaning =
   | 'ignore' | 'person_name' | 'personal_number' | 'birth_number' | 'birth_date' | 'health_insurer_code'
   | 'relation_label'
   | 'department' | 'cost_center' | 'position' | 'weekly_hours' | 'start_end_note' | 'start_date' | 'monthly_wage'
+  | 'hourly_rate' | 'end_date' | 'bank_account'
   | 'worked_hours' | 'overtime_hours' | 'night_hours' | 'weekend_hours' | 'holiday_work_hours'
   | 'afternoon_hours' | 'fund_hours'
   | 'vacation_hours' | 'holiday_hours' | 'sick_hours' | 'doctor_hours' | 'care_hours'
@@ -514,6 +515,13 @@ export interface AttendancePerson {
   weekly_hours: string | null
   start_end_note: string | null
   monthly_wage: string | null
+  /** Sjednaná hodinová sazba a konec dohody tak, jak jsou v podkladech. */
+  hourly_rate?: string | null
+  end_date?: string | null
+  /** Sjednaný konec dohody přečtený ze sloupce (`YYYY-MM-DD`). */
+  agreed_end_on?: string | null
+  /** Číslo účtu z podkladů jen maskované; celé ho při založení doplní server. */
+  bank_account_masked?: string | null
   /** Nástup a ukončení přečtené z poznámky (`YYYY-MM-DD`). */
   start_on?: string | null
   end_on?: string | null
@@ -753,6 +761,9 @@ export interface AttendancePersonCreate {
   /** Sjednaná měsíční mzda v celých korunách (z mzdového výměru v podkladech). */
   monthly_gross: number | null
   planned_start_on: string
+  /** Hodinová sazba a konec dohody z podkladů; nečitelné vrátí server ve zprávě výsledku. */
+  hourly_rate?: string | null
+  fixed_term_end_on?: string | null
   personal_number: string | null
   activate: boolean
 }

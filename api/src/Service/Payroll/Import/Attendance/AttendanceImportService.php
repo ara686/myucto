@@ -16,6 +16,7 @@ use MyInvoice\Repository\Payroll\PayrollEmploymentRepository;
 use MyInvoice\Repository\Payroll\PayrollImportLinkRepository;
 use MyInvoice\Repository\Payroll\PayrollImportProfileRepository;
 use MyInvoice\Repository\Payroll\PayrollInputImportRepository;
+use MyInvoice\Repository\Payroll\PayrollPersonProfileRepository;
 use MyInvoice\Repository\Payroll\PayrollTermsSettledException;
 use MyInvoice\Service\License\LicenseCapacityGate;
 use MyInvoice\Service\License\LicensePayrollLimitExceeded;
@@ -27,6 +28,7 @@ use MyInvoice\Service\Payroll\Net\DeductionAgreementStatus;
 use MyInvoice\Service\Payroll\Net\DeductionAgreementTerms;
 use MyInvoice\Service\Payroll\PayrollEmploymentValidator;
 use MyInvoice\Service\Payroll\PayrollPersonCreateService;
+use MyInvoice\Service\Payroll\PayrollPersonProfileValidator;
 use MyInvoice\Service\Payroll\Security\PayrollSensitiveData;
 use MyInvoice\Service\Payroll\Security\PayrollSensitiveField;
 use MyInvoice\Service\Payroll\Time\PayrollAgreementAnnualHours;
@@ -114,6 +116,8 @@ final class AttendanceImportService
         private readonly PayrollTimeImportApprovalService $timeApprovals,
         private readonly PayrollImportAbsenceCompensationMaterializer $absenceCompensations,
         private readonly PayrollDeductionAgreementRepository $deductions,
+        private readonly PayrollPersonProfileValidator $profileValidator,
+        private readonly PayrollPersonProfileRepository $personProfiles,
     ) {
     }
 
@@ -521,9 +525,9 @@ final class AttendanceImportService
     }
 
     /**
-     * Osobní údaje z podkladů podle klíče osoby: rodné číslo, datum narození
-     * a kód zdravotní pojišťovny. Klient zná rodné číslo jen maskované a
-     * ostatní údaje vůbec, takže je při zakládání osob doplní server ze
+     * Osobní údaje z podkladů podle klíče osoby: rodné číslo, datum narození,
+     * kód zdravotní pojišťovny a číslo účtu. Klient zná rodné číslo a účet jen
+     * maskované a ostatní údaje vůbec, takže je při zakládání osob doplní server ze
      * stejných souborů a stejného mapování, ze kterých vznikl náhled.
      *
      * @param list<array{name:string,content:string,sha256:string,extension:string}> $files
@@ -548,7 +552,12 @@ final class AttendanceImportService
         $computed = $this->compute($supplierId, $periodStart, $files, $read, $validated, $profileComponents, $profileMeta);
         $data = [];
         foreach ($computed['persons'] as $person) {
-            foreach (['birth_number' => '_birth_number', 'birth_date' => '_birth_date', 'health_insurer_code' => '_health_insurer_code'] as $field => $internal) {
+            foreach ([
+                'birth_number' => '_birth_number',
+                'birth_date' => '_birth_date',
+                'health_insurer_code' => '_health_insurer_code',
+                'bank_account' => '_bank_account',
+            ] as $field => $internal) {
                 $value = $person[$internal] ?? null;
                 if (is_string($value) && trim($value) !== '') {
                     $data[(string) $person['key']][$field] = trim($value);
@@ -1081,6 +1090,19 @@ final class AttendanceImportService
                     $person['birth_number_masked'] = null;
                 }
             }
+            $bankAccount = $person['_bank_account'] ?? null;
+            if (is_string($bankAccount)) {
+                try {
+                    $bankAccount = $this->profileValidator->normalizeBankAccount($bankAccount);
+                    $person['_bank_account'] = $bankAccount;
+                    $person['bank_account_masked'] = $this->sensitive->mask($bankAccount, PayrollSensitiveField::BANK_ACCOUNT);
+                } catch (\InvalidArgumentException $e) {
+                    // Existující osobě import účet nemění, varování patří jen zakládané.
+                    if (!in_array($person['match']['status'], ['linked', 'matched'], true)) {
+                        $person['warnings'][] = self::bankAccountNote($e, false);
+                    }
+                }
+            }
             foreach (array_keys($person['_components']) as $code) {
                 $usedCodes[(string) $code] = true;
             }
@@ -1500,9 +1522,10 @@ final class AttendanceImportService
 
     /**
      * Roční limit DPP (§ 75 ZP) s odpracovanými hodinami z importovaného měsíce.
-     * Dosavadní součet bere {@see PayrollAgreementAnnualHours::yearToDate()} do
-     * konce předchozího měsíce; importovaný měsíc se do něj nepočítá, protože
-     * dávka jeho pracovní souhrn teprve zapíše nebo přepíše.
+     * Součet za celý rok bere {@see PayrollAgreementAnnualHours::yearWithoutMonth()}
+     * bez uloženého souhrnu importovaných vztahů za importovaný měsíc, protože
+     * dávka ho teprve zapíše nebo přepíše. Pozdější měsíce (import staršího
+     * měsíce) i jiná dohoda téže osoby za týž měsíc se tak počítají.
      *
      * @param list<array<string,mixed>> $persons
      * @param list<array<string,mixed>> $options
@@ -1514,17 +1537,21 @@ final class AttendanceImportService
         if ($employeeIds === []) {
             return $persons;
         }
-        $year = (int) substr($periodStart, 0, 4);
-        $month = (int) substr($periodStart, 5, 2);
-        $prior = $month > 1
-            ? (new PayrollAgreementAnnualHours($this->db))->yearToDate(
-                $supplierId,
-                $employeeIds,
-                sprintf('%04d-%02d-01', $year, $month - 1),
-            )
-            : [];
+        $agreements = self::agreementEmploymentIds($options);
+        $employmentIds = [];
+        foreach ($persons as $person) {
+            if (self::agreementEmployeeId($person, $agreements) !== null) {
+                $employmentIds[(int) $person['match']['employment_id']] = true;
+            }
+        }
+        $stored = (new PayrollAgreementAnnualHours($this->db))->yearWithoutMonth(
+            $supplierId,
+            $employeeIds,
+            $periodStart,
+            array_keys($employmentIds),
+        );
 
-        return self::annotateAgreementHours($persons, $options, $prior, $year);
+        return self::annotateAgreementHours($persons, $options, $stored, (int) substr($periodStart, 0, 4));
     }
 
     /**
@@ -1533,7 +1560,8 @@ final class AttendanceImportService
      *
      * @param list<array<string,mixed>> $persons
      * @param list<array<string,mixed>> $options volby vztahů s `employment_id` a `relation_type`
-     * @param array<int,array{own_minutes:int,takeover_minutes:int,total_minutes:int}> $prior
+     * @param array<int,array{own_minutes:int,takeover_minutes:int,total_minutes:int}> $prior roční součet
+     *        bez uloženého souhrnu importovaných vztahů za importovaný měsíc
      * @return list<array<string,mixed>>
      */
     public static function annotateAgreementHours(array $persons, array $options, array $prior, int $year): array
@@ -1661,6 +1689,11 @@ final class AttendanceImportService
         if ($monthlyGross !== null && !is_int($monthlyGross)) {
             throw new \InvalidArgumentException('Měsíční mzda musí být celé číslo v korunách.');
         }
+        $notes = $weeklyNote === null ? [] : [$weeklyNote];
+        $plannedStart = is_string($item['planned_start_on'] ?? null) ? $item['planned_start_on'] : '';
+        [$hourlyMinor, $hourlyNote] = self::hourlyRateMinor($item['hourly_rate'] ?? null);
+        [$fixedEnd, $endNote] = self::fixedTermEnd($item['fixed_term_end_on'] ?? null, $plannedStart);
+        array_push($notes, ...array_filter([$hourlyNote, $endNote]));
         $input = [
             'full_name' => $item['full_name'] ?? null,
             'first_name' => $item['first_name'] ?? null,
@@ -1672,14 +1705,28 @@ final class AttendanceImportService
             'planned_start_on' => $item['planned_start_on'] ?? null,
             'weekly_hours' => $weeklyHours,
             'monthly_gross' => $monthlyGross,
+            'fixed_term_end_on' => $fixedEnd,
+            // Sazbu ze smlouvy aplikace jinde neeviduje; jako pravděpodobný
+            // výdělek (§ 355 ZP) poslouží průměru, dokud nevznikne skutečný.
+            'probable_hourly_earning_minor' => $hourlyMinor,
+            'probable_earning_rationale' => $hourlyMinor === null ? null : sprintf(
+                'Sjednaná hodinová sazba %s Kč z podkladů importu docházky.',
+                number_format($hourlyMinor / 100, 2, ',', ' '),
+            ),
         ];
         $person = $this->personCreate->create($supplierId, $input, $userId, $ip, $userAgent);
         $employeeId = (int) ($person['id'] ?? 0);
         $employment = $this->imports->latestEmploymentOfEmployee($supplierId, $employeeId)
             ?? throw new \LogicException('Nově založený pracovní vztah nebyl nalezen.');
 
-        $message = $weeklyNote;
-        $plannedStart = is_string($input['planned_start_on']) ? $input['planned_start_on'] : '';
+        $bankAccount = $item['bank_account'] ?? null;
+        if (is_string($bankAccount) && trim($bankAccount) !== '') {
+            $accountNote = $this->savePayoutAccount($supplierId, $employeeId, trim($bankAccount), $plannedStart, $userId);
+            if ($accountNote !== null) {
+                $notes[] = $accountNote;
+            }
+        }
+        $message = $notes === [] ? null : implode(' ', $notes);
         if (($item['activate'] ?? false) === true) {
             if ($plannedStart <= $today) {
                 $this->employments->transition(
@@ -1715,6 +1762,109 @@ final class AttendanceImportService
         );
 
         return ['employee_id' => $employeeId, 'employment_id' => $employment['id'], 'message' => $message];
+    }
+
+    /**
+     * Hodinová sazba z podkladů v haléřích. Nečitelná nebo nekladná osobu
+     * neshodí: vztah vznikne bez ní a vrátí se, co doplnit.
+     *
+     * @return array{0:?int,1:?string}
+     */
+    private static function hourlyRateMinor(mixed $raw): array
+    {
+        if (is_int($raw) || is_float($raw)) {
+            $raw = (string) $raw;
+        }
+        if ($raw === null || (is_string($raw) && trim($raw) === '')) {
+            return [null, null];
+        }
+        $text = is_string($raw) ? trim($raw) : '';
+        $number = $text === '' ? null : AttendanceDecimal::parseNumber($text);
+        $minor = $number === null || str_starts_with($number, '-') ? 0 : AttendanceDecimal::scaled($number, 2);
+        if ($minor <= 0) {
+            return [null, sprintf(
+                'Hodinovou sazbu „%s“ z podkladů nejde přečíst jako kladnou částku, vztah je založený bez ní. '
+                    . 'Doplňte ji na kartě vztahu jako pravděpodobný výdělek.',
+                mb_substr($text, 0, 40),
+            )];
+        }
+
+        return [$minor, null];
+    }
+
+    /**
+     * Sjednaný konec dohody nebo doby určité. Nečitelné datum nebo konec před
+     * nástupem osobu neshodí: vztah vznikne bez konce a vrátí se, co doplnit.
+     *
+     * @return array{0:?string,1:?string}
+     */
+    private static function fixedTermEnd(mixed $raw, string $plannedStart): array
+    {
+        if ($raw === null || (is_string($raw) && trim($raw) === '')) {
+            return [null, null];
+        }
+        $text = is_string($raw) ? trim($raw) : '';
+        $end = AttendancePersonAggregator::isoDate($text);
+        if ($end === null) {
+            return [null, sprintf(
+                'Konec dohody „%s“ z podkladů nejde přečíst, vztah je založený bez něj. Doplňte ho na kartě vztahu.',
+                mb_substr($text, 0, 40),
+            )];
+        }
+        if ($plannedStart !== '' && $end < $plannedStart) {
+            return [null, 'Konec dohody ' . self::czechDate($end) . ' je před nástupem, vztah je založený bez něj. '
+                . 'Opravte ho na kartě vztahu.'];
+        }
+
+        return [$end, null];
+    }
+
+    /**
+     * Výplatní účet nové osoby z podkladů, stejnou cestou a validací jako
+     * osobní karta. Účet zůstane neověřený; neplatný osobu neshodí.
+     *
+     * @return ?string co doplnit, když se účet nezapsal
+     */
+    private function savePayoutAccount(int $supplierId, int $employeeId, string $bankAccount, string $from, ?int $userId): ?string
+    {
+        $current = $this->personProfiles->get($supplierId, $employeeId);
+        if ($current === null) {
+            return 'Osobní karta nové osoby nebyla nalezena, číslo účtu doplňte na kartě.';
+        }
+        try {
+            $this->personProfiles->save($supplierId, $employeeId, $this->profileValidator->validate([
+                'row_version' => $current['row_version'],
+                'profile_status' => $current['profile_status'] === 'missing' ? 'setup' : $current['profile_status'],
+                'payout_method' => 'bank',
+                'partner_settlement_account_code' => $current['partner_settlement_account_code'],
+                'cash_allocation_basis_points' => 0,
+                'payout_effective_on' => $from !== '' ? $from : ($current['payout_effective_on'] ?? date('Y-m-d')),
+                'secure_delivery_channel' => $current['secure_delivery_channel'],
+                'identity_history' => [],
+                'addresses' => [],
+                'contacts' => [],
+                'identifiers' => [],
+                'accounts' => [[
+                    'id' => null,
+                    'label' => 'Výplatní účet z importu docházky',
+                    'bank_account' => $bankAccount,
+                    'allocation_basis_points' => 10000,
+                    'effective_from' => $from !== '' ? $from : date('Y-m-d'),
+                    'effective_to' => null,
+                    'is_active' => true,
+                ]],
+            ]), $current['row_version'], $userId, null, null);
+        } catch (\InvalidArgumentException|\DomainException $e) {
+            return self::bankAccountNote($e, true);
+        }
+
+        return null;
+    }
+
+    private static function bankAccountNote(\Throwable $e, bool $created): string
+    {
+        return 'Číslo účtu z podkladů neplatí (' . rtrim($e->getMessage(), '.') . '), '
+            . ($created ? 'osoba je založená bez něj. Doplňte ho na kartě osoby.' : 'nová osoba se založí bez něj.');
     }
 
     /**

@@ -7,6 +7,7 @@ namespace MyInvoice\Tests\Integration\Payroll;
 use MyInvoice\Bootstrap;
 use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Repository\Payroll\PayrollPeopleRepository;
+use MyInvoice\Service\Payroll\Import\Attendance\AttendanceImportService;
 use MyInvoice\Service\Payroll\Run\PayrollRunReadinessImpact;
 use MyInvoice\Service\Payroll\Time\PayrollAgreementAnnualHours;
 use MyInvoice\Tests\Support\IsolatedSupplierTrait;
@@ -24,6 +25,7 @@ final class PayrollAgreementAnnualHoursTest extends TestCase
     use IsolatedSupplierTrait;
 
     private Connection $db;
+    private \Psr\Container\ContainerInterface $container;
     private PayrollPeopleRepository $people;
     private int $supplierId;
     private int $employeeId;
@@ -34,6 +36,7 @@ final class PayrollAgreementAnnualHoursTest extends TestCase
     {
         try {
             $container = Bootstrap::buildContainer();
+            $this->container = $container;
             $this->db = $container->get(Connection::class);
             $this->people = $container->get(PayrollPeopleRepository::class);
         } catch (\Throwable $exception) {
@@ -215,6 +218,73 @@ final class PayrollAgreementAnnualHoursTest extends TestCase
         self::assertSame(90 * 60, $hours[7]['takeover_minutes']);
         self::assertSame(630, $hours[7]['own_minutes']);
         self::assertSame(90 * 60 + 630, $hours[7]['total_minutes']);
+    }
+
+    /**
+     * Náhled importu staršího měsíce (březen), když duben až červen už hodiny
+     * mají: roční součet bere celý rok bez uloženého březnového souhrnu
+     * importovaného vztahu, jiná dohoda téže osoby za březen se počítá.
+     * Dřív se bral součet jen do února a varování nepřišlo.
+     */
+    public function testAttendancePreviewOfOlderMonthCountsLaterMonthsAndOtherAgreement(): void
+    {
+        for ($month = 4; $month <= 6; ++$month) {
+            $this->ownMonth($this->firstAgreement, $month, 60_000);
+        }
+        $this->ownMonth($this->firstAgreement, 3, 30_000);
+        $this->ownMonth($this->secondAgreement, 3, 10_000);
+        $service = new PayrollAgreementAnnualHours($this->db);
+
+        $stored = $service->yearWithoutMonth($this->supplierId, [$this->employeeId], '2026-03-01', [$this->firstAgreement]);
+        self::assertSame(190 * 60, $stored[$this->employeeId]['total_minutes']);
+        self::assertSame(220 * 60, $service->yearToDate($this->supplierId, [$this->employeeId], '2026-12-01')[$this->employeeId]['total_minutes']);
+
+        $import = $this->container->get(AttendanceImportService::class);
+        $method = new \ReflectionMethod(AttendanceImportService::class, 'withAgreementHours');
+        $persons = $method->invoke($import, $this->supplierId, '2026-03-01', [[
+            'display_name' => 'Syntetická brigádnice',
+            'match' => [
+                'status' => 'linked',
+                'employment_id' => $this->firstAgreement,
+                'employee_id' => $this->employeeId,
+                'employee_name' => 'Syntetická brigádnice',
+            ],
+            'warnings' => [],
+            '_metrics' => ['worked_hours' => ['millihours' => 70_000, 'source' => 'A1']],
+        ]], [
+            ['employment_id' => $this->firstAgreement, 'relation_type' => 'dpp'],
+            ['employment_id' => $this->secondAgreement, 'relation_type' => 'dpp'],
+        ]);
+
+        self::assertSame(260 * 60, $persons[0]['dpp_annual_hours']['total_minutes']);
+        self::assertSame(70 * 60, $persons[0]['dpp_annual_hours']['imported_minutes']);
+        self::assertSame('approaching', $persons[0]['dpp_annual_hours']['status']);
+        self::assertCount(1, $persons[0]['warnings']);
+        self::assertStringContainsString('260 h', $persons[0]['warnings'][0]);
+    }
+
+    private function ownMonth(int $employmentId, int $month, int $workedMillihours): void
+    {
+        $pdo = $this->db->pdo();
+        $period = sprintf('2026-%02d-01', $month);
+        $pdo->prepare(
+            "INSERT INTO payroll_time_months
+                (supplier_id, employment_id, period_start, status, revision_no, approved_at, approved_by)
+             SELECT ?, ?, ?, 'approved', 1, NOW(), MIN(id) FROM users",
+        )->execute([$this->supplierId, $employmentId, $period]);
+        $timeMonthId = (int) $pdo->lastInsertId();
+        $pdo->prepare(
+            "INSERT INTO payroll_jmhz_work_month_revisions
+                (supplier_id, employment_id, time_month_id, time_month_revision_no, period_start,
+                 spec_package_id, spec_manifest_sha256, scenario_catalog_key, scenario_manifest_sha256,
+                 derivation_version, source_snapshot_json, source_snapshot_sha256,
+                 standard_fund_millihours, agreed_fund_millihours, weekly_work_centihours, evidence_days,
+                 worked_millihours, confirmation_note, provenance_json, summary_sha256, approved_at)
+             SELECT ?, ?, ?, 1, ?, MIN(id), REPEAT('a', 64), 'synthetic', REPEAT('a', 64),
+                    'jmhz-work-month-core.v1', '{}', REPEAT('a', 64), 0, 0, 0, 30,
+                    ?, 'Syntetický souhrn', '{}', REPEAT('b', 64), NOW()
+               FROM payroll_jmhz_spec_packages",
+        )->execute([$this->supplierId, $employmentId, $timeMonthId, $period, $workedMillihours]);
     }
 
     private function agreement(string $code): int

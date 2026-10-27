@@ -148,12 +148,58 @@ final class PayrollAgreementAnnualHours
      */
     public function yearToDate(int $supplierId, array $employeeIds, string $periodStart): array
     {
+        return $this->workedMinutes($supplierId, $employeeIds, $periodStart, null, []);
+    }
+
+    /**
+     * Odpracované minuty na DPP za CELÝ kalendářní rok měsíce `$periodStart`
+     * bez uloženého pracovního souhrnu vztahů `$employmentIds` za tento měsíc.
+     *
+     * Pro náhled importu docházky: dávka souhrn těchto vztahů za měsíc teprve
+     * zapíše nebo přepíše, takže se k výsledku přičtou importované hodiny.
+     * Pozdější měsíce roku (import staršího měsíce) i souhrn jiné dohody téže
+     * osoby za týž měsíc se počítají, jak je evidence vede.
+     *
+     * @param list<int> $employeeIds
+     * @param list<int> $employmentIds
+     * @return array<int,array{own_minutes:int,takeover_minutes:int,total_minutes:int}>
+     */
+    public function yearWithoutMonth(int $supplierId, array $employeeIds, string $periodStart, array $employmentIds): array
+    {
+        return $this->workedMinutes(
+            $supplierId,
+            $employeeIds,
+            sprintf('%04d-12-01', (int) substr($periodStart, 0, 4)),
+            $periodStart,
+            $employmentIds,
+        );
+    }
+
+    /**
+     * @param list<int> $employeeIds
+     * @param list<int> $excludedEmploymentIds
+     * @return array<int,array{own_minutes:int,takeover_minutes:int,total_minutes:int}>
+     */
+    private function workedMinutes(
+        int $supplierId,
+        array $employeeIds,
+        string $periodStart,
+        ?string $excludedMonth,
+        array $excludedEmploymentIds,
+    ): array {
         if ($employeeIds === []) {
             return [];
         }
         $year = (int) substr($periodStart, 0, 4);
         $yearStart = sprintf('%04d-01-01', $year);
         $in = implode(', ', array_fill(0, count($employeeIds), '?'));
+        $exclusion = '';
+        $exclusionParams = [];
+        if ($excludedMonth !== null && $excludedEmploymentIds !== []) {
+            $exclusion = ' AND NOT (month_row.period_start = ? AND month_row.employment_id IN ('
+                . implode(', ', array_fill(0, count($excludedEmploymentIds), '?')) . '))';
+            $exclusionParams = [$excludedMonth, ...$excludedEmploymentIds];
+        }
 
         // Převzaté hodiny za měsíce před začátkem vedení mezd v MyÚčtu.
         $startPeriod = $this->startPeriod($supplierId);
@@ -193,10 +239,10 @@ final class PayrollAgreementAnnualHours
               WHERE month_row.supplier_id = ?
                 AND employment.relation_type = 'dpp'
                 AND employment.employee_id IN ({$in})
-                AND month_row.period_start >= ? AND month_row.period_start <= ?
+                AND month_row.period_start >= ? AND month_row.period_start <= ?{$exclusion}
               GROUP BY employment.employee_id, month_row.period_start",
         );
-        $own->execute([$supplierId, ...$employeeIds, $yearStart, $periodStart]);
+        $own->execute([$supplierId, ...$employeeIds, $yearStart, $periodStart, ...$exclusionParams]);
 
         return self::combine($employeeIds, $takeoverRows, $own->fetchAll(PDO::FETCH_ASSOC));
     }

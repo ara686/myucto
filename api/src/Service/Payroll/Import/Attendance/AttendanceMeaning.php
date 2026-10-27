@@ -48,6 +48,9 @@ final class AttendanceMeaning
         'start_end_note',
         'start_date',
         'monthly_wage',
+        'hourly_rate',
+        'end_date',
+        'bank_account',
     ];
 
     /** Měsíční souhrny hodin, které jdou do evidence dávky. */
@@ -124,7 +127,12 @@ final class AttendanceMeaning
         return in_array($meaning, self::IDENTITY, true);
     }
 
-    /** @return list<string> */
+    /**
+     * Identitní údaje (i sazba, konec dohody a číslo účtu) jsou text; čísla
+     * a data z nich čte až agregace a zakládání osob.
+     *
+     * @return list<string>
+     */
     public static function allowedUnits(string $meaning): array
     {
         if (self::isHours($meaning)) {

@@ -24,7 +24,7 @@ final class AttendanceMyUctoSampleProfile
 {
     public const KEY = 'myucto';
     public const NAME = 'Vzor MyÚčto';
-    public const VERSION = 1;
+    public const VERSION = 2;
 
     public const SHEET = 'Podklady';
     public const GUIDE_SHEET = 'Návod';
@@ -107,6 +107,15 @@ final class AttendanceMyUctoSampleProfile
             $column('Měsíční mzda', ['měsíční mzda*'], 'monthly_wage', self::FORMAT_AMOUNT,
                 'Sjednaná měsíční mzda v Kč jen u zaměstnance s měsíční mzdou. Při založení osoby se předvyplní do podmínek, u existující osoby ji import nabídne ke změně podmínek.',
                 [null, null]),
+            $column('Hodinová sazba (Kč/h)', ['hodinová sazba*'], 'hourly_rate', self::FORMAT_AMOUNT,
+                'Sjednaná hodinová sazba v Kč za hodinu (např. 180). Při založení osoby se uloží do podmínek vztahu jako pravděpodobný výdělek pro náhrady, než vznikne skutečný průměr.',
+                [180, 180]),
+            $column('Konec dohody', ['konec dohody*', 'sjednaný konec*'], 'end_date', self::FORMAT_DATE,
+                'Sjednaný konec dohody nebo pracovního poměru na dobu určitou. Při založení osoby se uloží do podmínek vztahu; po tomto dni ji nabídne hromadné ukončení dohod.',
+                ['2026-12-31', null]),
+            $column('Číslo účtu', ['číslo účtu*', 'bankovní účet*'], 'bank_account', self::FORMAT_TEXT,
+                'Účet pro výplatu ve tvaru předčíslí-číslo/kód banky (např. 1000000005/0100) nebo IBAN. Při založení osoby se uloží jako výplatní účet; před první výplatou ho na kartě osoby ověřte.',
+                ['1000000005/0100', null]),
             $column('Odpracováno (hod)', ['odpracováno*'], 'worked_hours', self::FORMAT_HOURS,
                 'Všechny odpracované hodiny v měsíci včetně noci, víkendu, svátku a přesčasu.',
                 [42.5, 60]),
