@@ -1105,7 +1105,8 @@
         "2201_stock_history_import.sql",
         "2202_cash_journal_offset_notes.sql",
         "2203_readonly_seat_policy.sql",
-        "2204_supplier_receipt_payable_account.sql"
+        "2204_supplier_receipt_payable_account.sql",
+        "2205_bank_rule_template_vat_refund.sql"
     ],
     "tables": {
         "abra_flexi_connections": {
