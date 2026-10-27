@@ -62,6 +62,12 @@ final class PristineChart500
         'unit_charge_components' => ['account_code'],
     ];
 
+    /**
+     * Kódy účtů ve firemním nastavení (tabulka supplier, klíčem je id firmy).
+     * Vyplněný účet je použití osnovy, takže osnova už nedotčená není.
+     */
+    public const SUPPLIER_CODE_REFERENCES = ['receipt_payable_account_code'];
+
     /** Kódy účtů v řádcích dokladů bez supplier_id: tabulka => [sloupec, rodič, FK na rodiče]. */
     public const CHILD_CODE_REFERENCES = [
         'invoice_items' => ['revenue_account_code', 'invoices', 'invoice_id'],
@@ -123,6 +129,10 @@ final class PristineChart500
             if ($this->exists($sql, [$supplierId])) {
                 return false;
             }
+        }
+        $any = implode(' OR ', array_map(static fn (string $c): string => "{$c} IS NOT NULL", self::SUPPLIER_CODE_REFERENCES));
+        if ($this->exists("SELECT 1 FROM supplier WHERE id = ? AND ({$any}) LIMIT 1", [$supplierId])) {
+            return false;
         }
 
         return $this->onlySeededPostingRules($supplierId) && $this->onlySeededSettings($supplierId);

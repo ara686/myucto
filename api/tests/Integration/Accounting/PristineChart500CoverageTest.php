@@ -59,6 +59,9 @@ final class PristineChart500CoverageTest extends TestCase
         foreach (PristineChart500::CHILD_CODE_REFERENCES as $table => [$column]) {
             $known[] = $table . '.' . $column;
         }
+        foreach (PristineChart500::SUPPLIER_CODE_REFERENCES as $column) {
+            $known[] = 'supplier.' . $column;
+        }
         $missing = [];
         foreach ($stmt->fetchAll(\PDO::FETCH_NUM) as [$table, $column]) {
             if (!in_array($table . '.' . $column, $known, true)) $missing[] = $table . '.' . $column;
