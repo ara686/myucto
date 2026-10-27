@@ -3117,13 +3117,22 @@ final class JmhzScenario1DocumentResolver
         $requestStatus = is_string($request['status'] ?? null)
             ? $request['status']
             : null;
+        $requestImpossible = $request === []
+            && ($requestEvidence['present'] ?? null) === false
+            && ($requestEvidence['proof'] ?? null)
+                === JmhzAnnualEvidenceService::PROOF_NO_EMPLOYMENT_IN_TAX_YEAR
+            && ($requestEvidence['tax_year'] ?? null) === $expectedTaxYear;
         $requested = null;
         if ($month <= 2) {
-            $requested = $requestLocked ? match ($requestStatus) {
-                'requested' => true,
-                'not_requested' => false,
+            $requested = match (true) {
+                $requestLocked => match ($requestStatus) {
+                    'requested' => true,
+                    'not_requested' => false,
+                    default => null,
+                },
+                $requestImpossible => false,
                 default => null,
-            } : null;
+            };
             if ($requested === null) {
                 $blockers[] = $this->blocker(
                     $request === []

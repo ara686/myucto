@@ -19,6 +19,16 @@ use MyInvoice\Service\Payroll\Security\PayrollSensitiveData;
  */
 final readonly class JmhzAnnualEvidenceService
 {
+    /**
+     * Osoba u firmy ve zdaňovacím roce neměla žádný pracovní vztah, takže
+     * u ní o roční zúčtování požádat nemohla (§ 38ch odst. 1 ZDP: žádá se
+     * u plátce, od kterého poplatník v roce pobíral příjem). Hlášení pak nese
+     * „nepožádal" bez ručního zápisu. Platí JEN pro rok, který mzdy v aplikaci
+     * pokrývají celý; u firmy, která přešla v průběhu nebo bez převzaté
+     * historie, chybějící vztah nic nedokazuje.
+     */
+    public const PROOF_NO_EMPLOYMENT_IN_TAX_YEAR = 'request_impossible_no_employment_in_tax_year';
+
     public function __construct(
         private Connection $db,
         private PayrollAnnualSettlementRepository $settlements,
@@ -42,6 +52,12 @@ final readonly class JmhzAnnualEvidenceService
             );
         }
         $taxYear = $reportYear - 1;
+        $withoutTaxYearEmployment = $this->yearCoveredByPayroll($supplierId, $taxYear)
+            ? array_diff(
+                array_values(array_unique($employeeIds)),
+                $this->employeesEmployedInYear($supplierId, $employeeIds, $taxYear),
+            )
+            : [];
         $snapshots = [];
         foreach (array_values(array_unique($employeeIds)) as $employeeId) {
             if ($employeeId <= 0) {
@@ -97,9 +113,12 @@ final readonly class JmhzAnnualEvidenceService
                 ],
                 'request_evidence' => [
                     'present' => $request !== null,
-                    'proof' => $request === null
-                        ? 'request_absent_under_unique_key_lock'
-                        : 'verified_request_row_under_unique_key_lock',
+                    'proof' => match (true) {
+                        $request !== null => 'verified_request_row_under_unique_key_lock',
+                        in_array($employeeId, $withoutTaxYearEmployment, true)
+                            => self::PROOF_NO_EMPLOYMENT_IN_TAX_YEAR,
+                        default => 'request_absent_under_unique_key_lock',
+                    },
                     'supplier_id' => $supplierId,
                     'employee_id' => $employeeId,
                     'tax_year' => $taxYear,
@@ -135,6 +154,58 @@ final readonly class JmhzAnnualEvidenceService
         ksort($snapshots, SORT_NUMERIC);
 
         return $snapshots;
+    }
+
+    /**
+     * Mzdy v aplikaci pokrývají celý zdaňovací rok: agenda se vede nejpozději
+     * od 1. ledna, nebo je od ledna převzatá historie z předchozího programu.
+     */
+    private function yearCoveredByPayroll(int $supplierId, int $taxYear): bool
+    {
+        $yearStart = sprintf('%04d-01-01', $taxYear);
+        $stmt = $this->db->pdo()->prepare(
+            'SELECT EXISTS (
+                        SELECT 1 FROM payroll_module_state
+                         WHERE supplier_id = ? AND start_period <= ?
+                    ) OR EXISTS (
+                        SELECT 1 FROM payroll_takeover_runs
+                         WHERE supplier_id = ? AND period_start = ?
+                    )',
+        );
+        $stmt->execute([$supplierId, $yearStart, $supplierId, $yearStart]);
+
+        return (bool) $stmt->fetchColumn();
+    }
+
+    /**
+     * Osoby, které měly ve zdaňovacím roce aspoň jeden den pracovního vztahu.
+     *
+     * @param list<int> $employeeIds
+     * @return list<int>
+     */
+    private function employeesEmployedInYear(int $supplierId, array $employeeIds, int $taxYear): array
+    {
+        $ids = array_values(array_unique(array_filter($employeeIds, static fn (int $id): bool => $id > 0)));
+        if ($ids === []) {
+            return [];
+        }
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $this->db->pdo()->prepare(
+            'SELECT DISTINCT employee_id
+               FROM payroll_employments
+              WHERE supplier_id = ?
+                AND employee_id IN (' . $placeholders . ')
+                AND LEAST(start_date, COALESCE(actual_start_date, start_date)) <= ?
+                AND (end_date IS NULL OR end_date >= ?)',
+        );
+        $stmt->execute([
+            $supplierId,
+            ...$ids,
+            sprintf('%04d-12-31', $taxYear),
+            sprintf('%04d-01-01', $taxYear),
+        ]);
+
+        return array_map('intval', $stmt->fetchAll(\PDO::FETCH_COLUMN));
     }
 
     /**
