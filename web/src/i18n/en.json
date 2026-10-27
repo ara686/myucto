@@ -3282,6 +3282,67 @@
       "apply_failed": "Could not save the insurers.",
       "retry": "Try again"
     },
+    "declaration_sign_bulk": {
+      "title": "Signed taxpayer declarations in bulk",
+      "intro": "Records the taxpayer declaration as Signed in the statutory records of the selected people, the same way as the person card. This applies the basic taxpayer credit; record other credits and children on the person card. A signed declaration is never overwritten and nothing is written into months closed by an approved payroll.",
+      "warning_one_payer": "An employee may sign the declaration for the same period with one payer only. If they signed it elsewhere, do not record it.",
+      "warning_responsibility": "The employee is responsible for the truthfulness of the declaration. The application cannot verify the signature or the declared data, so record only declarations you hold signed.",
+      "year": "Tax year",
+      "signed_on": "Signature date",
+      "reload": "Load preview",
+      "effective_from": "Valid from {date}",
+      "basis": {
+        "year_start": "from the start of the year, the declaration was signed before the year or in January",
+        "signing_month": "from the month of signature, the credit does not apply to earlier months",
+        "after_frozen_period": "only after the period closed by an approved payroll (until {date})"
+      },
+      "year_frozen": "The whole year {year} is closed by an approved payroll (until {date}). Nothing is written retroactively into a closed calculation.",
+      "recalculate_title": "Payrolls in progress to recalculate",
+      "recalculate_hint": "These payrolls were calculated without the signature. Recalculate them after recording.",
+      "summary": {
+        "people": "People",
+        "ready": "Will be recorded",
+        "already_signed": "Already signed",
+        "skipped": "Cannot be recorded"
+      },
+      "state": {
+        "ready": "Will be recorded",
+        "already_signed": "Already signed for the year, skipped",
+        "period_frozen": "Period closed by an approved payroll",
+        "timeline_gap": "The previous record ends earlier, record it on the person card",
+        "employee_not_found": "Person not found"
+      },
+      "change": {
+        "add": "New record",
+        "close_previous": "Ends the previous one ({status})",
+        "replace": "Replaces ({status})"
+      },
+      "status": {
+        "not-signed": "Not signed",
+        "unverified": "Unverified",
+        "signed": "Signed"
+      },
+      "select_all": "Select all",
+      "select_none": "Clear selection",
+      "select_person": "Select: {name}",
+      "empty": "Nobody has an ongoing employment in {year}.",
+      "confirm": "I confirm that I hold the signed declarations of the selected people.",
+      "apply": "Record signature ({count})",
+      "nothing_selected": "Select at least one person to record the signature for.",
+      "confirm_required": "Confirm that you hold the signed declarations.",
+      "applied_toast": "Signed declaration recorded for {count} people.",
+      "result_title": "Result",
+      "result": {
+        "applied": "Recorded",
+        "skipped": "Skipped",
+        "failed": "Error"
+      },
+      "applied_item": "from {date}",
+      "person_fallback": "Person no. {id}",
+      "load_failed": "Could not load the preview.",
+      "apply_failed": "Could not record the signed declarations.",
+      "retry": "Try again"
+    },
     "statutory_bulk": {
       "title": "Fill in default statutory data",
       "intro": "For people without a foreign element, fills in the missing data that follows from having no ties abroad: Czech tax residence, Czech insurance jurisdiction without an A1 form and, for people under 60, the working pensioner discount not claimed. An existing record is never overwritten. The health insurer is never filled in bulk; only the registration or the employee knows it.",
@@ -3316,6 +3377,7 @@
       "declaration_label": "Record the missing declarations as not signed ({count} people)",
       "declaration_hint": "Records the state “not signed”. Without a signed declaration neither the taxpayer credit nor other credits apply. Turn this on only when you know the declarations really were not signed.",
       "declaration_on": "This does not create a signature. When the employee signs the declaration, record it on their card.",
+      "declaration_signed_link": "Signed declarations in bulk",
       "withholding_title": "Withholding tax risk ({count})",
       "withholding_hint": "Without a signed declaration, withholding tax applies in any month where the total income from you stays below the decisive amount. This applies to every relationship type, including regular employment, not just agreements. Review them before writing.",
       "and_more": "and {count} more",
@@ -5485,6 +5547,7 @@
       "filter": "View",
       "quick_inputs": "Monthly payroll entry",
       "statutory_bulk_action": "Fill in default statutory data",
+      "declaration_sign_bulk_action": "Signed declarations in bulk",
       "workplace_bulk_action": "Fill in place of work",
       "no_results_title": "No employee matches the filter",
       "no_results_description": "Change the search text or choose another view.",

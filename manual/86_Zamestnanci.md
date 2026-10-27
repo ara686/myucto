@@ -97,7 +97,8 @@ má stav **Aktivní** a v checklistu nástupu jsou registrace splněné.
 
 > [!TIP]
 > Víc lidí najednou doplníte tlačítky nad seznamem: **Doplnit výchozí zákonné
-> údaje**, **Zdravotní pojišťovny hromadně** a **Doplnit místo výkonu práce**.
+> údaje**, **Podepsaná prohlášení hromadně**, **Zdravotní pojišťovny hromadně**
+> a **Doplnit místo výkonu práce**.
 
 ## 86.4 Krok za krokem: zákonná evidence osoby
 
@@ -117,6 +118,8 @@ a pojistného. Vede se po celých měsících.
    **Uložit vše** dole na kartě.
 6. Prohlášení poplatníka zapište v sekci **Prohlášení poplatníka k dani** jako
    **Podepsáno** nebo **Nepodepsáno**. Doplnit běžné údaje ho nezapíše.
+   Podepsaná prohlášení více lidí zapíšete najednou podle
+   [§ 86.4.1](#8641-podepsana-prohlaseni-hromadne).
 
 Podle situace doplňte i další sekce:
 
@@ -137,6 +140,45 @@ Podle situace doplňte i další sekce:
 > Bez prohlášení, rezidence, sociálního a zdravotního pojištění mzdový běh
 > zákonný výpočet osoby nespočítá a pošle ji do ručního posouzení. Podrobnosti
 > v [§ 86.12.3](#86123-zakonna-evidence-osoby).
+
+### 86.4.1 Podepsaná prohlášení hromadně
+
+Když na začátku sezóny přinesete balík podepsaných prohlášení poplatníka,
+nemusíte je zapisovat po jednom.
+
+1. V seznamu zaměstnanců klikněte na **Podepsaná prohlášení hromadně**. Ze
+   souhrnu **Doplnit výchozí zákonné údaje** vede na tentýž dialog odkaz
+   u chybějícího prohlášení.
+2. Vyplňte **Zdaňovací rok** a **Datum podpisu** (výchozí je dnešek). Náhled
+   ukáže, od kterého měsíce se podpis zapíše:
+   - od ledna, je-li prohlášení podepsané před začátkem roku nebo v lednu,
+   - jinak od měsíce podpisu, za dřívější měsíce se sleva neuplatní,
+   - nikdy do měsíců uzavřených schválenou mzdou; v tom případě až od
+     prvního měsíce po nich. Je-li uzavřený celý rok, nezapíše se nic.
+3. Projděte seznam osob. Nabízí ty, kterým v roce trvá pracovní vztah:
+   - **Zapíše se** - u osoby vznikne záznam **Podepsáno**; předchozí
+     **Nepodepsáno** nebo **Neověřeno** se dnem před podpisem ukončí, případně
+     se nahradí;
+   - **Na rok už podepsáno** - osoba se přeskočí, záznam se nepřepíše;
+   - **Předchozí záznam končí dřív** - řada by nenavazovala, zapište na kartě
+     osoby.
+4. Odškrtněte osoby, jejichž prohlášení nemáte, a potvrďte, že prohlášení
+   máte podepsaná. Klikněte na **Zapsat podpis**.
+5. Výsledek ukáže po osobách, kde se podpis zapsal, kde se přeskočil a kde
+   se zápis nepovedl. Chyba jedné osoby ostatní nezastaví.
+
+Zapisuje se do zákonné evidence stejně jako na kartě osoby, se stejnými
+kontrolami. Hromadně vzniká jen podpis, a tím i základní sleva na poplatníka.
+Další slevy a děti zapište na kartě osoby. Náhled vyjmenuje rozpracované mzdy
+za dotčené měsíce, ty po zápisu přepočítejte.
+
+> [!WARNING]
+> Prohlášení může zaměstnanec za stejné období podepsat jen u jednoho plátce.
+> Za jeho pravdivost odpovídá zaměstnanec, aplikace podpis ani údaje
+> v prohlášení neověří. Zapisujte jen prohlášení, která máte podepsaná v ruce.
+
+U dohody, jejíž měsíční příjem nedosáhne rozhodné částky, podpis přepne zdanění
+ze srážkové daně na zálohu, stejně jako ruční zápis na kartě.
 
 ## 86.5 Krok za krokem: děti a daňové zvýhodnění
 

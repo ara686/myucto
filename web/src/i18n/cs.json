@@ -3282,6 +3282,67 @@
       "apply_failed": "Pojišťovny se nepodařilo uložit.",
       "retry": "Zkusit znovu"
     },
+    "declaration_sign_bulk": {
+      "title": "Podepsaná prohlášení poplatníka hromadně",
+      "intro": "Vybraným osobám zapíše do zákonné evidence prohlášení poplatníka jako Podepsáno, stejně jako karta osoby. Tím se uplatní základní sleva na poplatníka; ostatní slevy a děti zapište na kartě osoby. Podepsané prohlášení se nepřepíše a do měsíců uzavřených schválenou mzdou se nezapisuje.",
+      "warning_one_payer": "Prohlášení může zaměstnanec za stejné období podepsat jen u jednoho plátce. Podepsal-li ho jinde, nezapisujte ho.",
+      "warning_responsibility": "Za pravdivost prohlášení odpovídá zaměstnanec. Aplikace podpis ani údaje v prohlášení neověří, zapisujte jen prohlášení, která máte podepsaná v ruce.",
+      "year": "Zdaňovací rok",
+      "signed_on": "Datum podpisu",
+      "reload": "Načíst náhled",
+      "effective_from": "Platí od {date}",
+      "basis": {
+        "year_start": "od začátku roku, prohlášení je podepsané před rokem nebo v lednu",
+        "signing_month": "od měsíce podpisu, za dřívější měsíce se sleva neuplatní",
+        "after_frozen_period": "až po období uzavřeném schválenou mzdou (do {date})"
+      },
+      "year_frozen": "Celý rok {year} je uzavřený schválenou mzdou (do {date}). Do uzavřeného výpočtu se zpětně nezapisuje.",
+      "recalculate_title": "Rozpracované mzdy k přepočtu",
+      "recalculate_hint": "Tyto mzdy se počítaly bez podpisu. Po zápisu je přepočítejte.",
+      "summary": {
+        "people": "Osob",
+        "ready": "Zapíše se",
+        "already_signed": "Už podepsáno",
+        "skipped": "Nelze zapsat"
+      },
+      "state": {
+        "ready": "Zapíše se",
+        "already_signed": "Na rok už podepsáno, přeskočí se",
+        "period_frozen": "Období uzavřené schválenou mzdou",
+        "timeline_gap": "Předchozí záznam končí dřív, zapište na kartě osoby",
+        "employee_not_found": "Osoba nenalezena"
+      },
+      "change": {
+        "add": "Nový záznam",
+        "close_previous": "Ukončí předchozí ({status})",
+        "replace": "Nahradí ({status})"
+      },
+      "status": {
+        "not-signed": "Nepodepsáno",
+        "unverified": "Neověřeno",
+        "signed": "Podepsáno"
+      },
+      "select_all": "Vybrat vše",
+      "select_none": "Zrušit výběr",
+      "select_person": "Vybrat: {name}",
+      "empty": "V roce {year} nemá nikdo trvající pracovní vztah.",
+      "confirm": "Potvrzuji, že mám podepsaná prohlášení vybraných osob.",
+      "apply": "Zapsat podpis ({count})",
+      "nothing_selected": "Vyberte aspoň jednu osobu, u které se podpis zapíše.",
+      "confirm_required": "Potvrďte, že máte prohlášení podepsaná.",
+      "applied_toast": "Podepsané prohlášení zapsáno u {count} osob.",
+      "result_title": "Výsledek zápisu",
+      "result": {
+        "applied": "Zapsáno",
+        "skipped": "Přeskočeno",
+        "failed": "Chyba"
+      },
+      "applied_item": "od {date}",
+      "person_fallback": "Osoba č. {id}",
+      "load_failed": "Náhled se nepodařilo načíst.",
+      "apply_failed": "Podepsaná prohlášení se nepodařilo zapsat.",
+      "retry": "Zkusit znovu"
+    },
     "statutory_bulk": {
       "title": "Doplnit výchozí zákonné údaje",
       "intro": "Osobám bez cizího prvku doplní chybějící údaje, které plynou z toho, že s cizinou nemají nic společného: daňovou rezidenci v Česku, českou příslušnost k pojištění bez formuláře A1 a u osob mladších 60 let neuplatňování slevy pracujícího důchodce. Existující záznam se nikdy nepřepíše. Zdravotní pojišťovnu hromadně nedoplníme, zná ji jen registrace nebo zaměstnanec.",
@@ -3316,6 +3377,7 @@
       "declaration_label": "Zapsat chybějící prohlášení jako nepodepsané ({count} osob)",
       "declaration_hint": "Zapíše stav „nepodepsal“. Bez podepsaného prohlášení se neuplatní sleva na poplatníka ani další slevy. Zapněte jen tehdy, když víte, že prohlášení opravdu nepodepsali.",
       "declaration_on": "Podpis se tím nevytváří. Až zaměstnanec prohlášení podepíše, zapište to na jeho kartě.",
+      "declaration_signed_link": "Podepsaná prohlášení hromadně",
       "withholding_title": "Riziko srážkové daně ({count})",
       "withholding_hint": "Bez podepsaného prohlášení se v měsíci, kdy úhrn příjmů od vás nedosáhne rozhodné částky, sráží srážková daň. Týká se každého druhu vztahu, i pracovního poměru, nejen dohod. Zkontrolujte je před zápisem.",
       "and_more": "a dalších {count}",
@@ -5485,6 +5547,7 @@
       "filter": "Zobrazení",
       "quick_inputs": "Měsíční zadání mezd",
       "statutory_bulk_action": "Doplnit výchozí zákonné údaje",
+      "declaration_sign_bulk_action": "Podepsaná prohlášení hromadně",
       "workplace_bulk_action": "Doplnit místo výkonu práce",
       "no_results_title": "Žádný zaměstnanec neodpovídá filtru",
       "no_results_description": "Upravte hledaný text nebo zvolte jiné zobrazení.",
