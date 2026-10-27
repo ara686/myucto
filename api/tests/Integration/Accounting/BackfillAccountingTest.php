@@ -231,7 +231,7 @@ final class BackfillAccountingTest extends TestCase
         $vendorId = $this->client('Dodavatel nepodporované kombinace s.r.o.');
         $purchaseId = $this->purchase('ERR-BF-2098-1', $vendorId, 1000.00, 210.00, 21.00);
         $this->db->pdo()->prepare(
-            "UPDATE purchase_invoices SET reverse_charge = 1, vat_deduction = 'proportional' WHERE id = ?"
+            "UPDATE purchase_invoices SET document_kind = 'tax_document', reverse_charge = 1 WHERE id = ?"
         )->execute([$purchaseId]);
 
         $report = $this->backfill->run($this->supplierId, null, self::YEAR, true);
@@ -244,7 +244,7 @@ final class BackfillAccountingTest extends TestCase
         self::assertGreaterThanOrEqual(1, $report['purchase_invoice']['failed']);
         self::assertCount(1, $issues);
         self::assertSame('failed', $issues[0]['severity']);
-        self::assertSame('rc_partial_deduction_unsupported', $issues[0]['error_code']);
+        self::assertSame('ddkp_reverse_charge_unsupported', $issues[0]['error_code']);
         self::assertSame('ERR-BF-2098-1', $issues[0]['document_no']);
     }
 

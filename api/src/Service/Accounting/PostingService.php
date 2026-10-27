@@ -1751,17 +1751,6 @@ final class PostingService
             return $this->buildAllocatedPurchaseInvoiceLines($supplierId, $pi, $allocations, $opts);
         }
 
-        // Krácený nárok § 76 u samovyměření se účtuje jako plný: obě nohy 343 v plné výši,
-        // krácení koeficientem jde až souhrnně přes přiznání (ř. 43k/52), stejně jako u ř. 40k.
-        if (!in_array($vatDeduction, ['full', 'reduced'], true) && $isRc) {
-            throw new PostingException(
-                'rc_partial_deduction_unsupported',
-                'Přijatá faktura #' . $purchaseInvoiceId . ' kombinuje tuzemské samovyměření DPH (reverse charge) '
-                    . 's omezeným nárokem na odpočet (' . $vatDeduction . ') — tuto kombinaci systém zatím '
-                    . 'nezaúčtuje automaticky, zaúčtuj ji ručním zápisem.',
-            );
-        }
-
         if ($vatDeduction === 'full' || $isRc) {
             // received_at do okna jen u ruční PF (received_at_source='manual'), kde ho
             // VatLedgerService zohledňuje v období odpočtu (§ 73/1/a) — jinak by scanner
@@ -1827,17 +1816,32 @@ final class PostingService
             // Vendor fakturuje bez DPH → závazek = základ; daň se samovyměří na 343 (obě strany).
             // Smíšený doklad nese vedle řádků § 92a i tuzemský řádek s daní dodavatele: ta je
             // běžným odpočtem a je součástí závazku, samovyměřuje se jen daň RC řádků.
+            //
+            // Povinnost přiznat daň (§ 108) na nároku nezávisí (§ 72/4): výstup je vždy v plné
+            // výši. Odpočet se řídí nárokem — bez nároku nic, poměrný § 75 procentem, krácený
+            // § 76 v plné výši (krácení koeficientem jde souhrnně přes přiznání, ř. 43k/52).
+            // Neodpočitatelná část daně je nákladem stejně jako u tuzemského dokladu bez nároku.
             $supplierVat = round($vat - $selfAssessedVat, 2);
-            $this->appendSplit($lines, $weights, $expense, $expenseSide, $net, $cc);
+            $deductibleShare = match ($vatDeduction) {
+                'none' => 0.0,
+                'proportional' => $pct,
+                default => 1.0,
+            };
+            $deductibleSelfAssessed = round($selfAssessedVat * $deductibleShare, 2);
+            $deductibleSupplierVat = round($supplierVat * $deductibleShare, 2);
+            $nonDeductibleVat = round($selfAssessedVat - $deductibleSelfAssessed + $supplierVat - $deductibleSupplierVat, 2);
+            $this->appendSplit($lines, $weights, $expense, $expenseSide, round($net + $nonDeductibleVat, 2), $cc);
             if ($selfAssessedVat !== 0.0) {
-                // Samovyměření: obě nohy jsou tatáž částka, ale patří na RŮZNÉ analytiky —
-                // odpočet na vstup, přiznaná daň na výstup. Na plochém 343 se okamžitě
-                // vynetovaly a v zúčtování období po nich nezůstala stopa.
-                $lines[] = $this->line($this->inputVatAccount($supplierId), $expenseSide, abs($selfAssessedVat), $cc);  // nárok na odpočet
+                // Samovyměření: obě nohy patří na RŮZNÉ analytiky — odpočet na vstup, přiznaná
+                // daň na výstup. Na plochém 343 se okamžitě vynetovaly a v zúčtování období
+                // po nich nezůstala stopa.
+                if ($deductibleSelfAssessed !== 0.0) {
+                    $lines[] = $this->line($this->inputVatAccount($supplierId), $expenseSide, abs($deductibleSelfAssessed), $cc);  // nárok na odpočet
+                }
                 $lines[] = $this->line($this->outputVatAccount($supplierId), $payableSide, abs($selfAssessedVat), $cc); // povinnost přiznat daň
             }
-            if ($supplierVat !== 0.0) {
-                $lines[] = $this->line($this->inputVatAccount($supplierId), $expenseSide, abs($supplierVat), $cc);
+            if ($deductibleSupplierVat !== 0.0) {
+                $lines[] = $this->line($this->inputVatAccount($supplierId), $expenseSide, abs($deductibleSupplierVat), $cc);
             }
             $lines[] = $this->withForeign($this->line($payable, $payableSide, abs($totalCzk), $cc), $pi, $rate);
             $this->appendRounding($lines, $totalCzk, $net + $supplierVat, $cc, $totalOnCredit);
