@@ -1,3 +1,5 @@
+import type { Pixels } from './documentCrop'
+
 export const PHOTO_MAX_SIDE = 1200
 export const PHOTO_MAX_BYTES = 150 * 1024
 export const PHOTO_QUALITY_START = 0.85
@@ -5,6 +7,10 @@ export const PHOTO_QUALITY_MIN = 0.4
 export const PHOTO_QUALITY_STEP = 0.05
 export const PHOTO_SHRINK_FACTOR = 0.85
 export const PHOTO_MAX_SHRINKS = 8
+/** Delší strana obrazu, ze kterého se narovnává doklad (větší fotka se před tím zmenší). */
+export const CROP_WORK_MAX_SIDE = 2400
+/** Narovnaný doklad je užší než celá fotka, proto smí mít delší stranu větší (čitelnost dlouhé účtenky). */
+export const CROPPED_MAX_SIDE = 1600
 
 export interface PhotoCanvas {
   width: number
@@ -18,6 +24,8 @@ export interface PhotoSource {
   width: number
   height: number
   createCanvas(width: number, height: number): PhotoCanvas
+  /** Pixely zdroje zmenšené na daný rozměr (detekce a narovnání dokladu). */
+  pixels?(width: number, height: number): Pixels
   close?(): void
 }
 
@@ -71,6 +79,17 @@ export async function compressPhoto(source: PhotoSource, opts: PhotoOptions = {}
 function canvasSource(width: number, height: number, drawSource: (ctx: CanvasRenderingContext2D, w: number, h: number) => void, close?: () => void): PhotoSource {
   return {
     width, height, close,
+    pixels(w, h) {
+      const el = document.createElement('canvas')
+      el.width = w
+      el.height = h
+      const ctx = el.getContext('2d', { willReadFrequently: true })
+      if (!ctx) throw new PhotoDecodeError('canvas unavailable')
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, w, h)
+      drawSource(ctx, w, h)
+      return ctx.getImageData(0, 0, w, h)
+    },
     createCanvas(w, h) {
       const el = document.createElement('canvas')
       el.width = w
@@ -88,6 +107,17 @@ function canvasSource(width: number, height: number, drawSource: (ctx: CanvasRen
       }
     },
   }
+}
+
+/** Zdroj z hotových pixelů (narovnaný doklad) pro {@link compressPhoto}. */
+export function pixelsSource(px: Pixels): PhotoSource {
+  const holder = document.createElement('canvas')
+  holder.width = px.width
+  holder.height = px.height
+  const ctx = holder.getContext('2d')
+  if (!ctx) throw new PhotoDecodeError('canvas unavailable')
+  ctx.putImageData(new ImageData(new Uint8ClampedArray(px.data), px.width, px.height), 0, 0)
+  return canvasSource(px.width, px.height, (c, w, h) => c.drawImage(holder, 0, 0, w, h))
 }
 
 /** Dekóduje soubor s respektováním EXIF orientace; fallback přes `<img>`. */

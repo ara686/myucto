@@ -865,7 +865,13 @@
     "upload": "Nahrát",
     "upload_original": "Nahrát původní soubor",
     "retake": "Vyfotit znovu",
-    "cancel": "Zrušit"
+    "cancel": "Zrušit",
+    "crop_toggle": "Oříznout podle dokladu",
+    "crop_hint": "Doklad jsme na fotce našli. Rohy můžete posunout.",
+    "crop_manual_hint": "Rohy posuňte na okraje dokladu.",
+    "crop_off_hint": "Nahraje se celá fotka.",
+    "crop_not_found": "Doklad se na fotce nepodařilo najít. Ořez můžete vyznačit ručně.",
+    "corner": "Roh dokladu {n}"
   },
   "documents": {
     "ai": {

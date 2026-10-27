@@ -865,7 +865,13 @@
     "upload": "Upload",
     "upload_original": "Upload original file",
     "retake": "Take again",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "crop_toggle": "Crop to the document",
+    "crop_hint": "We found the document in the photo. You can move the corners.",
+    "crop_manual_hint": "Move the corners to the edges of the document.",
+    "crop_off_hint": "The whole photo will be uploaded.",
+    "crop_not_found": "The document could not be found in the photo. You can mark the crop manually.",
+    "corner": "Document corner {n}"
   },
   "documents": {
     "ai": {

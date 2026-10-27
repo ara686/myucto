@@ -125,7 +125,7 @@ upravit bez administrátorského zásahu.
 ## 23.5 Krok za krokem: zpracovat příchozí doklady
 
 1. Otevřete `Nákup → Příchozí doklady`.
-2. Doklady do fronty dostanete z klientského portálu, e-mailem nebo je nahrajete sami tlačítkem **Nahrát do fronty**. Na telefonu a tabletu je vedle něj tlačítko **Vyfotit**: vyfotí doklad fotoaparátem, v prohlížeči ho zmenší (delší strana nejvýš 1 200 px, zhruba do 150 kB), ukáže náhled a po potvrzení ho nahraje stejně jako ostatní soubory. Stejné tlačítko je u nahrání přílohy v editoru nové přijaté faktury.
+2. Doklady do fronty dostanete z klientského portálu, e-mailem nebo je nahrajete sami tlačítkem **Nahrát do fronty**. Na telefonu a tabletu je vedle něj tlačítko **Vyfotit**: vyfotí doklad fotoaparátem, na fotce ho najde a navrhne ořez (rohy jdou v náhledu posunout, ořez jde vypnout a nahrát celou fotku), doklad narovná a zmenší (zhruba do 150 kB) a po potvrzení ho nahraje stejně jako ostatní soubory. Ořez i zmenšení proběhnou v telefonu, fotka nikam jinam neodchází. Nejlépe se doklad najde na tmavém podkladu. Stejné tlačítko je u nahrání přílohy v editoru nové přijaté faktury.
 3. U dokladu zvolte, jak ho zpracovat: vytěžit přes ISDOC nebo AI, přepsat ručně, odmítnout, nebo klienta požádat o náhradu.
 4. Patří-li doklad jiné vaší firmě, klikněte na **Přesunout do …** u navržené firmy, nebo na **Přesunout do jiné firmy** a firmu vyberte.
 5. Pro více dokladů najednou je zaškrtněte a použijte hromadnou akci, například **Vytěžit označené**.
