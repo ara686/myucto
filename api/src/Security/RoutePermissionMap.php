@@ -260,6 +260,8 @@ final class RoutePermissionMap
         // Hromadné doplnění pracoviště — tentýž zápis jako oprava podmínek na
         // kartě vztahu, jen pro víc vztahů. Náhled je POST se seznamem vztahů.
         ['POST', '#^/api/payroll/employments/workplace-bulk/(preview|apply)$#', 'payroll.employment.write', AccessLevel::WRITE],
+        // Hromadné ukončení a archivace — tentýž přechod stavu jako na kartě vztahu.
+        ['POST', '#^/api/payroll/employments/bulk-closure/(preview|apply)$#', 'payroll.employment.write', AccessLevel::WRITE],
         // Počáteční stavy kumulací: zápis je táž operace jako PUT
         // /people/{id}/statutory-openings, jen za víc osob naráz (soubor za celou
         // firmu). Vzorový soubor je prázdná šablona bez dat, tedy jen čtení.
