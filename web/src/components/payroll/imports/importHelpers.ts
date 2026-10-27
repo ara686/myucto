@@ -367,7 +367,7 @@ export const ATTENDANCE_MEANING_GROUPS: { key: string; meanings: AttendanceMeani
     meanings: [
       'person_name', 'personal_number', 'birth_number', 'birth_date', 'health_insurer_code',
       'relation_label', 'department', 'cost_center', 'position', 'weekly_hours', 'start_end_note',
-      'start_date', 'monthly_wage',
+      'start_date', 'monthly_wage', 'hourly_rate', 'end_date', 'bank_account',
     ],
   },
   {
@@ -404,6 +404,7 @@ export const AUTO_COMPONENT_CODE = '*'
 const TEXT_MEANINGS = new Set<AttendanceMeaning>([
   'person_name', 'personal_number', 'birth_number', 'birth_date', 'health_insurer_code', 'relation_label',
   'department', 'cost_center', 'position', 'start_end_note', 'start_date', 'monthly_wage',
+  'hourly_rate', 'end_date', 'bank_account',
 ])
 const MONEY_MEANINGS = new Set<AttendanceMeaning>([
   'component', 'net_meal_deduction', 'net_other_deduction', 'reference_gross', 'reference_net',
@@ -903,6 +904,35 @@ export interface PersonCreateDefaults {
  * bez něj se použije jednotný `defaults.relation_type` jako dosud (ruční
  * založení v kroku Osoby, kde druh vybírá uživatel jednou pro celou dávku).
  */
+export type PersonCreateDetailKey = 'start_on' | 'agreed_end_on' | 'hourly_rate' | 'monthly_wage' | 'bank_account'
+
+/**
+ * Údaje z podkladů, které se nové osobě převezmou — pro náhled zakládání.
+ * `invalid` = hodnota v podkladech je, ale nejde přečíst; server ji nepoužije.
+ */
+export function personCreateDetails(
+  person: AttendancePerson,
+  plannedStartOn: string,
+): { key: PersonCreateDetailKey; value: string; invalid: boolean }[] {
+  const details: { key: PersonCreateDetailKey; value: string; invalid: boolean }[] = [
+    { key: 'start_on', value: person.start_on || plannedStartOn, invalid: false },
+  ]
+  const end = person.end_date?.trim() ?? ''
+  if (end !== '') details.push({ key: 'agreed_end_on', value: person.agreed_end_on ?? end, invalid: !person.agreed_end_on })
+  const rate = person.hourly_rate?.trim() ?? ''
+  if (rate !== '') {
+    const parsed = parseLocaleNumber(rate)
+    details.push({ key: 'hourly_rate', value: parsed !== null && parsed > 0 ? String(parsed) : rate, invalid: parsed === null || parsed <= 0 })
+  }
+  const wage = person.monthly_wage?.trim() ?? ''
+  if (wage !== '') {
+    const parsed = parseLocaleNumber(wage)
+    details.push({ key: 'monthly_wage', value: parsed !== null && parsed > 0 ? String(parsed) : wage, invalid: parsed === null || parsed <= 0 })
+  }
+  if (person.bank_account_masked) details.push({ key: 'bank_account', value: person.bank_account_masked, invalid: false })
+  return details
+}
+
 export function buildPersonsPayload(
   persons: AttendancePerson[],
   drafts: Record<string, PersonDraft>,
@@ -926,6 +956,9 @@ export function buildPersonsPayload(
       monthly_gross: Number.isFinite(wage) && wage > 0 ? Math.round(wage) : null,
       // Nástup z poznámky v podkladech je přesnější než jednotný den pro celou dávku.
       planned_start_on: person.start_on || defaults.planned_start_on,
+      // Surový text: nečitelnou hodnotu server nepoužije a řekne to ve výsledku.
+      hourly_rate: person.hourly_rate?.trim() || null,
+      fixed_term_end_on: person.end_date?.trim() || null,
       personal_number: person.personal_number,
       activate: defaults.activate,
     }

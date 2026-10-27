@@ -800,10 +800,26 @@ rodného čísla, kódu vztahu nebo jména; nejasnou osobu import nezakládá.
 Chybějící osoby lze založit tlačítkem; měsíční mzda z mzdového výměru se
 předvyplní jako pravidelná mzda a nástup z poznámky („nový nástup 15. 6. 2026")
 jako den nástupu. Sloupce **Datum narození** a **Zdravotní pojišťovna (kód)**
-(třímístný, např. 111) se zapíšou rovnou. Automatické založení při použití se
+(třímístný, např. 111) se zapíšou rovnou. **Hodinová sazba** se uloží do
+podmínek vztahu jako pravděpodobný hodinový výdělek s odůvodněním (§ 355 ZP),
+ze kterého se počítají náhrady, než vznikne skutečný průměr. **Konec dohody**
+se uloží jako sjednaný konec vztahu, takže ho po uplynutí nabídne hromadné
+ukončení dohod. **Číslo účtu** (předčíslí-číslo/kód banky nebo IBAN) projde
+stejnou kontrolou jako na kartě osoby a uloží se jako neověřený výplatní účet
+s výplatou převodem; před první výplatou ho na kartě ověřte. Náhled zakládání
+u každé osoby ukáže nástup, konec, sazbu, měsíční mzdu a maskovaný účet.
+Nečitelná sazba, konec dohody před nástupem nebo neplatný účet osobu
+nezastaví: vznikne bez nich a výsledek u ní napíše, co doplnit. U osoby, která
+už v evidenci je, import sazbu, konec ani účet nemění. Automatické založení při použití se
 týká jen osob s osobním nebo rodným číslem; osoba bez čísel bývá jinak zapsané
 jméno někoho z evidence. Uvádějí-li podklady ukončení, osoba dostane upozornění;
 import vztah neukončuje.
+
+**Roční limit DPP.** U osoby přiřazené na dohodu o provedení práce náhled sečte
+odpracované hodiny za celý kalendářní rok včetně importovaného měsíce a jiných
+DPP téže osoby; uložený souhrn importovaného měsíce nahradí hodiny z podkladů.
+Import staršího měsíce tak počítá i s hodinami pozdějších měsíců. Od 240 h
+(80 % limitu) a nad 300 h (§ 75 ZP) náhled upozorní; import nezastaví.
 
 **Souhrn a použití.** Tabulka ukáže hodiny a částky s buňkou původu a pro
 kontrolu hrubou a čistou mzdu z mzdového exportu. Chybějící mzdovou složku
@@ -846,7 +862,7 @@ každý sloupec šablony.
 
 | Skupina | Sloupce |
 |---|---|
-| Osoba | Osobní číslo, Příjmení a jméno (povinné), Rodné číslo, Datum narození, Zdravotní pojišťovna (kód), Druh vztahu (HPP, DPP, DPČ), Nástup, Týdenní úvazek, Měsíční mzda |
+| Osoba | Osobní číslo, Příjmení a jméno (povinné), Rodné číslo, Datum narození, Zdravotní pojišťovna (kód), Druh vztahu (HPP, DPP, DPČ), Nástup, Týdenní úvazek, Měsíční mzda, Hodinová sazba (Kč/h), Konec dohody, Číslo účtu |
 | Hodiny | Odpracováno; z toho noc, víkend, svátek, přesčas; Dovolená, Nemoc, Lékař |
 | Peníze (Kč za měsíc) | Hodinová mzda celkem, Odměna, Mimořádná odměna, Srážka z čisté mzdy |
 
@@ -854,7 +870,8 @@ Hodiny se zapisují desetinně (7,5) nebo jako čas v Excelu (7:30), v jednom
 sloupci vždy stejně; noc, víkend, svátek a přesčas jsou část odpracovaných
 hodin. Datum jako datum v Excelu nebo text „1. 6. 2026". **Druh vztahu** určí
 druh vztahu nově zakládané osoby, **Nástup** její den nástupu (bez něj první den
-měsíce). **Hodinová mzda celkem** jde na složku **Hodinová mzda podle
+měsíce), **Hodinová sazba**, **Konec dohody** a **Číslo účtu** se převezmou při
+jejím založení (viz Osoby výše). **Hodinová mzda celkem** jde na složku **Hodinová mzda podle
 docházky** (zařazení JMHZ 10329), **Odměna** na **Odměnu** z číselníku,
 **Mimořádná odměna** na vlastní složku vzoru (pravidelnost odměny pro JMHZ
 zařadí účetní jednou za firmu) a **Srážka z čisté mzdy** založí dohodu o srážce

@@ -10,6 +10,7 @@ use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Middleware\AuthMiddleware;
 use MyInvoice\Middleware\SupplierScopeMiddleware;
 use MyInvoice\Service\Payroll\Import\Attendance\AttendanceImportService;
+use MyInvoice\Service\Payroll\Import\Attendance\AttendanceMyUctoSampleProfile;
 use MyInvoice\Service\Payroll\Import\Attendance\AttendanceMyUctoTemplate;
 use MyInvoice\Tests\Support\IsolatedSupplierTrait;
 use MyInvoice\Tests\Unit\Payroll\Import\Attendance\AttendanceFixture;
@@ -121,6 +122,13 @@ final class AttendanceMyUctoRoundTripTest extends TestCase
         self::assertSame('DPP', $persons['eva ukazkova']['relation_label']);
         self::assertSame('2026-06-01', $persons['eva ukazkova']['start_on']);
         self::assertSame('DPČ', $persons['adam prikladny']['relation_label']);
+        self::assertSame('180', $persons['eva ukazkova']['hourly_rate']);
+        self::assertSame('2026-12-31', $persons['eva ukazkova']['agreed_end_on']);
+        self::assertNull($persons['adam prikladny']['agreed_end_on']);
+        self::assertIsString($persons['eva ukazkova']['bank_account_masked']);
+        self::assertStringNotContainsString('1000000005', $persons['eva ukazkova']['bank_account_masked']);
+        self::assertArrayNotHasKey('_bank_account', $persons['eva ukazkova'], 'Číslo účtu klient nedostane celé.');
+        self::assertNull($persons['adam prikladny']['bank_account_masked']);
         $checks = array_column($preview['component_checks'], 'status', 'component_code');
         ksort($checks);
         self::assertSame(['MZDA_HODINOVA_DOCH' => 'will_create', 'ODMENA' => 'ok', 'ODMENA_MIMORADNA' => 'will_create'], $checks);
@@ -135,6 +143,8 @@ final class AttendanceMyUctoRoundTripTest extends TestCase
                 'relation_type' => 'dpp',
                 'weekly_hours' => null,
                 'planned_start_on' => $persons['eva ukazkova']['start_on'],
+                'hourly_rate' => $persons['eva ukazkova']['hourly_rate'],
+                'fixed_term_end_on' => $persons['eva ukazkova']['end_date'],
                 'personal_number' => 'B001',
                 'activate' => true,
             ],
@@ -164,6 +174,10 @@ final class AttendanceMyUctoRoundTripTest extends TestCase
             $this->employment($adam),
         );
 
+        // Sazba, konec a účet z šablony: sazba se u Adama nepředala, účet má jen Eva.
+        self::assertSame(['probable' => 18_000, 'fixed_end' => '2026-12-31', 'accounts' => 1], $this->agreed($eva));
+        self::assertSame(['probable' => null, 'fixed_end' => null, 'accounts' => 0], $this->agreed($adam));
+
         $again = $this->service->preview($this->supplierId, self::PERIOD, [$file], null, $profileId);
         self::assertSame(2, $again['summary']['matched']);
 
@@ -192,6 +206,18 @@ final class AttendanceMyUctoRoundTripTest extends TestCase
             $this->inputs(),
         );
         self::assertSame(1, $result['deductions']['created']);
+
+        // Existující osobě import sazbu, konec ani účet nemění.
+        $changed = AttendanceFixture::file('zmena.xlsx', AttendanceFixture::xlsx([
+            AttendanceMyUctoSampleProfile::SHEET => ['rows' => [
+                1 => ['A' => 'Osobní číslo', 'B' => 'Příjmení a jméno', 'C' => 'Hodinová sazba (Kč/h)', 'D' => 'Konec dohody', 'E' => 'Číslo účtu', 'F' => 'Odpracováno (hod)'],
+                2 => ['A' => 'B001', 'B' => 'Ukázková Eva', 'C' => 250, 'D' => '30. 9. 2026', 'E' => '19-2000145399/0800', 'F' => 10],
+            ]],
+        ]));
+        $changedPreview = $this->service->preview($this->supplierId, self::PERIOD, [$changed], null, $profileId);
+        self::assertSame('linked', $changedPreview['persons'][0]['match']['status']);
+        $this->service->apply($this->supplierId, self::PERIOD, [$changed], null, [], false, true, $this->userId, profileId: $profileId);
+        self::assertSame(['probable' => 18_000, 'fixed_end' => '2026-12-31', 'accounts' => 1], $this->agreed($eva));
     }
 
     private function downloadTemplate(): string
@@ -230,6 +256,32 @@ final class AttendanceMyUctoRoundTripTest extends TestCase
             'status' => (string) $row['status'],
             'actual_start_date' => $row['actual_start_date'] === null ? null : (string) $row['actual_start_date'],
             'code' => (string) $row['code'],
+        ];
+    }
+
+    /** @return array{probable:?int,fixed_end:?string,accounts:int} */
+    private function agreed(int $employmentId): array
+    {
+        $stmt = $this->db->pdo()->prepare(
+            'SELECT terms.probable_hourly_earning_minor, terms.fixed_term_end_on,
+                    (SELECT COUNT(*) FROM payroll_person_accounts account
+                      WHERE account.supplier_id = employment.supplier_id
+                        AND account.employee_id = employment.employee_id) AS accounts
+               FROM payroll_employments employment
+               JOIN payroll_employment_terms terms
+                 ON terms.supplier_id = employment.supplier_id AND terms.employment_id = employment.id
+              WHERE employment.supplier_id = ? AND employment.id = ?
+              ORDER BY terms.id DESC
+              LIMIT 1',
+        );
+        $stmt->execute([$this->supplierId, $employmentId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        self::assertIsArray($row);
+
+        return [
+            'probable' => $row['probable_hourly_earning_minor'] === null ? null : (int) $row['probable_hourly_earning_minor'],
+            'fixed_end' => $row['fixed_term_end_on'] === null ? null : (string) $row['fixed_term_end_on'],
+            'accounts' => (int) $row['accounts'],
         ];
     }
 
