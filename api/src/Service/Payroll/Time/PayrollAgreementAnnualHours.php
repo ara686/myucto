@@ -54,6 +54,9 @@ final class PayrollAgreementAnnualHours
     public const STATUS_APPROACHING = 'approaching';
     public const STATUS_EXCEEDED = 'exceeded';
 
+    /** Stavy, které dostane klient (PayrollAgreementAnnualHoursStatus). */
+    public const STATUSES = [self::STATUS_OK, self::STATUS_APPROACHING, self::STATUS_EXCEEDED];
+
     public function __construct(private readonly Connection $db) {}
 
     /**

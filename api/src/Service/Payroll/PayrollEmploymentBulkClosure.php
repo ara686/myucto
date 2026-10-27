@@ -43,6 +43,10 @@ final class PayrollEmploymentBulkClosure
 {
     public const MAX_ITEMS = 500;
 
+    /** Skupiny kandidátů a akce, jak je dostane klient. */
+    public const GROUPS = ['expired', 'inactive', 'archive'];
+    public const ACTIONS = ['end', 'archive'];
+
     private const SETTLED_RUN_STATUSES = "'posted', 'payment_ready', 'paid', 'closed'";
 
     private const NOTE_END = 'Hromadné ukončení skončených dohod.';

@@ -44,6 +44,10 @@ final class PayrollTaxDeclarationBulkSign
 
     public const EVIDENCE_REFERENCE = 'declaration:38k-signed';
 
+    /** Stav osoby v náhledu a změna evidence, jak je dostane klient. */
+    public const STATES = ['ready', 'already_signed', 'period_frozen', 'timeline_gap', 'employee_not_found'];
+    public const CHANGES = ['add', 'close_previous', 'replace'];
+
     private const MAX_EMPLOYEES = 2000;
 
     private const CHUNK_SIZE = 500;

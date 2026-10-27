@@ -1106,7 +1106,8 @@
         "2202_cash_journal_offset_notes.sql",
         "2203_readonly_seat_policy.sql",
         "2204_supplier_receipt_payable_account.sql",
-        "2205_bank_rule_template_vat_refund.sql"
+        "2205_bank_rule_template_vat_refund.sql",
+        "2206_payroll_import_profile_sample_key.sql"
     ],
     "tables": {
         "abra_flexi_connections": {
@@ -13860,6 +13861,7 @@
                 "name": "varchar(120) NOT NULL",
                 "row_version": "int(10) unsigned NOT NULL DEFAULT 1",
                 "rules_json": "longtext NOT NULL",
+                "sample_key": "varchar(32) NULL DEFAULT NULL",
                 "sample_rules_sha256": "char(64) NULL DEFAULT NULL",
                 "sample_version": "int(11) NULL DEFAULT NULL",
                 "source_system": "varchar(32) NOT NULL",
@@ -25760,6 +25762,7 @@
                 "payment_thanks_default_checked": "tinyint(1) NOT NULL DEFAULT 0",
                 "payment_thanks_enabled": "tinyint(1) NOT NULL DEFAULT 0",
                 "payment_thanks_max_age_days": "smallint(5) unsigned NOT NULL DEFAULT 30",
+                "payroll_attendance_myucto_sample_seeded_at": "datetime NULL DEFAULT NULL",
                 "payroll_attendance_sample_seeded_at": "datetime NULL DEFAULT NULL",
                 "payroll_enabled": "tinyint(1) NOT NULL DEFAULT 0",
                 "pdf_logo_show_name": "tinyint(1) NOT NULL DEFAULT 0",

@@ -26,7 +26,7 @@ final class AttendanceSampleSeedTest extends TestCase
 {
     use IsolatedSupplierTrait;
 
-    private const MIGRATION = '2208_payroll_import_profile_sample_key.sql';
+    private const MIGRATION = '2206_payroll_import_profile_sample_key.sql';
 
     private Connection $db;
     private AttendanceImportService $service;
@@ -168,7 +168,7 @@ final class AttendanceSampleSeedTest extends TestCase
     }
 
     /**
-     * Migrace 2208 je opakovatelná a vzorům bez klíče doplní GIRITON; vlastní
+     * Migrace 2206 je opakovatelná a vzorům bez klíče doplní GIRITON; vlastní
      * profily klíč nedostanou.
      */
     public function testMigrationBackfillsGiritonKey(): void
