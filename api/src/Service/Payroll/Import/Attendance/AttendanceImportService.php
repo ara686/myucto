@@ -29,6 +29,7 @@ use MyInvoice\Service\Payroll\Net\DeductionAgreementTerms;
 use MyInvoice\Service\Payroll\PayrollEmploymentValidator;
 use MyInvoice\Service\Payroll\PayrollPersonCreateService;
 use MyInvoice\Service\Payroll\PayrollPersonProfileValidator;
+use MyInvoice\Service\Payroll\Payment\PayrollPersonAccountVerificationService;
 use MyInvoice\Service\Payroll\Security\PayrollSensitiveData;
 use MyInvoice\Service\Payroll\Security\PayrollSensitiveField;
 use MyInvoice\Service\Payroll\Time\PayrollAgreementAnnualHours;
@@ -118,6 +119,7 @@ final class AttendanceImportService
         private readonly PayrollDeductionAgreementRepository $deductions,
         private readonly PayrollPersonProfileValidator $profileValidator,
         private readonly PayrollPersonProfileRepository $personProfiles,
+        private readonly PayrollPersonAccountVerificationService $accountVerification,
     ) {
     }
 
@@ -1856,6 +1858,40 @@ final class AttendanceImportService
             ]), $current['row_version'], $userId, null, null);
         } catch (\InvalidArgumentException|\DomainException $e) {
             return self::bankAccountNote($e, true);
+        }
+
+        return $this->verifyPayoutAccount($supplierId, $employeeId, $userId);
+    }
+
+    /**
+     * Účet z podkladů rovnou ověří uživatel, který import spustil (stejně jako převod
+     * mezd ověřuje účty z předchozího systému). Bez přihlášeného uživatele ověřit nejde
+     * (`verified_by` je povinné), účet pak zůstane k ověření na kartě osoby.
+     */
+    private function verifyPayoutAccount(int $supplierId, int $employeeId, ?int $userId): ?string
+    {
+        $pending = 'Číslo účtu je uložené, ověřte ho na kartě osoby.';
+        if ($userId === null) {
+            return $pending;
+        }
+        $profile = $this->personProfiles->get($supplierId, $employeeId);
+        foreach ($profile['accounts'] ?? [] as $account) {
+            if ($account['verification_source'] !== null || $account['is_active'] !== true) {
+                continue;
+            }
+            try {
+                $this->accountVerification->verify(
+                    $supplierId,
+                    $employeeId,
+                    (int) $account['id'],
+                    'user_verified',
+                    date('Y-m-d'),
+                    $userId,
+                    (int) $account['row_version'],
+                );
+            } catch (\DomainException|\InvalidArgumentException|\RuntimeException) {
+                return $pending;
+            }
         }
 
         return null;

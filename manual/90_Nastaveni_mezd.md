@@ -805,8 +805,8 @@ podmínek vztahu jako pravděpodobný hodinový výdělek s odůvodněním (§ 3
 ze kterého se počítají náhrady, než vznikne skutečný průměr. **Konec dohody**
 se uloží jako sjednaný konec vztahu, takže ho po uplynutí nabídne hromadné
 ukončení dohod. **Číslo účtu** (předčíslí-číslo/kód banky nebo IBAN) projde
-stejnou kontrolou jako na kartě osoby a uloží se jako neověřený výplatní účet
-s výplatou převodem; před první výplatou ho na kartě ověřte. Náhled zakládání
+stejnou kontrolou jako na kartě osoby a uloží se jako výplatní účet
+s výplatou převodem, rovnou ověřený uživatelem, který import spustil. Náhled zakládání
 u každé osoby ukáže nástup, konec, sazbu, měsíční mzdu a maskovaný účet.
 Nečitelná sazba, konec dohody před nástupem nebo neplatný účet osobu
 nezastaví: vznikne bez nich a výsledek u ní napíše, co doplnit. U osoby, která

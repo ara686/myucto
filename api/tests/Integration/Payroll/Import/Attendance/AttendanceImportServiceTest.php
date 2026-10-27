@@ -600,20 +600,26 @@ final class AttendanceImportServiceTest extends TestCase
         $sensitive = $this->container->get(PayrollSensitiveData::class);
         self::assertInstanceOf(PayrollSensitiveData::class, $sensitive);
         $stmt = $this->db->pdo()->prepare(
-            'SELECT bank_account_masked, allocation_basis_points, effective_from, is_active
+            'SELECT bank_account_masked, allocation_basis_points, effective_from, is_active,
+                    verification_source, verified_by
                FROM payroll_person_accounts WHERE supplier_id = ? AND employee_id = ?',
         );
         $stmt->execute([$this->supplierId, (int) $result['results'][0]['employee_id']]);
+        // Účet z podkladů rovnou ověří uživatel, který import spustil.
         self::assertSame([[
             'bank_account_masked' => $sensitive->mask('1000000005/0100', PayrollSensitiveField::BANK_ACCOUNT),
             'allocation_basis_points' => 10000,
             'effective_from' => '2026-06-01',
             'is_active' => 1,
+            'verification_source' => 'user_verified',
+            'verified_by' => $this->userId,
         ]], array_map(static fn (array $row): array => [
             'bank_account_masked' => (string) $row['bank_account_masked'],
             'allocation_basis_points' => (int) $row['allocation_basis_points'],
             'effective_from' => (string) $row['effective_from'],
             'is_active' => (int) $row['is_active'],
+            'verification_source' => $row['verification_source'],
+            'verified_by' => $row['verified_by'] === null ? null : (int) $row['verified_by'],
         ], $stmt->fetchAll(PDO::FETCH_ASSOC)));
 
         $closure = $this->container->get(PayrollEmploymentBulkClosure::class);
