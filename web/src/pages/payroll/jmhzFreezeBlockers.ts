@@ -1,5 +1,4 @@
 import { ref } from 'vue'
-import { useRoute } from 'vue-router'
 import type { PayrollJmhzFreezeBlocker } from '@/api/payroll'
 
 /** Nálezy blokace zmrazení hlášení z odpovědi 409 (`error.details.blockers`). */
@@ -34,8 +33,11 @@ export function pathWithReturn(path: string, returnTo: string, year?: number | n
  * Cesta zpět na přípravu JMHZ, když se stránka otevřela odkazem z blokace.
  * Hodnota se zachytí jednou při vzniku stránky, takže přežije, i když stránka
  * později přepíše vlastní query.
+ *
+ * Čte se z adresy, ne přes `useRoute()`: lišta je na stránkách, jejichž testy
+ * router mockují bez téhle funkce, a mimo kontext routeru by stránka spadla.
  */
-export function useJmhzReturn() {
-  const target = ref<string | null>(safeReturnPath(useRoute().query.return))
+export function useJmhzReturn(search: string = typeof window === 'undefined' ? '' : window.location.search) {
+  const target = ref<string | null>(safeReturnPath(new URLSearchParams(search).get('return')))
   return { returnTarget: target }
 }

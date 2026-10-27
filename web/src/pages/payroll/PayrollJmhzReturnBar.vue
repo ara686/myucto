@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { useRouter } from 'vue-router'
 import { btnOutline } from '@/components/ui/buttonStyles'
 import { useJmhzReturn } from './jmhzFreezeBlockers'
 
@@ -9,22 +8,20 @@ import { useJmhzReturn } from './jmhzFreezeBlockers'
  * z blokace zmrazení hlášení (query `return`).
  */
 const { t } = useI18n()
-const router = useRouter()
 const { returnTarget } = useJmhzReturn()
 </script>
 
 <template>
   <div v-if="returnTarget" class="flex flex-wrap gap-2" data-test="jmhz-return-bar">
-    <button
-      type="button"
+    <RouterLink
+      :to="returnTarget"
       :class="[btnOutline('primary'), 'whitespace-nowrap']"
       data-test="jmhz-return"
-      @click="router.push(returnTarget)"
     >
       <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
         <path d="M10 19l-7-7m0 0l7-7m-7 7h18" />
       </svg>
       {{ t('payroll.jmhz_gate.return_to_jmhz') }}
-    </button>
+    </RouterLink>
   </div>
 </template>

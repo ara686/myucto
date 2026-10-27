@@ -83,15 +83,16 @@ describe('blokace zmrazení JMHZ s proklikem na opravu', () => {
   })
 
   it('na cílové stránce nabídne návrat jen pro bezpečný odkaz return', async () => {
-    m.route.query = { return: '/payroll/submissions/jmhz?period=2026-09' }
-    const wrapper = mountWith(PayrollJmhzReturnBar, {})
-    await wrapper.find('[data-test="jmhz-return"]').trigger('click')
-    expect(m.push).toHaveBeenCalledWith('/payroll/submissions/jmhz?period=2026-09')
-    expect(wrapper.text()).toContain(cs.payroll.jmhz_gate.return_to_jmhz)
+    const at = (search: string) => {
+      window.history.replaceState({}, '', `/payroll/annual-settlement${search}`)
+      return mountWith(PayrollJmhzReturnBar, {}).find('[data-test="jmhz-return"]')
+    }
+    const link = at(`?person=11&return=${encodeURIComponent('/payroll/submissions/jmhz?period=2026-09')}`)
+    expect(link.attributes('data-to')).toBe('/payroll/submissions/jmhz?period=2026-09')
+    expect(link.text()).toContain(cs.payroll.jmhz_gate.return_to_jmhz)
 
-    m.route.query = { return: '//evil.example/x' }
-    expect(mountWith(PayrollJmhzReturnBar, {}).find('[data-test="jmhz-return"]').exists()).toBe(false)
-    m.route.query = {}
-    expect(mountWith(PayrollJmhzReturnBar, {}).find('[data-test="jmhz-return"]').exists()).toBe(false)
+    expect(at(`?return=${encodeURIComponent('//evil.example/x')}`).exists()).toBe(false)
+    expect(at('?person=11').exists()).toBe(false)
+    window.history.replaceState({}, '', '/')
   })
 })

@@ -75,6 +75,8 @@ final class JmhzCodeCatalogCoverageTest extends TestCase
         'jmhz_minor' => 'field',
         'jmhz_functional_benefits_status' => 'field',
         'jmhz_identity' => 'route',
+        // Panel karty zaměstnance v odkazu na opravu (JmhzBlockerRemediationPath), ne kód blokace.
+        'jmhz_profile' => 'route',
         // Původ identifikátoru osoby (source_origin), ne kód blokace.
         'jmhz_import' => 'enum',
         'jmhz_import_form' => 'other',
