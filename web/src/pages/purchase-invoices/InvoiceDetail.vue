@@ -958,14 +958,15 @@ const purchaseActions = computed<ActionItem[]>(() => {
   items.push({ key: 'exp-pohoda', label: t('purchase_invoice.export.pohoda'), icon: 'doc', tier: 'overflow', variant: 'warning',
     href: purchaseInvoicesApi.pohodaUrl(inv.id) })
 
+  items.push({ key: 'force-edit', label: t('purchase_invoice.force_edit'), icon: 'edit', tier: 'overflow', variant: 'warning',
+    show: canForceEdit.value, title: t('purchase_invoice.force_edit_hint') as string, run: confirmForceEdit })
+
   items.push({ key: 'delete', label: t('common.delete'), icon: 'trash', tier: 'overflow', variant: 'danger',
     show: canDelete.value && canDeletePermission && !(auth.isClientRole && draftDeletionLockedForClient(inv.locked,
       !!inv.bank_payments?.length || !!inv.cash_payments?.length || !!inv.settlement_payments?.length,
       Array.isArray(inv.bank_payments) && Array.isArray(inv.cash_payments) && Array.isArray(inv.settlement_payments))), disabled: acting.value, run: remove })
 
-  // admin „force" akce (pod „Pokročilé")
-  items.push({ key: 'force-edit', label: t('purchase_invoice.force_edit'), icon: 'edit', tier: 'advanced', variant: 'warning',
-    show: canForceEdit.value, title: t('purchase_invoice.force_edit_hint') as string, run: confirmForceEdit })
+  // admin „force" smazání (pod „Pokročilé")
   items.push({ key: 'force-delete', label: t('purchase_invoice.force_delete'), icon: 'trash', tier: 'advanced', variant: 'danger',
     show: canForceDelete.value, title: t('purchase_invoice.confirm.force_delete_warning') as string, run: forceDelete })
 
