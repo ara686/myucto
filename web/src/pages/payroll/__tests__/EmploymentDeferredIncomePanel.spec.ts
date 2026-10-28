@@ -108,6 +108,23 @@ describe('EmploymentDeferredIncomePanel', () => {
     expect(wrapper.find('[data-test="deferred-income-item"]').text()).toContain('payroll.people.deferred_income.type_4')
   })
 
+  it('typ 5 nese stejné omezení na leden až březen jako typ 4', async () => {
+    m.list.mockResolvedValue({ items: [], supported_types: ['1', '4', '5'] })
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.find('[data-test="deferred-income-add"]').trigger('click')
+    expect(wrapper.findAll('[data-test="deferred-income-type"] option').map(option => option.attributes('value')))
+      .toEqual(['1', '4', '5'])
+    await wrapper.find('[data-test="deferred-income-type"]').setValue('5')
+    expect(wrapper.find('[data-test="deferred-income-type-5-hint"]').exists()).toBe(true)
+    await wrapper.find('[data-test="deferred-income-period"]').setValue('2026-07')
+    await wrapper.find('[data-test="deferred-income-form"]').trigger('submit')
+    await flushPromises()
+    expect(m.save).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-test="deferred-income-invalid"]').text())
+      .toBe('payroll.people.deferred_income.period_annual_invalid')
+  })
+
   it('zruší potvrzení a bez práva zápisu nenabízí úpravy', async () => {
     m.list.mockResolvedValue({ items: [item()], supported_types: ['1'] })
     m.remove.mockResolvedValue(true)

@@ -49,13 +49,14 @@ const firstPeriod = computed(() => {
 })
 
 /**
- * Roční zúčtování po skončení (typ 4) se hlásí jen za leden až březen
- * (Pravidla podání JMHZ 1.4.5, kap. 6 bod 3 b); server to hlídá stejně.
+ * Roční zúčtování po skončení (typ 4, i v typu 5) se hlásí jen za leden až
+ * březen (Pravidla podání JMHZ 1.4.5, kap. 6 bod 3 b); server to hlídá stejně.
  */
 const ANNUAL_SETTLEMENT_MONTHS = ['01', '02', '03']
+const ANNUAL_SETTLEMENT_TYPES: PayrollDeferredIncomeType[] = ['4', '5']
 
 const periodValid = computed(() => /^\d{4}-\d{2}$/.test(period.value) && period.value >= firstPeriod.value)
-const periodFitsType = computed(() => deferredType.value !== '4'
+const periodFitsType = computed(() => !ANNUAL_SETTLEMENT_TYPES.includes(deferredType.value)
   || ANNUAL_SETTLEMENT_MONTHS.includes(period.value.slice(5, 7)))
 const invalidReason = computed(() => {
   if (!periodValid.value) return t('payroll.people.deferred_income.period_invalid', { first: firstPeriod.value })
@@ -124,6 +125,7 @@ function typeLabel(type: PayrollDeferredIncomeType): string {
   switch (type) {
     case '1': return t('payroll.people.deferred_income.type_1')
     case '4': return t('payroll.people.deferred_income.type_4')
+    case '5': return t('payroll.people.deferred_income.type_5')
     default: return t('payroll.people.deferred_income.type_other', { code: type })
   }
 }
@@ -223,6 +225,11 @@ onMounted(load)
             class="mt-1 block text-xs text-neutral-500"
             data-test="deferred-income-type-4-hint"
           >{{ t('payroll.people.deferred_income.type_4_hint') }}</span>
+          <span
+            v-if="deferredType === '5'"
+            class="mt-1 block text-xs text-neutral-500"
+            data-test="deferred-income-type-5-hint"
+          >{{ t('payroll.people.deferred_income.type_5_hint') }}</span>
         </label>
         <label class="text-xs text-neutral-600 sm:col-span-2">
           {{ t('payroll.people.deferred_income.note') }}

@@ -628,7 +628,7 @@ final class PayrollRunStatutoryInputAssembler
                 && $employmentTo < $periodStart
                 && $mapping->aggregationGroup
                     === SocialParticipationAggregationGroup::RegularRelationship
-                && self::deferredIncomeType($snapshot) === '1'
+                && self::deferredWithPostTerminationIncome($snapshot)
             ) {
                 /*
                  * Odložený příjem typu 1 potvrzený účetní (JMHZ scénář 8):
@@ -640,7 +640,7 @@ final class PayrollRunStatutoryInputAssembler
                     SocialIncomeAttribution::PostTerminationPaymentMonthVerified;
             } elseif ($employmentTo !== null
                 && $employmentTo < $periodStart
-                && self::deferredIncomeType($snapshot) === '1'
+                && self::deferredWithPostTerminationIncome($snapshot)
             ) {
                 /*
                  * Tentýž odložený příjem u vztahu, jehož účast stojí na výši
@@ -2874,6 +2874,21 @@ final class PayrollRunStatutoryInputAssembler
         $type = is_array($deferred) ? ($deferred['deferred_type'] ?? null) : null;
 
         return is_string($type) ? $type : null;
+    }
+
+    /**
+     * Potvrzený odložený příjem s příjmem po skončení (typ 1, nebo 5 spolu
+     * s ročním zúčtováním): pojistné patří do měsíce zúčtování.
+     *
+     * @param array<string,mixed> $snapshot
+     */
+    private static function deferredWithPostTerminationIncome(array $snapshot): bool
+    {
+        return in_array(
+            self::deferredIncomeType($snapshot),
+            \MyInvoice\Repository\Payroll\PayrollDeferredIncomeRepository::TYPES_WITH_POST_TERMINATION_INCOME,
+            true,
+        );
     }
 
     /**

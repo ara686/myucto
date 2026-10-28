@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MyInvoice\Tests\Integration\Payroll;
 
 use MyInvoice\Action\Payroll\PayrollDeferredIncomeAction;
+use MyInvoice\Repository\Payroll\PayrollComponentJmhzMappingRepository;
 use MyInvoice\Service\Payroll\Ruleset\CanonicalJson;
 use MyInvoice\Tests\Support\PayrollFullFlowTrait;
 use PHPUnit\Framework\Attributes\Group;
@@ -79,6 +80,43 @@ final class PayrollJmhzDeferredAnnualSettlementFlowTest extends TestCase
     }
 
     /**
+     * Typ 5 = příjem po skončení (znak 1) + roční zúčtování po skončení
+     * (znak 4), číselník 10548. Doplatek zúčtovaný v lednu 2026 po skončení
+     * v roce 2025: ELDP jako u typu 1 (kód s „P", 0 dnů, vyměřovací základ
+     * doplatku, Pravidla podání JMHZ 1.4.5, kap. 6 bod 1 c), pojistné za
+     * měsíc zúčtování a k tomu roční údaje jako u typu 4 (bod 3).
+     */
+    public function testIncomeWithAnnualSettlementAfterTerminationIsReportedAsDeferredTypeFive(): void
+    {
+        $componentId = $this->createComponent('ODMENA_PO_SKONCENI', 'base_wage', 'regular');
+        $mappings = $this->container->get(PayrollComponentJmhzMappingRepository::class);
+        self::assertInstanceOf(PayrollComponentJmhzMappingRepository::class, $mappings);
+        $mappings->put($this->supplierId, $componentId, '10329', null, $this->actors[0]);
+        $person = $this->endedInPreviousYear('Pavel Doplatkový', '1976-11-08', 'male', 4);
+        $this->annualRequest($person['employee_id'], 'not_requested');
+        $this->confirmDeferred($person['employment_id'], '5');
+        $this->createApprovedInput($person, $componentId, 1_200_000, 'bonus-' . $person['employment_id'], self::PERIOD_START);
+
+        $xml = $this->submission('income-and-annual-after-termination');
+
+        self::assertSame(1, preg_match('#<form:odlozenyPrijem[^>]*><form:typ>5</form:typ>#', $xml), $xml);
+        self::assertStringContainsString(
+            '<form:eldpObdobi><form:obdobi><form:mesic>1</form:mesic><form:rok>2026</form:rok>'
+                . '<form:eldpSeznam><form:eldp><form:kod>1P+</form:kod><form:platnostOd>2026-01-01</form:platnostOd>'
+                . '<form:platnostDo>2026-01-31</form:platnostDo><form:pocetDnu>0</form:pocetDnu>'
+                . '<form:vymerovaciZaklad>12000</form:vymerovaciZaklad></form:eldp></form:eldpSeznam>',
+            $xml,
+        );
+        self::assertStringContainsString('<form:castkaOdvodPojistneho>12000</form:castkaOdvodPojistneho>', $xml);
+        self::assertStringContainsString('<form:zuctovanoCelkem>12000</form:zuctovanoCelkem>', $xml);
+        self::assertStringContainsString(
+            '<form:rocniUhrny><form:rocniZuctovaniZadost>false</form:rocniZuctovaniZadost>'
+                . '<form:rocniZuctovaniProvedeno>false</form:rocniZuctovaniProvedeno></form:rocniUhrny>',
+            $xml,
+        );
+    }
+
+    /**
      * Typ 4 se týká všech druhů činnosti kromě 10 (Pravidla podání JMHZ
      * 1.4.5, kap. 6), tedy i dohody. Zdravotní pojistné z příjmu po skončení
      * dohody ale patří do měsíce jejího konce a měsíc bez příjmu výpočet
@@ -119,7 +157,9 @@ final class PayrollJmhzDeferredAnnualSettlementFlowTest extends TestCase
 
         self::assertSame(422, $response->getStatusCode());
         self::assertStringContainsString('leden, únor nebo březen', (string) $response->getBody());
+        self::assertSame(422, $this->saveDeferred($person['employment_id'], '5', '2026-05')->getStatusCode());
         self::assertSame(200, $this->saveDeferred($person['employment_id'], '4', '2026-03')->getStatusCode());
+        self::assertSame(200, $this->saveDeferred($person['employment_id'], '5', '2026-02')->getStatusCode());
     }
 
     /**

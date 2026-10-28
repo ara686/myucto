@@ -19,12 +19,12 @@ final class PayrollDeferredIncomeRepository
 {
     /**
      * Typy číselníku „Typ odloženého příjmu", které aplikace zpracuje sama:
-     * 1 příjem po skončení a 4 roční zúčtování po skončení (Pravidla podání
-     * JMHZ 1.4.5, kap. 6 body 1 a 3). Náhrada mzdy při neplatném skončení
-     * (2, 3, 6) má vlastní pravidla pro ELDP a pojistné a potvrdit ji tu
-     * nejde.
+     * 1 příjem po skončení, 4 roční zúčtování po skončení a jejich spojení 5
+     * (Pravidla podání JMHZ 1.4.5, kap. 6 body 1 a 3, číselník 10548).
+     * Náhrada mzdy při neplatném skončení (2, 3, 6) má vlastní pravidla pro
+     * ELDP a pojistné a potvrdit ji tu nejde.
      */
-    public const SUPPORTED_TYPES = ['1', '4'];
+    public const SUPPORTED_TYPES = ['1', '4', '5'];
 
     /**
      * Typy, které se hlásí bez zúčtovaného příjmu. Mzdový běh si skončený
@@ -32,6 +32,19 @@ final class PayrollDeferredIncomeRepository
      * (typ 4: 10286 = 0, Pravidla podání JMHZ 1.4.5, kap. 6 bod 3).
      */
     public const TYPES_WITHOUT_INCOME = ['4'];
+
+    /**
+     * Typy s příjmem zúčtovaným po skončení, jehož pojistné patří do měsíce
+     * zúčtování a ELDP nese kód s „P" (kap. 6 bod 1): typ 1 a typ 5
+     * (příjem po skončení spolu s ročním zúčtováním po skončení).
+     */
+    public const TYPES_WITH_POST_TERMINATION_INCOME = ['1', '5'];
+
+    /**
+     * Typy s ročním zúčtováním po skončení, hlásí se jen za leden až březen
+     * (kap. 6 bod 3 b).
+     */
+    public const TYPES_WITH_ANNUAL_SETTLEMENT = ['4', '5'];
 
     public function __construct(private readonly Connection $db) {}
 
@@ -96,13 +109,15 @@ final class PayrollDeferredIncomeRepository
         if (!in_array($deferredType, self::SUPPORTED_TYPES, true)) {
             throw new \InvalidArgumentException(
                 'Aplikace zpracuje sama odložený příjem typu 1 (příjem po skončení'
-                . ' zaměstnaneckého poměru) a typu 4 (roční zúčtování po skončení).'
+                . ' zaměstnaneckého poměru), 4 (roční zúčtování po skončení) a 5 (obojí).'
                 . ' Náhradu mzdy při neplatném skončení podejte přes ePortál ČSSZ.',
             );
         }
         // Pravidla podání JMHZ 1.4.5, kap. 6 bod 3 b): roční zúčtování po
         // skončení se hlásí za rozhodné období leden až březen.
-        if ($deferredType === '4' && !in_array(substr($periodStart, 5, 2), ['01', '02', '03'], true)) {
+        if (in_array($deferredType, self::TYPES_WITH_ANNUAL_SETTLEMENT, true)
+            && !in_array(substr($periodStart, 5, 2), ['01', '02', '03'], true)
+        ) {
             throw new \InvalidArgumentException(
                 'Roční zúčtování po skončení pracovního vztahu se hlásí jen za leden, únor nebo březen.',
             );
@@ -119,7 +134,9 @@ final class PayrollDeferredIncomeRepository
         // Zdravotní pojistné z příjmu po skončení dohody patří do měsíce jejího
         // konce; pozdější měsíc bez příjmu výpočet nespočítá (pojistka je
         // i v běhu, `post_termination_annual_settlement_agreement_unsupported`).
-        if ($deferredType === '4' && in_array($row['relation_type'], ['dpp', 'dpc'], true)) {
+        if (in_array($deferredType, self::TYPES_WITHOUT_INCOME, true)
+            && in_array($row['relation_type'], ['dpp', 'dpc'], true)
+        ) {
             throw new \InvalidArgumentException(
                 'Roční zúčtování po skončení dohody o provedení práce nebo o pracovní činnosti'
                 . ' aplikace sama nevykáže. Hlášení za dohodu podejte ručně přes ePortál ČSSZ.',

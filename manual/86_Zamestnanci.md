@@ -1299,7 +1299,12 @@ a v měsíci se nezúčtovává žádný příjem. Mzdový běh si skončený vz
 i bez mzdových vstupů a JMHZ ho vykáže formulářem Odložený příjem typu 4
 s nulovým příjmem, 0 dny pojištění a evidenčním listem bez kódu; údaje
 ročního zúčtování převezme z agendy Roční zúčtování. Vyplácíte-li v témže
-měsíci i doplatek, typ 4 nestačí a hlášení vztah zastaví. U dohody
+měsíci i doplatek, typ 4 nestačí a hlášení vztah zastaví: potvrďte druh
+*Příjem po skončení s ročním zúčtováním (5)*. Hlášení pak nese evidenční list
+jako u příjmu po skončení (0 dnů, kód s „P" na druhé pozici, vyměřovací
+základ doplatku), pojistné za měsíc zúčtování a k tomu údaje ročního
+zúčtování; pravidla pro dohody a zaměstnání malého rozsahu jsou stejná jako
+u druhu 1. U dohody
 o provedení práce nebo o pracovní činnosti aplikace typ 4 nepotvrdí: měsíc
 bez příjmu po skončení dohody zdravotní pojištění nespočítá, hlášení za ni
 podejte ručně přes ePortál ČSSZ.

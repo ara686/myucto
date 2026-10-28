@@ -172,6 +172,15 @@ final class JmhzEldpEvidenceBuilder
      */
     private const DEFERRED_TYPES_WITHOUT_ELDP = ['4'];
 
+    /**
+     * Typy s příjmem po skončení, jejichž ELDP za měsíc zúčtování nese kód
+     * s „P", 0 dnů a vyměřovací základ zúčtovaného příjmu (kap. 6 bod 1):
+     * typ 1 a typ 5. Typ 5 je typ 1 spolu s ročním zúčtováním po skončení
+     * (číselník 10548, „znak 1 + znak 4"); roční zúčtování se do ELDP
+     * nepromítá, nese ho souhrn zaměstnance.
+     */
+    private const DEFERRED_TYPES_WITH_INCOME_ELDP = ['1', '5'];
+
     /** @var array{manifest_sha256:string,payload:array<string,mixed>}|null */
     private ?array $specManifest = null;
 
@@ -1248,10 +1257,18 @@ final class JmhzEldpEvidenceBuilder
         array $confirmation,
     ): JmhzEldpEvidenceSnapshot {
         $withoutEldp = in_array($deferredType, self::DEFERRED_TYPES_WITHOUT_ELDP, true);
-        if ($deferredType !== '1' && !$withoutEldp) {
+        if (!$withoutEldp && !in_array($deferredType, self::DEFERRED_TYPES_WITH_INCOME_ELDP, true)) {
             $this->invalid(
                 'jmhz_deferred_income_type_unsupported',
-                'Aplikace zpracuje sama jen odložený příjem typu 1 a 4.',
+                'Aplikace zpracuje sama jen odložený příjem typu 1, 4 a 5.',
+            );
+        }
+        if (in_array($deferredType, ['4', '5'], true)
+            && !in_array(substr($periodStart, 5, 2), ['01', '02', '03'], true)
+        ) {
+            $this->invalid(
+                'jmhz_deferred_annual_settlement_period_invalid',
+                'Roční zúčtování po skončení se hlásí jen za leden, únor nebo březen.',
             );
         }
         if (!$withoutEldp) {
@@ -1398,12 +1415,6 @@ final class JmhzEldpEvidenceBuilder
         array $confirmation,
     ): JmhzEldpEvidenceSnapshot {
         $month = (int) substr($periodStart, 5, 2);
-        if ($month < 1 || $month > 3) {
-            $this->invalid(
-                'jmhz_deferred_annual_settlement_period_invalid',
-                'Roční zúčtování po skončení se hlásí jen za leden, únor nebo březen.',
-            );
-        }
         foreach (['assessment_base_minor_units', 'capped_assessment_base_minor_units'] as $key) {
             if ($this->nonNegativeInt($relationship[$key] ?? null, $key) !== 0) {
                 $this->invalid(
