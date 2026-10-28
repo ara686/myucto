@@ -485,6 +485,9 @@ final class AnnualTaxSettlementService implements AnnualSettlementPerformer
             'deductions' => $annualClaims['deductions'],
             'spouse' => $annualClaims['spouse_row'],
             'dependants' => $this->claims->dependants($supplierId, $employeeId),
+            // Zákonné ocenění odběrů (§ 15 odst. 1) pro formulář — obrazovka si
+            // ho nesmí držet natvrdo, je ročníkové.
+            'statute' => ['counted_donation_values' => self::countedDonationValues()],
         ];
 
         try {
@@ -554,6 +557,19 @@ final class AnnualTaxSettlementService implements AnnualSettlementPerformer
             'annual_claims' => $annualClaimsPayload,
             'already_settled' => $settled,
         ];
+    }
+
+    /** @return array<string,int> ocenění odběru podle druhu (§ 15 odst. 1) */
+    private static function countedDonationValues(): array
+    {
+        $values = [];
+        foreach (AnnualNonTaxableKind::cases() as $kind) {
+            if ($kind->isCountedDonation()) {
+                $values[$kind->value] = AnnualNonTaxableStatute::countedDonationValue($kind);
+            }
+        }
+
+        return $values;
     }
 
     /**

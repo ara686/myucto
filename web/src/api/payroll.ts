@@ -6235,6 +6235,9 @@ export interface PayrollAnnualClaimsSet {
 
 export interface PayrollAnnualClaimsView extends PayrollAnnualClaimsSet {
   dependants: PayrollAnnualDependant[]
+  statute: {
+    counted_donation_values: Partial<Record<PayrollAnnualDeductionKind, number>>
+  }
 }
 
 export interface PayrollAnnualSettlementStoredOutcome {
