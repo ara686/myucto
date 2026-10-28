@@ -765,6 +765,23 @@ describe('TimeAttendance', () => {
     expect(wrapper.get('[data-test="work-summary-guidance"]').text()).toContain('payroll.remediation.work.steps.terms')
   })
 
+  // Chybějící kalendář vztahu server hlásí za každý den; v září to bylo
+  // 30 stejných odstavců s tlačítkem pod sebou.
+  it('tentýž problém pracovního souhrnu za více dní ukáže jen jednou', async () => {
+    const item = row(12, 'Syntetická osoba')
+    item.jmhz_work_summary.preview.issues = [1, 2, 3].map(day => ({
+      code: 'calendar_day_not_uniquely_covered',
+      message: `Den 2026-09-0${day} nemá pracovní kalendář.`,
+    })) as never[]
+    m.timeMonth.mockResolvedValue({ items: [item] })
+    const wrapper = mount(TimeAttendance, { global: { stubs: { teleport: true } } })
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text() === 'payroll.time.approve')!.trigger('click')
+
+    expect(wrapper.findAll('[data-test="work-summary-guidance"]')).toHaveLength(1)
+    expect(wrapper.text()).toContain('Den 2026-09-03 nemá pracovní kalendář.')
+  })
+
   it('na mobilu zvýrazní viditelnou akci docházky místo skryté mřížky', async () => {
     const item = row(12, 'Syntetická osoba')
     item.jmhz_work_summary.preview.issues = [{ code: 'worked_intervals_overlap', message: 'Synthetic overlap' }] as never[]

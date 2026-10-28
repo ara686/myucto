@@ -281,6 +281,21 @@ describe('PeopleList toolbar and shared employee creation', () => {
   })
 
   /*
+   * Šest tlačítek vedle hledání a filtru zabralo celou šířku řádku a filtr
+   * (pevných 14rem) přetekl přes hledání i první tlačítko. Hledání s filtrem
+   * si drží minimální šířku, tlačítka se zalomí.
+   */
+  it('nedovolí tlačítkům stlačit hledání a filtr pod jejich šířku', async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="people-toolbar-filters"]').classes()).toContain('lg:min-w-[30rem]')
+    const buttons = wrapper.get('[data-test="quick-inputs-link"]').element.parentElement!
+    expect(buttons.classList.contains('flex-wrap')).toBe(true)
+    expect(buttons.classList.contains('min-w-0')).toBe(true)
+  })
+
+  /*
    * Zúžení nesmí zůstat v prohlížeči: kdyby hledal jen v načtené stránce,
    * o člověku ze třetí stránky by obrazovka tvrdila, že neexistuje.
    */
@@ -1016,6 +1031,36 @@ describe('PeopleList toolbar and shared employee creation', () => {
     await flushPromises()
     expect(focus).toHaveBeenCalledExactlyOnceWith(44, 'jmhz_profile', 'jmhz_deep_mining_work_applies')
     expect(m.routerReplace).toHaveBeenCalledWith({ query: { employment: '44' } })
+    wrapper.unmount()
+  })
+
+  /*
+   * Blokace „chybí počáteční roční úhrny" vede na Počáteční stavy. Ty karta
+   * vztahu kreslí jen u hlavního vztahu a jen se známým začátkem vedení mezd,
+   * takže doskok musí počkat na capabilities a vybrat hlavní vztah.
+   */
+  it('doskočí na počáteční stavy hlavního vztahu až se známým začátkem mezd', async () => {
+    m.routeQuery.person = '4'
+    m.routeQuery.panel = 'opening_balances'
+    const focus = vi.fn()
+    m.person.mockResolvedValue({
+      ...person(4, 'Delta Nová', true, true),
+      employments: [{ id: 43, is_primary: false }, { id: 44, is_primary: true }],
+    })
+    const wrapper = mountPage(defineComponent({
+      props: ['employment', 'payrollStartPeriod'],
+      setup(props, { expose }) {
+        expose({
+          employmentId: computed(() => props.employment.id),
+          isPrimary: computed(() => props.employment.is_primary === true),
+          focusSection: (panel: string) => focus(props.employment.id, panel, props.payrollStartPeriod),
+        })
+        return () => null
+      },
+    }))
+    await flushPromises()
+
+    expect(focus).toHaveBeenCalledExactlyOnceWith(44, 'opening_balances', '2026-01-01')
     wrapper.unmount()
   })
 

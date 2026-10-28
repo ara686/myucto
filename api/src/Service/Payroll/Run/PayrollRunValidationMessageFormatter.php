@@ -23,7 +23,11 @@ final class PayrollRunValidationMessageFormatter
         $details = [];
         foreach ($issues as $issue) {
             if (is_string($issue) && $issue !== '') {
-                $details[$issue] = PayrollRunIssueGuidance::describe($issue, $employeeId);
+                $detail = PayrollRunIssueGuidance::describe($issue, $employeeId);
+                // Klíčem je to, co účetní uvidí: dvě příčiny téže věci (chybějící
+                // sada exekučních srážek) by jinak daly u osoby dva stejné řádky.
+                $key = $detail['entity_type'] . ':' . $detail['entity_id'] . ':' . $detail['remediation_path'] . ':' . $detail['message'];
+                $details[$key] = $detail;
             }
         }
         return array_values($details === []
