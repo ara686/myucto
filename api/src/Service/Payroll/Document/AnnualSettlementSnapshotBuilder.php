@@ -230,6 +230,10 @@ final class AnnualSettlementSnapshotBuilder
             ? []
             : self::object($trace['external_certificates'], 'result.trace.external_certificates');
 
+        // Starší revize roční položky nenesou — rozpis je pak prázdný a sekce
+        // se na dokladu neukáže.
+        $claims = AnnualClaimsPrintBreakdown::fromResult($result);
+
         return new AnnualSettlementDocumentData(
             $snapshotHash,
             self::integerValue($snapshot['tax_year'] ?? null, 'tax_year'),
@@ -306,6 +310,11 @@ final class AnnualSettlementSnapshotBuilder
                 $external['tax_bonus_minor_units'] ?? 0,
                 'result.trace.external_certificates.tax_bonus_minor_units',
             ),
+            $claims['present'],
+            $claims['tax_base_before_deductions_minor_units'],
+            $claims['rows'],
+            $claims['non_taxable_deductions_minor_units'],
+            $claims['enforcement_credit_minor_units'],
         );
     }
 
