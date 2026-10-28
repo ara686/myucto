@@ -12510,6 +12510,7 @@
         "eldp_xml_snapshot_mismatch": "The pension record XML does not match the exact source snapshot. Prepare the pension record again.",
         "eldp_xml_source_invalid": "The source used to build the pension record XML has an invalid or incomplete format; support must investigate this technical error.",
         "eldp_xsd_validation_failed": "The generated pension record XML did not pass the pinned XSD schema; support must investigate this technical error.",
+        "jmhz_2027_source_missing": "The report for periods from January 2027 requires a new item that payroll does not yet have a source for; the report cannot be built without it.",
         "jmhz_acknowledgement_class_mismatch": "The VREP acknowledgement refers to a different submission class than the one that was sent.",
         "jmhz_acknowledgement_correlation_missing": "The VREP acknowledgement carries no usable CorrelationID; the submission could no longer be traced or closed.",
         "jmhz_acknowledgement_endpoint_untrusted": "The VREP acknowledgement refers to a query address outside HTTPS.",

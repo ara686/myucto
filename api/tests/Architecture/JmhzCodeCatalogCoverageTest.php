@@ -54,6 +54,8 @@ final class JmhzCodeCatalogCoverageTest extends TestCase
         'eldp_statement_id' => 'table',
         'eldp_submission' => 'key',
         'eldp_type' => 'field',
+        // Blok údajů verze 2027 v normalizovaném dokumentu (resolver), ne kód blokace.
+        'jmhz_2027' => 'field',
         'jmhz_activity' => 'field',
         'jmhz_amount' => 'field',
         'jmhz_amount_minor' => 'field',
