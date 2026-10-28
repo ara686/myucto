@@ -10,6 +10,7 @@ const m = vi.hoisted(() => ({
   bulkSetAnnualSettlementRequestStatus: vi.fn(),
   settleAnnualSettlement: vi.fn(),
   saveAnnualSettlementCertificates: vi.fn(),
+  saveAnnualSettlementAnnualClaims: vi.fn(),
   downloadDocument: vi.fn(),
   enqueueAnnualDocumentBatch: vi.fn(),
   annualDocumentBatch: vi.fn(),
@@ -37,6 +38,7 @@ vi.mock('@/api/payroll', () => ({
     bulkSetAnnualSettlementRequestStatus: m.bulkSetAnnualSettlementRequestStatus,
     settleAnnualSettlement: m.settleAnnualSettlement,
     saveAnnualSettlementCertificates: m.saveAnnualSettlementCertificates,
+    saveAnnualSettlementAnnualClaims: m.saveAnnualSettlementAnnualClaims,
     downloadDocument: m.downloadDocument,
     enqueueAnnualDocumentBatch: m.enqueueAnnualDocumentBatch,
     annualDocumentBatch: m.annualDocumentBatch,
@@ -225,6 +227,7 @@ function mountPage() {
         ActionBar: actionBarStub,
         EmptyState: emptyStateStub,
         SavedFiltersMenu: true,
+        RouterLink: true,
       },
     },
   })
@@ -971,5 +974,136 @@ describe('Roční zúčtování', () => {
       .toContain('Syntetická osoba 3')
     expect(wrapper.find('[data-test="annual-settlement-bulk-failures"]').exists()).toBe(false)
     confirm.mockRestore()
+  })
+
+  /**
+   * Ročně uplatňované položky: načtou se z náhledu, odběry se oceňují pevnou
+   * sazbou a PUT nenese id, částku odběrů ani měsíce mimo úroky.
+   */
+  it('ročně uplatňované položky vykreslí a uloží ve správném tvaru', async () => {
+    const claims = {
+      deductions: [
+        {
+          id: 12, kind: 'housing_interest', amount_minor_units: 15_000_000, quantity: null,
+          months_mask: 7, housing_acquired_before_2021: true, counterparty_name: 'Banka',
+          evidence_status: 'verified', evidence_reference: 'potvrzení', note: null,
+        },
+        {
+          id: 13, kind: 'blood_donation', amount_minor_units: null, quantity: 2,
+          months_mask: null, housing_acquired_before_2021: false, counterparty_name: null,
+          evidence_status: 'unverified', evidence_reference: null, note: null,
+        },
+      ],
+      spouse: {
+        spouse_dependant_id: 5, child_dependant_id: 6, months_mask: 4095, ztp_p_months_mask: 3,
+        spouse_income_minor_units: 4_000_000, evidence_status: 'verified',
+        evidence_reference: 'doklad', note: null,
+      },
+      dependants: [
+        { id: 5, relation: 'spouse', full_name: 'Manželka', birth_date: '1990-01-01', ztp_p: true },
+        { id: 6, relation: 'child_own', full_name: 'Dítě', birth_date: '2025-05-05', ztp_p: false },
+      ],
+    }
+    m.previewAnnualSettlement.mockResolvedValue(previewResponse({ annual_claims: claims }))
+    m.saveAnnualSettlementAnnualClaims.mockResolvedValue({
+      deductions: claims.deductions,
+      spouse: claims.spouse,
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+    await wrapper.find('[data-test="annual-settlement-person"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.findAll('[data-test="annual-settlement-deduction"]')).toHaveLength(2)
+    expect(wrapper.find('[data-test="annual-settlement-deduction-evaluation"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="annual-settlement-spouse-form"]').exists()).toBe(true)
+    // Manželka má ZTP/P, takže se nabízí druhá řada měsíců.
+    expect(wrapper.find('[data-test="annual-settlement-spouse-ztp-p"]').exists()).toBe(true)
+    const housingMonths = wrapper.findAll('[data-test="annual-settlement-deduction-month"]')
+    expect(housingMonths.filter(box => (box.element as HTMLInputElement).checked)).toHaveLength(3)
+
+    await wrapper.find('[data-test="annual-settlement-save-claims"]').trigger('click')
+    await flushPromises()
+
+    const [, , payload] = m.saveAnnualSettlementAnnualClaims.mock.calls[0]
+    expect(payload.deductions[0]).toEqual({
+      kind: 'housing_interest',
+      amount_minor_units: 15_000_000,
+      quantity: null,
+      months_mask: 7,
+      housing_acquired_before_2021: true,
+      counterparty_name: 'Banka',
+      evidence_status: 'verified',
+      evidence_reference: 'potvrzení',
+      note: null,
+    })
+    expect(payload.deductions[1].amount_minor_units).toBeNull()
+    expect(payload.deductions[1].quantity).toBe(2)
+    expect(payload.deductions[1].months_mask).toBeNull()
+    expect(payload.deductions[1]).not.toHaveProperty('id')
+    expect(payload.spouse).toMatchObject({
+      spouse_dependant_id: 5,
+      child_dependant_id: 6,
+      months_mask: 4095,
+      ztp_p_months_mask: 3,
+      spouse_income_minor_units: 4_000_000,
+    })
+  })
+
+  it('bez manžela v evidenci ukáže nápovědu s odkazem na kartu zaměstnance', async () => {
+    m.previewAnnualSettlement.mockResolvedValue(previewResponse({
+      annual_claims: { deductions: [], spouse: null, dependants: [] },
+    }))
+    const wrapper = mountPage()
+    await flushPromises()
+    await wrapper.find('[data-test="annual-settlement-person"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="annual-settlement-spouse-missing"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="annual-settlement-spouse-form"]').exists()).toBe(false)
+  })
+
+  it('rozpis nezdanitelných částí a důvody blokátoru slevy na manžela vypíše', async () => {
+    m.previewAnnualSettlement.mockResolvedValue(previewResponse({
+      result: result({
+        tax_base_before_deductions_minor_units: 60_000_000,
+        non_taxable_deductions_minor_units: 1_000_000,
+        enforcement_credit_minor_units: 50_000,
+        trace: {
+          non_taxable: {
+            donation: {
+              claimed_minor_units: 500_000, threshold_met: true,
+              cap_minor_units: 9_000_000, deducted_minor_units: 500_000,
+            },
+          },
+          credits: { spouse: { months: 12, ztp_p_months: 2, amount_minor_units: 2_494_800 } },
+        },
+      }),
+    }))
+    const wrapper = mountPage()
+    await flushPromises()
+    await wrapper.find('[data-test="annual-settlement-person"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="annual-settlement-base-before-deductions"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="annual-settlement-trace-donation"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="annual-settlement-trace-spouse"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="annual-settlement-trace-enforcement"]').exists()).toBe(true)
+
+    m.previewAnnualSettlement.mockResolvedValue(previewResponse({
+      result: result({
+        performed: false,
+        blockers: ['spouse_credit_conditions_not_met'],
+        trace: { spouse_credit_failures: ['spouse_income_over_limit', 'neznamy_kod'] },
+      }),
+    }))
+    const blocked = mountPage()
+    await flushPromises()
+    await blocked.find('[data-test="annual-settlement-person"]').trigger('click')
+    await flushPromises()
+
+    const failures = blocked.find('[data-test="annual-settlement-spouse-failures"]')
+    expect(failures.text()).toContain('payroll.annual_settlement.spouse_failure.spouse_income_over_limit')
+    expect(failures.text()).not.toContain('neznamy_kod')
   })
 })
