@@ -789,6 +789,7 @@ Kromě konceptu umí asistent s vydanými doklady totéž, co detail faktury v a
 | `uncancel_invoice` | zruší interní storno omylem stornované faktury nebo zálohy |
 | `clone_invoice` | založí koncept jako kopii dokladu |
 | `create_final_invoice_from_proforma` | ze zaplacené zálohy založí koncept finální faktury s odečtenou zálohou |
+| `list_invoice_advance_drawdown_candidates`, `apply_invoice_advance_drawdown`, `remove_invoice_advance_drawdown` | postupné čerpání jedné zálohy víc fakturami (milníky): na koncept faktury odečte zadanou část zálohy, nebo odpočet odebere |
 | `list_invoice_advance_candidates`, `list_proforma_final_candidates`, `link_invoice_advance`, `unlink_invoice_advance` | ruční propojení faktury se zálohou a jeho zrušení |
 | `preview_invoice_penalty`, `create_invoice_penalty` | výpočet úroku z prodlení a koncept penalizační faktury |
 | `add_invoice_payment`, `delete_invoice_payment`, `unmark_invoice_paid` | evidence částečné i celé úhrady, smazání úhrady, vrácení stavu zaplaceno |

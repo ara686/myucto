@@ -110,6 +110,26 @@ kterékoli strany:
 **Jak poznáte, že je hotovo:** zobrazí se zpráva „Záloha propojena.“ Tlačítko se nabídne jen
 tehdy, když u daného odběratele existuje vhodný nespárovaný protějšek.
 
+### 15.4.2 Čerpat jednu zálohu postupně víc fakturami (milníky)
+
+Typicky smlouva o dílo: klient zaplatí při podpisu zálohu 30 % z ceny díla a každá faktura za
+milník pak odečte 30 % své ceny, dokud se záloha nevyčerpá. Záloha musí být zaplacená a mít
+vystavený daňový doklad k přijaté platbě.
+
+1. Založte běžnou fakturu s položkami milníku v plné ceně a uložte ji jako koncept.
+2. V detailu konceptu klikněte na **Odečíst zálohu**, vyberte zálohovou fakturu a zadejte
+   čerpanou částku včetně DPH. U zálohy vidíte, kolik z ní ještě zbývá.
+3. Na faktuře přibude záporná položka „Odpočet zálohy“ se základem i DPH v poměru daňového
+   dokladu k záloze. Fakturu zkontrolujte a vystavte.
+
+Další milníky čerpají stejnou zálohu stejným postupem. Faktura, která zálohu vyčerpá, odečte
+přesný zbytek základu i daně, takže součet odpočtů sedí na daňový doklad k platbě. Víc, než ze
+zálohy zbývá, odečíst nejde. Odpočet z konceptu odeberete tlačítkem **Odebrat čerpání zálohy**.
+
+**Jak poznáte, že je hotovo:** faktura má odkaz na zálohovou fakturu a v položkách odpočet
+zálohy. Při zaúčtování každá faktura zúčtuje ze zálohy (MD 324 / D 311) jen základ, který sama
+odečetla, a zbytek zálohy zůstává na 324 pro další faktury.
+
 ## 15.5 Krok za krokem: výkaz víceprací a materiálu
 
 Fakturujete-li za hodiny, můžete ke každé hodinové položce přidat výkaz, který se vytiskne
@@ -183,7 +203,7 @@ Rozdíl mezi stornem a dobropisem a zaúčtování dobropisu viz [§ 15.9.9](#15
 | „Fakturu nelze stornovat - nejdřív vyřešte pokladní doklad, kterým byla hotově inkasována (…)“ | Pokladní doklad nejde zrušit (třeba kvůli uzavřenému období) | Vyřešte pokladní doklad v Pokladně a storno zopakujte |
 | „Tento odkaz byl již použit nebo není platný“ | Schvalovací odkaz je jednorázový | Pošlete výkaz ke schválení znovu |
 | Uložení faktury s prodejem majetku skončí chybou | Karta majetku už byla prodána jiným dokladem, nebo je vyřazená | Vyberte jinou kartu, viz [§ 15.9.3](#1593-polozky) |
-| Doklad zálohy nelze automaticky zaúčtovat | K proformě existuje zároveň daňový doklad k platbě i vyúčtovací faktura, nebo víc vyúčtovacích faktur | Dořešte ručním zápisem, viz [§ 15.9.8](#1598-zalohova-faktura-a-danovy-doklad) |
+| Doklad zálohy nelze automaticky zaúčtovat | Vyúčtovací faktura neodečítá zálohu podle daňového dokladu k platbě, faktury dohromady odečítají víc, než ze zálohy bylo, chybí zaúčtovaná úhrada zálohy, nebo je k proformě bez daňového dokladu víc vyúčtovacích faktur | Opravte odpočet ([§ 15.4.2](#1542-cerpat-jednu-zalohu-postupne-vic-fakturami-milniky)), zaúčtujte úhradu zálohy, nebo dořešte ručním zápisem, viz [§ 15.9.8](#1598-zalohova-faktura-a-danovy-doklad) |
 | Pole data se neuloží | Neplatné datum (např. `31. 2.`) | Opravte datum |
 
 ## 15.9 Podrobnosti a pravidla
@@ -899,11 +919,17 @@ Z pohledu [Účetního deníku](52_Ucetni_denik.md) fungují tři doklady záloh
   skutečně **přijaté** zálohy, ne nominální částky proformy, takže i částečně zaplacená nebo
   jinak vyrovnaná proforma se zúčtuje správně.
 
+- **Zálohu s daňovým dokladem k platbě čerpanou postupně víc fakturami** (viz
+  [§ 15.4.2](#1542-cerpat-jednu-zalohu-postupne-vic-fakturami-milniky)) zúčtuje každá faktura
+  jen ve výši základu, který odečetla. Součet odpočtů všech faktur nesmí přesáhnout daňový
+  doklad k platbě a úhrada zálohy musí být zaúčtovaná.
+
 > [!WARNING]
-> Mimo automatiku zůstává proforma, ke které existuje **zároveň** daňový doklad k přijaté
-> platbě i vyúčtovací faktura, a proforma navázaná na **víc než jednu** vyúčtovací fakturu.
-> V obou případech by částka zúčtování zálohy nebyla jednoznačná, systém takový doklad
-> automaticky nezaúčtuje a je potřeba dořešit ho ručním zápisem.
+> Mimo automatiku zůstává proforma **bez** daňového dokladu k platbě navázaná na **víc než
+> jednu** vyúčtovací fakturu, vyúčtovací faktura s daňovým dokladem, která zálohu neodečítá
+> nebo odečítá víc, než daňové doklady přiznaly, a postupné čerpání, ke kterému chybí
+> zaúčtovaná úhrada zálohy. Částka zúčtování zálohy by nebyla jednoznačná, systém takový
+> doklad automaticky nezaúčtuje a je potřeba dořešit ho ručním zápisem.
 
 ### 15.9.9 Storno vs. dobropis
 

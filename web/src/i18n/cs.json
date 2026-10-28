@@ -22821,6 +22821,21 @@
       "proforma": "Zálohová faktura",
       "parent": "Původní faktura"
     },
+    "advance_drawdown": {
+      "action": "Odečíst zálohu",
+      "tooltip": "Odečíst část zaplacené zálohy (postupné čerpání)",
+      "remove": "Odebrat čerpání zálohy",
+      "remove_confirm": "Odebrat odpočet zálohy z této faktury?",
+      "modal_title": "Odečíst zálohu",
+      "no_candidates": "Žádná záloha k čerpání (nutná zaplacená záloha se daňovým dokladem pro stejného odběratele a měnu).",
+      "total": "celkem",
+      "available": "k čerpání",
+      "amount": "Odečítaná částka (s DPH)",
+      "amount_hint": "Maximálně zbývající nečerpaná částka vybrané zálohy.",
+      "confirm": "Odečíst",
+      "applied": "Záloha byla odečtena.",
+      "removed": "Čerpání zálohy bylo odebráno."
+    },
     "advance_link": {
       "none": "Není propojeno se zálohovou fakturou.",
       "none_final": "Není propojeno s daňovým dokladem.",
