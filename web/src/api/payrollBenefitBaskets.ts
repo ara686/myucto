@@ -16,6 +16,7 @@ export const BENEFIT_EXEMPTION_BASKETS: PayrollBenefitExemptionBasket[] = [
   'non_cash_health',
   'non_cash_leisure',
   'old_age_savings',
+  'recreation',
 ]
 
 /** Koše, jejichž rozhodným obdobím je kalendářní měsíc (§ 6 odst. 9 písm. b) a i)). */
@@ -35,6 +36,7 @@ export type BenefitBasketStatus =
   | 'exceeded'
   | 'incomplete'
   | 'limit_unavailable'
+  | 'unlimited'
 
 /**
  * Za jaké období platí LIMIT řádku — což NENÍ totéž jako období součtu.

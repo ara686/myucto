@@ -1867,6 +1867,7 @@ export type PayrollBenefitExemptionBasket =
   | 'old_age_savings'
   | 'meal_per_shift'
   | 'temporary_accommodation'
+  | 'recreation'
 
 /**
  * Čím je nezdanění složky podložené. `not_subject_to_tax` NENÍ osvobození —
@@ -1898,13 +1899,15 @@ export interface PayrollBenefitBasketUsage {
    */
   shift_entitlements: number | null
   entitlement?: PayrollMealShiftEntitlement | null
-  limit_minor: number
+  /** `null` = osvobozeno bez číselného limitu (§ 6 odst. 9 písm. d) bod 2 od 2027). */
+  limit_minor: number | null
   used_before_minor: number
   used_after_minor: number
-  remaining_minor: number
+  remaining_minor: number | null
   exempt_minor: number
   taxable_minor: number
   limit_exceeded: boolean
+  unlimited?: boolean
   allocation?: {
     mode: 'uniform_per_entitlement' | 'no_entitlement'
     entitlement_count: number

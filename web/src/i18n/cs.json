@@ -4583,6 +4583,7 @@
         "empty": "V tomto období nejsou mzdové vstupy",
         "empty_hint": "Přidejte jednorázový vstup, importujte soubor nebo materializujte pravidelné předpisy.",
         "basket_usage": "Koš {basket} podle {statute}: po tomto plnění vyčerpáno {used} z {limit}, zbývá {remaining}.",
+        "basket_usage_unlimited": "Koš {basket} podle {statute} je v tomto roce osvobozený bez limitu, po tomto plnění poskytnuto {used}.",
         "basket_over_limit": "Zákonný limit koše je překročen: osvobozeno {exempt}, zdanitelných {taxable} - nadlimitní část vstupuje do daně i do vyměřovacích základů pojistného.",
         "meal_entitlement_summary": "Nároků celkem {count}: {qualifying} základních a {second} druhých příspěvků.",
         "meal_allocation_uniform": "Auditní rozdělení: {count} nároků × {amount}; na každý nárok limit {limit}, osvobozeno {exempt} a zdanitelné {taxable}.",
@@ -4817,10 +4818,11 @@
       "exemption_basket": {
         "none": "Bez zákonného koše",
         "non_cash_health": "Zdravotní plnění (§ 6 odst. 9 písm. d) bod 1)",
-        "non_cash_leisure": "Rekreace, sport a kultura (§ 6 odst. 9 písm. d) bod 2)",
+        "non_cash_leisure": "Sport, kultura a volný čas, do roku 2026 i rekreace (§ 6 odst. 9 písm. d) bod 2, od 2027 bez limitu)",
         "old_age_savings": "Spoření na stáří a dlouhodobá péče (§ 6 odst. 9 písm. m))",
         "meal_per_shift": "Příspěvek na stravování za směnu (§ 6 odst. 9 písm. b))",
-        "temporary_accommodation": "Přechodné ubytování měsíčně (§ 6 odst. 9 písm. i))"
+        "temporary_accommodation": "Přechodné ubytování měsíčně (§ 6 odst. 9 písm. i))",
+        "recreation": "Rekreace a zájezd od roku 2027 (§ 6 odst. 9 písm. d) bod 3)"
       },
       "exemption_basis": {
         "none": "Bez uvedeného podkladu",
@@ -11685,17 +11687,19 @@
       },
       "basket": {
         "non_cash_health": "Zdravotní plnění",
-        "non_cash_leisure": "Rekreace, sport a kultura",
+        "non_cash_leisure": "Sport, kultura a volný čas",
         "old_age_savings": "Spoření na stáří a dlouhodobá péče",
         "meal_per_shift": "Příspěvek na stravování",
-        "temporary_accommodation": "Přechodné ubytování"
+        "temporary_accommodation": "Přechodné ubytování",
+        "recreation": "Rekreace a zájezd"
       },
       "status": {
         "ok": "V limitu",
         "approaching": "Blíží se limitu",
         "exceeded": "Nad limitem",
         "incomplete": "Neúplný podklad",
-        "limit_unavailable": "Limit není k dispozici"
+        "limit_unavailable": "Limit není k dispozici",
+        "unlimited": "Bez limitu"
       },
       "limit_basis": {
         "tax_year": "Limit platí za zdaňovací období.",

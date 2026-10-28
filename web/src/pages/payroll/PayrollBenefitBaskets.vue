@@ -105,6 +105,7 @@ const STATUS_BADGE: Record<BenefitBasketStatus, string> = {
   exceeded: 'bg-danger-50 text-danger-600',
   incomplete: 'bg-neutral-100 text-neutral-600',
   limit_unavailable: 'bg-neutral-100 text-neutral-600',
+  unlimited: 'bg-success-50 text-success-700',
 }
 
 const BAR_COLOR: Record<BenefitBasketStatus, string> = {
@@ -113,6 +114,7 @@ const BAR_COLOR: Record<BenefitBasketStatus, string> = {
   exceeded: 'bg-danger-500',
   incomplete: 'bg-neutral-300',
   limit_unavailable: 'bg-neutral-300',
+  unlimited: 'bg-success-500',
 }
 
 async function load() {

@@ -4583,6 +4583,7 @@
         "empty": "There are no payroll inputs in this period",
         "empty_hint": "Add a one-off input, import a file or materialize recurring assignments.",
         "basket_usage": "Basket {basket} under {statute}: after this benefit {used} of {limit} is used, {remaining} remains.",
+        "basket_usage_unlimited": "Basket {basket} under {statute} is exempt without a limit this year, {used} provided after this benefit.",
         "basket_over_limit": "The statutory basket limit is exceeded: {exempt} exempt, {taxable} taxable — the excess enters income tax and both insurance assessment bases.",
         "meal_entitlement_summary": "{count} entitlements in total: {qualifying} primary and {second} second contributions.",
         "meal_allocation_uniform": "Audit allocation: {count} entitlements × {amount}; per entitlement limit {limit}, {exempt} exempt and {taxable} taxable.",
@@ -4817,10 +4818,11 @@
       "exemption_basket": {
         "none": "No statutory basket",
         "non_cash_health": "Health benefits (§ 6(9)(d)(1))",
-        "non_cash_leisure": "Recreation, sport and culture (§ 6(9)(d)(2))",
+        "non_cash_leisure": "Sport, culture and leisure, until 2026 also recreation (§ 6(9)(d)(2), unlimited from 2027)",
         "old_age_savings": "Old-age savings and long-term care (§ 6(9)(m))",
         "meal_per_shift": "Meal contribution per shift (§ 6(9)(b))",
-        "temporary_accommodation": "Temporary accommodation per month (§ 6(9)(i))"
+        "temporary_accommodation": "Temporary accommodation per month (§ 6(9)(i))",
+        "recreation": "Recreation and holidays from 2027 (§ 6(9)(d)(3))"
       },
       "exemption_basis": {
         "none": "No basis stated",
@@ -11685,17 +11687,19 @@
       },
       "basket": {
         "non_cash_health": "Health benefits",
-        "non_cash_leisure": "Recreation, sport and culture",
+        "non_cash_leisure": "Sport, culture and leisure",
         "old_age_savings": "Old-age savings and long-term care",
         "meal_per_shift": "Meal contribution",
-        "temporary_accommodation": "Temporary accommodation"
+        "temporary_accommodation": "Temporary accommodation",
+        "recreation": "Recreation and holidays"
       },
       "status": {
         "ok": "Within limit",
         "approaching": "Approaching limit",
         "exceeded": "Above limit",
         "incomplete": "Incomplete data",
-        "limit_unavailable": "Limit unavailable"
+        "limit_unavailable": "Limit unavailable",
+        "unlimited": "No limit"
       },
       "limit_basis": {
         "tax_year": "The limit applies per tax period.",

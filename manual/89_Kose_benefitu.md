@@ -63,6 +63,7 @@ vysvětlení a nadlimitní čerpání odpovídá zdaněné částce.
 | Schválený benefitní vstup nejde upravit | Čerpání je už zapsané v ročním koši | Proveďte opačný zápis a pak zadejte správnou částku. |
 | Schválení vstupu neprojde | Vstup překračuje vlastní firemní strop (**Roční limit** u složky) | Snižte částku, nebo upravte strop složky. |
 | Stav **Neúplný podklad** | Část vstupů je z doby, kdy se koše nezmrazovaly | Nic se nedopočítává; zkontrolujte vstupy ručně. |
+| Stav **Bez limitu** | Koš je v roce osvobozený bez číselného limitu (sport, kultura a volný čas od 2027) | Nic, plnění je celé osvobozené. |
 | Stav **Limit není k dispozici** | Pro období chybí schválená legislativní pravidla, nebo jde o stravování s limitem za směnu | Schvalte pravidla pro rok; u stravování je to v pořádku. |
 | Poznámka „Zmrazený rozpad neodpovídá dnešnímu limitu" | Limit se v pravidlech změnil po schválení vstupů | Čísla zůstávají zmrazená, sedí s vyplacenými mzdami. |
 | „Za zvolené období nikdo koš nečerpal" | Ve filtru nejsou žádné vstupy | Zkuste jiné období, nebo klikněte na **Zrušit filtry**. |
@@ -77,9 +78,33 @@ složku, ale na **úhrn všech plnění daného ustanovení za kalendářní rok
 Aplikace ho drží jako **zákonný koš** vybraný u složky:
 
 - **Zdravotní plnění** (§ 6 odst. 9 písm. d) bod 1): do výše průměrné mzdy,
-- **Rekreace, sport a kultura** (§ 6 odst. 9 písm. d) bod 2): do poloviny
-  průměrné mzdy,
+- **Sport, kultura a volný čas** (§ 6 odst. 9 písm. d) bod 2): do roku 2026
+  včetně rekreace a do poloviny průměrné mzdy; od roku 2027 **bez limitu**
+  (vzdělávací a rekreační zařízení, předškolní zařízení, knihovna, sport,
+  společenské akce, příspěvek na kulturní či sportovní akce a tištěné knihy),
+- **Rekreace a zájezd** (§ 6 odst. 9 písm. d) bod 3): od roku 2027 samostatně,
+  do 20 000 Kč za rok,
 - **Spoření na stáří a dlouhodobá péče** (§ 6 odst. 9 písm. m)): 50 000 Kč.
+
+Koš bez limitu ukazuje přehled se stavem **Bez limitu**: plnění je celé
+osvobozené a nic se nezdaňuje. Koš **Rekreace a zájezd** pro rok 2026 a dřív
+neexistuje; vstup s ním do takového období schválení odmítne.
+
+Od roku 2027 obsahuje výchozí katalog složek také:
+
+- **Rekreace a zájezd** (koš Rekreace a zájezd); složka **Rekreace
+  a volnočasový benefit** se od 2027 jmenuje **Volnočasový benefit** a rekreaci
+  do ní nezařazujte,
+- **Příspěvek na komunitní sociální služby** (§ 6 odst. 9 písm. d) bod 4):
+  osobní asistence, pečovatelská služba, tísňová péče, odlehčovací služba, raná
+  péče, centrum denních služeb a denní stacionář komunitního charakteru;
+  osvobozený bez limitu, klasifikaci potvrdí účetní,
+- **Péče o zdraví zaměstnanců (příloha č. 4 ZDP)** (§ 6 odst. 7 písm. f)): plnění
+  v rozsahu přílohy č. 4 příjmem vůbec není, nevstupuje do daně, pojistného ani
+  do měsíčního hlášení a limit nemá.
+
+Tyto složky se založí, jakmile jsou pro rok 2027 schválená pravidla daně
+z příjmů.
 
 Koš se sčítá za osobu u zaměstnavatele, tedy i napříč souběžnými vztahy
 a napříč složkami téhož koše, a limit bere z pravidel daně z příjmů účinných

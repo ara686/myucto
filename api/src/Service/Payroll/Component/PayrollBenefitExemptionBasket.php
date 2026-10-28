@@ -53,6 +53,23 @@ namespace MyInvoice\Service\Payroll\Component;
  *    měsíc; kolik směn na to je, řekne
  *    {@see \MyInvoice\Service\Payroll\Component\PayrollMealShiftEntitlement}
  *    z publikovaných směn a schválené docházky, ne odhad.
+ *
+ * ── Od zdaňovacího období 2027 (zák. č. 180/2026 Sb., § 30 body 2 až 6) ──────
+ * Písm. d) se přestavělo (doslovné znění k 1. 1. 2027):
+ *
+ *   bod 1 — beze změny, „v úhrnu do výše průměrné mzdy za zdaňovací období",
+ *   bod 2 — vzdělávací a rekreační zařízení, předškolní zařízení, knihovna,
+ *           sport, společenská akce, příspěvek na kulturní či sportovní akce
+ *           a tištěné knihy: limit ZRUŠEN ({@see isUnlimited()}),
+ *   bod 3 — „poskytnutí rekreace nebo zájezdu; tato plnění jsou osvobozena
+ *           v úhrnu do výše 20000 Kč za zdaňovací období" — vlastní koš
+ *           {@see Recreation}, částka v rulesetu,
+ *   bod 4 — příspěvek na komunitní sociální služby, bez limitu (koš nepotřebuje).
+ *
+ * Nový § 6 odst. 7 písm. f) (péče o zdraví v rozsahu přílohy č. 4) příjmem
+ * vůbec není, takže ani do koše nepatří. Přechodné ustanovení § 31 bod 2
+ * váže nové znění písm. d) na plnění poskytnutá od 1. 1. 2027; o roce se proto
+ * rozhoduje podle mzdového období vstupu.
  */
 enum PayrollBenefitExemptionBasket: string
 {
@@ -89,6 +106,16 @@ enum PayrollBenefitExemptionBasket: string
      */
     case TemporaryAccommodation = 'temporary_accommodation';
 
+    /**
+     * § 6 odst. 9 písm. d) bod 3 ZDP ve znění od 1. 1. 2027 — rekreace a zájezd,
+     * úhrn 20 000 Kč za zdaňovací období. Před rokem 2027 samostatný koš
+     * neexistoval (rekreace byla v bodu 2), takže se pro dřívější období nepoužije.
+     */
+    case Recreation = 'recreation';
+
+    /** První zdaňovací období přestavěného § 6 odst. 9 písm. d) ZDP. */
+    public const BENEFITS_2027_FROM_YEAR = 2027;
+
     /** Kanonický klíč limitu koše v rulesetu daně z příjmů (částka v haléřích). */
     public function rulesetKey(): string
     {
@@ -98,7 +125,25 @@ enum PayrollBenefitExemptionBasket: string
             self::OldAgeSavings => 'benefit_exemption.old_age_savings.yearly',
             self::MealPerShift => 'benefit_exemption.meal.per_shift',
             self::TemporaryAccommodation => 'benefit_exemption.temporary_accommodation.monthly',
+            self::Recreation => 'benefit_exemption.recreation.yearly',
         };
+    }
+
+    /**
+     * Je koš v daném zdaňovacím období osvobozený bez číselného limitu?
+     *
+     * Jen písm. d) bod 2 od roku 2027: nové znění u něj větu „v úhrnu do výše
+     * poloviny průměrné mzdy" nemá. Limit se pak z rulesetu vůbec nečte.
+     */
+    public function isUnlimited(int $taxYear): bool
+    {
+        return $this === self::NonCashLeisure && $taxYear >= self::BENEFITS_2027_FROM_YEAR;
+    }
+
+    /** Existuje koš v daném zdaňovacím období? */
+    public function existsIn(int $taxYear): bool
+    {
+        return $this !== self::Recreation || $taxYear >= self::BENEFITS_2027_FROM_YEAR;
     }
 
     /**
@@ -110,7 +155,7 @@ enum PayrollBenefitExemptionBasket: string
     public function accumulatesPerMonth(): bool
     {
         return match ($this) {
-            self::NonCashHealth, self::NonCashLeisure, self::OldAgeSavings => false,
+            self::NonCashHealth, self::NonCashLeisure, self::OldAgeSavings, self::Recreation => false,
             self::MealPerShift, self::TemporaryAccommodation => true,
         };
     }
@@ -139,7 +184,7 @@ enum PayrollBenefitExemptionBasket: string
     public function limitBasis(): string
     {
         return match ($this) {
-            self::NonCashHealth, self::NonCashLeisure, self::OldAgeSavings => 'tax_year',
+            self::NonCashHealth, self::NonCashLeisure, self::OldAgeSavings, self::Recreation => 'tax_year',
             self::TemporaryAccommodation => 'calendar_month',
             self::MealPerShift => 'per_shift',
         };
@@ -153,6 +198,7 @@ enum PayrollBenefitExemptionBasket: string
             self::OldAgeSavings => '§ 6 odst. 9 písm. m) ZDP',
             self::MealPerShift => '§ 6 odst. 9 písm. b) ZDP',
             self::TemporaryAccommodation => '§ 6 odst. 9 písm. i) ZDP',
+            self::Recreation => '§ 6 odst. 9 písm. d) bod 3 ZDP',
         };
     }
 }

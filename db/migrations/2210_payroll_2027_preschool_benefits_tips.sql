@@ -1,5 +1,6 @@
 -- MyÚčto.cz — mzdy 2027 podle zákona č. 180/2026 Sb. (novela ZDP, účinnost
--- 1. 1. 2027): sleva za umístění dítěte (§ 35ba odst. 1 písm. g), § 35bd).
+-- 1. 1. 2027): sleva za umístění dítěte (§ 35ba odst. 1 písm. g), § 35bd)
+-- a koš osvobození rekreace a zájezdů (§ 6 odst. 9 písm. d) bod 3).
 --
 -- Sleva se při zálohách neuplatňuje (§ 38h odst. 6), jen v ročním zúčtování po
 -- prohlášení do 15. února (§ 38k odst. 5 písm. h). Evidence je proto vedle
@@ -100,3 +101,15 @@ ALTER TABLE payroll_annual_settlement_preschool_claims
       evidence_status <> 'verified'
       OR (evidence_reference IS NOT NULL AND evidence_reference <> '')
     );
+
+-- Koš § 6 odst. 9 písm. d) bod 3 ZDP (rekreace a zájezd, 20 000 Kč za
+-- zdaňovací období) od roku 2027. Limit drží ruleset, tady jen hodnota výčtu.
+ALTER TABLE payroll_component_definitions
+  MODIFY COLUMN exemption_basket
+    ENUM('non_cash_health','non_cash_leisure','old_age_savings',
+         'meal_per_shift','temporary_accommodation','recreation') NULL;
+
+ALTER TABLE payroll_inputs
+  MODIFY COLUMN benefit_basket
+    ENUM('non_cash_health','non_cash_leisure','old_age_savings',
+         'meal_per_shift','temporary_accommodation','recreation') NULL;
