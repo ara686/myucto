@@ -427,11 +427,9 @@ final class JmhzScenario1Xml2027Serializer
         $agreementsNode = $this->node($dom, Jmhz2027Schema::NS_SOUHRN, 'so:kolektivniSmlouvy');
         foreach ($agreements as $agreement) {
             $code = $this->string($agreement, '10214');
+            // Typ kolektivní smlouvy je jednoznakový kód číselníku (`znakType`).
             if (strlen($code) !== 1) {
-                $this->invalid(
-                    'jmhz_xml_collective_agreement_invalid',
-                    'Typ kolektivní smlouvy (10214) je jednoznakový kód číselníku.',
-                );
+                $this->unresolved('10214');
             }
             $agreementNode = $this->node($dom, Jmhz2027Schema::NS_SOUHRN, 'so:kolektivniSmlouva');
             $this->text($dom, $agreementNode, Jmhz2027Schema::NS_SOUHRN, 'so:typKolektSmlouvy', $code);
@@ -1092,7 +1090,7 @@ final class JmhzScenario1Xml2027Serializer
             $boardFee = $this->int($boardFee, '10308');
             if ($boardFee !== 0 && (!$extended || $incomeTotal === 0)) {
                 $this->invalid(
-                    'jmhz_xml_2027_attribute_unreportable',
+                    Jmhz2027DocumentContract::INCONSISTENT_CODE,
                     'Odměnu člena orgánu nerezidenta (10308) tento formulář nebo měsíc'
                         . ' bez zúčtovaného příjmu nevede.',
                 );
@@ -1181,7 +1179,7 @@ final class JmhzScenario1Xml2027Serializer
             $withheld = $this->int($paragraph6['withheld'] ?? null, '10309');
             if ($incomeTotal === 0 && ($base !== 0 || $withheld !== 0)) {
                 $this->invalid(
-                    'jmhz_xml_2027_attribute_unreportable',
+                    Jmhz2027DocumentContract::INCONSISTENT_CODE,
                     'Samostatný základ § 6 odst. 4 (10307, 10309) nelze vykázat v měsíci'
                         . ' bez zúčtovaného příjmu.',
                 );
@@ -1278,7 +1276,9 @@ final class JmhzScenario1Xml2027Serializer
     {
         $annualNode = $this->node($dom, Jmhz2027Schema::NS_FORM, 'form:rocniUhrny');
         $withholding = $this->object($annual['withholding'] ?? null);
-        if ($withholding !== [] && $year >= 2028) {
+        if ($withholding !== []
+            && sprintf('%04d-01', $year) >= Jmhz2027DocumentContract::ANNUAL_WITHHOLDING_FIRST_PERIOD
+        ) {
             $this->text(
                 $dom,
                 $annualNode,
@@ -1330,14 +1330,14 @@ final class JmhzScenario1Xml2027Serializer
         $bonus = $this->signedInt($result['bonus_difference_czk'] ?? null, '10323');
         if ($total < 0 || $tax < 0 || $bonus < 0) {
             $this->invalid(
-                'jmhz_xml_2027_annual_result_negative',
+                Jmhz2027DocumentContract::INCONSISTENT_CODE,
                 'Výsledek ročního zúčtování se ve verzi 2027 vykazuje nezáporně (10321, 10322,'
                     . ' 10323); přeplacený bonus nemá v datové větě místo.',
             );
         }
         if ($total !== $tax + $bonus) {
             $this->invalid(
-                'jmhz_xml_2027_annual_result_mismatch',
+                Jmhz2027DocumentContract::INCONSISTENT_CODE,
                 'Doplatek z ročního zúčtování (10321) musí být součtem přeplatku na dani (10322)'
                     . ' a doplatku bonusu (10323), kontrola 78.',
             );
@@ -2219,7 +2219,7 @@ final class JmhzScenario1Xml2027Serializer
         }
         if ($abroad && $address !== []) {
             $this->invalid(
-                'jmhz_xml_workplace_address_abroad',
+                'jmhz_xml_workplace_address_invalid',
                 'Místo výkonu práce mimo ČR (kód obce 111111) nesmí nést adresu v ČR'
                     . ' (atributy 10550 až 10554, interakce IN41).',
             );
@@ -2439,7 +2439,7 @@ final class JmhzScenario1Xml2027Serializer
             $hours = $this->int($row['worked_millihours'] ?? null, '10273');
             if ($hours > $worked) {
                 $this->invalid(
-                    'jmhz_xml_risk_hours_exceed_worked_hours',
+                    'jmhz_xml_risk_categorization_invalid',
                     'Hodiny rizikové práce (10273) nesmějí být vyšší než odpracované hodiny (10268).',
                 );
             }
@@ -2570,7 +2570,7 @@ final class JmhzScenario1Xml2027Serializer
         );
         if ($advanceIncome > 0 && $paragraph6Income > 0) {
             $this->invalid(
-                'jmhz_xml_2027_tax_income_ambiguous',
+                Jmhz2027DocumentContract::INCONSISTENT_CODE,
                 'Příjem pro výpočet zálohy (10535) a příjem podle § 6 odst. 4 (10555) nesmějí'
                     . ' být kladné oba (kontrola 304).',
             );

@@ -66,6 +66,15 @@ final class Jmhz2027DocumentContract
 {
     public const MISSING_CODE = 'jmhz_xml_2027_attribute_missing';
 
+    /** Hodnoty dokumentu, které datová věta 2027 nepřipouští (kontroly 78, 304, IN34). */
+    public const INCONSISTENT_CODE = 'jmhz_xml_2027_value_inconsistent';
+
+    /**
+     * První vykazované období, za které se v ročních úhrnech vyplňují 10311
+     * a 10312 (aktualita MPSV 7. 10. 2026: za leden 2027 ne, poprvé leden 2028).
+     */
+    public const ANNUAL_WITHHOLDING_FIRST_PERIOD = '2028-01';
+
     public const EMPLOYER_COLLECTIVE_AGREEMENTS = 'collective_agreement_types';
 
     public const SUMMARY_MULTI_MONTH_ADVANCE = 'advance_tax_multi_month';

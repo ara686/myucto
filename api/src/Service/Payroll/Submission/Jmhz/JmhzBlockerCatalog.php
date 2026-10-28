@@ -671,6 +671,10 @@ final class JmhzBlockerCatalog
         'jmhz_work_summary_v2_missing' => 'time',
         'jmhz_workplace_codebooks_unverified' => 'workplace',
         'jmhz_xml_attribute_unresolved' => 'retry',
+        // Normalizovaný dokument zatím nenese klíče kontraktu 2027 (doplní je příprava).
+        'jmhz_xml_2027_attribute_missing' => 'retry',
+        'jmhz_xml_2027_value_inconsistent' => 'runs',
+        'jmhz_xml_workplace_address_invalid' => 'workplace',
         'jmhz_xml_bonus_without_declaration' => 'statutory_evidence',
         'jmhz_xml_child_credit_without_children' => 'dependants',
         'jmhz_xml_credit_without_declaration' => 'statutory_evidence',
