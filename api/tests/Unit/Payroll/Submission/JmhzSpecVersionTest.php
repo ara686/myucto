@@ -119,20 +119,26 @@ final class JmhzSpecVersionTest extends TestCase
     }
 
     /**
-     * Hlášení za 01/2027 se nesestaví, dokud integrátor nepřipne balík 2027
-     * (WP-1). Blokace je doménová výjimka s kódem pro obrazovku, ne chyba 500.
+     * Nepřipnutý ročník se nesestaví ani nenačte. Blokace je doménová výjimka
+     * s kódem pro obrazovku, ne chyba 500.
      */
-    public function testVersion2027IsBlockedUntilItsPackageIsPinned(): void
+    public function testUnpinnedVersionIsBlocked(): void
     {
-        self::assertNull((new JmhzSpecPackageCatalog())->pinFor(JmhzSpecVersion::V2027));
+        $unpinned = new JmhzSpecPackageCatalog(null, [
+            '2026' => [
+                'package_key' => JmhzSpecPackageCatalog::DEFAULT_PACKAGE_KEY,
+                'manifest_sha256' => JmhzSpecPackageCatalog::DEFAULT_MANIFEST_SHA256,
+            ],
+            '2027' => ['package_key' => JmhzSpecPackageCatalog::PACKAGE_KEY_2027, 'manifest_sha256' => null],
+        ]);
+        self::assertNull($unpinned->pinFor(JmhzSpecVersion::V2027));
         foreach ([
-            static fn () => JmhzSpecPackageCatalog::requireBuildable(JmhzSpecVersion::forPeriod(2027, 1)),
-            static fn () => (new JmhzSpecPackageCatalog())->load(JmhzSpecPackageCatalog::PACKAGE_KEY_2027),
-            static fn () => (new JmhzSchemaCatalog())->entryPointFor(JmhzSpecVersion::V2027),
+            static fn () => $unpinned->requirePin(JmhzSpecVersion::V2027),
+            static fn () => $unpinned->load(JmhzSpecPackageCatalog::PACKAGE_KEY_2027),
         ] as $index => $call) {
             try {
                 $call();
-                self::fail("Verze 2027 prošla bránou č. {$index}.");
+                self::fail("Nepřipnutá verze 2027 prošla bránou č. {$index}.");
             } catch (JmhzXmlException $exception) {
                 self::assertSame(JmhzSpecPackageCatalog::UNAVAILABLE_CODE, $exception->validationCode);
                 self::assertStringContainsString('2027', $exception->getMessage());
@@ -140,11 +146,38 @@ final class JmhzSpecVersionTest extends TestCase
         }
     }
 
+    /**
+     * Specifikace a XSD 1.5.0.3 jsou připnuté a načtou se, ale hlášení za
+     * 01/2027 se nesestaví, dokud nebude hotový serializér 2027.
+     */
+    public function testVersion2027IsPinnedButNotBuildableWithoutItsSerializer(): void
+    {
+        $catalog = new JmhzSpecPackageCatalog();
+        $pin = $catalog->requirePin(JmhzSpecVersion::V2027);
+        self::assertSame(JmhzSpecPackageCatalog::PACKAGE_KEY_2027, $pin['package_key']);
+        self::assertSame(
+            $pin['manifest_sha256'],
+            $catalog->load(JmhzSpecPackageCatalog::PACKAGE_KEY_2027)['manifest_sha256'],
+        );
+        $entry = (new JmhzSchemaCatalog())->entryPointFor(JmhzSpecVersion::V2027);
+        self::assertSame(JmhzSchemaCatalog::PACKAGE_KEY_2027, $entry['package_key']);
+        self::assertSame('1.5.0', $entry['data_version']);
+        self::assertFileExists($entry['path']);
+
+        try {
+            JmhzSpecPackageCatalog::requireBuildable(JmhzSpecVersion::forPeriod(2027, 1));
+            self::fail('Hlášení za 01/2027 se sestavilo bez serializéru 2027.');
+        } catch (JmhzXmlException $exception) {
+            self::assertSame(JmhzSpecPackageCatalog::UNAVAILABLE_CODE, $exception->validationCode);
+        }
+        JmhzSpecPackageCatalog::requireBuildable(JmhzSpecVersion::forPeriod(2026, 12));
+    }
+
     /** Stub manifest: jakmile je balík 2027 připnutý, katalog ho načte stejnou cestou jako 2026. */
     public function testPinnedVersion2027LoadsThroughTheSameCatalog(): void
     {
         $root = sys_get_temp_dir() . '/jmhz-spec-2027-' . bin2hex(random_bytes(4));
-        mkdir($root . '/dictionary-1.5.0.2', 0777, true);
+        mkdir($root . '/dictionary-1.5.0.3', 0777, true);
         try {
             $payload = [
                 'package_key' => JmhzSpecPackageCatalog::PACKAGE_KEY_2027,
@@ -165,7 +198,7 @@ final class JmhzSpecVersionTest extends TestCase
             ];
             $hash = hash('sha256', CanonicalJson::encode($payload));
             file_put_contents(
-                $root . '/dictionary-1.5.0.2/manifest.json',
+                $root . '/dictionary-1.5.0.3/manifest.json',
                 json_encode(['manifest_sha256' => $hash, 'payload' => $payload], JSON_THROW_ON_ERROR),
             );
             $catalog = new JmhzSpecPackageCatalog($root, [
@@ -181,8 +214,8 @@ final class JmhzSpecVersionTest extends TestCase
             $this->expectException(\UnexpectedValueException::class);
             $wrong->load(JmhzSpecPackageCatalog::PACKAGE_KEY_2027);
         } finally {
-            @unlink($root . '/dictionary-1.5.0.2/manifest.json');
-            @rmdir($root . '/dictionary-1.5.0.2');
+            @unlink($root . '/dictionary-1.5.0.3/manifest.json');
+            @rmdir($root . '/dictionary-1.5.0.3');
             @rmdir($root);
         }
     }

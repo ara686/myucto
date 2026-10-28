@@ -22,15 +22,24 @@ final class JmhzSpecPackageCatalog
      * (pokud se liší) a otisk manifestu; nic dalšího se přepínat nemusí.
      */
     public const PACKAGE_KEY_2027 =
-        'jmhz-xsd-1.5_dictionary-1.5.0.2_controls-source-1.5.0.3_manifest-v1';
-    public const MANIFEST_SHA256_2027 = null;
+        'jmhz-xsd-1.5.0.3_dictionary-1.5.0.3_controls-source-1.5.0.4_manifest-v1';
+    public const MANIFEST_SHA256_2027 =
+        'fc244e34b74117cfc332b62d787738754562b91c61f33ee29370197967f8e5b0';
+
+    /**
+     * Ročníky, jejichž datovou větu umí serializér sestavit. Ročník 2027 sem
+     * přibude se serializérem XSD 1.5 (WP-3); do té doby je jen připnutý.
+     *
+     * @var list<JmhzSpecVersion>
+     */
+    private const SERIALIZABLE_VERSIONS = [JmhzSpecVersion::V2026];
 
     /** Kód blokace sestavení hlášení verze, která není připnutá. */
     public const UNAVAILABLE_CODE = 'jmhz_spec_version_unavailable';
 
     private const PACKAGE_DIRECTORIES = [
         self::DEFAULT_PACKAGE_KEY => 'dictionary-1.4.1.6',
-        self::PACKAGE_KEY_2027 => 'dictionary-1.5.0.2',
+        self::PACKAGE_KEY_2027 => 'dictionary-1.5.0.3',
     ];
 
     /**
@@ -129,6 +138,18 @@ final class JmhzSpecPackageCatalog
         (new self())->requirePin($version);
         if (!JmhzSchemaCatalog::isPinned($version)) {
             (new JmhzSchemaCatalog())->entryPointFor($version);
+        }
+        // Specifikace a schéma ročníku jsou připnuté dřív, než je hotový jeho
+        // serializér. Bez téhle pojistky by se hlášení za 01/2027 sestavilo
+        // serializérem 2026 a zmrazilo ve tvaru, který XSD 1.5 nepřijme.
+        if (!in_array($version, self::SERIALIZABLE_VERSIONS, true)) {
+            throw new JmhzXmlException(
+                self::UNAVAILABLE_CODE,
+                'Hlášení se řídí specifikací ' . $version->label() . '. Její schéma je'
+                    . ' připnuté, ale sestavení datové věty v tomto tvaru tahle verze'
+                    . ' aplikace ještě neumí. Podání se proto nepřipraví. Hlášení, opravy'
+                    . ' i storna za období do 12/2026 připravíte jako dosud.',
+            );
         }
     }
 
