@@ -37,23 +37,16 @@ final class PayrollJmhzZeroReportProfileFlowTest extends TestCase
     private const PAYDAY = '2026-08-14';
 
     /**
-     * Fond pracovní doby (10259 až 10261) se u zaměstnance v evidenčním
-     * stavu vykazuje podle Pokynů k vyplnění MH 1.4.14 (10259: stanovená
-     * pracovní doba v měsíci, 10260: sjednaná, 10261: týdenní), i když
-     * v měsíci nepracoval. Tabulka nulového hlášení v Pravidlech podání
-     * uvádí 0. Rozpor obou podkladů je samostatný nález; do rozhodnutí
-     * zůstávají řádky norem pro fond otevřené a test drží dnešní hodnoty
-     * podle Pokynů, aby změna nepřišla nepozorovaně.
+     * Fond pracovní doby (10259 až 10261) je v řádném nulovém formuláři 0
+     * podle tabulky Pravidel podání 1.4.6 (str. 16-17) a vzorového XML MPSV
+     * „Nulový formulář osoby - řádný formulář“. Tabulka je zvláštní pravidlo
+     * pro tuto situaci a má přednost před obecným popisem v Pokynech.
      */
     private const FUND_ATTRIBUTES = ['10259', '10260', '10261'];
 
     /**
-     * Pojistné na sociální zabezpečení (10481, 10370) serializér u dohody
-     * bez účasti na pojištění nevypisuje vůbec (chybí vyměřovací základ
-     * 10477). Pokyny k vyplnění i tabulka nulového hlášení je vedou jako
-     * povinné s hodnotou 0. Týká se každé dohody bez účasti, nejen nulového
-     * měsíce, takže je to samostatný nález mimo nulové hlášení; test drží
-     * dnešní stav.
+     * Pojistné na sociální zabezpečení (10481, 10370) u dohody bez účasti na
+     * pojištění se vykazuje nulou (oprava fix/jmhz-dpp-pojistne-nula).
      */
     private const AGREEMENT_SOCIAL_ATTRIBUTES = ['10481', '10370'];
 
@@ -95,10 +88,10 @@ final class PayrollJmhzZeroReportProfileFlowTest extends TestCase
         $form = $projection->forms()[0];
         self::assertSame('1++', $form->value('10240'));
         $this->assertSubmissionHeader($projection);
-        $this->assertRegularZeroTable($form, self::FUND_ATTRIBUTES);
-        self::assertSame('184.000', $form->value('10259'));
-        self::assertSame('184.000', $form->value('10260'));
-        self::assertSame('40.00', $form->value('10261'));
+        $this->assertRegularZeroTable($form, []);
+        self::assertSame('0.000', $form->value('10259'));
+        self::assertSame('0.000', $form->value('10260'));
+        self::assertSame('0.00', $form->value('10261'));
     }
 
     /**
@@ -119,7 +112,10 @@ final class PayrollJmhzZeroReportProfileFlowTest extends TestCase
         $form = $projection->forms()[0];
         self::assertFalse($form->has('10240'));
         $this->assertSubmissionHeader($projection);
-        $this->assertRegularZeroTable($form, [...self::FUND_ATTRIBUTES, ...self::AGREEMENT_SOCIAL_ATTRIBUTES]);
+        $this->assertRegularZeroTable($form, []);
+        foreach (self::FUND_ATTRIBUTES as $attributeId) {
+            self::assertSame(0.0, (float) $form->value($attributeId), "Fond {$attributeId} u dohody bez práce.");
+        }
         // Pojistné a jeho základ jsou podle datových scénářů MH povinné i u vztahu
         // bez účasti na pojištění – vykazují se nulou (oprava fix/jmhz-dpp-pojistne-nula).
         foreach (self::AGREEMENT_SOCIAL_ATTRIBUTES as $attributeId) {

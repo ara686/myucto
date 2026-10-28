@@ -331,10 +331,13 @@ final class PayrollJmhzScenarioFlowTest extends TestCase
         self::assertStringContainsString('<form:penezitaPomocMaterstvi>31</form:penezitaPomocMaterstvi>', $xml);
         self::assertStringContainsString('<form:vylouceneDobyCelkem>31</form:vylouceneDobyCelkem>', $xml);
         self::assertStringNotContainsString('<form:osvobozenoCelkem>', $xml);
-        // Na mateřské není zaměstnankyně v evidenčním stavu (10265 = 0),
-        // fondy 10259 a 10260 zůstávají plné.
+        // Na mateřské není zaměstnankyně v evidenčním stavu (10265 = 0) a bez
+        // práce i příjmu jde o řádný formulář s nulovými hodnotami: fond
+        // 10259 až 10261 je 0 (Pravidla podání 1.4.6, str. 16-17).
         self::assertStringContainsString('<form:dnyEvidencniStav>0</form:dnyEvidencniStav>', $xml);
-        self::assertStringContainsString('<form:sjednanyFond>184.000</form:sjednanyFond>', $xml);
+        self::assertStringContainsString('<form:stanovenyFond>0.000</form:stanovenyFond>', $xml);
+        self::assertStringContainsString('<form:sjednanyFond>0.000</form:sjednanyFond>', $xml);
+        self::assertStringContainsString('<form:stanovenaTydenniDoba>0.00</form:stanovenaTydenniDoba>', $xml);
         // Za příjemkyni PPM platí pojistné stát (§ 7 odst. 1 písm. d) zák.
         // 48/1997), minimum se po celý měsíc nepoužije: bez doplatku.
         self::assertStringContainsString(

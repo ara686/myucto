@@ -635,7 +635,15 @@ final class JmhzScenario1DocumentResolver
                     // JmhzScenario1XmlSerializer::tristate()).
                     'jmhz_default_interpretations' =>
                         $employment['jmhz_default_interpretations'] ?? null,
-                    'work_month' => $employment['work_month'] ?? null,
+                    'work_month' => $this->zeroReportWorkMonth(
+                        $employment['work_month'] ?? null,
+                        JmhzZeroReportProfile::isMonthWithoutIncome(
+                            $earnings,
+                            is_int($employment['exempt_income_minor'] ?? null)
+                                ? $employment['exempt_income_minor']
+                                : 0,
+                        ),
+                    ),
                     'eldp' => $employment['eldp'] ?? null,
                     // Nulový formulář vztahu bez příjmu: 10345 = 0 podle
                     // JmhzZeroReportProfile (Pravidla podání 1.4.5, kap. 4).
@@ -1938,6 +1946,48 @@ final class JmhzScenario1DocumentResolver
         }
 
         return $result;
+    }
+
+    /**
+     * Fond pracovní doby (10259 až 10261) řádného formuláře s nulovými
+     * hodnotami.
+     *
+     * Vztah, ve kterém se v měsíci nepracovalo (10268 = 0) a nebyl zúčtován
+     * žádný příjem, vykazuje fond podle tabulky „řádný formulář s nulovými
+     * hodnotami“ (Pravidla podání 1.4.6, kap. 1, str. 16-17, a vzorové XML
+     * MPSV „Nulový formulář osoby - řádný formulář“): 10259, 10260 i 10261
+     * jsou 0. Tabulka je zvláštní pravidlo pro tuto situaci a má přednost
+     * před obecným popisem atributů v Pokynech k vyplnění MH. Hodnoty se berou
+     * z {@see JmhzZeroReportProfile}, ne z druhé konstanty; platí pro HPP na
+     * rodičovské i pro dohodu bez práce a příjmu. Návrh fondu v pracovním
+     * souhrnu se nemění, je to návrh pro měsíce s prací.
+     */
+    private function zeroReportWorkMonth(mixed $workMonth, bool $withoutIncome): mixed
+    {
+        if (!$withoutIncome || !is_array($workMonth)) {
+            return $workMonth;
+        }
+        $summary = $workMonth['jmhz_work_summary'] ?? null;
+        $values = is_array($summary) ? ($summary['values'] ?? null) : null;
+        if (!is_array($values) || ($values['worked_millihours'] ?? null) !== 0) {
+            return $workMonth;
+        }
+        foreach ([
+            '10259' => 'standard_fund_millihours',
+            '10260' => 'agreed_fund_millihours',
+            '10261' => 'weekly_work_centihours',
+        ] as $attributeId => $key) {
+            if (JmhzZeroReportProfile::rule(
+                JmhzZeroReportProfile::SITUATION_REGULAR_WITHOUT_WORK,
+                (string) $attributeId,
+            ) === JmhzZeroReportProfile::RULE_ZERO) {
+                $values[$key] = 0;
+            }
+        }
+        $summary['values'] = $values;
+        $workMonth['jmhz_work_summary'] = $summary;
+
+        return $workMonth;
     }
 
     /**
