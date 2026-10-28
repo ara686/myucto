@@ -1437,6 +1437,7 @@ export const TOOLS = [
       reverse_charge: bool('Přenesená daňová povinnost.'),
       discount_percent: num('Sleva z celé faktury v procentech (0–100). Slevovou položku NEposílej v `items`.', { minimum: 0, maximum: 100 }),
       payment_method: str('Způsob úhrady.', { enum: ['bank_transfer', 'card', 'cash', 'other'] }),
+      revenue_category_id: int('Kategorie tržby. Bez zadání ji doplní server podle zakázky nebo pravidel.'),
       note: str('Poznámka na dokladu.'),
       varsymbol: str('Ruční variabilní symbol; jinak se přidělí automaticky při vystavení.'),
     }, ['client_id', 'items']),
@@ -1492,6 +1493,7 @@ export const TOOLS = [
       varsymbol: str('Ruční variabilní symbol; prázdný text = přidělí se při vystavení.'),
       payment_variable_symbol: str('Variabilní symbol pro platbu, liší-li se od čísla dokladu.'),
       supplier_order_number: str('Číslo objednávky odběratele.'),
+      revenue_category_id: int('Kategorie tržby. 0 kategorii z dokladu odebere.', { minimum: 0 }),
       invoice_type: str('Typ konceptu. Rozpis plateb kalendáře nastaví `set_invoice_payment_schedule`.', {
         enum: ['invoice', 'proforma', 'credit_note', 'payment_calendar'],
       }),
@@ -1505,10 +1507,11 @@ export const TOOLS = [
         'issue_date', 'due_date', 'tax_date', 'currency', 'exchange_rate', 'language',
         'payment_method', 'note_above_items', 'project_id', 'discount_percent',
         'prices_include_vat', 'reverse_charge', 'varsymbol', 'payment_variable_symbol',
-        'supplier_order_number', 'invoice_type',
+        'supplier_order_number', 'invoice_type', 'revenue_category_id',
       ]);
       if (a.note !== undefined) changes.note_below_items = a.note;
       if (changes.project_id === 0) changes.project_id = null;
+      if (changes.revenue_category_id === 0) changes.revenue_category_id = null;
       if (Object.keys(changes).length === 0) {
         throw new Error('Není co měnit. Zadejte aspoň jedno pole hlavičky.');
       }
