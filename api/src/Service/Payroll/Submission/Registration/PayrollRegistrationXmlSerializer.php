@@ -505,9 +505,7 @@ final class PayrollRegistrationXmlSerializer
                         $this->eventNullableText($data, 'relationship_detail_code'),
                     ),
                 ),
-                $version === JmhzSpecVersion::V2027
-                    ? self::textOrNull($payload->identity->identity['citizenship_country_code'] ?? null)
-                    : null,
+                self::textOrNull($payload->identity->identity['citizenship_country_code'] ?? null),
             );
         }
         $employee->appendChild($client);
@@ -676,7 +674,7 @@ final class PayrollRegistrationXmlSerializer
             && is_array($delta['foreign_worker'] ?? null)
             && !isset($identity['citizenship_country_code'])
         ) {
-            // EDV 1.5.0.3, Vysvětlivky, Kontrola 5: sada údajů cizince v A3/A4
+            // EDV 1.4.0.7 i 1.5.0.3, Vysvětlivky, Kontrola 5: sada údajů cizince v A3/A4
             // nese vždy i státní občanství 10067, jinak ji DIS zamítne.
             $identity['citizenship_country_code'] = $citizenshipForForeignWorker;
         }

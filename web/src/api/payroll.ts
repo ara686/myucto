@@ -2054,6 +2054,12 @@ export interface PayrollEmploymentJmhzEvidenceOptions {
   foreign_worker_free_access_reason_codes: Array<{ code: string; label: string }>
   foreign_worker_permit_type_codes: Array<{ code: string; label: string }>
   labour_office_codes: Array<{ code: string; label: string }>
+  /** Hodnoty EDV 1.5.0.3, které ČSSZ přijme jen pro události od 1. 1. 2027. */
+  from_2027?: {
+    employment_types: Array<{ code: string; label: string }>
+    free_access_reason_codes: Array<{ code: string; label: string }>
+    service_termination_reasons: Array<{ code: string; label: string; employment_types: string[] }>
+  }
 }
 
 export interface PayrollJmhzMunicipalityOption {
@@ -5053,7 +5059,7 @@ export interface PayrollRegistrationEventInput {
     early_termination_reason?: string
     average_net_earnings?: string
     pension_periods?: PayrollRegistrationPensionPeriodInput[]
-    employment_type?: '1' | '2'
+    employment_type?: '1' | '2' | '3' | '4'
     termination_reason?: string
     service_termination_reason?: string
     entitlement?: boolean

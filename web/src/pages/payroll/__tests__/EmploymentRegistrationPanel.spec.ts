@@ -86,6 +86,7 @@ function jmhzOptions() {
     },
     activity_codes: [
       { code: '1', label: 'Pracovní poměr', relationship_detail_mode: 'select' },
+      { code: '13', label: 'Člen volební komise', relationship_detail_mode: 'forbidden' },
     ],
     relationship_detail_codes: [{ code: '1', label: 'Žádné' }],
     apz_instruments: [],
@@ -114,6 +115,21 @@ function jmhzOptions() {
     ],
     foreign_worker_permit_type_codes: [{ code: '1', label: 'povolení k zaměstnání' }],
     labour_office_codes: [{ code: 'HMP', label: 'Krajská pobočka pro hlavní město Prahu' }],
+    from_2027: {
+      employment_types: [
+        { code: '3', label: 'služební poměr podle zákona č. 361/2003 Sb.' },
+        { code: '4', label: 'služební poměr podle zákona č. 221/1999 Sb.' },
+      ],
+      free_access_reason_codes: [
+        { code: '22', label: '§ 98 písm. a) zvláštní dlouhodobý pobyt' },
+        { code: '23', label: '§ 98 písm. k) vyslání zaměstnavatelem usazeným v EU' },
+      ],
+      service_termination_reasons: [
+        { code: '5', label: 'Ostatní', employment_types: ['2', '3', '4'] },
+        { code: '7', label: '§ 42 odst. 1 písm. h)', employment_types: ['3'] },
+        { code: '15', label: '§ 18 písm. d)', employment_types: ['4'] },
+      ],
+    },
   }
 }
 
@@ -1396,6 +1412,119 @@ describe('EmploymentRegistrationPanel', () => {
       .toBe('31. 10. 2026')
     expect((wrapper.get('[data-test="registration-a2-ended-by-death"]').element as HTMLSelectElement).value).toBe('no')
     expect(wrapper.find('[data-test="registration-a2-net-average-note"]').exists()).toBe(true)
+  })
+
+  async function openA2Prefilled(endDate: string, employmentType: '1' | '2') {
+    const wrapper = mount(EmploymentRegistrationPanel, {
+      props: {
+        employmentId: 5,
+        personId: 9,
+        canWrite: true,
+        terminationEndDate: endDate,
+        a2Prefill: {
+          ended_by_death: false,
+          unemployment: {
+            mode: 'provided',
+            employment_type: employmentType,
+            termination_reason: '4',
+            average_net_earnings: '28150',
+          },
+        },
+      },
+      global: { stubs: { RouterLink: { props: ['to'], template: '<a><slot /></a>' }, Modal: { template: '<div><slot /></div>' } } },
+    })
+    await flushPromises()
+    await wrapper.get('[data-test="registration-event-new"]').trigger('click')
+    await wrapper.get('[data-test="registration-a2-prefill-button"]').trigger('click')
+    await flushPromises()
+    return wrapper
+  }
+
+  it('offers the 2027 service relations and their termination reasons only from 1 January 2027', async () => {
+    const before = await openA2Prefilled('2026-12-31', '2')
+    expect(before.get('[data-test="registration-a2-employment-type"]').findAll('option').map(o => o.element.value))
+      .toEqual(['omit', '1', '2'])
+    expect(before.get('[data-test="registration-a2-termination-reason"]').element.tagName).toBe('INPUT')
+
+    const wrapper = await openA2Prefilled('2027-01-15', '2')
+    const type = wrapper.get('[data-test="registration-a2-employment-type"]')
+    expect(type.findAll('option').map(o => o.element.value)).toEqual(['omit', '1', '2', '3', '4'])
+
+    await type.setValue('3')
+    const reason = wrapper.get('[data-test="registration-a2-termination-reason"]')
+    expect(reason.element.tagName).toBe('SELECT')
+    expect(reason.findAll('option').map(o => o.element.value)).toEqual(['', '5', '7'])
+
+    await type.setValue('4')
+    expect(wrapper.get('[data-test="registration-a2-termination-reason"]').findAll('option').map(o => o.element.value))
+      .toEqual(['', '5', '15'])
+  })
+
+  it('softly warns about state employees ending in a civil-service relation from 1 November 2026', async () => {
+    const early = await openA2Prefilled('2026-10-31', '2')
+    expect(early.find('[data-test="registration-a2-state-employee-warning"]').exists()).toBe(false)
+    expect(early.find('[data-test="registration-a2-state-employee-hint"]').exists()).toBe(true)
+
+    const later = await openA2Prefilled('2026-11-15', '2')
+    expect(later.find('[data-test="registration-a2-state-employee-warning"]').exists()).toBe(true)
+
+    const employment = await openA2Prefilled('2026-11-15', '1')
+    expect(employment.find('[data-test="registration-a2-state-employee-warning"]').exists()).toBe(false)
+
+    const firstDay = await openA2Prefilled('2026-11-01', '2')
+    expect(firstDay.find('[data-test="registration-a2-state-employee-warning"]').exists()).toBe(true)
+    await firstDay.get('[data-test="registration-a2-termination-reason"]').setValue('5')
+    expect(firstDay.find('[data-test="registration-a2-state-employee-warning"]').exists()).toBe(false)
+  })
+
+  it('shows the election commission hint only for activity type 13', async () => {
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-test="registration-a1-toggle"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-test="a1-employment-activity-code"]').setValue('1')
+    expect(wrapper.find('[data-test="a1-election-commission-hint"]').exists()).toBe(false)
+    await wrapper.get('[data-test="a1-employment-activity-code"]').setValue('13')
+    expect(wrapper.get('[data-test="a1-election-commission-hint"]').exists()).toBe(true)
+  })
+
+  async function openForeignA1(startOn: string) {
+    const suggested = a1Suggested()
+    m.a1Profile.mockResolvedValue(a1View({
+      foreigner: true,
+      citizenship_country_code: 'UA',
+      suggested: {
+        ...suggested,
+        employment: { ...suggested.employment, actual_start_on: startOn },
+        foreign_worker: {
+          free_access: true,
+          free_access_reason_code: null,
+          permit_type_code: null,
+          permit_identifier: null,
+          permit_from: null,
+          permit_to: null,
+          issuing_labour_office_code: null,
+        },
+      },
+    }))
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-test="registration-a1-toggle"]').trigger('click')
+    await flushPromises()
+    const reasons = wrapper.get('[data-test="a1-foreign-worker-free-access-reason-code"]')
+    await reasons.get('input[role="combobox"]').trigger('focus')
+    return reasons
+  }
+
+  it('offers free-access reasons 22 and 23 only for a start from 1 January 2027', async () => {
+    const before = await openForeignA1('2026-12-31')
+    expect(before.text()).toContain('Občan EU/EHP')
+    expect(before.text()).not.toContain('zvláštní dlouhodobý pobyt')
+
+    const after = await openForeignA1('2027-01-04')
+    expect(after.text()).toContain('zvláštní dlouhodobý pobyt')
+    expect(after.text()).toContain('vyslání zaměstnavatelem')
   })
 
   it('keeps the A2 prefill disabled without a termination record', async () => {
