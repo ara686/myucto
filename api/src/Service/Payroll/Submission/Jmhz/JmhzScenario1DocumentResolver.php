@@ -72,6 +72,24 @@ final class JmhzScenario1DocumentResolver
         '10417', '10418', '10292', '10293', '10294', '10295', '10296',
     ];
 
+    /**
+     * Hodiny pracovního souhrnu, které řádný nulový formulář nevykazuje:
+     * neodpracované hodiny 10275 až 10280 a překážky 10471, 10472
+     * (viz {@see zeroReportWorkMonth()}).
+     *
+     * @var list<string>
+     */
+    private const ZERO_REPORT_OMITTED_UNWORKED_KEYS = [
+        'unworked_total_millihours',
+        'unworked_paid_millihours',
+        'dpn_without_employer_compensation_millihours',
+        'dpn_with_employer_compensation_millihours',
+        'vacation_millihours',
+        'care_millihours',
+        'employee_obstacle_paid_millihours',
+        'employer_obstacle_millihours',
+    ];
+
     private ?JmhzControlParameterCatalog $controlParameters = null;
 
     private ?JmhzScenario1XmlSerializer $probeSerializer = null;
@@ -1982,6 +2000,17 @@ final class JmhzScenario1DocumentResolver
                 (string) $attributeId,
             ) === JmhzZeroReportProfile::RULE_ZERO) {
                 $values[$key] = 0;
+            }
+        }
+        // Neodpracované hodiny (10275) se počítají ze sjednané pracovní doby
+        // (Pokyny MH 1.4.14, kap. 3.3.6) a s odpracovanými ji skládají
+        // (10268 + 10275 = 10260). Při fondu 0 je tedy nemá z čeho vykázat
+        // a vzorové XML MPSV blok neodpracovaných hodin i překážek vynechává.
+        // Rodičovská nebo neplacené volno přes celý měsíc proto v nulovém
+        // formuláři hodiny nenese; dny vyloučené doby nese dál ELDP.
+        if (($values['agreed_fund_millihours'] ?? null) === 0) {
+            foreach (self::ZERO_REPORT_OMITTED_UNWORKED_KEYS as $key) {
+                $values[$key] = null;
             }
         }
         $summary['values'] = $values;
