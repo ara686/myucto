@@ -2265,6 +2265,14 @@ final class Routes
                 [PayrollJmhzCorrectionAction::class, 'freezeContentCorrection'],
             );
             $g->get(
+                '/submissions/{submissionId:[0-9]+}/jmhz-zero-amendment',
+                [PayrollJmhzCorrectionAction::class, 'zeroAmendmentCandidates'],
+            );
+            $g->post(
+                '/submissions/{submissionId:[0-9]+}/jmhz-zero-amendment',
+                [PayrollJmhzCorrectionAction::class, 'freezeZeroAmendment'],
+            );
+            $g->get(
                 '/submissions/jmhz-protocol-import',
                 [PayrollJmhzProtocolImportAction::class, 'history'],
             );
