@@ -12779,6 +12779,7 @@
         "jmhz_projection_form_unbound": "The person's form in the XML submission has no parent submission component.",
         "jmhz_projection_path_ambiguous": "The attribute path belongs to more than one attribute in the JMHZ dictionary at once.",
         "jmhz_projection_path_unknown": "An element of the JMHZ monthly report XML has no counterpart in the JMHZ dictionary.",
+        "jmhz_projection_version_mismatch": "The JMHZ monthly report XML belongs to a different JMHZ specification year than the one it is checked against.",
         "jmhz_projection_xml_unreadable": "The JMHZ monthly report XML cannot be loaded to process its attributes.",
         "jmhz_protocol_ambiguous": "The CSSZ response contains protocols for several submissions, and without the expected CorrelationID it cannot be determined which one belongs to this submission.",
         "jmhz_protocol_anchor_unreadable": "The trusted CSSZ certificate (trust anchor) could not be loaded, so the protocol cannot be verified. Contact support.",

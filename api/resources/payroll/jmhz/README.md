@@ -57,6 +57,17 @@ atributy (10255, 10407, 10258) bez povinnosti ve dvou scénářích a v IN06;
 builder je vede jako `unspecified` a jako anomálii `blank_requirement_cells`,
 nikdy jako nepovinné.
 
+Kontroly verze 2027 načítá `JmhzControlSourceCatalog::loadFor(JmhzSpecVersion::V2027)`
+a vykonává tentýž evaluator s ročníkem 2027 (`JmhzScenario1ControlValidator::create(…,
+JmhzSpecVersion::V2027)`). Projekce atributů čte XML ve jmenných prostorech `/2027`
+přes slovník 1.5.0.3 a XML jiného ročníku odmítne kódem
+`jmhz_projection_version_mismatch`. Kontrola 109 ve verzi 2027 není, 333 má
+zase význam časového omezení slevy a je `not_evaluable`, kontroly 245, 325,
+365 a 380 až 382 rozhoduje registr nebo počet mzdových účtáren
+(`not_evaluable`). Věcně změněné kontroly (57, 78, 79, 193, 194, 244, 248,
+282, 283, 304, 369) mají variantu 2027, kód obce 111111 „Mimo ČR" prochází
+kontrolami 152 a 335 a hlídá ho kontrola 385. Verze 2026 se nemění.
+
 Balík staví tytéž buildery jako balík 2026, jen s volbou `--profile=2027`
 (profily a připnuté hashe jsou v `tools/jmhz-spec-package-profiles.php`):
 
