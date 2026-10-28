@@ -12517,6 +12517,7 @@
         "eldp_xml_snapshot_mismatch": "XML evidenčního listu neodpovídá přesnému zdrojovému snapshotu. Připravte evidenční list znovu.",
         "eldp_xml_source_invalid": "Podklad pro sestavení XML evidenčního listu má neplatný nebo neúplný formát; tuto technickou chybu musí posoudit podpora.",
         "eldp_xsd_validation_failed": "Vygenerované XML evidenčního listu neprošlo připnutým XSD schématem; tuto technickou chybu musí posoudit podpora.",
+        "jmhz_2027_source_missing": "Hlášení za období od ledna 2027 vyžaduje nový údaj, pro který mzdy zatím nemají podklad; hlášení se bez něj nesestaví.",
         "jmhz_acknowledgement_class_mismatch": "Potvrzení VREP se týká jiné třídy podání, než jaká byla odeslána.",
         "jmhz_acknowledgement_correlation_missing": "Potvrzení VREP nenese použitelné CorrelationID; podání by se už nedalo dohledat ani uzavřít.",
         "jmhz_acknowledgement_endpoint_untrusted": "Potvrzení VREP odkazuje na dotazovací adresu mimo HTTPS.",
