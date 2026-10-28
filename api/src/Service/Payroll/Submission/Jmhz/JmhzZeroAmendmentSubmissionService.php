@@ -69,18 +69,29 @@ final readonly class JmhzZeroAmendmentSubmissionService
      *
      * @return array<string,mixed>
      */
-    public function candidates(int $supplierId, string $environment, int $regularSubmissionId): array
-    {
+    public function candidates(
+        int $supplierId,
+        string $environment,
+        int $regularSubmissionId,
+        ?string $onlyEmploymentHash = null,
+    ): array {
         $original = $this->requireRoot($supplierId, $environment, $regularSubmissionId);
         $xml = $this->frozen->bytes($supplierId, $environment, $regularSubmissionId);
         $identity = JmhzFrozenSubmissionIdentity::read($xml);
         $periodStart = sprintf('%04d-%02d-01', $identity->year, $identity->month);
         $touched = $this->touchedFormGuids($supplierId, $environment, $regularSubmissionId);
+        $shape = $this->serializer->assess($xml);
         $rows = [];
         $employeeIds = [];
         foreach ($this->frozen->components($supplierId, $environment, $regularSubmissionId) as $component) {
             $guid = strtoupper($component['form_guid']);
-            $link = $this->employment($supplierId, $environment, $component['employment_external_identifier']);
+            $hash = $this->employmentHash($supplierId, $component['employment_external_identifier']);
+            if ($onlyEmploymentHash !== null && ($hash === null || !hash_equals($onlyEmploymentHash, $hash))) {
+                continue;
+            }
+            $link = $hash === null
+                ? null
+                : $this->identities->employmentByExternalIdValueHash($supplierId, $environment, 'id_ppv', $hash);
             $bounds = $link === null
                 ? ['start' => null, 'end' => null]
                 : $this->employments->employmentBounds($supplierId, $link['employment_id']);
@@ -90,11 +101,9 @@ final readonly class JmhzZeroAmendmentSubmissionService
                     throw new \DomainException('Řádné hlášení nebylo přijato celé.');
                 }
                 $this->assertComponent($guid, $periodStart, $link, $bounds, $touched);
-                $this->serializer->serialize(
-                    $xml,
-                    [$guid],
-                    $this->envelope($identity->submissionGuid),
-                );
+                if (($shape[$guid] ?? null) !== null) {
+                    throw $shape[$guid];
+                }
             } catch (JmhzXmlException $exception) {
                 $blocker = ['code' => $exception->validationCode, 'message' => $exception->getMessage()];
             } catch (\DomainException $exception) {
@@ -104,6 +113,7 @@ final readonly class JmhzZeroAmendmentSubmissionService
                 $employeeIds[] = $link['employee_id'];
             }
             $rows[] = [
+                'amendments' => $touched[$guid] ?? [],
                 'form_guid' => $guid,
                 'person_external_identifier' => $component['person_external_identifier'],
                 'employment_external_identifier' => $component['employment_external_identifier'],
@@ -125,6 +135,7 @@ final readonly class JmhzZeroAmendmentSubmissionService
         return [
             'environment' => $environment,
             'submission_id' => $regularSubmissionId,
+            'submission_status' => $original['status'],
             'situation' => self::SITUATION,
             'month' => $identity->month,
             'year' => $identity->year,
@@ -352,7 +363,7 @@ final readonly class JmhzZeroAmendmentSubmissionService
      *
      * @param array{id:int,employee_id:int,employment_id:int}|null $link
      * @param array{start:?string,end:?string} $bounds
-     * @param array<string,true> $touched
+     * @param array<string,list<array<string,mixed>>> $touched
      */
     private function assertComponent(
         string $guid,
@@ -393,7 +404,7 @@ final readonly class JmhzZeroAmendmentSubmissionService
      * opravilo nebo stornovalo — u nich zmrazený původní formulář přestal
      * být tím, co u ČSSZ platí.
      *
-     * @return array<string,true>
+     * @return array<string,list<array{submission_id:int,status:string,submission_kind:string}>>
      */
     private function touchedFormGuids(int $supplierId, string $environment, int $regularSubmissionId): array
     {
@@ -403,7 +414,11 @@ final readonly class JmhzZeroAmendmentSubmissionService
                 continue;
             }
             foreach ($this->frozen->formGuids($supplierId, $environment, $row['id']) as $guid) {
-                $touched[strtoupper($guid)] = true;
+                $touched[strtoupper($guid)][] = [
+                    'submission_id' => $row['id'],
+                    'status' => $row['status'],
+                    'submission_kind' => $row['submission_kind'],
+                ];
             }
         }
 
@@ -413,8 +428,17 @@ final readonly class JmhzZeroAmendmentSubmissionService
     /** @return array{id:int,employee_id:int,employment_id:int}|null */
     private function employment(int $supplierId, string $environment, string $externalIdentifier): ?array
     {
+        $hash = $this->employmentHash($supplierId, $externalIdentifier);
+
+        return $hash === null
+            ? null
+            : $this->identities->employmentByExternalIdValueHash($supplierId, $environment, 'id_ppv', $hash);
+    }
+
+    private function employmentHash(int $supplierId, string $externalIdentifier): ?string
+    {
         try {
-            $hash = $this->sensitiveData->lookupHash(
+            return $this->sensitiveData->lookupHash(
                 $externalIdentifier,
                 PayrollSensitiveField::EMPLOYMENT_EXTERNAL_IDENTIFIER,
                 $supplierId,
@@ -422,8 +446,6 @@ final readonly class JmhzZeroAmendmentSubmissionService
         } catch (\InvalidArgumentException) {
             return null;
         }
-
-        return $this->identities->employmentByExternalIdValueHash($supplierId, $environment, 'id_ppv', $hash);
     }
 
     /** @return array<string,mixed> */

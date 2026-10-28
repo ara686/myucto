@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MyInvoice\Tests\Integration\Payroll;
 
 use MyInvoice\Action\Payroll\PayrollJmhzCorrectionAction;
+use MyInvoice\Action\Payroll\PayrollJmhzPost20Action;
 use MyInvoice\Repository\Payroll\PayrollComponentJmhzMappingRepository;
 use MyInvoice\Service\Payroll\Ruleset\CanonicalJson;
 use MyInvoice\Service\Payroll\Submission\Jmhz\JmhzAttributeProjection;
@@ -136,6 +137,69 @@ final class PayrollJmhzZeroAmendmentFlowTest extends TestCase
         $implicit = $this->freeze($regularId, [$guid], 'regular_without_work');
         self::assertSame(422, $implicit['status']);
         self::assertStringContainsString('výslovně potvrdit', (string) $implicit['body']['error']['message']);
+    }
+
+    /**
+     * Průvodce po 20. dni (Pravidla podání 1.4.5, „Postup po 20. dni", B):
+     * zapomenutá odhláška = REGZEC akce 2 a nulová opravná hlášení za měsíce
+     * po skončení. Průvodce ukáže, že červenec čeká na anulaci a odhláška
+     * chybí; po zmrazení anulace je měsíc vyřízený. U neplatného PPV (A)
+     * aplikace měsíce v období vztahu sama neanuluje.
+     */
+    public function testPost20GuidePairsRegistrationWithMonthAmendments(): void
+    {
+        [$annulled, , $regularId] = $this->acceptedJulyWithTwoEmployees();
+        $this->endEmployment($annulled['employment_id'], '2026-06-30');
+
+        $before = $this->guide($annulled['employment_id'], 'late_termination');
+        self::assertSame(200, $before['status'], CanonicalJson::encode($before['body']));
+        self::assertSame([2], $before['body']['regzec_actions']);
+        self::assertSame('amendments_first', $before['body']['order']);
+        self::assertFalse($before['body']['registration']['prepared']);
+        self::assertSame('open', $before['body']['status']);
+        self::assertCount(1, $before['body']['months']);
+        $month = $before['body']['months'][0];
+        self::assertSame('2026-07', $month['period']);
+        self::assertSame($regularId, $month['submission_id']);
+        self::assertSame('outside', $month['scope']);
+        self::assertSame('annul', $month['action']);
+
+        $frozen = $this->freeze($regularId, [$month['form_guid']]);
+        self::assertSame(201, $frozen['status'], CanonicalJson::encode($frozen['body']));
+
+        $after = $this->guide($annulled['employment_id'], 'late_termination');
+        self::assertSame('amended', $after['body']['months'][0]['action']);
+        self::assertSame($frozen['body']['submission_id'], $after['body']['months'][0]['amendments'][0]['submission_id']);
+        self::assertSame('partially_done', $after['body']['status']);
+
+        $invalid = $this->guide($annulled['employment_id'], 'invalid_employment');
+        self::assertSame([8], $invalid['body']['regzec_actions']);
+        self::assertSame('together', $invalid['body']['order']);
+
+        $unknown = $this->guide($annulled['employment_id'], 'storno');
+        self::assertSame(422, $unknown['status']);
+    }
+
+    /**
+     * Neplatný PPV (A): měsíce v období vztahu podle evidence aplikace
+     * nulovým hlášením sama neanuluje (fail-closed), průvodce je vede jako
+     * ruční krok.
+     */
+    public function testPost20GuideLeavesMonthsInsideEmploymentToManualStep(): void
+    {
+        [$annulled] = $this->acceptedJulyWithTwoEmployees();
+
+        $guide = $this->guide($annulled['employment_id'], 'invalid_employment');
+
+        self::assertSame(200, $guide['status'], CanonicalJson::encode($guide['body']));
+        self::assertCount(1, $guide['body']['months']);
+        self::assertSame('inside', $guide['body']['months'][0]['scope']);
+        self::assertSame('manual', $guide['body']['months'][0]['action']);
+        self::assertSame(
+            'jmhz_zero_amendment_employment_active_in_month',
+            $guide['body']['months'][0]['blocker']['code'],
+        );
+        self::assertSame([], $this->guide($annulled['employment_id'], 'late_termination')['body']['months']);
     }
 
     /** Anulovat jde až úplně přijaté řádné hlášení. */
@@ -300,6 +364,20 @@ final class PayrollJmhzZeroAmendmentFlowTest extends TestCase
                 ]),
             new Response(),
             ['submissionId' => (string) $regularId],
+        ));
+    }
+
+    /** @return array{status:int,body:array<string,mixed>} */
+    private function guide(int $employmentId, string $situation): array
+    {
+        $action = $this->container->get(PayrollJmhzPost20Action::class);
+        self::assertInstanceOf(PayrollJmhzPost20Action::class, $action);
+
+        return $this->respond($action(
+            $this->request('GET', "/api/payroll/submissions/jmhz-post20/{$employmentId}")
+                ->withQueryParams(['environment' => 'test', 'situation' => $situation]),
+            new Response(),
+            ['employmentId' => (string) $employmentId],
         ));
     }
 

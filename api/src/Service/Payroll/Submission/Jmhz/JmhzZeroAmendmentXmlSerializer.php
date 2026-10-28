@@ -172,6 +172,36 @@ final class JmhzZeroAmendmentXmlSerializer
     }
 
     /**
+     * Posouzení všech součástí původního podání najednou (dokument se čte
+     * jednou): GUID formuláře => `null`, pokud ho tvar dovoluje anulovat,
+     * jinak výjimka, která by anulaci zastavila.
+     *
+     * @return array<string,?JmhzXmlException>
+     */
+    public function assess(string $originalXml): array
+    {
+        [, $xpath] = self::load($originalXml);
+        $byPerson = [];
+        $forms = self::nodes($xpath, '/p:jmhz/p:formulareOsob/p:formularOsoby');
+        foreach ($forms as $form) {
+            $person = self::text($xpath, './/f:identifikace/f:ikMpsv', $form);
+            $byPerson[$person] = ($byPerson[$person] ?? 0) + 1;
+        }
+        $result = [];
+        foreach ($forms as $form) {
+            $guid = strtoupper(self::text($xpath, './p:hlavicka/p:idFormulare', $form));
+            try {
+                $this->assertAnnullable($xpath, $form, $byPerson);
+                $result[$guid] = null;
+            } catch (JmhzXmlException $exception) {
+                $result[$guid] = $exception;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
      * @param list<string> $formGuids
      * @return list<DOMElement>
      */

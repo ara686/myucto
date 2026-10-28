@@ -217,6 +217,7 @@ final class RoutePermissionMapTest extends TestCase
             ['GET', '/api/payroll/submissions/42/jmhz-content-correction', 'payroll.submissions', AccessLevel::WRITE],
             ['GET', '/api/payroll/submissions/42/jmhz-content-correction-preparations', 'payroll.submissions', AccessLevel::WRITE],
             ['POST', '/api/payroll/submissions/42/jmhz-content-correction', 'payroll.submissions', AccessLevel::WRITE],
+            ['GET', '/api/payroll/submissions/jmhz-post20/42', 'payroll.submissions', AccessLevel::READ],
             ['GET', '/api/payroll/submissions/42/jmhz-zero-amendment', 'payroll.submissions', AccessLevel::WRITE],
             ['POST', '/api/payroll/submissions/42/jmhz-zero-amendment', 'payroll.submissions', AccessLevel::WRITE],
             ['GET', '/api/payroll/submissions/42', 'payroll.submissions', AccessLevel::READ],
