@@ -3047,9 +3047,10 @@ Ani jednu lhůtu nelze prodloužit. Aplikace je vypisuje jako text; do daňovéh
 kalendáře ani do přehledu mzdových termínů se nepromítají.
 
 > [!TIP]
-> Za rok 2026 se obojí podává běžným způsobem. Teprve od období 2027
-> nahradí vyúčtování zálohové daně hlášení k záloze v měsíčním hlášení, takže
-> tuhle cestu je potřeba ještě jednu sezónu.
+> Za rok 2026 se obojí podává běžným způsobem. Za období 2027 a dál aplikace
+> vyúčtování nesestaví ani nepřipomene: vyúčtování zálohové daně nahradilo
+> hlášení k záloze v měsíčním hlášení a srážková daň ze mzdy zanikla (příjmy
+> podle § 6 odst. 4 se daní zálohou).
 
 **Kde to je.** Na `Mzdy → Přehled mezd`, panel **Roční vyúčtování daně**,
 pod ročním zúčtováním a roční uzávěrkou. Vybíráte rok (výchozí je loňský)
