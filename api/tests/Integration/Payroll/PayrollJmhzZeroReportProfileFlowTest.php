@@ -92,6 +92,55 @@ final class PayrollJmhzZeroReportProfileFlowTest extends TestCase
         self::assertSame('0.000', $form->value('10259'));
         self::assertSame('0.000', $form->value('10260'));
         self::assertSame('0.00', $form->value('10261'));
+        $this->assertNoUnworkedHours($form);
+    }
+
+    /**
+     * Rodičovská přes celý měsíc u vztahu s pravidelným kalendářem, ale bez
+     * publikovaných směn: hodiny nepřítomnosti se měří kalendářem stejně jako
+     * krácení mzdy, takže je návrh souhrnu nese a příprava hlášení se nezastaví.
+     * Svátek 6. 7. do rodičovské nepatří, souhrn ho přičte zvlášť jako svátek
+     * bez mzdy; dohromady tak neodpracované hodiny nepřekročí sjednaný fond.
+     */
+    public function testParentalLeaveWithoutPublishedShiftsSuggestsCalendarHours(): void
+    {
+        $person = $this->hireEmployee('Petra Kalendářová', 'female', '1990-09-09', publishShifts: false);
+        $this->createApprovedAbsence($person['employment_id'], 'parental', '2026-06-01', '2026-12-31');
+        $this->ensureRegularCalendar($person['employment_id']);
+
+        $suggestions = $this->timeMonthPreview($person['employment_id'], self::PERIOD)['suggestions'];
+        self::assertSame('176', $suggestions['parental_hours']);
+        self::assertSame('176', $suggestions['unworked_total_hours']);
+        self::assertTrue($suggestions['unworked_hours_occurred']);
+
+        $response = $this->approveTimeMonth($person['employment_id'], self::PERIOD, []);
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getBody());
+        $stored = $this->db->pdo()->prepare(
+            'SELECT unworked_total_millihours, agreed_fund_millihours
+               FROM payroll_jmhz_work_month_revisions
+              WHERE supplier_id = ? AND employment_id = ?
+              ORDER BY id DESC LIMIT 1'
+        );
+        $stored->execute([$this->supplierId, $person['employment_id']]);
+        self::assertSame(
+            ['unworked_total_millihours' => 184_000, 'agreed_fund_millihours' => 184_000],
+            array_map('intval', $stored->fetch(\PDO::FETCH_ASSOC) ?: []),
+        );
+
+        $form = JmhzAttributeProjection::fromXml($this->submission('parental-calendar'))->forms()[0];
+        self::assertSame('0.000', $form->value('10260'));
+        $this->assertNoUnworkedHours($form);
+    }
+
+    /**
+     * Fond je v nulovém formuláři 0 a neodpracované hodiny se počítají z něj,
+     * takže blok neodpracovaných hodin i překážek chybí jako ve vzoru MPSV.
+     */
+    private function assertNoUnworkedHours(JmhzAttributeScope $form): void
+    {
+        foreach (['10275', '10276', '10277', '10278', '10279', '10280', '10471', '10472'] as $attributeId) {
+            self::assertFalse($form->has($attributeId), "Atribut {$attributeId} v nulovém formuláři.");
+        }
     }
 
     /**
@@ -202,7 +251,7 @@ final class PayrollJmhzZeroReportProfileFlowTest extends TestCase
     }
 
     /** @return array{employee_id:int,employment_id:int,name:string,sequence:int} */
-    private function hireEmployee(string $name, string $sex, string $birthDate): array
+    private function hireEmployee(string $name, string $sex, string $birthDate, bool $publishShifts = true): array
     {
         $sequence = ++$this->sequence;
         $person = $this->createEmployment(
@@ -218,7 +267,9 @@ final class PayrollJmhzZeroReportProfileFlowTest extends TestCase
             healthTopUpResponsibility: 'employer_obstacle_verified',
         );
         $this->completeIdentity($person, $name, $sex, $birthDate, $sequence);
-        $this->publishShifts($person['employment_id'], self::workdays(self::PERIOD));
+        if ($publishShifts) {
+            $this->publishShifts($person['employment_id'], self::workdays(self::PERIOD));
+        }
 
         return $person + ['sequence' => $sequence];
     }
