@@ -13142,6 +13142,7 @@
         "jmhz_xml_surcharge_total_missing": "Rozpad příplatků nelze vykázat bez celkové částky příplatků (pole 10332). Zkontrolujte mzdové složky příplatků v mzdovém běhu.",
         "jmhz_xml_temporary_assignment_user_invalid": "Uživatel dočasného přidělení není vyplněný správně (IČO musí mít osm číslic). Opravte ho na kartě pracovního vztahu.",
         "jmhz_xml_risk_categorization_invalid": "Kategorizace rizika musí být z číselníku ČSSZ (1, 6 nebo 7). Opravte ji na kartě pracovního vztahu.",
+        "jmhz_xml_risk_shift_count_forbidden": "Počet směn při rizikové práci se uvádí jen u práce kategorie 4 s odpracovanými hodinami rizikové práce. Obraťte se na podporu.",
         "jmhz_xml_deferred_income_type_invalid": "Typ odloženého příjmu musí být z číselníku ČSSZ (1 až 6). Kontaktujte podporu.",
         "jmhz_xml_deferred_income_periods_unsupported": "Odložený příjem typu 1 nese právě jedno období ELDP; jiné rozložení aplikace nesestaví. Hlášení podejte ručně přes ePortál ČSSZ.",
         "jmhz_xml_deferred_income_period_invalid": "Měsíc odloženého příjmu musí být 1 až 12. Kontaktujte podporu.",

@@ -3767,10 +3767,13 @@ final class JmhzScenario1DocumentResolver
      *   S podepsaným prohlášením samostatný základ nevzniká a 10555 = 0.
      *   `$paragraph6IncomeCzk` = `null` znamená, že nález vznikl u osoby;
      *   chybějící vztah v něm nález vztahu.
-     * - `social_base.reported_income_czk` (10476) nese ve verzi 2027 nový
-     *   význam „započitatelný příjem pro účely nemocenského pojištění" (ZP 062):
-     *   nezastropovaný vyměřovací základ účastného vztahu, u neúčastného vztahu
-     *   a v měsíci bez příjmu 0.
+     * - `social_base.reported_income_czk` (10476) se ve verzi 2027 jmenuje
+     *   „započitatelný příjem pro účely nemocenského pojištění" (ZP 062 je jen
+     *   přejmenování): nezastropovaný vyměřovací základ účastného vztahu
+     *   včetně částky nad maximálním VZ (§ 18 odst. 2 ZNP), u DPP a zaměstnání
+     *   malého rozsahu bez účasti dosažený podlimitní příjem (§ 19 odst. 9
+     *   ZNP, Pokyny MH 1.4.14 str. 108), v měsíci bez příjmu 0. Obsah je
+     *   stejný jako u 10476 ve verzi 2026.
      * - `risk_work.categories` (10273, 10274, 10580): kategorie rizika
      *   s odpracovanými hodinami vztahu po odečtu náhradního volna
      *   ({@see JmhzReportedWorkHours}, kontrola 57). Počet směn 10580 (IN42)
@@ -3895,7 +3898,19 @@ final class JmhzScenario1DocumentResolver
         }
         $participation = $this->object($insurance['participation'] ?? null);
         if (($participation['status'] ?? null) !== 'participates') {
-            return 0;
+            // DPP a zaměstnání malého rozsahu bez účasti: dosažený (podlimitní)
+            // příjem měsíce, § 19 odst. 9 ZNP, Pokyny MH 1.4.14 str. 108. Je to
+            // tentýž zdroj jako 10476 ve verzi 2026 ({@see self::socialBase()});
+            // vztah bez příjmu má nulu.
+            $income = $participation['participation_income_minor_units'] ?? null;
+
+            return $this->wholeCzk(
+                is_int($income) ? $income : 0,
+                '10476',
+                'employment',
+                $employmentId,
+                $blockers,
+            );
         }
         $base = $insurance['assessment_base_minor_units'] ?? null;
 

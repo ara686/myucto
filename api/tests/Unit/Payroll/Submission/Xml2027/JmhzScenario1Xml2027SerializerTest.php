@@ -465,6 +465,26 @@ final class JmhzScenario1Xml2027SerializerTest extends TestCase
         self::fail('Neplatná adresa místa výkonu práce se nesmí dostat do datové věty.');
     }
 
+    /**
+     * Kontrola 386 (katalog 1.5.0.4): počet směn 10580 jen u kategorie rizika 1
+     * s hodinami, „v ostatních případech nesmí být vyplněn". Dokument, který by
+     * směny nesl u jiné kategorie, serializér odmítne, místo aby je zapsal.
+     */
+    public function testShiftCountOutsideRiskCategoryOneIsRefused(): void
+    {
+        $payload = self::fullPayload();
+        $payload['people'][0]['employments'][0]['risk_work']['categorization_codes'] = ['6'];
+        $payload['people'][0]['employments'][0]['risk_work']['categories'][0]['code'] = '6';
+        try {
+            $this->validator()->dryRun(self::resolution($payload), self::envelope());
+        } catch (JmhzXmlException $exception) {
+            self::assertSame('jmhz_xml_risk_shift_count_forbidden', $exception->validationCode);
+
+            return;
+        }
+        self::fail('Směny u kategorie rizika 6 se nesmí dostat do datové věty.');
+    }
+
     public function testDocumentOf2026PeriodIsNotSerializedAs2027(): void
     {
         $payload = self::fullPayload();

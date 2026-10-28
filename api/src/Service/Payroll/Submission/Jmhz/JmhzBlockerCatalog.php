@@ -174,6 +174,7 @@ final class JmhzBlockerCatalog
         'jmhz_xml_deferred_income_periods_unsupported' => 'manual',
         'jmhz_xml_deferred_income_type_invalid' => 'support',
         'jmhz_xml_risk_categorization_invalid' => ['employment_terms', 'jmhz_risk_categorization_code'],
+        'jmhz_xml_risk_shift_count_forbidden' => 'support',
         'jmhz_xml_temporary_assignment_user_invalid' => ['employment_terms', 'jmhz_assignment_user_kind'],
         // Údaj verze 2027, pro který mzdové jádro zatím nemá podklad (resolver).
         'jmhz_2027_source_missing' => 'manual',

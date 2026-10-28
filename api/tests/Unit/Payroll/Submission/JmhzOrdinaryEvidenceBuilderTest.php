@@ -703,6 +703,41 @@ final class JmhzOrdinaryEvidenceBuilderTest extends TestCase
     }
 
     /**
+     * Kontrola 386 a IN42: 10580 jen při hodinách rizikové práce (10273 > 0).
+     * V měsíci bez odpracovaných hodin se počet směn nežádá, stejně jako ho
+     * resolver a serializér do věty nezapíšou ({@see Jmhz2027DocumentContract::riskShiftCountRequired()}).
+     */
+    public function testRiskShiftCountIsNotRequiredWithoutWorkedHours(): void
+    {
+        $risk = $this->sourceWithOrdinaryProfile();
+        $input = json_decode($risk['revision']['input_snapshot_json'], true, flags: JSON_THROW_ON_ERROR);
+        $input['people'][0]['employments'][0]['term']['social_employer_rate_category'] = 'risk_employment';
+        $input['people'][0]['employments'][0]['time_month']['jmhz_work_summary']['values'] = [
+            'worked_millihours' => 0,
+            'overtime_millihours' => null,
+        ];
+        $this->replaceInput($risk, $input);
+        $risk2027 = $this->atPeriod($risk, '2027-01-01');
+
+        $snapshot = (new JmhzOrdinaryEvidenceBuilder())->build(
+            7, $risk2027, 101, $this->facts(), 12, '2027-02-13T12:00:00Z', 'derived_from_frozen_payroll_sources',
+        );
+        self::assertArrayNotHasKey('risk_shift_count', $snapshot->payload);
+
+        $input['people'][0]['employments'][0]['time_month']['jmhz_work_summary']['values']['worked_millihours'] = 8_000;
+        $this->replaceInput($risk, $input);
+        try {
+            (new JmhzOrdinaryEvidenceBuilder())->build(
+                7, $this->atPeriod($risk, '2027-01-01'), 101, $this->facts(), 12, '2027-02-13T12:00:00Z',
+                'derived_from_frozen_payroll_sources',
+            );
+            self::fail('S hodinami rizikové práce se počet směn žádá.');
+        } catch (JmhzOrdinaryEvidenceException $exception) {
+            self::assertSame('jmhz_ordinary_evidence_risk_shifts_required', $exception->validationCode);
+        }
+    }
+
+    /**
      * @param array{revision:array<string,mixed>} $source
      * @return array{revision:array<string,mixed>}
      */

@@ -554,17 +554,30 @@ final class JmhzScenario1Document2027Test extends TestCase
         self::assertArrayNotHasKey(Jmhz2027DocumentContract::OZP_HEALTH_PAID_ON, $ozp);
     }
 
-    /** 10476 (`social_base.reported_income_czk`): neúčastný vztah má 0, ne neuvedeno. */
-    public function testSicknessCountableIncomeIsZeroForNonParticipatingRelationship(): void
+    /**
+     * 10476 (`social_base.reported_income_czk`, „započitatelný příjem"): u DPP
+     * a zaměstnání malého rozsahu bez účasti se uvádí dosažený podlimitní
+     * příjem (§ 19 odst. 9 ZNP, Pokyny MH 1.4.14 str. 108), tedy 8 000 Kč,
+     * ne 0; vztah bez příjmu má 0, ne neuvedeno. Stejně jako verze 2026.
+     */
+    public function testSicknessCountableIncomeOfNonParticipatingRelationshipIsItsIncome(): void
     {
         $payload = $this->completePayload('2027-04-01');
         $payload['people'][0]['employments'][0]['insurance']['participation']['status'] = 'not_participating';
+        $payload['people'][0]['employments'][0]['insurance']['participation']['participation_income_minor_units'] = 800_000;
 
         $resolution = $this->resolve($payload, '2027-04-01');
 
         self::assertSame(
-            0,
+            8000,
             $resolution->candidate?->payload['people'][0]['employments'][0]['social_base']['reported_income_czk'],
+        );
+
+        $payload['people'][0]['employments'][0]['insurance']['participation']['participation_income_minor_units'] = 0;
+        $zero = $this->resolve($payload, '2027-04-01');
+        self::assertSame(
+            0,
+            $zero->candidate?->payload['people'][0]['employments'][0]['social_base']['reported_income_czk'],
         );
     }
 

@@ -2452,6 +2452,15 @@ final class JmhzScenario1Xml2027Serializer
                 );
             }
             $shifts = $row['shift_count'] ?? null;
+            if ($shifts !== null && !Jmhz2027DocumentContract::riskShiftCountRequired($code, $hours)) {
+                // Kontrola 386 (katalog 1.5.0.4): 10580 jen při 10274 = 1
+                // a 10273 > 0, „v ostatních případech nesmí být vyplněn".
+                $this->invalid(
+                    'jmhz_xml_risk_shift_count_forbidden',
+                    'Počet směn (10580) se uvádí jen u kategorie rizika 1 s odpracovanými'
+                        . ' hodinami rizikové práce.',
+                );
+            }
             if ($shifts !== null) {
                 $shifts = $this->int($shifts, '10580');
                 if ($shifts > 999) {

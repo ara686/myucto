@@ -13142,6 +13142,7 @@
         "jmhz_xml_surcharge_total_missing": "The surcharge breakdown cannot be reported without the total surcharge amount (field 10332). Check the surcharge payroll components in the payroll run.",
         "jmhz_xml_temporary_assignment_user_invalid": "The temporary assignment user is not filled in correctly (the company ID must have eight digits). Correct it on the employment card.",
         "jmhz_xml_risk_categorization_invalid": "The risk categorization must come from the ČSSZ code list (1, 6 or 7). Correct it on the employment card.",
+        "jmhz_xml_risk_shift_count_forbidden": "The number of shifts in risky work is reported only for category 4 work with hours worked in risky work. Contact support.",
         "jmhz_xml_deferred_income_type_invalid": "The deferred income type must come from the ČSSZ code list (1 to 6). Contact support.",
         "jmhz_xml_deferred_income_periods_unsupported": "Type 1 deferred income carries exactly one ELDP period; the application cannot build another layout. File the report manually through the ČSSZ ePortal.",
         "jmhz_xml_deferred_income_period_invalid": "The deferred income month must be 1 to 12. Contact support.",

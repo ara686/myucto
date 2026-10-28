@@ -297,6 +297,7 @@ final class JmhzOrdinaryEvidenceBuilder
         if ($riskShiftCount === null
             && $is2027
             && ($term['social_employer_rate_category'] ?? null) === 'risk_employment'
+            && self::riskShiftCountExpected($employment)
         ) {
             $this->invalid(
                 'jmhz_ordinary_evidence_risk_shifts_required',
@@ -319,6 +320,31 @@ final class JmhzOrdinaryEvidenceBuilder
             $payload['risk_shift_count'] = $riskShiftCount;
         }
         return new JmhzOrdinaryEvidenceSnapshot($payload);
+    }
+
+    /**
+     * Čeká se v měsíci počet směn 10580? Jen při odpracovaných hodinách
+     * rizikové práce (IN42, kontrola 386: 10274 = 1 a 10273 > 0), tedy podle
+     * {@see Xml2027\Jmhz2027DocumentContract::riskShiftCountRequired()}
+     * s hodinami vztahu po odečtu náhradního volna, stejně jako resolver.
+     * Bez zmrazeného pracovního souhrnu se počet žádá (fail-closed).
+     *
+     * @param array<string,mixed> $employment
+     */
+    private static function riskShiftCountExpected(array $employment): bool
+    {
+        $timeMonth = $employment['time_month'] ?? null;
+        $summary = is_array($timeMonth) ? ($timeMonth['jmhz_work_summary'] ?? null) : null;
+        $values = is_array($summary) ? ($summary['values'] ?? null) : null;
+        if (!is_array($values)) {
+            return true;
+        }
+        $worked = JmhzReportedWorkHours::reported($values, true)['worked_millihours'];
+
+        return $worked === null || Xml2027\Jmhz2027DocumentContract::riskShiftCountRequired(
+            Xml2027\Jmhz2027DocumentContract::RISK_SHIFT_CODE,
+            $worked,
+        );
     }
 
     /**
