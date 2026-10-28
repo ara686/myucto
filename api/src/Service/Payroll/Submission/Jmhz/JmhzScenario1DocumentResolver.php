@@ -518,10 +518,16 @@ final class JmhzScenario1DocumentResolver
                         && $employmentId === $socialEmploymentId);
                 $socialContributions = null;
                 if ($ownContribution !== null && $reportsSocial) {
-                    $employerSocial = $this->relationshipEmployerSocialCzk(
-                        $socialBase,
-                        $preparation->periodStart,
-                    );
+                    // Vztah bez účasti nemá vyměřovací základ, a tedy ani
+                    // pojistné zaměstnavatele; relationshipContributions()
+                    // už ověřilo, že nenese ani pojistné zaměstnance. 10481
+                    // je přesto povinný údaj formuláře a vykazuje se nulou.
+                    $employerSocial = $ownContribution['participates']
+                        ? $this->relationshipEmployerSocialCzk(
+                            $socialBase,
+                            $preparation->periodStart,
+                        )
+                        : 0;
                     $socialContributions = [
                         'employee_social_czk' => $this->wholeCzk(
                             $ownContribution['before_minor'],

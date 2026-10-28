@@ -1779,8 +1779,15 @@ final class JmhzScenario1XmlSerializerTest extends TestCase
         self::assertStringNotContainsString('<form:castkaOdvodPojistneho>', $result['xml']);
         self::assertStringNotContainsString('<form:kod>', $result['xml']);
         self::assertStringNotContainsString('<form:platnostOd>', $result['xml']);
-        self::assertStringNotContainsString('<form:pojisteniZamestnanec>', $result['xml']);
-        self::assertStringNotContainsString('<form:pojisteniZamestnavatel>', $result['xml']);
+        // Matice datových scénářů 1.4.0.2 vede 10370 i 10481 jako povinné
+        // bez podmínky a ukázka MPSV „Jedna DPP do 11499" je u dohody bez
+        // účasti vyplňuje nulou; kontrola 341 chybějící povinný údaj odmítne.
+        $compact = preg_replace('/>\s+</', '><', $result['xml']) ?? '';
+        self::assertStringContainsString(
+            '<form:pojisteniZamestnanec><form:socialniPojisteni>0</form:socialniPojisteni></form:pojisteniZamestnanec>'
+                . '<form:pojisteniZamestnavatel><form:socialniPojisteni>0</form:socialniPojisteni></form:pojisteniZamestnavatel>',
+            $compact,
+        );
     }
 
     public function testNonUuidV7GuidIsRefused(): void

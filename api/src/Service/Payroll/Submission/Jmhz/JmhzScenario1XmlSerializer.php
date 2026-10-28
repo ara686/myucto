@@ -2199,16 +2199,28 @@ final class JmhzScenario1XmlSerializer
         // (JmhzScenario1DocumentResolver::socialContributionEmployment()).
         // Dokument bez příznaku vznikl v době, kdy měla osoba vždy jen jeden
         // formulář.
+        //
+        // 10370 a 10481 jsou povinné na KAŽDÉM formuláři s blokem pojištění:
+        // matice datových scénářů 1.4.0.2 je vede jako „P" bez podmínky ve
+        // všech listech (1 až 9, M, K/N–S, odložený příjem), Pokyny MH 1.4.14
+        // (kap. 3.6.7 a 3.6.8) jako „Povinný údaj" a chybějící povinný údaj
+        // odmítá kontrola 341. Formulář bez účasti na pojištění (DPP nebo
+        // DPČ pod hranicí, vztah v souběhu, který pojistné osoby nenese) je
+        // proto vykazuje nulou, stejně jako ukázka MPSV „Jedna DPP do 11499".
+        // Kontroly 118 a 315 berou chybějící 10477 jako nulu, nula pojistného
+        // jim tedy odpovídá, a součet kontroly 12 se nezmění.
         $reportsSocial = ($employment['reports_social_contributions'] ?? true) === true;
         $ownContributions = $this->object($employment['social_contributions'] ?? null);
         foreach ([
             'form:pojisteniZamestnanec' => ['employee_social_czk', '10370'],
             'form:pojisteniZamestnavatel' => ['employer_social_czk', '10481'],
         ] as $element => [$key, $attributeId]) {
-            $value = $ownContributions !== []
-                ? ($ownContributions[$key] ?? null)
-                : ($summary[$key] ?? null);
-            if (!$reportsSocial || !is_int($value) || $amount === null) {
+            $value = match (true) {
+                $ownContributions !== [] => $ownContributions[$key] ?? null,
+                $reportsSocial => $summary[$key] ?? null,
+                default => 0,
+            };
+            if (!is_int($value)) {
                 continue;
             }
             $wrapper = $this->node($dom, JmhzSchemaCatalog::NS_FORM, $element);
