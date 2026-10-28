@@ -27,8 +27,11 @@ final class JmhzSpecPackageCatalog
         'fc244e34b74117cfc332b62d787738754562b91c61f33ee29370197967f8e5b0';
 
     /**
-     * Ročníky, jejichž datovou větu umí serializér sestavit. Ročník 2027 sem
-     * přibude se serializérem XSD 1.5 (WP-3); do té doby je jen připnutý.
+     * Ročníky, jejichž hlášení se smí sestavit a zmrazit. Serializér XSD 1.5
+     * i dokument podle jeho kontraktu už ročník 2027 umí; mzdový běh za 01/2027
+     * ale dál stojí na číselnících obcí a států, které pro rok 2027 připnuté
+     * nejsou (kontroly 152, 153, 335). Ročník 2027 sem přibude s nimi
+     * (`PayrollJmhz2027FlowTest` hlídá, že je to poslední mezera toku).
      *
      * @var list<JmhzSpecVersion>
      */

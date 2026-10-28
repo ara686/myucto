@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace MyInvoice\Tests\Unit\Payroll\Submission;
 
+use MyInvoice\Service\Payroll\Ruleset\CzechPayrollRulesets;
 use MyInvoice\Service\Payroll\Submission\Jmhz\JmhzAnnualEvidenceService;
+use MyInvoice\Service\Payroll\Submission\Jmhz\JmhzControlContext;
+use MyInvoice\Service\Payroll\Submission\Jmhz\JmhzScenario1ControlValidator;
 use MyInvoice\Service\Payroll\Submission\Jmhz\JmhzPreparationSnapshot;
 use MyInvoice\Service\Payroll\Submission\Jmhz\JmhzPreparationSnapshotBuilder;
 use MyInvoice\Service\Payroll\Submission\Jmhz\JmhzPvpojPreview;
@@ -76,6 +79,53 @@ final class JmhzScenario1Document2027Test extends TestCase
         self::assertStringContainsString('<form:prijemPar6>0</form:prijemPar6>', $xml);
         self::assertStringContainsString('<so:typKolektSmlouvy>1</so:typKolektSmlouvy>', $xml);
         self::assertStringContainsString('<form:zapocitatelnyPrijem>1000</form:zapocitatelnyPrijem>', $xml);
+    }
+
+    /**
+     * Datová věta 2027 z resolveru projde kontrolami katalogu 1.5.0.4. Jediné
+     * nepropustné nálezy jsou kontroly obce a státu místa výkonu (152, 153,
+     * 335): číselníky obcí a států s účinností pro rok 2027 připnuté nejsou
+     * (fail-closed), proto hlášení za 2027 zatím nejde zmrazit.
+     */
+    public function testDataSentence2027PassesControlsExceptUnpinnedCodebooks(): void
+    {
+        $abroad = $this->completePayload('2027-04-01');
+        $domestic = $this->completePayload('2027-04-01');
+        $term = &$domestic['people'][0]['employments'][0]['term'];
+        $term['work_place'] = 'Brno';
+        $term['jmhz_workplace_municipality_code'] = '582786';
+        $term['jmhz_workplace_country_code'] = 'CZ';
+        $term['jmhz_workplace_house_number'] = '120';
+        $term['jmhz_workplace_postal_code'] = '60200';
+        unset($term);
+
+        self::assertSame([153 => 'unverifiable'], $this->controlStoppers($abroad));
+        self::assertSame(
+            [152 => 'unverifiable', 153 => 'unverifiable', 335 => 'unverifiable'],
+            $this->controlStoppers($domestic),
+        );
+    }
+
+    /**
+     * Nepropustné nálezy kontrol 2027 nad datovou větou z resolveru.
+     *
+     * @param array<string,mixed> $payload
+     * @return array<int,string>
+     */
+    private function controlStoppers(array $payload): array
+    {
+        $resolution = $this->resolveForSubmission($payload, '2027-04-01');
+        self::assertSame([], $this->blockers($resolution));
+        $xml = $this->validator()->dryRun($resolution, $this->envelope())['xml'];
+        $report = JmhzScenario1ControlValidator::create(CzechPayrollRulesets::provider(), null, JmhzSpecVersion::V2027)
+            ->validate($xml, new JmhzControlContext('2027-05-12', schemaValidated: true));
+        $stoppers = [];
+        foreach ([...$report->blocking(), ...$report->coverageGaps()] as $finding) {
+            $stoppers[$finding->controlId] = $finding->outcome->value;
+        }
+        ksort($stoppers);
+
+        return $stoppers;
     }
 
     /**
