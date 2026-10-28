@@ -339,6 +339,17 @@ HOZ je doručené do schránky pojišťovny.
 > nebo ukončení předregistrace P2 (viz
 > [§ 85.14.16](#851416-registrace-zamestnance-prezec-a-regzec)).
 
+**Členové volebních komisí.** Člena okrskové volební komise, který dostává
+jen osvobozenou odměnu a nemá u zaměstnavatele jiný příjem ze závislé činnosti
+ani jiné zaměstnání, nepřihlašujete ani nevykazujete (ani sociální, ani
+daňovou část). Je-li zároveň vaším zaměstnancem, odměna se přičte do
+zúčtovaného příjmu za měsíc a znovu se nepřihlašuje. Člena komise se
+zdanitelným příjmem (nadlimitní stravné) založte s druhem činnosti 13;
+vyplňují se jen daňové atributy a přihlašuje se do 8 dnů od složení slibu.
+U komise pro místní referendum odměna osvobozená není, takový člen se zakládá
+jako zaměstnanec s druhem činnosti 1 (malý rozsah). Formulář ukáže u druhu
+činnosti 13 stručnou nápovědu.
+
 ## 85.6 Krok za krokem: nemoc, ošetřování, mateřská a otcovská
 
 NEMPRI je oznámení o dávce, HZUPN hlášení o skončení pracovní neschopnosti.
@@ -395,6 +406,18 @@ dál.
 **Jak poznáte, že je hotovo:** Odhláška A2 má stav přijato podle protokolu
 ČSSZ a HOZ s kódem `O` je doručené do schránky pojišťovny. Položky výstupního
 checklistu na kartě vztahu jsou splněné.
+
+**Druh zaměstnání v podkladech pro podporu v nezaměstnanosti.** Pole **Druh
+zaměstnání v podkladech** nabízí pracovní vztah a služební poměr a od
+1. 1. 2027 i služební poměr podle zákonů č. 361/2003 Sb. a č. 221/1999 Sb.;
+u služebních poměrů pak nabídne jen důvody skončení, které k danému druhu
+patří. Státní zaměstnanci vykonávají od 1. 11. 2026 práci v pracovním poměru
+(zákon č. 195/2026 Sb.), proto u jejich skončení od tohoto dne zvolte pracovní
+vztah a jeho důvod ukončení, jinak 15 (Ostatní). Služební poměr zvolte u
+skončení do 31. 10. 2026 a u služebního poměru končícího 1. 11. 2026 podle
+§ 95 odst. 19 s důvodem 5 (Ostatní). Zvolíte-li služební poměr se skončením
+po 1. 11. 2026, formulář jen upozorní; nic nezakazuje, protože jiné služební
+vztahy než státních zaměstnanců pokračují.
 
 > [!WARNING]
 > Příprava A2 prověří všechna období od ledna 2026 do měsíce
