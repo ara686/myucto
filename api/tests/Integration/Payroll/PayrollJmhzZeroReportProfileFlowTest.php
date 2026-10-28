@@ -120,8 +120,10 @@ final class PayrollJmhzZeroReportProfileFlowTest extends TestCase
         self::assertFalse($form->has('10240'));
         $this->assertSubmissionHeader($projection);
         $this->assertRegularZeroTable($form, [...self::FUND_ATTRIBUTES, ...self::AGREEMENT_SOCIAL_ATTRIBUTES]);
+        // Pojistné a jeho základ jsou podle datových scénářů MH povinné i u vztahu
+        // bez účasti na pojištění – vykazují se nulou (oprava fix/jmhz-dpp-pojistne-nula).
         foreach (self::AGREEMENT_SOCIAL_ATTRIBUTES as $attributeId) {
-            self::assertFalse($form->has($attributeId), "Atribut {$attributeId} u dohody bez účasti.");
+            self::assertSame('0', $form->value($attributeId), "Atribut {$attributeId} u dohody bez účasti.");
         }
     }
 
