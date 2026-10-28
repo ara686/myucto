@@ -2809,10 +2809,9 @@ se potvrzuje jen ve formuláři.
   věta druhá zákona č. 582/1991 Sb.). List se vede do tohoto měsíce včetně,
   pozdější měsíce se z listu vypustí; nezbude-li žádný, list se nesestaví
   a hláška to řekne. Za roky do
-  2024 se list za pracujícího důchodce vede dál. Z evidence se bere první
-  celý měsíc starobního důchodu (druh 1 bez příznaku předčasnosti): důchod
-  přiznaný uprostřed měsíce se počítá od následujícího měsíce, takže měsíc
-  přiznání v listu zůstane.
+  2024 se list za pracujícího důchodce vede dál. Z evidence se bere měsíc
+  začátku starobního důchodu (druh 1 bez příznaku předčasnosti), tedy měsíc,
+  od něhož náleží výplata: důchod přiznaný od 15. dubna ukončí list dubnem.
 - **Účast na důchodovém pojištění v cizině.** Je-li zaměstnanec účasten
   pojištění v cizině, vede se list i za poživatele plného starobního důchodu.
 
