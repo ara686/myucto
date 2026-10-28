@@ -301,8 +301,8 @@ final class PayrollRegistrationSpecVersionRules
         }
         $worker = $delta['foreign_worker'] ?? null;
         if (is_array($worker)) {
-            self::assertForeignWorker($worker, $citizenship, false);
             self::assertControl5($worker, $citizenship);
+            self::assertForeignWorker($worker, $citizenship, false);
         }
     }
 
@@ -405,6 +405,14 @@ final class PayrollRegistrationSpecVersionRules
      */
     private static function assertControl5(array $worker, ?string $citizenship): void
     {
+        if ($citizenship === 'CZ') {
+            self::fail(
+                'registration_regzec27_foreign_worker_forbidden',
+                'Údaje o přístupu na trh práce se u zaměstnance s českým'
+                    . ' státním občanstvím neposílají (kontrola 5). Odeberte je'
+                    . ' z oznámení, nebo opravte státní občanství na kartě osoby.',
+            );
+        }
         $required = match (true) {
             ($worker['free_access'] ?? null) === true => ['free_access', 'free_access_reason_code'],
             ($worker['free_access'] ?? null) === false

@@ -247,6 +247,92 @@ final class PayrollRegistrationRegzec27Test extends TestCase
         self::assertStringContainsString('<forinreg state="SK"/>', $xml);
     }
 
+    /**
+     * Kontrola 5 (EDV 1.5.0.3, Vysvětlivky): údaje cizince v A3/A4 jen jako
+     * celá sada se státním občanstvím 10067. Občan ČR je nesmí mít vůbec.
+     */
+    public function testForeignWorkerChangeIsACompleteSetWithCitizenship(): void
+    {
+        $data = [
+            'activity_code' => '1',
+            'relationship_detail_code' => '1',
+            'delta' => ['foreign_worker' => [
+                'free_access' => false,
+                'permit_type_code' => '2',
+                'permit_identifier' => 'SYN-PERMIT-1',
+                'permit_from' => '2027-01-01',
+                'permit_to' => '2028-12-31',
+                'stay_valid_from' => '2027-01-01',
+                'stay_valid_to' => '2028-12-31',
+            ]],
+        ];
+        $xml = self::validated(self::eventPayload(3, $data, identity: self::identity('UA')));
+        self::assertStringContainsString('<stat cnt="UA"/>', $xml);
+        self::assertStringContainsString('stayvalidto="2028-12-31"', $xml);
+
+        $incomplete = $data;
+        unset($incomplete['delta']['foreign_worker']['permit_identifier']);
+        self::assertCode(
+            'registration_regzec27_foreign_worker_set_incomplete',
+            self::eventPayload(3, $incomplete, identity: self::identity('UA')),
+        );
+        self::assertCode('registration_regzec27_foreign_worker_forbidden', self::eventPayload(3, $data));
+    }
+
+    /** EDV 1.5.0.1 (JMHZ-2997): A1-SPEC nese příslušnost k cizím předpisům 10427. */
+    public function testSpecialA1In2027CarriesForeignLegislation(): void
+    {
+        $source = self::source();
+        $source['employment']['activity_code'] = '11';
+        $source['employment']['relationship_detail_code'] = '1';
+        $source['foreign_legislation'] = ['applies' => false, 'country_code' => null];
+        $xml = self::validated(self::a1Payload(self::a1($source), self::identity()));
+
+        self::assertStringContainsString('<forinreg juris="N"/>', $xml);
+    }
+
+    /** Changelog 1.5 ř. 220: pravidlo devíti dnů u 10223 platí v REGZEC27 jen pro A1. */
+    public function testNewStartInChangeIsNotLimitedToNineDaysIn2027(): void
+    {
+        $data = [
+            'activity_code' => '1',
+            'relationship_detail_code' => '1',
+            'birth_number' => '9152031234',
+            'delta' => ['employment' => ['actual_start_on' => '2027-02-15']],
+        ];
+        self::validated(self::eventPayload(3, $data));
+
+        $data2026 = $data;
+        $data2026['delta']['employment']['actual_start_on'] = '2026-12-28';
+        self::assertCode(
+            'registration_a3_start_window_invalid',
+            self::eventPayload(3, $data2026, preparedOn: '2026-12-12', version: JmhzSpecVersion::V2026, effectiveOn: '2026-12-10'),
+        );
+    }
+
+    /** Hodnoty číselníků, které přidala až verze 2027, REGZEC25 neodešle. */
+    public function testRegzec25RefusesCodebookValuesFrom2027(): void
+    {
+        foreach ([
+            ['employment' => ['profession_code' => '23596']],
+            ['employment' => ['workplace_municipality_code' => '111111']],
+        ] as $delta) {
+            self::assertCode('registration_regzec25_value_from_2027', self::eventPayload(3, [
+                'activity_code' => '1',
+                'relationship_detail_code' => '1',
+                'birth_number' => '9152031234',
+                'delta' => $delta,
+            ], preparedOn: '2026-12-12', version: JmhzSpecVersion::V2026, effectiveOn: '2026-12-10'));
+        }
+        $xml = self::validated(self::eventPayload(3, [
+            'activity_code' => '1',
+            'relationship_detail_code' => '1',
+            'birth_number' => '9152031234',
+            'delta' => ['employment' => ['profession_code' => '23596', 'workplace_municipality_code' => '111111']],
+        ]));
+        self::assertStringContainsString('clas="23596"', $xml);
+    }
+
     /** Hranice verzí (EDV 1.5.0.3, Slovník): ročník musí odpovídat rozhodnému datu. */
     public function testPayloadWithWrongVintageIsRejected(): void
     {
@@ -275,6 +361,50 @@ final class PayrollRegistrationRegzec27Test extends TestCase
         $xml = self::validated(self::a1Payload(self::a1(self::source()), self::identity()));
 
         self::assertSame('REGZEC27', JmhzGovTalkRequestShape::forPayload('CSSZ_REGZEC', $xml)->bodyEnvelopeType);
+    }
+
+    /**
+     * PREZEC s nástupem 4. 1. 2027 podaný 28. 12. 2026: balík „PREZEC27 1.5"
+     * má jmenný prostor `/PREZEC/2026`, takže věta je PREZEC26, projde XSD 1.2
+     * i 1.5 a obálka nese `eType` PREZEC26.
+     */
+    public function testPreRegistrationForStartIn2027StaysPrezec26AndPassesBothSchemas(): void
+    {
+        self::assertSame('PREZEC26', (new PayrollRegistrationSchemaCatalog())->documentTypeFor('PREZEC26', self::START));
+        $payload = new PayrollRegistrationXmlPayload(
+            identity: new PayrollRegistrationIdentitySnapshot(
+                scope: [
+                    'supplier_id' => 11, 'submission_id' => 21, 'source_revision_id' => 31,
+                    'employee_id' => 41, 'employment_id' => 51, 'environment' => 'production',
+                    'agenda_code' => 'PREZEC26', 'effective_on' => self::START,
+                ],
+                identity: self::identity() + ['title_suffix' => null],
+                identifiers: ['birth_number' => '9152031234', 'ecp' => null, 'vcp' => null, 'foreign_tax_identifier' => null],
+                employmentExternalIdentifier: null,
+                registrationEligibility: [
+                    'status' => 'verified',
+                    'basis' => 'domestic_citizenship_country_code',
+                    'citizenship_country_code' => 'CZ',
+                ],
+                sourceVersions: [],
+            ),
+            interaction: new PayrollRegistrationInteraction('PREZEC26', 'limited_pre_registration', 9),
+            sequenceNumber: 1,
+            formGuid: '12345678-1234-1234-1234-123456789ABC',
+            preparedOn: '2026-12-28',
+            expectedStartOn: self::START,
+            actualStartOn: null,
+            employerVariableSymbol: '1100000007',
+            productName: 'MyÚčto.cz',
+            productVersion: '6.49.0',
+        );
+        $xml = self::validated($payload);
+
+        $document = new DOMDocument();
+        $document->loadXML($xml);
+        self::assertTrue($document->schemaValidate(dirname(__DIR__, 5) . '/xsd/jmhz/prezec-1.5/PREZEC26_1_5.xsd'));
+        self::assertSame('PREZEC26', JmhzGovTalkRequestShape::forPayload('CSSZ_PREZEC', $xml)->bodyEnvelopeType);
+        self::assertStringContainsString('predat="' . self::START . '"', $xml);
     }
 
     private static function validated(PayrollRegistrationXmlPayload $payload): string
@@ -395,12 +525,17 @@ final class PayrollRegistrationRegzec27Test extends TestCase
         );
     }
 
-    /** @param array<string,mixed> $data */
+    /**
+     * @param array<string,mixed> $data
+     * @param array<string,mixed>|null $identity
+     */
     private static function eventPayload(
         int $action,
         array $data,
         string $preparedOn = self::PREPARED,
         JmhzSpecVersion $version = JmhzSpecVersion::V2027,
+        ?array $identity = null,
+        string $effectiveOn = self::EFFECTIVE,
     ): PayrollRegistrationXmlPayload {
         $interaction = [
             2 => 'termination', 3 => 'change', 4 => 'correction',
@@ -409,7 +544,7 @@ final class PayrollRegistrationRegzec27Test extends TestCase
         ][$action];
 
         return new PayrollRegistrationXmlPayload(
-            identity: self::snapshot(self::identity(), null),
+            identity: self::snapshot($identity ?? self::identity(), null),
             interaction: new PayrollRegistrationInteraction('REGZEC25', $interaction, $action),
             sequenceNumber: 1,
             formGuid: '12345678-1234-1234-1234-123456789ABC',
@@ -427,8 +562,8 @@ final class PayrollRegistrationRegzec27Test extends TestCase
                 'environment' => 'production',
                 'interaction' => $interaction,
                 'action_code' => $action,
-                'effective_on' => self::EFFECTIVE,
-                'notification_trigger_on' => self::EFFECTIVE,
+                'effective_on' => $effectiveOn,
+                'notification_trigger_on' => $effectiveOn,
                 'person_external_identifier' => ['id' => 61, 'row_version' => 1, 'value' => '1000000001'],
                 'employment_external_identifier' => ['id' => 71, 'row_version' => 1, 'value' => '200000000000000000002'],
                 'employer' => [

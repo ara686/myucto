@@ -28,16 +28,16 @@ final class PayrollRegistrationRegzec25RegressionTest extends TestCase
 
     /** @var array<string,string> */
     private const SHA256 = [
-        'A1 občan ČR' => '',
-        'A1 cizinec SK' => '',
-        'A2 odstupné' => '',
-        'A2 služební poměr odchodné' => '',
-        'A3 změna' => '',
-        'A4 oprava' => '',
-        'A5 převod VS' => '',
-        'A6 vznik českých předpisů' => '',
-        'A7 skončení českých předpisů' => '',
-        'A8 storno' => '',
+        'A1 občan ČR' => '3c4f6aed7f510cee64527499aae5fae6b9c914e2f06c472ab8eff2b7dd518cb9',
+        'A1 cizinec SK' => '1cf84853f639829c11cbd3378146e1e03cf20175c20303201142adad4c1a1794',
+        'A2 odstupné' => 'f18566709b137ac5f2da650b0e1de7e72585825973cbb4d3d64202c227a87cac',
+        'A2 služební poměr odchodné' => 'b9dafae9e9ba368b3b6e0815fea34740eef753c0933f992d02a22875d5a2fdfc',
+        'A3 změna' => 'f75ae7235271d03a8f4f72dc8678245b4fd1b5fe6cf35b6b0570b0cf525831b6',
+        'A4 oprava' => 'a0e72846d16fd376921cd6204a20c904c9e92c8fd792d18f5a9a6bd5132bf71b',
+        'A5 převod VS' => '44139aeed564550dd08ba4c0e475778a592acec54b1e2406ab87d54d7945547b',
+        'A6 vznik českých předpisů' => '67da6ec143c5eca1f2c893b77a85bb848699e2d414154463c8c1078a046bc5a5',
+        'A7 skončení českých předpisů' => '8743d524720f6f2317c3b2685fdc61272bffe3bb9223460e68fbab55f54c48ea',
+        'A8 storno' => '80f260c5f9cb2ac7d13d7ca3a6d226f6538bdf713d2e5b001594d0402f97a2b3',
     ];
 
     /** @return iterable<string,array{string}> */
