@@ -185,7 +185,10 @@ verzovaná aplikační business pravidla ani odborné legislativní ověření.
 - **Kontrola 368** (DIS, nepropustná, kód chyby 20368): počet dnů pojištění
   ELDP sekce (10356) nesmí přesáhnout interval platnosti jejího kódu (10241
   až 10242). Katalog píše rozdíl dat stejně jako u kontroly 134; interval se
-  počítá včetně krajních dnů a odchylka je vedená mezi zdokumentovanými.
+  počítá včetně krajních dnů. Není to odchylka: „platnost do" je podle Pokynů
+  k vyplnění MH 1.4.14 poslední den platnosti a vzorová hlášení v Příloze A
+  uvádějí 1. 2. až 28. 2. s 28 dny. Kontroly 134 ani 368 proto nejsou mezi
+  zdokumentovanými odchylkami.
 - **Kontrola 369** (DIS, nepropustná, kód chyby 20369): sekce s kódem ELDP
   (10240) musí mít vyplněnou platnost od (10241) i do (10242).
 - **Kontrola 371** (cJMHZ, propustná, informativní): chybějící údaje cizinců

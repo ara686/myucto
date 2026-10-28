@@ -339,14 +339,6 @@ final class JmhzScenario1ControlEvaluator
     public function documentedDeviations(): array
     {
         $deviations = [
-            134 => 'Katalog píše „počet dnů <= datum do minus datum od", tedy'
-                . ' rozdíl dat. Celý měsíc má ale o den víc, než je rozdíl jeho'
-                . ' krajních dnů, takže by doslovné znění neprošlo ani bezvadné'
-                . ' hlášení za celý měsíc. Interval se počítá včetně krajních dnů.',
-            368 => 'Táž konstrukce jako u kontroly 134, jen nad platností kódu ELDP:'
-                . ' katalog píše „počet dnů <= platnost do minus platnost od".'
-                . ' Kód platný celý měsíc má o den víc dnů pojištění, než je rozdíl'
-                . ' krajních dat, takže interval platnosti se počítá včetně krajních dnů.',
             168 => 'Vedle tolerance žádá katalog i dolní mez 7,171 % z úhrnu'
                 . ' vyměřovacích základů. Na minimálním případě (základ 1 000 Kč,'
                 . ' pojistné 71 Kč) by ji neprošlo ani zcela správné podání,'
@@ -1904,10 +1896,12 @@ final class JmhzScenario1ControlEvaluator
     /**
      * Kontrola 134 — počet dnů pojištění v ELDP sekci proti intervalu trvání.
      *
-     * Katalog píše `10356 <= 10355 - 10354`, což je rozdíl dat. Celý červenec
-     * (1. až 31. 7.) má ale 31 dnů pojištění, ne 30, takže doslovné znění by
-     * neprošlo ani u bezvadného hlášení za celý měsíc. Počítá se proto interval
-     * včetně obou krajních dnů.
+     * Katalog píše `10356 <= 10355 - 10354`. „Pojištění do" je podle Pokynů
+     * k vyplnění MH 1.4.14 poslední den trvání (u celého měsíce jeho poslední
+     * den), takže výraz je zkratka pro počet dnů intervalu včetně obou
+     * krajních dnů: celý červenec má 31 dnů pojištění. Vzorová hlášení
+     * v Příloze A Pokynů to tak počítají a referenční hlášení za 07/2026
+     * prošlo protokolem ČSSZ; nejde o odchylku.
      *
      * @return list<JmhzControlVerdict>
      */
@@ -1942,10 +1936,13 @@ final class JmhzScenario1ControlEvaluator
      * Kontrola 368 (katalog 1.4.2.11) — počet dnů pojištění v ELDP sekci
      * (10356) proti intervalu platnosti jejího kódu (10241 až 10242).
      *
-     * Katalog píše `10356 <= 10242 - 10241`, tedy rozdíl dat, stejně jako
-     * u kontroly 134. Kód platný celý měsíc by doslovným zněním neprošel, proto
-     * se interval počítá včetně obou krajních dnů ({@see self::documentedDeviations()}).
-     * Sekci bez úplné platnosti hlídá kontrola 369.
+     * Interval se počítá včetně obou krajních dnů. „Platnost do" je podle
+     * Pokynů k vyplnění MH 1.4.14 den, do kterého kód platí, a vzorová hlášení
+     * v Příloze A Pokynů uvádějí 10241 1. 2. až 10242 28. 2. s 10356 = 28
+     * (a 15. 2. až 28. 2. s 10356 = 14). Výraz katalogu „10242 - 10241" je
+     * zkratka pro počet dnů intervalu, kontrola vznikla jako analogie
+     * kontroly 134; nejde o odchylku. Sekci bez úplné platnosti hlídá
+     * kontrola 369.
      *
      * @return list<JmhzControlVerdict>
      */

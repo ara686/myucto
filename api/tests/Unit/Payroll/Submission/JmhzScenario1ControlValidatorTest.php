@@ -1569,8 +1569,9 @@ final class JmhzScenario1ControlValidatorTest extends TestCase
     /**
      * Kontrola 368 (katalog 1.4.2.11): dny pojištění ELDP sekce nesmí
      * přesáhnout platnost jejího kódu. Interval se počítá včetně krajních
-     * dnů, takže 15 dnů za 1. až 15. 7. projde (doslovné znění „do minus od"
-     * by dalo 14) a 16 dnů ne.
+     * dnů jako ve vzoru Pokynů 1.4.14, Příloha A (1. 2. až 28. 2. = 28 dnů),
+     * takže 15 dnů za 1. až 15. 7. projde a 16 dnů ne. Je to jediné čtení
+     * katalogu, se kterým projdou vzory, proto není mezi odchylkami.
      */
     public function testEldpDaysMustFitTheCodeValidityIncludingBothEnds(): void
     {
@@ -1602,7 +1603,8 @@ final class JmhzScenario1ControlValidatorTest extends TestCase
             JmhzControlSourceCatalog::load()->parameters(),
             new JmhzDeadlinePolicy(CzechPayrollRulesets2026::provider()),
         );
-        self::assertArrayHasKey(368, $evaluator->documentedDeviations());
+        self::assertArrayNotHasKey(368, $evaluator->documentedDeviations());
+        self::assertArrayNotHasKey(134, $evaluator->documentedDeviations());
     }
 
     /**
