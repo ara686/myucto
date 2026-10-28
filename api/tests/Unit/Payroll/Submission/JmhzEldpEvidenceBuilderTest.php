@@ -148,10 +148,12 @@ final class JmhzEldpEvidenceBuilderTest extends TestCase
     /**
      * Po dovršení důchodového věku bez starobního důchodu tvoří omluvné
      * důvody i volno bez náhrady odečítané doby a IN04 (10375, 10462–10469)
-     * je povinná. Měsíc s takovou nepřítomností se nesmí sestavit bez nich;
-     * předčasný důchodce důchod pobírá, takže se ho to netýká.
+     * je povinná (Pokyny MH 1.4.14, ID 10375 a 10466). Otcovská 13.–26. 7.
+     * je 14 dnů vyloučené doby (10362) i odečtené doby (10466); dny pojištění
+     * jsou interval minus odečtené doby, 31 − 14 = 17 (kontrola 309).
+     * Předčasný důchodce důchod pobírá, takže se ho to netýká.
      */
-    public function testPensionAgeMonthWithDeductedAbsenceIsRefused(): void
+    public function testPensionAgeMonthWithPaternityReportsDeductedDays(): void
     {
         $builder = new JmhzEldpEvidenceBuilder();
         $paternity = $this->absenceSource('paternity', '2026-07-13', '2026-07-26', [
@@ -162,20 +164,43 @@ final class JmhzEldpEvidenceBuilderTest extends TestCase
             'pension_age_reached_on' => '2026-03-15',
             'early_pension_from' => null,
         ]];
-        try {
-            $builder->deriveOrdinaryConfirmation(7, 101, $reached);
-            self::fail('Měsíc s odečítanými dobami nesmí projít bez IN04.');
-        } catch (JmhzEldpEvidenceException $exception) {
-            self::assertSame('jmhz_eldp_deducted_days_unsupported', $exception->validationCode);
+        $confirmation = $builder->deriveOrdinaryConfirmation(7, 101, $reached);
+        self::assertSame('1D+', $confirmation['code']);
+        self::assertSame(17, $confirmation['insurance_days']);
+        self::assertTrue($confirmation['in04_active']);
+        $snapshot = $builder->build(7, 101, $reached, $confirmation);
+        $section = $snapshot->payload['eldp_sections'][0];
+        self::assertSame(17, $section['insurance_days']);
+        self::assertSame(14, $section['excluded_days_total']);
+        self::assertSame(14, $section['deducted_days_total']);
+        self::assertSame(['otcovska' => 14], $section['deducted_days']);
+        self::assertTrue($snapshot->payload['confirmation']['in04_active']);
+
+        // Dny i IN04 se odvozují; potvrzení se starým tvarem neprojde.
+        foreach ([
+            [31, true, 'jmhz_eldp_days_mismatch'],
+            [17, false, 'jmhz_eldp_interaction_unsupported'],
+        ] as [$days, $in04, $expected]) {
+            try {
+                $builder->build(7, 101, $reached, ['insurance_days' => $days, 'in04_active' => $in04] + $confirmation);
+                self::fail("Potvrzení s {$days} dny a IN04 = " . var_export($in04, true) . ' nesmí projít.');
+            } catch (JmhzEldpEvidenceException $exception) {
+                self::assertSame($expected, $exception->validationCode);
+            }
         }
 
         $early = [...$paternity, 'pension_status' => [
             'pension_age_reached_on' => '2027-01-01',
             'early_pension_from' => '2026-03-01',
         ]];
-        $snapshot = $builder->build(7, 101, $early, $builder->deriveOrdinaryConfirmation(7, 101, $early));
+        $earlyConfirmation = $builder->deriveOrdinaryConfirmation(7, 101, $early);
+        self::assertSame(31, $earlyConfirmation['insurance_days']);
+        self::assertFalse($earlyConfirmation['in04_active']);
+        $snapshot = $builder->build(7, 101, $early, $earlyConfirmation);
         self::assertSame('1D+', $snapshot->payload['eldp_sections'][0]['code']);
         self::assertSame(14, $snapshot->payload['eldp_sections'][0]['excluded_days_total']);
+        self::assertNull($snapshot->payload['eldp_sections'][0]['deducted_days_total']);
+        self::assertArrayNotHasKey('deducted_days', $snapshot->payload['eldp_sections'][0]);
     }
 
     public function testRejectsOffByOneCalendarDay(): void
@@ -933,21 +958,151 @@ final class JmhzEldpEvidenceBuilderTest extends TestCase
 
     /**
      * § 38 odst. 4 písm. h) zákona č. 582/1991 Sb. a logický test 39: měsíc
-     * s kódem D a nemocí má odečtené doby. Měsíční hlášení je zatím zapsat
-     * neumí (IN04), takže měsíc zastaví; dřív odešel s vyloučenými dobami
-     * a bez odečtených, což ČSSZ odmítne.
+     * s kódem D a nemocí má odečtené doby a vyloučené doby leží uvnitř nich.
+     * Dřív měsíc zastavil; teď nese stejný počet dnů jako vyloučená doba
+     * z téhož modulu, v rozpadu 10462, a dny pojištění jsou interval minus
+     * odečtené doby.
      */
-    public function testPensionAgeMonthWithDeductedDaysStops(): void
+    public function testPensionAgeMonthWithSicknessDeductsTheExcludedDays(): void
     {
         $builder = new JmhzEldpEvidenceBuilder();
         $source = [...$this->sicknessSource(), 'pension_status' => ['pension_age_reached_on' => '2026-01-01', 'early_pension_from' => null]];
 
+        $section = $builder->build(7, 101, $source, $builder->deriveOrdinaryConfirmation(7, 101, $source))
+            ->payload['eldp_sections'][0];
+        $excluded = $section['excluded_days_total'];
+        self::assertSame($excluded, $section['excluded_days']['docasNeschopnost']);
+        self::assertSame($excluded, $section['deducted_days_total']);
+        self::assertSame(['pracovniNeschopnost' => $excluded], $section['deducted_days']);
+        self::assertSame(31 - $excluded, $section['insurance_days']);
+        self::assertGreaterThan(0, $excluded);
+    }
+
+    /**
+     * Neplacené volno 6.–10. 7. a neomluvená absence 20.–21. 7. u osoby po
+     * dovršení důchodového věku bez důchodu: vyloučená doba to není, odečtená
+     * ano (Pokyny MH, ID 10468 a 10469). 10375 = 5 + 2 = 7 a dny pojištění
+     * 31 − 7 = 24. Bez odečtených dob se IN04 nezapne a snapshot si zachová
+     * dřívější tvar (otisk zmrazených řezů se nemění).
+     */
+    public function testPensionAgeMonthWithUnpaidLeaveAndUnexcusedAbsence(): void
+    {
+        $builder = new JmhzEldpEvidenceBuilder();
+        $source = $this->absenceSource('unpaid_leave', '2026-07-06', '2026-07-10', [
+            'unpaid_leave_millihours' => 40_000,
+            'unexcused_millihours' => 16_000,
+        ]);
+        $input = json_decode($source['revision']['input_snapshot_json'], true, flags: JSON_THROW_ON_ERROR);
+        self::assertIsArray($input);
+        $input['people'][0]['employments'][0]['absences'][] = [
+            'id' => 911,
+            'absence_type' => 'unexcused',
+            'date_from' => '2026-07-20',
+            'date_to' => '2026-07-21',
+        ];
+        $source = [...$this->withInput($source, $input), 'pension_status' => [
+            'pension_age_reached_on' => '2026-01-01',
+            'early_pension_from' => null,
+        ]];
+
+        $confirmation = $builder->deriveOrdinaryConfirmation(7, 101, $source);
+        self::assertSame(24, $confirmation['insurance_days']);
+        self::assertTrue($confirmation['in04_active']);
+        $section = $builder->build(7, 101, $source, $confirmation)->payload['eldp_sections'][0];
+        self::assertSame(0, $section['excluded_days_total']);
+        self::assertSame(7, $section['deducted_days_total']);
+        self::assertSame(['neplaceneVolno' => 5, 'neomluveneAbsence' => 2], $section['deducted_days']);
+        self::assertSame(
+            (new EldpExcludedPeriodDeriver())->deriveDeducted(
+                $input['people'][0]['employments'][0]['absences'],
+                '2026-07-01',
+                '2026-07-31',
+                ['provenance' => []],
+                false,
+            )['total'],
+            $section['deducted_days_total'],
+        );
+
+        $plain = [...$this->source(), 'pension_status' => [
+            'pension_age_reached_on' => '2026-01-01',
+            'early_pension_from' => null,
+        ]];
+        $snapshot = $builder->build(7, 101, $plain, $builder->deriveOrdinaryConfirmation(7, 101, $plain));
+        self::assertSame('1D+', $snapshot->payload['eldp_sections'][0]['code']);
+        self::assertSame(31, $snapshot->payload['eldp_sections'][0]['insurance_days']);
+        self::assertNull($snapshot->payload['eldp_sections'][0]['deducted_days_total']);
+        self::assertArrayNotHasKey('deducted_days', $snapshot->payload['eldp_sections'][0]);
+        self::assertFalse($snapshot->payload['confirmation']['in04_active']);
+    }
+
+    /**
+     * Fail-closed případy odečtených dob, které hlášení podle pravidel zapsat
+     * nejde: doba § 16 odst. 4 písm. j) (žádná složka ji nenese, logické testy
+     * ELDP12 č. 39 a 48) a měsíc rozdělený dovršením věku, pro který katalog
+     * výpočet kontroly 309 nestanoví. Každý má vlastní úzký blokátor.
+     */
+    public function testPensionAgeDeductedDaysUnsupportedCasesStopWithNarrowCodes(): void
+    {
+        $builder = new JmhzEldpEvidenceBuilder();
+        $invalid = [...$this->absenceSource('invalid_termination', '2026-07-01', '2026-07-31', []), 'pension_status' => [
+            'pension_age_reached_on' => '2026-01-01',
+            'early_pension_from' => null,
+        ]];
+        $input = json_decode($invalid['revision']['input_snapshot_json'], true, flags: JSON_THROW_ON_ERROR);
+        self::assertIsArray($input);
+        $input['people'][0]['employments'][0]['time_month']['jmhz_work_summary']['interactions']['IN07'] = false;
+        $invalid = [...$this->withInput($invalid, $input), 'pension_status' => $invalid['pension_status']];
+        // Doba po neplatném skončení bez přiznané náhrady: měsíc bez příjmu.
+        $result = json_decode($invalid['revision']['result_snapshot_json'], true, flags: JSON_THROW_ON_ERROR);
+        self::assertIsArray($result);
+        $result['people'][0]['statutory']['social_insurance']['relationships'][0]['assessment_base_minor_units'] = 0;
+        $result['people'][0]['statutory']['social_insurance']['relationships'][0]['capped_assessment_base_minor_units'] = 0;
+        $invalid['revision']['result_snapshot_json'] = CanonicalJson::encode($result);
+        $invalid['revision']['result_snapshot_hash'] = hash('sha256', $invalid['revision']['result_snapshot_json']);
         try {
-            $builder->build(7, 101, $source, $builder->deriveOrdinaryConfirmation(7, 101, $source));
-            self::fail('Měsíc s kódem D a odečtenými dobami se bez nich vykázat nesmí.');
+            $builder->deriveOrdinaryConfirmation(7, 101, $invalid);
+            self::fail('Doba § 16 odst. 4 písm. j) v měsíci s kódem D se vykázat nesmí.');
         } catch (JmhzEldpEvidenceException $exception) {
-            self::assertSame('jmhz_eldp_deducted_days_unsupported', $exception->validationCode);
+            self::assertSame('jmhz_eldp_deducted_days_invalid_termination_unsupported', $exception->validationCode);
         }
+
+        // Měsíc bez účasti („X") celý na rodičovské: 10375 = 31, ale rodičovská
+        // složku 10462–10469 nemá a součet složek se 10375 rovnat musí.
+        $parental = $this->absenceSource('parental', '2026-07-01', '2026-07-31', [
+            'parental_millihours' => 184_000,
+        ]);
+        $parental['revision']['result_snapshot_json'] = $invalid['revision']['result_snapshot_json'];
+        $parental = [...$this->withInput(
+            $parental,
+            json_decode($parental['revision']['input_snapshot_json'], true, flags: JSON_THROW_ON_ERROR),
+        ), 'pension_status' => $invalid['pension_status']];
+        try {
+            $builder->deriveOrdinaryConfirmation(7, 101, $parental);
+            self::fail('Odečtené dny bez složky se vykázat nesmí.');
+        } catch (JmhzEldpEvidenceException $exception) {
+            self::assertSame('jmhz_eldp_deducted_days_without_component_unsupported', $exception->validationCode);
+        }
+
+        $split = [...$this->absenceSource('unpaid_leave', '2026-07-20', '2026-07-22', [
+            'unpaid_leave_millihours' => 24_000,
+        ]), 'pension_status' => [
+            'pension_age_reached_on' => '2026-07-16',
+            'early_pension_from' => null,
+        ]];
+        try {
+            $builder->build(7, 101, $split, $builder->deriveOrdinaryConfirmation(7, 101, $split));
+            self::fail('Rozdělený měsíc s odečtenými dobami v sekci D se vykázat nesmí.');
+        } catch (JmhzEldpEvidenceException $exception) {
+            self::assertSame('jmhz_eldp_deducted_days_split_month_unsupported', $exception->validationCode);
+        }
+
+        // Volno před dovršením věku do sekce D nepatří: měsíc projde jako dřív.
+        $before = [...$this->absenceSource('unpaid_leave', '2026-07-06', '2026-07-08', [
+            'unpaid_leave_millihours' => 24_000,
+        ]), 'pension_status' => $split['pension_status']];
+        $sections = $builder->build(7, 101, $before, $builder->deriveOrdinaryConfirmation(7, 101, $before))
+            ->payload['eldp_sections'];
+        self::assertSame([null, null], array_column($sections, 'deducted_days_total'));
     }
 
     /**

@@ -1468,10 +1468,22 @@ projeví se až v hlášení, které se teprve sestaví (i v opravném).
 
 Kdo dosáhl důchodového věku a starobní důchod nepobírá, má za nemoc,
 ošetřování, mateřskou, otcovskou, neplacené volno, neomluvenou absenci
-a měsíc bez účasti **odečítané doby** (10375). Ty aplikace do měsíčního
-hlášení nesestaví: takový měsíc přípravu zastaví a hlášení za vztah podejte
-ručně přes ePortál ČSSZ, nebo vztah odložte. Předčasný důchod je důchod,
-takže u jeho poživatele se odečítané doby nevedou a hlášení se sestaví.
+a měsíc bez účasti **odečítané doby** (10375, interakce IN04). Aplikace je
+odvodí ze schválených nepřítomností stejně jako u evidenčního listu a zapíše
+do hlášení úhrn 10375 s rozpadem: pracovní neschopnost (10462), mateřská
+(10463), ošetřovné v podpůrčí době (10464) a po ní (10465), otcovská (10466),
+neplacené volno (10468) a neomluvená absence (10469). Počet dnů pojištění
+(10356) je pak interval měsíce minus odečítané doby. Měsíc bez odečítaných
+dob element nenese. Předčasný důchod je důchod, takže u jeho poživatele se
+odečítané doby nevedou.
+
+Příprava hlášení zastaví tři případy, které pravidla podání vykázat
+nedovolují nebo pro ně nestanoví postup: dobu po neplatném skončení vztahu
+(§ 16 odst. 4 písm. j)), dny bez účasti na pojištění, které nevysvětluje
+žádná nepřítomnost se složkou odečítaných dob (součet složek se musí rovnat
+10375), a odečítané doby v měsíci, ve kterém zaměstnanec důchodový věk
+teprve dovršil (měsíc rozdělený na dvě sekce). Hlášení za takový vztah
+podejte ručně přes ePortál ČSSZ.
 
 Měsíc porodu, ve kterém zaměstnankyně pobírá peněžitou pomoc v mateřství
 a nemá žádný započitatelný příjem, se vykazuje jako měsíc účasti na
