@@ -20,6 +20,7 @@ use MyInvoice\Service\Payroll\Ruleset\PayrollRulesetYearCoverage;
 use MyInvoice\Service\Payroll\Ruleset\PayrollRulesetYearOutlook;
 use MyInvoice\Service\Payroll\Ruleset\VendorRulesetApprover;
 use MyInvoice\Service\Payroll\Ruleset\VendorRulesetManifest;
+use MyInvoice\Service\Payroll\Submission\Jmhz\JmhzDeadlinePolicy;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -282,13 +283,31 @@ final class CzechPayrollRulesets2027Test extends TestCase
      * náhrady (vyhláška pro rok 2027 nevyšla), nezabavitelné částky a lhůty,
      * číselníky a podání JMHZ selžou na chybějícím rulesetu.
      */
+    /**
+     * Lhůta JMHZ za období 2027 (§ 7 odst. 1 z. č. 323/2025 Sb.): od 1. do 20.
+     * dne následujícího měsíce, konec posunutý na nejbližší pracovní den.
+     * Hlášení za 01/2027 se podává 1. až 22. 2. 2027 (20. 2. je sobota).
+     */
+    public function testJmhzDeadlineOf2027FollowsTheAct(): void
+    {
+        $window = (new JmhzDeadlinePolicy(CzechPayrollRulesets::provider()))->forPeriod('2027-01-01');
+
+        self::assertSame('2027-02-01', $window->earliestSubmissionOn);
+        self::assertSame('2027-02-22', $window->dueOn);
+        self::assertSame('cz-jmhz-deadlines-2027.regular.v1', $window->rulesetId);
+        self::assertTrue(PayrollRulesetYearCoverage::coversYear(
+            CzechPayrollRulesets::provider(),
+            PayrollRulesetDomain::Deadlines,
+            2027,
+        ));
+    }
+
     public function testUndocumentedDomainsOf2027FailClosed(): void
     {
         $provider = CzechPayrollRulesets::provider();
         foreach ([
             PayrollRulesetDomain::TravelAllowances,
             PayrollRulesetDomain::EnforcementDeductions,
-            PayrollRulesetDomain::Deadlines,
             PayrollRulesetDomain::Codebooks,
             PayrollRulesetDomain::Submissions,
         ] as $domain) {
