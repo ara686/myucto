@@ -1204,6 +1204,25 @@ final class JmhzEldpEvidenceBuilderTest extends TestCase
     }
 
     /**
+     * Potvrzení náhrady mzdy při neplatném skončení (typy 2, 3 a 6), které
+     * vzniklo mimo kartu vztahu (import, starší data), řez ELDP nesestaví:
+     * ELDP po měsících s náhradou aplikace doložitelně nezná.
+     */
+    public function testInvalidTerminationCompensationTypesAreRefused(): void
+    {
+        foreach (['2', '3', '6'] as $type) {
+            $source = $this->deferredAnnualSource('employment', 1_500_000, $type);
+            $builder = new JmhzEldpEvidenceBuilder();
+            try {
+                $builder->build(7, 101, $source, $builder->deriveOrdinaryConfirmation(7, 101, $source));
+                self::fail("Typ {$type} se sestavit nesmí.");
+            } catch (JmhzEldpEvidenceException $exception) {
+                self::assertSame('jmhz_deferred_income_type_unsupported', $exception->validationCode, "typ {$type}");
+            }
+        }
+    }
+
+    /**
      * Skončený vztah s potvrzeným ročním zúčtováním po skončení za únor 2026.
      *
      * @return array<string,mixed>

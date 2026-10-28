@@ -46,6 +46,22 @@ final class PayrollDeferredIncomeRepository
      */
     public const TYPES_WITH_ANNUAL_SETTLEMENT = ['4', '5'];
 
+    /**
+     * Náhrada mzdy při neplatném skončení: 2 (vztah dál neprobíhá), 3 (vztah
+     * probíhá) a 6 (2 + roční zúčtování). Zůstávají na ePortálu ČSSZ, protože
+     * je aplikace doložitelně nesestaví:
+     *  - ELDP se hlásí za každý měsíc s náhradou (10537/10538, Pravidla podání
+     *    JMHZ 1.4.5, kap. 6 bod 2) s vyměřovacím základem připadajícím na
+     *    měsíc; rozpočítání náhrady podle soudního rozhodnutí aplikace nezná,
+     *  - 10476 se podle Pravidel hlásí rovněž po měsících, ale `eldpObdobi`
+     *    v XSD 1.4.3.6 (formOdlozenyPrijem.xsd) pro něj místo nemá,
+     *  - měsíce před 1. 1. 2026 se podle úvodu kap. 6 opravují opravným ELDP,
+     *    kdežto vzorové hlášení MPSV (TEST_odložený příjem_1.1.2026, sloupce
+     *    H až M) je vykazuje přes 10537/10538,
+     *  - typu 2 předchází REGZEC změna s výmazem data skončení (bod 2.1 a).
+     */
+    public const INVALID_TERMINATION_TYPES = ['2', '3', '6'];
+
     public function __construct(private readonly Connection $db) {}
 
     /**
@@ -106,11 +122,18 @@ final class PayrollDeferredIncomeRepository
         ?string $note,
         ?int $userId,
     ): array {
+        if (in_array($deferredType, self::INVALID_TERMINATION_TYPES, true)) {
+            throw new \InvalidArgumentException(
+                'Náhradu mzdy při neplatném skončení (odložený příjem typu 2, 3 a 6) aplikace'
+                . ' sama nevykáže: hlásí se za každý měsíc s náhradou zvlášť (měsíc a rok'
+                . ' 10537/10538 s vlastním evidenčním listem) a typu 2 předchází změna'
+                . ' registrace s výmazem data skončení a soudním rozhodnutím v příloze.'
+                . ' Hlášení podejte ručně přes ePortál ČSSZ.',
+            );
+        }
         if (!in_array($deferredType, self::SUPPORTED_TYPES, true)) {
             throw new \InvalidArgumentException(
-                'Aplikace zpracuje sama odložený příjem typu 1 (příjem po skončení'
-                . ' zaměstnaneckého poměru), 4 (roční zúčtování po skončení) a 5 (obojí).'
-                . ' Náhradu mzdy při neplatném skončení podejte přes ePortál ČSSZ.',
+                'Typ odloženého příjmu musí být z číselníku ČSSZ (1 až 6).',
             );
         }
         // Pravidla podání JMHZ 1.4.5, kap. 6 bod 3 b): roční zúčtování po

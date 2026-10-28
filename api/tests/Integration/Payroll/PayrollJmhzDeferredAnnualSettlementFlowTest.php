@@ -117,6 +117,29 @@ final class PayrollJmhzDeferredAnnualSettlementFlowTest extends TestCase
     }
 
     /**
+     * Náhrada mzdy při neplatném skončení (typy 2, 3 a 6) zůstává na ePortálu
+     * ČSSZ: ELDP po měsících s náhradou a 10476 po měsících (Pravidla podání
+     * JMHZ 1.4.5, kap. 6 bod 2) aplikace doložitelně nesestaví a XSD 1.4.3.6
+     * nemá pro 10476 v `eldpObdobi` místo. Potvrzení se odmítne s vysvětlením
+     * a nic se neuloží.
+     */
+    public function testInvalidTerminationCompensationIsLeftToManualFiling(): void
+    {
+        $person = $this->endedInPreviousYear('Rudolf Neplatný', '1972-02-14', 'male', 5);
+
+        foreach (['2', '3', '6'] as $type) {
+            $response = $this->saveDeferred($person['employment_id'], $type, self::PERIOD);
+            self::assertSame(422, $response->getStatusCode(), "typ {$type}");
+            self::assertStringContainsString('10537/10538', (string) $response->getBody(), "typ {$type}");
+            self::assertStringContainsString('ePortál ČSSZ', (string) $response->getBody(), "typ {$type}");
+        }
+        self::assertSame(0, (int) $this->scalar(
+            'SELECT COUNT(*) FROM payroll_employment_deferred_incomes WHERE supplier_id = ?',
+            [$this->supplierId],
+        ));
+    }
+
+    /**
      * Typ 4 se týká všech druhů činnosti kromě 10 (Pravidla podání JMHZ
      * 1.4.5, kap. 6), tedy i dohody. Zdravotní pojistné z příjmu po skončení
      * dohody ale patří do měsíce jejího konce a měsíc bez příjmu výpočet

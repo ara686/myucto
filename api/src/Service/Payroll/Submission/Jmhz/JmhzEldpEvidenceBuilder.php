@@ -1257,10 +1257,13 @@ final class JmhzEldpEvidenceBuilder
         array $confirmation,
     ): JmhzEldpEvidenceSnapshot {
         $withoutEldp = in_array($deferredType, self::DEFERRED_TYPES_WITHOUT_ELDP, true);
+        // Typy 2, 3 a 6 zůstávají zastavené; důvody u
+        // {@see \MyInvoice\Repository\Payroll\PayrollDeferredIncomeRepository::INVALID_TERMINATION_TYPES}.
         if (!$withoutEldp && !in_array($deferredType, self::DEFERRED_TYPES_WITH_INCOME_ELDP, true)) {
             $this->invalid(
                 'jmhz_deferred_income_type_unsupported',
-                'Aplikace zpracuje sama jen odložený příjem typu 1, 4 a 5.',
+                'Aplikace zpracuje sama jen odložený příjem typu 1, 4 a 5. Náhradu mzdy při neplatném'
+                    . ' skončení (typy 2, 3 a 6) podejte ručně přes ePortál ČSSZ.',
             );
         }
         if (in_array($deferredType, ['4', '5'], true)
