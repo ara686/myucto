@@ -80,7 +80,9 @@ final class VendorRulesetManifest
         // cz-payroll-2026.travel-allowances.v1
         '4894d8ce93b013d4314c89362c39a7667f33185c8348e2a6ece9fe4a0024b8dd',
         // cz-payroll-2026.travel-allowances.v2
-        '6a6a888ca73de0a7b6e33619cfc2799929d4b39ea9fa9ba1904ab17e9abd3538',
+        '1d319cb56061a70e650e90683a023716778ab9d292cbfd59b22241447858c9b1',
+        // cz-payroll-2026.travel-allowances.v3
+        '6b14aa4bc26b5a4f23b0982253c4bb1ecc38402dbed1e6ce7615fd958cc95c7a',
     ];
 
     public static function contains(string $contentHash): bool
