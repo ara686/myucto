@@ -6109,6 +6109,7 @@ export type PayrollAnnualSettlementBlocker =
   | 'annual_claims_inconsistent'
   | 'annual_claim_evidence_unverified'
   | 'spouse_credit_conditions_not_met'
+  | 'preschool_credit_conditions_not_met'
 
 export interface PayrollAnnualSettlementRequest {
   id?: number
@@ -6192,8 +6193,19 @@ export interface PayrollAnnualSettlementTrace {
       ztp_p_months: number
       amount_minor_units: number
     }
+    preschool?: {
+      children: Array<{
+        child_reference: string
+        expenses_minor_units: number
+        cap_minor_units: number
+        amount_minor_units: number
+      }>
+      minimum_wage_minor_units: number
+      amount_minor_units: number
+    }
   }
   spouse_credit_failures?: string[]
+  preschool_credit_failures?: Record<string, string[]>
 }
 
 export type PayrollAnnualDeductionKind =
@@ -6232,6 +6244,27 @@ export interface PayrollAnnualSpouseClaim {
   note: string | null
 }
 
+/** § 35bd odst. 6 písm. a) až c) ZDP. */
+export type PayrollAnnualPreschoolFacilityKind =
+  | 'kindergarten'
+  | 'children_group'
+  | 'licensed_care'
+
+export interface PayrollAnnualPreschoolClaim {
+  child_dependant_id: number
+  facility_kind: PayrollAnnualPreschoolFacilityKind
+  facility_name: string | null
+  expenses_minor_units: number
+  households_count: number
+  agreed_cap_minor_units: number | null
+  claimed_by_other_taxpayer: boolean
+  claimed_as_business_expense: boolean
+  grandchild_care_replaces_parents: boolean
+  evidence_status: 'verified' | 'unverified'
+  evidence_reference: string | null
+  note: string | null
+}
+
 export type PayrollAnnualDependantRelation =
   | 'spouse'
   | 'child_own'
@@ -6252,9 +6285,12 @@ export interface PayrollAnnualDependant {
 export interface PayrollAnnualClaimsSet {
   deductions: PayrollAnnualDeduction[]
   spouse: PayrollAnnualSpouseClaim | null
+  preschool: PayrollAnnualPreschoolClaim[]
 }
 
 export interface PayrollAnnualClaimsView extends PayrollAnnualClaimsSet {
+  /** Sleva za umístění dítěte existuje od zdaňovacího období 2027. */
+  preschool_available: boolean
   dependants: PayrollAnnualDependant[]
   statute: {
     counted_donation_values: Partial<Record<PayrollAnnualDeductionKind, number>>

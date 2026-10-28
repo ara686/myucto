@@ -446,6 +446,7 @@ final class AnonymizationPolicy
         'payroll_annual_settlement_certificates' => ['certificate_reference' => 'text', 'evidence_reference' => 'text', 'note' => 'text', 'payer_name' => 'party_name', 'payer_tax_identification' => 'dic'],
         'payroll_annual_settlement_deductions' => ['counterparty_name' => 'party_name', 'evidence_reference' => 'text', 'note' => 'text'],
         'payroll_annual_settlement_other_caregivers' => ['family_name' => 'last_name', 'given_name' => 'first_name', 'months_mask' => 'keep'],
+        'payroll_annual_settlement_preschool_claims' => ['evidence_reference' => 'text', 'facility_name' => 'party_name', 'note' => 'text'],
         'payroll_annual_settlement_requests' => ['annual_claims_note' => 'text', 'filing_obligation_reason' => 'text', 'note' => 'text', 'request_evidence_reference' => 'text'],
         'payroll_annual_settlement_spouse_claims' => ['evidence_reference' => 'text', 'note' => 'text'],
         'payroll_attendance_import_rows' => ['component_code' => 'keep', 'meaning' => 'keep', 'source_ref' => 'text'],

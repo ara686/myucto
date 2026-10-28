@@ -5269,7 +5269,8 @@
         "prior_documents_date_missing": "U doložených dokladů předchozích zaměstnavatelů chybí datum převzetí. Bez něj nejde doložit lhůtu do 15. února. Podklady jsou uložené, doplňte datum v poli Datum převzetí dokladů.",
         "annual_claims_inconsistent": "Odpověď o ročně uplatňovaných položkách nesedí s evidencí. Buď zvolte „Uplatňuje - evidováno níže\" a položky uložte, nebo evidenci odstraňte.",
         "annual_claim_evidence_unverified": "U některé ročně uplatňované položky chybí doložení. Do základu daně a slev se smí promítnout jen doložená položka - doplňte doložení v sekci Ročně uplatňované položky.",
-        "spouse_credit_conditions_not_met": "Nejsou splněny podmínky slevy na manžela. Opravte evidenci slevy, nebo ji odeberte."
+        "spouse_credit_conditions_not_met": "Nejsou splněny podmínky slevy na manžela. Opravte evidenci slevy, nebo ji odeberte.",
+        "preschool_credit_conditions_not_met": "Nejsou splněny podmínky slevy za umístění dítěte. Opravte evidenci slevy, nebo ji odeberte."
       },
       "row_base_before_deductions": "Základ daně před odpočty",
       "row_non_taxable": "Nezdanitelné části základu daně (§ 15)",
@@ -5289,6 +5290,16 @@
         "ztp_p_not_in_evidence": "Zvýšení ZTP/P se uplatňuje, ale manžel nemá v evidenci průkaz ZTP/P.",
         "child_not_under_three": "Dítě v některém uplatněném měsíci nebylo mladší 3 let.",
         "spouse_not_in_evidence": "Manžel není v evidenci vyživovaných osob zaměstnance."
+      },
+      "preschool_failure": {
+        "statute_not_effective": "Slevu za umístění dítěte lze uplatnit až za rok 2027.",
+        "minimum_wage_unavailable": "Pravidla výpočtu pro tento rok nemají minimální mzdu, ze které se počítá strop slevy.",
+        "child_relation": "Vybraná osoba není vyživované dítě. Vnuk jen v péči nahrazující péči rodičů.",
+        "child_not_in_household": "Dítě v tomto roce se zaměstnancem nežilo ve společné domácnosti.",
+        "claimed_by_other_taxpayer": "Slevu na dítě v téže domácnosti uplatňuje jiný poplatník.",
+        "claimed_as_business_expense": "Výdaje jsou uplatněné jako výdaj na dosažení příjmů.",
+        "agreement_without_shared_care": "Dohoda o stropu slevy se uzavírá jen tehdy, když dítě žije ve více domácnostech.",
+        "agreed_cap_over_minimum_wage": "Strop z dohody je vyšší než minimální mzda."
       },
       "claims": {
         "section": "Ročně uplatňované položky",
@@ -5352,7 +5363,30 @@
         "spouse_months": "Měsíce uplatnění slevy",
         "spouse_ztp_p_months": "Měsíce, kdy má manžel průkaz ZTP/P",
         "spouse_income": "Vlastní příjem manžela za rok (Kč)",
-        "spouse_income_hint": "Limit 68 000 Kč."
+        "spouse_income_hint": "Limit 68 000 Kč.",
+        "preschool_section": "Sleva za umístění dítěte (školkovné)",
+        "preschool_hint": "Skutečně zaplacené a doložené výdaje za mateřskou školu, dětskou skupinu nebo srovnatelné zařízení za tento rok, bez stravného. Na dítě nejvýše minimální mzda. V jedné domácnosti uplatňuje slevu jen jeden z rodičů.",
+        "preschool_missing": "Zaměstnanec nemá v evidenci vyživovaných osob dítě. Doplňte ho v kartě zaměstnance.",
+        "preschool_add": "Uplatnit slevu za umístění dítěte",
+        "preschool_remove": "Odebrat slevu za umístění dítěte",
+        "preschool_child": "Dítě",
+        "preschool_facility_kind": "Druh zařízení",
+        "preschool_facility": {
+          "kindergarten": "Mateřská škola",
+          "children_group": "Dětská skupina",
+          "licensed_care": "Péče o dítě na živnostenské oprávnění"
+        },
+        "preschool_facility_name": "Název zařízení",
+        "preschool_expenses": "Výdaje za rok podle potvrzení zařízení (Kč)",
+        "preschool_expenses_hint": "Bez stravného. Sleva se uplatní nejvýše do minimální mzdy.",
+        "preschool_households": "Počet domácností, ve kterých dítě žije",
+        "preschool_households_hint": "Při střídavé péči se strop dělí počtem domácností.",
+        "preschool_agreed_cap": "Strop podle písemné dohody rodičů (Kč)",
+        "preschool_agreed_cap_hint": "Nechte prázdné, pokud dohoda není. Součet stropů obou rodičů musí dát minimální mzdu.",
+        "preschool_other_taxpayer": "Slevu na toto dítě v téže domácnosti uplatňuje jiná osoba",
+        "preschool_business_expense": "Výdaje jsou uplatněné jako výdaj na dosažení příjmů",
+        "preschool_grandchild_care": "Vnuk je v péči nahrazující péči rodičů",
+        "preschool_evidence_placeholder": "Potvrzení zařízení o zaplacených výdajích"
       },
       "open_employee_card": "Otevřít kartu zaměstnance",
       "settle_read_only": "Provést zúčtování může jen uživatel s právem schvalovat mzdy.",

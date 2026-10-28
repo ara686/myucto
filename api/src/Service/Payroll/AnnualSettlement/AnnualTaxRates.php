@@ -97,7 +97,19 @@ final readonly class AnnualTaxRates
         public array $annualCreditMinorUnits,
         /** @var array<int,int> roční daňové zvýhodnění podle pořadí dítěte (1, 2, 3+) */
         public array $annualChildCreditMinorUnits,
+        /**
+         * § 21g odst. 1: měsíční minimální mzda účinná k 1. dni zdaňovacího
+         * období — strop slevy za umístění dítěte (§ 35bd odst. 1). `null`, když
+         * ruleset klíč {@see MINIMUM_WAGE_KEY} nenese (roky před 2027).
+         */
+        public ?int $minimumWageMinorUnits = null,
     ) {}
+
+    /** Klíč minimální mzdy v rulesetu daně z příjmů (od rulesetu 2027). */
+    public const MINIMUM_WAGE_KEY = 'minimum_wage.monthly';
+
+    /** § 35c odst. 4: roční práh bonusu je šestinásobek minimální mzdy. */
+    private const BONUS_MINIMUM_WAGE_MULTIPLE = 6;
 
     public static function forRuleset(PayrollRulesetVersion $ruleset): self
     {
@@ -167,7 +179,31 @@ final readonly class AnnualTaxRates
             self::money($ruleset, 'spouse.income_limit'),
             $credits,
             $children,
+            self::minimumWage($ruleset, $yearlyBonusIncome),
         );
+    }
+
+    /**
+     * Minimální mzda pro slevu za umístění dítěte, je-li v rulesetu.
+     *
+     * Třetí brána: minimální mzdu nese ruleset ještě jednou, nepřímo, jako
+     * roční práh bonusu (§ 35c odst. 4 — šestinásobek). Rozejdou-li se, není
+     * jasné, které číslo platí, a zúčtování se zastaví.
+     */
+    private static function minimumWage(PayrollRulesetVersion $ruleset, int $yearlyBonusIncome): ?int
+    {
+        if (!isset($ruleset->parameters[self::MINIMUM_WAGE_KEY])) {
+            return null;
+        }
+        $minimumWage = self::money($ruleset, self::MINIMUM_WAGE_KEY);
+        if ($minimumWage * self::BONUS_MINIMUM_WAGE_MULTIPLE !== $yearlyBonusIncome) {
+            throw new AnnualSettlementUnavailableException(
+                'Ruleset daně z příjmů má minimální mzdu, jejíž šestinásobek neodpovídá '
+                . 'ročnímu prahu daňového bonusu (bonus.minimum_income.yearly).',
+            );
+        }
+
+        return $minimumWage;
     }
 
     /**
@@ -283,6 +319,10 @@ final readonly class AnnualTaxRates
             'derivation' => 'monthly-times-twelve',
             'derivation_basis' => 'zdp-35d-2',
             'annual_keys_source' => 'ruleset',
+            // Jen u rulesetu s minimální mzdou — stopa starších let zůstává bajtově stejná.
+            ...($this->minimumWageMinorUnits === null
+                ? []
+                : ['minimum_wage_minor_units' => $this->minimumWageMinorUnits]),
         ];
     }
 }

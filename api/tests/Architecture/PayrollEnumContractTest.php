@@ -422,6 +422,9 @@ final class PayrollEnumContractTest extends TestCase
             => 'enum:MyInvoice\Service\Payroll\AnnualSettlement\AnnualNonTaxableKind',
         'payroll.ts::PayrollAnnualDependantRelation'
             => 'db:payroll_dependants.relation',
+        // Sleva za umístění dítěte (§ 35bd odst. 6) — druh předškolního zařízení.
+        'payroll.ts::PayrollAnnualPreschoolFacilityKind'
+            => 'enum:MyInvoice\Service\Payroll\AnnualSettlement\AnnualPreschoolFacilityKind',
         // Průvodce postupem po 20. dni (nulové opravné hlášení + REGZEC).
         'payroll.ts::PayrollJmhzPost20Situation'
             => 'keys:MyInvoice\Service\Payroll\Submission\Jmhz\JmhzPost20GuideService::SITUATIONS',

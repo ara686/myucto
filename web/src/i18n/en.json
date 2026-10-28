@@ -5269,7 +5269,8 @@
         "prior_documents_date_missing": "The prior employers' documents are recorded as provided but have no receipt date. Without it the 15 February deadline cannot be evidenced. The record is saved — fill in the receipt date.",
         "annual_claims_inconsistent": "The answer about annually claimed items does not match the records. Either choose \"Yes, claimed (recorded below)\" and save the items, or remove the records.",
         "annual_claim_evidence_unverified": "An annually claimed item has no evidence. Only an evidenced item may affect the tax base and credits - add the evidence in the Annually claimed items section.",
-        "spouse_credit_conditions_not_met": "The conditions of the spouse credit are not met. Correct the credit record or remove it."
+        "spouse_credit_conditions_not_met": "The conditions of the spouse credit are not met. Correct the credit record or remove it.",
+        "preschool_credit_conditions_not_met": "The conditions of the childcare placement credit are not met. Correct the credit record or remove it."
       },
       "row_base_before_deductions": "Tax base before deductions",
       "row_non_taxable": "Non-taxable parts of the tax base (Sec. 15)",
@@ -5289,6 +5290,16 @@
         "ztp_p_not_in_evidence": "The ZTP/P increase is claimed, but the spouse has no ZTP/P card in the records.",
         "child_not_under_three": "The child was not under 3 years old in one of the claimed months.",
         "spouse_not_in_evidence": "The spouse is not in the employee's dependants records."
+      },
+      "preschool_failure": {
+        "statute_not_effective": "The childcare placement credit can be claimed only from tax year 2027.",
+        "minimum_wage_unavailable": "The calculation rules for this year have no minimum wage to derive the credit cap from.",
+        "child_relation": "The selected person is not a dependent child. A grandchild only in care replacing parental care.",
+        "child_not_in_household": "The child did not live in the employee's household in this year.",
+        "claimed_by_other_taxpayer": "Another taxpayer in the same household claims the credit for the child.",
+        "claimed_as_business_expense": "The expenses are claimed as a business expense.",
+        "agreement_without_shared_care": "An agreement on the credit cap applies only when the child lives in more households.",
+        "agreed_cap_over_minimum_wage": "The agreed cap exceeds the minimum wage."
       },
       "claims": {
         "section": "Annually claimed items",
@@ -5352,7 +5363,30 @@
         "spouse_months": "Months the credit is claimed",
         "spouse_ztp_p_months": "Months the spouse holds a ZTP/P card",
         "spouse_income": "Spouse's own annual income (CZK)",
-        "spouse_income_hint": "Limit CZK 68,000."
+        "spouse_income_hint": "Limit CZK 68,000.",
+        "preschool_section": "Childcare placement credit",
+        "preschool_hint": "Expenses actually paid and evidenced for a kindergarten, children's group or comparable facility for this year, excluding meals. Up to the minimum wage per child. Only one parent per household may claim it.",
+        "preschool_missing": "The employee has no child in the dependants records. Add one in the employee card.",
+        "preschool_add": "Claim childcare placement credit",
+        "preschool_remove": "Remove childcare placement credit",
+        "preschool_child": "Child",
+        "preschool_facility_kind": "Facility type",
+        "preschool_facility": {
+          "kindergarten": "Kindergarten",
+          "children_group": "Children's group",
+          "licensed_care": "Licensed childcare business"
+        },
+        "preschool_facility_name": "Facility name",
+        "preschool_expenses": "Annual expenses per the facility's confirmation (CZK)",
+        "preschool_expenses_hint": "Excluding meals. The credit is capped at the minimum wage.",
+        "preschool_households": "Number of households the child lives in",
+        "preschool_households_hint": "With shared care the cap is divided by the number of households.",
+        "preschool_agreed_cap": "Cap under a written agreement of the parents (CZK)",
+        "preschool_agreed_cap_hint": "Leave empty without an agreement. The parents' caps must add up to the minimum wage.",
+        "preschool_other_taxpayer": "Another person in the same household claims the credit for this child",
+        "preschool_business_expense": "The expenses are claimed as a business expense",
+        "preschool_grandchild_care": "The grandchild is in care replacing parental care",
+        "preschool_evidence_placeholder": "Facility's confirmation of the expenses paid"
       },
       "open_employee_card": "Open employee card",
       "settle_read_only": "Only a user allowed to approve payroll can perform the settlement.",

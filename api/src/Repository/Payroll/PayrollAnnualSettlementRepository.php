@@ -846,7 +846,11 @@ final class PayrollAnnualSettlementRepository
      * (vztah, narození, trvání, ZTP/P), podle kterých se posuzují podmínky
      * nároku. Rodné číslo se nikdy nenačítá.
      *
-     * @return array{deductions:list<array<string,mixed>>,spouse:?array<string,mixed>}
+     * @return array{
+     *   deductions:list<array<string,mixed>>,
+     *   spouse:?array<string,mixed>,
+     *   preschool:list<array<string,mixed>>
+     * }
      */
     public function annualClaimsForYear(
         int $supplierId,
@@ -888,12 +892,33 @@ final class PayrollAnnualSettlementRepository
         $spouse->execute([$supplierId, $employeeId, $taxYear]);
         $spouseRow = $spouse->fetch(PDO::FETCH_ASSOC);
 
+        $preschool = $pdo->prepare(
+            'SELECT claim.*,
+                    child.relation AS child_relation,
+                    child.full_name AS child_full_name,
+                    child.birth_date AS child_birth_date,
+                    child.existence_from AS child_existence_from,
+                    child.existence_to AS child_existence_to
+               FROM payroll_annual_settlement_preschool_claims claim
+               JOIN payroll_dependants child
+                 ON child.supplier_id = claim.supplier_id
+                AND child.id = claim.child_dependant_id
+              WHERE claim.supplier_id = ? AND claim.employee_id = ?
+                AND claim.tax_year = ?
+              ORDER BY claim.id'
+        );
+        $preschool->execute([$supplierId, $employeeId, $taxYear]);
+
         return [
             'deductions' => array_map(
                 self::castDeduction(...),
                 array_values($deductions->fetchAll(PDO::FETCH_ASSOC)),
             ),
             'spouse' => $spouseRow === false ? null : self::castSpouseClaim($spouseRow),
+            'preschool' => array_map(
+                self::castPreschoolClaim(...),
+                array_values($preschool->fetchAll(PDO::FETCH_ASSOC)),
+            ),
         ];
     }
 
@@ -906,6 +931,7 @@ final class PayrollAnnualSettlementRepository
      *
      * @param list<array<string,mixed>> $deductions
      * @param array<string,mixed>|null $spouse
+     * @param list<array<string,mixed>> $preschool
      */
     public function replaceAnnualClaims(
         int $supplierId,
@@ -914,6 +940,7 @@ final class PayrollAnnualSettlementRepository
         array $deductions,
         ?array $spouse,
         ?int $actorUserId,
+        array $preschool = [],
     ): void {
         $pdo = $this->db->pdo();
         if (!$pdo->inTransaction()) {
@@ -925,6 +952,7 @@ final class PayrollAnnualSettlementRepository
         foreach ([
             'payroll_annual_settlement_deductions',
             'payroll_annual_settlement_spouse_claims',
+            'payroll_annual_settlement_preschool_claims',
         ] as $table) {
             $delete = $pdo->prepare(
                 "DELETE FROM {$table}
@@ -986,6 +1014,39 @@ final class PayrollAnnualSettlementRepository
                 $actorUserId,
                 $actorUserId,
             ]);
+        }
+
+        if ($preschool !== []) {
+            $insert = $pdo->prepare(
+                'INSERT INTO payroll_annual_settlement_preschool_claims
+                    (supplier_id, employee_id, tax_year, child_dependant_id,
+                     facility_kind, facility_name, expenses_minor, households_count,
+                     agreed_cap_minor, claimed_by_other_taxpayer,
+                     claimed_as_business_expense, grandchild_care_replaces_parents,
+                     evidence_status, evidence_reference, note, created_by, updated_by)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+            );
+            foreach ($preschool as $row) {
+                $insert->execute([
+                    $supplierId,
+                    $employeeId,
+                    $taxYear,
+                    $row['child_dependant_id'],
+                    $row['facility_kind'],
+                    $row['facility_name'] ?? null,
+                    $row['expenses_minor'],
+                    $row['households_count'] ?? 1,
+                    $row['agreed_cap_minor'] ?? null,
+                    !empty($row['claimed_by_other_taxpayer']) ? 1 : 0,
+                    !empty($row['claimed_as_business_expense']) ? 1 : 0,
+                    !empty($row['grandchild_care_replaces_parents']) ? 1 : 0,
+                    $row['evidence_status'] ?? 'unverified',
+                    $row['evidence_reference'] ?? null,
+                    $row['note'] ?? null,
+                    $actorUserId,
+                    $actorUserId,
+                ]);
+            }
         }
     }
 
@@ -1242,6 +1303,31 @@ final class PayrollAnnualSettlementRepository
         }
         $row['spouse_ztp_p'] = (int) $row['spouse_ztp_p'] === 1;
         $row['child_ztp_p'] = (int) $row['child_ztp_p'] === 1;
+
+        return $row;
+    }
+
+    /**
+     * @param array<string,mixed> $row
+     * @return array<string,mixed>
+     */
+    private static function castPreschoolClaim(array $row): array
+    {
+        foreach ([
+            'id', 'supplier_id', 'employee_id', 'tax_year', 'child_dependant_id',
+            'expenses_minor', 'households_count',
+        ] as $key) {
+            $row[$key] = (int) $row[$key];
+        }
+        if ($row['agreed_cap_minor'] !== null) {
+            $row['agreed_cap_minor'] = (int) $row['agreed_cap_minor'];
+        }
+        foreach ([
+            'claimed_by_other_taxpayer', 'claimed_as_business_expense',
+            'grandchild_care_replaces_parents',
+        ] as $key) {
+            $row[$key] = (int) $row[$key] === 1;
+        }
 
         return $row;
     }

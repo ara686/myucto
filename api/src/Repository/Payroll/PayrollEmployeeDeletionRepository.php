@@ -232,6 +232,8 @@ final class PayrollEmployeeDeletionRepository
         // (smazání osoby nesmí slevu tiše odstranit); se smazáním celého zaměstnance
         // ale mizí i ona, je to podklad neprovedeného zúčtování.
         'payroll_annual_settlement_spouse_claims',
+        // Totéž sleva za umístění dítěte (§ 35bd).
+        'payroll_annual_settlement_preschool_claims',
     ];
 
     /**

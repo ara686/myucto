@@ -1066,6 +1066,56 @@ describe('Roční zúčtování', () => {
     expect(wrapper.find('[data-test="annual-settlement-spouse-form"]').exists()).toBe(false)
   })
 
+  it('sleva za umístění dítěte: sekce jen od roku 2027 a uložení posílá řádek na dítě', async () => {
+    const dependants = [
+      { id: 6, relation: 'child_own', full_name: 'Dítě', birth_date: '2023-05-05', ztp_p: false },
+    ]
+    m.previewAnnualSettlement.mockResolvedValue(previewResponse({
+      annual_claims: {
+        deductions: [], spouse: null, preschool: [], preschool_available: false, dependants,
+        statute: { counted_donation_values: {} },
+      },
+    }))
+    const before = mountPage()
+    await flushPromises()
+    await before.find('[data-test="annual-settlement-person"]').trigger('click')
+    await flushPromises()
+    expect(before.find('[data-test="annual-settlement-preschool"]').exists()).toBe(false)
+
+    m.previewAnnualSettlement.mockResolvedValue(previewResponse({
+      annual_claims: {
+        deductions: [], spouse: null, preschool: [], preschool_available: true, dependants,
+        statute: { counted_donation_values: {} },
+      },
+    }))
+    m.saveAnnualSettlementAnnualClaims.mockResolvedValue({ deductions: [], spouse: null, preschool: [] })
+    const wrapper = mountPage()
+    await flushPromises()
+    await wrapper.find('[data-test="annual-settlement-person"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.find('[data-test="annual-settlement-preschool-add"]').trigger('click')
+    await wrapper.find('[data-test="annual-settlement-preschool-expenses"]').setValue('18000,50')
+    await wrapper.find('[data-test="annual-settlement-save-claims"]').trigger('click')
+    await flushPromises()
+
+    const [, , payload] = m.saveAnnualSettlementAnnualClaims.mock.calls[0]
+    expect(payload.preschool).toEqual([{
+      child_dependant_id: 6,
+      facility_kind: 'kindergarten',
+      facility_name: null,
+      expenses_minor_units: 1_800_050,
+      households_count: 1,
+      agreed_cap_minor_units: null,
+      claimed_by_other_taxpayer: false,
+      claimed_as_business_expense: false,
+      grandchild_care_replaces_parents: false,
+      evidence_status: 'unverified',
+      evidence_reference: null,
+      note: null,
+    }])
+  })
+
   it('rozpis nezdanitelných částí a důvody blokátoru slevy na manžela vypíše', async () => {
     m.previewAnnualSettlement.mockResolvedValue(previewResponse({
       result: result({

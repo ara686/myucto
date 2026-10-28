@@ -1110,7 +1110,8 @@
         "2206_payroll_import_profile_sample_key.sql",
         "2207_other_item_settled_outside.sql",
         "2208_payroll_annual_settlement_claims.sql",
-        "2209_payroll_deduction_agreement_jmhz_target.sql"
+        "2209_payroll_deduction_agreement_jmhz_target.sql",
+        "2210_payroll_2027_preschool_benefits_tips.sql"
     ],
     "tables": {
         "abra_flexi_connections": {
@@ -10959,6 +10960,53 @@
                 "chk_payroll_annual_settlement_outcome_state": "`outcome` = 'underpayment_not_withheld' and `settlement_difference_minor` < 0 and `payable_minor` = 0 or `outcome` = 'no_difference' and `settlement_difference_minor` = 0 and `payable_minor` = 0 or `outcome` = 'overpayment_below_threshold' and `settlement_difference_minor` > 0 and `settlement_difference_minor` <= `payout_threshold_minor` and `payable_minor` = 0 or `outcome` = 'overpayment' and `settlement_difference_minor` > `payout_threshold_minor` and `payable_minor` = `settlement_difference_minor`",
                 "chk_payroll_annual_settlement_outcome_sum": "`settlement_difference_minor` = `tax_difference_minor` + `bonus_difference_minor`",
                 "chk_payroll_annual_settlement_outcome_year": "`tax_year` between 2000 and 2199"
+            }
+        },
+        "payroll_annual_settlement_preschool_claims": {
+            "type": "BASE TABLE",
+            "engine": "InnoDB",
+            "collation": "utf8mb4_unicode_ci",
+            "columns": {
+                "agreed_cap_minor": "bigint(20) NULL DEFAULT NULL",
+                "child_dependant_id": "bigint(20) unsigned NOT NULL",
+                "claimed_as_business_expense": "tinyint(1) NOT NULL DEFAULT 0",
+                "claimed_by_other_taxpayer": "tinyint(1) NOT NULL DEFAULT 0",
+                "created_at": "timestamp NOT NULL DEFAULT current_timestamp()",
+                "created_by": "bigint(20) unsigned NULL DEFAULT NULL",
+                "employee_id": "bigint(20) unsigned NOT NULL",
+                "evidence_reference": "varchar(500) NULL DEFAULT NULL",
+                "evidence_status": "enum('unverified','verified') NOT NULL DEFAULT 'unverified'",
+                "expenses_minor": "bigint(20) NOT NULL",
+                "facility_kind": "enum('kindergarten','children_group','licensed_care') NOT NULL",
+                "facility_name": "varchar(191) NULL DEFAULT NULL",
+                "grandchild_care_replaces_parents": "tinyint(1) NOT NULL DEFAULT 0",
+                "households_count": "tinyint(3) unsigned NOT NULL DEFAULT 1",
+                "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
+                "note": "varchar(500) NULL DEFAULT NULL",
+                "supplier_id": "int(10) unsigned NOT NULL",
+                "tax_year": "smallint(5) unsigned NOT NULL",
+                "updated_at": "timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE CURRENT_TIMESTAMP()",
+                "updated_by": "bigint(20) unsigned NULL DEFAULT NULL"
+            },
+            "indexes": {
+                "PRIMARY": "UNIQUE BTREE (id)",
+                "fk_payroll_annual_settlement_preschool_child": "BTREE (supplier_id, child_dependant_id)",
+                "fk_payroll_annual_settlement_preschool_creator": "BTREE (created_by)",
+                "fk_payroll_annual_settlement_preschool_editor": "BTREE (updated_by)",
+                "uq_payroll_annual_settlement_preschool_scope": "UNIQUE BTREE (supplier_id, employee_id, tax_year, child_dependant_id)",
+                "uq_payroll_annual_settlement_preschool_supplier_id": "UNIQUE BTREE (supplier_id, id)"
+            },
+            "foreign_keys": {
+                "fk_payroll_annual_settlement_preschool_child": "(supplier_id, child_dependant_id) -> payroll_dependants (supplier_id, id) ON UPDATE RESTRICT ON DELETE RESTRICT",
+                "fk_payroll_annual_settlement_preschool_creator": "(created_by) -> users (id) ON UPDATE RESTRICT ON DELETE SET NULL",
+                "fk_payroll_annual_settlement_preschool_editor": "(updated_by) -> users (id) ON UPDATE RESTRICT ON DELETE SET NULL",
+                "fk_payroll_annual_settlement_preschool_employee": "(supplier_id, employee_id) -> payroll_employees (supplier_id, id) ON UPDATE RESTRICT ON DELETE CASCADE"
+            },
+            "checks": {
+                "chk_payroll_annual_settlement_preschool_amounts": "`expenses_minor` > 0 and `households_count` between 1 and 9 and (`agreed_cap_minor` is null or `agreed_cap_minor` >= 0)",
+                "chk_payroll_annual_settlement_preschool_evidence": "`evidence_status` <> 'verified' or `evidence_reference` is not null and `evidence_reference` <> ''",
+                "chk_payroll_annual_settlement_preschool_flags": "`claimed_by_other_taxpayer` in (0,1) and `claimed_as_business_expense` in (0,1) and `grandchild_care_replaces_parents` in (0,1)",
+                "chk_payroll_annual_settlement_preschool_year": "`tax_year` between 2027 and 2199"
             }
         },
         "payroll_annual_settlement_requests": {

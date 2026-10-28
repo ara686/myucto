@@ -166,13 +166,15 @@ Nezodpovězená otázka má stejný účinek jako záporná odpověď.
   neodvozuje (o většině skutečností neví), odpověď zadává mzdová účetní.
 - **Ročně uplatňované položky jsou zodpovězené a doložené.** Dary, úroky
   z úvěru na bytovou potřebu, penzijní a životní pojištění, dlouhodobý
-  investiční produkt, pojištění dlouhodobé péče, sleva na manžela a sleva za
-  zastavenou exekuci se podle § 38h odst. 6 uplatňují až v ročním zúčtování.
+  investiční produkt, pojištění dlouhodobé péče, sleva na manžela, sleva za
+  umístění dítěte a sleva za zastavenou exekuci se podle § 38h odst. 6
+  uplatňují až v ročním zúčtování.
   V žádosti zvolte **Uplatňuje, evidováno níže** a položky zapište v sekci
   **Ročně uplatňované položky** ([§ 84.7.7](#8477-rocne-uplatnovane-polozky)).
   Volba **Uplatňuje něco, co aplikace neeviduje** zúčtování zastaví, aby
   nevyšel nižší přeplatek. Zastaví ho také rozpor mezi žádostí a evidencí
-  položek, nedoložená položka a nesplněné podmínky slevy na manžela.
+  položek, nedoložená položka a nesplněné podmínky slevy na manžela nebo
+  slevy za umístění dítěte.
 
 Nesplněné podmínky se vypisují všechny najednou jako věty a tlačítko
 **Provést roční zúčtování** zůstává vidět zašedlé s vysvětlením.
@@ -302,6 +304,34 @@ musí mít vztah **manžel/manželka**. Dále označte:
 Sleva je 24 840 Kč ročně, za každý označený měsíc 1/12. Dítě, které dovrší
 tři roky v průběhu měsíce, zakládá nárok ještě za tento měsíc. Roční JMHZ
 vykazuje slevu na manžela s manželem, dítětem, počtem měsíců a ZTP/P.
+
+**Sleva za umístění dítěte (školkovné).** Uplatňuje se za zdaňovací období
+2027 a další (§ 35bd ZDP), jen ročně: k zálohám se nepřihlíží. Pro každé
+dítě přidejte jeden řádek a vyplňte:
+
+- dítě z evidence vyživovaných osob; vnuk jen tehdy, je-li v péči
+  nahrazující péči rodičů (zaškrtněte to u něj),
+- druh zařízení: mateřská škola, dětská skupina, nebo péče o dítě
+  provozovaná na živnostenské oprávnění (i obdobné zařízení v zahraničí),
+- výdaje za rok podle potvrzení zařízení, bez stravného,
+- počet domácností, ve kterých dítě žije, a u sdílené péče případně strop
+  z písemné dohody rodičů,
+- doložení potvrzením zařízení.
+
+Sleva se rovná skutečně zaplaceným výdajům, nejvýše minimální mzdě
+platné k 1. lednu roku (pro rok 2027 je to 24 900 Kč) za každé dítě. Žije-li
+dítě ve více domácnostech, je strop podíl minimální mzdy a počtu domácností
+v celých korunách dolů, při střídavé péči ve dvou domácnostech 12 450 Kč;
+písemná dohoda rodičů může strop rozdělit jinak. Je to sleva na dani,
+ne odpočet: snižuje daň spolu se slevou na poplatníka a ostatními slevami,
+nejvýše do výše daně, a uplatní se před daňovým zvýhodněním na děti. Může
+tak zvýšit daňový bonus.
+
+Zúčtování zastaví nedoložená sleva a nesplněné podmínky: dítě v roce
+se zaměstnancem nežilo, slevu na totéž dítě v téže domácnosti uplatňuje
+jiná osoba, výdaje jsou uplatněné jako výdaj na dosažení příjmů, nebo
+dohodnutý strop je vyšší než minimální mzda. Které to jsou, vypíše výsledek
+u překážky.
 
 ## 84.8 Související kapitoly
 
