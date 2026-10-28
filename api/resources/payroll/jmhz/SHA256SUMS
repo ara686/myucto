@@ -5,6 +5,14 @@ cc282115d58a3744348b500a2dcc6eec4a5899b12753ec756f01fe261fd7ff37  dictionary-1.4
 e794a56d3baa48dd876ad45a0deb5b1bb77c17a0cb44a3511e8ef4028be69743  dictionary-1.4.1.6/datovy_slovnik_1.4.1.6.xlsx
 1deeb27c4cb68bd80d1f7be52b37200943a19f4f21bad4ad544f13ecae09e0db  dictionary-1.4.1.6/manifest.json
 37df3a44f1cce84518e773c1ba0eca5dc599d752d3e66b0ddf9339161c866889  dictionary-1.4.1.6/scenario-requirement-manifest.json
+748dd83a376540b85d5e0942af95ba6230671007c6e4269dda50db74faa88d35  dictionary-1.5.0.3/Katalog kontrol MH(public)_1.5.0.4.xlsx
+a16b3f3cdb487a04325fe59552a68a8b76678cb744e0d3f156c32461d70590d8  dictionary-1.5.0.3/control-manifest.json
+c4cb0704208f463417b564fd91a1884c71789b84d2966b074af33e5c41b5f45e  dictionary-1.5.0.3/datove_scenare_interakce_povinnosti_MH_1.5.0.3.xlsx
+861bc297adbadd475efa68214bdf194ce1b60a14337d5cf10307cf00b12e92ca  dictionary-1.5.0.3/datovy_slovnik_1.5.0.3.xlsx
+fc4710ab9298676f76cfba122133afae62cff979c202171b01a5d690c8f34799  dictionary-1.5.0.3/manifest.json
+8d6906f10241d4da8769d05de5b39498db85d4b46bdb4b9bed40e70fcb853796  dictionary-1.5.0.3/scenario-requirement-manifest.json
+1b1a4c1ec0d1e49663d0b793539a67c655555dfc208e2a4ba792f07226bc79c0  edv-1.5.0.3/Definice externí datové věty_1.5.0.3.xlsx
+ae08cde2f36c5c18873d7da976d583ab9a36131ef7ecd3a7704a4a3369ca7e02  edv-1.5.0.3/manifest.json
 11a35b83dd761d5d0a7cb466d74c74e5ee8c6de36970c58edde3e0d63f2c268f  examples-2026-04-13/classification-decisions.json
 8b24406f14a71268eca2cc4f1a72f6fdd0c15158e9fefe118c842e196b95af16  examples-2026-04-13/manifest.json
 940d3ebef6d42294da79c7611654a59aef5beead3a48ffbdffdac9d0f1c58886  external-codebooks-2026-08-31/CIS1186_CS_2026-08-13.csv
