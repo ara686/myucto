@@ -20316,8 +20316,11 @@
     "vat_allocation": {
       "enable": "Split deduction and posting",
       "disable": "Remove accounting allocations",
-      "hint": "Allocations do not change the supplier's VAT recap. They only define the VAT deduction and debit account for each part. The first business row is calculated as the remainder.",
-      "add": "Add allocation",
+      "hint": "Allocations do not change the supplier's VAT recap. They only define the VAT deduction and debit account for each part. One row per rate is calculated as the remainder: the first business row without a personal part, the personal part once added. You can split the business part into several rows with different accounts; the \"=\" button selects which row is calculated.",
+      "add": "Add personal or other part",
+      "add_business": "Add business part",
+      "make_residual": "Calculate this row as the remainder of the rate",
+      "residual": "Calculated as the remainder",
       "business": "Business part",
       "personal": "Personal use",
       "description": "Description",
