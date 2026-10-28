@@ -151,9 +151,9 @@ final class JmhzScenario1Document2027Test extends TestCase
 
     /**
      * S prohlášením se § 6 odst. 4 neuplatní: 10555 = 0. Den podpisu (10575,
-     * IN16) a slevu na studenta (10565, 10566) evidence zatím nenese.
+     * IN16) evidence zatím nenese.
      */
-    public function testDeclarantReportsZeroSection64AndBlocksSignatureDateAndStudentCredit(): void
+    public function testDeclarantReportsZeroSection64AndBlocksSignatureDate(): void
     {
         $payload = $this->completePayload('2027-04-01');
         $payload['people'][0]['employments'][0]['term']['tax_declaration_signed'] = true;
@@ -161,10 +161,7 @@ final class JmhzScenario1Document2027Test extends TestCase
         $resolution = $this->resolve($payload, '2027-04-01');
 
         self::assertSame(
-            [
-                [self::SOURCE_MISSING, 'person', 11, ['10565', '10566']],
-                [self::SOURCE_MISSING, 'person', 11, ['10575']],
-            ],
+            [[self::SOURCE_MISSING, 'person', 11, ['10575']]],
             $this->blockers($resolution),
         );
         $document = $resolution->candidate?->payload ?? [];
@@ -173,6 +170,52 @@ final class JmhzScenario1Document2027Test extends TestCase
             Jmhz2027DocumentContract::SUMMARY_DECLARATION_SIGNED_ON,
             $document['people'][0]['summary'],
         );
+    }
+
+    /**
+     * Sleva na studenta (10565, 10566) ze zmrazeného rozpadu nároku přes
+     * StudentTaxCredit::fromCreditBreakdown(). Rozpad slev 10299 až 10302
+     * ji zná, takže úhrn nároku sedí a nevzniká
+     * `tax_credit_breakdown_unavailable`.
+     */
+    public function testStudentCreditComesFromFrozenCreditBreakdown(): void
+    {
+        foreach (['student' => false, 'student-doctoral' => true] as $kind => $doctoral) {
+            $payload = $this->completePayload('2027-04-01');
+            $payload['people'][0]['employments'][0]['term']['tax_declaration_signed'] = true;
+            $tax = &$payload['people'][0]['person_summary']['statutory']['income_tax'];
+            $tax['claimed_non_refundable_credits_minor_units'] = 307_000;
+            $tax['applied_non_refundable_credits_minor_units'] = 15_000;
+            $tax['claimed_non_refundable_credit_breakdown'] = ['taxpayer' => 273_500, $kind => 33_500];
+            unset($tax);
+
+            $resolution = $this->resolve($payload, '2027-04-01');
+
+            self::assertSame(
+                [[self::SOURCE_MISSING, 'person', 11, ['10575']]],
+                $this->blockers($resolution),
+                $kind,
+            );
+            $summary = $resolution->candidate?->payload['people'][0]['summary'] ?? [];
+            self::assertSame(
+                ['amount_czk' => 335, 'doctoral' => $doctoral],
+                $summary[Jmhz2027DocumentContract::SUMMARY_STUDENT_CREDIT],
+                $kind,
+            );
+            self::assertSame(2735, $summary['tax_credits_czk']['basic'], $kind);
+        }
+    }
+
+    /** Prohlášení bez slevy na studenta: klíč je doložené „neuplatněna" (`null`). */
+    public function testDeclarantWithoutStudentCreditCarriesNullStudentCredit(): void
+    {
+        $payload = $this->completePayload('2027-04-01');
+        $payload['people'][0]['employments'][0]['term']['tax_declaration_signed'] = true;
+
+        $summary = $this->resolve($payload, '2027-04-01')->candidate?->payload['people'][0]['summary'] ?? [];
+
+        self::assertArrayHasKey(Jmhz2027DocumentContract::SUMMARY_STUDENT_CREDIT, $summary);
+        self::assertNull($summary[Jmhz2027DocumentContract::SUMMARY_STUDENT_CREDIT]);
     }
 
     /** Bez spočtené měsíční zálohy je 10579 neuvedený (nález nese záloha). */

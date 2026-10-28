@@ -6,6 +6,7 @@ namespace MyInvoice\Service\Payroll\Submission\Jmhz;
 
 use MyInvoice\Service\Payroll\Absence\PayrollSicknessInputMaterializer;
 use MyInvoice\Service\Payroll\PayrollEmploymentJmhzActivityFamily;
+use MyInvoice\Service\Payroll\IncomeTax\StudentTaxCredit;
 use MyInvoice\Service\Payroll\IncomeTax\TaxCreditKind;
 use MyInvoice\Service\Payroll\IncomeTax\TaxRegime;
 use MyInvoice\Service\Payroll\SocialInsurance\SocialPartTimeDiscountReason;
@@ -676,6 +677,7 @@ final class JmhzScenario1DocumentResolver
                     $declarationSigned,
                     $advanceTaxCzk,
                     $withholdingTaxCzk,
+                    $tax,
                     $ozpWage !== null,
                     $this->object($person['annual_evidence'] ?? null),
                     $employeeId,
@@ -2773,6 +2775,13 @@ final class JmhzScenario1DocumentResolver
             );
             $total += is_int($minor) ? $minor : 0;
         }
+        // Sleva na studenta (§ 35ba odst. 1 písm. f) ZDP od 2027) je v úhrnu
+        // nároku taky, ale vykazuje se vlastním blokem 10565/10566
+        // (StudentTaxCredit::fromCreditBreakdown()), ne v 10299 až 10302.
+        $student = StudentTaxCredit::fromCreditBreakdown($breakdown);
+        if ($student !== null) {
+            $total += $student['amount_minor_units'];
+        }
         if ($total !== $claimed) {
             // Kdyby rozpad neseděl na úhrn, mlčky bychom vykázali jiné číslo,
             // než ze kterého se počítala záloha.
@@ -3762,8 +3771,10 @@ final class JmhzScenario1DocumentResolver
      *   `withholding_tax_czk`; `null` = základ nevznikl.
      * - {@see Jmhz2027DocumentContract::SUMMARY_DECLARATION_SIGNED_ON} (10575,
      *   IN16 při 10419 = ANO): evidence prohlášení nese jen účinnost od–do.
-     * - {@see Jmhz2027DocumentContract::SUMMARY_STUDENT_CREDIT} (10565, 10566):
-     *   sleva na studenta.
+     * - {@see Jmhz2027DocumentContract::SUMMARY_STUDENT_CREDIT} (10565, 10566,
+     *   IN39): sleva na studenta ze zmrazeného rozpadu nároku výsledku daně
+     *   ({@see StudentTaxCredit::fromCreditBreakdown()}); `null` = v měsíci
+     *   se neuplatnila. Jen s podepsaným prohlášením.
      * - výdělek OZP: 10589, 10570 a 10571 (IN28) nahrazují 10347; ruční
      *   evidence nese jen jedno datum „mzdy včetně pojistného".
      * - úhrn měsíčních bonusů za minulý rok 10577 (jen leden). Osoba bez
@@ -3783,6 +3794,7 @@ final class JmhzScenario1DocumentResolver
         ?bool $declarationSigned,
         array $advanceTaxCzk,
         ?array $withholding,
+        array $tax,
         bool $hasOzpWage,
         array $annualEvidence,
         ?int $employeeId,
@@ -3798,7 +3810,16 @@ final class JmhzScenario1DocumentResolver
         ];
         if ($declarationSigned === true) {
             $blockers[] = $this->blocker(self::SOURCE_MISSING_2027, 'person', $employeeId, ['10575']);
-            $blockers[] = $this->blocker(self::SOURCE_MISSING_2027, 'person', $employeeId, ['10565', '10566']);
+            $breakdown = $tax['claimed_non_refundable_credit_breakdown'] ?? null;
+            $student = is_array($breakdown) ? StudentTaxCredit::fromCreditBreakdown($breakdown) : null;
+            $studentAmount = $student === null
+                ? null
+                : $this->wholeCzk($student['amount_minor_units'], '10565', 'person', $employeeId, $blockers);
+            if ($student === null || $studentAmount !== null) {
+                $summary[Jmhz2027DocumentContract::SUMMARY_STUDENT_CREDIT] = $student === null
+                    ? null
+                    : ['amount_czk' => $studentAmount, 'doctoral' => $student['doctoral']];
+            }
         } elseif ($declarationSigned === false && $withholding !== null) {
             $blockers[] = $this->blocker(self::SOURCE_MISSING_2027, 'person', $employeeId, ['10535', '10555']);
         }
