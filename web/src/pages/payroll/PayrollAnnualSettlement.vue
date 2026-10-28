@@ -21,6 +21,7 @@ import {
   type PayrollAnnualDocumentBatch,
   type PayrollAnnualDocumentBatchItem,
   type PayrollAnnualClaimsSet,
+  type PayrollAnnualClaimsView,
   type PayrollAnnualDependant,
   type PayrollAnnualDeductionKind,
   type PayrollAnnualSettlementAnnualClaims,
@@ -198,12 +199,11 @@ const DEDUCTION_KINDS: readonly PayrollAnnualDeductionKind[] = [
   'long_term_care_insurance',
   'enforcement_stop',
 ]
-/** Odběry se oceňují pevnou částkou za odběr (§ 15 odst. 1 ZDP), částku nezadává uživatel. */
-const QUANTITY_RATES: Partial<Record<PayrollAnnualDeductionKind, number>> = {
-  blood_donation: 300_000,
-  organ_donation: 2_000_000,
-  stem_cell_donation: 2_000_000,
-}
+/**
+ * Odběry se oceňují pevnou částkou za odběr (§ 15 odst. 1 ZDP), částku nezadává
+ * uživatel. Částky posílá server ze zákonné tabulky ročníku, natvrdo tu nejsou.
+ */
+const quantityRates = ref<Partial<Record<PayrollAnnualDeductionKind, number>>>({})
 const SPOUSE_FAILURE_CODES: readonly string[] = [
   'spouse_relation',
   'child_relation',
@@ -563,11 +563,14 @@ function spouseForm(row: NonNullable<PayrollAnnualClaimsSet['spouse']>): SpouseF
 
 /** `?? []` schválně: chybějící blok nesmí shodit obrazovku (viz potvrzení). */
 function applyClaims(
-  claims: (PayrollAnnualClaimsSet & { dependants?: PayrollAnnualDependant[] }) | undefined,
+  claims: (PayrollAnnualClaimsSet & Partial<Pick<PayrollAnnualClaimsView, 'dependants' | 'statute'>>) | undefined,
 ): void {
   deductions.value = (claims?.deductions ?? []).map(deductionForm)
   spouse.value = claims?.spouse ? spouseForm(claims.spouse) : null
   dependants.value = claims?.dependants ?? []
+  if (claims?.statute) {
+    quantityRates.value = claims.statute.counted_donation_values
+  }
 }
 
 function addDeduction(): void {
@@ -611,7 +614,7 @@ function quantityValue(row: DeductionForm): number | null {
 }
 
 function quantityEvaluation(row: DeductionForm): number {
-  return (quantityValue(row) ?? 0) * (QUANTITY_RATES[row.kind] ?? 0)
+  return (quantityValue(row) ?? 0) * (quantityRates.value[row.kind] ?? 0)
 }
 
 /** Sestaví tělo PUT. Částka u odběrů, měsíce mimo úroky a id se neposílají. */
@@ -619,7 +622,7 @@ function buildClaimsPayload(): PayrollAnnualClaimsSet {
   const claim = spouse.value
   return {
     deductions: deductions.value.map((row) => {
-      const isQuantity = QUANTITY_RATES[row.kind] !== undefined
+      const isQuantity = quantityRates.value[row.kind] !== undefined
       const isHousing = row.kind === 'housing_interest'
       return {
         kind: row.kind,
@@ -1963,7 +1966,7 @@ onMounted(async () => {
               </p>
 
               <div class="mt-3 grid gap-3 sm:grid-cols-2">
-                <label v-if="QUANTITY_RATES[row.kind] === undefined" class="block">
+                <label v-if="quantityRates[row.kind] === undefined" class="block">
                   <span class="mb-1 block text-xs font-medium text-neutral-600">
                     {{ t('payroll.annual_settlement.claims.amount') }}
                   </span>
@@ -1991,7 +1994,7 @@ onMounted(async () => {
                   >
                   <span class="mt-1 block text-xs text-neutral-500" data-test="annual-settlement-deduction-evaluation">
                     {{ t('payroll.annual_settlement.claims.quantity_evaluation', {
-                      rate: money(QUANTITY_RATES[row.kind]),
+                      rate: money(quantityRates[row.kind]),
                       total: money(quantityEvaluation(row)),
                     }) }}
                   </span>

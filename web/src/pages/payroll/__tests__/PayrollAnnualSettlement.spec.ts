@@ -1003,6 +1003,9 @@ describe('Roční zúčtování', () => {
         { id: 5, relation: 'spouse', full_name: 'Manželka', birth_date: '1990-01-01', ztp_p: true },
         { id: 6, relation: 'child_own', full_name: 'Dítě', birth_date: '2025-05-05', ztp_p: false },
       ],
+      statute: {
+        counted_donation_values: { blood_donation: 300_000, organ_donation: 2_000_000, stem_cell_donation: 2_000_000 },
+      },
     }
     m.previewAnnualSettlement.mockResolvedValue(previewResponse({ annual_claims: claims }))
     m.saveAnnualSettlementAnnualClaims.mockResolvedValue({
@@ -1052,7 +1055,7 @@ describe('Roční zúčtování', () => {
 
   it('bez manžela v evidenci ukáže nápovědu s odkazem na kartu zaměstnance', async () => {
     m.previewAnnualSettlement.mockResolvedValue(previewResponse({
-      annual_claims: { deductions: [], spouse: null, dependants: [] },
+      annual_claims: { deductions: [], spouse: null, dependants: [], statute: { counted_donation_values: {} } },
     }))
     const wrapper = mountPage()
     await flushPromises()
