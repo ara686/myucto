@@ -10,13 +10,12 @@ use MyInvoice\Service\Payroll\IncomeTax\TaxCreditKind;
 use MyInvoice\Service\Payroll\IncomeTax\TaxRegime;
 use MyInvoice\Service\Payroll\SocialInsurance\SocialPartTimeDiscountReason;
 use MyInvoice\Service\Payroll\Submission\CsszEmployerVariableSymbol;
+use MyInvoice\Service\Payroll\Submission\Jmhz\Xml2027\Jmhz2027DocumentContract;
+use MyInvoice\Service\Payroll\Submission\Jmhz\Xml2027\JmhzScenario1Xml2027Serializer;
 use MyInvoice\Service\Tax\TaxConstants;
 
 final class JmhzScenario1DocumentResolver
 {
-    /** Klíč bloku údajů, které přidala specifikace 2027 ({@see JmhzSpecVersion::V2027}). */
-    private const SPEC_2027_KEY = 'jmhz_2027';
-
     /**
      * Verze přípravy, ze kterých se scénář 1 normalizuje.
      *
@@ -73,6 +72,8 @@ final class JmhzScenario1DocumentResolver
     private ?JmhzControlParameterCatalog $controlParameters = null;
 
     private ?JmhzScenario1XmlSerializer $probeSerializer = null;
+
+    private ?JmhzScenario1Xml2027Serializer $probeSerializer2027 = null;
 
     private const NEGATIVE_INCOME_REPORTED_AS_ZERO = [
         '10286',
@@ -660,12 +661,13 @@ final class JmhzScenario1DocumentResolver
                 $employeeId,
                 $blockers,
             );
-            $personSpecExtension = null;
+            $personSpecExtension = [];
             if ($is2027) {
                 foreach ($normalizedEmployments as $index => $normalizedEmployment) {
-                    $normalizedEmployments[$index][self::SPEC_2027_KEY] = $this->employment2027(
+                    $normalizedEmployments[$index] = $this->employment2027(
                         $normalizedEmployment,
                         $declarationSigned,
+                        $withholdingTaxCzk,
                         $blockers,
                     );
                 }
@@ -673,6 +675,7 @@ final class JmhzScenario1DocumentResolver
                     $preparation->periodStart,
                     $declarationSigned,
                     $advanceTaxCzk,
+                    $withholdingTaxCzk,
                     $ozpWage !== null,
                     $this->object($person['annual_evidence'] ?? null),
                     $employeeId,
@@ -781,7 +784,9 @@ final class JmhzScenario1DocumentResolver
                         $blockers,
                     ),
                     'annual' => $annual,
-                    ...($personSpecExtension === null ? [] : [self::SPEC_2027_KEY => $personSpecExtension]),
+                    // Klíče datové věty 2027 podle Jmhz2027DocumentContract;
+                    // dokument 2026 je nenese.
+                    ...$personSpecExtension,
                 ],
                 'employments' => $normalizedEmployments,
             ];
@@ -914,6 +919,14 @@ final class JmhzScenario1DocumentResolver
                 ['10270', '10271', '10272'],
             );
         }
+        $employerSpecExtension = $is2027
+            ? $this->employerCollectiveAgreements2027(
+                $preparation->payload['employer_annual_evidence'] ?? null,
+                (int) substr($preparation->periodStart, 0, 4),
+                $preparation->sourceRevisionId,
+                $blockers,
+            )
+            : [];
         $blockers = $this->normalizeBlockers($blockers);
 
         $candidate = new JmhzScenario1NormalizedDocument([
@@ -949,6 +962,7 @@ final class JmhzScenario1DocumentResolver
                 'pvpoj' => $pvpojPayload,
                 'summary_totals' => $this->employerTaxTotals($normalizedPeople),
                 'annual' => $employerAnnual,
+                ...$employerSpecExtension,
             ],
             'people' => $normalizedPeople,
             'interactions' => [
@@ -1297,7 +1311,12 @@ final class JmhzScenario1DocumentResolver
             }
         }
         $found = [];
-        foreach ($this->probeSerializer()->probeForms($candidate) as $failure) {
+        // Formuláře zkouší serializér ročníku dokumentu: za období od 01/2027
+        // tentýž, který pak datovou větu sestaví (JmhzScenario1XmlValidator).
+        $failures = ($candidate->payload['spec_version'] ?? null) === JmhzSpecVersion::V2027->value
+            ? $this->probeSerializer2027()->probeForms($candidate)
+            : $this->probeSerializer()->probeForms($candidate);
+        foreach ($failures as $failure) {
             if (($failure['employment_id'] !== null
                     && isset($blockedEmployments[$failure['employment_id']]))
                 || ($failure['employee_id'] !== null
@@ -1320,6 +1339,11 @@ final class JmhzScenario1DocumentResolver
     private function probeSerializer(): JmhzScenario1XmlSerializer
     {
         return $this->probeSerializer ??= new JmhzScenario1XmlSerializer();
+    }
+
+    private function probeSerializer2027(): JmhzScenario1Xml2027Serializer
+    {
+        return $this->probeSerializer2027 ??= new JmhzScenario1Xml2027Serializer();
     }
 
     /**
@@ -3072,16 +3096,7 @@ final class JmhzScenario1DocumentResolver
         }
         $evidence = $this->object($value);
         $types = $evidence['collective_agreement_types'] ?? null;
-        $validTypes = is_array($types)
-            && array_is_list($types)
-            && $types !== []
-            && $types === array_values(array_unique($types, SORT_STRING))
-            && array_filter(
-                $types,
-                static fn (mixed $type): bool => !is_string($type)
-                    || !in_array($type, ['0', '1', '2', '3', '4', '5'], true),
-            ) === []
-            && (!in_array('0', $types, true) || $types === ['0']);
+        $validTypes = self::validCollectiveAgreementTypes($types);
         if (!$validTypes
             || ($evidence['schema_reference'] ?? null)
                 !== 'payroll-jmhz-employer-annual-evidence.v1'
@@ -3594,87 +3609,103 @@ final class JmhzScenario1DocumentResolver
     }
 
     /**
-     * Údaje formuláře (vztahu), které přináší verze 2027 (datový slovník
-     * 1.5.0.3, scénáře 1.5.0.3). Klíče se do dokumentu zapisují jen za období
-     * od 01/2027; dokument 2026 je nemá.
+     * Formulář (vztah) verze 2027 podle {@see Jmhz2027DocumentContract}:
+     * resolver doplní klíče, které datová věta 2027 potřebuje navíc proti
+     * verzi 2026, a nic jiného. Za období do 12/2026 se nevolá.
      *
-     * - `section_6_4_income_czk` (10555): příjem podle § 6 odst. 4 ZDP bez
-     *   osvobozených. Kontrola 304 chce 10535 i 10555 vyplněné u každého
-     *   vztahu a nikdy obě kladné. S podepsaným prohlášením se § 6 odst. 4
-     *   neuplatní, takže 10555 = 0. Bez prohlášení se od 2027 mění samostatný
-     *   základ na zálohu (z. 360/2025 Sb.) a rozdělení základu po vztazích
-     *   výpočet daně zatím nenese: hodnota zůstává neuvedená a nález vzniká
-     *   u osoby ({@see self::person2027()}).
-     * - `sickness_countable_income_czk` (10476, nově „Započitatelný příjem
-     *   pro účely nemocenského pojištění", ZP 062): příjem zahrnutý do
-     *   vyměřovacího základu, tedy nezastropovaný základ účastného vztahu;
-     *   u neúčastného vztahu a v měsíci bez příjmu 0 („pokud žádný příjem
-     *   nebude, musí se vyplnit 0").
-     * - `worked_millihours` a `overtime_millihours` (10268, 10269): po odečtu
-     *   náhradního volna, přesčas se znaménkem ({@see JmhzReportedWorkHours}).
-     * - `risk_work` (10273, 10274, 10580): blok rizika po kategoriích;
-     *   10273 je ve verzi 2027 celé číslo, zaokrouhlené nahoru
-     *   ({@see JmhzWholeHours}, kontrola 57). Počet směn 10580 (IN42:
-     *   10274 = 1 a 10273 > 0) mzdové jádro neeviduje.
-     * - `state_prosecutor` (10587): povinný jen ve scénáři „K,N,O,P,Q,R,S"
-     *   (`scenario_3`); příznak státního zástupce jádro neeviduje.
-     * - `work_place_address` (10550 až 10554): plná adresa místa výkonu
-     *   práce. Vztah nese jen obec a stát (10229 až 10231); 10552 a 10554
-     *   jsou povinné, kromě místa výkonu v zahraničí (kontrola 385).
+     * - {@see Jmhz2027DocumentContract::EMPLOYMENT_PARAGRAPH6_INCOME} (10555):
+     *   příjem podle § 6 odst. 4 ZDP bez osvobozených. Kontrola 304 chce 10535
+     *   i 10555 u každého vztahu a nikdy obě kladné. S podepsaným prohlášením
+     *   se § 6 odst. 4 neuplatní (10555 = 0). Bez prohlášení je 10555 = 0 jen
+     *   tehdy, když výpočet daně osobě samostatný základ nevytvořil
+     *   (`withholding_tax_czk` je `null`) a celý příjem je v záloze (10535).
+     *   S takovým základem ho výpočet po vztazích nerozděluje: klíč chybí
+     *   a nález vzniká u osoby ({@see self::person2027()}).
+     * - `social_base.reported_income_czk` (10476) nese ve verzi 2027 nový
+     *   význam „započitatelný příjem pro účely nemocenského pojištění" (ZP 062):
+     *   nezastropovaný vyměřovací základ účastného vztahu, u neúčastného vztahu
+     *   a v měsíci bez příjmu 0.
+     * - `risk_work.categories` (10273, 10274, 10580): kategorie rizika
+     *   s odpracovanými hodinami vztahu po odečtu náhradního volna
+     *   ({@see JmhzReportedWorkHours}, kontrola 57). Počet směn 10580 (IN42)
+     *   mzdové jádro neeviduje.
+     * - {@see Jmhz2027DocumentContract::EMPLOYMENT_STATE_PROSECUTOR} (10587):
+     *   jen formulář K až S; příznak jádro neeviduje.
+     * - `term.jmhz_workplace_*` (10550 až 10554): plná adresa místa výkonu
+     *   práce; vztah nese jen obec a stát (10229 až 10231).
+     *
+     * Kde podklad chybí, klíč se do dokumentu nezapíše a vzniká nález
+     * {@see self::SOURCE_MISSING_2027}, nikdy odhad.
      *
      * @param array<string,mixed> $employment normalizovaný vztah
+     * @param array{base:?int,tax:?int}|null $withholding
      * @param list<JmhzScenario1Blocker> $blockers
      * @return array<string,mixed>
      */
     private function employment2027(
         array $employment,
         ?bool $declarationSigned,
+        ?array $withholding,
         array &$blockers,
     ): array {
         $employmentId = is_int($employment['employment_id'] ?? null)
             ? $employment['employment_id']
             : null;
-        $scenarioKey = $this->object($employment['selector'] ?? null)['scenario_key'] ?? null;
-        $term = $this->object($employment['term'] ?? null);
-        $values = $this->object(
-            $this->object(
-                $this->object($employment['work_month'] ?? null)['jmhz_work_summary'] ?? null,
-            )['values'] ?? null,
-        );
-        $reported = JmhzReportedWorkHours::reported($values, true);
+        if ($declarationSigned === true
+            || ($declarationSigned === false && $withholding === null)
+        ) {
+            $employment[Jmhz2027DocumentContract::EMPLOYMENT_PARAGRAPH6_INCOME] = 0;
+        }
 
-        $riskWork = null;
+        $socialBase = $employment['social_base'] ?? null;
+        if (is_array($socialBase)) {
+            $socialBase['reported_income_czk'] = $this->sicknessCountableIncome2027(
+                $employment,
+                $employmentId,
+                $blockers,
+            );
+            $employment['social_base'] = $socialBase;
+        }
+
         $risk = $this->object($employment['risk_work'] ?? null);
         $codes = is_array($risk['categorization_codes'] ?? null)
             ? array_values(array_filter($risk['categorization_codes'], 'is_string'))
             : [];
         if ($codes !== []) {
-            $worked = $reported['worked_millihours'];
-            $hours = is_int($worked) && $worked > 0
-                ? JmhzWholeHours::fromMillihours($worked)
-                : ($worked === 0 ? 0 : null);
-            if ($hours === null) {
+            $values = $this->object(
+                $this->object(
+                    $this->object($employment['work_month'] ?? null)['jmhz_work_summary'] ?? null,
+                )['values'] ?? null,
+            );
+            $worked = JmhzReportedWorkHours::reported($values, true)['worked_millihours'];
+            if ($worked === null) {
                 $blockers[] = $this->blocker(self::SOURCE_MISSING_2027, 'employment', $employmentId, ['10273']);
-            }
-            $riskWork = [];
-            foreach ($codes as $code) {
-                if ($code === '1' && $hours !== 0) {
-                    $blockers[] = $this->blocker(self::SOURCE_MISSING_2027, 'employment', $employmentId, ['10580']);
+            } else {
+                $categories = [];
+                foreach ($codes as $code) {
+                    if (Jmhz2027DocumentContract::riskShiftCountRequired($code, $worked)) {
+                        $blockers[] = $this->blocker(
+                            self::SOURCE_MISSING_2027,
+                            'employment',
+                            $employmentId,
+                            ['10580'],
+                        );
+                    }
+                    $categories[] = [
+                        'code' => $code,
+                        'worked_millihours' => $worked,
+                        'shift_count' => null,
+                    ];
                 }
-                $riskWork[] = [
-                    'categorization_code' => $code,
-                    'worked_hours' => $hours,
-                    'shift_count' => null,
-                ];
+                $risk[Jmhz2027DocumentContract::RISK_CATEGORIES] = $categories;
+                $employment['risk_work'] = $risk;
             }
         }
 
-        if ($scenarioKey === 'scenario_3') {
+        if (Jmhz2027DocumentContract::stateProsecutorRequired($employment)) {
             $blockers[] = $this->blocker(self::SOURCE_MISSING_2027, 'employment', $employmentId, ['10587']);
         }
-        if (!in_array($scenarioKey, ['scenario_5', 'scenario_8'], true)
-            && ($term['jmhz_workplace_country_code'] ?? null) === 'CZ'
-        ) {
+        if (Jmhz2027DocumentContract::workplaceAddressRequired($employment)) {
             $blockers[] = $this->blocker(
                 self::SOURCE_MISSING_2027,
                 'employment',
@@ -3683,19 +3714,7 @@ final class JmhzScenario1DocumentResolver
             );
         }
 
-        return [
-            'section_6_4_income_czk' => $declarationSigned === true ? 0 : null,
-            'sickness_countable_income_czk' => $this->sicknessCountableIncome2027(
-                $employment,
-                $employmentId,
-                $blockers,
-            ),
-            'worked_millihours' => $reported['worked_millihours'],
-            'overtime_millihours' => $reported['overtime_millihours'],
-            'risk_work' => $riskWork,
-            'state_prosecutor' => null,
-            'work_place_address' => null,
-        ];
+        return $employment;
     }
 
     /**
@@ -3729,30 +3748,32 @@ final class JmhzScenario1DocumentResolver
     }
 
     /**
-     * Souhrnná data zaměstnance verze 2027.
+     * Souhrnná data zaměstnance verze 2027 podle
+     * {@see Jmhz2027DocumentContract}. Vrací klíče, které se přidají do
+     * `summary` osoby.
      *
-     * - `taxpayer_declaration_signed_on` (10575, IN16 při 10419 = ANO):
-     *   evidence prohlášení nese jen účinnost od–do, ne den podpisu.
-     * - `student_credit_czk` a `student_doctoral_programme` (10565, 10566,
-     *   kontrola 366): sleva na studenta (§ 35ba ZDP od 2027) ve výpočtu
-     *   zálohy zatím není. Uplatnit ji smí jen poplatník s prohlášením.
-     * - `multi_month_advance` (10579, povinný): mzdový výpočet zálohy počítá
-     *   vždy za jeden kalendářní měsíc (MonthlyEmploymentIncomeTaxCalculator),
-     *   postup § 38h odst. 8 nezná; spočtená měsíční záloha proto znamená NE.
-     *   Bez spočtené zálohy (čistě § 6 odst. 4) se neuvádí (kontrola 245).
-     * - `ozp_wage_dates` (10589, 10570, 10571; IN28): datum úhrady mzdy
-     *   a dny odvodu sociálního a zdravotního pojištění nahrazují 10347.
-     *   Ruční evidence výdělku OZP nese jen jedno datum „mzdy včetně
-     *   pojistného", které žádnému z nových tří neodpovídá.
-     * - `annual_monthly_bonuses_total_czk` (10577, jen leden): úhrn
-     *   vyplacených měsíčních daňových bonusů za minulý rok; roční evidence
-     *   přípravy ho nenese. Osoba bez zaměstnání v minulém roce bonus mít
-     *   nemohla a nález nedostane.
+     * - {@see Jmhz2027DocumentContract::SUMMARY_MULTI_MONTH_ADVANCE} (10579):
+     *   mzdový výpočet zálohy počítá vždy za jeden kalendářní měsíc
+     *   (MonthlyEmploymentIncomeTaxCalculator), postup § 38h odst. 8 nezná;
+     *   spočtená měsíční záloha proto znamená NE. Bez spočtené zálohy `null`
+     *   (nález už nese {@see self::advanceTaxCzk()}).
+     * - {@see Jmhz2027DocumentContract::SUMMARY_PARAGRAPH6_TAX} (10307, 10309):
+     *   samostatný základ § 6 odst. 4 ze stejného výsledku daně jako
+     *   `withholding_tax_czk`; `null` = základ nevznikl.
+     * - {@see Jmhz2027DocumentContract::SUMMARY_DECLARATION_SIGNED_ON} (10575,
+     *   IN16 při 10419 = ANO): evidence prohlášení nese jen účinnost od–do.
+     * - {@see Jmhz2027DocumentContract::SUMMARY_STUDENT_CREDIT} (10565, 10566):
+     *   sleva na studenta.
+     * - výdělek OZP: 10589, 10570 a 10571 (IN28) nahrazují 10347; ruční
+     *   evidence nese jen jedno datum „mzdy včetně pojistného".
+     * - úhrn měsíčních bonusů za minulý rok 10577 (jen leden). Osoba bez
+     *   zaměstnání v minulém roce bonus mít nemohla a nález nedostane.
      *
-     * Kde podklad chybí, hodnota je `null` a vzniká nález
-     * {@see self::SOURCE_MISSING_2027} — nikdy odhad.
+     * Kde podklad chybí, klíč se nezapíše a vzniká nález
+     * {@see self::SOURCE_MISSING_2027}, nikdy odhad.
      *
      * @param array{base:?int,computed:?int,after_credits:?int,bonus:?int,taxable_income:?int} $advanceTaxCzk
+     * @param array{base:?int,tax:?int}|null $withholding
      * @param array<string,mixed> $annualEvidence
      * @param list<JmhzScenario1Blocker> $blockers
      * @return array<string,mixed>
@@ -3761,15 +3782,24 @@ final class JmhzScenario1DocumentResolver
         string $periodStart,
         ?bool $declarationSigned,
         array $advanceTaxCzk,
+        ?array $withholding,
         bool $hasOzpWage,
         array $annualEvidence,
         ?int $employeeId,
         array &$blockers,
     ): array {
+        $summary = [
+            Jmhz2027DocumentContract::SUMMARY_MULTI_MONTH_ADVANCE => is_int($advanceTaxCzk['after_credits'])
+                ? false
+                : null,
+            Jmhz2027DocumentContract::SUMMARY_PARAGRAPH6_TAX => $withholding === null
+                ? null
+                : ['base' => $withholding['base'], 'withheld' => $withholding['tax']],
+        ];
         if ($declarationSigned === true) {
             $blockers[] = $this->blocker(self::SOURCE_MISSING_2027, 'person', $employeeId, ['10575']);
             $blockers[] = $this->blocker(self::SOURCE_MISSING_2027, 'person', $employeeId, ['10565', '10566']);
-        } elseif ($declarationSigned === false) {
+        } elseif ($declarationSigned === false && $withholding !== null) {
             $blockers[] = $this->blocker(self::SOURCE_MISSING_2027, 'person', $employeeId, ['10535', '10555']);
         }
         if ($hasOzpWage) {
@@ -3788,20 +3818,55 @@ final class JmhzScenario1DocumentResolver
             $blockers[] = $this->blocker(self::SOURCE_MISSING_2027, 'person', $employeeId, ['10577']);
         }
 
-        return [
-            'taxpayer_declaration_signed_on' => null,
-            'student_credit_czk' => null,
-            'student_doctoral_programme' => null,
-            'multi_month_advance' => is_int($advanceTaxCzk['after_credits']) ? false : null,
-            'ozp_wage_dates' => $hasOzpWage
-                ? [
-                    'wage_payment_date' => null,
-                    'social_insurance_payment_date' => null,
-                    'health_insurance_payment_date' => null,
-                ]
-                : null,
-            'annual_monthly_bonuses_total_czk' => null,
-        ];
+        return $summary;
+    }
+
+    /**
+     * Typy kolektivních smluv (10214) ve verzi 2027: souhrn je nese KAŽDÝ
+     * měsíc (ZP 102), ne jen v prosinci. Zdrojem je roční evidence
+     * zaměstnavatele za rok vykazovaného období, tatáž, ze které prosincové
+     * hlášení bere roční údaje; v 2027 ji příprava zmrazí v každém měsíci.
+     *
+     * @param list<JmhzScenario1Blocker> $blockers
+     * @return array<string,list<string>>
+     */
+    private function employerCollectiveAgreements2027(
+        mixed $evidence,
+        int $reportYear,
+        int $revisionId,
+        array &$blockers,
+    ): array {
+        $evidence = $this->object($evidence);
+        $types = $evidence['collective_agreement_types'] ?? null;
+        if (($evidence['report_year'] ?? null) !== $reportYear
+            || !self::validCollectiveAgreementTypes($types)
+        ) {
+            $blockers[] = $this->blocker(self::SOURCE_MISSING_2027, 'revision', $revisionId, ['10214']);
+
+            return [];
+        }
+
+        return [Jmhz2027DocumentContract::EMPLOYER_COLLECTIVE_AGREEMENTS => $types];
+    }
+
+    /**
+     * Seznam typů kolektivních smluv z číselníku (0 až 5), bez opakování;
+     * „bez kolektivní smlouvy" (0) se s jiným typem nekombinuje.
+     *
+     * @phpstan-assert-if-true list<string> $types
+     */
+    private static function validCollectiveAgreementTypes(mixed $types): bool
+    {
+        return is_array($types)
+            && array_is_list($types)
+            && $types !== []
+            && $types === array_values(array_unique($types, SORT_STRING))
+            && array_filter(
+                $types,
+                static fn (mixed $type): bool => !is_string($type)
+                    || !in_array($type, ['0', '1', '2', '3', '4', '5'], true),
+            ) === []
+            && (!in_array('0', $types, true) || $types === ['0']);
     }
 
     /**

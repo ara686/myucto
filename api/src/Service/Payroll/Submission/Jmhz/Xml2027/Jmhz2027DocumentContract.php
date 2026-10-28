@@ -97,6 +97,9 @@ final class Jmhz2027DocumentContract
     public const TERM_ORIENTATION_NUMBER = 'jmhz_workplace_orientation_number';
     public const TERM_POSTAL_CODE = 'jmhz_workplace_postal_code';
 
+    /** Kategorizace rizika, u které se vykazuje počet směn 10580 (IN42). */
+    public const RISK_SHIFT_CODE = '1';
+
     /** Kód obce „Mimo ČR" (CISOB, interakce IN41): adresa se nevyplňuje. */
     public const MUNICIPALITY_ABROAD = '111111';
 
@@ -177,22 +180,18 @@ final class Jmhz2027DocumentContract
         if (!array_key_exists(self::EMPLOYMENT_PARAGRAPH6_INCOME, $employment)) {
             $missing[] = '10555';
         }
-        $selector = self::object($employment['selector'] ?? null);
-        $scenario = $selector['scenario_key'] ?? null;
-        if ($scenario === 'scenario_3'
+        if (self::stateProsecutorRequired($employment)
             && !array_key_exists(self::EMPLOYMENT_STATE_PROSECUTOR, $employment)
         ) {
             $missing[] = '10587';
         }
-        if (in_array($scenario, self::POSITION_SCENARIOS, true)) {
+        if (self::workplaceAddressRequired($employment)) {
             $term = self::object($employment['term'] ?? null);
-            if (($term['jmhz_workplace_municipality_code'] ?? null) !== self::MUNICIPALITY_ABROAD) {
-                if (!array_key_exists(self::TERM_HOUSE_NUMBER, $term)) {
-                    $missing[] = '10552';
-                }
-                if (!array_key_exists(self::TERM_POSTAL_CODE, $term)) {
-                    $missing[] = '10554';
-                }
+            if (!array_key_exists(self::TERM_HOUSE_NUMBER, $term)) {
+                $missing[] = '10552';
+            }
+            if (!array_key_exists(self::TERM_POSTAL_CODE, $term)) {
+                $missing[] = '10554';
             }
         }
         $risk = self::object($employment['risk_work'] ?? null);
@@ -205,6 +204,41 @@ final class Jmhz2027DocumentContract
         }
 
         return array_values(array_unique($missing));
+    }
+
+    /**
+     * Nese formulář vztahu příznak státního zástupce (10587)? Jen formulář
+     * činnosti K až S (scénář 3). Volá ho i resolver, aby o povinnosti
+     * rozhodovalo jedno místo.
+     *
+     * @param array<string,mixed> $employment
+     */
+    public static function stateProsecutorRequired(array $employment): bool
+    {
+        return (self::object($employment['selector'] ?? null)['scenario_key'] ?? null) === 'scenario_3';
+    }
+
+    /**
+     * Musí formulář vztahu nést adresu místa výkonu práce v ČR (10552,
+     * 10554)? Formuláře s `vykonavanaPozice` mimo kód obce „Mimo ČR" (IN41).
+     *
+     * @param array<string,mixed> $employment
+     */
+    public static function workplaceAddressRequired(array $employment): bool
+    {
+        $scenario = self::object($employment['selector'] ?? null)['scenario_key'] ?? null;
+        if (!in_array($scenario, self::POSITION_SCENARIOS, true)) {
+            return false;
+        }
+
+        return (self::object($employment['term'] ?? null)['jmhz_workplace_municipality_code'] ?? null)
+            !== self::MUNICIPALITY_ABROAD;
+    }
+
+    /** Vykazuje kategorie rizika počet směn (IN42: 10274 = 1 a 10273 > 0)? */
+    public static function riskShiftCountRequired(string $categorizationCode, int $workedMillihours): bool
+    {
+        return $categorizationCode === self::RISK_SHIFT_CODE && $workedMillihours > 0;
     }
 
     /** @param array<string,array<int,true>> $missing atribut => vztahy */

@@ -10,14 +10,19 @@ use MyInvoice\Service\Payroll\Submission\Jmhz\JmhzPreparationSnapshotBuilder;
 use MyInvoice\Service\Payroll\Submission\Jmhz\JmhzPvpojPreview;
 use MyInvoice\Service\Payroll\Submission\Jmhz\JmhzScenario1DocumentResolver;
 use MyInvoice\Service\Payroll\Submission\Jmhz\JmhzScenario1Resolution;
+use MyInvoice\Service\Payroll\Submission\Jmhz\JmhzScenario1XmlValidator;
 use MyInvoice\Service\Payroll\Submission\Jmhz\JmhzSpecPackageCatalog;
+use MyInvoice\Service\Payroll\Submission\Jmhz\JmhzSpecVersion;
+use MyInvoice\Service\Payroll\Submission\Jmhz\JmhzSubmissionEnvelope;
 use MyInvoice\Service\Payroll\Submission\Jmhz\JmhzVerifiedPreparationSnapshot;
+use MyInvoice\Service\Payroll\Submission\Jmhz\Xml2027\Jmhz2027DocumentContract;
 use PHPUnit\Framework\TestCase;
 
 /**
  * Normalizovaný dokument JMHZ verze 2027 (vykazované období od 01/2027):
- * nové atributy datového slovníku 1.5.0.3 z mzdového jádra a fail-closed
- * nálezy tam, kde jádro podklad nemá.
+ * resolver skládá klíče přesně podle {@see Jmhz2027DocumentContract}
+ * (jediné místo pravdy pro serializér 2027) a tam, kde jádro podklad nemá,
+ * vrací fail-closed nález místo klíče.
  */
 final class JmhzScenario1Document2027Test extends TestCase
 {
@@ -36,67 +41,121 @@ final class JmhzScenario1Document2027Test extends TestCase
         self::assertSame('resolved', $resolution->status());
         $payload = $resolution->candidate?->payload ?? [];
         self::assertArrayNotHasKey('spec_version', $payload);
-        self::assertArrayNotHasKey('jmhz_2027', $payload['people'][0]['summary']);
-        self::assertArrayNotHasKey('jmhz_2027', $payload['people'][0]['employments'][0]);
+        self::assertArrayNotHasKey(Jmhz2027DocumentContract::EMPLOYER_COLLECTIVE_AGREEMENTS, $payload['employer']);
+        self::assertArrayNotHasKey(Jmhz2027DocumentContract::SUMMARY_MULTI_MONTH_ADVANCE, $payload['people'][0]['summary']);
+        self::assertArrayNotHasKey(Jmhz2027DocumentContract::EMPLOYMENT_PARAGRAPH6_INCOME, $payload['people'][0]['employments'][0]);
         self::assertSame(self::DOCUMENT_2026_SHA256, $resolution->candidate?->sha256());
     }
 
     /**
-     * Bez prohlášení (fixture) jde příjem podle § 6 odst. 4 od 2027 do
-     * zálohové daně, jejíž rozdělení po vztazích výpočet zatím nenese:
-     * 10555 zůstává neuvedený a dokument stojí. V lednu chybí i úhrn
-     * měsíčních bonusů (10577).
+     * Dokument 2027 nese klíče kontraktu přímo (žádný vedlejší blok s jinými
+     * názvy). Kontrakt pak nenajde nic chybějícího a serializér 2027 ho
+     * sestaví do XML, které projde XSD 1.5.0.3.
      */
-    public function testJanuary2027WithoutDeclarationBlocksSection64AndMonthlyBonusTotal(): void
+    public function testResolved2027DocumentMeetsTheContractAndIsSchemaValid(): void
+    {
+        $resolution = $this->resolveForSubmission($this->completePayload('2027-04-01'), '2027-04-01');
+
+        self::assertSame([], $this->blockers($resolution));
+        $payload = $resolution->candidate?->payload ?? [];
+        self::assertSame('2027', $payload['spec_version']);
+        self::assertArrayNotHasKey('jmhz_2027', $payload['people'][0]['summary']);
+        self::assertArrayNotHasKey('jmhz_2027', $payload['people'][0]['employments'][0]);
+        Jmhz2027DocumentContract::assertComplete($payload);
+        self::assertSame(['1'], $payload['employer'][Jmhz2027DocumentContract::EMPLOYER_COLLECTIVE_AGREEMENTS]);
+        $summary = $payload['people'][0]['summary'];
+        self::assertFalse($summary[Jmhz2027DocumentContract::SUMMARY_MULTI_MONTH_ADVANCE]);
+        self::assertNull($summary[Jmhz2027DocumentContract::SUMMARY_PARAGRAPH6_TAX]);
+        $employment = $payload['people'][0]['employments'][0];
+        self::assertSame(0, $employment[Jmhz2027DocumentContract::EMPLOYMENT_PARAGRAPH6_INCOME]);
+        self::assertSame(1000, $employment['social_base']['reported_income_czk']);
+
+        $xml = (new JmhzScenario1XmlValidator(buildableGate: static function (JmhzSpecVersion $version): void {}))
+            ->dryRun($resolution, $this->envelope())['xml'];
+        self::assertStringContainsString('xmlns="http://schemas.cssz.cz/JMHZ/podani/2027"', $xml);
+        self::assertStringContainsString('<form:prijemPar6>0</form:prijemPar6>', $xml);
+        self::assertStringContainsString('<so:typKolektSmlouvy>1</so:typKolektSmlouvy>', $xml);
+        self::assertStringContainsString('<form:zapocitatelnyPrijem>1000</form:zapocitatelnyPrijem>', $xml);
+    }
+
+    /**
+     * Formuláře zkouší serializér ročníku dokumentu. Záporný rozpad mzdy
+     * (10329) verze 2027 připouští; serializér 2026 by ho odmítl a vztah
+     * by dostal nález, který pro období 2027 neplatí.
+     */
+    public function testFormProbeOf2027DocumentUsesThe2027Serializer(): void
+    {
+        $payload = $this->completePayload('2027-04-01');
+        $payload['people'][0]['employments'][0]['earnings_by_attribute_minor']['10329'] = -10_000;
+        $payload['people'][0]['employments'][0]['earnings_by_attribute_minor']['10330'] = 110_000;
+
+        $resolution = $this->resolveForSubmission($payload, '2027-04-01');
+
+        self::assertSame([], $this->blockers($resolution));
+        self::assertSame(
+            -100,
+            $resolution->candidate?->payload['people'][0]['employments'][0]['earnings_by_attribute_czk']['10329'],
+        );
+    }
+
+    /**
+     * Bez prohlášení a bez samostatného základu § 6 odst. 4 je celý příjem
+     * v záloze: 10555 = 0. V lednu chybí úhrn měsíčních bonusů (10577),
+     * bez roční evidence zaměstnavatele typy kolektivních smluv (10214)
+     * a bez plné adresy místa výkonu 10550 až 10554.
+     */
+    public function testJanuary2027WithoutSourcesBlocksCollectiveAgreementsAddressAndBonusTotal(): void
     {
         $resolution = $this->resolve($this->payload('2027-01-01'), '2027-01-01');
 
         self::assertSame('blocked', $resolution->status());
         self::assertSame(
             [
-                [self::SOURCE_MISSING, 'person', 11, ['10535', '10555']],
+                [self::SOURCE_MISSING, 'employment', 101, ['10550', '10551', '10552', '10553', '10554']],
                 [self::SOURCE_MISSING, 'person', 11, ['10577']],
+                [self::SOURCE_MISSING, 'revision', 301, ['10214']],
             ],
-            array_values(array_filter(
-                $this->blockers($resolution),
-                static fn (array $blocker): bool => $blocker[0] === self::SOURCE_MISSING,
-            )),
+            $this->blockersWithCode($resolution, self::SOURCE_MISSING),
         );
         $payload = $resolution->candidate?->payload ?? [];
-        self::assertSame('2027', $payload['spec_version']);
+        self::assertArrayNotHasKey(Jmhz2027DocumentContract::EMPLOYER_COLLECTIVE_AGREEMENTS, $payload['employer']);
+        self::assertSame(0, $payload['people'][0]['employments'][0][Jmhz2027DocumentContract::EMPLOYMENT_PARAGRAPH6_INCOME]);
+    }
+
+    /**
+     * Samostatný základ § 6 odst. 4 výpočet daně po vztazích nerozděluje:
+     * 10555 bez prohlášení se základem zůstává neuvedený a stojí. Základ
+     * a sražená daň (10307, 10309) jdou do kontraktu z téhož výsledku.
+     */
+    public function testParagraph6BaseWithoutDeclarationBlocksRelationshipSplit(): void
+    {
+        $payload = $this->completePayload('2027-04-01');
+        $tax = &$payload['people'][0]['person_summary']['statutory']['income_tax'];
+        $tax['withholding_tax_minor_units'] = 6_000;
+        $tax['withholding_base_minor_units'] = 40_000;
+        unset($tax);
+
+        $resolution = $this->resolve($payload, '2027-04-01');
+
+        self::assertContains([self::SOURCE_MISSING, 'person', 11, ['10535', '10555']], $this->blockers($resolution));
+        $document = $resolution->candidate?->payload ?? [];
         self::assertSame(
-            [
-                'taxpayer_declaration_signed_on' => null,
-                'student_credit_czk' => null,
-                'student_doctoral_programme' => null,
-                'multi_month_advance' => false,
-                'ozp_wage_dates' => null,
-                'annual_monthly_bonuses_total_czk' => null,
-            ],
-            $payload['people'][0]['summary']['jmhz_2027'],
+            ['base' => 400, 'withheld' => 60],
+            $document['people'][0]['summary'][Jmhz2027DocumentContract::SUMMARY_PARAGRAPH6_TAX],
         );
-        self::assertSame(
-            [
-                'section_6_4_income_czk' => null,
-                'sickness_countable_income_czk' => 1000,
-                'worked_millihours' => null,
-                'overtime_millihours' => null,
-                'risk_work' => null,
-                'state_prosecutor' => null,
-                'work_place_address' => null,
-            ],
-            $payload['people'][0]['employments'][0]['jmhz_2027'],
+        self::assertArrayNotHasKey(
+            Jmhz2027DocumentContract::EMPLOYMENT_PARAGRAPH6_INCOME,
+            $document['people'][0]['employments'][0],
         );
     }
 
     /**
-     * S prohlášením se § 6 odst. 4 neuplatní: 10555 = 0 (kontrola 304 chce
-     * 10535 i 10555 vyplněné). Datum podpisu (10575, IN16) a slevu na
-     * studenta (10565, 10566) jádro nemá, takže dokument stojí.
+     * S prohlášením se § 6 odst. 4 neuplatní: 10555 = 0. Den podpisu (10575,
+     * IN16) a slevu na studenta (10565, 10566) evidence zatím nenese.
      */
     public function testDeclarantReportsZeroSection64AndBlocksSignatureDateAndStudentCredit(): void
     {
-        $payload = $this->payload('2027-04-01');
+        $payload = $this->completePayload('2027-04-01');
         $payload['people'][0]['employments'][0]['term']['tax_declaration_signed'] = true;
 
         $resolution = $this->resolve($payload, '2027-04-01');
@@ -109,105 +168,99 @@ final class JmhzScenario1Document2027Test extends TestCase
             $this->blockers($resolution),
         );
         $document = $resolution->candidate?->payload ?? [];
-        self::assertSame(0, $document['people'][0]['employments'][0]['jmhz_2027']['section_6_4_income_czk']);
-        self::assertNull($document['people'][0]['summary']['jmhz_2027']['taxpayer_declaration_signed_on']);
-        self::assertNull($document['people'][0]['summary']['jmhz_2027']['student_credit_czk']);
-        self::assertFalse($document['people'][0]['summary']['jmhz_2027']['multi_month_advance']);
+        self::assertSame(0, $document['people'][0]['employments'][0][Jmhz2027DocumentContract::EMPLOYMENT_PARAGRAPH6_INCOME]);
+        self::assertArrayNotHasKey(
+            Jmhz2027DocumentContract::SUMMARY_DECLARATION_SIGNED_ON,
+            $document['people'][0]['summary'],
+        );
     }
 
-    /** Bez spočtené měsíční zálohy se 10579 neuvádí (kontrola 245). */
+    /** Bez spočtené měsíční zálohy je 10579 neuvedený (nález nese záloha). */
     public function testMultiMonthAdvanceIsUnsetWithoutCalculatedAdvance(): void
     {
-        $payload = $this->payload('2027-04-01');
+        $payload = $this->completePayload('2027-04-01');
         unset($payload['people'][0]['person_summary']['statutory']['income_tax']['advance_tax']);
 
         $resolution = $this->resolve($payload, '2027-04-01');
 
-        $summary2027 = $resolution->candidate?->payload['people'][0]['summary']['jmhz_2027'] ?? [];
-        self::assertArrayHasKey('multi_month_advance', $summary2027);
-        self::assertNull($summary2027['multi_month_advance']);
+        $summary = $resolution->candidate?->payload['people'][0]['summary'] ?? [];
+        self::assertArrayHasKey(Jmhz2027DocumentContract::SUMMARY_MULTI_MONTH_ADVANCE, $summary);
+        self::assertNull($summary[Jmhz2027DocumentContract::SUMMARY_MULTI_MONTH_ADVANCE]);
     }
 
     /**
-     * 10273 je ve verzi 2027 celé číslo: odpracované hodiny po odečtu
-     * náhradního volna, zaokrouhlené nahoru (150,5 h − 8 h = 142,5 h → 143).
-     * Přesčas (10269) smí být záporný: 4 h přesčasu − 8 h volna = −4 h.
-     * Kategorie 1 (práce kategorie 4) vyžaduje počet směn 10580 (IN42).
+     * Riziková práce: kategorie s odpracovanými hodinami po odečtu
+     * náhradního volna (150,5 h − 8 h = 142,5 h), ze kterých serializér
+     * vykáže celé hodiny nahoru. Kategorie 1 (práce kategorie 4) vyžaduje
+     * počet směn 10580 (IN42), který jádro neeviduje.
      */
-    public function testRiskWorkCategoryFourReportsWholeHoursSignedOvertimeAndBlocksShifts(): void
+    public function testRiskWorkCategoryFourReportsCategoryHoursAndBlocksShifts(): void
     {
-        $payload = $this->payload('2027-04-01');
+        $payload = $this->completePayload('2027-04-01');
         $employment = &$payload['people'][0]['employments'][0];
         $employment['term']['social_employer_rate_category'] = 'risk_employment';
-        $employment['work_month']['jmhz_work_summary']['values'] = [
-            'worked_millihours' => 150_500,
-            'overtime_millihours' => 4_000,
-            'compensatory_time_off_millihours' => 8_000,
-        ];
+        $employment['work_month']['jmhz_work_summary']['values'] = array_replace(
+            $employment['work_month']['jmhz_work_summary']['values'],
+            [
+                'worked_millihours' => 150_500,
+                'overtime_millihours' => 4_000,
+                'compensatory_time_off_millihours' => 8_000,
+            ],
+        );
         unset($employment);
 
         $resolution = $this->resolve($payload, '2027-04-01');
 
-        self::assertContains(
-            [self::SOURCE_MISSING, 'employment', 101, ['10580']],
-            $this->blockers($resolution),
-        );
-        $form = $resolution->candidate?->payload['people'][0]['employments'][0]['jmhz_2027'] ?? [];
-        self::assertSame(142_500, $form['worked_millihours']);
-        self::assertSame(-4_000, $form['overtime_millihours']);
+        self::assertContains([self::SOURCE_MISSING, 'employment', 101, ['10580']], $this->blockers($resolution));
         self::assertSame(
-            [['categorization_code' => '1', 'worked_hours' => 143, 'shift_count' => null]],
-            $form['risk_work'],
+            [
+                'categorization_codes' => ['1'],
+                'categories' => [['code' => '1', 'worked_millihours' => 142_500, 'shift_count' => null]],
+            ],
+            $resolution->candidate?->payload['people'][0]['employments'][0]['risk_work'],
         );
     }
 
     /** Záchranář (kategorie 6) počet směn nevykazuje (kontrola 386). */
     public function testRescueWorkReportsHoursWithoutShiftBlocker(): void
     {
-        $payload = $this->payload('2027-04-01');
+        $payload = $this->completePayload('2027-04-01');
         $employment = &$payload['people'][0]['employments'][0];
         $employment['term']['social_employer_rate_category'] = 'rescue_and_company_fire_service';
         $employment['term']['jmhz_risk_categorization_code'] = '6';
-        $employment['work_month']['jmhz_work_summary']['values'] = ['worked_millihours' => 160_000];
         unset($employment);
 
-        $resolution = $this->resolve($payload, '2027-04-01');
+        $resolution = $this->resolveForSubmission($payload, '2027-04-01');
 
-        self::assertNotContains(
-            [self::SOURCE_MISSING, 'employment', 101, ['10580']],
-            $this->blockers($resolution),
-        );
+        self::assertSame([], $this->blockers($resolution));
         self::assertSame(
-            [['categorization_code' => '6', 'worked_hours' => 160, 'shift_count' => null]],
-            $resolution->candidate?->payload['people'][0]['employments'][0]['jmhz_2027']['risk_work'],
+            [['code' => '6', 'worked_millihours' => 160_000, 'shift_count' => null]],
+            $resolution->candidate?->payload['people'][0]['employments'][0]['risk_work']['categories'],
         );
     }
 
     /**
      * Místo výkonu v ČR: plná adresa (10552, 10554 povinné) ve vztahu není.
-     * Místo výkonu v zahraničí adresu mít nesmí (kontrola 385).
+     * Místo výkonu mimo ČR (kód obce 111111) adresu mít nesmí (kontrola 385).
+     * O povinnosti rozhoduje kontrakt, stejně jako v serializéru.
      */
-    public function testDomesticWorkplaceBlocksFullAddressForeignDoesNot(): void
+    public function testDomesticWorkplaceBlocksFullAddressAbroadDoesNot(): void
     {
-        $domestic = $this->payload('2027-04-01');
+        $domestic = $this->completePayload('2027-04-01');
+        $domestic['people'][0]['employments'][0]['term']['jmhz_workplace_municipality_code'] = '582786';
         $domestic['people'][0]['employments'][0]['term']['jmhz_workplace_country_code'] = 'CZ';
-        $foreign = $this->payload('2027-04-01');
-        $foreign['people'][0]['employments'][0]['term']['jmhz_workplace_country_code'] = 'DE';
 
-        self::assertContains(
-            [self::SOURCE_MISSING, 'employment', 101, ['10550', '10551', '10552', '10553', '10554']],
+        self::assertSame(
+            [[self::SOURCE_MISSING, 'employment', 101, ['10550', '10551', '10552', '10553', '10554']]],
             $this->blockers($this->resolve($domestic, '2027-04-01')),
         );
-        self::assertSame(
-            [[self::SOURCE_MISSING, 'person', 11, ['10535', '10555']]],
-            $this->blockers($this->resolve($foreign, '2027-04-01')),
-        );
+        self::assertSame([], $this->blockers($this->resolve($this->completePayload('2027-04-01'), '2027-04-01')));
     }
 
     /** Státní zástupce (10587) je povinný jen ve scénáři K až S. */
     public function testStateProsecutorFlagBlocksOnlyInCorporateBodyScenario(): void
     {
-        $payload = $this->payload('2027-04-01');
+        $payload = $this->completePayload('2027-04-01');
         $payload['scope']['scenario_set'] = ['scenario_3'];
         $payload['people'][0]['employments'][0]['scenario_resolution'] = ['scenario_key' => 'scenario_3'];
 
@@ -216,7 +269,7 @@ final class JmhzScenario1Document2027Test extends TestCase
         self::assertContains([self::SOURCE_MISSING, 'employment', 101, ['10587']], $blockers);
         self::assertNotContains(
             [self::SOURCE_MISSING, 'employment', 101, ['10587']],
-            $this->blockers($this->resolve($this->payload('2027-04-01'), '2027-04-01')),
+            $this->blockers($this->resolve($this->completePayload('2027-04-01'), '2027-04-01')),
         );
     }
 
@@ -226,7 +279,7 @@ final class JmhzScenario1Document2027Test extends TestCase
      */
     public function testOzpWageBlocksTheThreeSplitDates(): void
     {
-        $payload = $this->payload('2027-04-01');
+        $payload = $this->completePayload('2027-04-01');
         $payload['ordinary_evidence'][0]['ozp_wage'] = [
             'payment_date' => '2027-04-10',
             'cash_paid' => false,
@@ -240,28 +293,34 @@ final class JmhzScenario1Document2027Test extends TestCase
             [self::SOURCE_MISSING, 'person', 11, ['10570', '10571', '10589']],
             $this->blockers($resolution),
         );
-        self::assertSame(
-            [
-                'wage_payment_date' => null,
-                'social_insurance_payment_date' => null,
-                'health_insurance_payment_date' => null,
-            ],
-            $resolution->candidate?->payload['people'][0]['summary']['jmhz_2027']['ozp_wage_dates'],
-        );
+        $ozp = $resolution->candidate?->payload['people'][0]['summary']['ozp_wage'] ?? [];
+        self::assertArrayNotHasKey(Jmhz2027DocumentContract::OZP_SOCIAL_PAID_ON, $ozp);
+        self::assertArrayNotHasKey(Jmhz2027DocumentContract::OZP_HEALTH_PAID_ON, $ozp);
     }
 
-    /** 10476: neúčastný vztah má započitatelný příjem 0, ne neuvedeno. */
+    /** 10476 (`social_base.reported_income_czk`): neúčastný vztah má 0, ne neuvedeno. */
     public function testSicknessCountableIncomeIsZeroForNonParticipatingRelationship(): void
     {
-        $payload = $this->payload('2027-04-01');
+        $payload = $this->completePayload('2027-04-01');
         $payload['people'][0]['employments'][0]['insurance']['participation']['status'] = 'not_participating';
 
         $resolution = $this->resolve($payload, '2027-04-01');
 
         self::assertSame(
             0,
-            $resolution->candidate?->payload['people'][0]['employments'][0]['jmhz_2027']
-                ['sickness_countable_income_czk'],
+            $resolution->candidate?->payload['people'][0]['employments'][0]['social_base']['reported_income_czk'],
+        );
+    }
+
+    /** Roční evidence zaměstnavatele jiného roku typy kolektivních smluv za 2027 nedoloží. */
+    public function testCollectiveAgreementsFromAnotherYearBlock(): void
+    {
+        $payload = $this->completePayload('2027-04-01');
+        $payload['employer_annual_evidence']['report_year'] = 2026;
+
+        self::assertSame(
+            [[self::SOURCE_MISSING, 'revision', 301, ['10214']]],
+            $this->blockers($this->resolve($payload, '2027-04-01')),
         );
     }
 
@@ -388,40 +447,153 @@ final class JmhzScenario1Document2027Test extends TestCase
         );
     }
 
+    /** @return list<array{0:string,1:string,2:?int,3:list<string>}> */
+    private function blockersWithCode(JmhzScenario1Resolution $resolution, string $code): array
+    {
+        return array_values(array_filter(
+            $this->blockers($resolution),
+            static fn (array $blocker): bool => $blocker[0] === $code,
+        ));
+    }
+
     /** @param array<string,mixed> $payload */
     private function resolve(array $payload, string $periodStart): JmhzScenario1Resolution
+    {
+        return (new JmhzScenario1DocumentResolver())->resolve(
+            $this->snapshot($payload, $periodStart),
+            $this->pvpoj(substr($periodStart, 0, 7)),
+        );
+    }
+
+    /** @param array<string,mixed> $payload */
+    private function resolveForSubmission(array $payload, string $periodStart): JmhzScenario1Resolution
+    {
+        return (new JmhzScenario1DocumentResolver())->resolveForSubmission(
+            $this->snapshot($payload, $periodStart),
+            $this->pvpoj(substr($periodStart, 0, 7), true),
+        );
+    }
+
+    /** @param array<string,mixed> $payload */
+    private function snapshot(array $payload, string $periodStart): JmhzVerifiedPreparationSnapshot
     {
         $periodEnd = (new \DateTimeImmutable($periodStart))->modify('last day of this month')->format('Y-m-d');
         $payload['scope']['period_start'] = $periodStart;
         $payload['scope']['period_end'] = $periodEnd;
 
-        return (new JmhzScenario1DocumentResolver())->resolve(
-            new JmhzVerifiedPreparationSnapshot(
-                501,
-                7,
-                'test',
-                401,
-                301,
-                1,
-                $periodStart,
-                $periodEnd,
-                'scenario_1',
-                JmhzPreparationSnapshotBuilder::BUILDER_VERSION,
-                str_repeat('1', 64),
-                str_repeat('2', 64),
-                str_repeat('3', 64),
-                [],
-                [
-                    'schema_reference' => 'payroll-jmhz-preparation-readiness.v1',
-                    'status' => 'source_ready',
-                    'issue_count' => 0,
-                    'issues' => [],
-                    'official_submission_supported' => false,
-                ],
-                $payload,
-            ),
-            $this->pvpoj(substr($periodStart, 0, 7)),
+        return new JmhzVerifiedPreparationSnapshot(
+            501,
+            7,
+            'test',
+            401,
+            301,
+            1,
+            $periodStart,
+            $periodEnd,
+            'scenario_1',
+            JmhzPreparationSnapshotBuilder::BUILDER_VERSION,
+            str_repeat('1', 64),
+            str_repeat('2', 64),
+            str_repeat('3', 64),
+            [],
+            [
+                'schema_reference' => 'payroll-jmhz-preparation-readiness.v1',
+                'status' => 'source_ready',
+                'issue_count' => 0,
+                'issues' => [],
+                'official_submission_supported' => false,
+            ],
+            $payload,
         );
+    }
+
+    private function envelope(): JmhzSubmissionEnvelope
+    {
+        return JmhzSubmissionEnvelope::create(
+            '0195e2c4-1a2b-7c3d-8e4f-5a6b7c8d9e0f',
+            [101 => '0195E2C4-1A2B-7C3D-8E4F-5A6B7C8D9E10'],
+            '2027-05-05T09:30:00Z',
+            'MyÚčto.cz',
+            '6.0.0',
+        );
+    }
+
+    /**
+     * Přípravek s podklady, které dokument 2027 potřebuje: roční evidence
+     * zaměstnavatele roku 2027 (10214), místo výkonu mimo ČR (adresa se
+     * nevyplňuje), pracovní souhrn, ELDP a náležitosti formuláře.
+     *
+     * @return array<string,mixed>
+     */
+    private function completePayload(string $periodStart): array
+    {
+        $payload = $this->payload($periodStart);
+        $payload['employer_annual_evidence'] = [
+            'id' => 71,
+            'schema_reference' => 'payroll-jmhz-employer-annual-evidence.v1',
+            'report_year' => (int) substr($periodStart, 0, 4),
+            'revision_no' => 1,
+            'collective_agreement_types' => ['1'],
+            'ownership_form' => '1',
+            'average_headcount_hundredths' => 100,
+            'average_disabled_headcount_hundredths' => 0,
+            'disabled_share_hundredths' => 0,
+            'ozp_reporting_office_id' => null,
+        ];
+        $employment = &$payload['people'][0]['employments'][0];
+        $employment['term'] += [
+            'work_place' => 'Wien',
+            'jmhz_workplace_municipality_code' => Jmhz2027DocumentContract::MUNICIPALITY_ABROAD,
+            'jmhz_workplace_country_code' => 'AT',
+            'jmhz_apz_contribution_status' => 'no',
+            'jmhz_functional_benefits_status' => 'no',
+            'jmhz_temporary_assignment_status' => 'no',
+        ];
+        $employment['work_month']['jmhz_work_summary']['values'] = [
+            'standard_fund_millihours' => 160_000,
+            'agreed_fund_millihours' => 160_000,
+            'weekly_work_centihours' => 4_000,
+            'evidence_days' => 30,
+            'worked_millihours' => 160_000,
+            'overtime_millihours' => 0,
+            'unworked_total_millihours' => null,
+            'employee_obstacle_paid_millihours' => null,
+            'employer_obstacle_millihours' => null,
+        ];
+        $month = substr($periodStart, 0, 7);
+        $employment['eldp'] = [
+            'confirmation' => ['in03_active' => false, 'in04_active' => false],
+            'insurance_interval' => [
+                'insurance_from' => $periodStart,
+                'insurance_to' => (new \DateTimeImmutable($periodStart))->modify('last day of this month')->format('Y-m-d'),
+            ],
+            'eldp_sections' => [[
+                'ordinal' => 1,
+                'code' => '1++',
+                'valid_from' => $periodStart,
+                'valid_to' => (new \DateTimeImmutable($month . '-01'))->modify('last day of this month')->format('Y-m-d'),
+                'insurance_days' => (int) (new \DateTimeImmutable($periodStart))->format('t'),
+                'assessment_base_czk' => 1_000,
+                'excluded_days_total' => 0,
+                'excluded_days' => [
+                    'docasNeschopnost' => 0,
+                    'penezitaPomocMaterstvi' => 0,
+                    'osetrovaniClenaRodiny' => 0,
+                    'otcovska' => 0,
+                    'vyloucenePar16' => 0,
+                ],
+                'section18_days_total' => 0,
+                'section18_days' => [
+                    'omluvenaNepritomnost' => 0,
+                    'pracovniNeschopnost' => 0,
+                    'vyplaceniDavek' => 0,
+                ],
+                'deducted_days' => null,
+            ]],
+        ];
+        unset($employment);
+
+        return $payload;
     }
 
     /** @return array<string,mixed> */
@@ -561,8 +733,20 @@ final class JmhzScenario1Document2027Test extends TestCase
         ];
     }
 
-    private function pvpoj(string $period): JmhzPvpojPreview
+    /**
+     * @param bool $complete přehled se všemi úhrny, které vyžaduje XSD;
+     *        bez nich zůstává otisk dokumentu 2026 stejný jako dřív
+     */
+    private function pvpoj(string $period, bool $complete = false): JmhzPvpojPreview
     {
+        $contributions = [
+            'zakladZamestnavateleA' => 1_000,
+            'pojistneZamestnavateleA' => 248,
+            ...($complete ? ['pojistneZamestnavateleCelkem' => 248] : []),
+            'pojistneZamestnance' => 71,
+            ...($complete ? ['pojistneCelkem' => 319] : []),
+        ];
+
         return new JmhzPvpojPreview(
             7,
             401,
@@ -583,11 +767,7 @@ final class JmhzScenario1Document2027Test extends TestCase
             ]],
             ['revision_input_hash' => str_repeat('d', 64)],
             [
-                'pojistne' => [
-                    'zakladZamestnavateleA' => 1_000,
-                    'pojistneZamestnavateleA' => 248,
-                    'pojistneZamestnance' => 71,
-                ],
+                'pojistne' => $contributions,
                 'pojistneUhrada' => 319,
             ],
             [['employee_id' => 11]],

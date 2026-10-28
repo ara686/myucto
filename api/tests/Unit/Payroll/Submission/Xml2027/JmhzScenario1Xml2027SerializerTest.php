@@ -123,6 +123,27 @@ final class JmhzScenario1Xml2027SerializerTest extends TestCase
         self::assertSame('1000', self::value($xpath, '//f:cinnostKS/f:mzda/f:mzdaRozpad/f:tarif'));
     }
 
+    /**
+     * Náhradní volno za přesčas se odečte od 10268 i 10269 podle
+     * JmhzReportedWorkHours (stejně jako hodiny rizikové práce v resolveru):
+     * ve verzi 2027 je přesčas se znaménkem, 4 h − 8 h volna = −4 h.
+     */
+    public function testCompensatoryTimeOffGivesSignedOvertime(): void
+    {
+        $payload = self::fullPayload();
+        $values = &$payload['people'][0]['employments'][0]['work_month']['jmhz_work_summary']['values'];
+        $values['worked_millihours'] = 150_500;
+        $values['overtime_millihours'] = 4_000;
+        $values['compensatory_time_off_millihours'] = 8_000;
+        unset($values);
+        $payload['people'][0]['employments'][0]['risk_work']['categories'][0]['worked_millihours'] = 142_500;
+        $xpath = self::xpath($this->validator()->dryRun(self::resolution($payload), self::envelope())['xml']);
+
+        self::assertSame('142.500', self::value($xpath, '//f:odpracovaneHodiny/f:pocet'));
+        self::assertSame('-4.000', self::value($xpath, '//f:odpracovaneHodiny/f:rozpad/f:prescas'));
+        self::assertSame('143', self::value($xpath, '//f:riziko/f:hodinyOdpracovanePocet'));
+    }
+
     public function testWorkplaceAbroadOmitsCzechAddress(): void
     {
         $payload = self::fullPayload();

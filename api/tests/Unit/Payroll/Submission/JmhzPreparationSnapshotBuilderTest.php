@@ -871,6 +871,32 @@ final class JmhzPreparationSnapshotBuilderTest extends TestCase
     }
 
     /**
+     * Od verze 2027 nese souhrn typy kolektivních smluv (10214) každý měsíc:
+     * bez roční evidence zaměstnavatele se na ně příprava ptá i mimo prosinec.
+     * Roční údaje (forma vlastnictví, OZP) zůstávají prosincové; za období
+     * 2026 se mimo prosinec nic nemění.
+     */
+    public function testVersion2027NamesMissingCollectiveAgreementsEveryMonth(): void
+    {
+        $builder = new JmhzPreparationSnapshotBuilder();
+        $april2027 = $builder->build(7, 'test', $this->sourceForPeriod('2027-04-01'), [], []);
+        self::assertContains(
+            'jmhz_employer_annual_collective_agreement_missing',
+            $april2027->payload['readiness_issue_codes'],
+        );
+        self::assertNotContains(
+            'jmhz_employer_annual_ownership_missing',
+            $april2027->payload['readiness_issue_codes'],
+        );
+
+        $april2026 = $builder->build(7, 'test', $this->sourceForPeriod('2026-04-01'), [], []);
+        self::assertNotContains(
+            'jmhz_employer_annual_collective_agreement_missing',
+            $april2026->payload['readiness_issue_codes'],
+        );
+    }
+
+    /**
      * @param array<string,mixed> $relationship
      * @return array<string,mixed>
      */
@@ -897,6 +923,12 @@ final class JmhzPreparationSnapshotBuilderTest extends TestCase
     /** @return array<string,mixed> */
     private function sourceForDecember(): array
     {
+        return $this->sourceForPeriod('2026-12-01');
+    }
+
+    /** @return array<string,mixed> */
+    private function sourceForPeriod(string $periodStart): array
+    {
         $source = $this->source();
         $input = json_decode(
             $source['revision']['input_snapshot_json'],
@@ -904,10 +936,13 @@ final class JmhzPreparationSnapshotBuilderTest extends TestCase
             flags: JSON_THROW_ON_ERROR,
         );
         self::assertIsArray($input);
-        $input['period_start'] = '2026-12-01';
-        $input['period_end'] = '2026-12-31';
-        $input['people'][0]['employments'][0]['average_earning']['applicable_quarter'] = 4;
-        $source['revision']['period_start'] = '2026-12-01';
+        $start = new \DateTimeImmutable($periodStart);
+        $input['period_start'] = $periodStart;
+        $input['period_end'] = $start->modify('last day of this month')->format('Y-m-d');
+        $input['people'][0]['employments'][0]['average_earning']['applicable_year'] = (int) $start->format('Y');
+        $input['people'][0]['employments'][0]['average_earning']['applicable_quarter']
+            = intdiv((int) $start->format('n') - 1, 3) + 1;
+        $source['revision']['period_start'] = $periodStart;
         $source['revision']['input_snapshot_json'] = CanonicalJson::encode($input);
         $source['revision']['input_snapshot_hash'] = hash(
             'sha256',

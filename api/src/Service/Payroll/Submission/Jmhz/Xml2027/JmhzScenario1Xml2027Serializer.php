@@ -12,6 +12,7 @@ use MyInvoice\Service\Payroll\Submission\Jmhz\JmhzBlockerExplainer;
 use MyInvoice\Service\Payroll\Submission\Jmhz\JmhzContentCorrectionPlan;
 use MyInvoice\Service\Payroll\Submission\Jmhz\JmhzPackageSplitter;
 use MyInvoice\Service\Payroll\Submission\Jmhz\JmhzPreparationSnapshotBuilder;
+use MyInvoice\Service\Payroll\Submission\Jmhz\JmhzReportedWorkHours;
 use MyInvoice\Service\Payroll\Submission\Jmhz\JmhzScenario1NormalizedDocument;
 use MyInvoice\Service\Payroll\Submission\Jmhz\JmhzSubmissionEnvelope;
 use MyInvoice\Service\Payroll\Submission\Jmhz\JmhzSubmissionFlagMatrix;
@@ -77,9 +78,6 @@ final class JmhzScenario1Xml2027Serializer
 
     /** Kategorizace rizika (10274) z číselníku ČSSZ. */
     private const RISK_CODES = ['1', '6', '7'];
-
-    /** Kategorie, u které se vykazuje počet směn (IN42: 10274 = 1, 10273 > 0). */
-    private const RISK_SHIFT_CODE = '1';
 
     public function __construct(
         private readonly JmhzPackageSplitter $packageSplitter = new JmhzPackageSplitter(),
@@ -2449,7 +2447,7 @@ final class JmhzScenario1Xml2027Serializer
                 if ($shifts > 999) {
                     $this->unresolved('10580');
                 }
-            } elseif ($code === self::RISK_SHIFT_CODE && $hours > 0) {
+            } elseif (Jmhz2027DocumentContract::riskShiftCountRequired($code, $hours)) {
                 $this->unresolved('10580');
             }
             $categories[$code] = ['code' => $code, 'worked_millihours' => $hours, 'shift_count' => $shifts];
@@ -2531,24 +2529,22 @@ final class JmhzScenario1Xml2027Serializer
 
     /**
      * Náhradní volno za přesčas se odečítá od 10268 i 10269 (Pokyny MH k
-     * 10269), stejný převod jako ve verzi 2026.
+     * 10269). Ve verzi 2027 je přesčas se znaménkem; pravidlo i znaménko
+     * drží {@see JmhzReportedWorkHours}, ze kterého staví hodiny rizikové
+     * práce i resolver.
      *
      * @param array<string,mixed> $values
      * @return array<string,mixed>
      */
     private static function reportedWorkedHours(array $values): array
     {
-        $timeOff = $values['compensatory_time_off_millihours'] ?? null;
-        $worked = $values['worked_millihours'] ?? null;
-        if (!is_int($timeOff) || $timeOff <= 0 || !is_int($worked)) {
+        if (!is_int($values['compensatory_time_off_millihours'] ?? null)
+            || !is_int($values['worked_millihours'] ?? null)
+        ) {
             return $values;
         }
-        $overtime = $values['overtime_millihours'] ?? null;
-        $reportedOvertime = is_int($overtime) ? max(0, $overtime - $timeOff) : null;
-        $values['overtime_millihours'] = $reportedOvertime;
-        $values['worked_millihours'] = max($reportedOvertime ?? 0, $worked - $timeOff);
 
-        return $values;
+        return array_replace($values, JmhzReportedWorkHours::reported($values, true));
     }
 
     /**
