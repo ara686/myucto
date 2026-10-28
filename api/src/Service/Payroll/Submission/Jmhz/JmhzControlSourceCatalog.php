@@ -8,8 +8,8 @@ use MyInvoice\Service\Payroll\Ruleset\CanonicalJson;
 
 final class JmhzControlSourceCatalog
 {
-    public const CATALOG_KEY = 'jmhz-controls-1.4.2.10-source-v4';
-    public const MANIFEST_SHA256 = '565bfb145efd1e7c0893e81c26b3d865c486929dc44cef72620340b663b4e493';
+    public const CATALOG_KEY = 'jmhz-controls-1.4.2.11-source-v4';
+    public const MANIFEST_SHA256 = '05e26c2722a72c989282ed72939faa3cedc02789239b0a798f4ecd33b4dca195';
 
     /** @var array<int, JmhzControlDefinition> */
     private array $definitions = [];
@@ -181,18 +181,11 @@ final class JmhzControlSourceCatalog
             $remote = JmhzControlPassability::from(self::string($row, 'remote_passability'));
             ++$remoteCounts[$remote->value];
             self::verifyRowHash($row, "kontrola {$id}");
+            // Katalog 1.4.2.11 sjednotil atributy kontroly 333 s jejím pravidlem,
+            // takže připnutý katalog nemá žádnou zdrojovou anomálii. Marker, který
+            // by se objevil bez vědomého připnutí, se odmítne.
             $anomaly = $row['source_anomaly'] ?? null;
-            $expectedAnomaly = $id === 333 ? [
-                'code' => 'official_detail_attribute_mismatch',
-                'source_cells' => ['B189', 'C189', 'L189', 'M189'],
-                'declared_attribute_ids' => ['10006', '10032', '10010', '10011'],
-                'detail_attribute_ids' => ['10016', '10495'],
-                'resolution' => 'fail_closed_not_evaluable',
-            ] : null;
-            if (($anomaly === null || $expectedAnomaly === null)
-                ? $anomaly !== $expectedAnomaly
-                : CanonicalJson::encode($anomaly) !== CanonicalJson::encode($expectedAnomaly)
-            ) {
+            if ($anomaly !== null) {
                 throw new \UnexpectedValueException("Kontrola JMHZ {$id} má neplatně doloženou anomálii.");
             }
             $sourceAnomalyCount += $anomaly === null ? 0 : 1;

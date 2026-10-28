@@ -5,7 +5,7 @@ se staví datový slovník, katalog kontrol, scénářová matice a číselníky
 Každý balíček je ve vlastním verzovaném adresáři a vedle zdrojů leží
 deterministický `manifest.json`, který je jediným čtecím vstupem aplikace.
 
-Připnutý stav pro rok 2026: datový slovník 1.4.1.6, katalog kontrol 1.4.2.10,
+Připnutý stav pro rok 2026: datový slovník 1.4.1.6, katalog kontrol 1.4.2.11,
 datové scénáře 1.4.0.2 a časový registr overlay externích číselníků. Balík pro
 rok 2027 je popsán v samostatné kapitole níže. Slovník připíná
 **46 číselníků** — 40 vložených se 783 položkami a 6 externích referencí, které
@@ -24,7 +24,7 @@ uložené provenience s touto identitou se dál ověřují proti období.
 | Zdroj | Soubor | Původ | SHA-256 |
 |---|---|---|---|
 | Datový slovník 1.4.1.6 | `dictionary-1.4.1.6/datovy_slovnik_1.4.1.6.xlsx` | [developers.mpsv.cz](https://developers.mpsv.cz/assets/documents/f389e547-8bc0-4470-9531-f8319ff4d11e/datovy_slovnik_1.4.1.6.xlsx) | `e794a56d3baa48dd876ad45a0deb5b1bb77c17a0cb44a3511e8ef4028be69743` |
-| Katalog kontrol 1.4.2.10 | `dictionary-1.4.1.6/Katalog kontrol MH(public)_1.4.2.10.xlsx` | [developers.mpsv.cz](https://developers.mpsv.cz/assets/documents/c5905c65-8fe0-4a60-826d-e8f0237bb6c8/Katalog%20kontrol%20MH%28public%29_1.4.2.10.xlsx) | `38a8eaf2d399feaeb92616b5244c0133b9d4acc0c087fa095dda4d75bc83f7b2` |
+| Katalog kontrol 1.4.2.11 | `dictionary-1.4.1.6/Katalog kontrol MH(public)_1.4.2.11.xlsx` | [developers.mpsv.cz](https://developers.mpsv.cz/assets/documents/8aea9a31-e27a-4635-934e-6d2a32289976/Katalog%20kontrol%20MH%28public%29_1.4.2.11.xlsx) | `e5b664c135b63774b555e067c5ed83991bd919f023f3f577bcfafd030b441b62` |
 | Datové scénáře 1.4.0.2 | `dictionary-1.4.1.6/datove_scenare_interakce_povinnosti_MH_1.4.0.2.xlsx` | [developers.mpsv.cz](https://developers.mpsv.cz/assets/documents/9fad6021-73d0-4914-80c8-609716b5697d/datove_scenare_interakce_povinnosti_MH_1.4.0.2.xlsx) | `cc282115d58a3744348b500a2dcc6eec4a5899b12753ec756f01fe261fd7ff37` |
 | CISOB, právní pokrytí do 31. 8. | `external-codebooks-2026-08-31/sb-2025-511-priloha-2-fragment-1093782.ttl` | stejné autoritativní bajty 511/2025 Sb.; samostatný neměnný manifest právního období | `b4f130984c94904d083306b19e47f146e6e703847d315219daf97589a7526d44` |
 | CISOB od 1. 9. 2026 | `external-codebooks-2026-09-01/sb-2026-145-priloha-2-fragment-1836642.ttl` | [e-Sbírka, vyhláška č. 145/2026 Sb., příloha č. 2](https://e-sbirka.gov.cz/sb/2026/145/2026-09-01), [OpenData fragment 1836642](https://opendata.eselpoint.gov.cz/esel-esb/právní-akt-fragment/1836642) — **ruční zdroj** | `2263cd58c4dc589e42bc48f13f30db464ffce16e611762364c73f6a1c5bbc003` |
@@ -169,19 +169,25 @@ Změna URL, verze, kontrolního součtu, počtu položek nebo seznamu externích
 referencí musí být vědomá. Manifest ověřuje původ a integritu; nenahrazuje
 verzovaná aplikační business pravidla ani odborné legislativní ověření.
 
-## Zdrojová anomálie kontroly 333 ve verzi 1.4.2.10
+## Změny kontrol ve verzi 1.4.2.11
 
-Oficiální řádek kontroly 333 je v sešitu 1.4.2.10 vnitřně rozporný (stejně jako
-v 1.4.2.9; nová kontrola 22 ho posunula o řádek níž). Buňky B189,
-C189 a M189 popisují časové omezení slevy a deklarují atributy 10006, 10032,
-10010 a 10011, zatímco L189 obsahuje pravidlo o primárním pracovněprávním
-vztahu s atributy 10016 a 10495. Katalog ukládá oba oficiální obsahy beze změny
-a přidává pouze strukturovaný marker `official_detail_attribute_mismatch`.
-Správné znění se lokálně neodhaduje. Protože výsledek časového omezení závisí
-na datu přijetí, které přiděluje až ČSSZ, je kontrola vedena jako
-`not_evaluable`: lokální obsah podání kvůli ní není označen za chybný a
-autoritativní výsledek vrátí protokol ČSSZ. Marker zůstává v manifestu, aby se
-rozpor při další verzi katalogu nedal přehlédnout.
+- **Kontrola 368** (DIS, nepropustná, kód chyby 20368): počet dnů pojištění
+  ELDP sekce (10356) nesmí přesáhnout interval platnosti jejího kódu (10241
+  až 10242). Katalog píše rozdíl dat stejně jako u kontroly 134; interval se
+  počítá včetně krajních dnů a odchylka je vedená mezi zdokumentovanými.
+- **Kontrola 369** (DIS, nepropustná, kód chyby 20369): sekce s kódem ELDP
+  (10240) musí mít vyplněnou platnost od (10241) i do (10242).
+- **Kontrola 371** (cJMHZ, propustná, informativní): chybějící údaje cizinců
+  v registru zaměstnanců (10414, 10105 až 10110). Rozhoduje registr ČSSZ,
+  proto je vedena jako `not_evaluable`; hláška vyzývá k doplnění přes REGZEC A3.
+- **Kontrola 333**: katalog sjednotil deklarované atributy s pravidlem
+  (10495 a 10016). Zdrojová anomálie `official_detail_attribute_mismatch`
+  z verzí 1.4.2.9 a 1.4.2.10 zmizela a kontrola se vyhodnocuje stejně jako
+  332: příznak primárního pracovněprávního vztahu je povinný kromě scénáře
+  pro druh činnosti 10 a stornujícího formuláře. Název a hláška řádku dál
+  mluví o časovém omezení slevy za 01 až 03/2026; vyhodnocuje se pravidlo.
+- Texty kontrol 96, 164, 226, 238, 291, 336, 337 a 339 se upřesnily bez
+  dopadu na lokální vyhodnocení; odůvodnění v evaluatoru jsou zarovnaná.
 
 ## Změny kontrol ve verzi 1.4.2.10
 

@@ -11,7 +11,7 @@ use MyInvoice\Service\Payroll\Submission\Registration\PayrollRegistrationIdentit
  * Vykonávací implementace kontrol katalogu ČSSZ nad prvním profilem měsíčního
  * hlášení (`scenario_1`, `form:bezPriznaku`, řádné podání).
  *
- * Katalog 1.4.2.10 popisuje 200 kontrol textem, ne strojově. Tahle třída je
+ * Katalog 1.4.2.11 popisuje 203 kontrol textem, ne strojově. Tahle třída je
  * jediné místo, kde se text překládá do kódu, a drží tři pravidla:
  *
  * 1. **Sazby se nezadrátovávají.** Každý koeficient se bere z parametrických
@@ -84,18 +84,23 @@ final class JmhzScenario1ControlEvaluator
             . ' takže by se musel uhodnout; shodu s registrem zaměstnavatelů'
             . ' ČSSZ navíc lokálně ověřit nelze.',
         164 => 'Lhůta splatnosti se odvozuje od data přijetí podání (10006),'
-            . ' které přiděluje až ČSSZ; od verze 1.4.2.8 kontrola platí jen'
-            . ' od období 04/2026 a první přijatou pojistnou část zná evidence ČSSZ.',
+            . ' které přiděluje až ČSSZ; podle katalogu 1.4.2.11 kontrola platí'
+            . ' jen od období 04/2026 (pojistné je splatné do 20. dne'
+            . ' následujícího měsíce, o víkendu a svátku nejbližší pracovní den)'
+            . ' a první přijatou pojistnou část zná evidence ČSSZ.',
         217 => 'Odkaz na GUID jiného podání ověří jen evidence ČSSZ.',
         218 => 'Existenci GUID stornovaného podání ověří jen evidence ČSSZ.',
         220 => 'Existenci GUID stornované součásti ověří jen evidence ČSSZ.',
         221 => 'O zamítnutí celého podání rozhoduje výsledek zpracování všech'
             . ' součástí na straně ČSSZ.',
         226 => 'Porovnání počtu součástí s registrem ČSSZ je možné až na straně'
-            . ' ČSSZ; nesoulad vede k částečnému přijetí a formální výzvě.',
+            . ' ČSSZ (formuláře odloženého příjmu se do počtu nezapočítávají);'
+            . ' nesoulad vede k částečnému přijetí a formální výzvě.',
         225 => 'Chybějící první dílčí podání se pozná až porovnáním došlých'
             . ' balíků na straně ČSSZ.',
         228 => 'Počet skutečně došlých dílčích podání zná jen ČSSZ.',
+        // Katalog 1.4.2.11 sloučil v hlášce větve a1/a2 do jedné (nový řádný
+        // formulář s novým GUID); pravidlo zůstává.
         238 => 'Shodu klíčů s předchozím řádným podáním drží evidence ČSSZ.',
         241 => 'Shodu metaatributů se stornovaným podáním drží evidence ČSSZ.',
         242 => 'Rozlišení rezidenta a nerezidenta stojí na atributu 10068,'
@@ -109,7 +114,13 @@ final class JmhzScenario1ControlEvaluator
         262 => 'Existenci ID PPV ověřuje pouze registr ČSSZ.',
         263 => 'Existenci IK MPSV ověřuje pouze registr ČSSZ.',
         264 => 'Existenci dvojice IK MPSV a ID PPV ověřuje pouze registr ČSSZ.',
-        291 => 'Platnost oznámeného záměru uplatňovat slevu (OZUSPOJ) eviduje ČSSZ.',
+        // Katalog 1.4.2.11 změnil hlášku: slevu, kterou zaměstnavatel po lhůtě
+        // opravným hlášením snížil, nelze v dalším opravném podání vykázat
+        // vyšší než v posledním hlášení s akceptovanou pojistnou částí.
+        // Pravidlo kontroly (L) zůstává nad záměrem OZUSPOJ.
+        291 => 'Platnost oznámeného záměru uplatňovat slevu (OZUSPOJ) eviduje ČSSZ'
+            . ' a slevu z posledního hlášení s akceptovanou pojistnou částí, se'
+            . ' kterou ČSSZ porovná slevu sníženou po lhůtě, zná jen její evidence.',
         323 => 'Detekce duplicitního přijetí se opírá o identifikátor zprávy'
             . ' a čas přijetí, které přiděluje až ČSSZ.',
         348 => 'Nekritická kontrola integrity se opírá o dotazy do registru'
@@ -127,11 +138,14 @@ final class JmhzScenario1ControlEvaluator
             . ' který první profil nevykazuje; podmínka se vynucuje před serializací.',
         326 => 'Jedinečnost řádného podání za období se rozhoduje nad evidencí'
             . ' podání, ne nad obsahem jednoho XML.',
-        333 => 'Oficiální katalog 1.4.2.10 má u kontroly časového omezení slevy'
-            . ' rozporné odkazy na atributy. Věcný výsledek navíc závisí na datu'
-            . ' přijetí podání, které přiděluje až ČSSZ; lokálně se proto'
-            . ' neodhaduje a rozhodne protokol ČSSZ.',
         334 => 'Ztotožnění osoby provádí kmenová evidence ČSSZ.',
+        // Nová informativní kontrola katalogu 1.4.2.11 (cJMHZ, propustná,
+        // kategorie I1). Chybějící údaje cizinců (10414, 10105 až 10110)
+        // hledá ČSSZ v registru zaměstnanců, ne v měsíčním hlášení, a hláška
+        // podání neznehodnocuje: vyzývá k doplnění přes REGZEC A3.
+        371 => 'Úplnost údajů o zaměstnávání cizinců (10414, 10105 až 10110)'
+            . ' ověřuje cJMHZ nad registrem zaměstnanců, ne nad obsahem hlášení;'
+            . ' jde o informativní výzvu k aktualizaci registrace (REGZEC A3).',
     ];
 
     /**
@@ -230,7 +244,7 @@ final class JmhzScenario1ControlEvaluator
             236, 237, 240, 244, 248, 251, 258,
             253, 255, 260, 265, 267, 269, 270, 271, 272, 273, 275, 282, 283, 284, 286, 290,
             296, 297, 298, 299, 300, 301, 302, 303, 304, 306, 307, 309, 310, 312, 315, 328, 329, 330, 331, 332,
-            335, 336, 337, 338, 339, 341, 342, 343, 354, 355,
+            333, 335, 336, 337, 338, 339, 341, 342, 343, 354, 355, 368, 369,
         ];
     }
 
@@ -262,6 +276,10 @@ final class JmhzScenario1ControlEvaluator
                 . ' rozdíl dat. Celý měsíc má ale o den víc, než je rozdíl jeho'
                 . ' krajních dnů, takže by doslovné znění neprošlo ani bezvadné'
                 . ' hlášení za celý měsíc. Interval se počítá včetně krajních dnů.',
+            368 => 'Táž konstrukce jako u kontroly 134, jen nad platností kódu ELDP:'
+                . ' katalog píše „počet dnů <= platnost do minus platnost od".'
+                . ' Kód platný celý měsíc má o den víc dnů pojištění, než je rozdíl'
+                . ' krajních dat, takže interval platnosti se počítá včetně krajních dnů.',
             168 => 'Vedle tolerance žádá katalog i dolní mez 7,171 % z úhrnu'
                 . ' vyměřovacích základů. Na minimálním případě (základ 1 000 Kč,'
                 . ' pojistné 71 Kč) by ji neprošlo ani zcela správné podání,'
@@ -359,18 +377,23 @@ final class JmhzScenario1ControlEvaluator
             138 => $this->shorterWorkingTimeRequiredForReason($projection),
             156 => $this->riskCategorizationFromCodebook($projection),
             331 => $this->deferredIncomeTypeFromCodebook($projection),
+            // Katalog 1.4.2.11 v 336 vyjmenovává jen příjem a roční zúčtování po
+            // skončení a jejich součet; typy s „PPV dále neprobíhá" pokrývá 339.
+            // Výsledek pro typy mimo výčet je tentýž (rozhoduje registr), proto
+            // seznam zůstává; aplikace sama tvoří jen typ 1.
             336 => $this->deferredIncomeRegistryCheck(
                 $projection,
                 ['1', '2', '4', '5', '6'],
-                'Že je pracovněprávní vztah v rozhodném období již ukončený, ověří'
-                    . ' cJMHZ proti registru; aplikace odložený příjem připouští jen'
-                    . ' u vztahu skončeného před vykazovaným měsícem.',
+                'Že je pracovněprávní vztah uzavřený a datum skončení (10224) leží'
+                    . ' před rozhodným obdobím, ověří cJMHZ proti registru; aplikace'
+                    . ' odložený příjem připouští jen u vztahu skončeného před'
+                    . ' vykazovaným měsícem.',
             ),
             337 => $this->deferredIncomeRegistryCheck(
                 $projection,
                 ['3'],
-                'Že pracovněprávní vztah k poslednímu dni měsíce trvá, ověří cJMHZ'
-                    . ' proti registru.',
+                'Že pracovněprávní vztah v období určeném měsícem a rokem hlášení'
+                    . ' (10010, 10011) stále trvá, ověří cJMHZ proti registru.',
             ),
             338 => $this->deferredIncomeEldpCodeSecondPosition($projection),
             339 => $this->deferredIncomeRegistryCheck(
@@ -514,7 +537,13 @@ final class JmhzScenario1ControlEvaluator
             307 => $this->eldpDetailEmptyWithoutCode($projection),
             309 => $this->insuranceDaysAgainstDeductedTime($projection),
             330 => $this->eldpCodeRequiredWithDays($projection),
-            332 => $this->primaryFlagRequired($projection),
+            // Katalog 1.4.2.11 opravil u kontroly 333 atributy na 10495 a 10016
+            // a pravidlo (L) je doslova totéž jako u kontroly 332. Název a hláška
+            // řádku dál mluví o časovém omezení slevy za 01 až 03/2026, které
+            // pravidlo neobsahuje; vyhodnocuje se pravidlo, ne název.
+            332, 333 => $this->primaryFlagRequired($projection),
+            368 => $this->eldpDaysWithinCodeValidity($projection),
+            369 => $this->eldpCodeValidityRequired($projection),
             31, 131 => $this->periodNotBeforeStart($projection),
             37 => $this->personIdentifierChecksum($projection),
             50 => $this->assessmentBaseNotNegative($projection),
@@ -524,6 +553,8 @@ final class JmhzScenario1ControlEvaluator
             290 => $this->lateSubmissionDiscount($projection, $context),
             94 => $this->nonNegativeScaled($projection, '10259'),
             95 => $this->nonNegativeScaled($projection, '10260'),
+            // Katalog 1.4.2.11 zmírnil 96 na „(10261) >= 0": nulová týdenní doba
+            // projde, jak ji kontrola vyhodnocovala už dřív.
             96 => $this->nonNegativeScaled($projection, '10261'),
             100 => $this->eldpValidityOrdering($projection),
             129 => $this->monthInRange($projection),
@@ -1797,6 +1828,69 @@ final class JmhzScenario1ControlEvaluator
                 if ((int) $days > $span) {
                     return "Počet dnů pojištění {$days} překračuje délku intervalu"
                         . " {$from} až {$to} ({$span} dnů).";
+                }
+            }
+
+            return null;
+        });
+    }
+
+    /**
+     * Kontrola 368 (katalog 1.4.2.11) — počet dnů pojištění v ELDP sekci
+     * (10356) proti intervalu platnosti jejího kódu (10241 až 10242).
+     *
+     * Katalog píše `10356 <= 10242 - 10241`, tedy rozdíl dat, stejně jako
+     * u kontroly 134. Kód platný celý měsíc by doslovným zněním neprošel, proto
+     * se interval počítá včetně obou krajních dnů ({@see self::documentedDeviations()}).
+     * Sekci bez úplné platnosti hlídá kontrola 369.
+     *
+     * @return list<JmhzControlVerdict>
+     */
+    private function eldpDaysWithinCodeValidity(JmhzAttributeProjection $projection): array
+    {
+        return $this->perForm($projection, static function (JmhzAttributeScope $form): ?string {
+            foreach ($form->groupedBy(['10241', '10242', '10356'], self::ELDP_SECTION_DEPTH) as $section) {
+                $days = $section['10356'] ?? null;
+                $from = $section['10241'] ?? null;
+                $to = $section['10242'] ?? null;
+                if ($days === null || $from === null || $to === null) {
+                    continue;
+                }
+                $span = self::intervalDays($from, $to);
+                if ($span === null) {
+                    continue;
+                }
+                if ((int) $days > $span) {
+                    return "Počet dnů pojištění {$days} překračuje platnost kódu ELDP"
+                        . " {$from} až {$to} ({$span} dnů).";
+                }
+            }
+
+            return null;
+        });
+    }
+
+    /**
+     * Kontrola 369 (katalog 1.4.2.11) — ELDP sekce s kódem (10240) musí mít
+     * vyplněnou platnost od (10241) i do (10242).
+     *
+     * @return list<JmhzControlVerdict>
+     */
+    private function eldpCodeValidityRequired(JmhzAttributeProjection $projection): array
+    {
+        return $this->perForm($projection, static function (JmhzAttributeScope $form): ?string {
+            foreach ($form->groupedBy(['10240', '10241', '10242'], self::ELDP_SECTION_DEPTH) as $section) {
+                $code = $section['10240'] ?? null;
+                if ($code === null) {
+                    continue;
+                }
+                $missing = array_values(array_filter(
+                    ['10241', '10242'],
+                    static fn (string $id): bool => ($section[$id] ?? '') === '',
+                ));
+                if ($missing !== []) {
+                    return "Kód ELDP {$code} nemá vyplněnou platnost "
+                        . implode(' ani ', $missing) . '.';
                 }
             }
 

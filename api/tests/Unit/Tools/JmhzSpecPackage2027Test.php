@@ -154,10 +154,21 @@ final class JmhzSpecPackage2027Test extends TestCase
         $removed = array_values(array_diff(array_keys($old), array_keys($new)));
         sort($added);
 
+        // Katalog 1.5.0.4 přidává proti 1.4.2.10 22 kontrol; tři z nich (368,
+        // 369 a 371) převzal už katalog 1.4.2.11 pro rok 2026.
         self::assertSame(
-            [347, 350, 351, 362, 363, 365, 366, 368, 369, 370, 371, 378, 379, 380, 381, 382, 383, 384, 385, 386, 387, 388],
+            [347, 350, 351, 362, 363, 365, 366, 370, 378, 379, 380, 381, 382, 383, 384, 385, 386, 387, 388],
             $added,
         );
+        foreach ([368, 369, 371] as $sharedWith2026) {
+            self::assertArrayHasKey($sharedWith2026, $old);
+            self::assertSame(
+                $old[$sharedWith2026]['remote_passability'],
+                $new[$sharedWith2026]['remote_passability'],
+                "Kontrola {$sharedWith2026}.",
+            );
+            $added[] = $sharedWith2026;
+        }
         self::assertSame([109], $removed, 'Kontrola 109 se v katalogu 1.5 ruší.');
         // Všechny nové kontroly jsou nepropustné kromě 371 (propustná v cJMHZ).
         foreach ($added as $controlId) {
@@ -246,7 +257,7 @@ final class JmhzSpecPackage2027Test extends TestCase
 
         self::assertSame(self::MANIFEST_SHA256, $profiles['2027']['manifest_sha256']);
         self::assertSame(self::PACKAGE_KEY, $profiles['2027']['package_key']);
-        self::assertSame('de478274906eac47d5d51c3a5837a8278ade1fa0dba3fc5dcde6c86d5d05113d', $profiles['2026']['manifest_sha256']);
+        self::assertSame('39bb516b4fff204c44f0b8a6b9e0ec40601ef73af79460bdf937777e046c00d8', $profiles['2026']['manifest_sha256']);
         foreach (['dictionary_sha256', 'control_catalog_sha256', 'scenario_sha256'] as $key) {
             self::assertNotSame($profiles['2026'][$key], $profiles['2027'][$key]);
         }
@@ -290,11 +301,11 @@ final class JmhzSpecPackage2027Test extends TestCase
         $output = $this->temporary . '/out26';
         $this->runBuilder('JmhzDictionaryPackageBuilder.php', [
             $resource . '/datovy_slovnik_1.4.1.6.xlsx',
-            $resource . '/Katalog kontrol MH(public)_1.4.2.10.xlsx',
+            $resource . '/Katalog kontrol MH(public)_1.4.2.11.xlsx',
             $output,
         ]);
         $this->runBuilder('JmhzControlCatalogPackageBuilder.php', [
-            $resource . '/Katalog kontrol MH(public)_1.4.2.10.xlsx',
+            $resource . '/Katalog kontrol MH(public)_1.4.2.11.xlsx',
             $output . '/control-manifest.json',
         ]);
 
