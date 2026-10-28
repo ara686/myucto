@@ -1110,7 +1110,8 @@
         "2206_payroll_import_profile_sample_key.sql",
         "2207_other_item_settled_outside.sql",
         "2208_payroll_annual_settlement_claims.sql",
-        "2209_payroll_deduction_agreement_jmhz_target.sql"
+        "2209_payroll_deduction_agreement_jmhz_target.sql",
+        "2210_payroll_component_jmhz_catalog_1_4_2_11_package.sql"
     ],
     "tables": {
         "abra_flexi_connections": {

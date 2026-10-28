@@ -14,6 +14,9 @@ use MyInvoice\Service\Tax\TaxConstants;
 
 final class JmhzScenario1DocumentResolver
 {
+    /** Klíč bloku údajů, které přidala specifikace 2027 ({@see JmhzSpecVersion::V2027}). */
+    private const SPEC_2027_KEY = 'jmhz_2027';
+
     /**
      * Verze přípravy, ze kterých se scénář 1 normalizuje.
      *
@@ -657,16 +660,16 @@ final class JmhzScenario1DocumentResolver
                 $employeeId,
                 $blockers,
             );
-            $person2027 = null;
+            $personSpecExtension = null;
             if ($is2027) {
                 foreach ($normalizedEmployments as $index => $normalizedEmployment) {
-                    $normalizedEmployments[$index]['jmhz_2027'] = $this->employment2027(
+                    $normalizedEmployments[$index][self::SPEC_2027_KEY] = $this->employment2027(
                         $normalizedEmployment,
                         $declarationSigned,
                         $blockers,
                     );
                 }
-                $person2027 = $this->person2027(
+                $personSpecExtension = $this->person2027(
                     $preparation->periodStart,
                     $declarationSigned,
                     $advanceTaxCzk,
@@ -778,7 +781,7 @@ final class JmhzScenario1DocumentResolver
                         $blockers,
                     ),
                     'annual' => $annual,
-                    ...($person2027 === null ? [] : ['jmhz_2027' => $person2027]),
+                    ...($personSpecExtension === null ? [] : [self::SPEC_2027_KEY => $personSpecExtension]),
                 ],
                 'employments' => $normalizedEmployments,
             ];
@@ -3811,7 +3814,7 @@ final class JmhzScenario1DocumentResolver
      */
     private function annual2027(?array $annual, string $periodStart): ?array
     {
-        if ($annual === null || !str_starts_with($periodStart, '2027-01')) {
+        if ($annual === null || substr($periodStart, 0, 7) !== JmhzSpecVersion::FIRST_2027_PERIOD) {
             return $annual;
         }
         $annual['withholding'] = null;
