@@ -275,15 +275,31 @@ final class PayrollStatutoryAccumulatorRepository
                     $calculationKind,
                     true,
                 );
+                // Osoba, kterou opravná revize přidala (zapomenutý nebo
+                // dodatečně zadaný zaměstnanec), za období ještě žádný
+                // příspěvek nemá. Její příspěvek je první, nic nenahrazuje.
+                // Má-li osoba za období příspěvek z jiné revize, oprava na něj
+                // navázat musí, jinak by se období započetlo dvakrát.
                 if ($previous === null
+                    && !$this->hasPeriodEntry(
+                        $supplierId,
+                        $employeeId,
+                        $year,
+                        $periodStart,
+                        $calculationKind,
+                    )
+                ) {
+                    $replacesEntryId = null;
+                } elseif ($previous === null
                     || $previous['period_start'] !== $periodStart
                     || $this->hasEntrySuccessor($supplierId, $previous['id'])
                 ) {
                     throw new \DomainException(
                         'Opravná revize nenavazuje na aktuální zákonný výsledek období.',
                     );
+                } else {
+                    $replacesEntryId = $previous['id'];
                 }
-                $replacesEntryId = $previous['id'];
             }
 
             $recordHash = hash('sha256', CanonicalJson::encode([
@@ -1280,6 +1296,35 @@ final class PayrollStatutoryAccumulatorRepository
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
         return is_array($row) ? $this->castEntry($row) : null;
+    }
+
+    private function hasPeriodEntry(
+        int $supplierId,
+        int $employeeId,
+        int $year,
+        string $periodStart,
+        string $calculationKind,
+    ): bool {
+        $stmt = $this->db->pdo()->prepare(
+            'SELECT 1
+               FROM payroll_statutory_accumulator_entries
+              WHERE supplier_id = ?
+                AND employee_id = ?
+                AND tax_year = ?
+                AND period_start = ?
+                AND calculation_kind = ?
+              LIMIT 1
+              FOR UPDATE'
+        );
+        $stmt->execute([
+            $supplierId,
+            $employeeId,
+            $year,
+            $periodStart,
+            $calculationKind,
+        ]);
+
+        return $stmt->fetchColumn() !== false;
     }
 
     private function hasEntrySuccessor(int $supplierId, int $entryId): bool
