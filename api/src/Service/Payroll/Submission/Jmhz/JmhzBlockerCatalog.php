@@ -593,6 +593,12 @@ final class JmhzBlockerCatalog
         'jmhz_signing_private_key_missing' => 'submission',
         'jmhz_signing_profile_missing' => 'submission',
         'jmhz_signing_serial_unreadable' => 'submission',
+        // Ročník specifikace (JmhzSpecVersion): verze 2027 bez připnutého
+        // balíku čeká na aktualizaci aplikace, ostatní jsou porušená data.
+        'jmhz_spec_version_mismatch' => 'support',
+        'jmhz_spec_version_period_invalid' => 'retry',
+        'jmhz_spec_version_unavailable' => 'support',
+        'jmhz_spec_version_unknown' => 'support',
         'jmhz_signing_unavailable' => 'support',
         'jmhz_snapshot_hash_mismatch' => 'retry',
         'jmhz_snapshot_invalid' => 'retry',

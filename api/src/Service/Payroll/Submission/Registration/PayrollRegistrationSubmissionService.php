@@ -702,6 +702,21 @@ final readonly class PayrollRegistrationSubmissionService
                 ? $preRegistration?->variableSymbol
                 : null,
         );
+        // Ročník formuláře určuje datum události (nástup, skončení, platnost
+        // změny), ne den odeslání: od 1. 1. 2027 REGZEC27. Serializér zatím
+        // umí jen formuláře 2026, takže jiný ročník se fail-closed nesestaví.
+        $documentType = (new PayrollRegistrationSchemaCatalog())->documentTypeFor(
+            $interaction->documentType,
+            $effectiveOn,
+        );
+        if ($documentType !== $interaction->documentType) {
+            throw new PayrollRegistrationXmlException(
+                PayrollRegistrationSchemaCatalog::UNAVAILABLE_CODE,
+                "Událost k {$effectiveOn} se hlásí formulářem {$documentType},"
+                    . ' který tahle verze aplikace zatím neumí sestavit. Podání se'
+                    . ' proto nepřipraví.',
+            );
+        }
         $xml = $this->serializer->serialize($payload);
         // Validátor si XML serializuje znovu a porovná bajty; volá se i tady,
         // v produkční cestě, ne jen v testu. XSD a hranice agendy jsou to

@@ -67,6 +67,36 @@ final class JmhzOrdinaryEvidenceCompatibility
         return $requirements;
     }
 
+    /**
+     * Ročník specifikace zmrazeného potvrzení podle klíče jeho balíku;
+     * `null` u neznámého klíče.
+     */
+    public static function specVersionOf(array $spec): ?JmhzSpecVersion
+    {
+        $packageKey = $spec['package_key'] ?? null;
+
+        return is_string($packageKey) ? JmhzSpecPackageCatalog::versionOf($packageKey) : null;
+    }
+
+    /**
+     * Potvrzení musí patřit téže verzi jako hlášení, ke kterému se váže:
+     * potvrzení postavené nad slovníkem 2026 se pro období 2027 nepoužije
+     * a naopak. Pro verzi 2027 zatím neplatí žádné potvrzení: katalog
+     * scénářů a kontrol 1.5 ještě není připnutý (WP-1, WP-4), takže by
+     * nebylo s čím porovnat řádky matice.
+     */
+    public static function acceptsSpecificationFor(array $spec, JmhzSpecVersion $version): bool
+    {
+        if (self::specVersionOf($spec) !== $version) {
+            return false;
+        }
+
+        return match ($version) {
+            JmhzSpecVersion::V2026 => self::acceptsSpecification($spec),
+            JmhzSpecVersion::V2027 => false,
+        };
+    }
+
     public static function acceptsSpecification(array $spec): bool
     {
         $current = [

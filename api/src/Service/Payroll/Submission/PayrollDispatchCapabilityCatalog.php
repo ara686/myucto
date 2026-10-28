@@ -127,6 +127,7 @@ final class PayrollDispatchCapabilityCatalog
      * Ročník v kódu se odřezává stejně jako v {@see PayrollAgendaGroupCatalog}:
      * historické povinnosti nesou `JMHZ`, nové `JMHZ25`, a obě znamenají totéž
      * měsíční hlášení. Bez normalizace by starší řádek dostal „neumíme".
+     * Ročník datové věty 2027 (`JMHZ27`, `REGZEC27`) patří k téže agendě.
      */
     public static function canonical(string $agendaCode): string
     {
