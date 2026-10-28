@@ -6025,6 +6025,7 @@ export type PayrollAnnualSettlementFilingObligation =
 export type PayrollAnnualSettlementAnnualClaims =
   | 'unknown'
   | 'none'
+  | 'present'
   | 'present_unsupported'
 
 export type PayrollAnnualSettlementCaregiverStatus = 'unknown' | 'none' | 'present'
@@ -6084,6 +6085,9 @@ export type PayrollAnnualSettlementBlocker =
   | 'ruleset_year_not_covered'
   | 'request_date_missing'
   | 'prior_documents_date_missing'
+  | 'annual_claims_inconsistent'
+  | 'annual_claim_evidence_unverified'
+  | 'spouse_credit_conditions_not_met'
 
 export interface PayrollAnnualSettlementRequest {
   id?: number
@@ -6135,6 +6139,102 @@ export interface PayrollAnnualSettlementResult {
   bonus_minimum_income_minor_units?: number
   bonus_minimum_amount_minor_units?: number
   monthly_tax_bonus_minor_units?: number
+  tax_base_before_deductions_minor_units?: number
+  non_taxable_deductions_minor_units?: number
+  enforcement_credit_minor_units?: number
+  trace?: PayrollAnnualSettlementTrace
+}
+
+export interface PayrollAnnualSettlementTrace {
+  non_taxable?: {
+    donation?: {
+      claimed_minor_units: number
+      threshold_met: boolean
+      cap_minor_units: number
+      deducted_minor_units: number
+    }
+    housing_interest?: {
+      claimed_minor_units: number
+      months: number
+      cap_minor_units: number
+      deducted_minor_units: number
+    }
+    retirement_and_care?: {
+      claimed_minor_units: number
+      cap_minor_units: number
+      deducted_minor_units: number
+    }
+  }
+  credits?: {
+    spouse?: {
+      months: number
+      ztp_p_months: number
+      amount_minor_units: number
+    }
+  }
+  spouse_credit_failures?: string[]
+}
+
+export type PayrollAnnualDeductionKind =
+  | 'donation'
+  | 'blood_donation'
+  | 'organ_donation'
+  | 'stem_cell_donation'
+  | 'housing_interest'
+  | 'pension_savings'
+  | 'life_insurance'
+  | 'long_term_investment'
+  | 'long_term_care_insurance'
+  | 'enforcement_stop'
+
+export interface PayrollAnnualDeduction {
+  id?: number
+  kind: PayrollAnnualDeductionKind
+  amount_minor_units: number | null
+  quantity: number | null
+  months_mask: number | null
+  housing_acquired_before_2021: boolean
+  counterparty_name: string | null
+  evidence_status: 'verified' | 'unverified'
+  evidence_reference: string | null
+  note: string | null
+}
+
+export interface PayrollAnnualSpouseClaim {
+  spouse_dependant_id: number
+  child_dependant_id: number
+  months_mask: number
+  ztp_p_months_mask: number
+  spouse_income_minor_units: number | null
+  evidence_status: 'verified' | 'unverified'
+  evidence_reference: string | null
+  note: string | null
+}
+
+export type PayrollAnnualDependantRelation =
+  | 'spouse'
+  | 'child_own'
+  | 'child_adopted'
+  | 'child_in_care'
+  | 'child_of_spouse'
+  | 'grandchild'
+  | 'partner'
+
+export interface PayrollAnnualDependant {
+  id: number
+  relation: PayrollAnnualDependantRelation
+  full_name: string
+  birth_date: string
+  ztp_p: boolean
+}
+
+export interface PayrollAnnualClaimsSet {
+  deductions: PayrollAnnualDeduction[]
+  spouse: PayrollAnnualSpouseClaim | null
+}
+
+export interface PayrollAnnualClaimsView extends PayrollAnnualClaimsSet {
+  dependants: PayrollAnnualDependant[]
 }
 
 export interface PayrollAnnualSettlementStoredOutcome {
@@ -6277,6 +6377,7 @@ export interface PayrollAnnualSettlementPreview {
   credit_rows: PayrollAnnualSettlementCreditRow[]
   child_rows: PayrollAnnualSettlementChildRow[]
   certificates: PayrollAnnualSettlementCertificate[]
+  annual_claims?: PayrollAnnualClaimsView
   already_settled: PayrollAnnualSettlementStoredOutcome | null
 }
 
@@ -9523,6 +9624,16 @@ export const payrollApi = {
       `/payroll/annual-settlements/${year}/people/${employeeId}/certificates`,
       { certificates },
     ).then(response => response.data.certificates),
+  /** Uloží celou sadu ročně uplatňovaných položek za rok (nezdanitelné části, sleva na manžela). */
+  saveAnnualSettlementAnnualClaims: (
+    year: number,
+    employeeId: number,
+    payload: PayrollAnnualClaimsSet,
+  ) =>
+    api.put<PayrollAnnualClaimsSet>(
+      `/payroll/annual-settlements/${year}/people/${employeeId}/annual-claims`,
+      payload,
+    ).then(response => response.data),
   /**
    * Provede roční zúčtování. Nesplněné podmínky NEJSOU chyba — vrátí se
    * `performed: false` a seznam překážek, které má obrazovka vypsat.
