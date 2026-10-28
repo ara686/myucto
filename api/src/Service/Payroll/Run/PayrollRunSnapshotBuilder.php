@@ -1777,9 +1777,11 @@ final class PayrollRunSnapshotBuilder
      *    neuplatní. Ve výsledku běhu je to jen „nedoložený nárok"; odsud se
      *    dozví, KTERÉ podání chybí.
      * 2. **Přechodné pravidlo pro 01–03/2026.** Kontroly 164, 290 a 333 vážou
-     *    slevu za tahle období na 30. 6. 2026 a všechny tři jsou v evaluátoru
-     *    `NotEvaluable`, protože potřebují datum přijetí podání od ČSSZ.
-     *    Uživatel tedy z kontrol nedostane varování žádné.
+     *    slevu za tahle období na 30. 6. 2026. Evaluátor hranici z hotového
+     *    XML nevyhodnotí: 164 potřebuje datum přijetí podání od ČSSZ, 290 hlásí
+     *    jen podání po splatnosti a 333 má od katalogu 1.4.2.11 v pravidle
+     *    povinnost příznaku primárního vztahu. Uživatel tedy z kontrol
+     *    varování o téhle hranici nedostane.
      *
      * 3. **Neevidované poučení zaměstnance.** § 23d odst. 2 ukládá zaměstnavateli
      *    informovat zaměstnance písemně PŘED prvním uplatněním slevy; porušení

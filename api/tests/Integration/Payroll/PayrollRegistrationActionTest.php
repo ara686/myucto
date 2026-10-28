@@ -286,7 +286,7 @@ final class PayrollRegistrationActionTest extends TestCase
             (int) $event['id'],
         );
         self::assertSame(
-            'jmhz-xsd-1.4.3.6_dictionary-1.4.1.6_controls-source-1.4.2.10_manifest-v1',
+            'jmhz-xsd-1.4.3.6_dictionary-1.4.1.6_controls-source-1.4.2.11_manifest-v1',
             $snapshot['jmhz_codebook']['package_key'] ?? null,
         );
         self::assertMatchesRegularExpression(

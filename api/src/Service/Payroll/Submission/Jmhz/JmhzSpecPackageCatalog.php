@@ -9,9 +9,9 @@ use MyInvoice\Service\Payroll\Ruleset\CanonicalJson;
 final class JmhzSpecPackageCatalog
 {
     public const DEFAULT_PACKAGE_KEY =
-        'jmhz-xsd-1.4.3.6_dictionary-1.4.1.6_controls-source-1.4.2.10_manifest-v1';
+        'jmhz-xsd-1.4.3.6_dictionary-1.4.1.6_controls-source-1.4.2.11_manifest-v1';
     public const DEFAULT_MANIFEST_SHA256 =
-        'de478274906eac47d5d51c3a5837a8278ade1fa0dba3fc5dcde6c86d5d05113d';
+        '39bb516b4fff204c44f0b8a6b9e0ec40601ef73af79460bdf937777e046c00d8';
 
     /**
      * Balík specifikace pro vykazovaná období od 01/2027 ({@see JmhzSpecVersion}).

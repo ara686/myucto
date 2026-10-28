@@ -457,6 +457,7 @@ final class JmhzBlockerCatalog
         'jmhz_projection_form_unbound' => 'support',
         'jmhz_projection_path_ambiguous' => 'support',
         'jmhz_projection_path_unknown' => 'support',
+        'jmhz_projection_version_mismatch' => 'support',
         'jmhz_projection_xml_unreadable' => 'support',
         'jmhz_protocol_ambiguous' => 'submission',
         'jmhz_protocol_anchor_unreadable' => 'support',

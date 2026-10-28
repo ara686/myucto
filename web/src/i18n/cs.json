@@ -12787,6 +12787,7 @@
         "jmhz_projection_form_unbound": "Formulář osoby v XML podání nemá nadřazenou součást podání.",
         "jmhz_projection_path_ambiguous": "Cesta atributu patří ve slovníku JMHZ víc atributům současně.",
         "jmhz_projection_path_unknown": "Element XML měsíčního hlášení nemá ve slovníku JMHZ protějšek.",
+        "jmhz_projection_version_mismatch": "XML měsíčního hlášení patří k jinému ročníku specifikace JMHZ, než podle kterého se kontroluje.",
         "jmhz_projection_xml_unreadable": "XML měsíčního hlášení nelze načíst pro zpracování atributů.",
         "jmhz_protocol_ambiguous": "Odpověď ČSSZ obsahuje protokoly více podání a bez očekávaného identifikátoru CorrelationID nelze určit, který z nich patří tomuto podání.",
         "jmhz_protocol_anchor_unreadable": "Důvěryhodný certifikát ČSSZ (kotva důvěry) se nepodařilo načíst, takže protokol nelze ověřit. Obraťte se na podporu.",
