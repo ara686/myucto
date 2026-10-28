@@ -1313,7 +1313,28 @@ skutečně sraženou částku. Potvrzení se uloží jako neměnný šifrovaný 
 svázaný s přesnou revizí a přesným pracovním vztahem. Vztah bez potvrzení
 zůstává adresným nálezem přípravy; je z něj vidět, komu evidence chybí.
 Pokud některá skutečnost nastala, tento první běžný profil ji nepodporuje
-a přípravu uzavře bez falešného výchozího **Ne**.
+a přípravu uzavře bez falešného výchozího **Ne**. Výjimkou je podpora
+zaměstnávání osob se zdravotním postižením, viz níže.
+
+**Zaměstnanci OZP u zaměstnavatele na chráněném trhu práce (IN28, IN24).**
+Má-li pracovní vztah v profilu JMHZ zaškrtnutou podporu zaměstnávání osob se
+zdravotním postižením a je-li zaměstnavatel v profilu registrace označen jako
+uznaný na chráněném trhu práce, nese hlášení výdělek OZP: datum úhrady mzdy
+včetně pojistného (10347), výplatu v hotovosti (10348) a srážky ve prospěch
+zaměstnavatele (10349 až 10353). Datum úhrady je nejpozdější z: den výplaty
+mzdy, den odvodu sociálního a den odvodu zdravotního pojištění. Zadává se až
+po úhradě v panelu právních skutečností přímo u vztahu (**Potvrdit výdělek
+OZP**); nesmí být v budoucnu ani před začátkem vykazovaného měsíce a bez něj
+se hlášení nepřipraví. Srážky se odvodí ze schválené revize: počítají se jen
+dohody o srážkách, u kterých je v `Mzdy → Dohody o srážkách` (sekce
+**Měsíční hlášení JMHZ**) uvedeno, že
+věřitelem je zaměstnavatel, a podle zvoleného zařazení (10350 plnění podle
+občanského zákoníku, 10351 náhrada škody, 10352 závodní stravování, 10353 jiný
+závazek podle § 146 písm. b) zákoníku práce). Exekuce, srážky ze zákona podle
+§ 147 odst. 1 zákoníku práce ani srážky ve prospěch třetí osoby se do nich
+nepočítají. Dohoda, ze které se v měsíci srazilo a u které věřitel není
+rozhodnutý, hlášení zastaví. Výdělek OZP nese jen souhrn hlavního pracovního
+vztahu; podpora nastavená jen u vedlejšího vztahu hlášení zastaví.
 
 **Sleva po splatnosti (kontrola 290).** Hlášení, které se podává **po
 splatnosti pojistného** a uplatňuje **slevu na pojistném zaměstnavatele**,

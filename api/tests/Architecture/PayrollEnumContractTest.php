@@ -558,6 +558,7 @@ final class PayrollEnumContractTest extends TestCase
             => 'enum:MyInvoice\Service\Payroll\Net\DeductionAgreementCommand',
         'payrollDeductions.ts::DeductionAgreementKind' => 'db:payroll_deduction_agreements.deduction_kind',
         'payrollDeductions.ts::DeductionLegalBasis' => 'db:payroll_deduction_agreements.legal_basis',
+        'payrollDeductions.ts::DeductionJmhzTarget' => 'db:payroll_deduction_agreements.jmhz_target',
         'payroll.ts::PayrollWorkInjuryCompensationPayer'
             => 'db:payroll_employment_terminations.work_injury_compensation_payer',
         'payroll.ts::PayrollEmploymentCertificateDeductionSourceKind'

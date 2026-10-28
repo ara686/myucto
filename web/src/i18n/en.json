@@ -6425,7 +6425,8 @@
         "specific_legal_fact_applies": "A specific legal event reportable in JMHZ may occur",
         "ozp_employment_support_applies": "The employer may claim supported employment funding for a person with a disability",
         "deep_mining_work_applies": "The work is performed in deep mining",
-        "monthly_hint": "Automatic JMHZ preparation cannot yet handle these flagged exceptions. If one actually applies, contact support; do not disable correct information to submit a report. Enforcement, insolvency and deduction agreements are taken from their respective records."
+        "monthly_hint": "Automatic JMHZ preparation cannot yet handle these flagged exceptions. If one actually applies, contact support; do not disable correct information to submit a report. Enforcement, insolvency and deduction agreements are taken from their respective records.",
+        "ozp_employment_support_hint": "Only for an employer recognised on the protected labour market. The monthly report then carries the disability wage data: confirm the payment date and cash payment in Payroll submissions; deductions in favour of the employer are derived from deduction agreements."
       },
       "cz_isco_code": "CZ-ISCO code",
       "cz_isco": {
@@ -9122,7 +9123,12 @@
             "activity_invalid": "The activity type in the saved payroll revision is not valid in the JMHZ code list.",
             "detail_missing": "The selected activity type requires a more detailed employment classification.",
             "detail_invalid": "The detailed employment classification is not valid in the JMHZ code list.",
-            "detail_not_applicable": "The detailed employment classification cannot be used with the selected activity type."
+            "detail_not_applicable": "The detailed employment classification cannot be used with the selected activity type.",
+            "ozp_wage": "The employee has disability employment support and the wage payment date and cash payment flag are missing.",
+            "ozp_payment_date": "The wage payment date including contributions is out of the allowed range.",
+            "ozp_profile": "Disability employment support in the confirmation does not match the employment settings.",
+            "ozp_deductions": "A deduction agreement has no decision whether the employer is the creditor and how it is reported in JMHZ.",
+            "ozp_employer": "The employer registration does not mark the employer as recognised on the protected labour market."
           },
           "steps": {
             "specification": "Open payroll for this period. For a new preparation or an actually required correction, create and approve a new correction revision and prepare the report from it. Do not resend accepted reports solely because of this warning. Contact support if a new revision has the same problem.",
@@ -9157,7 +9163,12 @@
             "activity_invalid": "Open this employment and its effective terms. In the basic details check Activity type and Detailed employment classification against the actual contract. Save the correct terms effective for the reporting month, then recalculate payroll and approve a new revision. Do not substitute incorrect values just to pass validation.",
             "detail_missing": "Open this employment and its effective terms. In the basic details check Activity type and Detailed employment classification against the actual contract. Save the correct terms effective for the reporting month, then recalculate payroll and approve a new revision. Do not substitute incorrect values just to pass validation.",
             "detail_invalid": "Open this employment and its effective terms. In the basic details check Activity type and Detailed employment classification against the actual contract. Save the correct terms effective for the reporting month, then recalculate payroll and approve a new revision. Do not substitute incorrect values just to pass validation.",
-            "detail_not_applicable": "Open this employment and its effective terms. In the basic details check Activity type and Detailed employment classification against the actual contract. Save the correct terms effective for the reporting month, then recalculate payroll and approve a new revision. Do not substitute incorrect values just to pass validation."
+            "detail_not_applicable": "Open this employment and its effective terms. In the basic details check Activity type and Detailed employment classification against the actual contract. Save the correct terms effective for the reporting month, then recalculate payroll and approve a new revision. Do not substitute incorrect values just to pass validation.",
+            "ozp_wage": "Below, enter the payment date (the latest of paying the wage, social and health contributions) and whether any part was paid in cash, then confirm.",
+            "ozp_payment_date": "Enter the day the wage including contributions was actually paid; it must not be in the future or before the start of the month.",
+            "ozp_profile": "Check the disability employment support flag on the employment card and prepare the report again.",
+            "ozp_deductions": "On the agreement choose the creditor (employer or third party) and, for a deduction in favour of the employer, its category 10350 to 10353; then prepare the report again.",
+            "ozp_employer": "Check the protected labour market recognition in the employer settings, or switch off disability employment support on the employment."
           },
           "actions": {
             "run": "Open payroll for this month",
@@ -9165,7 +9176,8 @@
             "employment": "Check employment terms",
             "deductions": "Open person’s enforcement and deductions",
             "agreements": "Open person’s deduction agreements",
-            "support": "Open support"
+            "support": "Open support",
+            "employer": "Open employer settings"
           },
           "fields": {
             "orchard_discount_eligible": "Insurance discount for fruit or vegetable growing",
@@ -9176,6 +9188,19 @@
           "technical_details": "Technical details for support",
           "xsd_versions": "Report format: saved version {old}, current version {current}.",
           "control_versions": "Validation rules: saved version {old}, current version {current}."
+        },
+        "jmhz_ozp_wage": {
+          "hint": "The payment date (10347) is the latest of: wage payment day, social contribution remittance day, health contribution remittance day. Deductions in favour of the employer (10349 to 10353) are derived from the payroll run.",
+          "payment_date": "Wage payment date including contributions",
+          "cash_paid": "Part of the wage paid in cash",
+          "cash_select": "Select",
+          "cash_yes": "Yes",
+          "cash_no": "No",
+          "confirm": "Confirm disability wage data",
+          "failed": "The disability wage data could not be confirmed.",
+          "summary": "Disability wage data (employment {employment}): paid {date}, cash {cash}.",
+          "no_deductions": "No deductions in favour of the employer.",
+          "deduction": "{attribute}: CZK {amount}"
         }
       },
       "manual_acceptance": {
@@ -10463,7 +10488,8 @@
         "employee": "Select the employee the agreement belongs to.",
         "title": "Fill in the agreement name — the deduction appears under it on the payslip.",
         "read_only": "You only have read access to payroll inputs, so you cannot save the agreement.",
-        "started_on": "For a statutory deduction, fill in the day deductions started — it sets its rank against garnishments and agreements."
+        "started_on": "For a statutory deduction, fill in the day deductions started — it sets its rank against garnishments and agreements.",
+        "jmhz_target": "For a deduction in favour of the employer, choose how it is reported in JMHZ."
       },
       "legal_basis_label": "Legal basis of the deduction",
       "legal_basis_hint_agreement": "Wage deduction agreement with the employee (Section 146(b) of the Labour Code). The day the agreement was delivered sets its rank against garnishments.",
@@ -10520,6 +10546,29 @@
         "reversed": "Deduction reversal",
         "paid": "Remitted to recipient",
         "payment_reversed": "Remittance reversal"
+      },
+      "section_jmhz": "JMHZ monthly report (employees with disabilities)",
+      "jmhz_hint": "Fill in for an employee for whom an employer recognised on the protected labour market claims disability employment support. Only deductions in favour of the employer are reported; enforcement and statutory deductions are not.",
+      "jmhz_creditor": "Deduction creditor",
+      "jmhz_creditor_options": {
+        "undecided": "Not decided",
+        "employer": "Employer",
+        "third_party": "Third party"
+      },
+      "jmhz_target": "Report in JMHZ as",
+      "jmhz_target_select": "Select category",
+      "jmhz_target_badge": "JMHZ {attribute}",
+      "jmhz_targets": {
+        "10350": "10350 Employer claim under the Civil Code",
+        "10351": "10351 Damage compensation",
+        "10352": "10352 Workplace catering (s. 236 Labour Code)",
+        "10353": "10353 Other obligation (s. 146(b) Labour Code)"
+      },
+      "jmhz_target_hints": {
+        "10350": "Deduction agreement under s. 2045 of the Civil Code in favour of the employer, e.g. an employee loan or repayment of an advance above entitlement.",
+        "10351": "Deduction to compensate damage the employee is liable for (s. 250 et seq. Labour Code), always by agreement.",
+        "10352": "Employee contribution to catering provided by the employer, not the meal allowance.",
+        "10353": "Another obligation of the employee towards the employer, e.g. paying for benefits or a loan instalment."
       }
     },
     "insolvency": {
@@ -12913,7 +12962,17 @@
         "jmhz_xml_work_summary_missing": "The submission component has no frozen monthly work summary. Approve the working time for the month and prepare the report again.",
         "jmhz_xsd_validation_failed": "The monthly JMHZ report XML failed validation against the pinned XSD schema; this is a technical issue for support to investigate.",
         "jmhz_zero_report_attribute_unknown": "The requested zero-report JMHZ attribute is not defined in the application; this is a technical issue for support to investigate.",
-        "jmhz_zero_report_situation_unknown": "The zero-report situation for JMHZ is not described in the application's rules; this is a technical issue for support to investigate."
+        "jmhz_zero_report_situation_unknown": "The zero-report situation for JMHZ is not described in the application's rules; this is a technical issue for support to investigate.",
+        "jmhz_ordinary_evidence_ozp_deduction_unclassified": "A wage deduction agreement of an employee with disability employment support has no decision whether the employer is the creditor and how the deduction is reported in JMHZ (10350 to 10353).",
+        "jmhz_ordinary_evidence_ozp_employer_not_protected": "Disability employment support is reported only by an employer recognised on the protected labour market; the employer registration does not say so.",
+        "jmhz_ordinary_evidence_ozp_payment_date_invalid": "The date of paying the wage including contributions (10347) must fall between the start of the reported month and today; the report is filed only after payment.",
+        "jmhz_ordinary_evidence_ozp_profile_mismatch": "Disability employment support in the confirmation does not match the employment settings.",
+        "jmhz_ordinary_evidence_ozp_wage_invalid": "The disability wage data must contain a valid payment date and an explicit Yes or No for cash payment.",
+        "jmhz_ordinary_evidence_ozp_wage_required": "For an employee with disability employment support, the date of paying the wage including contributions (10347) and the cash payment flag (10348) are missing.",
+        "jmhz_ordinary_evidence_ozp_wage_unexpected": "Disability wage data (10347 to 10349) is reported only for an employment with disability employment support.",
+        "jmhz_ozp_wage_primary_mismatch": "Only a secondary employment of the person has disability employment support, but the disability wage data belongs to the summary of the primary employment.",
+        "jmhz_xml_ozp_deductions_inconsistent": "The flag of deductions in favour of the employer (10349) does not match amounts 10350 to 10353 (control 258).",
+        "jmhz_xml_ozp_wage_form_unsupported": "This form type does not carry the disability wage data and deductions in favour of the employer (10347 to 10353); process the report manually."
       }
     },
     "server_codes": {

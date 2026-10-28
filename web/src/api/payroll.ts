@@ -4289,6 +4289,8 @@ export interface PayrollJmhzOrdinaryEvidenceScope {
     current_xsd?: string
     stored_controls?: string
     current_controls?: string
+    /** Dohody o srážkách bez rozhodnutí o věřiteli (výdělek OZP). */
+    agreement_ids?: number[]
   }
 }
 
@@ -4308,10 +4310,25 @@ export interface PayrollJmhzOrdinaryEvidence {
   schema_reference: 'payroll-jmhz-ordinary-evidence.v1'
   source_manifest_sha256: string
   facts: PayrollJmhzOrdinaryEvidenceFacts
+  /** Výdělek OZP (10347 až 10353), jen u vztahu s IN28. */
+  ozp_wage?: PayrollJmhzOzpWage | null
   source_kind: 'explicit_confirmation' | 'derived_from_frozen_payroll_sources'
   confirmed_at: string
   created_at: string
   created: boolean
+}
+
+/** Údaje výdělku OZP, které zadává účetní (10347, 10348). */
+export interface PayrollJmhzOzpWageInput {
+  payment_date: string
+  cash_paid: boolean
+}
+
+/** Zmrazený výdělek OZP; srážky v haléřích podle atributu 10350 až 10353. */
+export interface PayrollJmhzOzpWage extends PayrollJmhzOzpWageInput {
+  employer_deductions_made: boolean
+  employer_deductions_minor: Partial<Record<'10350' | '10351' | '10352' | '10353', number>> | []
+  employer_deduction_sources: Array<{ agreement_id: number, jmhz_target: string, applied_minor_units: number }>
 }
 
 export interface PayrollJmhzPreparation {
@@ -8920,10 +8937,16 @@ export const payrollApi = {
       reason: 'Zobrazení identifikátorů ČSSZ na kartě pracovního vztahu',
     },
   ).then(response => response.data.reveal),
+  /**
+   * `ozpWage` jen u vztahu s podporou zaměstnávání OZP (IN28): datum úhrady
+   * mzdy včetně pojistného (10347) a výplata v hotovosti (10348). Srážky
+   * 10349 až 10353 server odvodí ze zmrazené revize.
+   */
   confirmJmhzOrdinaryEvidence: (
     revisionId: number,
     employmentId: number,
     idempotencyKey: string,
+    ozpWage?: PayrollJmhzOzpWageInput,
   ) => api.post<PayrollJmhzOrdinaryEvidence>(
     `/payroll/submissions/jmhz-ordinary-evidence/${revisionId}/${employmentId}`,
     {
@@ -8931,10 +8954,11 @@ export const payrollApi = {
         reportable_wage_deductions_recorded: false,
         employee_social_discount_claimed: false,
         specific_legal_fact_occurred: false,
-        ozp_employment_support_claimed: false,
+        ozp_employment_support_claimed: ozpWage !== undefined,
         deep_mining_work_occurred: false,
       },
       evidence_confirmed: true,
+      ...(ozpWage === undefined ? {} : { ozp_wage: ozpWage }),
     },
     { headers: { 'Idempotency-Key': idempotencyKey } },
   ).then(response => response.data),

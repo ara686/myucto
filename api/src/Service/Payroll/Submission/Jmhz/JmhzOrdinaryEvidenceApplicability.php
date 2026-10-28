@@ -125,11 +125,26 @@ final class JmhzOrdinaryEvidenceApplicability
                 'Ordinary evidence obsahuje nepodporovanou pravni skutecnost.',
             );
         }
+        // IN28 (podpora zaměstnávání OZP) nese evidence právě tehdy, když má
+        // blok výdělku OZP; ostatní interakce profil dál podporuje jen jako Ne.
+        $ozpWage = $payload['ozp_wage'] ?? null;
+        if ($ozpWage !== null) {
+            $this->assertOzpWage($ozpWage, $periodStart, $payload['confirmation'] ?? null);
+        }
+        $ozpSupport = $ozpWage !== null;
+        if (is_bool($term['jmhz_ozp_employment_support_applies'] ?? null)
+            && $term['jmhz_ozp_employment_support_applies'] !== $ozpSupport
+        ) {
+            $this->invalid(
+                'jmhz_ordinary_evidence_ozp_profile_mismatch',
+                'Podpora zaměstnávání OZP v potvrzení neodpovídá podmínkám pracovního vztahu.',
+            );
+        }
         $expectedInteractions = [];
         foreach (['IN13', 'IN28', 'IN30'] as $interactionId) {
             $expectedInteractions[] = [
                 'interaction_id' => $interactionId,
-                'triggered' => false,
+                'triggered' => $interactionId === 'IN28' && $ozpSupport,
                 'row_sha256' => $catalog->interaction($interactionId)->rowHash,
             ];
         }
@@ -165,6 +180,59 @@ final class JmhzOrdinaryEvidenceApplicability
             $this->invalid(
                 'jmhz_ordinary_evidence_confirmation_invalid',
                 'Ordinary evidence nema platne potvrzeni.',
+            );
+        }
+    }
+
+    /**
+     * Tvar zmrazeného výdělku OZP ({@see JmhzOrdinaryEvidenceBuilder}): datum
+     * úhrady 10347 v rozsahu vykazovaného měsíce až dne potvrzení (FAQ MPSV
+     * k webináři 11. 5. 2026, dotaz 12, kontrola 20201), hotovost 10348 a
+     * srážky 10350 až 10353 jako nezáporné částky v haléřích.
+     */
+    private function assertOzpWage(mixed $ozpWage, string $periodStart, mixed $confirmation): void
+    {
+        $wage = $this->object($ozpWage, 'ordinary_evidence.ozp_wage');
+        $keys = array_keys($wage);
+        sort($keys, SORT_STRING);
+        $paymentDate = $wage['payment_date'] ?? null;
+        $confirmedAt = is_array($confirmation) ? ($confirmation['confirmed_at'] ?? null) : null;
+        $sums = $wage['employer_deductions_minor'] ?? null;
+        $valid = $keys === [
+            'cash_paid',
+            'employer_deduction_sources',
+            'employer_deductions_made',
+            'employer_deductions_minor',
+            'payment_date',
+        ]
+            && is_bool($wage['cash_paid'])
+            && is_bool($wage['employer_deductions_made'])
+            && is_array($sums)
+            && is_array($wage['employer_deduction_sources'])
+            && array_is_list($wage['employer_deduction_sources'])
+            && is_string($paymentDate)
+            && preg_match('/^\d{4}-\d{2}-\d{2}$/D', $paymentDate) === 1
+            && is_string($confirmedAt);
+        if ($valid) {
+            foreach ($sums as $target => $amount) {
+                if (!in_array((string) $target, ['10350', '10351', '10352', '10353'], true)
+                    || !is_int($amount) || $amount <= 0
+                ) {
+                    $valid = false;
+                }
+            }
+            $valid = $valid && $wage['employer_deductions_made'] === ($sums !== []);
+        }
+        if ($valid) {
+            $confirmedOn = (new \DateTimeImmutable($confirmedAt))
+                ->setTimezone(new \DateTimeZone('Europe/Prague'))
+                ->format('Y-m-d');
+            $valid = $paymentDate >= $periodStart && $paymentDate <= $confirmedOn;
+        }
+        if (!$valid) {
+            $this->invalid(
+                'jmhz_ordinary_evidence_values_mismatch',
+                'Ordinary evidence obsahuje neplatny vydelek OZP.',
             );
         }
     }

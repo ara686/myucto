@@ -227,7 +227,7 @@ final class JmhzScenario1ControlEvaluator
             150, 151, 153, 154, 155, 156, 157, 158, 159, 162, 165, 167, 168, 170, 188, 194,
             204, 207, 208, 209, 213, 214, 215,
             191, 192, 193, 211, 216, 227, 229, 230, 232, 233, 235,
-            236, 237, 240, 244, 248, 251,
+            236, 237, 240, 244, 248, 251, 258,
             253, 255, 260, 265, 267, 269, 270, 271, 272, 273, 275, 282, 283, 284, 286, 290,
             296, 297, 298, 299, 300, 301, 302, 303, 304, 306, 307, 309, 310, 312, 315, 328, 329, 330, 331, 332,
             335, 336, 337, 338, 339, 341, 342, 343, 354, 355,
@@ -503,6 +503,7 @@ final class JmhzScenario1ControlEvaluator
             343 => $this->formTypeMatchesActivity($projection),
             244 => $this->noCreditsWithoutDeclaration($projection),
             248 => $this->summaryDataOnlyOnPrimary($projection),
+            258 => $this->employerDeductionAmountsWhenFlagged($projection),
             251 => $this->employmentIdentifierUniqueAcrossReport($projection),
             267 => $this->wageBreakdownEmptyWhenWageZero($projection),
             282 => $this->riskyHoursEmptyWhenNoWorkedHours($projection),
@@ -4880,6 +4881,34 @@ final class JmhzScenario1ControlEvaluator
      * @param list<string> $dependents
      * @return list<JmhzControlVerdict>
      */
+    /**
+     * Kontrola 258 (katalog MH 1.4.2.10, nepropustná): „Pokud jsou Provedeny
+     * srážky ze mzdy nebo platu určené k uspokojení plnění zaměstnavatele
+     * (10349) = ANO, pak musí být uvedena alespoň jedna hodnota z: 10350,
+     * 10351, 10352, 10353."
+     *
+     * @return list<JmhzControlVerdict>
+     */
+    private function employerDeductionAmountsWhenFlagged(JmhzAttributeProjection $projection): array
+    {
+        return $this->perForm(
+            $projection,
+            static function (JmhzAttributeScope $form): ?string {
+                if ($form->boolean('10349') !== true) {
+                    return null;
+                }
+                foreach (['10350', '10351', '10352', '10353'] as $attributeId) {
+                    if ($form->has($attributeId)) {
+                        return null;
+                    }
+                }
+
+                return 'Atribut 10349 (srážky ve prospěch zaměstnavatele) je ANO, ale žádná'
+                    . ' z částek 10350 až 10353 není uvedena.';
+            },
+        );
+    }
+
     private function emptyWhenZero(
         JmhzAttributeProjection $projection,
         string $triggerId,

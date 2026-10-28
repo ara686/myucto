@@ -1665,7 +1665,11 @@ final class JmhzScenario1XmlSerializer
                     ? 'true'
                     : 'false',
             );
+            JmhzOzpWageXmlWriter::append($dom, $net, $summary, $form);
             $node->appendChild($net);
+        } else {
+            // Formulář bez čisté mzdy výdělek OZP vést nemůže; writer to zastaví.
+            JmhzOzpWageXmlWriter::append($dom, $node, $summary, $form);
         }
 
         $healthAmounts = match ($form) {

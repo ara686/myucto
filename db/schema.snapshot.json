@@ -1109,7 +1109,8 @@
         "2205_bank_rule_template_vat_refund.sql",
         "2206_payroll_import_profile_sample_key.sql",
         "2207_other_item_settled_outside.sql",
-        "2208_payroll_annual_settlement_claims.sql"
+        "2208_payroll_annual_settlement_claims.sql",
+        "2211_payroll_deduction_agreement_jmhz_target.sql"
     ],
     "tables": {
         "abra_flexi_connections": {
@@ -11472,11 +11473,13 @@
                 "basis_points": "int(10) unsigned NULL DEFAULT NULL",
                 "change_kind": "enum('created','updated','activated','paused','resumed','ended','cancelled','reopened') NOT NULL",
                 "created_at": "timestamp NOT NULL DEFAULT current_timestamp()",
+                "creditor_is_employer": "tinyint(1) NULL DEFAULT NULL",
                 "deduction_kind": "enum('advance','meal','contribution','damage','other','imported') NOT NULL",
                 "delivered_on": "date NULL DEFAULT NULL",
                 "effective_from": "date NOT NULL",
                 "employee_id": "bigint(20) unsigned NOT NULL",
                 "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
+                "jmhz_target": "enum('10350','10351','10352','10353') NULL DEFAULT NULL",
                 "legal_basis": "enum('agreement','zp_147_1_c','zp_147_1_d','zp_147_1_e') NOT NULL DEFAULT 'agreement'",
                 "note": "varchar(500) NULL DEFAULT NULL",
                 "priority_no": "int(10) unsigned NOT NULL",
@@ -11520,10 +11523,12 @@
                 "basis_points": "int(10) unsigned NULL DEFAULT NULL",
                 "created_at": "timestamp NOT NULL DEFAULT current_timestamp()",
                 "created_by": "bigint(20) unsigned NULL DEFAULT NULL",
+                "creditor_is_employer": "tinyint(1) NULL DEFAULT NULL",
                 "deduction_kind": "enum('advance','meal','contribution','damage','other','imported') NOT NULL",
                 "delivered_on": "date NULL DEFAULT NULL",
                 "employee_id": "bigint(20) unsigned NOT NULL",
                 "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
+                "jmhz_target": "enum('10350','10351','10352','10353') NULL DEFAULT NULL",
                 "legal_basis": "enum('agreement','zp_147_1_c','zp_147_1_d','zp_147_1_e') NOT NULL DEFAULT 'agreement'",
                 "note": "varchar(500) NULL DEFAULT NULL",
                 "priority_no": "int(10) unsigned NOT NULL DEFAULT 100",
@@ -11558,6 +11563,7 @@
             },
             "checks": {
                 "chk_payroll_deduction_agreement_interval": "`valid_to` is null or `valid_to` >= `valid_from`",
+                "chk_payroll_deduction_agreement_jmhz_target": "(`creditor_is_employer` = 1 and `jmhz_target` is not null or coalesce(`creditor_is_employer`,0) = 0 and `jmhz_target` is null) and (`legal_basis` = 'agreement' or `creditor_is_employer` is null and `jmhz_target` is null)",
                 "chk_payroll_deduction_agreement_limit": "`total_limit_minor` is null or `withheld_total_minor` <= `total_limit_minor`",
                 "chk_payroll_deduction_agreement_percentage": "`basis_points` is null or `basis_points` between 0 and 10000 and `basis_amount_minor` is not null",
                 "chk_payroll_deduction_agreement_statutory_basis": "`legal_basis` = 'agreement' or `delivered_on` is not null and `deduction_kind` <> 'damage'"
