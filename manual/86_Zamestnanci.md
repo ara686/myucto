@@ -930,6 +930,23 @@ z příjmů; na kartě se nic nevyplňuje:
 Základ srážkové daně i daň se zaokrouhlují na celé koruny dolů. Sražená daň je
 konečná a do ročního zúčtování nevstupuje.
 
+**Od roku 2027 záloha ze samostatného základu.** Pro mzdy za měsíce roku 2027
+a dál zákon srážkovou daň ze závislé činnosti nezná. Tytéž příjmy (DPP pod
+rozhodnou částkou 12 500 Kč, ostatní příjmy pod rozhodnou částkou 5 000 Kč, vždy
+bez podepsaného prohlášení) tvoří samostatný základ **zálohy** 15 %:
+
+- základ i záloha se zaokrouhlují na celé koruny **nahoru**,
+- záloha se odvádí jedním převodem s ostatními zálohami a účtuje se na účet
+  zálohové daně,
+- výplatní páska ji uvádí jako zálohu ze samostatného základu (§ 6 odst. 4),
+- v ročním zúčtování u vás se příjem i sražená záloha započtou; příjmy podle
+  § 6 odst. 4 od jiného zaměstnavatele do zúčtování nevstupují,
+- potvrzení o srážkové dani ani vyúčtování srážkové daně se za rok 2027
+  nevystavuje.
+
+Rozhoduje měsíc, za který se mzda zúčtovává: prosincová mzda 2026 vyplacená
+v lednu 2027 se ještě daní srážkou.
+
 **Souběhy.** Jedna osoba může mít souběžně např. HPP a DPP nebo pracovní poměr
 a odměnu za výkon funkce. V aktivní práci je právě jeden vztah primární. Každý
 souběh má vlastní kód, stav, historii a registrační identitu. Je-li v měsíci

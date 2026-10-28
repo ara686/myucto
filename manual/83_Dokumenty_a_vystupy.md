@@ -213,6 +213,7 @@ stáhne.
 | Daňové potvrzení blokované kvůli úhradě | Platební evidence nedokládá úplnou výplatu všech čistých mezd do 31. ledna následujícího roku | Doložte úhrady v [Mzdových příkazech a úhradách](82_Platby_a_uhrady.md). |
 | Potvrzení odmítnuto kvůli neúplným polím | Nedoložený nárok, nerezident bez částky pojistného, produkt spoření bez mapování, nepeněžní příjem nebo doplatek za minulý rok | Údaj se nikdy nedopočítá; doplňte podklad, nebo potvrzení vystavte mimo aplikaci. |
 | Srážkové potvrzení odmítnuto kvůli rezidenci | Tiskopis 25 5460/A je jen pro českého rezidenta nebo nerezidenta EU/EHP | Vystavte potvrzení mimo aplikaci. |
+| Srážkové potvrzení za rok 2027 odmítnuto | Od roku 2027 se z příjmů podle § 6 odst. 4 ZDP sráží záloha, ne srážková daň | Příjem a záloha patří do potvrzení o zálohách. |
 | „Revize zatím nemá vygenerované výplatní pásky. Nejdřív spusťte generování dokumentů.“ | Pásky ke schválené revizi ještě nevznikly | Spusťte generování dokumentů a rozeslání zopakujte. |
 | Rozeslání pásek nezařadí nic | Není splněná podmínka zaměstnavatele (doručování na instanci, dokončené nastavení, kanál **Portál zaměstnance** s datem ověření) | Doplňte nastavení ([§ 83.4](#834-krok-za-krokem-rozeslat-vyplatni-pasky)). |
 | Zaměstnanci se páska neposlala | Volba papírového doručení nebo chybějící e-mail | Předejte pásku jinak, nebo doplňte kartu zaměstnance. |

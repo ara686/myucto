@@ -908,6 +908,7 @@ final class PayrollEnumContractTest extends TestCase
         \MyInvoice\Service\Payroll\HealthInsurance\HealthParticipationStatus::class,
         \MyInvoice\Service\Payroll\IncomeTax\EmploymentRelationshipKind::class,
         \MyInvoice\Service\Payroll\IncomeTax\IncomeTaxComponentTreatment::class,
+        \MyInvoice\Service\Payroll\IncomeTax\SeparateTaxBaseRegime::class,
         \MyInvoice\Service\Payroll\IncomeTax\TaxCalculationStatus::class,
         \MyInvoice\Service\Payroll\IncomeTax\TaxCorrectionTreatment::class,
         \MyInvoice\Service\Payroll\IncomeTax\TaxCreditKind::class,

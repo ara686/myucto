@@ -89,6 +89,21 @@ final class PayrollTaxStatementTest extends TestCase
         }
     }
 
+    /**
+     * Za rok 2027 se vyúčtování ze mzdy nepodává: § 38j odst. 4 až 9 ZDP zrušil
+     * od 1. 1. 2027 zák. č. 360/2025 Sb. (čl. VI bod 80) a srážková daň ze
+     * závislé činnosti zanikla. Sestavit tiskopis za 2027 by tvrdilo povinnost,
+     * která neexistuje — i kdyby mzdy roku 2027 nesly samostatný základ.
+     */
+    public function testNoStatementCanBeBuiltFor2027(): void
+    {
+        $this->seedMonth($this->supplierId, '2027-01-01', 1, 1_000_000, 0, 150_000);
+
+        $this->expectException(\DomainException::class);
+        $this->expectExceptionMessage('Za zdaňovací období 2027 se vyúčtování');
+        $this->service->preview($this->supplierId, 2027);
+    }
+
     public function testPreviewAggregatesFrozenResultsAndStaysInsideTheTenant(): void
     {
         $this->seedMonth($this->supplierId, '2025-01-01', 4, 48_200_00, 1_260_00, 900_00);
