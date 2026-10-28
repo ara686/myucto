@@ -60,6 +60,7 @@ final class PayrollRegistrationSpecVersionRules
         }
         self::assertBoundary($payload);
         if ($payload->specVersion === JmhzSpecVersion::V2026) {
+            self::assertEdv1407($payload);
             self::assertNoValuesFrom2027($payload);
 
             return;
@@ -122,6 +123,45 @@ final class PayrollRegistrationSpecVersionRules
                 . ', ČSSZ jiný ročník odmítne (hranice 1. 1. 2027). Připravte'
                 . ' podání znovu.',
         );
+    }
+
+    /**
+     * Logické kontroly EDV REGZEC25 1.4.0.7 (vydání 14. 10. 2026, Changelog:
+     * „Přidání globální logické kontroly 5“ a „Přidání logické kontroly pro
+     * oddělení verzí“). Dokument neuvádí datum účinnosti, proto platí pro
+     * každou větu REGZEC25 bez ohledu na datum události:
+     * - 10009 <= aktuální datum u A3 až A7,
+     * - Kontrola 5: údaje cizince v A3/A4 jako ucelená sada se státním
+     *   občanstvím 10067 (stejné pravidlo jako v EDV 1.5.0.3),
+     * - občan EU (vazebník 5898) má volný přístup „A“ s důvodem „1“.
+     * Věty bez cizince se nemění.
+     */
+    private static function assertEdv1407(PayrollRegistrationXmlPayload $payload): void
+    {
+        $action = $payload->interaction->actionCode;
+        if ($action >= 3 && $action <= 7) {
+            self::assertChangeNotInFuture($payload);
+        }
+        if ($action === 1) {
+            $worker = $payload->identity->regzecA1?->foreignWorker;
+            if (is_array($worker)) {
+                self::assertEuFreeAccess($worker, self::citizenship($payload->identity->identity));
+            }
+
+            return;
+        }
+        if ($action !== 3 && $action !== 4) {
+            return;
+        }
+        $delta = self::array(self::eventData($payload)['delta'] ?? null);
+        $worker = $delta['foreign_worker'] ?? null;
+        if (!is_array($worker)) {
+            return;
+        }
+        $citizenship = self::citizenship(self::array($delta['identity'] ?? null))
+            ?? self::citizenship($payload->identity->identity);
+        self::assertControl5($worker, $citizenship);
+        self::assertEuFreeAccess($worker, $citizenship);
     }
 
     /**
@@ -325,6 +365,29 @@ final class PayrollRegistrationSpecVersionRules
     }
 
     /**
+     * EDV REGZEC25 1.4.0.7 (ID 10414 a 10105) i EDV 1.5 (JMHZ-3022): občan
+     * státu EU (vazebník 5898) má volný přístup „A“ s důvodem „1“.
+     *
+     * @param array<string,mixed> $worker
+     */
+    private static function assertEuFreeAccess(array $worker, ?string $citizenship): void
+    {
+        if ($citizenship === null || !in_array($citizenship, self::EU_WITHOUT_CZ, true)) {
+            return;
+        }
+        $freeAccess = $worker['free_access'] ?? null;
+        $reason = self::text($worker['free_access_reason_code'] ?? null);
+        if ($freeAccess === false || ($freeAccess === true && $reason !== '1')) {
+            self::fail(
+                'registration_regzec27_eu_free_access',
+                "Občan státu EU ({$citizenship}) má volný přístup na trh práce"
+                    . ' s důvodem 1 (§ 87 zákona o zaměstnanosti); ČSSZ jiné'
+                    . ' vyplnění zamítne. Opravte údaje cizince.',
+            );
+        }
+    }
+
+    /**
      * Údaje cizince podle EDV 1.5:
      * - Changelog ř. 241 až 243 (JMHZ-3022): občan EU má volný přístup „A"
      *   s důvodem 1; důvod 3 (rodinný příslušník občana EU) jen u občana
@@ -354,16 +417,8 @@ final class PayrollRegistrationSpecVersionRules
             return;
         }
         $eu = in_array($citizenship, self::EU_WITHOUT_CZ, true);
-        $freeAccess = $worker['free_access'] ?? null;
         $reason = self::text($worker['free_access_reason_code'] ?? null);
-        if ($eu && ($freeAccess === false || ($freeAccess === true && $reason !== '1'))) {
-            self::fail(
-                'registration_regzec27_eu_free_access',
-                "Občan státu EU ({$citizenship}) má volný přístup na trh práce"
-                    . ' s důvodem 1 (§ 87 zákona o zaměstnanosti); ČSSZ jiné'
-                    . ' vyplnění od 1. 1. 2027 zamítne. Opravte údaje cizince.',
-            );
-        }
+        self::assertEuFreeAccess($worker, $citizenship);
         if ($reason === '3' && $eu) {
             self::fail(
                 'registration_regzec27_family_member_citizenship',
@@ -397,8 +452,8 @@ final class PayrollRegistrationSpecVersionRules
     }
 
     /**
-     * Vysvětlivky EDV 1.5.0.3, Kontrola 5 (Changelog 1.5.0.3 ř. 281 až 287,
-     * JMHZ-4618): v A3/A4 se údaje cizince posílají jen jako ucelená sada
+     * Vysvětlivky EDV 1.5.0.3 i EDV REGZEC25 1.4.0.7, Kontrola 5 (Changelog
+     * 1.5.0.3 ř. 281 až 287, JMHZ-4618): v A3/A4 se údaje cizince posílají jen jako ucelená sada
      * podle volného přístupu a druhu oprávnění.
      *
      * @param array<string,mixed> $worker
@@ -431,10 +486,30 @@ final class PayrollRegistrationSpecVersionRules
             static fn (string $key): bool => !array_key_exists($key, $worker)
                 || $worker[$key] === null || $worker[$key] === '',
         ));
+        $surplus = array_values(array_filter(
+            ['free_access_reason_code', 'permit_type_code', 'permit_identifier',
+                'permit_from', 'permit_to', 'issuing_labour_office_code'],
+            static fn (string $key): bool => !in_array($key, $required, true)
+                && array_key_exists($key, $worker)
+                && $worker[$key] !== null && $worker[$key] !== '',
+        ));
+        if ($surplus !== []) {
+            self::fail(
+                'registration_regzec27_foreign_worker_set_incomplete',
+                'Sada údajů cizince v oznámení změny nebo opravy neodpovídá'
+                    . ' kontrole 5: navíc je vyplněno '
+                    . implode(', ', array_map(
+                        static fn (string $key): string => PayrollRegistrationFieldVocabulary::name('foreign_worker.' . $key) ?? $key,
+                        $surplus,
+                    ))
+                    . '. Úřad práce se uvádí jen u povolení k zaměstnání (druh 1),'
+                    . ' pracovní oprávnění jen bez volného přístupu.',
+            );
+        }
         if ($missing !== [] || $citizenship === null) {
             self::fail(
                 'registration_regzec27_foreign_worker_set_incomplete',
-                'Údaje cizince se od 1. 1. 2027 v oznámení změny nebo opravy'
+                'Údaje cizince se v oznámení změny nebo opravy'
                     . ' posílají jen jako celá sada (kontrola 5): státní'
                     . ' občanství, volný přístup a podle něj důvod, nebo celé'
                     . ' pracovní oprávnění. Chybí: '
