@@ -1275,6 +1275,8 @@ const FOCUSABLE_PANELS = [
   'deferred_income',
   // Karta Skončení vztahu (srážky z odstupného podle § 299 odst. 4 o. s. ř.).
   'termination',
+  // Počáteční roční úhrny, na kartě hlavního pracovního vztahu.
+  'opening_balances',
 ] as const
 
 /** Sekce, které umí otevřít `PayrollPersonProfilePanel.focusSection()`. */
@@ -1302,12 +1304,14 @@ async function focusPanel(panel: string) {
   delete query.panel
   delete query.field
   await router.replace({ query })
-  if (['jmhz_identity', 'jmhz_profile', 'employment_terms', 'employment_checklist', 'registration', 'deferred_income', 'termination'].includes(panel)) {
+  if (['jmhz_identity', 'jmhz_profile', 'employment_terms', 'employment_checklist', 'registration', 'deferred_income', 'termination', 'opening_balances'].includes(panel)) {
     await nextTick()
     const cards = employmentCards.value
     const target = Number.isInteger(employmentId) && employmentId > 0
       ? cards.find(card => card.employmentId === employmentId)
-      : cards.length === 1 ? cards[0] : undefined
+      : panel === 'opening_balances'
+        ? cards.find(card => card.isPrimary)
+        : cards.length === 1 ? cards[0] : undefined
     await target?.focusSection(panel, field)
     return
   }
@@ -1463,17 +1467,20 @@ function onBulkClosureApplied() {
 }
 
 onMounted(async () => {
+  // Začátek vedení mezd rozhoduje, jestli karta vztahu ukáže Počáteční stavy.
+  // Doskok na ně (`panel=opening_balances`) proto musí počkat, až je známý.
+  const startPeriod = payrollApi.capabilities()
+    .then(data => data.state.start_period)
+    .catch(() => null)
   // Uložené řazení se čte z preferencí, takže první stránka na ně musí počkat.
   await ensurePrefsLoaded()
   await load()
   void loadBulkClosureCount()
   await openFromQuery()
+  payrollStartPeriod.value = await startPeriod
   const panel = Array.isArray(route.query.panel) ? route.query.panel[0] : route.query.panel
   if (typeof panel === 'string' && panel !== '') await focusPanel(panel)
   await openFromCreateCommand()
-  payrollStartPeriod.value = await payrollApi.capabilities()
-    .then(data => data.state.start_period)
-    .catch(() => null)
 })
 </script>
 
@@ -1706,7 +1713,7 @@ onMounted(async () => {
 
     <section v-if="!editing && !showEmployeeForm" class="rounded-xl border border-neutral-200 bg-surface p-3 shadow-sm sm:p-4">
       <div class="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-        <div class="grid min-w-0 flex-1 grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_14rem]">
+        <div class="grid min-w-0 flex-1 grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_14rem] lg:min-w-[30rem]" data-test="people-toolbar-filters">
           <label class="min-w-0 text-xs font-medium text-neutral-600">
             {{ t('payroll.people.search') }}
             <div class="relative mt-1">
@@ -1726,7 +1733,7 @@ onMounted(async () => {
             />
           </label>
         </div>
-        <div class="flex flex-wrap gap-2">
+        <div class="flex min-w-0 flex-wrap gap-2 lg:justify-end">
           <button
             v-if="canCreatePerson"
             type="button"

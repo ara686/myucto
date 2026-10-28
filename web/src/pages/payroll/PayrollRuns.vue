@@ -1796,7 +1796,7 @@ onMounted(load)
       </svg>
       <div class="flex-1 space-y-2">
         <p class="font-medium">
-          {{ t('payroll.runs.missing_previous.title', { count: missingPreviousPeriods.length, period: formatPeriod(period) }) }}
+          {{ t('payroll.runs.missing_previous.title', { count: missingPreviousPeriods.length, period: formatPeriod(period) }, missingPreviousPeriods.length) }}
         </p>
         <p>{{ t(advanceStartTo !== null ? 'payroll.runs.missing_previous.hint_takeover' : 'payroll.runs.missing_previous.hint') }}</p>
         <div class="flex flex-wrap gap-2">

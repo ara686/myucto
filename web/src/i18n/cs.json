@@ -3657,7 +3657,7 @@
         "hint": "Zobrazeny jsou jen kontroly, které brání schválení. Dalších {count} varování schválení nezastaví; najdete je pod Všechny kontroly, seskupené podle druhu."
       },
       "missing_previous": {
-        "title": "Před obdobím {period} chybí mzdový běh za {count} měsíců od začátku vedení mezd v MyÚčtu",
+        "title": "Před obdobím {period} chybí mzdové běhy za {count} měsíců od začátku vedení mezd v MyÚčtu | Před obdobím {period} chybí mzdový běh za {count} měsíc od začátku vedení mezd v MyÚčtu | Před obdobím {period} chybí mzdové běhy za {count} měsíce od začátku vedení mezd v MyÚčtu | Před obdobím {period} chybí mzdové běhy za {count} měsíců od začátku vedení mezd v MyÚčtu",
         "hint": "Mzda staví na předchozích měsících (roční úhrny, průměry, zálohová daň). Spočítejte chybějící měsíce dřív. Pokud je zpracoval předchozí program, posuňte v Nastavení mezd začátek vedení mezd za ně a převezměte je jako převzaté měsíce.",
         "settings": "Začátek vedení mezd",
         "hint_takeover": "Tyto měsíce zpracoval předchozí mzdový program (MyÚčto má z převodu jejich mzdy) a MyÚčto za ně vlastní běh nemá. Posuňte začátek vedení mezd a měsíce převezměte v panelu Převzaté měsíce níže tlačítkem Převzít všechny měsíce.",

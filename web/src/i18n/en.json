@@ -3657,7 +3657,7 @@
         "hint": "Only checks that prevent approval are shown. {count} more warnings do not stop approval; find them under All checks, grouped by kind."
       },
       "missing_previous": {
-        "title": "Before {period}, a payroll run is missing for {count} months since payroll started in MyÚčto",
+        "title": "Before {period}, payroll runs are missing for {count} months since payroll started in MyÚčto | Before {period}, a payroll run is missing for {count} month since payroll started in MyÚčto | Before {period}, payroll runs are missing for {count} months since payroll started in MyÚčto",
         "hint": "Payroll builds on previous months (annual totals, averages, advance tax). Calculate the missing months first. If the previous program processed them, move the payroll start in the payroll settings past them and take them over as taken-over months.",
         "settings": "Payroll start",
         "hint_takeover": "The previous payroll program processed these months (MyÚčto has their payroll from the migration) and MyÚčto has no run of its own for them. Move the payroll start and take the months over in the Taken-over months panel below with Take over all months.",

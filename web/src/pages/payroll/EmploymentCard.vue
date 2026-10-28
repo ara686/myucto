@@ -272,13 +272,14 @@ const expanded = ref(!isClosed.value)
 const cardRoot = ref<HTMLElement | null>(null)
 
 async function focusSection(panel: string, field?: string): Promise<void> {
-  if (!['jmhz_identity', 'jmhz_profile', 'employment_terms', 'employment_checklist', 'registration', 'deferred_income', 'termination'].includes(panel)) return
+  if (!['jmhz_identity', 'jmhz_profile', 'employment_terms', 'employment_checklist', 'registration', 'deferred_income', 'termination', 'opening_balances'].includes(panel)) return
   expanded.value = true
   await nextTick()
   const root = cardRoot.value
   if (!root) return
   if (field && revealField(fieldSelector(field), root)) return
   const selector = panel === 'employment_checklist' ? '[data-test="employment-checklist"]'
+    : panel === 'opening_balances' ? '[data-test="opening-balances-needed"]'
     : panel === 'deferred_income' ? '[data-test="deferred-income"]'
     : panel === 'termination' ? '[data-test="employment-termination"]'
     : panel === 'employment_terms' ? '[data-test="terms-office"]'
@@ -288,7 +289,11 @@ async function focusSection(panel: string, field?: string): Promise<void> {
   revealField(selector, root)
 }
 
-defineExpose({ focusSection, employmentId: computed(() => props.employment.id) })
+defineExpose({
+  focusSection,
+  employmentId: computed(() => props.employment.id),
+  isPrimary: computed(() => props.employment.is_primary === true),
+})
 
 /**
  * Je karta rozložená do dvou sloupců (postranní pruh vlevo)?
