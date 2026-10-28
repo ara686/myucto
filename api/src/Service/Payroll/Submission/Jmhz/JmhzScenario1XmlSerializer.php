@@ -1627,6 +1627,9 @@ final class JmhzScenario1XmlSerializer
                         ? 'true'
                         : 'false',
                 );
+                if (($result['spouse_credit_claimed'] ?? null) === true) {
+                    $this->annualSpouseCredit($dom, $resultNode, $result);
+                }
                 $this->text(
                     $dom,
                     $resultNode,
@@ -1756,6 +1759,68 @@ final class JmhzScenario1XmlSerializer
     }
 
     /** @param array<string,mixed> $result */
+    /**
+     * Blok slevaNaPartnera (IN19): manžel, dítě do 3 let, průkaz ZTP/P
+     * a počty měsíců slevy (10421 až 10426, 10430, 10539 až 10542).
+     *
+     * @param array<string,mixed> $result
+     */
+    private function annualSpouseCredit(
+        DOMDocument $dom,
+        DOMElement $resultNode,
+        array $result,
+    ): void {
+        $details = $this->object($result['spouse_credit_details'] ?? null);
+        $children = $this->rows($details['children'] ?? null);
+        if ($details === [] || $children === []) {
+            $this->unresolved('10421');
+        }
+        $block = $this->node($dom, JmhzSchemaCatalog::NS_FORM, 'form:slevaNaPartnera');
+        $partner = $this->node($dom, JmhzSchemaCatalog::NS_FORM, 'form:partner');
+        $partner->appendChild($this->annualPerson(
+            $dom,
+            $this->object($details['partner'] ?? null),
+            'form:partnerUdaje',
+            ['10421', '10422', '10423', '10424'],
+        ));
+        $childList = $this->node($dom, JmhzSchemaCatalog::NS_FORM, 'form:deti');
+        foreach ($children as $child) {
+            $childList->appendChild($this->annualPerson(
+                $dom,
+                $child,
+                'form:dite',
+                ['10539', '10540', '10541', '10542'],
+            ));
+        }
+        $partner->appendChild($childList);
+        $ztpP = $this->bool($details['ztp_p'] ?? null, '10425');
+        $this->text(
+            $dom,
+            $partner,
+            JmhzSchemaCatalog::NS_FORM,
+            'form:prukazZtpp',
+            $ztpP ? 'true' : 'false',
+        );
+        $this->text(
+            $dom,
+            $partner,
+            JmhzSchemaCatalog::NS_FORM,
+            'form:slevaPocetMesicu',
+            (string) $this->int($details['months'] ?? null, '10426'),
+        );
+        if ($ztpP) {
+            $this->text(
+                $dom,
+                $partner,
+                JmhzSchemaCatalog::NS_FORM,
+                'form:slevaPocetMesicuZtpp',
+                (string) $this->int($details['ztp_p_months'] ?? null, '10430'),
+            );
+        }
+        $block->appendChild($partner);
+        $resultNode->appendChild($block);
+    }
+
     private function annualChildCredit(
         DOMDocument $dom,
         DOMElement $resultNode,

@@ -185,6 +185,7 @@ final class JmhzBlockerCatalog
         'jmhz_annual_request_source_missing' => 'annual_settlement',
         'jmhz_annual_request_status_unresolved' => 'annual_settlement',
         'jmhz_annual_settlement_child_details_unsupported' => 'dependants',
+        'jmhz_annual_settlement_spouse_details_unsupported' => 'dependants',
         'jmhz_annual_settlement_performance_source_missing' => 'annual_settlement',
         'jmhz_annual_settlement_request_source_inconsistent' => 'annual_settlement',
         'jmhz_annual_settlement_result_incomplete' => 'annual_settlement',

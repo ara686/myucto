@@ -12406,6 +12406,7 @@
         "jmhz_annual_request_source_missing": "Není doloženo, zda zaměstnanec požádal o roční zúčtování. Otevřete Mzdy → Roční zúčtování a evidujte výslovně požádáno nebo nepožádáno.",
         "jmhz_annual_request_status_unresolved": "Stav žádosti o roční zúčtování není rozhodnutý. Otevřete Mzdy → Roční zúčtování a rozhodněte stav žádosti.",
         "jmhz_annual_settlement_child_details_unsupported": "Roční zúčtování uplatňuje zvýhodnění na děti, ale zmrazený podklad ještě nenese povinné identifikační údaje dětí pro JMHZ.",
+        "jmhz_annual_settlement_spouse_details_unsupported": "Roční zúčtování uplatňuje slevu na manžela, ale zmrazený podklad nenese úplné identifikační údaje manžela a dítěte pro JMHZ.",
         "jmhz_annual_settlement_performance_source_missing": "Není doloženo, zda bylo roční zúčtování provedeno. Obnovte přípravu JMHZ nad uzamčenou evidencí výsledků ročního zúčtování.",
         "jmhz_annual_settlement_request_source_inconsistent": "Provedené roční zúčtování nemá souhlasnou uzamčenou žádost a evidenci ročních nároků.",
         "jmhz_annual_settlement_result_incomplete": "Výsledek ročního zúčtování nelze bezpečně převést do celých korun pro JMHZ.",

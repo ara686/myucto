@@ -108,6 +108,7 @@ final class JmhzBlockerExplainer
         'jmhz_annual_settlement_request_source_inconsistent' => 'Provedené roční zúčtování nemá souhlasnou uzamčenou žádost a evidenci ročních nároků.',
         'jmhz_annual_settlement_result_incomplete' => 'Výsledek ročního zúčtování nelze převést do celých korun JMHZ.',
         'jmhz_annual_settlement_child_details_unsupported' => 'Roční zúčtování obsahuje zvýhodnění na děti, ale snapshot zatím nenese povinné identifikační údaje JMHZ.',
+        'jmhz_annual_settlement_spouse_details_unsupported' => 'Roční zúčtování uplatňuje slevu na manžela, ale zmrazený podklad nenese úplné údaje manžela a dítěte pro JMHZ.',
         'jmhz_december_collective_agreement_source_missing' => 'Chybí roční údaj o typu kolektivní smlouvy pro prosincové hlášení.',
         'jmhz_december_ownership_form_source_missing' => 'Chybí roční údaj o formě vlastnictví a kontroly pro prosincové hlášení.',
         'jmhz_december_ozp_annual_source_missing' => 'Chybí roční evidence zaměstnávání osob se zdravotním postižením pro prosincové hlášení.',

@@ -269,6 +269,11 @@ final readonly class JmhzAnnualEvidenceService
             'settlement_difference_minor_units' => $result['settlement_difference_minor_units'],
             'credit_rows' => $this->rows($snapshot['credit_rows'] ?? null, 'credit_rows'),
             'child_rows' => $this->rows($snapshot['child_rows'] ?? null, 'child_rows'),
+            // Sleva na manžela (10420, blok slevaNaPartnera). Revize bez ní
+            // klíč nemají — `null` je „neuplatněna", ne „nevíme".
+            'spouse_row' => isset($snapshot['spouse_row'])
+                ? $this->object($snapshot['spouse_row'], 'spouse_row')
+                : null,
         ];
     }
 

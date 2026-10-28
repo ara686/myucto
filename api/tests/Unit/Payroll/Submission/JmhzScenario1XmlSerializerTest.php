@@ -2581,7 +2581,16 @@ final class JmhzScenario1XmlSerializerTest extends TestCase
                 'settlement_difference_czk' => 1_500,
                 'tax_difference_czk' => 1_000,
                 'bonus_difference_czk' => 500,
-                'spouse_credit_claimed' => false,
+                'spouse_credit_claimed' => true,
+                'spouse_credit_details' => [
+                    'partner' => ['given_name' => 'Petra', 'family_name' => 'Nováková', 'birth_date' => '1991-02-03', 'birth_number' => null],
+                    'children' => [
+                        ['given_name' => 'Ema', 'family_name' => 'Nováková', 'birth_date' => '2024-05-15', 'birth_number' => null],
+                    ],
+                    'ztp_p' => true,
+                    'months' => 12,
+                    'ztp_p_months' => 3,
+                ],
                 'child_credit_claimed' => true,
                 'child_credit_details' => [
                     'other_household_caregiver' => true,
@@ -2660,7 +2669,14 @@ final class JmhzScenario1XmlSerializerTest extends TestCase
             $monthly . 'vyzivovaneDeti/vyzivovaneDite/poradi' => ['1', '2'],
             $result . 'danPreplatekRok' => '1000',
             $result . 'danBonusPreplatekRok' => '500',
-            $result . 'uplatnenaSlevaNaPartnera' => 'false',
+            $result . 'uplatnenaSlevaNaPartnera' => 'true',
+            $result . 'slevaNaPartnera/partner/partnerUdaje/jmeno' => 'Petra',
+            $result . 'slevaNaPartnera/partner/partnerUdaje/datumNarozeni' => '1991-02-03',
+            $result . 'slevaNaPartnera/partner/deti/dite/jmeno' => 'Ema',
+            $result . 'slevaNaPartnera/partner/deti/dite/datumNarozeni' => '2024-05-15',
+            $result . 'slevaNaPartnera/partner/prukazZtpp' => 'true',
+            $result . 'slevaNaPartnera/partner/slevaPocetMesicu' => '12',
+            $result . 'slevaNaPartnera/partner/slevaPocetMesicuZtpp' => '3',
             $result . 'uplatnenoZvyhodneniNaDeti' => 'true',
             $annualChildren . 'vyzivujeJinaOsoba' => 'true',
             $annualChildren . 'jineOsoby/jinaOsoba/osoba/jmeno' => 'Petr',
@@ -2713,6 +2729,33 @@ final class JmhzScenario1XmlSerializerTest extends TestCase
                 "{$body}: {$path}",
             );
         }
+    }
+
+    /**
+     * Roční výsledek se slevou na manžela (IN19): blok slevaNaPartnera stojí
+     * mezi 10420 a 10454 a celé hlášení projde XSD 1.4.3.6.
+     */
+    public function testAnnualSpouseCreditBlockIsXsdValid(): void
+    {
+        $xml = $this->summaryMatrixXml($this->summaryMatrixDocument('bezPriznaku'));
+        self::assertStringContainsString('<form:slevaNaPartnera>', $xml);
+        $dom = new \DOMDocument();
+        self::assertTrue($dom->loadXML($xml));
+        $previous = libxml_use_internal_errors(true);
+        try {
+            $valid = $dom->schemaValidate(
+                (new \MyInvoice\Service\Payroll\Submission\Jmhz\JmhzSchemaCatalog())->entryPoint()['path'],
+            );
+            $errors = array_map(
+                static fn (\LibXMLError $error): string => trim($error->message),
+                libxml_get_errors(),
+            );
+        } finally {
+            libxml_clear_errors();
+            libxml_use_internal_errors($previous);
+        }
+        self::assertTrue($valid, implode("
+", $errors));
     }
 
     /**
@@ -3146,7 +3189,15 @@ final class JmhzScenario1XmlSerializerTest extends TestCase
             $result . 'preplatekRok' => '1500',
             $result . 'danPreplatekRok' => '1000',
             $result . 'danBonusPreplatekRok' => '500',
-            $result . 'uplatnenaSlevaNaPartnera' => 'false',
+            $result . 'uplatnenaSlevaNaPartnera' => 'true',
+            $result . 'slevaNaPartnera/partner/partnerUdaje/jmeno' => 'Petra',
+            $result . 'slevaNaPartnera/partner/partnerUdaje/prijmeni' => 'Nováková',
+            $result . 'slevaNaPartnera/partner/partnerUdaje/datumNarozeni' => '1991-02-03',
+            $result . 'slevaNaPartnera/partner/deti/dite/jmeno' => 'Ema',
+            $result . 'slevaNaPartnera/partner/deti/dite/datumNarozeni' => '2024-05-15',
+            $result . 'slevaNaPartnera/partner/prukazZtpp' => 'true',
+            $result . 'slevaNaPartnera/partner/slevaPocetMesicu' => '12',
+            $result . 'slevaNaPartnera/partner/slevaPocetMesicuZtpp' => '3',
             $result . 'uplatnenoZvyhodneniNaDeti' => 'true',
             $annualChildren . 'vyzivujeJinaOsoba' => 'true',
             $annualChildren . 'jineOsoby/jinaOsoba/osoba/jmeno' => ['Petr', 'Karel'],

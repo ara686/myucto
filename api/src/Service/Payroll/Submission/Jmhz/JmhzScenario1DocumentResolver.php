@@ -3177,9 +3177,18 @@ final class JmhzScenario1DocumentResolver
             && substr($settlement['settled_on'], 0, 7) === substr($periodStart, 0, 7);
         $result = null;
         if ($performed) {
+            // Ročně uplatňované položky (§ 38h odst. 6) zúčtování od 10/2026
+            // umí, takže žádost s evidovanými položkami (`present`) je
+            // v pořádku. `present_unsupported` a `unknown` zúčtování zastaví,
+            // provedené zúčtování s nimi je tedy rozpor.
+            $claimsResolved = in_array(
+                $request['annual_claims'] ?? null,
+                ['none', 'present'],
+                true,
+            );
             if (!$requestLocked
                 || $requestStatus !== 'requested'
-                || ($request['annual_claims'] ?? null) !== 'none'
+                || !$claimsResolved
             ) {
                 $blockers[] = $this->blocker(
                     'jmhz_annual_settlement_request_source_inconsistent',
@@ -3200,6 +3209,17 @@ final class JmhzScenario1DocumentResolver
                     $employeeId,
                     ['10441', '10442', '10443', '10444', '10445', '10446',
                         '10447', '10448', '10449', '10450', '10451', '10454', '10455'],
+                );
+            }
+            $spouseRow = $settlement['spouse_row'] ?? null;
+            $spouse = is_array($spouseRow) ? $this->annualSpouse($spouseRow) : null;
+            if (is_array($spouseRow) && $spouse === null) {
+                $blockers[] = $this->blocker(
+                    'jmhz_annual_settlement_spouse_details_unsupported',
+                    'person',
+                    $employeeId,
+                    ['10420', '10421', '10422', '10423', '10424', '10425', '10426',
+                        '10430', '10539', '10540', '10541', '10542'],
                 );
             }
             $taxDifference = is_int($settlement['tax_difference_minor_units'] ?? null)
@@ -3225,13 +3245,16 @@ final class JmhzScenario1DocumentResolver
                 ),
                 'spouse_credit_claimed' => $requestLocked
                     && $requestStatus === 'requested'
-                    && ($request['annual_claims'] ?? null) === 'none'
-                        ? false
+                    && $claimsResolved
+                        ? $spouse !== null
                         : null,
                 'child_credit_claimed' => $childClaimed,
             ];
             if ($childClaimed) {
                 $result['child_credit_details'] = $children;
+            }
+            if ($spouse !== null) {
+                $result['spouse_credit_details'] = $spouse;
             }
             if (in_array(null, $result, true)) {
                 $blockers[] = $this->blocker(
@@ -3277,6 +3300,74 @@ final class JmhzScenario1DocumentResolver
      * @param list<array<string,mixed>> $rows
      * @return array<string,mixed>|null
      */
+    /**
+     * Sleva na manžela ze zmrazené revize zúčtování (blok slevaNaPartnera).
+     *
+     * Totéž ověření identity jako u dětí: jméno a příjmení vždy, datum
+     * narození nebo rodné číslo aspoň jedno. Počet měsíců 1–12, měsíce ZTP/P
+     * nejvýš tolik, kolik je měsíců nároku.
+     *
+     * @param array<string,mixed> $row
+     * @return array<string,mixed>|null
+     */
+    private function annualSpouse(array $row): ?array
+    {
+        $person = static function (mixed $value): ?array {
+            if (!is_array($value)) {
+                return null;
+            }
+            $givenName = $value['given_name'] ?? null;
+            $familyName = $value['family_name'] ?? null;
+            $birthDate = $value['birth_date'] ?? null;
+            $birthNumber = $value['birth_number'] ?? null;
+            if (!is_string($givenName) || trim($givenName) === '' || mb_strlen($givenName) > 100
+                || !is_string($familyName) || trim($familyName) === '' || mb_strlen($familyName) > 100
+                || ($birthDate !== null
+                    && (!is_string($birthDate)
+                        || preg_match('/^\d{4}-\d{2}-\d{2}$/D', $birthDate) !== 1))
+                || ($birthNumber !== null
+                    && (!is_string($birthNumber)
+                        || preg_match('/^\d{9,10}$/D', $birthNumber) !== 1))
+                || ($birthDate === null && $birthNumber === null)
+            ) {
+                return null;
+            }
+
+            return [
+                'given_name' => trim($givenName),
+                'family_name' => trim($familyName),
+                'birth_date' => $birthDate,
+                'birth_number' => $birthNumber,
+            ];
+        };
+        $spouse = $person($row['spouse'] ?? null);
+        $children = [];
+        foreach ($this->rows($row['children'] ?? null) as $child) {
+            $identity = $person($child);
+            if ($identity === null) {
+                return null;
+            }
+            $children[] = $identity;
+        }
+        $months = $row['months'] ?? null;
+        $ztpPMonths = $row['ztp_p_months'] ?? null;
+        if ($spouse === null
+            || $children === []
+            || !is_int($months) || $months < 1 || $months > 12
+            || !is_int($ztpPMonths) || $ztpPMonths < 0 || $ztpPMonths > $months
+        ) {
+            return null;
+        }
+
+        return [
+            'partner' => $spouse,
+            'children' => $children,
+            'ztp_p' => $ztpPMonths > 0,
+            'months' => $months,
+            'ztp_p_months' => $ztpPMonths,
+        ];
+    }
+
     private function annualChildren(array $rows): ?array
     {
         $children = [];

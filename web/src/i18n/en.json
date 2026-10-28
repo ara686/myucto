@@ -12406,6 +12406,7 @@
         "jmhz_annual_request_source_missing": "It is not documented whether the employee requested the annual tax settlement. Open Payroll → Annual settlement and record explicitly requested or not requested.",
         "jmhz_annual_request_status_unresolved": "The status of the annual tax settlement request is not decided. Open Payroll → Annual settlement and decide the request status.",
         "jmhz_annual_settlement_child_details_unsupported": "The annual settlement claims the child tax credit, but the frozen source does not yet carry the mandatory JMHZ identification data for the children.",
+        "jmhz_annual_settlement_spouse_details_unsupported": "The annual settlement claims the spouse credit, but the frozen source does not carry complete JMHZ identification data for the spouse and the child.",
         "jmhz_annual_settlement_performance_source_missing": "It is not documented whether the annual tax settlement was performed. Refresh the JMHZ preparation over the locked annual settlement result records.",
         "jmhz_annual_settlement_request_source_inconsistent": "The performed annual tax settlement does not have a matching locked request and record of annual claims.",
         "jmhz_annual_settlement_result_incomplete": "The annual tax settlement result cannot be safely converted to whole crowns for JMHZ.",
