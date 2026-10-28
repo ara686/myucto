@@ -512,7 +512,7 @@ final class PayrollFoundationTest extends TestCase
     {
         $admin = $this->request('PUT', 'admin')->withParsedBody([
             'enabled' => true,
-            'start_period' => '2027-01',
+            'start_period' => '2028-01',
             'row_version' => 0,
         ]);
         $response = $this->activationAction->put($admin, new Response());
