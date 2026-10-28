@@ -7183,6 +7183,52 @@
         "takeover_deductions_review": "Deductions from taken-over report",
         "takeover_sickness_review": "Sickness from taken-over report"
       },
+      "post20": {
+        "title": "Remedy after the 20th (REGZEC and corrective reports)",
+        "subtitle": "After the 20th, a component cancellation is no longer possible. An invalid employment, a forgotten deregistration or a change of the start or end date is remedied by a pair of filings: a REGZEC registration action and corrective monthly reports for the affected months.",
+        "situation_label": "Situation",
+        "situation_placeholder": "Choose a situation",
+        "situations": {
+          "late_termination": "Forgotten or retroactive deregistration",
+          "date_change": "Change or correction of the start or end date",
+          "invalid_employment": "Invalid employment (court decision, wrong activity type or variable symbol)"
+        },
+        "situation_hints": {
+          "late_termination": "REGZEC action 2 (deregistration) and zero corrective reports for the months after the end. First record the actual end date and file the corrective reports, then the deregistration.",
+          "date_change": "REGZEC action 3 (change) or 4 (correction) and corrective reports for the affected months. First correct the dates on the employment and file the corrective reports, then REGZEC.",
+          "invalid_employment": "REGZEC action 8 (cancellation) with an attachment stating the reason and corrective reports to zero values for all periods of the employment. The application does not zero the months within the employment by itself; this is a manual step."
+        },
+        "environment_label": "Environment",
+        "environments": {
+          "production": "Production",
+          "test": "ČSSZ test"
+        },
+        "load": "Show the procedure",
+        "load_failed": "The procedure after the 20th could not be loaded.",
+        "status": {
+          "open": "Waiting for filing",
+          "partially_done": "Partially filed",
+          "complete": "Both parts filed"
+        },
+        "order": {
+          "together": "ČSSZ recommends filing REGZEC and the corrective reports at once.",
+          "amendments_first": "Methodically the corrective reports first, then REGZEC; ideally both at once."
+        },
+        "registration_title": "REGZEC registration (action {actions})",
+        "registration_missing": "No registration event with this action exists for the employment yet. Prepare it in the registration section above.",
+        "registration_event": "Action {action} as of {date}: {state}",
+        "registration_prepared": "prepared",
+        "registration_submitted": "included in a submission",
+        "months_title": "Monthly reports (last {months} months)",
+        "months_empty": "No filed monthly report concerns this employment in the affected months.",
+        "actions": {
+          "annul": "annul with a zero corrective report",
+          "amended": "corrective report filed",
+          "review": "boundary month: review and correct with a content correction if needed",
+          "manual": "the application does not correct it by itself, proceed manually"
+        },
+        "open_submissions": "Open the submission history"
+      },
       "termination": {
         "title": "Termination",
         "subtitle": "How and why the employment ended is entered only here. The A2 deregistration and the Labour Office certificate are prefilled from it, and leave settlement and severance pay are created for the last payroll run.",
@@ -12280,6 +12326,20 @@
         "frozen": "The cancellation of selected employments is prepared as submission no. {id}; send it the same way as the regular report.",
         "already": "The cancellation of selected employments already exists as submission no. {id}."
       },
+      "zero_amendment": {
+        "mode": "Annul the month with a zero correction",
+        "description": "For an employment that no longer lasted in this month (forgotten deregistration, shortened employment), a corrective form with zero values is filed according to the JMHZ submission rules. After the 20th and for January to March 2026 this is the only way; a component cancellation is no longer possible. The annulment belongs together with a REGZEC deregistration or registration change; file both at once.",
+        "cancellation_still_allowed": "The deadline for a component cancellation is still running. Cancelling the selected employments is the simpler way for this situation.",
+        "employment_period": "Employment on record: {start} to {end}",
+        "situation": "I confirm that the employment did not last in this month and the month should not have been reported. This is not an employment in which the person merely did not work.",
+        "impact": "I understand that the annulment is an irreversible corrective report and ČSSZ will cancel the insurance of the selected employees for this month.",
+        "disabled_reason": "Select at least one employment and confirm both the situation and the impact of the annulment.",
+        "confirm": "Annul the month for selected employments ({count})",
+        "load_failed": "The employments of the regular report could not be loaded for the annulment.",
+        "failed": "The zero corrective report could not be prepared.",
+        "frozen": "The zero corrective report is prepared as submission no. {id}; send it the same way as the regular report.",
+        "already": "The zero corrective report already exists as submission no. {id}."
+      },
       "codes": {
         "eldp_correction_reference_invalid": "The corrective pension record does not refer to the frozen record it corrects. The application cannot build such a record; contact support.",
         "eldp_correction_without_change": "The pension record data have not changed since the frozen record, so the corrective record has nothing to correct.",
@@ -12921,6 +12981,23 @@
         "jmhz_xml_wage_breakdown_without_wage": "The wage breakdown cannot be reported when the processed wage is zero. Check the payroll components in the payroll run.",
         "jmhz_xml_work_summary_missing": "The submission component has no frozen monthly work summary. Approve the working time for the month and prepare the report again.",
         "jmhz_xsd_validation_failed": "The monthly JMHZ report XML failed validation against the pinned XSD schema; this is a technical issue for support to investigate.",
+        "jmhz_post20_employment_identifier_missing": "The employment has no ČSSZ employment ID (ID PPV), so its filed monthly reports cannot be found.",
+        "jmhz_post20_end_date_missing": "Forgotten deregistration: first record the actual end date on the employment.",
+        "jmhz_post20_situation_unknown": "Choose the situation after the 20th: invalid employment, forgotten deregistration, or a change of the start or end date.",
+        "jmhz_post20_submission_unreadable": "A filed report could not be read; this is a technical issue for support to investigate.",
+        "jmhz_zero_amendment_annual_summary_unsupported": "The annulled form carries annual totals for the previous year, which a zero report does not correct. The application does not build an annulment of such a month; proceed manually according to the submission rules.",
+        "jmhz_zero_amendment_concurrent_employment_unsupported": "The person has a concurrent employment in the report, so their summary data would have to be recalculated after the annulment. The application does not build an annulment of such a form.",
+        "jmhz_zero_amendment_controls_failed": "The report after the annulment failed the ČSSZ control catalogue. Review the listed controls.",
+        "jmhz_zero_amendment_employment_active_in_month": "According to the records, the employment lasts in the annulled month. First correct the end or start date and file the deregistration or registration change.",
+        "jmhz_zero_amendment_employment_unknown": "The form cannot be matched to an employment in the records, so it cannot be verified that the employment did not last in the month. Add the employment ID (ID PPV).",
+        "jmhz_zero_amendment_form_already_amended": "A correction or cancellation already exists for this form. An annulment is built only from a form nobody changed since the regular report.",
+        "jmhz_zero_amendment_interval_invalid": "The first insured day of the original form is not in the annulled month; this is a technical issue for support to investigate.",
+        "jmhz_zero_amendment_original_incomplete": "The original form lacks a mandatory value carried into the annulment; this is a technical issue for support to investigate.",
+        "jmhz_zero_amendment_original_not_zero": "The annulled form reports income or contributions. Annulling it would also change the summary and insurance parts of the report; use a content correction from a new preparation.",
+        "jmhz_zero_amendment_root_not_accepted": "A month can be annulled only after ČSSZ fully accepted the regular report.",
+        "jmhz_zero_amendment_scenario_unsupported": "Only a form without a special flag can be annulled by a zero correction for now; the submission rules give no zero-report table for other data scenarios.",
+        "jmhz_zero_amendment_situation_required": "The annulment must be explicitly confirmed as a month that should not have been reported.",
+        "jmhz_zero_amendment_target_invalid": "Only a form of a regular monthly report can be annulled by a zero correction.",
         "jmhz_zero_report_attribute_unknown": "The requested zero-report JMHZ attribute is not defined in the application; this is a technical issue for support to investigate.",
         "jmhz_zero_report_situation_unknown": "The zero-report situation for JMHZ is not described in the application's rules; this is a technical issue for support to investigate."
       }

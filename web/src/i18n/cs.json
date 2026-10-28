@@ -7183,6 +7183,52 @@
         "eldp_submission": "ELDP",
         "taxable_income_confirmation": "Potvrzení o příjmech"
       },
+      "post20": {
+        "title": "Náprava po 20. dni (REGZEC a opravná hlášení)",
+        "subtitle": "Po 20. dni už storno součásti nejde. Neplatný vztah, zapomenutou odhlášku nebo změnu data nástupu či skončení napravuje dvojice podání: registrační akce REGZEC a opravná měsíční hlášení za dotčené měsíce.",
+        "situation_label": "Typová situace",
+        "situation_placeholder": "Vyberte situaci",
+        "situations": {
+          "late_termination": "Zapomenutá nebo zpětná odhláška",
+          "date_change": "Změna nebo oprava data nástupu či skončení",
+          "invalid_employment": "Neplatný pracovní vztah (rozhodnutí soudu, chybný druh činnosti nebo VS)"
+        },
+        "situation_hints": {
+          "late_termination": "REGZEC akce 2 (odhláška) a nulová opravná hlášení za měsíce po skončení. Nejdříve zapište skutečné datum skončení a pošlete opravná hlášení, potom odhlášku.",
+          "date_change": "REGZEC akce 3 (změna) nebo 4 (oprava) a opravná hlášení za dotčené měsíce. Nejdříve opravte data u vztahu a pošlete opravná hlášení, potom REGZEC.",
+          "invalid_employment": "REGZEC akce 8 (storno) s přílohou s důvodem a opravná hlášení na nulové hodnoty za všechna období vztahu. Měsíce v období vztahu aplikace sama nenuluje; je to ruční krok."
+        },
+        "environment_label": "Prostředí",
+        "environments": {
+          "production": "Produkce",
+          "test": "Test ČSSZ"
+        },
+        "load": "Zobrazit postup",
+        "load_failed": "Postup po 20. dni se nepodařilo načíst.",
+        "status": {
+          "open": "Čeká na podání",
+          "partially_done": "Částečně podáno",
+          "complete": "Obě části podány"
+        },
+        "order": {
+          "together": "ČSSZ doporučuje poslat REGZEC i opravná hlášení najednou.",
+          "amendments_first": "Metodicky nejdříve opravná hlášení, potom REGZEC; ideálně obojí najednou."
+        },
+        "registration_title": "Registrace REGZEC (akce {actions})",
+        "registration_missing": "Registrační událost s touto akcí u vztahu zatím není. Připravte ji v sekci registrace výše.",
+        "registration_event": "Akce {action} k {date}: {state}",
+        "registration_prepared": "připravena",
+        "registration_submitted": "zařazena do podání",
+        "months_title": "Měsíční hlášení (posledních {months} měsíců)",
+        "months_empty": "Žádné podané měsíční hlášení se tohoto vztahu v dotčených měsících netýká.",
+        "actions": {
+          "annul": "anulovat nulovým opravným hlášením",
+          "amended": "opravné hlášení je podané",
+          "review": "hraniční měsíc: zkontrolujte a případně opravte obsahovou opravou",
+          "manual": "aplikace sama neopraví, postupujte ručně"
+        },
+        "open_submissions": "Otevřít historii odeslání"
+      },
       "termination": {
         "title": "Skončení vztahu",
         "subtitle": "Způsob a důvod skončení se zadává jen tady. Odsud se předvyplní odhláška A2 i potvrzení pro Úřad práce a založí se proplacení dovolené a odstupné do posledního běhu.",
@@ -12280,6 +12326,20 @@
         "frozen": "Storno vybraných vztahů je připravené jako podání č. {id}; odešlete ho stejně jako řádné hlášení.",
         "already": "Storno vybraných vztahů už existuje jako podání č. {id}."
       },
+      "zero_amendment": {
+        "mode": "Anulovat měsíc nulovým opravným hlášením",
+        "description": "Pro vztah, který v tomto měsíci už netrval (zapomenutá odhláška, zkrácení vztahu), se pošle opravný formulář s nulovými hodnotami podle Pravidel podání JMHZ. Po 20. dni a za leden až březen 2026 je to jediná cesta, storno součásti už nejde. K anulaci patří i odhláška nebo změna registrace REGZEC; pošlete obojí najednou.",
+        "cancellation_still_allowed": "Lhůta pro storno součásti ještě běží. Storno vybraných vztahů je pro tuto situaci jednodušší cesta.",
+        "employment_period": "Vztah v evidenci: {start} až {end}",
+        "situation": "Potvrzuji, že pracovněprávní vztah v tomto měsíci netrval a měsíc neměl být hlášen. Nejde o vztah, ve kterém se jen nepracovalo.",
+        "impact": "Rozumím, že anulace je nevratné opravné hlášení a ČSSZ podle ní zruší pojistný vztah vybraných zaměstnanců za tento měsíc.",
+        "disabled_reason": "Vyberte alespoň jeden vztah a potvrďte situaci i dopad anulace.",
+        "confirm": "Anulovat měsíc u vybraných vztahů ({count})",
+        "load_failed": "Vztahy řádného hlášení k anulaci se nepodařilo načíst.",
+        "failed": "Nulové opravné hlášení se nepodařilo připravit.",
+        "frozen": "Nulové opravné hlášení je připravené jako podání č. {id}; odešlete ho stejně jako řádné hlášení.",
+        "already": "Nulové opravné hlášení už existuje jako podání č. {id}."
+      },
       "codes": {
         "eldp_correction_reference_invalid": "Opravný evidenční list neodkazuje na zmrazený list, který opravuje. Takový podklad aplikace nesestaví; kontaktujte podporu.",
         "eldp_correction_without_change": "Podklad evidenčního listu se od zmrazeného listu nezměnil, takže opravný list nemá co opravit.",
@@ -12921,6 +12981,23 @@
         "jmhz_xml_wage_breakdown_without_wage": "Rozpad mzdy nelze vykázat, pokud je zúčtovaná mzda nulová. Zkontrolujte mzdové složky v mzdovém běhu.",
         "jmhz_xml_work_summary_missing": "Součást podání nemá zmrazený pracovní souhrn měsíce. Schvalte pracovní dobu za daný měsíc a připravte hlášení znovu.",
         "jmhz_xsd_validation_failed": "XML měsíčního hlášení JMHZ neprošlo kontrolou proti připnutému XSD schématu; jde o technickou chybu, kterou musí posoudit podpora.",
+        "jmhz_post20_employment_identifier_missing": "Pracovní vztah nemá ID PPV od ČSSZ, takže nejde dohledat jeho podaná měsíční hlášení.",
+        "jmhz_post20_end_date_missing": "Zapomenutá odhláška: nejdříve u vztahu zapište skutečné datum skončení.",
+        "jmhz_post20_situation_unknown": "Vyberte typovou situaci po 20. dni: neplatný pracovní vztah, zapomenutá odhláška, nebo změna data nástupu či skončení.",
+        "jmhz_post20_submission_unreadable": "Některé podané hlášení se nepodařilo přečíst; jde o technickou chybu, kterou musí posoudit podpora.",
+        "jmhz_zero_amendment_annual_summary_unsupported": "Anulovaný formulář nese roční úhrny za předchozí rok, které nulové hlášení neopravuje. Anulaci takového měsíce aplikace nesestaví; postupujte ručně podle Pravidel podání.",
+        "jmhz_zero_amendment_concurrent_employment_unsupported": "Osoba má v hlášení souběžný pracovněprávní vztah, takže by se po anulaci musela přepočítat její souhrnná data. Anulaci takového formuláře aplikace nesestaví.",
+        "jmhz_zero_amendment_controls_failed": "Hlášení po anulaci neprošlo kontrolami katalogu ČSSZ. Zkontrolujte vypsané kontroly.",
+        "jmhz_zero_amendment_employment_active_in_month": "Podle evidence pracovní vztah v anulovaném měsíci trvá. Nejdříve opravte datum skončení nebo nástupu a podejte odhlášku nebo změnu registrace.",
+        "jmhz_zero_amendment_employment_unknown": "Formulář nejde přiřadit k pracovnímu vztahu v evidenci, takže nejde ověřit, že vztah v měsíci netrval. Doplňte ID PPV u vztahu.",
+        "jmhz_zero_amendment_form_already_amended": "K formuláři už existuje opravné nebo stornovací podání. Anulace se staví jen z formuláře, který od řádného podání nikdo neměnil.",
+        "jmhz_zero_amendment_interval_invalid": "První den pojištění v původním formuláři neleží v anulovaném měsíci; jde o technickou chybu, kterou musí posoudit podpora.",
+        "jmhz_zero_amendment_original_incomplete": "Původní formulář nemá povinný údaj, který se v anulaci přebírá; jde o technickou chybu, kterou musí posoudit podpora.",
+        "jmhz_zero_amendment_original_not_zero": "Anulovaný formulář vykazuje příjem nebo pojistné. Jeho anulace by změnila i souhrnnou a pojistnou část hlášení; použijte obsahovou opravu z nové přípravy.",
+        "jmhz_zero_amendment_root_not_accepted": "Měsíc lze anulovat až po úplném přijetí řádného hlášení ČSSZ.",
+        "jmhz_zero_amendment_scenario_unsupported": "Anulovat nulovým opravným hlášením lze zatím jen formulář bez zvláštního příznaku; pro ostatní datové scénáře Pravidla podání tabulku nulového hlášení neuvádějí.",
+        "jmhz_zero_amendment_situation_required": "Anulaci měsíce je nutné výslovně potvrdit jako měsíc, který neměl být hlášen.",
+        "jmhz_zero_amendment_target_invalid": "Anulovat nulovým opravným hlášením lze jen formulář řádného měsíčního hlášení.",
         "jmhz_zero_report_attribute_unknown": "Požadovaný atribut nulového hlášení JMHZ není v aplikaci definován; jde o technickou chybu, kterou musí posoudit podpora.",
         "jmhz_zero_report_situation_unknown": "Situace nulového hlášení JMHZ není v pravidlech aplikace popsaná; jde o technickou chybu, kterou musí posoudit podpora."
       }

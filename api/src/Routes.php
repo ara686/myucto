@@ -127,6 +127,7 @@ use MyInvoice\Action\Payroll\PayrollInstitutionAccountsAction;
 use MyInvoice\Action\Payroll\PayrollInsuranceBreakdownAction;
 use MyInvoice\Action\Payroll\PayrollJmhzCorrectionAction;
 use MyInvoice\Action\Payroll\PayrollJmhzDeferralAction;
+use MyInvoice\Action\Payroll\PayrollJmhzPost20Action;
 use MyInvoice\Action\Payroll\PayrollJmhzIdentityAction;
 use MyInvoice\Action\Payroll\PayrollJmhzProtocolImportAction;
 use MyInvoice\Action\Payroll\PayrollJmhzExternalSubmissionAction;
@@ -2263,6 +2264,18 @@ final class Routes
             $g->post(
                 '/submissions/{submissionId:[0-9]+}/jmhz-content-correction',
                 [PayrollJmhzCorrectionAction::class, 'freezeContentCorrection'],
+            );
+            $g->get(
+                '/submissions/jmhz-post20/{employmentId:[0-9]+}',
+                PayrollJmhzPost20Action::class,
+            );
+            $g->get(
+                '/submissions/{submissionId:[0-9]+}/jmhz-zero-amendment',
+                [PayrollJmhzCorrectionAction::class, 'zeroAmendmentCandidates'],
+            );
+            $g->post(
+                '/submissions/{submissionId:[0-9]+}/jmhz-zero-amendment',
+                [PayrollJmhzCorrectionAction::class, 'freezeZeroAmendment'],
             );
             $g->get(
                 '/submissions/jmhz-protocol-import',
