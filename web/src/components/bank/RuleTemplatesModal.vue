@@ -82,7 +82,7 @@ async function applyTemplate(template: BankRuleTemplate) {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3 sm:p-4" @click.self="emit('close')">
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3 sm:p-4 text-left whitespace-normal font-normal" @click.self="emit('close')">
     <div class="bg-surface rounded-xl shadow-lg w-full max-w-3xl max-h-[90vh] flex flex-col text-left">
       <div class="flex items-center justify-between gap-3 border-b border-neutral-200 px-4 py-3 sm:px-5">
         <h3 class="text-lg font-semibold text-neutral-800">{{ t('bank.templates.title') }}</h3>
