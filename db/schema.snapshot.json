@@ -1113,7 +1113,8 @@
         "2209_payroll_deduction_agreement_jmhz_target.sql",
         "2210_payroll_component_jmhz_catalog_1_4_2_11_package.sql",
         "2211_payroll_student_tax_credit.sql",
-        "2212_payroll_2027_preschool_benefits_tips.sql"
+        "2212_payroll_2027_preschool_benefits_tips.sql",
+        "2213_payroll_jmhz_2027_sources.sql"
     ],
     "tables": {
         "abra_flexi_connections": {
@@ -12927,9 +12928,15 @@
                 "jmhz_relationship_detail_code": "char(1) NULL DEFAULT NULL COLLATE ascii_bin",
                 "jmhz_risk_categorization_code": "enum('6','7') NULL DEFAULT NULL",
                 "jmhz_specific_legal_fact_applies": "tinyint(1) NOT NULL DEFAULT 0",
+                "jmhz_state_prosecutor": "tinyint(1) NULL DEFAULT NULL",
                 "jmhz_temporary_assignment_status": "enum('unverified','no','yes') NOT NULL DEFAULT 'unverified'",
+                "jmhz_workplace_address_point_code": "varchar(9) NULL DEFAULT NULL",
                 "jmhz_workplace_country_code": "char(2) NULL DEFAULT NULL COLLATE ascii_bin",
+                "jmhz_workplace_house_number": "varchar(4) NULL DEFAULT NULL",
                 "jmhz_workplace_municipality_code": "char(6) NULL DEFAULT NULL COLLATE ascii_bin",
+                "jmhz_workplace_orientation_number": "varchar(12) NULL DEFAULT NULL",
+                "jmhz_workplace_postal_code": "char(5) NULL DEFAULT NULL",
+                "jmhz_workplace_street": "varchar(50) NULL DEFAULT NULL",
                 "leave_entitlement_weeks_override": "smallint(5) unsigned NULL DEFAULT NULL",
                 "monthly_gross_minor": "bigint(20) unsigned NULL DEFAULT NULL",
                 "office_id": "bigint(20) unsigned NULL DEFAULT NULL",
@@ -17614,6 +17621,7 @@
                 "evidence_reference": "varchar(500) NULL DEFAULT NULL",
                 "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
                 "row_version": "int(10) unsigned NOT NULL DEFAULT 1",
+                "signed_on": "date NULL DEFAULT NULL",
                 "status": "enum('signed','not-signed','unverified') NOT NULL",
                 "supplier_id": "int(10) unsigned NOT NULL",
                 "updated_at": "timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE CURRENT_TIMESTAMP()",

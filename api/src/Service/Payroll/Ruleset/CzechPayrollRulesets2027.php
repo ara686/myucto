@@ -36,8 +36,9 @@ namespace MyInvoice\Service\Payroll\Ruleset;
  * 2026 nevyšla. Sada proto doménu NEMÁ — cestovní náhrada za rok 2027 spadne
  * fail-closed na chybějícím rulesetu, nikdy se nespočítá sazbami roku 2026.
  * Totéž platí pro nezabavitelné částky (nařízení pro rok 2027 není doložené)
- * a pro lhůty, číselníky a podání JMHZ, které připraví navazující balíček
- * (nové XSD 1.5).
+ * a pro číselníky a podání JMHZ (číselníky obcí a států s účinností pro rok
+ * 2027 ČSSZ nevydala). Lhůty JMHZ sada nese: § 7 odst. 1 z. č. 323/2025 Sb.
+ * je trvalé pravidlo zákona.
  *
  * Uvnitř daně z příjmů jsou jako ruční posouzení vedené dvě hodnoty, které se
  * pro rok 2027 doložit nedají:
@@ -74,7 +75,46 @@ final class CzechPayrollRulesets2027
             self::healthInsurance($technicalReview),
             self::employmentThresholds($technicalReview),
             self::compensationAverages($technicalReview),
+            self::jmhzDeadlines($technicalReview),
         ]);
+    }
+
+    /**
+     * Lhůta měsíčního hlášení za vykazovaná období roku 2027: § 7 odst. 1
+     * zákona č. 323/2025 Sb. („ve lhůtě od prvního do dvacátého dne
+     * kalendářního měsíce bezprostředně následujícího"). Je to trvalé
+     * pravidlo zákona; přechodné okno § 34 odst. 1 platilo jen pro leden až
+     * březen 2026 a jiné přechodné ustanovení pro rok 2027 zákon nemá.
+     * Tvar parametrů je stejný jako u ročníku 2026 (JmhzDeadlinePolicy).
+     */
+    private static function jmhzDeadlines(RulesetTechnicalReview $technicalReview): PayrollRulesetVersion
+    {
+        return self::version(
+            'cz-jmhz-deadlines-2027.regular.v1',
+            PayrollRulesetDomain::Deadlines,
+            PayrollRulesetCapability::Supported,
+            [self::jmhzAct2027()],
+            [
+                'jmhz.deadline.calendar_basis' => PayrollRuleValue::text('business_days'),
+                'jmhz.deadline.cancellation_allowed' => PayrollRuleValue::boolean(true),
+                'jmhz.deadline.due_day' => PayrollRuleValue::integer(20),
+                'jmhz.deadline.due_shift' => PayrollRuleValue::text('next_czech_working_day'),
+                'jmhz.deadline.earliest_day' => PayrollRuleValue::integer(1),
+                'jmhz.deadline.month_offset' => PayrollRuleValue::integer(1),
+                'jmhz.deadline.rule' => PayrollRuleValue::text('following_month_day_window'),
+            ],
+            $technicalReview,
+        );
+    }
+
+    private static function jmhzAct2027(): RulesetSource
+    {
+        return new RulesetSource(
+            'zakonyprolidi-jmhz-act-2027',
+            'Zákon č. 323/2025 Sb., o jednotném měsíčním hlášení zaměstnavatele, § 7 odst. 1',
+            'https://www.zakonyprolidi.cz/cs/2025-323',
+            self::RETRIEVED_ON,
+        );
     }
 
     private static function incomeTax(RulesetTechnicalReview $technicalReview): PayrollRulesetVersion

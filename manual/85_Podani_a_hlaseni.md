@@ -1373,6 +1373,22 @@ nepočítají. Dohoda, ze které se v měsíci srazilo a u které věřitel nen�
 rozhodnutý, hlášení zastaví. Výdělek OZP nese jen souhrn hlavního pracovního
 vztahu; podpora nastavená jen u vedlejšího vztahu hlášení zastaví.
 
+Za období od ledna 2027 se místo jednoho data uvádí datum úhrady mzdy
+a zvlášť **Den odvodu sociálního pojištění** a **Den odvodu zdravotního
+pojištění**. V panelu u vztahu vyplňte všechna tři data; bez dnů odvodů se
+výdělek OZP za rok 2027 nepotvrdí.
+
+**Počet směn při rizikové práci (od ledna 2027).** U vztahu s prací zařazenou
+do kategorie 4 uvádí hlášení počet směn odpracovaných v měsíci. Mzdy směny
+neevidují, proto se vztah v panelu právních skutečností zastaví a počet směn
+zadáte přímo u něj (**Potvrdit počet směn**).
+
+**Úhrn měsíčních bonusů za minulý rok (leden od roku 2027).** Lednové hlášení
+uvádí úhrn měsíčních daňových bonusů vyplacených za předchozí rok. Bere se
+z roční kumulace daně (počáteční stav a schválené měsíce), stejně jako
+v ročním zúčtování; ručně se nezadává. Chybí-li počáteční stav roku, hlášení
+se zastaví.
+
 **Sleva po splatnosti (kontrola 290).** Hlášení, které se podává **po
 splatnosti pojistného** a uplatňuje **slevu na pojistném zaměstnavatele**,
 dostane varování kontroly 290. ČSSZ slevu porovná se slevou v posledním

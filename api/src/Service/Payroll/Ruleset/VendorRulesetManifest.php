@@ -48,6 +48,8 @@ final class VendorRulesetManifest
         '52b5f1f0d2580e659e300874f0b0591129640cf38bc67714afb2b4728339d582',
         // cz-jmhz-deadlines-2026.transition.v1
         '9e30371cd82fcf6005bee2954c79b8e13b84f0b487b24df12272d4ba9951e999',
+        // cz-jmhz-deadlines-2027.regular.v1
+        '939bd74de70d4042192e5070ce17bc244588018347c2f973f880592fcd8bcfe8',
         // cz-payroll-2025.compensation-averages.v1
         'cd123a9889377736f0cbfcfb8bd9163163bae6feb31acbbaaab043d187c481e5',
         // cz-payroll-2025.employment-thresholds.v1

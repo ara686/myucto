@@ -139,6 +139,8 @@ export const STATUTORY_SECTIONS: readonly StatutorySectionSpec[] = [
     summaryKey: 'status',
     fields: [
       { key: 'status', kind: 'enum', options: ['signed', 'not-signed', 'unverified'] },
+      // Den podpisu prohlášení vykazuje měsíční hlášení od ledna 2027 (10575).
+      { key: 'signed_on', kind: 'date', visible: row => text(row, 'status') === 'signed' },
       {
         key: 'evidence_reference',
         kind: 'evidence',

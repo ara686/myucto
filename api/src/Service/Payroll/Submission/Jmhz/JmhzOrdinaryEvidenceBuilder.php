@@ -116,6 +116,7 @@ final class JmhzOrdinaryEvidenceBuilder
         string $confirmedAt,
         string $sourceKind = 'explicit_confirmation',
         ?array $ozpWage = null,
+        ?int $riskShiftCount = null,
     ): JmhzOrdinaryEvidenceSnapshot {
         if ($targetEmploymentId <= 0) {
             throw new \InvalidArgumentException('Pracovní vztah musí být kladné číslo.');
@@ -285,6 +286,37 @@ final class JmhzOrdinaryEvidenceBuilder
         // bajtově stejná jako před podporou výdělku OZP.
         if ($ozpWageBlock !== null) {
             $payload['ozp_wage'] = $ozpWageBlock;
+        }
+        /*
+         * Počet směn při rizikové práci (10580, verze 2027, IN42: kategorizace
+         * rizika 1 a odpracované hodiny). Mzdy směny neevidují, proto ho
+         * zadává účetní za měsíc; jen u vztahu zařazeného do kategorie 4
+         * (§ 5a odst. 1 písm. c) ZPSZ). Bez něj zůstává evidence beze změny.
+         */
+        $is2027 = JmhzSpecVersion::forPeriodStart($periodStart) === JmhzSpecVersion::V2027;
+        if ($riskShiftCount === null
+            && $is2027
+            && ($term['social_employer_rate_category'] ?? null) === 'risk_employment'
+        ) {
+            $this->invalid(
+                'jmhz_ordinary_evidence_risk_shifts_required',
+                'Doplňte počet směn odpracovaných při rizikové práci v měsíci (10580); mzdy směny neevidují.',
+            );
+        }
+        if ($riskShiftCount !== null) {
+            if (($term['social_employer_rate_category'] ?? null) !== 'risk_employment') {
+                $this->invalid(
+                    'jmhz_ordinary_evidence_risk_shifts_unexpected',
+                    'Počet směn při rizikové práci (10580) se uvádí jen u vztahu s prací zařazenou do kategorie 4.',
+                );
+            }
+            if ($riskShiftCount < 0 || $riskShiftCount > 999) {
+                $this->invalid(
+                    'jmhz_ordinary_evidence_risk_shifts_invalid',
+                    'Počet směn při rizikové práci (10580) musí být celé číslo 0 až 999.',
+                );
+            }
+            $payload['risk_shift_count'] = $riskShiftCount;
         }
         return new JmhzOrdinaryEvidenceSnapshot($payload);
     }
@@ -684,11 +716,54 @@ final class JmhzOrdinaryEvidenceBuilder
         }
         $keys = array_keys($input);
         sort($keys, SORT_STRING);
-        if ($keys !== ['cash_paid', 'payment_date'] || !is_bool($input['cash_paid'])) {
+        // Od verze 2027 se 10347 dělí na datum úhrady mzdy 10589 a dny
+        // provedení odvodů sociálního 10570 a zdravotního pojištění 10571.
+        // Obě data odvodů se zadávají spolu; evidence bez nich zůstává
+        // bajtově stejná jako dřív.
+        $withContributionDates = $keys === [
+            'cash_paid',
+            'health_insurance_paid_on',
+            'payment_date',
+            'social_insurance_paid_on',
+        ];
+        if (($keys !== ['cash_paid', 'payment_date'] && !$withContributionDates)
+            || !is_bool($input['cash_paid'])
+        ) {
             $this->invalid(
                 'jmhz_ordinary_evidence_ozp_wage_invalid',
-                'Výdělek OZP musí obsahovat přesně datum úhrady a výslovné Ano nebo Ne u výplaty v hotovosti.',
+                'Výdělek OZP musí obsahovat datum úhrady, výslovné Ano nebo Ne u výplaty v hotovosti'
+                    . ' a případně obě data odvodů pojistného.',
             );
+        }
+        if (!$withContributionDates
+            && JmhzSpecVersion::forPeriodStart($periodStart) === JmhzSpecVersion::V2027
+        ) {
+            $this->invalid(
+                'jmhz_ordinary_evidence_ozp_wage_required',
+                'Od ledna 2027 doplňte k datu úhrady mzdy (10589) i dny provedení odvodu sociálního'
+                    . ' (10570) a zdravotního pojištění (10571).',
+            );
+        }
+        $contributionDates = [];
+        if ($withContributionDates) {
+            $confirmedDay = (new \DateTimeImmutable($confirmedAt))
+                ->setTimezone(new \DateTimeZone('Europe/Prague'))
+                ->format('Y-m-d');
+            foreach (['social_insurance_paid_on', 'health_insurance_paid_on'] as $key) {
+                $value = $input[$key];
+                $parsed = is_string($value) ? \DateTimeImmutable::createFromFormat('!Y-m-d', $value) : false;
+                if ($parsed === false || $parsed->format('Y-m-d') !== $value
+                    || $value < $periodStart || $value > $confirmedDay
+                ) {
+                    $this->invalid(
+                        'jmhz_ordinary_evidence_ozp_payment_date_invalid',
+                        'Den provedení odvodu pojistného (10570, 10571) musí být platné datum mezi začátkem'
+                            . ' vykazovaného měsíce a dneškem; hlášení se podává až po odvodu.',
+                        ['payment_date' => is_string($value) ? $value : null, 'period_start' => $periodStart],
+                    );
+                }
+                $contributionDates[$key] = $value;
+            }
         }
         $paymentDate = $input['payment_date'];
         $date = is_string($paymentDate)
@@ -784,6 +859,7 @@ final class JmhzOrdinaryEvidenceBuilder
 
         return [
             'payment_date' => $paymentDate,
+            ...$contributionDates,
             'cash_paid' => $input['cash_paid'],
             'employer_deductions_made' => $sums !== [],
             'employer_deductions_minor' => $sums,

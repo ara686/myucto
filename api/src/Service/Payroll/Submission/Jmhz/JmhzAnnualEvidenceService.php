@@ -7,6 +7,8 @@ namespace MyInvoice\Service\Payroll\Submission\Jmhz;
 use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Repository\Payroll\PayrollAnnualDocumentRepository;
 use MyInvoice\Repository\Payroll\PayrollAnnualSettlementRepository;
+use MyInvoice\Repository\Payroll\PayrollStatutoryAccumulatorRepository;
+use MyInvoice\Repository\Payroll\PayrollStatutoryAccumulatorUnavailableException;
 use MyInvoice\Service\Auth\SecretEncryption;
 use MyInvoice\Service\Payroll\Document\AnnualSettlementSnapshotBuilder;
 use MyInvoice\Service\Payroll\Document\AnnualTaxCertificateSnapshotBuilder;
@@ -35,6 +37,7 @@ final readonly class JmhzAnnualEvidenceService
         private PayrollAnnualDocumentRepository $documents,
         private PayrollSensitiveData $sensitiveData,
         private SecretEncryption $encryption,
+        private PayrollStatutoryAccumulatorRepository $accumulators,
     ) {}
 
     /**
@@ -58,6 +61,8 @@ final readonly class JmhzAnnualEvidenceService
                 $this->employeesEmployedInYear($supplierId, $employeeIds, $taxYear),
             )
             : [];
+        // Úhrn měsíčních bonusů za minulý rok (10577) vykazuje až verze 2027.
+        $withBonusTotal = JmhzSpecVersion::forPeriod($reportYear, 1) === JmhzSpecVersion::V2027;
         $snapshots = [];
         foreach (array_values(array_unique($employeeIds)) as $employeeId) {
             if ($employeeId <= 0) {
@@ -149,11 +154,34 @@ final readonly class JmhzAnnualEvidenceService
                     'employee_id' => $employeeId,
                     'tax_year' => $taxYear,
                 ],
+                ...($withBonusTotal
+                    ? ['monthly_bonus_total_minor_units' => $this->monthlyBonusTotal($supplierId, $employeeId, $taxYear)]
+                    : []),
             ];
         }
         ksort($snapshots, SORT_NUMERIC);
 
         return $snapshots;
+    }
+
+    /**
+     * Úhrn měsíčních daňových bonusů za zdaňovací rok (JMHZ 10577, jen leden
+     * verze 2027) z roční zákonné kumulace daně: počáteční stav (převzatá část
+     * roku) plus schválené měsíce. Je to týž úhrn, který roční zúčtování bere
+     * jako vyplacené měsíční bonusy (`total_monthly_tax_bonus_minor_units`).
+     * Bez kumulace roku (chybí počáteční stav) `null`; resolver pak hlášení
+     * zastaví, pokud osoba v roce u firmy pracovala.
+     */
+    private function monthlyBonusTotal(int $supplierId, int $employeeId, int $taxYear): ?int
+    {
+        try {
+            $state = $this->accumulators->stateForYear($supplierId, $employeeId, $taxYear, 'income_tax');
+        } catch (PayrollStatutoryAccumulatorUnavailableException) {
+            return null;
+        }
+        $total = $state['totals']['tax_bonus_minor_units'] ?? null;
+
+        return is_int($total) ? $total : null;
     }
 
     /**

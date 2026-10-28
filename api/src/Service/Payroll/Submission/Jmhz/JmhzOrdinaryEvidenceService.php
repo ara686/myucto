@@ -27,6 +27,12 @@ final readonly class JmhzOrdinaryEvidenceService
         'jmhz_ordinary_evidence_ozp_employer_not_protected',
     ];
 
+    /**
+     * Vztah s prací kategorie 4 v období od 01/2027: počet směn při rizikové
+     * práci (10580) mzdy neevidují a zadává ho účetní.
+     */
+    public const RISK_SHIFTS_ATTENTION_CODE = 'jmhz_ordinary_evidence_risk_shifts_required';
+
     public function __construct(
         private JmhzOrdinaryEvidenceRepository $repository,
         private JmhzOrdinaryEvidenceBuilder $builder,
@@ -235,6 +241,7 @@ final readonly class JmhzOrdinaryEvidenceService
         ?string $userAgent,
         string $sourceKind = 'explicit_confirmation',
         ?array $ozpWage = null,
+        ?int $riskShiftCount = null,
     ): array {
         return $this->confirmAgainst(
             null,
@@ -248,6 +255,7 @@ final readonly class JmhzOrdinaryEvidenceService
             $userAgent,
             $sourceKind,
             $ozpWage,
+            $riskShiftCount,
         );
     }
 
@@ -269,6 +277,7 @@ final readonly class JmhzOrdinaryEvidenceService
         ?string $userAgent,
         string $sourceKind,
         ?array $ozpWage = null,
+        ?int $riskShiftCount = null,
     ): array {
         if ($supplierId <= 0 || $revisionId <= 0 || $confirmedBy <= 0 || $employmentId <= 0) {
             throw new \InvalidArgumentException('Firma, revize, vztah a potvrzující uživatel musí být kladná čísla.');
@@ -289,6 +298,7 @@ final readonly class JmhzOrdinaryEvidenceService
                 'source_kind' => $sourceKind,
                 // Jen s výdělkem OZP, ať otisk dosavadních potvrzení zůstane.
                 ...($ozpWage === null ? [] : ['ozp_wage' => $ozpWage]),
+                ...($riskShiftCount === null ? [] : ['risk_shift_count' => $riskShiftCount]),
             ]),
             'jmhz-ordinary-confirmation',
             $supplierId,
@@ -307,6 +317,7 @@ final readonly class JmhzOrdinaryEvidenceService
             $userAgent,
             $sourceKind,
             $ozpWage,
+            $riskShiftCount,
         ): array {
             $source = $lockedSource ?? $this->repository->lockSource($supplierId, $revisionId);
             if ($source === null) {
@@ -325,6 +336,7 @@ final readonly class JmhzOrdinaryEvidenceService
                 $confirmedAt,
                 $sourceKind,
                 $ozpWage,
+                $riskShiftCount,
             );
             $scope = $preview->payload['scope'];
             if (!is_array($scope) || array_is_list($scope)) {
@@ -373,6 +385,7 @@ final readonly class JmhzOrdinaryEvidenceService
                 $confirmedAt,
                 $sourceKind,
                 $ozpWage,
+                $riskShiftCount,
             );
             $plaintext = $snapshot->canonicalJson();
             $fingerprint = $this->sensitiveData->keyedFingerprint(
@@ -516,6 +529,7 @@ final readonly class JmhzOrdinaryEvidenceService
                             'jmhz_ordinary_evidence_monthly_exception_required',
                             'jmhz_ordinary_evidence_deduction_conflict',
                             ...self::OZP_ATTENTION_CODES,
+                            self::RISK_SHIFTS_ATTENTION_CODE,
                         ], true)) {
                             throw $exception;
                         }
@@ -535,9 +549,12 @@ final readonly class JmhzOrdinaryEvidenceService
                         'code' => $code,
                         'entity_type' => 'employment',
                         'entity_id' => $employmentId,
-                        'attribute_ids' => in_array($code, self::OZP_ATTENTION_CODES, true)
-                            ? ['10347', '10348', '10349', '10350', '10351', '10352', '10353']
-                            : ['10116', '10546'],
+                        'attribute_ids' => match (true) {
+                            in_array($code, self::OZP_ATTENTION_CODES, true) =>
+                                ['10347', '10348', '10349', '10350', '10351', '10352', '10353'],
+                            $code === self::RISK_SHIFTS_ATTENTION_CODE => ['10580'],
+                            default => ['10116', '10546'],
+                        },
                     ];
                 }
             }
@@ -685,6 +702,7 @@ final readonly class JmhzOrdinaryEvidenceService
                     $payload['interaction_decisions'][2]['triggered'] ?? null,
             ],
             'ozp_wage' => $payload['ozp_wage'] ?? null,
+            'risk_shift_count' => $payload['risk_shift_count'] ?? null,
             'source_kind' => $payload['confirmation']['source_kind'],
             'confirmed_at' => $payload['confirmation']['confirmed_at'],
             'created_at' => $stored['created_at'],

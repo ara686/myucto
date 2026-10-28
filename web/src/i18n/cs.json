@@ -6388,6 +6388,16 @@
         "municipality_name": "Obec pracoviště",
         "municipality_code": "Kód obce (CISOB)",
         "country_code": "Kód státu",
+        "address_hint": "Plnou adresu pracoviště vykazuje měsíční hlášení od ledna 2027. Vyplňte aspoň číslo popisné a PSČ; u pracoviště mimo ČR se nevyplňuje.",
+        "street": "Ulice",
+        "house_number": "Číslo popisné",
+        "orientation_number": "Číslo orientační",
+        "postal_code": "PSČ",
+        "address_point_code": "Kód adresního místa (RÚIAN, volitelné)",
+        "state_prosecutor": "Státní zástupce (hlášení od ledna 2027)",
+        "state_prosecutor_unset": "Neuvedeno",
+        "state_prosecutor_yes": "Ano",
+        "state_prosecutor_no": "Ne",
         "apz_status": "Příspěvek od úřadu práce (aktivní politika zaměstnanosti)",
         "apz_instrument": "Nástroj aktivní politiky zaměstnanosti",
         "functional_benefits": "Funkční požitky podle § 6 odst. 10 zákona o daních z příjmů",
@@ -6810,6 +6820,7 @@
         },
         "field": {
           "status": "Stav",
+          "signed_on": "Den podpisu",
           "evidence_reference": "Odkaz na podklad (volitelné)",
           "credit_kind": "Druh slevy",
           "evidence_status": "Doloženo",
@@ -9228,6 +9239,7 @@
             "detail_not_applicable": "Vyplněné bližší určení pracovněprávního vztahu se nesmí používat s vybraným druhem činnosti.",
             "ozp_wage": "Zaměstnanec má podporu zaměstnávání OZP a chybí datum úhrady mzdy včetně pojistného a údaj o výplatě v hotovosti.",
             "ozp_payment_date": "Datum úhrady mzdy včetně pojistného není v povoleném rozsahu.",
+            "risk_shifts": "U práce zařazené do kategorie 4 chybí počet směn odpracovaných v měsíci (10580).",
             "ozp_profile": "Podpora zaměstnávání OZP v potvrzení neodpovídá nastavení pracovního vztahu.",
             "ozp_deductions": "U dohody o srážce chybí rozhodnutí, zda je věřitelem zaměstnavatel a jak se srážka vykáže v JMHZ.",
             "ozp_employer": "Zaměstnavatel není v registraci uveden jako uznaný na chráněném trhu práce."
@@ -9268,6 +9280,7 @@
             "detail_not_applicable": "Otevřete uvedený pracovní vztah a jeho účinné podmínky. V základních údajích zkontrolujte pole Druh činnosti a Bližší určení pracovněprávního vztahu a jejich kombinaci podle skutečné smlouvy. Uložte správnou verzi podmínek s účinností pro vykazovaný měsíc, poté mzdu přepočítejte a schvalte novou revizi. Správné údaje neměňte na jiné jen kvůli průchodu kontroly.",
             "ozp_wage": "Níže u vztahu vyplňte den úhrady (nejpozdější z výplaty mzdy, odvodu sociálního a zdravotního pojištění) a zda byla část mzdy vyplacena v hotovosti, a potvrďte.",
             "ozp_payment_date": "Zadejte den, kdy byla mzda včetně pojistného skutečně uhrazena; nesmí být v budoucnu ani před začátkem měsíce.",
+            "risk_shifts": "Níže u vztahu zadejte počet směn, které zaměstnanec v měsíci odpracoval při rizikové práci, a potvrďte. Mzdy směny neevidují.",
             "ozp_profile": "Na kartě pracovního vztahu ověřte příznak podpory zaměstnávání OZP a připravte hlášení znovu.",
             "ozp_deductions": "U dohody vyberte věřitele (zaměstnavatel, nebo třetí osoba) a u srážky ve prospěch zaměstnavatele její zařazení 10350 až 10353; pak připravte hlášení znovu.",
             "ozp_employer": "V nastavení zaměstnavatele zkontrolujte uznání na chráněném trhu práce, nebo u vztahu podporu zaměstnávání OZP vypněte."
@@ -9295,6 +9308,9 @@
           "hint": "Datum úhrady (10347) je nejpozdější z: den výplaty mzdy, den odvodu sociálního pojištění, den odvodu zdravotního pojištění. Srážky ve prospěch zaměstnavatele (10349 až 10353) se odvodí z mzdového běhu.",
           "payment_date": "Datum úhrady mzdy včetně pojistného",
           "cash_paid": "Část mzdy vyplacena v hotovosti",
+          "social_paid_on": "Den odvodu sociálního pojištění (od ledna 2027)",
+          "health_paid_on": "Den odvodu zdravotního pojištění (od ledna 2027)",
+          "dates_hint": "Od ledna 2027 hlášení nese datum úhrady mzdy (10589) a zvlášť dny odvodu sociálního (10570) a zdravotního pojištění (10571); vyplňte oba.",
           "cash_select": "Vyberte",
           "cash_yes": "Ano",
           "cash_no": "Ne",
@@ -9303,6 +9319,11 @@
           "summary": "Výdělek OZP (vztah {employment}): úhrada {date}, hotovost {cash}.",
           "no_deductions": "Bez srážek ve prospěch zaměstnavatele.",
           "deduction": "{attribute}: {amount} Kč"
+        },
+        "jmhz_risk_shifts": {
+          "label": "Počet směn při rizikové práci (10580)",
+          "confirm": "Potvrdit počet směn",
+          "failed": "Počet směn se nepodařilo potvrdit."
         }
       },
       "manual_acceptance": {
@@ -13149,6 +13170,9 @@
         "jmhz_ordinary_evidence_ozp_wage_invalid": "Výdělek OZP musí obsahovat platné datum úhrady mzdy a výslovné Ano nebo Ne u výplaty v hotovosti.",
         "jmhz_ordinary_evidence_ozp_wage_required": "U zaměstnance s podporou zaměstnávání OZP chybí datum úhrady mzdy včetně pojistného (10347) a údaj o výplatě v hotovosti (10348).",
         "jmhz_ordinary_evidence_ozp_wage_unexpected": "Výdělek OZP (10347 až 10349) se uvádí jen u vztahu s podporou zaměstnávání OZP.",
+        "jmhz_ordinary_evidence_risk_shifts_invalid": "Počet směn při rizikové práci (10580) musí být celé číslo 0 až 999.",
+        "jmhz_ordinary_evidence_risk_shifts_required": "U práce zařazené do kategorie 4 chybí počet směn odpracovaných v měsíci (10580); mzdy směny neevidují, doplňte ho.",
+        "jmhz_ordinary_evidence_risk_shifts_unexpected": "Počet směn při rizikové práci (10580) se uvádí jen u vztahu s prací zařazenou do kategorie 4.",
         "jmhz_ozp_wage_primary_mismatch": "Podporu zaměstnávání OZP má jen vedlejší pracovní vztah osoby, výdělek OZP ale nese souhrn hlavního vztahu.",
         "jmhz_xml_ozp_deductions_inconsistent": "Příznak srážek ve prospěch zaměstnavatele (10349) neodpovídá částkám 10350 až 10353 (kontrola 258).",
         "jmhz_xml_ozp_wage_form_unsupported": "Výdělek osob OZP a srážky ve prospěch zaměstnavatele (10347 až 10353) formulář tohoto druhu nevede; hlášení zpracujte ručně."

@@ -70,7 +70,7 @@ final class PayrollPersonStatutoryEvidenceRepository
         'income_tax' => [
             'declarations' => [
                 'table' => 'payroll_person_tax_declarations',
-                'columns' => 'id, status, effective_from, effective_to,
+                'columns' => 'id, status, signed_on, effective_from, effective_to,
                             evidence_reference, row_version',
                 'order' => 'effective_from, id',
             ],
@@ -177,7 +177,7 @@ final class PayrollPersonStatutoryEvidenceRepository
             'section' => 'income_tax',
             'collection' => 'declarations',
             'kind' => 'interval',
-            'fields' => ['status', 'evidence_reference'],
+            'fields' => ['status', 'signed_on', 'evidence_reference'],
         ],
         'tax_residences' => [
             'section' => 'income_tax',

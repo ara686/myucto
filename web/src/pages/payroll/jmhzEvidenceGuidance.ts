@@ -39,6 +39,10 @@ export const jmhzEvidenceCodes: Record<string, Definition> = Object.fromEntries(
   ozp_profile_mismatch: ['ozp_profile', 'employment'],
   ozp_deduction_unclassified: ['ozp_deductions', 'agreements'],
   ozp_employer_not_protected: ['ozp_employer', 'employer'],
+  // Počet směn rizikové práce (10580, od 01/2027) se zadává přímo v panelu.
+  risk_shifts_required: ['risk_shifts', 'employment'],
+  risk_shifts_invalid: ['risk_shifts', 'employment'],
+  risk_shifts_unexpected: ['risk_shifts', 'employment'],
 }).map(([code, [message, destination]]) => [
   `jmhz_ordinary_evidence_${code}`, { message, destination },
 ])) as Record<string, Definition>
@@ -91,6 +95,8 @@ export function jmhzEvidenceGuidance(scope: PayrollJmhzOrdinaryEvidenceScope, pe
     const profile = code === 'jmhz_ordinary_evidence_monthly_exception_required' || ozp
     const field = ozp
       ? 'jmhz_ozp_employment_support_applies'
+      : code.startsWith('jmhz_ordinary_evidence_risk_shifts_')
+      ? 'social_employer_rate_category'
       : profile
       ? exceptionFields.includes(context.field ?? '') ? `jmhz_${context.field}` : undefined
       : context.reason?.includes('activity_code') ? 'activity_code' : 'jmhz_relationship_detail_code'
@@ -109,6 +115,9 @@ export function jmhzEvidenceGuidance(scope: PayrollJmhzOrdinaryEvidenceScope, pe
       && exceptionFields.includes(context.field ?? '') ? `${prefix}.fields.${context.field}` : null,
     /** Výdělek OZP (10347, 10348) se doplňuje přímo u vztahu v panelu. */
     ozpWageForm: code === 'jmhz_ordinary_evidence_ozp_wage_required',
+    /** Počet směn rizikové práce (10580) se doplňuje přímo u vztahu v panelu. */
+    riskShiftForm: code === 'jmhz_ordinary_evidence_risk_shifts_required'
+      || code === 'jmhz_ordinary_evidence_risk_shifts_invalid',
     versions: code === 'jmhz_ordinary_evidence_specification_mismatch' ? [
       ...(context.stored_xsd && context.current_xsd ? [{ key: `${prefix}.xsd_versions`, old: context.stored_xsd, current: context.current_xsd }] : []),
       ...(context.stored_controls && context.current_controls ? [{ key: `${prefix}.control_versions`, old: context.stored_controls, current: context.current_controls }] : []),

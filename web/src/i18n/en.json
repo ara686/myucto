@@ -6388,6 +6388,16 @@
         "municipality_name": "Workplace municipality",
         "municipality_code": "Municipality code (CISOB)",
         "country_code": "Country code",
+        "address_hint": "The monthly report includes the full workplace address from January 2027. Fill in at least the house number and postcode; leave it empty for a workplace abroad.",
+        "street": "Street",
+        "house_number": "House number",
+        "orientation_number": "Street number",
+        "postal_code": "Postcode",
+        "address_point_code": "Address point code (RÚIAN, optional)",
+        "state_prosecutor": "Public prosecutor (reported from January 2027)",
+        "state_prosecutor_unset": "Not stated",
+        "state_prosecutor_yes": "Yes",
+        "state_prosecutor_no": "No",
         "apz_status": "Labour office contribution (active employment policy)",
         "apz_instrument": "Active employment policy instrument",
         "functional_benefits": "Functional benefits under Section 6(10) of the Income Tax Act",
@@ -6810,6 +6820,7 @@
         },
         "field": {
           "status": "Status",
+          "signed_on": "Date signed",
           "evidence_reference": "Supporting reference (optional)",
           "credit_kind": "Credit kind",
           "evidence_status": "Documented",
@@ -9228,6 +9239,7 @@
             "detail_not_applicable": "The detailed employment classification cannot be used with the selected activity type.",
             "ozp_wage": "The employee has disability employment support and the wage payment date and cash payment flag are missing.",
             "ozp_payment_date": "The wage payment date including contributions is out of the allowed range.",
+            "risk_shifts": "Work classified in category 4 is missing the number of shifts worked in the month (10580).",
             "ozp_profile": "Disability employment support in the confirmation does not match the employment settings.",
             "ozp_deductions": "A deduction agreement has no decision whether the employer is the creditor and how it is reported in JMHZ.",
             "ozp_employer": "The employer registration does not mark the employer as recognised on the protected labour market."
@@ -9268,6 +9280,7 @@
             "detail_not_applicable": "Open this employment and its effective terms. In the basic details check Activity type and Detailed employment classification against the actual contract. Save the correct terms effective for the reporting month, then recalculate payroll and approve a new revision. Do not substitute incorrect values just to pass validation.",
             "ozp_wage": "Below, enter the payment date (the latest of paying the wage, social and health contributions) and whether any part was paid in cash, then confirm.",
             "ozp_payment_date": "Enter the day the wage including contributions was actually paid; it must not be in the future or before the start of the month.",
+            "risk_shifts": "Below, enter the number of shifts the employee worked in risk work during the month, then confirm. Payroll does not record shifts.",
             "ozp_profile": "Check the disability employment support flag on the employment card and prepare the report again.",
             "ozp_deductions": "On the agreement choose the creditor (employer or third party) and, for a deduction in favour of the employer, its category 10350 to 10353; then prepare the report again.",
             "ozp_employer": "Check the protected labour market recognition in the employer settings, or switch off disability employment support on the employment."
@@ -9295,6 +9308,9 @@
           "hint": "The payment date (10347) is the latest of: wage payment day, social contribution remittance day, health contribution remittance day. Deductions in favour of the employer (10349 to 10353) are derived from the payroll run.",
           "payment_date": "Wage payment date including contributions",
           "cash_paid": "Part of the wage paid in cash",
+          "social_paid_on": "Social contribution remittance day (from January 2027)",
+          "health_paid_on": "Health contribution remittance day (from January 2027)",
+          "dates_hint": "From January 2027 the report carries the wage payment date (10589) and separately the social (10570) and health (10571) contribution remittance days; fill in both.",
           "cash_select": "Select",
           "cash_yes": "Yes",
           "cash_no": "No",
@@ -9303,6 +9319,11 @@
           "summary": "Disability wage data (employment {employment}): paid {date}, cash {cash}.",
           "no_deductions": "No deductions in favour of the employer.",
           "deduction": "{attribute}: CZK {amount}"
+        },
+        "jmhz_risk_shifts": {
+          "label": "Number of shifts in risk work (10580)",
+          "confirm": "Confirm number of shifts",
+          "failed": "The number of shifts could not be confirmed."
         }
       },
       "manual_acceptance": {
@@ -13149,6 +13170,9 @@
         "jmhz_ordinary_evidence_ozp_wage_invalid": "The disability wage data must contain a valid payment date and an explicit Yes or No for cash payment.",
         "jmhz_ordinary_evidence_ozp_wage_required": "For an employee with disability employment support, the date of paying the wage including contributions (10347) and the cash payment flag (10348) are missing.",
         "jmhz_ordinary_evidence_ozp_wage_unexpected": "Disability wage data (10347 to 10349) is reported only for an employment with disability employment support.",
+        "jmhz_ordinary_evidence_risk_shifts_invalid": "The number of shifts in risk work (10580) must be a whole number from 0 to 999.",
+        "jmhz_ordinary_evidence_risk_shifts_required": "Work classified in category 4 is missing the number of shifts worked in the month (10580); payroll does not record shifts, please enter it.",
+        "jmhz_ordinary_evidence_risk_shifts_unexpected": "The number of shifts in risk work (10580) is reported only for an employment with work classified in category 4.",
         "jmhz_ozp_wage_primary_mismatch": "Only a secondary employment of the person has disability employment support, but the disability wage data belongs to the summary of the primary employment.",
         "jmhz_xml_ozp_deductions_inconsistent": "The flag of deductions in favour of the employer (10349) does not match amounts 10350 to 10353 (control 258).",
         "jmhz_xml_ozp_wage_form_unsupported": "This form type does not carry the disability wage data and deductions in favour of the employer (10347 to 10353); process the report manually."

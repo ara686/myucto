@@ -132,6 +132,17 @@ final class JmhzOrdinaryEvidenceApplicability
             $this->assertOzpWage($ozpWage, $periodStart, $payload['confirmation'] ?? null);
         }
         $ozpSupport = $ozpWage !== null;
+        if (array_key_exists('risk_shift_count', $payload)) {
+            $shifts = $payload['risk_shift_count'];
+            if (!is_int($shifts) || $shifts < 0 || $shifts > 999
+                || ($term['social_employer_rate_category'] ?? null) !== 'risk_employment'
+            ) {
+                $this->invalid(
+                    'jmhz_ordinary_evidence_values_mismatch',
+                    'Ordinary evidence obsahuje neplatny pocet smen rizikove prace.',
+                );
+            }
+        }
         if (is_bool($term['jmhz_ozp_employment_support_applies'] ?? null)
             && $term['jmhz_ozp_employment_support_applies'] !== $ozpSupport
         ) {
@@ -198,13 +209,17 @@ final class JmhzOrdinaryEvidenceApplicability
         $paymentDate = $wage['payment_date'] ?? null;
         $confirmedAt = is_array($confirmation) ? ($confirmation['confirmed_at'] ?? null) : null;
         $sums = $wage['employer_deductions_minor'] ?? null;
-        $valid = $keys === [
+        $baseKeys = [
             'cash_paid',
             'employer_deduction_sources',
             'employer_deductions_made',
             'employer_deductions_minor',
             'payment_date',
-        ]
+        ];
+        // Data odvodů 10570 a 10571 (verze 2027) jsou nepovinná, ale jen spolu.
+        $withDates = [...$baseKeys, 'health_insurance_paid_on', 'social_insurance_paid_on'];
+        sort($withDates, SORT_STRING);
+        $valid = ($keys === $baseKeys || $keys === $withDates)
             && is_bool($wage['cash_paid'])
             && is_bool($wage['employer_deductions_made'])
             && is_array($sums)
@@ -228,6 +243,17 @@ final class JmhzOrdinaryEvidenceApplicability
                 ->setTimezone(new \DateTimeZone('Europe/Prague'))
                 ->format('Y-m-d');
             $valid = $paymentDate >= $periodStart && $paymentDate <= $confirmedOn;
+            foreach (['social_insurance_paid_on', 'health_insurance_paid_on'] as $key) {
+                if (!array_key_exists($key, $wage)) {
+                    continue;
+                }
+                $date = $wage[$key];
+                $valid = $valid
+                    && is_string($date)
+                    && preg_match('/^\d{4}-\d{2}-\d{2}$/D', $date) === 1
+                    && $date >= $periodStart
+                    && $date <= $confirmedOn;
+            }
         }
         if (!$valid) {
             $this->invalid(

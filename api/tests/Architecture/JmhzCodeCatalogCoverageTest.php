@@ -54,8 +54,6 @@ final class JmhzCodeCatalogCoverageTest extends TestCase
         'eldp_statement_id' => 'table',
         'eldp_submission' => 'key',
         'eldp_type' => 'field',
-        // Blok údajů verze 2027 v normalizovaném dokumentu (resolver), ne kód blokace.
-        'jmhz_2027' => 'field',
         'jmhz_activity' => 'field',
         'jmhz_amount' => 'field',
         'jmhz_amount_minor' => 'field',
@@ -124,6 +122,8 @@ final class JmhzCodeCatalogCoverageTest extends TestCase
         'jmhz_assignment_user_kind' => 'field',
         'jmhz_assignment_user_name' => 'field',
         'jmhz_risk_categorization_code' => 'field',
+        // Příznak státního zástupce v podmínkách vztahu (JMHZ 2027, 10587).
+        'jmhz_state_prosecutor' => 'field',
         // Počty a upozornění v protokolu převodu PAMICA (PohodaPayrollJmhzWriter),
         // ne kódy blokací podání.
         'jmhz_attributes_unknown' => 'other',
