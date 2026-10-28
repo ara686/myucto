@@ -1148,6 +1148,9 @@ const canPairFinal = computed(() =>
 // Propojeno se zálohou (proforma) → lze odpojit. Rodič storna/dobropisu (non-proforma) ne.
 const linkedProforma = computed(() =>
   invoice.value?.parent_invoice?.invoice_type === 'proforma' ? invoice.value.parent_invoice : null)
+// Odpočtový řádek zálohy § 37a = záporný řádek mimo slevový (stejná definice jako na serveru).
+const hasAdvanceDeduction = computed(() =>
+  (invoice.value?.items ?? []).some(i => Number(i.total_with_vat) < 0 && (i.item_kind ?? 'standard') !== 'discount'))
 
 async function openPairModal(mode: 'advance' | 'final') {
   if (!invoice.value) return
@@ -2490,8 +2493,15 @@ useWindowRefresh(['invoices', 'clients', 'bank', 'bank-transactions', 'cash', 'a
           </RouterLink>
         </span>
         <!-- Daňový doklad k přijaté platbě (#89) má vazbu strukturální (drží § 37a
-             odpočty finálu i vazbu na platbu) — rozpojit nelze, backend to odmítá. -->
-        <button v-if="auth.canWrite('invoices') && invoice.invoice_type !== 'tax_document' && !lockedForMe" type="button" @click="unlinkAdvance()" :disabled="linkingAdvance"
+             odpočty finálu i vazbu na platbu) — rozpojit nelze, backend to odmítá.
+             Koncept s odpočtem zálohy § 37a rozpojí jen odebrání čerpání (smaže i odpočet);
+             vystavený doklad s odpočtem backend rozpojit nedovolí. -->
+        <button v-if="auth.canWrite('invoices') && invoice.invoice_type !== 'tax_document' && !lockedForMe && hasAdvanceDeduction && isDraft"
+          type="button" @click="removeDrawdown()" :disabled="busy !== null"
+          class="cursor-pointer text-xs px-2 py-1 border border-neutral-300 rounded text-neutral-600 hover:bg-neutral-50 disabled:opacity-50 shrink-0 bg-surface">
+          {{ t('invoice.advance_drawdown.remove') }}
+        </button>
+        <button v-else-if="auth.canWrite('invoices') && invoice.invoice_type !== 'tax_document' && !lockedForMe && !hasAdvanceDeduction" type="button" @click="unlinkAdvance()" :disabled="linkingAdvance"
           class="cursor-pointer text-xs px-2 py-1 border border-neutral-300 rounded text-neutral-600 hover:bg-neutral-50 disabled:opacity-50 shrink-0 bg-surface">
           {{ t('invoice.advance_link.unlink') }}
         </button>
