@@ -591,6 +591,11 @@ final class RoutePermissionMap
         // v catch-all pravidle níž: kdo cestu založil, musí umět svůj překlep uklidit.
         ['POST', '#^/api/payroll/travel/trips/[0-9]+/(approve|materialize|cancel)$#', 'payroll.approve', AccessLevel::WRITE],
         ['*', '#^/api/payroll/travel(?:/.*)?$#', 'payroll.inputs.write', AccessLevel::WRITE],
+        // Evidence tržeb pro osvobozené spropitné (§ 6 odst. 9 písm. g) ZDP).
+        // Strop se zmrazuje do schválených vstupů a mění daň i pojistné, proto
+        // zápis pod `payroll.approve` jako ostatní daňové podklady.
+        ['GET', '#^/api/payroll/food-service-tips/[0-9]{4}-[0-9]{2}$#', 'payroll', AccessLevel::READ],
+        ['PUT', '#^/api/payroll/food-service-tips/[0-9]{4}-[0-9]{2}$#', 'payroll.approve', AccessLevel::WRITE],
         ['GET', '#^/api/payroll/deduction-agreements(?:/|$)#', 'payroll', AccessLevel::READ],
         ['*', '#^/api/payroll/deduction-agreements(?:/|$)#', 'payroll.inputs.write', AccessLevel::WRITE],
         ['GET', '#^/api/payroll/revisions/[0-9]+/net-results/[0-9]+$#', 'payroll', AccessLevel::READ],

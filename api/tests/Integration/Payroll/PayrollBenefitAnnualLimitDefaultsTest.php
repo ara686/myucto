@@ -191,7 +191,7 @@ final class PayrollBenefitAnnualLimitDefaultsTest extends TestCase
     public function testEmployerOwnCapStillBlocksApproval(): void
     {
         $decided = $this->createComponent([
-            'code' => 'REKREACE_VOLNY_CAS',
+            'code' => 'REKREACE_STROP_FIRMY',
             'name' => 'Rekreace a volnočasový benefit',
             'component_kind' => 'benefit_recreation',
             'value_kind' => 'non_monetary',

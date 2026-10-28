@@ -1112,7 +1112,8 @@
         "2208_payroll_annual_settlement_claims.sql",
         "2209_payroll_deduction_agreement_jmhz_target.sql",
         "2210_payroll_component_jmhz_catalog_1_4_2_11_package.sql",
-        "2211_payroll_student_tax_credit.sql"
+        "2211_payroll_student_tax_credit.sql",
+        "2212_payroll_2027_preschool_benefits_tips.sql"
     ],
     "tables": {
         "abra_flexi_connections": {
@@ -10963,6 +10964,53 @@
                 "chk_payroll_annual_settlement_outcome_year": "`tax_year` between 2000 and 2199"
             }
         },
+        "payroll_annual_settlement_preschool_claims": {
+            "type": "BASE TABLE",
+            "engine": "InnoDB",
+            "collation": "utf8mb4_unicode_ci",
+            "columns": {
+                "agreed_cap_minor": "bigint(20) NULL DEFAULT NULL",
+                "child_dependant_id": "bigint(20) unsigned NOT NULL",
+                "claimed_as_business_expense": "tinyint(1) NOT NULL DEFAULT 0",
+                "claimed_by_other_taxpayer": "tinyint(1) NOT NULL DEFAULT 0",
+                "created_at": "timestamp NOT NULL DEFAULT current_timestamp()",
+                "created_by": "bigint(20) unsigned NULL DEFAULT NULL",
+                "employee_id": "bigint(20) unsigned NOT NULL",
+                "evidence_reference": "varchar(500) NULL DEFAULT NULL",
+                "evidence_status": "enum('unverified','verified') NOT NULL DEFAULT 'unverified'",
+                "expenses_minor": "bigint(20) NOT NULL",
+                "facility_kind": "enum('kindergarten','children_group','licensed_care') NOT NULL",
+                "facility_name": "varchar(191) NULL DEFAULT NULL",
+                "grandchild_care_replaces_parents": "tinyint(1) NOT NULL DEFAULT 0",
+                "households_count": "tinyint(3) unsigned NOT NULL DEFAULT 1",
+                "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
+                "note": "varchar(500) NULL DEFAULT NULL",
+                "supplier_id": "int(10) unsigned NOT NULL",
+                "tax_year": "smallint(5) unsigned NOT NULL",
+                "updated_at": "timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE CURRENT_TIMESTAMP()",
+                "updated_by": "bigint(20) unsigned NULL DEFAULT NULL"
+            },
+            "indexes": {
+                "PRIMARY": "UNIQUE BTREE (id)",
+                "fk_payroll_annual_settlement_preschool_child": "BTREE (supplier_id, child_dependant_id)",
+                "fk_payroll_annual_settlement_preschool_creator": "BTREE (created_by)",
+                "fk_payroll_annual_settlement_preschool_editor": "BTREE (updated_by)",
+                "uq_payroll_annual_settlement_preschool_scope": "UNIQUE BTREE (supplier_id, employee_id, tax_year, child_dependant_id)",
+                "uq_payroll_annual_settlement_preschool_supplier_id": "UNIQUE BTREE (supplier_id, id)"
+            },
+            "foreign_keys": {
+                "fk_payroll_annual_settlement_preschool_child": "(supplier_id, child_dependant_id) -> payroll_dependants (supplier_id, id) ON UPDATE RESTRICT ON DELETE RESTRICT",
+                "fk_payroll_annual_settlement_preschool_creator": "(created_by) -> users (id) ON UPDATE RESTRICT ON DELETE SET NULL",
+                "fk_payroll_annual_settlement_preschool_editor": "(updated_by) -> users (id) ON UPDATE RESTRICT ON DELETE SET NULL",
+                "fk_payroll_annual_settlement_preschool_employee": "(supplier_id, employee_id) -> payroll_employees (supplier_id, id) ON UPDATE RESTRICT ON DELETE CASCADE"
+            },
+            "checks": {
+                "chk_payroll_annual_settlement_preschool_amounts": "`expenses_minor` > 0 and `households_count` between 1 and 9 and (`agreed_cap_minor` is null or `agreed_cap_minor` >= 0)",
+                "chk_payroll_annual_settlement_preschool_evidence": "`evidence_status` <> 'verified' or `evidence_reference` is not null and `evidence_reference` <> ''",
+                "chk_payroll_annual_settlement_preschool_flags": "`claimed_by_other_taxpayer` in (0,1) and `claimed_as_business_expense` in (0,1) and `grandchild_care_replaces_parents` in (0,1)",
+                "chk_payroll_annual_settlement_preschool_year": "`tax_year` between 2027 and 2199"
+            }
+        },
         "payroll_annual_settlement_requests": {
             "type": "BASE TABLE",
             "engine": "InnoDB",
@@ -11374,7 +11422,7 @@
                 "created_at": "timestamp NOT NULL DEFAULT current_timestamp()",
                 "enforcement_treatment": "enum('included','excluded','manual_review') NOT NULL",
                 "exemption_basis": "enum('not_subject_to_tax','statutory_exempt','benefit_basket','periodic_benefit_limit') NULL DEFAULT NULL",
-                "exemption_basket": "enum('non_cash_health','non_cash_leisure','old_age_savings','meal_per_shift','temporary_accommodation') NULL DEFAULT NULL",
+                "exemption_basket": "enum('non_cash_health','non_cash_leisure','old_age_savings','meal_per_shift','temporary_accommodation','recreation','food_service_tips') NULL DEFAULT NULL",
                 "frequency_kind": "enum('regular','one_off') NOT NULL",
                 "health_participation_treatment": "enum('included','excluded','manual_review') NOT NULL",
                 "health_treatment": "enum('included','excluded','manual_review') NOT NULL",
@@ -13773,6 +13821,64 @@
                 "chk_payroll_external_jmhz_type": "`submission_type` is null or `submission_type` in ('R','O','S')"
             }
         },
+        "payroll_food_service_tip_allocations": {
+            "type": "BASE TABLE",
+            "engine": "InnoDB",
+            "collation": "utf8mb4_unicode_ci",
+            "columns": {
+                "employee_id": "bigint(20) unsigned NOT NULL",
+                "exempt_cap_minor": "bigint(20) NOT NULL",
+                "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
+                "supplier_id": "int(10) unsigned NOT NULL",
+                "tip_month_id": "bigint(20) unsigned NOT NULL"
+            },
+            "indexes": {
+                "PRIMARY": "UNIQUE BTREE (id)",
+                "fk_payroll_food_service_tip_allocation_employee": "BTREE (supplier_id, employee_id)",
+                "uq_payroll_food_service_tip_allocation": "UNIQUE BTREE (supplier_id, tip_month_id, employee_id)"
+            },
+            "foreign_keys": {
+                "fk_payroll_food_service_tip_allocation_employee": "(supplier_id, employee_id) -> payroll_employees (supplier_id, id) ON UPDATE RESTRICT ON DELETE CASCADE",
+                "fk_payroll_food_service_tip_allocation_month": "(supplier_id, tip_month_id) -> payroll_food_service_tip_months (supplier_id, id) ON UPDATE RESTRICT ON DELETE CASCADE"
+            },
+            "checks": {
+                "chk_payroll_food_service_tip_allocation_cap": "`exempt_cap_minor` >= 0"
+            }
+        },
+        "payroll_food_service_tip_months": {
+            "type": "BASE TABLE",
+            "engine": "InnoDB",
+            "collation": "utf8mb4_unicode_ci",
+            "columns": {
+                "allocation_mode": "enum('per_capita','employer_determined') NOT NULL",
+                "created_at": "timestamp NOT NULL DEFAULT current_timestamp()",
+                "created_by": "bigint(20) unsigned NULL DEFAULT NULL",
+                "evidence_reference": "varchar(500) NULL DEFAULT NULL",
+                "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
+                "note": "varchar(500) NULL DEFAULT NULL",
+                "period_start": "date NOT NULL",
+                "recipients_count": "smallint(5) unsigned NULL DEFAULT NULL",
+                "revenue_minor": "bigint(20) NOT NULL",
+                "supplier_id": "int(10) unsigned NOT NULL",
+                "updated_at": "timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE CURRENT_TIMESTAMP()",
+                "updated_by": "bigint(20) unsigned NULL DEFAULT NULL"
+            },
+            "indexes": {
+                "PRIMARY": "UNIQUE BTREE (id)",
+                "fk_payroll_food_service_tip_month_creator": "BTREE (created_by)",
+                "fk_payroll_food_service_tip_month_editor": "BTREE (updated_by)",
+                "uq_payroll_food_service_tip_month_period": "UNIQUE BTREE (supplier_id, period_start)",
+                "uq_payroll_food_service_tip_month_supplier_id": "UNIQUE BTREE (supplier_id, id)"
+            },
+            "foreign_keys": {
+                "fk_payroll_food_service_tip_month_creator": "(created_by) -> users (id) ON UPDATE RESTRICT ON DELETE SET NULL",
+                "fk_payroll_food_service_tip_month_editor": "(updated_by) -> users (id) ON UPDATE RESTRICT ON DELETE SET NULL",
+                "fk_payroll_food_service_tip_month_supplier": "(supplier_id) -> supplier (id) ON UPDATE RESTRICT ON DELETE CASCADE"
+            },
+            "checks": {
+                "chk_payroll_food_service_tip_month": "`period_start` >= '2027-01-01' and dayofmonth(`period_start`) = 1 and `revenue_minor` >= 0 and (`allocation_mode` = 'per_capita' and `recipients_count` >= 1 or `allocation_mode` = 'employer_determined' and `recipients_count` is null)"
+            }
+        },
         "payroll_generated_document_hidden": {
             "type": "BASE TABLE",
             "engine": "InnoDB",
@@ -14109,7 +14215,7 @@
                 "approved_at": "datetime NULL DEFAULT NULL",
                 "approved_by": "bigint(20) unsigned NULL DEFAULT NULL",
                 "benefit_allocation_json": "longtext NULL DEFAULT NULL",
-                "benefit_basket": "enum('non_cash_health','non_cash_leisure','old_age_savings','meal_per_shift','temporary_accommodation') NULL DEFAULT NULL",
+                "benefit_basket": "enum('non_cash_health','non_cash_leisure','old_age_savings','meal_per_shift','temporary_accommodation','recreation','food_service_tips') NULL DEFAULT NULL",
                 "benefit_exempt_minor": "bigint(20) NULL DEFAULT NULL",
                 "benefit_taxable_minor": "bigint(20) NULL DEFAULT NULL",
                 "component_id": "bigint(20) unsigned NOT NULL",

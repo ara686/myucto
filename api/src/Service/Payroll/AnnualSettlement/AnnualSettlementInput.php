@@ -59,6 +59,13 @@ final readonly class AnnualSettlementInput
         public array $nonTaxableClaims = [],
         /** § 35ba odst. 1 písm. b), § 35bb — sleva na manžela. */
         public ?AnnualSpouseCreditClaim $spouseClaim = null,
+        /**
+         * § 35ba odst. 1 písm. g), § 35bd — sleva za umístění dítěte, jeden
+         * nárok na dítě.
+         *
+         * @var list<AnnualPreschoolCreditClaim>
+         */
+        public array $preschoolClaims = [],
     ) {
         if ($taxYear < 2000 || $taxYear > 2199) {
             throw new \InvalidArgumentException('Rok ročního zúčtování není platný.');
@@ -88,6 +95,16 @@ final readonly class AnnualSettlementInput
         self::assertList($childMonths, AnnualSettlementChildMonths::class);
         self::assertList($externalCertificates, ExternalEmployerTaxCertificate::class);
         self::assertList($nonTaxableClaims, AnnualNonTaxableClaim::class);
+        self::assertList($preschoolClaims, AnnualPreschoolCreditClaim::class);
+        $seenPreschool = [];
+        foreach ($preschoolClaims as $claim) {
+            if (isset($seenPreschool[$claim->childReference])) {
+                throw new \InvalidArgumentException(
+                    'Sleva za umístění téhož dítěte nesmí být v ročním zúčtování dvakrát.',
+                );
+            }
+            $seenPreschool[$claim->childReference] = true;
+        }
 
         $seenCredits = [];
         foreach ($creditMonths as $credit) {

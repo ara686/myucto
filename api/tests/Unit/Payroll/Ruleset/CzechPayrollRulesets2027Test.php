@@ -316,17 +316,15 @@ final class CzechPayrollRulesets2027Test extends TestCase
         }
 
         $baskets = new PayrollBenefitBasketService(CzechPayrollRulesets::provider());
-        foreach ([
-            PayrollBenefitExemptionBasket::MealPerShift,
-            PayrollBenefitExemptionBasket::NonCashLeisure,
-        ] as $basket) {
-            try {
-                $baskets->limitMinor($basket, '2027-03-01', 10);
-                self::fail("Koš {$basket->value} nesmí mít pro rok 2027 limit.");
-            } catch (PayrollRulesetException) {
-                self::addToAssertionCount(1);
-            }
+        try {
+            $baskets->limitMinor(PayrollBenefitExemptionBasket::MealPerShift, '2027-03-01', 10);
+            self::fail('Stravenkový paušál nesmí mít pro rok 2027 limit, dokud nevyjde vyhláška.');
+        } catch (PayrollRulesetException) {
+            self::addToAssertionCount(1);
         }
+        // Volnočasový koš je od 2027 ze zákona bez limitu (§ 6 odst. 9 písm. d) bod 2
+        // ve znění zák. č. 180/2026 Sb.) – starý parametr se už nečte.
+        self::assertNull($baskets->limitMinor(PayrollBenefitExemptionBasket::NonCashLeisure, '2027-03-01', 10));
         // Doložený koš se počítá normálně.
         self::assertSame(
             self::AVERAGE_WAGE_MINOR,
@@ -340,7 +338,11 @@ final class CzechPayrollRulesets2027Test extends TestCase
      */
     public function testEveryDomainOf2027CarriesTheKeysOf2026(): void
     {
-        $addedIn2027 = ['income_tax' => ['credit.student.monthly']];
+        $addedIn2027 = ['income_tax' => [
+            'benefit_exemption.recreation.yearly',
+            'credit.student.monthly',
+            'minimum_wage.monthly',
+        ]];
 
         foreach (CzechPayrollRulesets2027::provider()->versions() as $version2027) {
             $keys2026 = array_keys(

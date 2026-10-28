@@ -4587,6 +4587,7 @@
         "empty": "V tomto období nejsou mzdové vstupy",
         "empty_hint": "Přidejte jednorázový vstup, importujte soubor nebo materializujte pravidelné předpisy.",
         "basket_usage": "Koš {basket} podle {statute}: po tomto plnění vyčerpáno {used} z {limit}, zbývá {remaining}.",
+        "basket_usage_unlimited": "Koš {basket} podle {statute} je v tomto roce osvobozený bez limitu, po tomto plnění poskytnuto {used}.",
         "basket_over_limit": "Zákonný limit koše je překročen: osvobozeno {exempt}, zdanitelných {taxable} - nadlimitní část vstupuje do daně i do vyměřovacích základů pojistného.",
         "meal_entitlement_summary": "Nároků celkem {count}: {qualifying} základních a {second} druhých příspěvků.",
         "meal_allocation_uniform": "Auditní rozdělení: {count} nároků × {amount}; na každý nárok limit {limit}, osvobozeno {exempt} a zdanitelné {taxable}.",
@@ -4821,10 +4822,12 @@
       "exemption_basket": {
         "none": "Bez zákonného koše",
         "non_cash_health": "Zdravotní plnění (§ 6 odst. 9 písm. d) bod 1)",
-        "non_cash_leisure": "Rekreace, sport a kultura (§ 6 odst. 9 písm. d) bod 2)",
+        "non_cash_leisure": "Sport, kultura a volný čas, do roku 2026 i rekreace (§ 6 odst. 9 písm. d) bod 2, od 2027 bez limitu)",
         "old_age_savings": "Spoření na stáří a dlouhodobá péče (§ 6 odst. 9 písm. m))",
         "meal_per_shift": "Příspěvek na stravování za směnu (§ 6 odst. 9 písm. b))",
-        "temporary_accommodation": "Přechodné ubytování měsíčně (§ 6 odst. 9 písm. i))"
+        "temporary_accommodation": "Přechodné ubytování měsíčně (§ 6 odst. 9 písm. i))",
+        "recreation": "Rekreace a zájezd od roku 2027 (§ 6 odst. 9 písm. d) bod 3)",
+        "food_service_tips": "Spropitné ze stravovacích služeb od roku 2027 (§ 6 odst. 9 písm. g))"
       },
       "exemption_basis": {
         "none": "Bez uvedeného podkladu",
@@ -5273,7 +5276,8 @@
         "prior_documents_date_missing": "U doložených dokladů předchozích zaměstnavatelů chybí datum převzetí. Bez něj nejde doložit lhůtu do 15. února. Podklady jsou uložené, doplňte datum v poli Datum převzetí dokladů.",
         "annual_claims_inconsistent": "Odpověď o ročně uplatňovaných položkách nesedí s evidencí. Buď zvolte „Uplatňuje - evidováno níže\" a položky uložte, nebo evidenci odstraňte.",
         "annual_claim_evidence_unverified": "U některé ročně uplatňované položky chybí doložení. Do základu daně a slev se smí promítnout jen doložená položka - doplňte doložení v sekci Ročně uplatňované položky.",
-        "spouse_credit_conditions_not_met": "Nejsou splněny podmínky slevy na manžela. Opravte evidenci slevy, nebo ji odeberte."
+        "spouse_credit_conditions_not_met": "Nejsou splněny podmínky slevy na manžela. Opravte evidenci slevy, nebo ji odeberte.",
+        "preschool_credit_conditions_not_met": "Nejsou splněny podmínky slevy za umístění dítěte. Opravte evidenci slevy, nebo ji odeberte."
       },
       "row_base_before_deductions": "Základ daně před odpočty",
       "row_non_taxable": "Nezdanitelné části základu daně (§ 15)",
@@ -5293,6 +5297,16 @@
         "ztp_p_not_in_evidence": "Zvýšení ZTP/P se uplatňuje, ale manžel nemá v evidenci průkaz ZTP/P.",
         "child_not_under_three": "Dítě v některém uplatněném měsíci nebylo mladší 3 let.",
         "spouse_not_in_evidence": "Manžel není v evidenci vyživovaných osob zaměstnance."
+      },
+      "preschool_failure": {
+        "statute_not_effective": "Slevu za umístění dítěte lze uplatnit až za rok 2027.",
+        "minimum_wage_unavailable": "Pravidla výpočtu pro tento rok nemají minimální mzdu, ze které se počítá strop slevy.",
+        "child_relation": "Vybraná osoba není vyživované dítě. Vnuk jen v péči nahrazující péči rodičů.",
+        "child_not_in_household": "Dítě v tomto roce se zaměstnancem nežilo ve společné domácnosti.",
+        "claimed_by_other_taxpayer": "Slevu na dítě v téže domácnosti uplatňuje jiný poplatník.",
+        "claimed_as_business_expense": "Výdaje jsou uplatněné jako výdaj na dosažení příjmů.",
+        "agreement_without_shared_care": "Dohoda o stropu slevy se uzavírá jen tehdy, když dítě žije ve více domácnostech.",
+        "agreed_cap_over_minimum_wage": "Strop z dohody je vyšší než minimální mzda."
       },
       "claims": {
         "section": "Ročně uplatňované položky",
@@ -5356,7 +5370,30 @@
         "spouse_months": "Měsíce uplatnění slevy",
         "spouse_ztp_p_months": "Měsíce, kdy má manžel průkaz ZTP/P",
         "spouse_income": "Vlastní příjem manžela za rok (Kč)",
-        "spouse_income_hint": "Limit 68 000 Kč."
+        "spouse_income_hint": "Limit 68 000 Kč.",
+        "preschool_section": "Sleva za umístění dítěte (školkovné)",
+        "preschool_hint": "Skutečně zaplacené a doložené výdaje za mateřskou školu, dětskou skupinu nebo srovnatelné zařízení za tento rok, bez stravného. Na dítě nejvýše minimální mzda. V jedné domácnosti uplatňuje slevu jen jeden z rodičů.",
+        "preschool_missing": "Zaměstnanec nemá v evidenci vyživovaných osob dítě. Doplňte ho v kartě zaměstnance.",
+        "preschool_add": "Uplatnit slevu za umístění dítěte",
+        "preschool_remove": "Odebrat slevu za umístění dítěte",
+        "preschool_child": "Dítě",
+        "preschool_facility_kind": "Druh zařízení",
+        "preschool_facility": {
+          "kindergarten": "Mateřská škola",
+          "children_group": "Dětská skupina",
+          "licensed_care": "Péče o dítě na živnostenské oprávnění"
+        },
+        "preschool_facility_name": "Název zařízení",
+        "preschool_expenses": "Výdaje za rok podle potvrzení zařízení (Kč)",
+        "preschool_expenses_hint": "Bez stravného. Sleva se uplatní nejvýše do minimální mzdy.",
+        "preschool_households": "Počet domácností, ve kterých dítě žije",
+        "preschool_households_hint": "Při střídavé péči se strop dělí počtem domácností.",
+        "preschool_agreed_cap": "Strop podle písemné dohody rodičů (Kč)",
+        "preschool_agreed_cap_hint": "Nechte prázdné, pokud dohoda není. Součet stropů obou rodičů musí dát minimální mzdu.",
+        "preschool_other_taxpayer": "Slevu na toto dítě v téže domácnosti uplatňuje jiná osoba",
+        "preschool_business_expense": "Výdaje jsou uplatněné jako výdaj na dosažení příjmů",
+        "preschool_grandchild_care": "Vnuk je v péči nahrazující péči rodičů",
+        "preschool_evidence_placeholder": "Potvrzení zařízení o zaplacených výdajích"
       },
       "open_employee_card": "Otevřít kartu zaměstnance",
       "settle_read_only": "Provést zúčtování může jen uživatel s právem schvalovat mzdy.",
@@ -11624,6 +11661,30 @@
         "official_form_own": "Vlastní čitelná sestava"
       }
     },
+    "food_service_tips": {
+      "title": "Spropitné ze stravovacích služeb",
+      "hint": "Spropitné vyplácené zaměstnancům je od roku 2027 osvobozené za měsíc do 7 % měsíčních příjmů ze stravovacích služeb, rovným dílem mezi zaměstnance, kteří spropitné dostali, nebo podle určení zaměstnavatele. Nadlimitní část se zdaní a je vyměřovacím základem pojistného.",
+      "load_failed": "Evidenci spropitného se nepodařilo načíst.",
+      "save_failed": "Evidenci spropitného se nepodařilo uložit.",
+      "saved": "Evidence spropitného byla uložena.",
+      "locked": "Spropitné je v tomto měsíci už schválené (zaměstnanců: {count}) a jeho strop je zmrazený. Evidenci lze změnit až po stornu schválených vstupů spropitného.",
+      "revenue": "Měsíční příjmy ze stravovacích služeb (Kč)",
+      "mode": "Rozdělení osvobozeného spropitného",
+      "mode_per_capita": "Rovným dílem mezi zaměstnance se spropitným",
+      "mode_employer_determined": "Podle určení zaměstnavatele",
+      "recipients": "Počet zaměstnanců, kteří v měsíci spropitné dostali",
+      "recipients_hint": "Strop na zaměstnance je 7 % příjmů dělených tímto počtem.",
+      "allocations": "Strop osvobozeného spropitného podle zaměstnanců",
+      "employee": "Zaměstnanec",
+      "cap": "Strop (Kč)",
+      "add_allocation": "Přidat zaměstnance",
+      "remove_allocation": "Odebrat",
+      "evidence_reference": "Čím jsou příjmy doložené",
+      "note": "Poznámka",
+      "employer_cap": "Úhrnný strop osvobození (7 %)",
+      "per_capita_cap": "Strop na zaměstnance",
+      "save": "Uložit evidenci spropitného"
+    },
     "benefit_baskets": {
       "title": "Koše osvobození benefitů",
       "subtitle_annual": "Kolik má který zaměstnanec za rok vyčerpáno z ročního limitu podle § 6 odst. 9 ZDP a kolik z toho se už zdanilo.",
@@ -11663,17 +11724,20 @@
       },
       "basket": {
         "non_cash_health": "Zdravotní plnění",
-        "non_cash_leisure": "Rekreace, sport a kultura",
+        "non_cash_leisure": "Sport, kultura a volný čas",
         "old_age_savings": "Spoření na stáří a dlouhodobá péče",
         "meal_per_shift": "Příspěvek na stravování",
-        "temporary_accommodation": "Přechodné ubytování"
+        "temporary_accommodation": "Přechodné ubytování",
+        "recreation": "Rekreace a zájezd",
+        "food_service_tips": "Spropitné"
       },
       "status": {
         "ok": "V limitu",
         "approaching": "Blíží se limitu",
         "exceeded": "Nad limitem",
         "incomplete": "Neúplný podklad",
-        "limit_unavailable": "Limit není k dispozici"
+        "limit_unavailable": "Limit není k dispozici",
+        "unlimited": "Bez limitu"
       },
       "limit_basis": {
         "tax_year": "Limit platí za zdaňovací období.",

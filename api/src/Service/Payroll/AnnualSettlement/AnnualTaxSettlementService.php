@@ -479,7 +479,9 @@ final class AnnualTaxSettlementService implements AnnualSettlementPerformer
         // § 38h odst. 6: žádost a evidence ročních nároků si nesmí odporovat.
         // Rozpor se nerozhoduje za účetní ani jedním směrem.
         $annualClaims = $this->claims->load($supplierId, $employeeId, $taxYear);
-        $hasAnnualClaims = $annualClaims['claims'] !== [] || $annualClaims['spouse'] !== null;
+        $hasAnnualClaims = $annualClaims['claims'] !== []
+            || $annualClaims['spouse'] !== null
+            || $annualClaims['preschool'] !== [];
         if (($request->annualClaims === AnnualSettlementAnnualClaims::Present && !$hasAnnualClaims)
             || ($hasAnnualClaims && in_array($request->annualClaims, [
                 AnnualSettlementAnnualClaims::None,
@@ -491,6 +493,9 @@ final class AnnualTaxSettlementService implements AnnualSettlementPerformer
         $annualClaimsPayload = [
             'deductions' => $annualClaims['deductions'],
             'spouse' => $annualClaims['spouse_row'],
+            'preschool' => $annualClaims['preschool_rows'],
+            // Sleva za umístění dítěte existuje od zdaňovacího období 2027 (§ 35bd).
+            'preschool_available' => AnnualPreschoolCreditStatute::isEffective($taxYear),
             'dependants' => $this->claims->dependants($supplierId, $employeeId),
             // Zákonné ocenění odběrů (§ 15 odst. 1) pro formulář — obrazovka si
             // ho nesmí držet natvrdo, je ročníkové.
@@ -544,6 +549,7 @@ final class AnnualTaxSettlementService implements AnnualSettlementPerformer
             $certificates,
             $annualClaims['claims'],
             $annualClaims['spouse'],
+            $annualClaims['preschool'],
         );
 
         $result = $this->calculator->calculate($input, $rates, $this->unique($blockers));
@@ -677,6 +683,16 @@ final class AnnualTaxSettlementService implements AnnualSettlementPerformer
                         'Sleva na manžela/manželku (%d měs.%s)',
                         (int) ($credit['months'] ?? 0),
                         $ztpPMonths > 0 ? sprintf(', z toho ZTP/P %d', $ztpPMonths) : '',
+                    ),
+                    'amount_minor_units' => (int) ($credit['amount_minor_units'] ?? 0),
+                ];
+                continue;
+            }
+            if ($kindValue === 'preschool') {
+                $rows[] = [
+                    'label' => sprintf(
+                        'Sleva za umístění dítěte (počet dětí: %d)',
+                        count(is_array($credit['children'] ?? null) ? $credit['children'] : []),
                     ),
                     'amount_minor_units' => (int) ($credit['amount_minor_units'] ?? 0),
                 ];

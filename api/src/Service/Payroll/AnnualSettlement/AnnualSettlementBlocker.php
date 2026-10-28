@@ -102,6 +102,16 @@ enum AnnualSettlementBlocker: string
     case SpouseCreditConditionsNotMet = 'spouse_credit_conditions_not_met';
 
     /**
+     * Sleva za umístění dítěte (§ 35bd) je uplatněná, ale podle evidence nejsou
+     * splněné podmínky: rok před účinností (2027), vnuk bez péče nahrazující péči
+     * rodičů, dítě v roce nežilo s poplatníkem, slevu v téže domácnosti uplatňuje
+     * jiný poplatník, výdaje jsou uplatněné jako výdaj na dosažení příjmů, dohoda
+     * o stropu nad minimální mzdou nebo ruleset bez minimální mzdy. Které
+     * podmínky to jsou, nese stopa výsledku (`preschool_credit_failures`).
+     */
+    case PreschoolCreditConditionsNotMet = 'preschool_credit_conditions_not_met';
+
+    /**
      * § 38ch odst. 4 mluví o ÚHRNU mezd od všech plátců. Potvrzení od
      * předchozího plátce, které je v evidenci vedené jako nedoložené, do úhrnu
      * vzít nejde.

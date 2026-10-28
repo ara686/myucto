@@ -63,8 +63,12 @@ final class PayrollRuleParameterCatalog
                 'Roční limit osvobození nepeněžních volnočasových plnění',
             'benefit_exemption.old_age_savings.yearly' =>
                 'Roční limit osvobození příspěvku na produkty spoření na stáří a pojištění dlouhodobé péče',
+            'benefit_exemption.recreation.yearly' =>
+                'Roční limit osvobození rekreace a zájezdu (od 2027)',
             'benefit_exemption.temporary_accommodation.monthly' =>
                 'Měsíční limit osvobození hodnoty přechodného ubytování',
+            'minimum_wage.monthly' =>
+                'Minimální měsíční mzda k 1. 1. roku (strop slevy za umístění dítěte)',
             'bonus.minimum_amount.monthly' => 'Nejnižší vyplatitelný měsíční daňový bonus',
             'bonus.minimum_amount.yearly' => 'Nejnižší uplatnitelný roční daňový bonus',
             'bonus.minimum_income.monthly' => 'Minimální měsíční příjem pro nárok na daňový bonus',

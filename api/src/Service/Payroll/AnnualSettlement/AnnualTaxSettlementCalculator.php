@@ -31,6 +31,8 @@ use MyInvoice\Service\Payroll\IncomeTax\TaxIntegerMath;
  *  2. Daň podle § 16 odst. 1: 15 % do 36násobku průměrné mzdy, 23 % nad.
  *  3. „nejdříve daň sníží o slevy na dani pro poplatníky daně z příjmů fyzických
  *     osob" — § 35ba, maximálně do výše daně (sleva nikdy nevytvoří přeplatek).
+ *     Od roku 2027 sem patří i sleva za umístění dítěte (§ 35ba odst. 1
+ *     písm. g), § 35bd), která se uplatňuje jen ročně.
  *  4. „pak vypočte částku daňového zvýhodnění … formou slevy na dani podle
  *     § 35c a daňového bonusu" — sleva do výše daně po § 35ba (§ 35c odst. 2),
  *     zbytek je bonus (§ 35c odst. 3).
@@ -91,7 +93,13 @@ final class AnnualTaxSettlementCalculator
             $input->taxYear,
             $rates->spouseIncomeLimitMinorUnits,
         ) ?? [];
-        $blockers = $this->withCalculationBlockers($input, $blockers, $spouseFailures);
+        $preschoolFailures = $this->preschoolFailures($input, $rates);
+        $blockers = $this->withCalculationBlockers(
+            $input,
+            $blockers,
+            $spouseFailures,
+            $preschoolFailures,
+        );
         if ($blockers !== []) {
             return AnnualSettlementResult::refused(
                 $input->taxYear,
@@ -100,6 +108,9 @@ final class AnnualTaxSettlementCalculator
                     'rates' => $rates->toArray(),
                     ...($spouseFailures !== []
                         ? ['spouse_credit_failures' => $spouseFailures]
+                        : []),
+                    ...($preschoolFailures !== []
+                        ? ['preschool_credit_failures' => $preschoolFailures]
                         : []),
                 ],
             );
@@ -196,6 +207,33 @@ final class AnnualTaxSettlementCalculator
                 'ztp_p_months' => $spouseZtpPMonths,
                 'amount_minor_units' => $amount,
                 'prorated' => true,
+            ];
+            $annualCredits = TaxIntegerMath::add($annualCredits, $amount);
+        }
+        // § 35ba odst. 1 písm. g), § 35bd: sleva za umístění dítěte. Je to
+        // sleva podle § 35ba, takže jde do téhož úhrnu a před daňové
+        // zvýhodnění (§ 35d odst. 7, § 35c odst. 2 a 3). Bez dvanáctinového
+        // krácení — § 35ba odst. 3 ho dává jen písm. b) až f).
+        if ($input->preschoolClaims !== []) {
+            $minimumWage = (int) $rates->minimumWageMinorUnits;
+            $children = [];
+            $amount = 0;
+            foreach ($input->preschoolClaims as $claim) {
+                $credit = $claim->creditMinorUnits($minimumWage);
+                $children[] = [
+                    'child_reference' => $claim->childReference,
+                    'expenses_minor_units' => $claim->expensesMinorUnits,
+                    'cap_minor_units' => $claim->capMinorUnits($minimumWage),
+                    'amount_minor_units' => $credit,
+                ];
+                $amount = TaxIntegerMath::add($amount, $credit);
+            }
+            $creditBreakdown['preschool'] = [
+                'children' => $children,
+                'minimum_wage_minor_units' => $minimumWage,
+                'amount_minor_units' => $amount,
+                'prorated' => false,
+                'statute' => AnnualPreschoolCreditStatute::SOURCE,
             ];
             $annualCredits = TaxIntegerMath::add($annualCredits, $amount);
         }
@@ -389,7 +427,10 @@ final class AnnualTaxSettlementCalculator
         AnnualNonTaxableDeductions $deductions,
         int $enforcementCredit,
     ): array {
-        if ($input->nonTaxableClaims === [] && $input->spouseClaim === null) {
+        if ($input->nonTaxableClaims === []
+            && $input->spouseClaim === null
+            && $input->preschoolClaims === []
+        ) {
             return [];
         }
 
@@ -400,6 +441,13 @@ final class AnnualTaxSettlementCalculator
                     $input->nonTaxableClaims,
                 ),
                 'spouse' => $input->spouseClaim?->jsonSerialize(),
+                // Klíč jen se školkovným, aby stopa zúčtování bez něj zůstala stejná.
+                ...($input->preschoolClaims === []
+                    ? []
+                    : ['preschool' => array_map(
+                        static fn (AnnualPreschoolCreditClaim $claim): array => $claim->jsonSerialize(),
+                        $input->preschoolClaims,
+                    )]),
             ],
             'tax_base_before_deductions_minor_units' => $baseBeforeDeductions,
             'non_taxable' => $deductions->toArray(),
@@ -411,16 +459,39 @@ final class AnnualTaxSettlementCalculator
     }
 
     /**
+     * Nesplněné podmínky slevy za umístění dítěte podle dítěte.
+     *
+     * @return array<string,list<string>>
+     */
+    private function preschoolFailures(AnnualSettlementInput $input, AnnualTaxRates $rates): array
+    {
+        $failures = [];
+        foreach ($input->preschoolClaims as $claim) {
+            $claimFailures = $claim->conditionFailures(
+                $input->taxYear,
+                $rates->minimumWageMinorUnits,
+            );
+            if ($claimFailures !== []) {
+                $failures[$claim->childReference] = $claimFailures;
+            }
+        }
+
+        return $failures;
+    }
+
+    /**
      * Překážky, které pozná až výpočet — na rozdíl od těch z evidence.
      *
      * @param list<AnnualSettlementBlocker> $blockers
      * @param list<string> $spouseFailures
+     * @param array<string,list<string>> $preschoolFailures
      * @return list<AnnualSettlementBlocker>
      */
     private function withCalculationBlockers(
         AnnualSettlementInput $input,
         array $blockers,
         array $spouseFailures,
+        array $preschoolFailures = [],
     ): array {
         if ($input->completedMonths === 0) {
             $blockers[] = AnnualSettlementBlocker::NoApprovedMonths;
@@ -437,6 +508,14 @@ final class AnnualTaxSettlementCalculator
         }
         if ($spouseFailures !== []) {
             $blockers[] = AnnualSettlementBlocker::SpouseCreditConditionsNotMet;
+        }
+        foreach ($input->preschoolClaims as $claim) {
+            if (!$claim->isVerified()) {
+                $blockers[] = AnnualSettlementBlocker::AnnualClaimEvidenceUnverified;
+            }
+        }
+        if ($preschoolFailures !== []) {
+            $blockers[] = AnnualSettlementBlocker::PreschoolCreditConditionsNotMet;
         }
         if ($input->nonTaxableClaims !== []
             && $input->taxYear < AnnualNonTaxableStatute::FIRST_SUPPORTED_YEAR

@@ -91,7 +91,7 @@ final class VendorRulesetManifest
         // cz-payroll-2027.health-insurance.v1
         'dc2ad8a5e8091f9adccac0300c8c20cea85d1c3c9b5a7adbb90f7b9ca5865741',
         // cz-payroll-2027.income-tax.v1
-        'f9c6b287b1e97faf40ad4e9c3d37ba8967ce5b456326dbc69765a150d4a00e44',
+        '5c7065d1eb4ec6b6ef076a0e278776a59e7862c014d9d780ccbf43f1abe926a0',
         // cz-payroll-2027.social-insurance.v1
         '85811872429f34f325481585310c9dccc39eb17bf231e5e306d4d926f024a439',
     ];

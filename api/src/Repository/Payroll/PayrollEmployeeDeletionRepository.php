@@ -194,6 +194,10 @@ final class PayrollEmployeeDeletionRepository
             // Žádost o potvrzení zdanitelných příjmů (§ 38j odst. 3) je pracovní
             // záznam lhůty, ne vydané potvrzení — bez osoby nemá co hlídat.
             'payroll_taxable_income_confirmation_requests',
+            // Strop osvobozeného spropitného určený zaměstnavatelem (§ 6 odst. 9
+            // písm. g) ZDP). Schválené spropitné nese zmrazený rozpad ve vstupu,
+            // který mazání osoby blokuje sám; samotný strop bez osoby nic nedokládá.
+            'payroll_food_service_tip_allocations',
         ],
         'insurance' => [
             // Výzvy a žádosti v důchodovém pojištění jsou pracovní záznam lhůty;
@@ -232,6 +236,8 @@ final class PayrollEmployeeDeletionRepository
         // (smazání osoby nesmí slevu tiše odstranit); se smazáním celého zaměstnance
         // ale mizí i ona, je to podklad neprovedeného zúčtování.
         'payroll_annual_settlement_spouse_claims',
+        // Totéž sleva za umístění dítěte (§ 35bd).
+        'payroll_annual_settlement_preschool_claims',
     ];
 
     /**

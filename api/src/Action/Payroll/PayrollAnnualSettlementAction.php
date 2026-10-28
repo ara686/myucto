@@ -259,7 +259,11 @@ final class PayrollAnnualSettlementAction
         $body = is_array($body) ? $body : [];
         $deductions = $body['deductions'] ?? [];
         $spouse = $body['spouse'] ?? null;
-        if (!is_array($deductions) || ($spouse !== null && !is_array($spouse))) {
+        $preschool = $body['preschool'] ?? [];
+        if (!is_array($deductions)
+            || ($spouse !== null && !is_array($spouse))
+            || !is_array($preschool)
+        ) {
             return self::invalid($response);
         }
         $supplierId = $this->currentSupplierId($request);
@@ -272,6 +276,7 @@ final class PayrollAnnualSettlementAction
                 array_values($deductions),
                 $spouse,
                 $userId,
+                array_values($preschool),
             );
         } catch (\DomainException|\InvalidArgumentException $exception) {
             return Json::error($response, 'validation_failed', $exception->getMessage(), 422);
@@ -286,6 +291,7 @@ final class PayrollAnnualSettlementAction
                 'tax_year' => $year,
                 'deductions' => count($saved['deductions']),
                 'spouse' => $saved['spouse'] !== null,
+                'preschool' => count($saved['preschool']),
             ],
             $this->ipMatcher->clientIpFromRequest(self::serverParams($request)),
             $request->getHeaderLine('User-Agent'),
@@ -297,6 +303,7 @@ final class PayrollAnnualSettlementAction
             'employee_id' => $employeeId,
             'deductions' => $saved['deductions'],
             'spouse' => $saved['spouse'],
+            'preschool' => $saved['preschool'],
         ]);
     }
 

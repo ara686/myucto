@@ -72,12 +72,15 @@ final class PayrollJmhz2027FlowTest extends TestCase
         $this->assignJmhzIdentity($person, self::syntheticOic(1), sprintf('3%020d', 1));
         $this->createApprovedInput($person, $this->baseComponentId, 500_000, 'jmhz27-1', self::PERIOD_START);
 
+        // Sada 2027 zatím nepokrývá všechny domény (exekuční srážky, lhůty,
+        // číselníky). Běh se proto buď nespočítá vůbec, nebo skončí neschválený
+        // s blokátorem – nikdy se neschválí s čísly roku 2026.
         try {
             $run = $this->runPayrollMonth(self::PERIOD_START, self::PAYDAY, $this->officeId, 'jmhz27');
-            self::fail('Lednový běh 2027 se bez sady 2027 nesmí spočítat: ' . CanonicalJson::encode([
-                'approved' => $run['approved'] !== null,
+            self::assertNull($run['approved'], 'Lednový běh 2027 se nesmí schválit: ' . CanonicalJson::encode([
                 'blockers' => $run['blockers'],
             ]));
+            self::assertNotSame([], $run['blockers']);
         } catch (PayrollRulesetException $exception) {
             self::assertStringContainsString('2027-01-01', $exception->getMessage());
         }

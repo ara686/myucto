@@ -84,6 +84,21 @@ final class AnnualClaimsPrintBreakdown
                 'Rozpis spoření na stáří neodpovídá odečtenému úhrnu z výpočtu.',
             );
         }
+        // § 35bd: sleva, ne odpočet — uplatněná je v úhrnu slev § 35ba; tady
+        // jen nárok podle dětí, jak ho výpočet spočítal.
+        $credits = is_array($trace['credits'] ?? null) ? $trace['credits'] : [];
+        $preschool = self::section($credits, 'preschool');
+        foreach (is_array($preschool['children'] ?? null) ? $preschool['children'] : [] as $child) {
+            if (!is_array($child)) {
+                continue;
+            }
+            self::add(
+                $rows,
+                'Sleva za umístění dítěte (§ 35bd)',
+                self::int($child, 'expenses_minor_units'),
+                self::int($child, 'amount_minor_units'),
+            );
+        }
 
         return [
             'present' => true,

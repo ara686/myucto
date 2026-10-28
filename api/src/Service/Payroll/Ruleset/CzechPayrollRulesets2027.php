@@ -113,8 +113,14 @@ final class CzechPayrollRulesets2027
                     . 'průměrné mzdy už neplatí.',
                 ),
                 'benefit_exemption.old_age_savings.yearly' => PayrollRuleValue::moneyMinor(5_000_000),
+                // § 6 odst. 9 písm. d) bod 3 ZDP ve znění zák. č. 180/2026 Sb.:
+                // rekreace a zájezd samostatně nejvýš 20 000 Kč za zdaňovací období.
+                'benefit_exemption.recreation.yearly' => PayrollRuleValue::moneyMinor(2_000_000),
                 'benefit_exemption.temporary_accommodation.monthly' =>
                     PayrollRuleValue::moneyMinor(350_000),
+                // § 21g odst. 1 a § 35bd ZDP: minimální mzda k 1. 1. roku (NV č. 164/2026 Sb.)
+                // – strop slevy za umístění dítěte; hlídaná proti 6 × bonus.minimum_income.yearly.
+                'minimum_wage.monthly' => PayrollRuleValue::moneyMinor(2_490_000),
                 'bonus.minimum_amount.monthly' => PayrollRuleValue::moneyMinor(5_000),
                 'bonus.minimum_amount.yearly' => PayrollRuleValue::moneyMinor(10_000),
                 // § 35d odst. 4: polovina minimální mzdy 24 900 Kč zaokrouhlená

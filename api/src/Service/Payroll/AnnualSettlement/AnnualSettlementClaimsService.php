@@ -10,7 +10,8 @@ use MyInvoice\Service\Payroll\IncomeTax\TaxEvidenceStatus;
 
 /**
  * Evidence ročně uplatňovaných položek (§ 38h odst. 6): nezdanitelné části
- * základu daně podle § 15, sleva za zastavenou exekuci a sleva na manžela.
+ * základu daně podle § 15, sleva za zastavenou exekuci, sleva na manžela a od
+ * roku 2027 sleva za umístění dítěte (§ 35bd).
  *
  * Ukládá se celá sada za rok najednou, stejně jako potvrzení od předchozích
  * plátců — uplatňuje se jako celek a půlka sady by zúčtování zkreslila.
@@ -36,8 +37,10 @@ final class AnnualSettlementClaimsService
      * @return array{
      *   claims:list<AnnualNonTaxableClaim>,
      *   spouse:?AnnualSpouseCreditClaim,
+     *   preschool:list<AnnualPreschoolCreditClaim>,
      *   deductions:list<array<string,mixed>>,
-     *   spouse_row:?array<string,mixed>
+     *   spouse_row:?array<string,mixed>,
+     *   preschool_rows:list<array<string,mixed>>
      * }
      */
     public function load(int $supplierId, int $employeeId, int $taxYear): array
@@ -105,11 +108,50 @@ final class AnnualSettlementClaimsService
             ];
         }
 
+        $preschool = [];
+        $preschoolRows = [];
+        foreach ($stored['preschool'] as $row) {
+            $preschool[] = new AnnualPreschoolCreditClaim(
+                'dependant-' . $row['child_dependant_id'],
+                (string) $row['child_relation'],
+                self::day($row['child_birth_date']),
+                self::day($row['child_existence_from']),
+                $row['child_existence_to'] === null ? null : self::day($row['child_existence_to']),
+                AnnualPreschoolFacilityKind::from((string) $row['facility_kind']),
+                self::text($row['facility_name'] ?? null),
+                $row['expenses_minor'],
+                $row['households_count'],
+                $row['agreed_cap_minor'],
+                $row['claimed_by_other_taxpayer'],
+                $row['claimed_as_business_expense'],
+                $row['grandchild_care_replaces_parents'],
+                TaxEvidenceStatus::tryFrom((string) $row['evidence_status'])
+                    ?? TaxEvidenceStatus::Unverified,
+                self::text($row['evidence_reference'] ?? null),
+            );
+            $preschoolRows[] = [
+                'child_dependant_id' => $row['child_dependant_id'],
+                'facility_kind' => (string) $row['facility_kind'],
+                'facility_name' => self::text($row['facility_name'] ?? null),
+                'expenses_minor_units' => $row['expenses_minor'],
+                'households_count' => $row['households_count'],
+                'agreed_cap_minor_units' => $row['agreed_cap_minor'],
+                'claimed_by_other_taxpayer' => $row['claimed_by_other_taxpayer'],
+                'claimed_as_business_expense' => $row['claimed_as_business_expense'],
+                'grandchild_care_replaces_parents' => $row['grandchild_care_replaces_parents'],
+                'evidence_status' => (string) $row['evidence_status'],
+                'evidence_reference' => self::text($row['evidence_reference'] ?? null),
+                'note' => self::text($row['note'] ?? null),
+            ];
+        }
+
         return [
             'claims' => $claims,
             'spouse' => $spouse,
+            'preschool' => $preschool,
             'deductions' => $deductionRows,
             'spouse_row' => $spouseRow,
+            'preschool_rows' => $preschoolRows,
         ];
     }
 
@@ -137,7 +179,12 @@ final class AnnualSettlementClaimsService
      *
      * @param list<array<string,mixed>> $deductions
      * @param array<string,mixed>|null $spouse
-     * @return array{deductions:list<array<string,mixed>>,spouse:?array<string,mixed>}
+     * @param list<array<string,mixed>> $preschool
+     * @return array{
+     *   deductions:list<array<string,mixed>>,
+     *   spouse:?array<string,mixed>,
+     *   preschool:list<array<string,mixed>>
+     * }
      * @throws \InvalidArgumentException neplatný vstup, cizí osoba v evidenci
      */
     public function save(
@@ -147,6 +194,7 @@ final class AnnualSettlementClaimsService
         array $deductions,
         ?array $spouse,
         ?int $actorUserId,
+        array $preschool = [],
     ): array {
         if (count($deductions) > self::MAX_DEDUCTIONS) {
             throw new \InvalidArgumentException('Ročních položek je příliš mnoho.');
@@ -201,6 +249,31 @@ final class AnnualSettlementClaimsService
             $preparedSpouse = $this->prepareSpouse($supplierId, $employeeId, $spouse);
         }
 
+        if ($preschool !== [] && !AnnualPreschoolCreditStatute::isEffective($taxYear)) {
+            throw new \InvalidArgumentException(
+                'Slevu za umístění dítěte lze uplatnit až za zdaňovací období '
+                . AnnualPreschoolCreditStatute::FIRST_YEAR . '.',
+            );
+        }
+        if (count($preschool) > self::MAX_DEDUCTIONS) {
+            throw new \InvalidArgumentException('Slev za umístění dítěte je příliš mnoho.');
+        }
+        $preparedPreschool = [];
+        $preschoolChildren = [];
+        foreach (array_values($preschool) as $row) {
+            if (!is_array($row)) {
+                throw new \InvalidArgumentException('Sleva za umístění dítěte není platná.');
+            }
+            $prepared = $this->preparePreschool($supplierId, $employeeId, $row);
+            if (isset($preschoolChildren[$prepared['child_dependant_id']])) {
+                throw new \InvalidArgumentException(
+                    'Slevu za umístění téhož dítěte lze uplatnit jen jednou.',
+                );
+            }
+            $preschoolChildren[$prepared['child_dependant_id']] = true;
+            $preparedPreschool[] = $prepared;
+        }
+
         $pdo = $this->db->pdo();
         $owns = !$pdo->inTransaction();
         if ($owns) {
@@ -214,6 +287,7 @@ final class AnnualSettlementClaimsService
                 $preparedDeductions,
                 $preparedSpouse,
                 $actorUserId,
+                $preparedPreschool,
             );
             if ($owns) {
                 $pdo->commit();
@@ -227,7 +301,72 @@ final class AnnualSettlementClaimsService
 
         $loaded = $this->load($supplierId, $employeeId, $taxYear);
 
-        return ['deductions' => $loaded['deductions'], 'spouse' => $loaded['spouse_row']];
+        return [
+            'deductions' => $loaded['deductions'],
+            'spouse' => $loaded['spouse_row'],
+            'preschool' => $loaded['preschool_rows'],
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $row
+     * @return array<string,mixed>
+     */
+    private function preparePreschool(int $supplierId, int $employeeId, array $row): array
+    {
+        $childId = self::integer($row['child_dependant_id'] ?? null, 'Dítě');
+        if ($childId === null || $childId <= 0) {
+            throw new \InvalidArgumentException('U slevy za umístění dítěte je potřeba vybrat dítě.');
+        }
+        $child = $this->settlements->findDependant($supplierId, $employeeId, $childId);
+        if ($child === null) {
+            throw new \InvalidArgumentException(
+                'Vybraná osoba není v evidenci vyživovaných osob tohoto zaměstnance.',
+            );
+        }
+        $kind = AnnualPreschoolFacilityKind::tryFrom((string) ($row['facility_kind'] ?? ''));
+        if ($kind === null) {
+            throw new \InvalidArgumentException('Druh předškolního zařízení není platný.');
+        }
+        $status = self::status($row['evidence_status'] ?? null);
+        $reference = self::bounded($row['evidence_reference'] ?? null, 500, 'Doklad');
+        $facilityName = self::bounded($row['facility_name'] ?? null, 191, 'Zařízení');
+        $note = self::bounded($row['note'] ?? null, 500, 'Poznámka');
+        self::assertEvidence($status, $reference);
+
+        // Konstruktor domény odmítne nulové výdaje a neplatný počet domácností.
+        $claim = new AnnualPreschoolCreditClaim(
+            'dependant-' . $childId,
+            (string) $child['relation'],
+            self::day($child['birth_date']),
+            self::day($child['existence_from']),
+            $child['existence_to'] === null ? null : self::day($child['existence_to']),
+            $kind,
+            $facilityName,
+            self::integer($row['expenses_minor_units'] ?? null, 'Výdaje') ?? 0,
+            self::integer($row['households_count'] ?? 1, 'Počet domácností') ?? 1,
+            self::integer($row['agreed_cap_minor_units'] ?? null, 'Dohodnutý strop'),
+            self::flag($row['claimed_by_other_taxpayer'] ?? false),
+            self::flag($row['claimed_as_business_expense'] ?? false),
+            self::flag($row['grandchild_care_replaces_parents'] ?? false),
+            $status,
+            $reference,
+        );
+
+        return [
+            'child_dependant_id' => $childId,
+            'facility_kind' => $claim->facilityKind->value,
+            'facility_name' => $claim->facilityName,
+            'expenses_minor' => $claim->expensesMinorUnits,
+            'households_count' => $claim->householdsCount,
+            'agreed_cap_minor' => $claim->agreedCapMinorUnits,
+            'claimed_by_other_taxpayer' => $claim->claimedByOtherTaxpayer,
+            'claimed_as_business_expense' => $claim->claimedAsBusinessExpense,
+            'grandchild_care_replaces_parents' => $claim->grandchildCareReplacesParents,
+            'evidence_status' => $claim->evidenceStatus->value,
+            'evidence_reference' => $claim->evidenceReference,
+            'note' => $note,
+        ];
     }
 
     /**
