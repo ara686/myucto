@@ -45,7 +45,11 @@ final readonly class AnnualSettlementInput
         public int $monthlyTaxBonusMinorUnits,
         /** Příjmy rozhodné pro roční nárok na bonus (§ 35c odst. 4). */
         public int $bonusQualifyingIncomeMinorUnits,
-        /** § 6 odst. 4: základ srážkové daně — do ročního zúčtování NEVSTUPUJE. */
+        /**
+         * § 6 odst. 4: samostatný základ od tohoto plátce. Do roku 2026 základ
+         * srážkové daně, který do ročního zúčtování NEVSTUPUJE; od roku 2027
+         * základ zálohy, který do úhrnu mezd vstupuje (§ 38ch odst. 4).
+         */
         public int $withholdingBaseMinorUnits,
         public int $withholdingTaxMinorUnits,
         public array $creditMonths,

@@ -8,6 +8,7 @@ use MyInvoice\Service\Payroll\Calculation\CalculationStep;
 use MyInvoice\Service\Payroll\Calculation\DecimalRate;
 use MyInvoice\Service\Payroll\Calculation\PayrollRounding;
 use MyInvoice\Service\Payroll\Calculation\RoundingMode;
+use MyInvoice\Service\Payroll\IncomeTax\SeparateTaxBaseRegime;
 use MyInvoice\Service\Payroll\IncomeTax\TaxCreditKind;
 use MyInvoice\Service\Payroll\IncomeTax\TaxIntegerMath;
 
@@ -67,11 +68,23 @@ use MyInvoice\Service\Payroll\IncomeTax\TaxIntegerMath;
  * ─────────────────────────────────────────────────────────────────────────────
  * Co se sem ZÁMĚRNĚ nepočítá
  * ─────────────────────────────────────────────────────────────────────────────
- * Srážková daň podle § 6 odst. 4. Je to samostatný základ daně a do ročního
- * zúčtování nevstupuje — § 38k odst. 7 věta druhá umožňuje ji do zúčtování
- * zahrnout jen tehdy, prokáže-li poplatník rozhodné skutečnosti a učiní
- * prohlášení do 15. února. Modul takový úkon neeviduje, takže se srážková daň
- * v ročním zúčtování nechává stranou a nese se jen jako doložený údaj.
+ * Srážková daň podle § 6 odst. 4 za zdaňovací období DO ROKU 2026. Je to
+ * samostatný základ daně a do ročního zúčtování nevstupuje — § 38k odst. 7
+ * věta druhá umožňuje ji do zúčtování zahrnout jen tehdy, prokáže-li poplatník
+ * rozhodné skutečnosti a učiní prohlášení do 15. února. Modul takový úkon
+ * neeviduje, takže se srážková daň v ročním zúčtování nechává stranou a nese
+ * se jen jako doložený údaj.
+ *
+ * Od zdaňovacího období 2027 je to naopak: příjmy podle § 6 odst. 4 jsou
+ * samostatným základem ZÁLOHY a § 38ch odst. 4 ZDP (zák. č. 360/2025 Sb.)
+ * počítá daň „z úhrnu mezd, vyjma příjmů podle § 6 odst. 4 plynoucích od
+ * jiného plátce daně". Vyjmuté jsou tedy jen příjmy od JINÉHO plátce; vlastní
+ * příjmy podle § 6 odst. 4 do úhrnu patří a sražené zálohy z nich se započtou
+ * (§ 38k odst. 7 věta druhá: „… a to i v případě příjmů podle § 6 odst. 4
+ * plynoucích od tohoto plátce daně"). Podmínku prohlášení podle § 38k odst. 4
+ * a 5 do 15. února splňuje každé roční zúčtování, protože bez ní se vůbec
+ * neprovede (§ 38ch odst. 1). Potvrzení od předchozích plátců příjmy podle
+ * § 6 odst. 4 nenesou, takže se v nich nic nevyjímá.
  */
 final class AnnualTaxSettlementCalculator
 {
@@ -112,11 +125,24 @@ final class AnnualTaxSettlementCalculator
         //    už výše shodila výpočet na překážku.
         $external = $this->externalTotals($input);
 
+        // 0b. Vlastní příjmy podle § 6 odst. 4 od roku 2027 (viz hlavička):
+        //     do úhrnu mezd, sražená záloha do úhrnu záloh.
+        $separate = SeparateTaxBaseRegime::forTaxYear($input->taxYear)->isAdvance()
+            ? [
+                'base_minor_units' => $input->withholdingBaseMinorUnits,
+                'advance_tax_minor_units' => $input->withholdingTaxMinorUnits,
+            ]
+            : null;
+        $ownBase = TaxIntegerMath::add(
+            $input->advanceBaseMinorUnits,
+            $separate['base_minor_units'] ?? 0,
+        );
+
         // 1. Základ daně (§ 16 odst. 2) — po odečtení nezdanitelných částí
         //    (§ 15). Limity darů se měří z úhrnu PŘED odpočtem; zaokrouhluje
         //    se až základ po odpočtu.
         $baseBeforeDeductions = TaxIntegerMath::add(
-            $input->advanceBaseMinorUnits,
+            $ownBase,
             $external['advance_base_minor_units'],
         );
         $deductions = (new AnnualNonTaxableDeductionCalculator())->calculate(
@@ -253,8 +279,16 @@ final class AnnualTaxSettlementCalculator
         // kterou § 35c odst. 4 popisuje. Ř. 1 potvrzení naopak srážkově zdaněné
         // příjmy obsahovat MŮŽE, a práh by pak vyšel splněný tam, kde splněný
         // není. Na obou stranách se proto sčítá zálohový základ (ř. 5).
+        //
+        // Od roku 2027 příjmy podle § 6 odst. 4 nejsou „příjmy, z nichž je daň
+        // vybírána srážkou podle zvláštní sazby", takže je § 35c odst. 4 věta
+        // druhá z rozhodného příjmu nevylučuje — patří k němu stejně jako do
+        // úhrnu mezd výše.
         $qualifyingIncome = TaxIntegerMath::add(
-            $input->bonusQualifyingIncomeMinorUnits,
+            TaxIntegerMath::add(
+                $input->bonusQualifyingIncomeMinorUnits,
+                $separate['base_minor_units'] ?? 0,
+            ),
             $external['advance_base_minor_units'],
         );
         $thresholdMet = $qualifyingIncome >= $rates->bonusMinimumIncomeMinorUnits;
@@ -273,7 +307,10 @@ final class AnnualTaxSettlementCalculator
 
         // 5. Rozdíl na dani.
         $advanceTax = TaxIntegerMath::add(
-            $input->advanceTaxMinorUnits,
+            TaxIntegerMath::add(
+                $input->advanceTaxMinorUnits,
+                $separate['advance_tax_minor_units'] ?? 0,
+            ),
             $external['advance_tax_minor_units'],
         );
         $taxDifference = $advanceTax - $taxAfterAllCredits;
@@ -352,6 +389,13 @@ final class AnnualTaxSettlementCalculator
                 'total_bonus_qualifying_income_minor_units' => $qualifyingIncome,
                 'withholding_base_minor_units' => $input->withholdingBaseMinorUnits,
                 'withholding_tax_minor_units' => $input->withholdingTaxMinorUnits,
+                // Jen od roku 2027 — stopa za rok 2026 a dřív zůstává bajtově stejná.
+                ...($separate !== null
+                    ? ['separate_base_included' => [
+                        'regime' => SeparateTaxBaseRegime::SeparateAdvance->value,
+                        ...$separate,
+                    ]]
+                    : []),
                 'rate_steps' => [
                     $lowStep->jsonSerialize(),
                     $highStep->jsonSerialize(),
