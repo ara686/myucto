@@ -461,6 +461,14 @@ final class MonthlyEmploymentIncomeTaxCalculator
      * poplatníkovi od téhož plátce daně“ — proto se DPP mimo písm. a) přičítá
      * do úhrnu písm. b) a ten pak rozhodnou částku dosáhne taky.
      *
+     * Učinil-li zaměstnanec u plátce prohlášení, samostatný základ nevzniká
+     * vůbec: podle prvního odstavce téhož pokynu jdou při souběhu HPP nebo
+     * DPČ s DPP „veškeré příjmy … do jednoho základu pro výpočet zálohy na
+     * daň bez ohledu na výši příjmů … z dohody o provedení práce“. Podmínka
+     * „u tohoto plátce daně neučinil prohlášení“ je v § 6 odst. 4 ve znění
+     * 2026 i 2027 stejná; prohlášení se proto eviduje pro zaměstnance
+     * plátce (supplier_id), ne pro osobu napříč firmami.
+     *
      * Test je ostrý („nedosáhne“, „nedosahující“): příjem PŘESNĚ na rozhodné
      * částce zakládá účast na nemocenském pojištění (§ 7a z. č. 187/2006 Sb.
      * „aspoň ve výši“) a daní se zálohou. Obě hranice tak na sebe navazují

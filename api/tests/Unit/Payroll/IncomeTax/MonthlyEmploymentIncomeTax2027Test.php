@@ -58,6 +58,36 @@ final class MonthlyEmploymentIncomeTax2027Test extends TestCase
         self::assertSame(TaxRegime::Withholding, $old->relationships[0]->regime);
     }
 
+    /**
+     * § 6 odst. 4 ZDP 2027: samostatný základ vzniká jen, „pokud zaměstnanec
+     * u tohoto plátce daně neučinil prohlášení". Kdo u plátce podepsal
+     * prohlášení, má DPP pod rozhodnou částkou (12 499 Kč) v jednom základu
+     * zálohy s HPP (pokyn GFŘ-D-59 k § 6 odst. 4). Prohlášení se vede pro
+     * zaměstnance plátce (`payroll_person_tax_declarations` podle
+     * supplier_id a employee_id), takže se nepřenáší mezi firmami.
+     */
+    public function testSignedDeclarationPutsDppBelowDecisiveAmountIntoTheAdvanceBase(): void
+    {
+        $result = $this->calculate('2027-01-31', [
+            $this->relationship('hpp', EmploymentRelationshipKind::Employment, 4_000_000),
+            $this->relationship('dpp', EmploymentRelationshipKind::Dpp, 1_249_900),
+        ], TaxDeclarationStatus::Signed);
+
+        self::assertSame(TaxCalculationStatus::Calculated, $result->status, implode(',', $result->issues));
+        self::assertSame(
+            [TaxRegime::Advance, TaxRegime::Advance],
+            array_map(static fn ($relationship): TaxRegime => $relationship->regime, $result->relationships),
+        );
+        self::assertSame(0, $result->withholdingTaxMinorUnits);
+        self::assertSame(5_249_900, $result->advanceTax?->taxableIncomeMinorUnits);
+
+        $unsigned = $this->calculate('2027-01-31', [
+            $this->relationship('hpp', EmploymentRelationshipKind::Employment, 4_000_000),
+            $this->relationship('dpp', EmploymentRelationshipKind::Dpp, 1_249_900),
+        ], TaxDeclarationStatus::NotSigned);
+        self::assertSame(TaxRegime::Withholding, $unsigned->relationships[1]->regime);
+    }
+
     public function testOtherIncomeUsesDecisiveIncome5000(): void
     {
         $below = $this->calculate('2027-02-28', [
