@@ -4016,9 +4016,13 @@
           "negative-relationship-tax-base": "Pracovní vztah má záporný daňový základ.",
           "nonresident-monthly-credit-not-supported": "Měsíční sleva nerezidenta vyžaduje odborné posouzení.",
           "nonresident-monthly-child-credit-not-supported": "Měsíční zvýhodnění na dítě u nerezidenta vyžaduje odborné posouzení.",
+          "nonresident-student-credit-not-allowed": "Daňový nerezident nemá nárok na slevu na studenta.",
           "other-withholding-eligibility-unverified": "Není ověřeno, zda lze příjem zařadit do srážkové daně.",
           "prior-period-tax-correction-requires-revision": "Oprava daně za starší období vyžaduje samostatnou revizi.",
           "relationship-tax-classification-conflict": "Daňové klasifikace pracovního vztahu jsou ve vzájemném konfliktu.",
+          "student-credit-conflict": "Sleva na studenta je evidována současně jako běžné i doktorské studium.",
+          "student-credit-interval-open": "Nárok na slevu na studenta nemá konec, ačkoli ho věková hranice vždy ukončí.",
+          "student-credit-not-in-ruleset": "Sleva na studenta v tomto roce neexistuje, zákon ji zavádí až od roku 2027.",
           "tax-credit-evidence-unverified": "Nárok na slevu nemá ověřený podklad.",
           "tax-credit-requires-signed-declaration": "Sleva vyžaduje účinné podepsané prohlášení k dani.",
           "tax-declaration-conflict": "Evidence prohlášení k dani je ve vzájemném konfliktu.",
@@ -6810,7 +6814,9 @@
             "taxpayer": "Na poplatníka",
             "disability-basic": "Na invaliditu I. a II. stupně",
             "disability-extended": "Na invaliditu III. stupně",
-            "ztp-p": "Na držitele ZTP/P"
+            "ztp-p": "Na držitele ZTP/P",
+            "student": "Na studenta (do 26 let)",
+            "student-doctoral": "Na studenta, prezenční doktorské studium (do 28 let)"
           },
           "evidence_status": {
             "verified": "Doloženo",

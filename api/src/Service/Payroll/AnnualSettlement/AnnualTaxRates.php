@@ -6,6 +6,7 @@ namespace MyInvoice\Service\Payroll\AnnualSettlement;
 
 use MyInvoice\Service\Payroll\IncomeTax\ChildCreditRateKey;
 use MyInvoice\Service\Payroll\IncomeTax\EmploymentIncomeTaxPolicy2026;
+use MyInvoice\Service\Payroll\IncomeTax\StudentTaxCredit;
 use MyInvoice\Service\Payroll\IncomeTax\TaxCreditKind;
 use MyInvoice\Service\Payroll\Ruleset\PayrollRulesetVersion;
 
@@ -144,6 +145,15 @@ final readonly class AnnualTaxRates
         ) {
             $credits[$kind] = $policy->money($key) * self::MONTHS_IN_YEAR;
         }
+        // Sleva na studenta (§ 35ba odst. 1 písm. f), od 1. 1. 2027). Ročník,
+        // který ji nemá, ji do ročních částek nepřidá vůbec — stopa zúčtování
+        // za rok 2026 tak zůstává bajtově stejná a nárok na ni zastaví
+        // {@see supportsCredit()} v AnnualTaxSettlementService.
+        if ($policy->definesMoney(StudentTaxCredit::RULESET_KEY)) {
+            $student = $policy->money(StudentTaxCredit::RULESET_KEY) * self::MONTHS_IN_YEAR;
+            $credits[TaxCreditKind::Student->value] = $student;
+            $credits[TaxCreditKind::StudentDoctoral->value] = $student;
+        }
         ksort($credits);
 
         $children = [];
@@ -200,12 +210,18 @@ final readonly class AnnualTaxRates
         return $value->value;
     }
 
+    /** Zná ročník sazeb roční částku téhle slevy? */
+    public function supportsCredit(TaxCreditKind $kind): bool
+    {
+        return isset($this->annualCreditMinorUnits[$kind->value]);
+    }
+
     /**
      * Roční sleva podle § 35ba za `$months` měsíců.
      *
      * § 35ba odst. 3 dává dvanáctinovou úpravu VÝSLOVNĚ jen slevám podle
-     * odst. 1 písm. b) až e). Základní sleva na poplatníka (písm. a) v tom výčtu
-     * NENÍ — náleží za celé zdaňovací období v plné výši i tomu, kdo pracoval
+     * odst. 1 písm. b) až e), od 1. 1. 2027 b) až f) (sleva na studenta).
+     * Základní sleva na poplatníka (písm. a) v tom výčtu NENÍ — náleží za celé zdaňovací období v plné výši i tomu, kdo pracoval
      * jediný měsíc. Krátit ji podle měsíců by byla častá a drahá chyba, proto to
      * tady stojí jako podmínka, ne jako poznámka.
      */

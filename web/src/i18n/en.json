@@ -4016,9 +4016,13 @@
           "negative-relationship-tax-base": "An employment relationship has a negative tax base.",
           "nonresident-monthly-credit-not-supported": "A non-resident monthly credit requires professional review.",
           "nonresident-monthly-child-credit-not-supported": "A non-resident monthly child benefit requires professional review.",
+          "nonresident-student-credit-not-allowed": "A tax non-resident is not entitled to the student tax credit.",
           "other-withholding-eligibility-unverified": "Eligibility for withholding tax has not been verified.",
           "prior-period-tax-correction-requires-revision": "A prior-period tax correction requires a separate revision.",
           "relationship-tax-classification-conflict": "Employment relationship tax classifications conflict with each other.",
+          "student-credit-conflict": "The student tax credit is recorded both as regular and as doctoral study.",
+          "student-credit-interval-open": "The student tax credit claim has no end date, although the age limit always ends it.",
+          "student-credit-not-in-ruleset": "The student tax credit does not exist in this year; the law introduces it from 2027.",
           "tax-credit-evidence-unverified": "The tax credit claim lacks verified evidence.",
           "tax-credit-requires-signed-declaration": "The credit requires an effective signed tax declaration.",
           "tax-declaration-conflict": "Tax declaration evidence conflicts with each other.",
@@ -6810,7 +6814,9 @@
             "taxpayer": "Taxpayer",
             "disability-basic": "First- and second-degree disability",
             "disability-extended": "Third-degree disability",
-            "ztp-p": "ZTP/P card holder"
+            "ztp-p": "ZTP/P card holder",
+            "student": "Student (up to age 26)",
+            "student-doctoral": "Student, full-time doctoral programme (up to age 28)"
           },
           "evidence_status": {
             "verified": "Documented",

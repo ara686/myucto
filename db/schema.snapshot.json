@@ -1111,7 +1111,8 @@
         "2207_other_item_settled_outside.sql",
         "2208_payroll_annual_settlement_claims.sql",
         "2209_payroll_deduction_agreement_jmhz_target.sql",
-        "2210_payroll_component_jmhz_catalog_1_4_2_11_package.sql"
+        "2210_payroll_component_jmhz_catalog_1_4_2_11_package.sql",
+        "2211_payroll_student_tax_credit.sql"
     ],
     "tables": {
         "abra_flexi_connections": {
@@ -17462,7 +17463,7 @@
             "columns": {
                 "created_at": "timestamp NOT NULL DEFAULT current_timestamp()",
                 "created_by": "bigint(20) unsigned NULL DEFAULT NULL",
-                "credit_kind": "enum('taxpayer','disability-basic','disability-extended','ztp-p') NOT NULL",
+                "credit_kind": "enum('taxpayer','disability-basic','disability-extended','ztp-p','student','student-doctoral') NOT NULL",
                 "effective_from": "date NOT NULL",
                 "effective_to": "date NULL DEFAULT NULL",
                 "employee_id": "bigint(20) unsigned NOT NULL",

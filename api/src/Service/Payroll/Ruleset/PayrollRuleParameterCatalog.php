@@ -77,6 +77,7 @@ final class PayrollRuleParameterCatalog
             'credit.spouse.eligibility' => 'Nárok na slevu na manžela',
             'credit.spouse.yearly' => 'Roční sleva na manžela',
             'credit.spouse.ztp_p_multiplier' => 'Násobek slevy na manžela s přiznaným nárokem na průkaz ZTP/P',
+            'credit.student.monthly' => 'Měsíční sleva na studenta',
             'credit.taxpayer.monthly' => 'Měsíční základní sleva na poplatníka',
             'credit.ztp_p.monthly' => 'Měsíční sleva na držitele průkazu ZTP/P',
             'dpp.withholding.threshold' => 'Rozhodná částka pro srážkovou daň u dohody o provedení práce',
@@ -288,6 +289,23 @@ final class PayrollRuleParameterCatalog
      */
     private const MANUAL_REVIEW = [
         'income_tax' => [
+            // Dvě vysvětlení NÍŽE jsou ruční posouzení jen v ročníku 2027. Ročník
+            // 2026 je má jako částky, takže se uživateli ukážou jedině u sady,
+            // které hodnota opravdu chybí.
+            'benefit_exemption.meal.per_shift' => [
+                'why' => 'Osvobozený příspěvek na stravování je 70 % horní hranice stravného při '
+                    . 'pracovní cestě 5 až 12 hodin. Vyhláška o stravném pro rok 2027 zatím nevyšla, '
+                    . 'takže částku za směnu nelze odvodit a hodnota roku 2026 by byla odhad.',
+                'action' => 'Až vyjde vyhláška o cestovních náhradách pro rok 2027, aktualizujte '
+                    . 'aplikaci. Do té doby se příspěvek na stravování za rok 2027 nespočítá.',
+            ],
+            'benefit_exemption.non_cash_leisure.yearly' => [
+                'why' => 'Od 1. 1. 2027 zákon č. 180/2026 Sb. zrušil společný limit poloviny průměrné '
+                    . 'mzdy pro volnočasová plnění: rekreace a zájezdy mají limit 20 000 Kč za rok, '
+                    . 'sport, kultura a vzdělávací zařízení limit nemají. Starý koš tomu neodpovídá.',
+                'action' => 'Nic tu nevyplňujte. Volnočasová plnění za rok 2027 se spočítají až po '
+                    . 'aktualizaci aplikace s novými koši osvobození.',
+            ],
             'credit.spouse.eligibility' => [
                 'why' => 'Roční sleva na manžela má od 1. 1. 2024 dvě podmínky NAJEDNOU: společně '
                     . 'hospodařící domácnost s manželem A s vyživovaným dítětem poplatníka, které '

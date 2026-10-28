@@ -232,7 +232,8 @@ manžela. Základ se zaokrouhlí na celá sta dolů až po odpočtu.
 
 Základní sleva na poplatníka náleží za celé zdaňovací období v plné výši
 i tomu, kdo pracoval jediný měsíc. Slevy na invaliditu, sleva na držitele
-průkazu ZTP/P a daňové zvýhodnění na dítě se krátí po dvanáctinách za
+průkazu ZTP/P, sleva na studenta (od roku 2027) a daňové zvýhodnění na dítě
+se krátí po dvanáctinách za
 měsíce, na jejichž počátku byly podmínky splněné. Měsíce se berou z evidence
 nároků, ne z toho, kolik se měsíčně skutečně uplatnilo: měsíční sleva je
 omezená výší zálohy, takže z ní nárok zpětně vyčíst nejde.

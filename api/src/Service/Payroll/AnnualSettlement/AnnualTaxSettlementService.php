@@ -424,6 +424,13 @@ final class AnnualTaxSettlementService implements AnnualSettlementPerformer
             $taxYear,
         );
         $blockers = [...$blockers, ...$credits['blockers'], ...$children['blockers']];
+        // Nárok na slevu, kterou ročník sazeb nezná (sleva na studenta před
+        // rokem 2027), se nespočítá jako nula — zúčtování se zastaví.
+        foreach ($credits['credits'] as $credit) {
+            if ($rates !== null && !$rates->supportsCredit($credit->kind)) {
+                $blockers[] = AnnualSettlementBlocker::CreditEvidenceUnverified;
+            }
+        }
         // Převzaté měsíce: počáteční stav nese uplatněné zvýhodnění, evidence
         // dětí nárok. Nesmí si odporovat, jinak by zúčtování vzalo zpět to, co
         // zaměstnanec u předchozího programu oprávněně dostal.
@@ -768,6 +775,9 @@ final class AnnualTaxSettlementService implements AnnualSettlementPerformer
             TaxCreditKind::DisabilityBasic => 'Základní sleva na invaliditu (§ 35ba odst. 1 písm. c)',
             TaxCreditKind::DisabilityExtended => 'Rozšířená sleva na invaliditu (§ 35ba odst. 1 písm. d)',
             TaxCreditKind::ZtpP => 'Sleva na držitele průkazu ZTP/P (§ 35ba odst. 1 písm. e)',
+            TaxCreditKind::Student => 'Sleva na studenta (§ 35ba odst. 1 písm. f)',
+            TaxCreditKind::StudentDoctoral
+                => 'Sleva na studenta, prezenční doktorské studium (§ 35ba odst. 1 písm. f)',
         };
         if ($kind === TaxCreditKind::Taxpayer) {
             return $name;

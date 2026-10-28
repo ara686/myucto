@@ -516,10 +516,10 @@ Sekce **Zákonná evidence osoby** vede:
 - **Prohlášení poplatníka k dani** (viz [§ 86.12.4](#86124-prohlaseni-k-dani-ma-jedine-misto)),
 - **Daňová rezidence**: rezident, nerezident se zemí, nebo neověřeno,
 - **Slevy na dani (§ 35ba)**: na poplatníka, na invaliditu I. a II. stupně, na
-  invaliditu III. stupně a na držitele ZTP/P. Uplatní se jen s podepsaným
-  prohlášením; bez záznamu se sleva neodečte. Každý druh je vlastní řada,
-  takže mohou platit souběžně. Sleva na poplatníka se odvodí z podepsaného
-  prohlášení,
+  invaliditu III. stupně, na držitele ZTP/P a od roku 2027 na studenta. Uplatní
+  se jen s podepsaným prohlášením; bez záznamu se sleva neodečte. Každý druh je
+  vlastní řada, takže mohou platit souběžně. Sleva na poplatníka se odvodí
+  z podepsaného prohlášení,
 - **Příslušnost k sociálnímu pojištění** včetně formuláře A1,
 - **Sleva pracujícího důchodce** (sleva na pojistném),
 - **Příslušnost ke zdravotnímu pojištění** a zdravotní pojišťovna,
@@ -527,6 +527,14 @@ Sekce **Zákonná evidence osoby** vede:
 - **Výjimky z minima zdravotního pojištění**,
 - **Vyměřovací základ u jiného zaměstnavatele**,
 - **Důchodový věk** a **Pobíraný důchod**.
+
+Sleva na studenta (§ 35bc ZDP, 335 Kč měsíčně) má dva druhy: soustavná
+příprava na budoucí povolání do 26 let a prezenční doktorské studium do 28 let.
+Doložte ji potvrzením školy a zadejte i konec nároku. Nárok trvá nejdéle do
+konce posledního měsíce, na jehož počátku zaměstnanec věkovou hranici ještě
+nedovršil; kdo má narozeniny prvního dne měsíce, v tom měsíci už nárok nemá.
+Aplikace to kontroluje podle data narození, bez něj nárok neuloží. Daňový
+nerezident na slevu nárok nemá.
 
 Chybí-li prohlášení, rezidence, sociální nebo zdravotní příslušnost nebo
 zdravotní pojišťovna, mzdový běh zákonný výpočet osoby nespočítá a skončí
