@@ -983,8 +983,8 @@ final class JmhzEldpEvidenceBuilder
      * Dovršila osoba důchodový věk před intervalem a nepobírá v něm starobní
      * důchod? Jen pro ni se vedou odečítané doby (datový slovník JMHZ 1.4.1.6
      * u 10375: „pojištěnec, který … nepobírá starobní důchod a je výdělečně
-     * činný po dovršení důchodového věku"). Předčasný důchod je důchod, takže
-     * kód D z něj odečítané doby nezakládá.
+     * činný po dovršení důchodového věku"). Pravidlo sdílí s ročním listem
+     * {@see EldpPensionAgeCode::deductsPeriods()}; tady se jen ověří tvar dat.
      *
      * @param array<string,mixed> $source
      */
@@ -995,19 +995,16 @@ final class JmhzEldpEvidenceBuilder
             return false;
         }
         $status = $this->object($status, 'pension_status');
-        $reachedOn = ($status['pension_age_reached_on'] ?? null) === null
-            ? null
-            : $this->date($status['pension_age_reached_on'], 'pension_status.pension_age_reached_on');
-        if ($reachedOn === null || $reachedOn > $intervalFrom) {
-            return false;
+        $pension = [];
+        foreach (['pension_age_reached_on', 'early_pension_from'] as $key) {
+            $pension[$key] = ($status[$key] ?? null) === null
+                ? null
+                : $this->date($status[$key], "pension_status.{$key}");
         }
-        $earlyFrom = ($status['early_pension_from'] ?? null) === null
-            ? null
-            : $this->date($status['early_pension_from'], 'pension_status.early_pension_from');
         $fullPaidFrom = $status['full_pension_paid_from'] ?? null;
+        $pension['full_pension_paid_from'] = is_string($fullPaidFrom) ? $fullPaidFrom : null;
 
-        return ($earlyFrom === null || $earlyFrom > $intervalTo)
-            && (!is_string($fullPaidFrom) || $fullPaidFrom > substr($intervalTo, 0, 7));
+        return EldpPensionAgeCode::deductsPeriods($pension, $intervalFrom, $intervalTo);
     }
 
     /**

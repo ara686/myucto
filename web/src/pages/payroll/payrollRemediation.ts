@@ -52,6 +52,7 @@ export const eldpRemediationCodes: Record<string, string> = {
   eldp_takeover_excluded_days_breakdown_missing: 'takeover',
   eldp_takeover_excluded_days_mismatch: 'takeover',
   eldp_deducted_days_unknown: 'unsupported',
+  eldp_code_d_month_without_insurance_unsupported: 'unsupported',
   eldp_section_15a_history_unavailable: 'unsupported',
   eldp_statement_continues_previous_employment: 'previous_employment',
   eldp_post_termination_small_scale_unsupported: 'unsupported',

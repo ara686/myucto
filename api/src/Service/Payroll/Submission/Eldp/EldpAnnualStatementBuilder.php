@@ -977,6 +977,7 @@ final class EldpAnnualStatementBuilder
             $lines = $this->applyPensionAgeCode(
                 $lines,
                 $pensionAgeCodeFrom,
+                $pension,
                 $employmentId,
                 $blockers,
             );
@@ -2437,20 +2438,25 @@ final class EldpAnnualStatementBuilder
      * vyměřovací základ jen za celý měsíc a rozdělit ho na dvě sekce by byl
      * vymyšlený údaj v zákonné evidenci.
      *
-     * Měsíc s kódem D nese odečtené doby (§ 38 odst. 4 písm. h) zákona
-     * č. 582/1991 Sb., údaj 40 ELDP) odvozené z nepřítomností
+     * Odečtené doby (§ 38 odst. 4 písm. h) zákona č. 582/1991 Sb., údaj 40
+     * ELDP) nese jen měsíc pojištěnce po dovršení důchodového věku, který
+     * starobní důchod nepobírá ({@see EldpPensionAgeCode::deductsPeriods()},
+     * stejný predikát jako u měsíčního hlášení). Odvozují se z nepřítomností
      * ({@see EldpExcludedPeriodDeriver::deriveDeducted()}) a dny pojištění jsou
      * interval Od–Do minus odečtené doby (Všeobecné zásady ELDP, údaj Dny).
-     * Převzatý měsíc nepřítomnosti v potřebném rozsahu doložit neumí, takže kód
-     * D nad ním blokuje.
+     * Kód D předčasného důchodce odečtené doby nezakládá a dny zůstávají
+     * intervalem. Převzatý měsíc nepřítomnosti v potřebném rozsahu doložit
+     * neumí, takže tam, kde se odečtené doby vedou, blokuje.
      *
      * @param list<array<string,mixed>> $lines
+     * @param array{pension_age_reached_on:?string,early_pension_from:?string,full_pension_paid_from:?string} $pension
      * @param list<array{code:string,message:string,detail:array<string,mixed>}> $blockers
      * @return list<array<string,mixed>>
      */
     private function applyPensionAgeCode(
         array $lines,
         string $codeFrom,
+        array $pension,
         int $employmentId,
         array &$blockers,
     ): array {
@@ -2463,6 +2469,28 @@ final class EldpAnnualStatementBuilder
             $placement = EldpPensionAgeCode::placement($codeFrom, $from, $to);
             if ($placement === EldpPensionAgeCode::PENSION_AGE) {
                 $lines[$index]['code'] = EldpPensionAgeCode::withPensionAge((string) $line['code']);
+                if (!EldpPensionAgeCode::deductsPeriods($pension, $from, $to)) {
+                    // Logický test ELDP12 k údaji Odečtené doby chce u kódu D
+                    // odečtené doby aspoň ve výši dnů měsíců „X". Předčasnému
+                    // důchodci se nevedou, takže měsíc bez pojištění v sekci D
+                    // by ČSSZ odmítla; list se zastaví dřív.
+                    if (($line['outside_insurance'] ?? $line['insurance_days'] === 0) === true) {
+                        $blockers[] = [
+                            'code' => 'eldp_code_d_month_without_insurance_unsupported',
+                            'message' => 'Za ' . self::monthLabel((string) $line['period_start'])
+                                . ' platí kód D z předčasného starobního důchodu a měsíc není dobou '
+                                . 'pojištění („X"). Logický test ELDP12 u kódu D vyžaduje odečtené '
+                                . 'doby aspoň za dny měsíců „X", odečtené doby se ale vedou jen po '
+                                . 'dovršení důchodového věku bez pobírání důchodu. Evidenční list '
+                                . 'podejte mimo aplikaci.',
+                            'detail' => [
+                                'period_start' => (string) $line['period_start'],
+                                'employment_id' => $employmentId,
+                            ],
+                        ];
+                    }
+                    continue;
+                }
                 $deductible = $line['deductible'] ?? null;
                 if ($deductible === null) {
                     $blockers[] = [

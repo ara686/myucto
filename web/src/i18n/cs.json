@@ -12492,6 +12492,7 @@
         "eldp_takeover_excluded_days_breakdown_missing": "Převzatý měsíc má vyloučené dny, ale chybí jejich rozpad podle druhů. Zaevidujte odpovídající nepřítomnosti a proveďte převod znovu.",
         "eldp_takeover_excluded_days_mismatch": "Převzatý měsíc má jiný počet vyloučených dob, než dávají evidované nepřítomnosti. Opravte nepřítomnosti, nebo převzatý měsíc v kontrole převodu mezd.",
         "eldp_deducted_days_unknown": "Pro měsíc s kódem D (po dovršení důchodového věku) nejde z převzatých mezd doložit odečtené doby. Evidenční list podejte mimo aplikaci.",
+        "eldp_code_d_month_without_insurance_unsupported": "Měsíc bez pojištění („X“) leží v době s kódem D z předčasného starobního důchodu. Odečtené doby, které ČSSZ u kódu D za takový měsíc vyžaduje, se předčasnému důchodci nevedou. Evidenční list podejte mimo aplikaci.",
         "eldp_section_15a_history_unavailable": "O vyloučené době v měsíci bez účasti rozhoduje účast v měsících před vykazovaným rokem (§ 15a zákona o nemocenském pojištění). Evidenční list podejte mimo aplikaci.",
         "eldp_statement_continues_previous_employment": "Pracovní vztah navazuje do tří měsíců na skončený vztah téže osoby ve stejném roce. Jeho doba patří do dalších řádků evidenčního listu dřívějšího vztahu; připravte list u něj.",
         "eldp_prepared_on_future": "Datum vyhotovení evidenčního listu je v budoucnosti. Zadejte datum vyhotovení mezi datem „Do“ a dneškem.",
