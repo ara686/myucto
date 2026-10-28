@@ -87,12 +87,21 @@ final class AnnualTaxSettlementCalculator
         AnnualTaxRates $rates,
         array $blockers = [],
     ): AnnualSettlementResult {
-        $blockers = $this->withCalculationBlockers($input, $blockers);
+        $spouseFailures = $input->spouseClaim?->conditionFailures(
+            $input->taxYear,
+            $rates->spouseIncomeLimitMinorUnits,
+        ) ?? [];
+        $blockers = $this->withCalculationBlockers($input, $blockers, $spouseFailures);
         if ($blockers !== []) {
             return AnnualSettlementResult::refused(
                 $input->taxYear,
                 $blockers,
-                ['rates' => $rates->toArray()],
+                [
+                    'rates' => $rates->toArray(),
+                    ...($spouseFailures !== []
+                        ? ['spouse_credit_failures' => $spouseFailures]
+                        : []),
+                ],
             );
         }
 
@@ -103,12 +112,20 @@ final class AnnualTaxSettlementCalculator
         //    už výše shodila výpočet na překážku.
         $external = $this->externalTotals($input);
 
-        // 1. Základ daně (§ 16 odst. 2).
+        // 1. Základ daně (§ 16 odst. 2) — po odečtení nezdanitelných částí
+        //    (§ 15). Limity darů se měří z úhrnu PŘED odpočtem; zaokrouhluje
+        //    se až základ po odpočtu.
+        $baseBeforeDeductions = TaxIntegerMath::add(
+            $input->advanceBaseMinorUnits,
+            $external['advance_base_minor_units'],
+        );
+        $deductions = (new AnnualNonTaxableDeductionCalculator())->calculate(
+            $input->taxYear,
+            $baseBeforeDeductions,
+            $input->nonTaxableClaims,
+        );
         $roundedBase = $this->floorToMultiple(
-            TaxIntegerMath::add(
-                $input->advanceBaseMinorUnits,
-                $external['advance_base_minor_units'],
-            ),
+            $baseBeforeDeductions - $deductions->totalMinorUnits(),
             self::TAX_BASE_MULTIPLE_MINOR_UNITS,
         );
 
@@ -142,7 +159,16 @@ final class AnnualTaxSettlementCalculator
             ],
         ], 100);
 
-        // 3. Slevy podle § 35ba.
+        // 3a. Sleva za zastavenou exekuci (§ 35 odst. 4). § 35ba odst. 1 snižuje
+        //     daň „případně sníženou podle § 35", takže tahle sleva jde první,
+        //     a stejně jako ostatní slevy nejvýš do výše daně.
+        $enforcementCredit = min(
+            $taxBeforeCredits,
+            $deductions->enforcementCreditClaimedMinorUnits,
+        );
+        $taxAfterEnforcement = $taxBeforeCredits - $enforcementCredit;
+
+        // 3b. Slevy podle § 35ba.
         $creditBreakdown = [];
         $annualCredits = 0;
         foreach ($input->creditMonths as $claim) {
@@ -154,9 +180,28 @@ final class AnnualTaxSettlementCalculator
             ];
             $annualCredits = TaxIntegerMath::add($annualCredits, $amount);
         }
+        // § 35ba odst. 1 písm. b), § 35bb odst. 1 a § 35ba odst. 3: 1/12 roční
+        // částky za každý měsíc nároku, za měsíce ZTP/P manžela dvojnásobek.
+        // Podmínky nároku už prověřila překážka výše; sem dojde jen platný nárok.
+        if ($input->spouseClaim !== null) {
+            $spouseMonths = $input->spouseClaim->months();
+            $spouseZtpPMonths = $input->spouseClaim->ztpPMonths();
+            $amount = intdiv(
+                $rates->spouseCreditMinorUnits
+                    * ($spouseMonths + ($rates->spouseCreditZtpPMultiplier - 1) * $spouseZtpPMonths),
+                AnnualTaxRates::MONTHS_IN_YEAR,
+            );
+            $creditBreakdown['spouse'] = [
+                'months' => $spouseMonths,
+                'ztp_p_months' => $spouseZtpPMonths,
+                'amount_minor_units' => $amount,
+                'prorated' => true,
+            ];
+            $annualCredits = TaxIntegerMath::add($annualCredits, $amount);
+        }
         ksort($creditBreakdown);
-        $appliedCredits = min($taxBeforeCredits, $annualCredits);
-        $taxAfterCredits = $taxBeforeCredits - $appliedCredits;
+        $appliedCredits = min($taxAfterEnforcement, $annualCredits);
+        $taxAfterCredits = $taxAfterEnforcement - $appliedCredits;
 
         // 4. Daňové zvýhodnění podle § 35c.
         $childBreakdown = [];
@@ -315,25 +360,88 @@ final class AnnualTaxSettlementCalculator
                 'children' => $childBreakdown,
                 'payout_threshold_minor_units' =>
                     AnnualSettlementStatute::PAYOUT_THRESHOLD_MINOR_UNITS,
+                ...$this->annualClaimsTrace(
+                    $input,
+                    $baseBeforeDeductions,
+                    $deductions,
+                    $enforcementCredit,
+                ),
             ],
             annualTaxBonusCandidateMinorUnits: $bonusCandidate,
             annualBonusAmountThresholdMet: $amountThresholdMet,
             annualBonusEligibilityReason: $bonusEligibilityReason,
+            taxBaseBeforeDeductionsMinorUnits: $baseBeforeDeductions,
+            nonTaxableDeductionsMinorUnits: $deductions->totalMinorUnits(),
+            enforcementCreditMinorUnits: $enforcementCredit,
         );
+    }
+
+    /**
+     * Stopa ročně uplatňovaných položek (§ 38h odst. 6).
+     *
+     * Jen když nějaké jsou — zúčtování bez nich má stopu stejnou jako dřív.
+     *
+     * @return array<string,mixed>
+     */
+    private function annualClaimsTrace(
+        AnnualSettlementInput $input,
+        int $baseBeforeDeductions,
+        AnnualNonTaxableDeductions $deductions,
+        int $enforcementCredit,
+    ): array {
+        if ($input->nonTaxableClaims === [] && $input->spouseClaim === null) {
+            return [];
+        }
+
+        return [
+            'annual_claims' => [
+                'items' => array_map(
+                    static fn (AnnualNonTaxableClaim $claim): array => $claim->jsonSerialize(),
+                    $input->nonTaxableClaims,
+                ),
+                'spouse' => $input->spouseClaim?->jsonSerialize(),
+            ],
+            'tax_base_before_deductions_minor_units' => $baseBeforeDeductions,
+            'non_taxable' => $deductions->toArray(),
+            'enforcement_credit' => [
+                'claimed_minor_units' => $deductions->enforcementCreditClaimedMinorUnits,
+                'applied_minor_units' => $enforcementCredit,
+            ],
+        ];
     }
 
     /**
      * Překážky, které pozná až výpočet — na rozdíl od těch z evidence.
      *
      * @param list<AnnualSettlementBlocker> $blockers
+     * @param list<string> $spouseFailures
      * @return list<AnnualSettlementBlocker>
      */
     private function withCalculationBlockers(
         AnnualSettlementInput $input,
         array $blockers,
+        array $spouseFailures,
     ): array {
         if ($input->completedMonths === 0) {
             $blockers[] = AnnualSettlementBlocker::NoApprovedMonths;
+        }
+        // § 38l odst. 1 a 2: ročně uplatňovanou položku plátce uzná jen
+        // doloženou.
+        foreach ($input->nonTaxableClaims as $claim) {
+            if (!$claim->isVerified()) {
+                $blockers[] = AnnualSettlementBlocker::AnnualClaimEvidenceUnverified;
+            }
+        }
+        if ($input->spouseClaim !== null && !$input->spouseClaim->isVerified()) {
+            $blockers[] = AnnualSettlementBlocker::AnnualClaimEvidenceUnverified;
+        }
+        if ($spouseFailures !== []) {
+            $blockers[] = AnnualSettlementBlocker::SpouseCreditConditionsNotMet;
+        }
+        if ($input->nonTaxableClaims !== []
+            && $input->taxYear < AnnualNonTaxableStatute::FIRST_SUPPORTED_YEAR
+        ) {
+            $blockers[] = AnnualSettlementBlocker::AnnualOnlyClaimsUnsupported;
         }
         foreach ($input->externalCertificates as $certificate) {
             // § 38ch odst. 4: do úhrnu mezd od všech plátců smí vstoupit jen

@@ -84,19 +84,14 @@ final readonly class AnnualTaxRates
         /**
          * § 35bb odst. 1 věta první: roční sleva na manžela.
          *
-         * ⚠ DO VÝPOČTU NEVSTUPUJE. Modul slevu na manžela neuplatňuje —
-         * chybí evidence podmínek (společně hospodařící domácnost, vyživované
-         * dítě do 3 let podle § 35bb odst. 2 písm. a), doložení podle § 38l),
-         * takže {@see AnnualSettlementAnnualClaims::PresentUnsupported}
-         * zúčtování zastaví. Číslo se drží jen proto, aby ho účetní viděla
-         * v administraci a aby se roční a měsíční ruleset nemohly rozejít
-         * nepozorovaně; ve stopě výpočtu je označené jako NEUPLATNĚNÉ —
-         * viz {@see toArray()}.
+         * Do výpočtu vstupuje jen přes evidovaný nárok
+         * ({@see AnnualSpouseCreditClaim}), jehož podmínky § 35bb odst. 2
+         * a doložení podle § 38l posoudí zúčtování. Bez nároku se nepoužije.
          */
         public int $spouseCreditMinorUnits,
-        /** § 35bb odst. 1 věta druhá: násobek u manžela s nárokem na průkaz ZTP/P. Do výpočtu nevstupuje. */
+        /** § 35bb odst. 1 věta druhá: násobek u manžela s nárokem na průkaz ZTP/P. */
         public int $spouseCreditZtpPMultiplier,
-        /** § 35bb odst. 2 písm. b): nejvyšší vlastní příjem manžela; nerovnost NEOSTRÁ. Do výpočtu nevstupuje. */
+        /** § 35bb odst. 2 písm. b): nejvyšší vlastní příjem manžela; nerovnost NEOSTRÁ. */
         public int $spouseIncomeLimitMinorUnits,
         /** @var array<string,int> roční částka slevy podle TaxCreditKind->value */
         public array $annualCreditMinorUnits,
@@ -269,10 +264,10 @@ final readonly class AnnualTaxRates
             'bonus_minimum_amount_minor_units' => $this->bonusMinimumAmountMinorUnits,
             'payout_threshold_minor_units' => $this->payoutThresholdMinorUnits,
             // Sleva na manžela se ve stopě drží POD VLASTNÍM KLÍČEM s příznakem
-            // `applied = false`. Ploché klíče vedle sazeb, které se skutečně
-            // počítají, dělaly ze snapshotu tvrzení „sleva byla posouzena" —
-            // a to modul nedělá. Vstupní podmínky (§ 35bb odst. 2, § 38l)
-            // nemá v evidenci a zúčtování na nich fail-closed padá.
+            // `applied = false`: sazba sama nic neuplatňuje. Uplatněná sleva
+            // je ve stopě výsledku pod `credits.spouse`, a to jen u zúčtování
+            // s evidovaným a doloženým nárokem. Klíč se nemění, aby zůstal
+            // stejný otisk stopy u zúčtování bez slevy na manžela.
             'spouse_credit' => [
                 'applied' => false,
                 'reason' => 'eligibility_manual_review',

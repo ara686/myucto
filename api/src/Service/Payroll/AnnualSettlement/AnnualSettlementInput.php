@@ -51,6 +51,14 @@ final readonly class AnnualSettlementInput
         public array $creditMonths,
         public array $childMonths,
         public array $externalCertificates,
+        /**
+         * § 38h odst. 6: položky uplatňované až ročně — § 15 a § 35 odst. 4.
+         *
+         * @var list<AnnualNonTaxableClaim>
+         */
+        public array $nonTaxableClaims = [],
+        /** § 35ba odst. 1 písm. b), § 35bb — sleva na manžela. */
+        public ?AnnualSpouseCreditClaim $spouseClaim = null,
     ) {
         if ($taxYear < 2000 || $taxYear > 2199) {
             throw new \InvalidArgumentException('Rok ročního zúčtování není platný.');
@@ -79,6 +87,7 @@ final readonly class AnnualSettlementInput
         self::assertList($creditMonths, AnnualSettlementCreditMonths::class);
         self::assertList($childMonths, AnnualSettlementChildMonths::class);
         self::assertList($externalCertificates, ExternalEmployerTaxCertificate::class);
+        self::assertList($nonTaxableClaims, AnnualNonTaxableClaim::class);
 
         $seenCredits = [];
         foreach ($creditMonths as $credit) {
