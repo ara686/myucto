@@ -2377,10 +2377,92 @@ final class JmhzScenario1XmlSerializer
             } else {
                 $this->appendEldpExcludedDays($dom, $entry, $section, $code);
             }
+            // Pořadí XSD (`eldpType`, `eldpVezenType`): vylouceneDny, pak odecitaneDny.
+            $this->appendEldpDeductedDays($dom, $entry, $section, $code, $prisoner);
             $list->appendChild($entry);
         }
 
         return $list;
+    }
+
+    /**
+     * Odečítané doby ELDP sekce (`odecitaneDny`, 10375 a 10462–10469,
+     * interakce IN04).
+     *
+     * Nese je jen sekce s kódem D, které builder odvodil nenulový úhrn
+     * (`deducted_days_total`); `null` znamená NEUVEDENO a element se nezapíše
+     * (Pravidla podání kap. 4: při nule se atributy nezobrazují, kontrola 328).
+     * Zapisuje se úhrn 10375 a nenulové složky v pořadí XSD. Součet složek se
+     * musí rovnat úhrnu (Pravidla podání kap. 4) a při kladném úhrnu musí být
+     * aspoň jedna složka (Pokyny MH k 10462–10469); obojí se ověří dřív, než
+     * se cokoliv zapíše. Formulář vězně (`odecitaneDnyVezenType`) vede jen
+     * pracovní neschopnost a mateřství; jiná nenulová složka by se tiše
+     * ztratila, proto je to vada jako u vyloučených dob vězně.
+     *
+     * @param array<string,mixed> $section
+     */
+    private function appendEldpDeductedDays(
+        DOMDocument $dom,
+        DOMElement $entry,
+        array $section,
+        mixed $code,
+        bool $prisoner,
+    ): void {
+        $total = $section['deducted_days_total'] ?? null;
+        if ($total === null) {
+            return;
+        }
+        $total = $this->int($total, '10375');
+        if ($total === 0) {
+            return;
+        }
+        if (!is_string($code) || strlen($code) < 2 || $code[strlen($code) - 2] !== 'D') {
+            $this->invalid(
+                'jmhz_xml_eldp_deducted_days_without_code',
+                'Odečítané doby patří jen do ELDP sekce s kódem D (po dovršení důchodového věku).',
+            );
+        }
+        $attributes = [
+            'pracovniNeschopnost' => '10462',
+            'materstvi' => '10463',
+            'osetrovaniSNarokem' => '10464',
+            'osetrovaniBezNaroku' => '10465',
+            'otcovska' => '10466',
+            'neplaceneVolno' => '10468',
+            'neomluveneAbsence' => '10469',
+        ];
+        $components = $section['deducted_days'] ?? null;
+        if (!is_array($components) || array_is_list($components)
+            || array_diff_key($components, $attributes) !== []
+        ) {
+            $this->unresolved('10375');
+        }
+        $values = [];
+        foreach ($attributes as $key => $attributeId) {
+            $value = $this->int($components[$key] ?? 0, $attributeId);
+            if ($value === 0) {
+                continue;
+            }
+            if ($prisoner && !in_array($key, ['pracovniNeschopnost', 'materstvi'], true)) {
+                $this->invalid(
+                    'jmhz_xml_prisoner_deducted_days_unsupported',
+                    "Formulář vězně nemá kam zapsat odečítané doby atributu {$attributeId}.",
+                );
+            }
+            $values[$key] = $value;
+        }
+        if ($values === [] || array_sum($values) !== $total) {
+            $this->invalid(
+                'jmhz_xml_eldp_deducted_days_sum_mismatch',
+                'Úhrn odečítaných dob (10375) neodpovídá součtu složek 10462–10469.',
+            );
+        }
+        $block = $this->node($dom, JmhzSchemaCatalog::NS_FORM, 'form:odecitaneDny');
+        $this->text($dom, $block, JmhzSchemaCatalog::NS_FORM, 'form:odecitaneDobyCelkem', (string) $total);
+        foreach ($values as $key => $value) {
+            $this->text($dom, $block, JmhzSchemaCatalog::NS_FORM, 'form:' . $key, (string) $value);
+        }
+        $entry->appendChild($block);
     }
 
     /**
@@ -3326,10 +3408,8 @@ final class JmhzScenario1XmlSerializer
      * Blok se pro něj nezapíše (element je v XSD nepovinný), místo aby se
      * doplnila nula, kterou zdroj netvrdí.
      *
-     * Odečítané doby (10375, 10462–10469) se nezapisují vůbec: měsíc s kódem
-     * D a nenulovými odečtenými dobami ELDP řez zastaví
-     * (`jmhz_eldp_deducted_days_unsupported`), takže sem dojde jen sekce, která
-     * žádné nemá, a builder je nechává neuvedené.
+     * Odečítané doby (10375, 10462–10469) zapisuje samostatně
+     * {@see appendEldpDeductedDays()}.
      *
      * @param array<string,mixed> $section
      */
