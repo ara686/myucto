@@ -724,6 +724,10 @@ vztahu, proto patří k osobě, ne do verze smlouvy.
 | **Neověřeno** | zapsané, ale nedoložené; osoba jde do ručního posouzení |
 | Nezadáno | k danému měsíci není žádný záznam |
 
+U podepsaného prohlášení vyplňte i **Den podpisu**. Měsíční hlášení za období
+od ledna 2027 ho uvádí (datum podpisu prohlášení) a bez něj se nesestaví.
+Prohlášení podepsané až po vykazovaném měsíci ten měsíc nedokládá.
+
 **Nezadáno není totéž co Nepodepsáno**, i když se počítá stejně opatrně: bez
 prohlášení se měsíční sleva uplatnit nesmí (§ 38k odst. 4 zákona o daních
 z příjmů) a za nesraženou zálohu ručí plátce (§ 38s). Rozlišení ukazuje, jestli
@@ -895,6 +899,17 @@ a **Termíny**. Ve sbalené části **Další údaje** jsou skupiny **Místo vý
 práce**, **JMHZ – vykonávaná pozice**, **Pojištění a daň** a **Výjimečné
 situace**; otevře se sama jen u vztahu, kde je něco z ní vyplněné. Postranní
 pruh ukazuje navazující agendy a údaje **Ze zákonné evidence osoby**.
+
+**Adresa místa výkonu práce.** Měsíční hlášení za období od ledna 2027 uvádí
+u pracoviště v ČR i plnou adresu: **Ulice**, **Číslo popisné**, **Číslo
+orientační**, **PSČ** a nepovinně **Kód adresního místa** (RÚIAN). Pole se
+ukážou po výběru obce pracoviště; vyplňte aspoň číslo popisné a PSČ. U
+pracoviště mimo ČR (kód obce 111111) se adresa nevyplňuje. Bez adresy se
+hlášení za rok 2027 nesestaví.
+
+**Státní zástupce.** U druhu činnosti K až S nabídne skupina **Místo výkonu
+práce** volbu **Státní zástupce** (Ano, Ne). Hlášení za období od ledna 2027
+ji u těchto formulářů vyžaduje; **Neuvedeno** hlášení zastaví.
 
 **Dovolená.** Firemní výměra dovolené platí všem vztahům. **Výjimku z výměry
 dovolené** vyplňte jen tam, kde má vztah jiný nárok (nejméně 4 týdny); prázdné

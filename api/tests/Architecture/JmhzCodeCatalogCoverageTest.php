@@ -122,6 +122,8 @@ final class JmhzCodeCatalogCoverageTest extends TestCase
         'jmhz_assignment_user_kind' => 'field',
         'jmhz_assignment_user_name' => 'field',
         'jmhz_risk_categorization_code' => 'field',
+        // Příznak státního zástupce v podmínkách vztahu (JMHZ 2027, 10587).
+        'jmhz_state_prosecutor' => 'field',
         // Počty a upozornění v protokolu převodu PAMICA (PohodaPayrollJmhzWriter),
         // ne kódy blokací podání.
         'jmhz_attributes_unknown' => 'other',

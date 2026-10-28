@@ -441,10 +441,23 @@ final class PayrollPersonStatutoryEvidenceValidator
         $status = $this->enum($row, 'status', ['signed', 'not-signed', 'unverified']);
         $evidence = $this->nullableCanonical($row, 'evidence_reference');
         $this->assertEvidenceAllowed($status !== 'unverified', $evidence, 'daňové prohlášení');
+        // Den podpisu prohlášení (JMHZ 10575 od 01/2027, IN16). Má smysl jen
+        // u podepsaného prohlášení; řádek bez něj zůstává ve snímku bajtově
+        // stejný jako dřív.
+        if (($row['signed_on'] ?? null) === '') {
+            $row['signed_on'] = null;
+        }
+        $signedOn = $this->nullableDateValue($row, 'signed_on');
+        if ($signedOn !== null && $status !== 'signed') {
+            throw new InvalidArgumentException(
+                'Den podpisu lze uvést jen u podepsaného prohlášení poplatníka.',
+            );
+        }
 
         return $this->baseInterval($row) + [
             'status' => $status,
             'evidence_reference' => $evidence,
+            ...($signedOn === null ? [] : ['signed_on' => $signedOn]),
         ];
     }
 

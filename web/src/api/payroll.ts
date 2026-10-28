@@ -342,6 +342,14 @@ export interface PayrollEmploymentTerms {
   regular_workplace: string | null
   jmhz_workplace_municipality_code: string | null
   jmhz_workplace_country_code: string | null
+  /** Plná adresa místa výkonu práce pro JMHZ 2027 (10550 až 10554). */
+  jmhz_workplace_address_point_code?: string | null
+  jmhz_workplace_street?: string | null
+  jmhz_workplace_house_number?: string | null
+  jmhz_workplace_orientation_number?: string | null
+  jmhz_workplace_postal_code?: string | null
+  /** Státní zástupce (JMHZ 2027, 10587); `null` = neuvedeno. */
+  jmhz_state_prosecutor?: boolean | null
   jmhz_external_codebook_overlay_key?: string | null
   jmhz_external_codebook_manifest_sha256?: string | null
   jmhz_apz_contribution_status: PayrollVerifiedTriState
@@ -4328,6 +4336,9 @@ export interface PayrollJmhzOrdinaryEvidence {
 export interface PayrollJmhzOzpWageInput {
   payment_date: string
   cash_paid: boolean
+  /** Dny odvodu sociálního (10570) a zdravotního pojištění (10571), hlášení od 01/2027. */
+  social_insurance_paid_on?: string
+  health_insurance_paid_on?: string
 }
 
 /** Zmrazený výdělek OZP; srážky v haléřích podle atributu 10350 až 10353. */
@@ -9027,6 +9038,7 @@ export const payrollApi = {
     employmentId: number,
     idempotencyKey: string,
     ozpWage?: PayrollJmhzOzpWageInput,
+    riskShiftCount?: number,
   ) => api.post<PayrollJmhzOrdinaryEvidence>(
     `/payroll/submissions/jmhz-ordinary-evidence/${revisionId}/${employmentId}`,
     {
@@ -9039,6 +9051,7 @@ export const payrollApi = {
       },
       evidence_confirmed: true,
       ...(ozpWage === undefined ? {} : { ozp_wage: ozpWage }),
+      ...(riskShiftCount === undefined ? {} : { risk_shift_count: riskShiftCount }),
     },
     { headers: { 'Idempotency-Key': idempotencyKey } },
   ).then(response => response.data),

@@ -608,6 +608,136 @@ final class JmhzOrdinaryEvidenceBuilderTest extends TestCase
     }
 
     /**
+     * Od 01/2027 se 10347 dělí na datum úhrady mzdy 10589 a dny odvodu
+     * sociálního 10570 a zdravotního pojištění 10571: bez nich se výdělek OZP
+     * nezmrazí, s nimi je evidence nese a projde kontrolou použitelnosti.
+     * V roce 2026 zůstává tvar evidence beze změny.
+     */
+    public function testOzpWageFrom2027CarriesContributionDates(): void
+    {
+        $source = $this->atPeriod($this->ozpSource([]), '2027-01-01');
+        try {
+            (new JmhzOrdinaryEvidenceBuilder())->build(
+                7,
+                $source,
+                101,
+                $this->facts(['ozp_employment_support_claimed' => true]),
+                12,
+                '2027-02-13T12:00:00Z',
+                'explicit_confirmation',
+                ['payment_date' => '2027-02-10', 'cash_paid' => false],
+            );
+            self::fail('Výdělek OZP za 2027 bez dat odvodů se nesmí zmrazit.');
+        } catch (JmhzOrdinaryEvidenceException $exception) {
+            self::assertSame('jmhz_ordinary_evidence_ozp_wage_required', $exception->validationCode);
+        }
+
+        $snapshot = (new JmhzOrdinaryEvidenceBuilder())->build(
+            7,
+            $source,
+            101,
+            $this->facts(['ozp_employment_support_claimed' => true]),
+            12,
+            '2027-02-13T12:00:00Z',
+            'explicit_confirmation',
+            [
+                'payment_date' => '2027-02-10',
+                'cash_paid' => false,
+                'social_insurance_paid_on' => '2027-02-11',
+                'health_insurance_paid_on' => '2027-02-12',
+            ],
+        );
+
+        self::assertSame('2027-02-11', $snapshot->payload['ozp_wage']['social_insurance_paid_on']);
+        self::assertSame('2027-02-12', $snapshot->payload['ozp_wage']['health_insurance_paid_on']);
+        $this->assertApplicable($source, $snapshot->canonicalJson());
+    }
+
+    /**
+     * Práce kategorie 4 od 01/2027: počet směn (10580) mzdy neevidují, takže
+     * automatické doložení se zastaví a účetní ho zadá. V roce 2026 se nic
+     * nemění; u jiného vztahu počet směn uvést nejde.
+     */
+    public function testRiskShiftCountIsRequiredForCategoryFourFrom2027(): void
+    {
+        $risk = $this->sourceWithOrdinaryProfile();
+        $input = json_decode($risk['revision']['input_snapshot_json'], true, flags: JSON_THROW_ON_ERROR);
+        $input['people'][0]['employments'][0]['term']['social_employer_rate_category'] = 'risk_employment';
+        $this->replaceInput($risk, $input);
+        $risk2027 = $this->atPeriod($risk, '2027-01-01');
+
+        (new JmhzOrdinaryEvidenceBuilder())->build(7, $risk, 101, $this->facts(), 12, '2026-08-13T12:00:00Z', 'derived_from_frozen_payroll_sources');
+        try {
+            (new JmhzOrdinaryEvidenceBuilder())->build(7, $risk2027, 101, $this->facts(), 12, '2027-02-13T12:00:00Z', 'derived_from_frozen_payroll_sources');
+            self::fail('Bez počtu směn se evidence 2027 rizikové práce nesmí zmrazit.');
+        } catch (JmhzOrdinaryEvidenceException $exception) {
+            self::assertSame('jmhz_ordinary_evidence_risk_shifts_required', $exception->validationCode);
+        }
+
+        $snapshot = (new JmhzOrdinaryEvidenceBuilder())->build(
+            7,
+            $risk2027,
+            101,
+            $this->facts(),
+            12,
+            '2027-02-13T12:00:00Z',
+            'explicit_confirmation',
+            null,
+            20,
+        );
+        self::assertSame(20, $snapshot->payload['risk_shift_count']);
+        $this->assertApplicable($risk2027, $snapshot->canonicalJson());
+
+        $this->expectException(JmhzOrdinaryEvidenceException::class);
+        (new JmhzOrdinaryEvidenceBuilder())->build(
+            7,
+            $this->atPeriod($this->source(), '2027-01-01'),
+            101,
+            $this->facts(),
+            12,
+            '2027-02-13T12:00:00Z',
+            'explicit_confirmation',
+            null,
+            3,
+        );
+    }
+
+    /**
+     * @param array{revision:array<string,mixed>} $source
+     * @return array{revision:array<string,mixed>}
+     */
+    private function atPeriod(array $source, string $periodStart): array
+    {
+        $input = json_decode($source['revision']['input_snapshot_json'], true, flags: JSON_THROW_ON_ERROR);
+        self::assertIsArray($input);
+        $input['period_start'] = $periodStart;
+        $input['period_end'] = (new \DateTimeImmutable($periodStart))->modify('last day of this month')->format('Y-m-d');
+        $source['revision']['period_start'] = $periodStart;
+        $this->replaceInput($source, $input);
+
+        return $source;
+    }
+
+    /** @param array{revision:array<string,mixed>} $source */
+    private function assertApplicable(array $source, string $canonicalJson): void
+    {
+        $input = json_decode($source['revision']['input_snapshot_json'], true, flags: JSON_THROW_ON_ERROR);
+        (new JmhzOrdinaryEvidenceApplicability())->assertApplicable(
+            [
+                'id' => 1,
+                'source_manifest_sha256' => str_repeat('a', 64),
+                'snapshot_fingerprint' => str_repeat('b', 64),
+                'payload' => json_decode($canonicalJson, true, flags: JSON_THROW_ON_ERROR),
+            ],
+            7,
+            $source['revision'],
+            11,
+            101,
+            $input['people'][0]['employments'][0]['term'],
+        );
+    }
+
+    /**
      * Bez IN28 evidence nenese klíč `ozp_wage` a má tvar jako dřív, takže
      * otisky dosavadních potvrzení zůstávají stejné.
      */

@@ -574,6 +574,10 @@ final class PayrollRunSnapshotBuilder
                         $row['jmhz_workplace_municipality_code'],
                     'jmhz_workplace_country_code' =>
                         $row['jmhz_workplace_country_code'],
+                    // Plná adresa místa výkonu a státní zástupce (JMHZ 2027,
+                    // migrace 2213); bez zadaných údajů klíče chybí a snímek
+                    // zůstává stejný jako dřív.
+                    ...self::jmhz2027TermFacts($row),
                     'jmhz_external_codebook_overlay_key' =>
                         $row['jmhz_external_codebook_overlay_key'],
                     'jmhz_external_codebook_manifest_sha256' =>
@@ -618,6 +622,9 @@ final class PayrollRunSnapshotBuilder
                         $statutoryEvidence[$employeeId] ?? null,
                         $row,
                     ),
+                    // Den podpisu prohlášení (JMHZ 10575); bez něj klíč chybí
+                    // a snímek zůstává stejný jako dřív.
+                    ...self::taxDeclarationSignedOn($statutoryEvidence[$employeeId] ?? null),
                     'risky_work' => (bool) $row['risky_work'],
                     'social_employer_rate_category' =>
                         (string) $row['social_employer_rate_category'],
@@ -932,6 +939,51 @@ final class PayrollRunSnapshotBuilder
         }
 
         return (bool) $row['tax_declaration_signed'];
+    }
+
+    /**
+     * Adresa místa výkonu (10550 až 10554) jde do snímku celá, jakmile je
+     * zadaná aspoň jedna její část: chybějící číslo popisné je pak doložené
+     * „nemá" (kontrakt JMHZ 2027), ne neznámé. Státní zástupce (10587) jen
+     * s odpovědí.
+     *
+     * @param array<string,mixed> $row
+     * @return array<string,string|bool|null>
+     */
+    private static function jmhz2027TermFacts(array $row): array
+    {
+        $address = [];
+        foreach ([
+            'jmhz_workplace_address_point_code',
+            'jmhz_workplace_street',
+            'jmhz_workplace_house_number',
+            'jmhz_workplace_orientation_number',
+            'jmhz_workplace_postal_code',
+        ] as $key) {
+            $value = $row[$key] ?? null;
+            $address[$key] = $value === null || $value === '' ? null : (string) $value;
+        }
+        $facts = array_filter($address, static fn (?string $value): bool => $value !== null) === []
+            ? []
+            : $address;
+        $prosecutor = $row['jmhz_state_prosecutor'] ?? null;
+        if ($prosecutor !== null) {
+            $facts['jmhz_state_prosecutor'] = (bool) $prosecutor;
+        }
+
+        return $facts;
+    }
+
+    /** @return array{tax_declaration_signed_on?:string} */
+    private static function taxDeclarationSignedOn(mixed $evidence): array
+    {
+        $incomeTax = is_array($evidence) ? ($evidence['income_tax'] ?? null) : null;
+        $declaration = is_array($incomeTax) ? ($incomeTax['declaration'] ?? null) : null;
+        $signedOn = is_array($declaration) && ($declaration['status'] ?? null) === 'signed'
+            ? ($declaration['signed_on'] ?? null)
+            : null;
+
+        return is_string($signedOn) ? ['tax_declaration_signed_on' => $signedOn] : [];
     }
 
     /**
@@ -1256,6 +1308,12 @@ final class PayrollRunSnapshotBuilder
                     term.work_place,
                     term.jmhz_workplace_municipality_code,
                     term.jmhz_workplace_country_code,
+                    term.jmhz_workplace_address_point_code,
+                    term.jmhz_workplace_street,
+                    term.jmhz_workplace_house_number,
+                    term.jmhz_workplace_orientation_number,
+                    term.jmhz_workplace_postal_code,
+                    term.jmhz_state_prosecutor,
                     term.jmhz_external_codebook_overlay_key,
                     term.jmhz_external_codebook_manifest_sha256,
                     term.jmhz_apz_contribution_status,

@@ -355,6 +355,141 @@ final class JmhzScenario1Document2027Test extends TestCase
         );
     }
 
+    /**
+     * Den podpisu prohlášení (10575) jde z podmínek vztahu do souhrnu osoby
+     * a do datové věty (`datumPodpisu`). Podpis po konci vykazovaného měsíce
+     * prohlášení za ten měsíc nedokládá.
+     */
+    public function testDeclarationSignatureDateComesFromTheTerm(): void
+    {
+        $payload = $this->completePayload('2027-04-01');
+        $payload['people'][0]['employments'][0]['term']['tax_declaration_signed'] = true;
+        $payload['people'][0]['employments'][0]['term']['tax_declaration_signed_on'] = '2026-12-15';
+
+        $resolution = $this->resolveForSubmission($payload, '2027-04-01');
+
+        self::assertSame([], $this->blockers($resolution));
+        self::assertSame(
+            '2026-12-15',
+            $resolution->candidate?->payload['people'][0]['summary'][Jmhz2027DocumentContract::SUMMARY_DECLARATION_SIGNED_ON],
+        );
+        $xml = $this->validator()->dryRun($resolution, $this->envelope())['xml'];
+        self::assertStringContainsString('<form:datumPodpisu>2026-12-15</form:datumPodpisu>', $xml);
+
+        $late = $payload;
+        $late['people'][0]['employments'][0]['term']['tax_declaration_signed_on'] = '2027-05-02';
+        self::assertSame(
+            [[self::SOURCE_MISSING, 'person', 11, ['10575']]],
+            $this->blockers($this->resolve($late, '2027-04-01')),
+        );
+    }
+
+    /**
+     * Plná adresa místa výkonu v ČR (10550 až 10554) z podmínek vztahu;
+     * nezadané části jsou doložené „nemá" a v XML chybí.
+     */
+    public function testDomesticWorkplaceAddressFromTheTermIsSchemaValid(): void
+    {
+        $payload = $this->completePayload('2027-04-01');
+        $term = &$payload['people'][0]['employments'][0]['term'];
+        $term['work_place'] = 'Brno';
+        $term['jmhz_workplace_municipality_code'] = '582786';
+        $term['jmhz_workplace_country_code'] = 'CZ';
+        $term['jmhz_workplace_address_point_code'] = null;
+        $term['jmhz_workplace_street'] = 'Náměstí Svobody';
+        $term['jmhz_workplace_house_number'] = '120';
+        $term['jmhz_workplace_orientation_number'] = null;
+        $term['jmhz_workplace_postal_code'] = '60200';
+        unset($term);
+
+        $resolution = $this->resolveForSubmission($payload, '2027-04-01');
+
+        self::assertSame([], $this->blockers($resolution));
+        $xml = $this->validator()->dryRun($resolution, $this->envelope())['xml'];
+        self::assertStringContainsString('<form:cisloPopisne>120</form:cisloPopisne>', $xml);
+        self::assertStringContainsString('<form:psc>60200</form:psc>', $xml);
+        self::assertStringNotContainsString('cisloOrientacni', $xml);
+    }
+
+    /** Státní zástupce (10587) z podmínek vztahu formuláře K až S. */
+    public function testStateProsecutorComesFromTheTerm(): void
+    {
+        $payload = $this->completePayload('2027-04-01');
+        $payload['scope']['scenario_set'] = ['scenario_3'];
+        $payload['people'][0]['employments'][0]['scenario_resolution'] = ['scenario_key' => 'scenario_3'];
+        $payload['people'][0]['employments'][0]['term']['jmhz_state_prosecutor'] = false;
+
+        $resolution = $this->resolve($payload, '2027-04-01');
+
+        self::assertNotContains([self::SOURCE_MISSING, 'employment', 101, ['10587']], $this->blockers($resolution));
+        self::assertFalse(
+            $resolution->candidate?->payload['people'][0]['employments'][0][Jmhz2027DocumentContract::EMPLOYMENT_STATE_PROSECUTOR],
+        );
+    }
+
+    /** Počet směn rizikové práce (10580) z ruční evidence měsíce. */
+    public function testRiskShiftCountComesFromOrdinaryEvidence(): void
+    {
+        $payload = $this->completePayload('2027-04-01');
+        $payload['people'][0]['employments'][0]['term']['social_employer_rate_category'] = 'risk_employment';
+        $payload['ordinary_evidence'][0]['risk_shift_count'] = 20;
+
+        $resolution = $this->resolveForSubmission($payload, '2027-04-01');
+
+        self::assertSame([], $this->blockers($resolution));
+        self::assertSame(
+            [['code' => '1', 'worked_millihours' => 160_000, 'shift_count' => 20]],
+            $resolution->candidate?->payload['people'][0]['employments'][0]['risk_work']['categories'],
+        );
+        $xml = $this->validator()->dryRun($resolution, $this->envelope())['xml'];
+        self::assertStringContainsString('<form:smenyOdpracovanePocet>20</form:smenyOdpracovanePocet>', $xml);
+    }
+
+    /** Výdělek OZP: data odvodů 10570 a 10571 z ruční evidence, 10589 je datum úhrady. */
+    public function testOzpWageContributionDatesComeFromOrdinaryEvidence(): void
+    {
+        $payload = $this->completePayload('2027-04-01');
+        $payload['ordinary_evidence'][0]['ozp_wage'] = [
+            'payment_date' => '2027-05-10',
+            'social_insurance_paid_on' => '2027-05-12',
+            'health_insurance_paid_on' => '2027-05-13',
+            'cash_paid' => false,
+            'employer_deductions_made' => false,
+            'employer_deductions_minor' => [],
+        ];
+
+        $resolution = $this->resolve($payload, '2027-04-01');
+
+        self::assertNotContains(
+            [self::SOURCE_MISSING, 'person', 11, ['10570', '10571', '10589']],
+            $this->blockers($resolution),
+        );
+        $ozp = $resolution->candidate?->payload['people'][0]['summary']['ozp_wage'] ?? [];
+        self::assertSame('2027-05-10', $ozp['payment_date']);
+        self::assertSame('2027-05-12', $ozp[Jmhz2027DocumentContract::OZP_SOCIAL_PAID_ON]);
+        self::assertSame('2027-05-13', $ozp[Jmhz2027DocumentContract::OZP_HEALTH_PAID_ON]);
+    }
+
+    /**
+     * Úhrn měsíčních bonusů za minulý rok (10577) v lednu z ročních podkladů
+     * přípravy (roční zákonná kumulace daně); bez podkladu nález.
+     */
+    public function testJanuaryMonthlyBonusTotalComesFromAnnualEvidence(): void
+    {
+        $payload = $this->withAnnualCertificate($this->completePayload('2027-01-01'), 2026);
+        $payload['people'][0]['annual_evidence']['request_evidence']['proof'] = 'request_absent_under_unique_key_lock';
+        $withoutTotal = $this->resolve($payload, '2027-01-01');
+        $payload['people'][0]['annual_evidence']['monthly_bonus_total_minor_units'] = 1_200_000;
+        $withTotal = $this->resolve($payload, '2027-01-01');
+
+        self::assertContains([self::SOURCE_MISSING, 'person', 11, ['10577']], $this->blockers($withoutTotal));
+        self::assertNotContains([self::SOURCE_MISSING, 'person', 11, ['10577']], $this->blockers($withTotal));
+        self::assertSame(
+            12_000,
+            $withTotal->candidate?->payload['people'][0]['summary']['annual'][Jmhz2027DocumentContract::ANNUAL_MONTHLY_BONUS_TOTAL],
+        );
+    }
+
     /** Roční evidence zaměstnavatele jiného roku typy kolektivních smluv za 2027 nedoloží. */
     public function testCollectiveAgreementsFromAnotherYearBlock(): void
     {
@@ -548,6 +683,11 @@ final class JmhzScenario1Document2027Test extends TestCase
             ],
             $payload,
         );
+    }
+
+    private function validator(): JmhzScenario1XmlValidator
+    {
+        return new JmhzScenario1XmlValidator(buildableGate: static function (JmhzSpecVersion $version): void {});
     }
 
     private function envelope(): JmhzSubmissionEnvelope

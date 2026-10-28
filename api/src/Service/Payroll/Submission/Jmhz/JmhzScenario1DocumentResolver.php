@@ -419,6 +419,7 @@ final class JmhzScenario1DocumentResolver
                 : null;
             $relationshipEmployerSocialCzk = null;
             $declarationSigned = null;
+            $declarationSignedOn = null;
 
             $normalizedEmployments = [];
             // `null` dokud některý vztah úhrn nenese: zmrazená příprava starší
@@ -465,6 +466,7 @@ final class JmhzScenario1DocumentResolver
                         $employeeId,
                         $blockers,
                     );
+                    $declarationSignedOn = $this->object($employment['term'] ?? null)['tax_declaration_signed_on'] ?? null;
                 }
                 $earnings = $this->earnings(
                     $employment['earnings_by_attribute_minor'] ?? null,
@@ -669,21 +671,32 @@ final class JmhzScenario1DocumentResolver
                         $normalizedEmployment,
                         $declarationSigned,
                         $withholdingTaxCzk,
+                        is_int($normalizedEmployment['employment_id'] ?? null)
+                            ? ($ordinaryEvidence[$normalizedEmployment['employment_id']] ?? null)
+                            : null,
                         $blockers,
                     );
                 }
                 $personSpecExtension = $this->person2027(
                     $preparation->periodStart,
                     $declarationSigned,
+                    $declarationSignedOn,
                     $advanceTaxCzk,
                     $withholdingTaxCzk,
                     $tax,
-                    $ozpWage !== null,
+                    $ozpWage,
+                    is_array($personEvidence['ozp_wage'] ?? null) ? $personEvidence['ozp_wage'] : null,
                     $this->object($person['annual_evidence'] ?? null),
                     $employeeId,
                     $blockers,
                 );
-                $annual = $this->annual2027($annual, $preparation->periodStart);
+                $annual = $this->annual2027(
+                    $annual,
+                    $preparation->periodStart,
+                    $this->object($person['annual_evidence'] ?? null),
+                    $employeeId,
+                    $blockers,
+                );
             }
             $normalizedPeople[] = [
                 'employee_id' => $employeeId,
@@ -3655,6 +3668,7 @@ final class JmhzScenario1DocumentResolver
         array $employment,
         ?bool $declarationSigned,
         ?array $withholding,
+        ?array $evidence,
         array &$blockers,
     ): array {
         $employmentId = is_int($employment['employment_id'] ?? null)
@@ -3691,8 +3705,10 @@ final class JmhzScenario1DocumentResolver
                 $blockers[] = $this->blocker(self::SOURCE_MISSING_2027, 'employment', $employmentId, ['10273']);
             } else {
                 $categories = [];
+                $shifts = $evidence['risk_shift_count'] ?? null;
                 foreach ($codes as $code) {
-                    if (Jmhz2027DocumentContract::riskShiftCountRequired($code, $worked)) {
+                    $required = Jmhz2027DocumentContract::riskShiftCountRequired($code, $worked);
+                    if ($required && !is_int($shifts)) {
                         $blockers[] = $this->blocker(
                             self::SOURCE_MISSING_2027,
                             'employment',
@@ -3703,7 +3719,7 @@ final class JmhzScenario1DocumentResolver
                     $categories[] = [
                         'code' => $code,
                         'worked_millihours' => $worked,
-                        'shift_count' => null,
+                        'shift_count' => $required && is_int($shifts) ? $shifts : null,
                     ];
                 }
                 $risk[Jmhz2027DocumentContract::RISK_CATEGORIES] = $categories;
@@ -3711,10 +3727,21 @@ final class JmhzScenario1DocumentResolver
             }
         }
 
+        $term = $this->object($employment['term'] ?? null);
         if (Jmhz2027DocumentContract::stateProsecutorRequired($employment)) {
-            $blockers[] = $this->blocker(self::SOURCE_MISSING_2027, 'employment', $employmentId, ['10587']);
+            $prosecutor = $term['jmhz_state_prosecutor'] ?? null;
+            if (is_bool($prosecutor)) {
+                $employment[Jmhz2027DocumentContract::EMPLOYMENT_STATE_PROSECUTOR] = $prosecutor;
+            } else {
+                $blockers[] = $this->blocker(self::SOURCE_MISSING_2027, 'employment', $employmentId, ['10587']);
+            }
         }
-        if (Jmhz2027DocumentContract::workplaceAddressRequired($employment)) {
+        // Adresa jde do snímku vztahu celá, jakmile je zadaná aspoň jedna část
+        // (PayrollRunSnapshotBuilder); chybějící klíče = adresa nezadaná.
+        if (Jmhz2027DocumentContract::workplaceAddressRequired($employment)
+            && (!array_key_exists(Jmhz2027DocumentContract::TERM_HOUSE_NUMBER, $term)
+                || !array_key_exists(Jmhz2027DocumentContract::TERM_POSTAL_CODE, $term))
+        ) {
             $blockers[] = $this->blocker(
                 self::SOURCE_MISSING_2027,
                 'employment',
@@ -3792,10 +3819,12 @@ final class JmhzScenario1DocumentResolver
     private function person2027(
         string $periodStart,
         ?bool $declarationSigned,
+        mixed $declarationSignedOn,
         array $advanceTaxCzk,
         ?array $withholding,
         array $tax,
-        bool $hasOzpWage,
+        ?array $ozpWage,
+        ?array $ozpEvidence,
         array $annualEvidence,
         ?int $employeeId,
         array &$blockers,
@@ -3809,7 +3838,14 @@ final class JmhzScenario1DocumentResolver
                 : ['base' => $withholding['base'], 'withheld' => $withholding['tax']],
         ];
         if ($declarationSigned === true) {
-            $blockers[] = $this->blocker(self::SOURCE_MISSING_2027, 'person', $employeeId, ['10575']);
+            // Prohlášení podepsané až po vykazovaném měsíci ho za ten měsíc nedokládá.
+            if (self::isoDate($declarationSignedOn)
+                && substr($declarationSignedOn, 0, 7) <= substr($periodStart, 0, 7)
+            ) {
+                $summary[Jmhz2027DocumentContract::SUMMARY_DECLARATION_SIGNED_ON] = $declarationSignedOn;
+            } else {
+                $blockers[] = $this->blocker(self::SOURCE_MISSING_2027, 'person', $employeeId, ['10575']);
+            }
             $breakdown = $tax['claimed_non_refundable_credit_breakdown'] ?? null;
             $student = is_array($breakdown) ? StudentTaxCredit::fromCreditBreakdown($breakdown) : null;
             $studentAmount = $student === null
@@ -3823,23 +3859,54 @@ final class JmhzScenario1DocumentResolver
         } elseif ($declarationSigned === false && $withholding !== null) {
             $blockers[] = $this->blocker(self::SOURCE_MISSING_2027, 'person', $employeeId, ['10535', '10555']);
         }
-        if ($hasOzpWage) {
-            $blockers[] = $this->blocker(
-                self::SOURCE_MISSING_2027,
-                'person',
-                $employeeId,
-                ['10570', '10571', '10589'],
-            );
+        if ($ozpWage !== null) {
+            $social = $ozpEvidence['social_insurance_paid_on'] ?? null;
+            $health = $ozpEvidence['health_insurance_paid_on'] ?? null;
+            if (self::isoDate($social) && self::isoDate($health)) {
+                $summary['ozp_wage'] = $ozpWage + [
+                    Jmhz2027DocumentContract::OZP_SOCIAL_PAID_ON => $social,
+                    Jmhz2027DocumentContract::OZP_HEALTH_PAID_ON => $health,
+                ];
+            } else {
+                $blockers[] = $this->blocker(
+                    self::SOURCE_MISSING_2027,
+                    'person',
+                    $employeeId,
+                    ['10570', '10571', '10589'],
+                );
+            }
         }
-        $january = substr($periodStart, 5, 2) === '01';
-        $requestEvidence = $this->object($annualEvidence['request_evidence'] ?? null);
-        if ($january
-            && ($requestEvidence['proof'] ?? null) !== JmhzAnnualEvidenceService::PROOF_NO_EMPLOYMENT_IN_TAX_YEAR
+        if (substr($periodStart, 5, 2) === '01'
+            && self::monthlyBonusTotalMinor($annualEvidence) === null
+            && ($this->object($annualEvidence['request_evidence'] ?? null)['proof'] ?? null)
+                !== JmhzAnnualEvidenceService::PROOF_NO_EMPLOYMENT_IN_TAX_YEAR
         ) {
             $blockers[] = $this->blocker(self::SOURCE_MISSING_2027, 'person', $employeeId, ['10577']);
         }
 
         return $summary;
+    }
+
+    /**
+     * Úhrn měsíčních bonusů za minulý rok (10577) zmrazený v ročních
+     * podkladech přípravy z roční zákonné kumulace daně
+     * ({@see JmhzAnnualEvidenceService}); `null` = podklad chybí.
+     *
+     * @param array<string,mixed> $annualEvidence
+     */
+    private static function monthlyBonusTotalMinor(array $annualEvidence): ?int
+    {
+        $total = $annualEvidence['monthly_bonus_total_minor_units'] ?? null;
+
+        return is_int($total) && $total >= 0 ? $total : null;
+    }
+
+    /** @phpstan-assert-if-true string $value */
+    private static function isoDate(mixed $value): bool
+    {
+        return is_string($value)
+            && preg_match('/^(\d{4})-(\d{2})-(\d{2})$/D', $value, $match) === 1
+            && checkdate((int) $match[2], (int) $match[3], (int) $match[1]);
     }
 
     /**
@@ -3895,15 +3962,39 @@ final class JmhzScenario1DocumentResolver
      * se v hlášení za leden 2027 nevyplňují (poprvé za leden 2028), protože
      * srážková daň podle § 6 odst. 4 se od 2027 mění na zálohu.
      *
+     * V lednu nese úhrn vyplacených měsíčních bonusů za minulý rok (10577,
+     * {@see Jmhz2027DocumentContract::ANNUAL_MONTHLY_BONUS_TOTAL}) z roční
+     * zákonné kumulace daně; chybí-li podklad, nález vzniká u osoby
+     * ({@see self::person2027()}).
+     *
      * @param array<string,mixed>|null $annual
+     * @param array<string,mixed> $annualEvidence
+     * @param list<JmhzScenario1Blocker> $blockers
      * @return array<string,mixed>|null
      */
-    private function annual2027(?array $annual, string $periodStart): ?array
-    {
-        if ($annual === null || substr($periodStart, 0, 7) !== JmhzSpecVersion::FIRST_2027_PERIOD) {
+    private function annual2027(
+        ?array $annual,
+        string $periodStart,
+        array $annualEvidence,
+        ?int $employeeId,
+        array &$blockers,
+    ): ?array {
+        if ($annual === null || substr($periodStart, 5, 2) !== '01') {
             return $annual;
         }
-        $annual['withholding'] = null;
+        if (substr($periodStart, 0, 7) === JmhzSpecVersion::FIRST_2027_PERIOD) {
+            $annual['withholding'] = null;
+        }
+        $bonus = self::monthlyBonusTotalMinor($annualEvidence);
+        if ($bonus !== null) {
+            $annual[Jmhz2027DocumentContract::ANNUAL_MONTHLY_BONUS_TOTAL] = $this->wholeCzk(
+                $bonus,
+                '10577',
+                'person',
+                $employeeId,
+                $blockers,
+            );
+        }
 
         return $annual;
     }

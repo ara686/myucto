@@ -426,6 +426,12 @@ function hydrate(employment: PayrollEmployment) {
     regular_workplace: terms.regular_workplace,
     jmhz_workplace_municipality_code: terms.jmhz_workplace_municipality_code,
     jmhz_workplace_country_code: terms.jmhz_workplace_country_code,
+    jmhz_workplace_address_point_code: terms.jmhz_workplace_address_point_code ?? null,
+    jmhz_workplace_street: terms.jmhz_workplace_street ?? null,
+    jmhz_workplace_house_number: terms.jmhz_workplace_house_number ?? null,
+    jmhz_workplace_orientation_number: terms.jmhz_workplace_orientation_number ?? null,
+    jmhz_workplace_postal_code: terms.jmhz_workplace_postal_code ?? null,
+    jmhz_state_prosecutor: terms.jmhz_state_prosecutor ?? null,
     jmhz_apz_contribution_status: terms.jmhz_apz_contribution_status,
     jmhz_apz_instrument_code: terms.jmhz_apz_instrument_code,
     jmhz_functional_benefits_status: terms.jmhz_functional_benefits_status,
@@ -543,6 +549,25 @@ function onActivityCodeChange() {
     termsForm.value.jmhz_relationship_detail_code = '1'
   }
 }
+
+/** Adresa pracoviště v ČR (JMHZ 2027, 10550 až 10554): ne bez obce ani mimo ČR (kód 111111). */
+const workplaceAddressApplies = computed(() => {
+  const code = termsForm.value?.jmhz_workplace_municipality_code ?? null
+  return code !== null && code !== '111111'
+})
+
+// Server adresu bez obce v ČR odmítne; po přepnutí na zahraničí se proto vyprázdní.
+watch(workplaceAddressApplies, applies => {
+  if (applies || termsForm.value === null) return
+  termsForm.value.jmhz_workplace_address_point_code = null
+  termsForm.value.jmhz_workplace_street = null
+  termsForm.value.jmhz_workplace_house_number = null
+  termsForm.value.jmhz_workplace_orientation_number = null
+  termsForm.value.jmhz_workplace_postal_code = null
+})
+
+/** Státní zástupce (JMHZ 2027, 10587) se uvádí u druhu činnosti K až S. */
+const stateProsecutorApplies = computed(() => /^[K-S]$/.test(termsForm.value?.activity_code ?? ''))
 
 const selectedRelationshipDetailMode = computed(() => {
   const activityCode = termsForm.value?.activity_code
@@ -1635,6 +1660,37 @@ const GRID = 'mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3'
                 <select v-model="termsForm.jmhz_workplace_country_code" :disabled="!canEditTerms || busy" :class="INPUT">
                   <option :value="null">—</option>
                   <option v-for="country in jmhzOptions?.countries ?? []" :key="country.code" :value="country.code">{{ country.code }} · {{ country.label }}</option>
+                </select>
+              </label>
+              <template v-if="workplaceAddressApplies">
+                <p class="text-xs text-neutral-500 sm:col-span-2" data-test="jmhz-address-hint">{{ t('payroll.people.jmhz_evidence.address_hint') }}</p>
+                <label :class="[FIELD, 'sm:col-span-2']">
+                  {{ t('payroll.people.jmhz_evidence.street') }}
+                  <input v-model="termsForm.jmhz_workplace_street" :disabled="!canEditTerms || busy" :class="INPUT" maxlength="50" data-test="jmhz-street">
+                </label>
+                <label :class="FIELD">
+                  {{ t('payroll.people.jmhz_evidence.house_number') }}
+                  <input v-model="termsForm.jmhz_workplace_house_number" :disabled="!canEditTerms || busy" :class="INPUT" inputmode="numeric" maxlength="4" data-test="jmhz-house-number">
+                </label>
+                <label :class="FIELD">
+                  {{ t('payroll.people.jmhz_evidence.orientation_number') }}
+                  <input v-model="termsForm.jmhz_workplace_orientation_number" :disabled="!canEditTerms || busy" :class="INPUT" maxlength="12" data-test="jmhz-orientation-number">
+                </label>
+                <label :class="FIELD">
+                  {{ t('payroll.people.jmhz_evidence.postal_code') }}
+                  <input v-model="termsForm.jmhz_workplace_postal_code" :disabled="!canEditTerms || busy" :class="INPUT" inputmode="numeric" maxlength="6" data-test="jmhz-postal-code">
+                </label>
+                <label :class="FIELD">
+                  {{ t('payroll.people.jmhz_evidence.address_point_code') }}
+                  <input v-model="termsForm.jmhz_workplace_address_point_code" :disabled="!canEditTerms || busy" :class="INPUT" inputmode="numeric" maxlength="9" data-test="jmhz-address-point">
+                </label>
+              </template>
+              <label v-if="stateProsecutorApplies" :class="FIELD">
+                {{ t('payroll.people.jmhz_evidence.state_prosecutor') }}
+                <select v-model="termsForm.jmhz_state_prosecutor" :disabled="!canEditTerms || busy" :class="INPUT" data-test="jmhz-state-prosecutor">
+                  <option :value="null">{{ t('payroll.people.jmhz_evidence.state_prosecutor_unset') }}</option>
+                  <option :value="true">{{ t('payroll.people.jmhz_evidence.state_prosecutor_yes') }}</option>
+                  <option :value="false">{{ t('payroll.people.jmhz_evidence.state_prosecutor_no') }}</option>
                 </select>
               </label>
               <label :class="[FIELD, 'sm:col-span-2']">
