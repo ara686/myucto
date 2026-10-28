@@ -466,6 +466,24 @@ final class JmhzScenario1Xml2027SerializerTest extends TestCase
     }
 
     /**
+     * 10214 ve verzi 2027 (ZP 102): zaměstnavatel bez kolektivní smlouvy uvádí
+     * KAŽDÝ měsíc jednu položku „0 neexistuje" (souhrn.xsd: kolektivniSmlouvy
+     * povinný, aspoň jedna položka; scénář 1.5.0.3 „P"). Atribut se
+     * nevynechává ani mimo prosinec.
+     */
+    public function testEmployerWithoutCollectiveAgreementReportsZeroEveryMonth(): void
+    {
+        $payload = self::fullPayload();
+        $payload['employer']['collective_agreement_types'] = ['0'];
+        $payload['employer']['annual']['collective_agreement_types'] = ['0'];
+        $xpath = self::xpath($this->validator()->dryRun(self::resolution($payload), self::envelope())['xml']);
+
+        $types = $xpath->query('/p:jmhz/so:souhrn/so:kolektivniSmlouvy/so:kolektivniSmlouva/so:typKolektSmlouvy');
+        self::assertSame(1, $types?->length);
+        self::assertSame('0', $types?->item(0)?->textContent);
+    }
+
+    /**
      * Kontrola 386 (katalog 1.5.0.4): počet směn 10580 jen u kategorie rizika 1
      * s hodinami, „v ostatních případech nesmí být vyplněn". Dokument, který by
      * směny nesl u jiné kategorie, serializér odmítne, místo aby je zapsal.
