@@ -1425,7 +1425,7 @@ describe('EmploymentRegistrationPanel', () => {
           ended_by_death: false,
           unemployment: {
             mode: 'provided',
-            employment_type: employmentType,
+            employment_type: employmentType as '1',
             termination_reason: '4',
             average_net_earnings: '28150',
           },
@@ -1486,7 +1486,7 @@ describe('EmploymentRegistrationPanel', () => {
     await wrapper.get('[data-test="a1-employment-activity-code"]').setValue('1')
     expect(wrapper.find('[data-test="a1-election-commission-hint"]').exists()).toBe(false)
     await wrapper.get('[data-test="a1-employment-activity-code"]').setValue('13')
-    expect(wrapper.get('[data-test="a1-election-commission-hint"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="a1-election-commission-hint"]').exists()).toBe(true)
   })
 
   async function openForeignA1(startOn: string) {
