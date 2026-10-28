@@ -126,13 +126,19 @@ final class PayrollRegistrationSpecVersionRules
     }
 
     /**
-     * Logické kontroly EDV REGZEC25 1.4.0.7 (vydání 14. 10. 2026, Changelog:
-     * „Přidání globální logické kontroly 5“ a „Přidání logické kontroly pro
-     * oddělení verzí“). Dokument neuvádí datum účinnosti, proto platí pro
-     * každou větu REGZEC25 bez ohledu na datum události:
-     * - 10009 <= aktuální datum u A3 až A7,
-     * - Kontrola 5: údaje cizince v A3/A4 jako ucelená sada se státním
-     *   občanstvím 10067 (stejné pravidlo jako v EDV 1.5.0.3),
+     * Logické kontroly REGZEC25 platné pro každou větu bez ohledu na datum
+     * události:
+     * - 10009 <= aktuální datum u A3 až A7. Pravidlo stojí v EDV REGZEC25 už
+     *   od verze 1.4.0.6 (29. 5. 2026, řádek 10009; změnová karta JMHZ-3292
+     *   „zákaz předčasného zaslání REGZEC“ je v produkci), nejde o novinku
+     *   1.4.0.7. U A1 a A2 se 10009 neuvádí; předstih přihlášky (nejdřív
+     *   8 dnů před nástupem, § 19 odst. 1 písm. a) z. 323/2025 Sb.) hlídá
+     *   pravidlo u 10223 a zůstává.
+     * - Kontrola 5 (novinka EDV 1.4.0.7, vydání 14. 10. 2026, list
+     *   Vysvětlivky): údaje cizince v A3/A4 jako ucelená sada se státním
+     *   občanstvím 10067 (stejné pravidlo jako v EDV 1.5.0.3). EDV datum
+     *   účinnosti neuvádí a úplná sada projde i bez kontroly, proto se
+     *   vynucuje hned.
      * - občan EU (vazebník 5898) má volný přístup „A“ s důvodem „1“.
      * Věty bez cizince se nemění.
      */
@@ -220,9 +226,10 @@ final class PayrollRegistrationSpecVersionRules
     }
 
     /**
-     * EDV 1.5.0.3, ID 10009 (Changelog ř. 278): „Datum platnosti od / oprava,
-     * změna ze dne (10009) <= aktuální datum (změna / oprava se nesmí podávat
-     * do budoucna)". Aktuálním datem je den vyhotovení věty (10005).
+     * EDV REGZEC25 1.4.0.6 a 1.4.0.7, řádek 10009, a EDV 1.5.0.3, ID 10009
+     * (Changelog ř. 278): „Datum platnosti od / oprava, změna ze dne (10009)
+     * <= aktuální datum (změna / oprava se nesmí podávat do budoucna)".
+     * Aktuálním datem je den vyhotovení věty (10005).
      */
     private static function assertChangeNotInFuture(PayrollRegistrationXmlPayload $payload): void
     {
