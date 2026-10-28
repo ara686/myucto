@@ -7,6 +7,7 @@ namespace MyInvoice\Service\Payroll\Submission\Jmhz;
 use DOMDocument;
 use DOMElement;
 use DOMXPath;
+use MyInvoice\Service\Payroll\Submission\Jmhz\Xml2027\JmhzZeroAmendmentXml2027Serializer;
 
 /**
  * Nulové opravné hlášení, které anuluje měsíc, jenž už neměl být hlášen,
@@ -67,11 +68,18 @@ final class JmhzZeroAmendmentXmlSerializer
      *
      * @param list<string> $formGuids GUIDy součástí původního podání
      */
+    public function __construct(
+        private readonly JmhzZeroAmendmentXml2027Serializer $serializer2027 = new JmhzZeroAmendmentXml2027Serializer(),
+    ) {}
+
     public function serialize(
         string $originalXml,
         array $formGuids,
         JmhzSubmissionEnvelope $envelope,
     ): string {
+        if (self::isVersion2027($originalXml)) {
+            return $this->serializer2027->serialize($originalXml, $formGuids, $envelope);
+        }
         [, $xpath] = self::load($originalXml);
         $identity = JmhzFrozenSubmissionIdentity::read($originalXml);
         if ($identity->submissionType !== JmhzSubmissionFlagMatrix::TYPE_REGULAR) {
@@ -154,6 +162,9 @@ final class JmhzZeroAmendmentXmlSerializer
      */
     public function effectiveSet(string $originalXml, array $formGuids): string
     {
+        if (self::isVersion2027($originalXml)) {
+            return $this->serializer2027->effectiveSet($originalXml, $formGuids);
+        }
         [$dom, $xpath] = self::load($originalXml);
         $identity = JmhzFrozenSubmissionIdentity::read($originalXml);
         $periodStart = sprintf('%04d-%02d-01', $identity->year, $identity->month);
@@ -180,6 +191,9 @@ final class JmhzZeroAmendmentXmlSerializer
      */
     public function assess(string $originalXml): array
     {
+        if (self::isVersion2027($originalXml)) {
+            return $this->serializer2027->assess($originalXml);
+        }
         [, $xpath] = self::load($originalXml);
         $byPerson = [];
         $forms = self::nodes($xpath, '/p:jmhz/p:formulareOsob/p:formularOsoby');
@@ -199,6 +213,18 @@ final class JmhzZeroAmendmentXmlSerializer
         }
 
         return $result;
+    }
+
+    /**
+     * Původní podání ve verzi 2027 (jmenný prostor kořene) anuluje serializér
+     * 2027; tvar formuláře zaměstnání se mezi verzemi liší.
+     */
+    private static function isVersion2027(string $originalXml): bool
+    {
+        [$dom] = self::load($originalXml);
+
+        return JmhzSpecVersion::fromDocumentNamespace((string) $dom->documentElement?->namespaceURI)
+            === JmhzSpecVersion::V2027;
     }
 
     /**
