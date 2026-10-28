@@ -57,6 +57,7 @@ final class AnnualTaxSettlementService implements AnnualSettlementPerformer
         private readonly AnnualSettlementSnapshotBuilder $snapshots,
         private readonly AnnualSettlementPdfRenderer $renderer,
         private readonly PayrollDocumentService $documents,
+        private readonly AnnualSettlementClaimsService $claims,
     ) {}
 
     /**
@@ -66,6 +67,7 @@ final class AnnualTaxSettlementService implements AnnualSettlementPerformer
      *   credit_rows:list<array{label:string,amount_minor_units:int}>,
      *   child_rows:list<array{label:string,months:int,amount_minor_units:int}>,
      *   certificates:list<array<string,mixed>>,
+     *   annual_claims:array<string,mixed>,
      *   already_settled:?array<string,mixed>
      * }
      */
@@ -340,6 +342,7 @@ final class AnnualTaxSettlementService implements AnnualSettlementPerformer
      *   credit_rows:list<array{label:string,amount_minor_units:int}>,
      *   child_rows:list<array{label:string,months:int,amount_minor_units:int}>,
      *   certificates:list<array<string,mixed>>,
+     *   annual_claims:array<string,mixed>,
      *   already_settled:?array<string,mixed>
      * }
      */
@@ -466,6 +469,24 @@ final class AnnualTaxSettlementService implements AnnualSettlementPerformer
             $blockers,
         );
 
+        // § 38h odst. 6: žádost a evidence ročních nároků si nesmí odporovat.
+        // Rozpor se nerozhoduje za účetní ani jedním směrem.
+        $annualClaims = $this->claims->load($supplierId, $employeeId, $taxYear);
+        $hasAnnualClaims = $annualClaims['claims'] !== [] || $annualClaims['spouse'] !== null;
+        if (($request->annualClaims === AnnualSettlementAnnualClaims::Present && !$hasAnnualClaims)
+            || ($hasAnnualClaims && in_array($request->annualClaims, [
+                AnnualSettlementAnnualClaims::None,
+                AnnualSettlementAnnualClaims::Unknown,
+            ], true))
+        ) {
+            $blockers[] = AnnualSettlementBlocker::AnnualClaimsInconsistent;
+        }
+        $annualClaimsPayload = [
+            'deductions' => $annualClaims['deductions'],
+            'spouse' => $annualClaims['spouse_row'],
+            'dependants' => $this->claims->dependants($supplierId, $employeeId),
+        ];
+
         try {
             $state = $this->accumulators->stateForYear(
                 $supplierId,
@@ -492,6 +513,7 @@ final class AnnualTaxSettlementService implements AnnualSettlementPerformer
                 'credit_rows' => [],
                 'child_rows' => [],
                 'certificates' => self::certificateRows($certificates),
+                'annual_claims' => $annualClaimsPayload,
                 'already_settled' => $settled,
             ];
         }
@@ -510,6 +532,8 @@ final class AnnualTaxSettlementService implements AnnualSettlementPerformer
             $credits['credits'],
             $children['children'],
             $certificates,
+            $annualClaims['claims'],
+            $annualClaims['spouse'],
         );
 
         $result = $this->calculator->calculate($input, $rates, $this->unique($blockers));
@@ -527,6 +551,7 @@ final class AnnualTaxSettlementService implements AnnualSettlementPerformer
             'credit_rows' => $this->creditRows($result),
             'child_rows' => $childRows,
             'certificates' => self::certificateRows($certificates),
+            'annual_claims' => $annualClaimsPayload,
             'already_settled' => $settled,
         ];
     }
@@ -620,6 +645,18 @@ final class AnnualTaxSettlementService implements AnnualSettlementPerformer
         $rows = [];
         foreach ($credits as $kindValue => $credit) {
             if (!is_array($credit)) {
+                continue;
+            }
+            if ($kindValue === 'spouse') {
+                $ztpPMonths = (int) ($credit['ztp_p_months'] ?? 0);
+                $rows[] = [
+                    'label' => sprintf(
+                        'Sleva na manžela/manželku (%d měs.%s)',
+                        (int) ($credit['months'] ?? 0),
+                        $ztpPMonths > 0 ? sprintf(', z toho ZTP/P %d', $ztpPMonths) : '',
+                    ),
+                    'amount_minor_units' => (int) ($credit['amount_minor_units'] ?? 0),
+                ];
                 continue;
             }
             $kind = TaxCreditKind::tryFrom((string) $kindValue);

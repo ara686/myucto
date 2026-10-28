@@ -554,6 +554,9 @@ final class RoutePermissionMap
         // jdou přímo do úhrnu, ze kterého vychází přeplatek, takže kdo je smí
         // zadat, ten rozhoduje o penězích stejně jako ten, kdo zúčtování provede.
         ['PUT', '#^/api/payroll/annual-settlements/[0-9]{4}/people/[0-9]+/certificates$#', 'payroll.approve', AccessLevel::WRITE],
+        // Roční nároky (§ 15, § 35 odst. 4, sleva na manžela) jdou rovnou do
+        // základu a daně, ze kterých vychází přeplatek — stejně citlivé jako potvrzení.
+        ['PUT', '#^/api/payroll/annual-settlements/[0-9]{4}/people/[0-9]+/annual-claims$#', 'payroll.approve', AccessLevel::WRITE],
         ['POST', '#^/api/payroll/annual-settlements/[0-9]{4}/people/[0-9]+/settle$#', 'payroll.approve', AccessLevel::WRITE],
         // Hromadné zúčtování žadatelů přes frontu ročních dokumentů — týž úkon.
         ['POST', '#^/api/payroll/documents/annual-batches/annual-settlement/[0-9]{4}$#', 'payroll.approve', AccessLevel::WRITE],

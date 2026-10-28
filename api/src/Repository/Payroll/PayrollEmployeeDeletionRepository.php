@@ -188,6 +188,9 @@ final class PayrollEmployeeDeletionRepository
             // Provedené zúčtování mazání blokuje dál, takže se tím nemaže nic,
             // o co by se pak někdo opřel.
             'payroll_annual_settlement_certificates',
+            // Ročně uplatňované položky (§ 15, § 35 odst. 4) jsou podklad téhož
+            // neprovedeného zúčtování. Slevu na manžela nese RESTRICT_SCAFFOLD.
+            'payroll_annual_settlement_deductions',
             // Žádost o potvrzení zdanitelných příjmů (§ 38j odst. 3) je pracovní
             // záznam lhůty, ne vydané potvrzení — bez osoby nemá co hlídat.
             'payroll_taxable_income_confirmation_requests',
@@ -223,7 +226,13 @@ final class PayrollEmployeeDeletionRepository
      *
      * @var list<string>
      */
-    private const RESTRICT_SCAFFOLD = ['payroll_payout_rules'];
+    private const RESTRICT_SCAFFOLD = [
+        'payroll_payout_rules',
+        // Sleva na manžela v ročním zúčtování ukazuje na osoby v evidenci s FK RESTRICT
+        // (smazání osoby nesmí slevu tiše odstranit); se smazáním celého zaměstnance
+        // ale mizí i ona, je to podklad neprovedeného zúčtování.
+        'payroll_annual_settlement_spouse_claims',
+    ];
 
     /**
      * Tabulky STARŠÍ agendy (Účetnictví → Mzdová rekapitulace) sdílené přes

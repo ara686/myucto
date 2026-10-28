@@ -1426,6 +1426,12 @@ final class Routes
                 '/annual-settlements/{year:[0-9]{4}}/people/{employeeId:[0-9]+}/certificates',
                 [PayrollAnnualSettlementAction::class, 'saveCertificates'],
             );
+            // Ročně uplatňované položky (§ 38h odst. 6): nezdanitelné části, sleva
+            // za exekuci a sleva na manžela. Celá sada za rok jedním PUT.
+            $g->put(
+                '/annual-settlements/{year:[0-9]{4}}/people/{employeeId:[0-9]+}/annual-claims',
+                [PayrollAnnualSettlementAction::class, 'saveAnnualClaims'],
+            );
             $g->post(
                 '/annual-settlements/{year:[0-9]{4}}/people/{employeeId:[0-9]+}/settle',
                 [PayrollAnnualSettlementAction::class, 'settle'],
