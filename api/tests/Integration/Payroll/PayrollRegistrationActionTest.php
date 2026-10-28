@@ -75,6 +75,9 @@ final class PayrollRegistrationActionTest extends TestCase
     private const TODAY = '2026-08-17';
     private const START_ON = '2026-08-22';
 
+    /** Den zmrazených hodin pro test, který potřebuje jiný den než {@see self::TODAY}. */
+    private static ?string $todayOverride = null;
+
     private Connection $db;
     private PayrollSensitiveData $sensitive;
     private PayrollRegistrationIdentityService $identities;
@@ -147,6 +150,7 @@ final class PayrollRegistrationActionTest extends TestCase
 
     protected function tearDown(): void
     {
+        self::$todayOverride = null;
         if (isset($this->db)) {
             if ($this->db->pdo()->inTransaction()) {
                 $this->db->pdo()->rollBack();
@@ -1902,6 +1906,27 @@ final class PayrollRegistrationActionTest extends TestCase
         self::assertStringContainsString('oid="200000000000000000002"', $xml);
         self::assertStringContainsString('<forin cur="P" nam="Syntetická zahraniční instituce" cnt="SK"/>', $xml);
         self::assertSame($body['artifact_sha256'], hash('sha256', $xml));
+    }
+
+    /**
+     * Ročník registračního formuláře určuje den události, ne den přípravy:
+     * nástup 4. 1. 2027 připravovaný v prosinci 2026 už spadá pod specifikaci
+     * 2027. Pro PREZEC27 ČSSZ `eType` nezveřejnila, takže se podání nepřipraví
+     * a účetní dostane kód blokace místo formuláře, který by ČSSZ odmítla.
+     */
+    public function testPreRegistrationForStartIn2027IsBlockedUntilSpecification2027(): void
+    {
+        self::$todayOverride = '2026-12-28';
+        $this->db->pdo()->prepare(
+            'UPDATE payroll_employments SET start_date = ? WHERE supplier_id = ? AND id = ?',
+        )->execute(['2027-01-04', $this->supplierId, $this->employmentId]);
+
+        $response = $this->post();
+        $body = $this->json($response);
+
+        self::assertSame(422, $response->getStatusCode(), (string) json_encode($body));
+        self::assertSame(PayrollRegistrationSchemaCatalog::UNAVAILABLE_CODE, $body['error']['code']);
+        self::assertSame(0, $this->countSubmissions());
     }
 
     /** A7: ukončení českých právních předpisů vyžaduje identifikátor nositele. */
@@ -5743,7 +5768,7 @@ final class PayrollRegistrationActionTest extends TestCase
 
     public static function todayAtNoon(): string
     {
-        return self::TODAY . ' 12:00:00';
+        return (self::$todayOverride ?? self::TODAY) . ' 12:00:00';
     }
 
     private function seedEmployer(PDO $pdo): void

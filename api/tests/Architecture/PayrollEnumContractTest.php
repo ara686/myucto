@@ -943,6 +943,8 @@ final class PayrollEnumContractTest extends TestCase
         \MyInvoice\Service\Payroll\Submission\Jmhz\JmhzOfficialExampleClassification::class,
         \MyInvoice\Service\Payroll\Submission\Jmhz\JmhzOfficialExampleValidationResult::class,
         \MyInvoice\Service\Payroll\Submission\Jmhz\JmhzScenarioSelectionKind::class,
+        // Ročník specifikace volí server; klient dostává jen kód blokace.
+        \MyInvoice\Service\Payroll\Submission\Jmhz\JmhzSpecVersion::class,
         \MyInvoice\Service\Payroll\Submission\Jmhz\Transport\JmhzProtocolErrorOrigin::class,
         \MyInvoice\Service\Payroll\Submission\Jmhz\Transport\JmhzProtocolKind::class,
         \MyInvoice\Service\Payroll\Submission\Jmhz\Transport\JmhzProtocolPartKind::class,
