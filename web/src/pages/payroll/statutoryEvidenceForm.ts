@@ -181,7 +181,7 @@ export const STATUTORY_SECTIONS: readonly StatutorySectionSpec[] = [
       {
         key: 'credit_kind',
         kind: 'enum',
-        options: ['taxpayer', 'disability-basic', 'disability-extended', 'ztp-p'],
+        options: ['taxpayer', 'disability-basic', 'disability-extended', 'ztp-p', 'student', 'student-doctoral'],
       },
       { key: 'evidence_status', kind: 'enum', options: ['verified', 'unverified'] },
       {

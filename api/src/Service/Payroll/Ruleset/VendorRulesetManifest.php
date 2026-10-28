@@ -30,7 +30,8 @@ namespace MyInvoice\Service\Payroll\Ruleset;
  *
  * ## Údržba
  *
- * Změna kterékoli hodnoty v {@see CzechPayrollRulesets2026} tenhle seznam rozbije.
+ * Změna kterékoli hodnoty v {@see CzechPayrollRulesets2026} (a v ostatních
+ * ročnících) tenhle seznam rozbije.
  * To je záměr — je to okamžik, kdy dodavatel znovu podepisuje, co dodává.
  * Správné otisky vypíše `CzechPayrollRulesets2026Test::testVendorManifestPinsEveryDeliveredVersion`
  * v hlášce o selhání.
@@ -83,6 +84,16 @@ final class VendorRulesetManifest
         '1d319cb56061a70e650e90683a023716778ab9d292cbfd59b22241447858c9b1',
         // cz-payroll-2026.travel-allowances.v3
         '6b14aa4bc26b5a4f23b0982253c4bb1ecc38402dbed1e6ce7615fd958cc95c7a',
+        // cz-payroll-2027.compensation-averages.v1
+        '62cda166198f62d43f4bb120694f9bf42ec8694ec19afad32ffea60cfad0efb3',
+        // cz-payroll-2027.employment-thresholds.v1
+        '955e2f361a56a74f6f6e8d2240fdbcd6e4123d043882ef6079399fad504cae49',
+        // cz-payroll-2027.health-insurance.v1
+        'dc2ad8a5e8091f9adccac0300c8c20cea85d1c3c9b5a7adbb90f7b9ca5865741',
+        // cz-payroll-2027.income-tax.v1
+        'f9c6b287b1e97faf40ad4e9c3d37ba8967ce5b456326dbc69765a150d4a00e44',
+        // cz-payroll-2027.social-insurance.v1
+        '85811872429f34f325481585310c9dccc39eb17bf231e5e306d4d926f024a439',
     ];
 
     public static function contains(string $contentHash): bool

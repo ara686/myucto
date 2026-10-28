@@ -478,6 +478,28 @@ final class MonthlyEmploymentIncomeTaxCalculator
         ) {
             $issues[] = 'disability-credit-conflict';
         }
+        // Sleva na studenta (§ 35bc ZDP) existuje až od roku 2027 a jen pro
+        // rezidenta; podmínky drží {@see StudentTaxCredit}. Ruleset bez její
+        // částky ji nezná — nárok pak výpočet zastaví, nepočítá ho jako nulu.
+        $studentKinds = 0;
+        foreach ($active as $claim) {
+            if (!StudentTaxCredit::isStudent($claim->kind)) {
+                continue;
+            }
+            $studentKinds++;
+            if ($claim->effectiveTo === null) {
+                $issues[] = 'student-credit-interval-open';
+            }
+            if ($input->residence->residence === TaxResidence::NonResident) {
+                $issues[] = 'nonresident-student-credit-not-allowed';
+            }
+            if (!$policy->definesMoney(StudentTaxCredit::RULESET_KEY)) {
+                $issues[] = 'student-credit-not-in-ruleset';
+            }
+        }
+        if ($studentKinds > 1) {
+            $issues[] = 'student-credit-conflict';
+        }
         if ($active !== [] && $declaration?->status !== TaxDeclarationStatus::Signed) {
             $issues[] = 'tax-credit-requires-signed-declaration';
         }
@@ -506,6 +528,10 @@ final class MonthlyEmploymentIncomeTaxCalculator
                 TaxCreditKind::DisabilityExtended
                     => $policy->money('credit.disability.extended.monthly'),
                 TaxCreditKind::ZtpP => $policy->money('credit.ztp_p.monthly'),
+                TaxCreditKind::Student, TaxCreditKind::StudentDoctoral
+                    => $policy->definesMoney(StudentTaxCredit::RULESET_KEY)
+                        ? $policy->money(StudentTaxCredit::RULESET_KEY)
+                        : 0,
             };
             $breakdown[$claim->kind->value] = TaxIntegerMath::add(
                 $breakdown[$claim->kind->value] ?? 0,
