@@ -164,6 +164,11 @@ final class PayrollJmhzZeroAmendmentFlowTest extends TestCase
         self::assertSame('outside', $month['scope']);
         self::assertSame('annul', $month['action']);
 
+        $dateChange = $this->guide($annulled['employment_id'], 'date_change');
+        self::assertSame([3, 4], $dateChange['body']['regzec_actions']);
+        self::assertSame('amendments_first', $dateChange['body']['order']);
+        self::assertSame(['annul'], array_column($dateChange['body']['months'], 'action'));
+
         $frozen = $this->freeze($regularId, [$month['form_guid']]);
         self::assertSame(201, $frozen['status'], CanonicalJson::encode($frozen['body']));
 

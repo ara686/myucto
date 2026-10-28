@@ -36,6 +36,7 @@ import EmploymentExitDocumentsPanel from './EmploymentExitDocumentsPanel.vue'
 import EmploymentWageStatementPanel from './EmploymentWageStatementPanel.vue'
 import EmploymentJmhzIdentityPanel from './EmploymentJmhzIdentityPanel.vue'
 import EmploymentRegistrationPanel from './EmploymentRegistrationPanel.vue'
+import EmploymentJmhzPost20Panel from './EmploymentJmhzPost20Panel.vue'
 import EmploymentTerminationPanel from './EmploymentTerminationPanel.vue'
 import PayrollOpeningBalancesPanel from './PayrollOpeningBalancesPanel.vue'
 import {
@@ -2174,6 +2175,7 @@ const GRID = 'mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3'
       :termination-end-date="terminationOverview?.employment.end_date ?? employment.end_date ?? null"
       :master-data-version="registrationMasterDataVersion"
     />
+    <EmploymentJmhzPost20Panel :employment-id="employment.id" />
 
     <EmploymentJmhzIdentityPanel
       :employment-id="employment.id"

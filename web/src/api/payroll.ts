@@ -7668,6 +7668,73 @@ export interface PayrollJmhzContentCorrectionCandidates {
   blocked_forms?: PayrollJmhzXmlDryRunBlocker[]
 }
 
+/** Návazné podání, které už formulář opravilo nebo stornovalo. */
+export interface PayrollJmhzFormAmendment {
+  submission_id: number
+  status: string
+  submission_kind: string
+}
+
+/** Formulář řádného hlášení a zda jde jeho měsíc anulovat nulovým opravným hlášením. */
+export interface PayrollJmhzZeroAmendmentForm {
+  form_guid: string
+  person_external_identifier: string
+  employment_external_identifier: string
+  employment_id: number | null
+  employee_id: number | null
+  employee_name: string | null
+  employment_start: string | null
+  employment_end: string | null
+  annullable: boolean
+  blocker: { code: string; message: string } | null
+  amendments: PayrollJmhzFormAmendment[]
+}
+
+export interface PayrollJmhzZeroAmendmentCandidates {
+  environment: PayrollJmhzTransportEnvironment
+  submission_id: number
+  submission_status: string
+  situation: 'amendment_unreportable_month'
+  month: number
+  year: number
+  /** Storno součásti je ještě možné (do lhůty, mimo leden až březen 2026). */
+  cancellation_allowed: boolean
+  forms: PayrollJmhzZeroAmendmentForm[]
+}
+
+export type PayrollJmhzPost20Situation = 'invalid_employment' | 'late_termination' | 'date_change'
+
+export interface PayrollJmhzPost20Month {
+  period: string
+  submission_id: number
+  submission_status: string
+  form_guid: string
+  scope: 'outside' | 'partial' | 'inside'
+  action: 'annul' | 'amended' | 'review' | 'manual'
+  annullable: boolean
+  blocker: { code: string; message: string } | null
+  amendments: PayrollJmhzFormAmendment[]
+}
+
+export interface PayrollJmhzPost20Guide {
+  environment: PayrollJmhzTransportEnvironment
+  employment_id: number
+  situation: PayrollJmhzPost20Situation
+  employment_start: string | null
+  employment_end: string | null
+  regzec_actions: number[]
+  registration: {
+    events: Array<{ id: number; action_code: number; effective_on: string; submitted: boolean }>
+    prepared: boolean
+    submitted: boolean
+  }
+  months: PayrollJmhzPost20Month[]
+  status: 'open' | 'partially_done' | 'complete'
+  order: 'together' | 'amendments_first'
+  lookback_months: number
+  warnings: string[]
+}
+
 export interface PayrollJmhzTransportHistory {
   environment: PayrollJmhzTransportEnvironment
   attempts: PayrollJmhzTransportAttempt[]
@@ -10633,6 +10700,35 @@ export const payrollApi = {
       preparation_id: preparationId,
       employment_external_identifiers: employmentExternalIdentifiers,
     },
+  ).then(response => response.data),
+  /** Formuláře přijatého řádného hlášení a zda jde jejich měsíc anulovat. */
+  jmhzZeroAmendmentCandidates: (
+    submissionId: number,
+    environment: PayrollJmhzTransportEnvironment,
+  ) => api.get<PayrollJmhzZeroAmendmentCandidates>(
+    `/payroll/submissions/${submissionId}/jmhz-zero-amendment`,
+    { params: { environment } },
+  ).then(response => response.data),
+  /**
+   * Nulové opravné hlášení, které anuluje měsíc vybraných vztahů. Situaci
+   * server vyžaduje výslovně; z dat ji neodvozuje.
+   */
+  freezeJmhzZeroAmendment: (
+    submissionId: number,
+    environment: PayrollJmhzTransportEnvironment,
+    formGuids: string[],
+  ) => api.post<PayrollJmhzCorrectiveSubmission>(
+    `/payroll/submissions/${submissionId}/jmhz-zero-amendment`,
+    { environment, form_guids: formGuids, situation: 'amendment_unreportable_month' },
+  ).then(response => response.data),
+  /** Průvodce postupem po 20. dni pro jeden pracovní vztah. */
+  jmhzPost20Guide: (
+    employmentId: number,
+    situation: PayrollJmhzPost20Situation,
+    environment: PayrollJmhzTransportEnvironment,
+  ) => api.get<PayrollJmhzPost20Guide>(
+    `/payroll/submissions/jmhz-post20/${employmentId}`,
+    { params: { environment, situation } },
   ).then(response => response.data),
   /** Protokoly načtené ze souboru, od nejnovějšího období. */
   jmhzImportedProtocols: (

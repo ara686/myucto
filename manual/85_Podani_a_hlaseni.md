@@ -455,6 +455,20 @@ podání A3 má stav přijato podle protokolu ČSSZ.
 3. Potvrďte dopad. Storno se připraví jako nové podání a odešlete ho stejně
    jako řádné hlášení.
 
+**Anulace měsíce** (vztah v měsíci už netrval, ale byl nahlášen, typicky
+zapomenutá odhláška; po 20. dni a za leden až březen 2026 storno nejde):
+
+1. Na kartě zaměstnance opravte datum skončení nebo nástupu vztahu.
+2. Na záložce **Odesláno** u platné karty období klikněte na **Stornovat
+   podání** a v **Rozsah storna** zvolte **Anulovat měsíc nulovým opravným
+   hlášením**.
+3. Vyberte zaměstnance (nabídnou se jen ti, jejichž vztah v měsíci podle
+   evidence netrval), potvrďte situaci i dopad a klikněte na **Anulovat
+   měsíc u vybraných vztahů**.
+4. Opravné hlášení odešlete stejně jako řádné hlášení a k tomu pošlete
+   odhlášku nebo změnu registrace REGZEC (viz průvodce **Náprava po 20. dni**
+   na kartě vztahu).
+
 **Odmítnuté nebo nepřevzaté podání** (ČSSZ ho zpracovala a zamítla, nebo
 odmítla zpracovat): na záložce **K odeslání** klikněte u podání na **Zahodit
 a podat znovu**, vložte odpověď úřadu jako důvod a podání odešlete znovu.
@@ -1506,6 +1520,28 @@ u zaměstnanců, které vyberete podle jména (ostatní formuláře zůstanou u 
 platné; storno vybraných vztahů jde jen u úplně přijatého hlášení). Obojí se
 nejdřív potvrzuje. Celé hlášení lze stornovat jen do 20. dne následujícího
 měsíce, potom už jen opravným hlášením.
+
+**Nulové hlášení.** Vztah, který v měsíci trvá, ale nic se v něm
+neodpracovalo ani nezúčtovalo (rodičovská dovolená, dohoda bez práce), se
+hlásí **řádným formulářem s nulovými hodnotami**: aplikace ho sestaví
+z mzdového běhu sama, jen u vztahu bez jediného vstupu je potřeba zadat
+u základní složky 0 Kč. Měsíc, ve kterém vztah **netrval** a přesto byl
+nahlášen, se **anuluje** nulovým opravným hlášením (volba **Anulovat měsíc
+nulovým opravným hlášením** ve **Stornovat podání**). Formulář se staví ze
+zmrazeného původního formuláře podle tabulky Pravidel podání JMHZ: trvání
+pojištění tvoří jediný den, kód ELDP se neuvádí a místo výkonu práce,
+stanovený fond a prohlášení poplatníka zůstávají z původního formuláře.
+Anulovat jde jen měsíc, který podle evidence leží celý mimo období vztahu,
+a jen formulář bez příjmu a pojistného, bez souběžného vztahu osoby
+a bez ročních úhrnů; jinak aplikace anulaci nesestaví a řekne proč.
+
+**Náprava po 20. dni.** Na kartě pracovního vztahu je průvodce **Náprava
+po 20. dni (REGZEC a opravná hlášení)**. Po výběru situace (zapomenutá
+odhláška, změna data nástupu či skončení, neplatný vztah) ukáže potřebnou
+akci REGZEC (2, 3 nebo 4, 8), zda už je připravená nebo podaná, a měsíce
+s podaným hlášením, které je třeba anulovat nebo zkontrolovat. ČSSZ
+doporučuje poslat obě podání najednou. U neplatného vztahu měsíce v jeho
+období aplikace sama nenuluje; postupujte ručně.
 
 **Obsahová oprava.** **Opravit hodnoty hlášení** pracuje s aktuální přípravou
 JMHZ po opravě mzdových údajů a vytvoří skutečné obsahové opravné hlášení.

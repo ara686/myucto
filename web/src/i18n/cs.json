@@ -7183,6 +7183,52 @@
         "eldp_submission": "ELDP",
         "taxable_income_confirmation": "Potvrzení o příjmech"
       },
+      "post20": {
+        "title": "Náprava po 20. dni (REGZEC a opravná hlášení)",
+        "subtitle": "Po 20. dni už storno součásti nejde. Neplatný vztah, zapomenutou odhlášku nebo změnu data nástupu či skončení napravuje dvojice podání: registrační akce REGZEC a opravná měsíční hlášení za dotčené měsíce.",
+        "situation_label": "Typová situace",
+        "situation_placeholder": "Vyberte situaci",
+        "situations": {
+          "late_termination": "Zapomenutá nebo zpětná odhláška",
+          "date_change": "Změna nebo oprava data nástupu či skončení",
+          "invalid_employment": "Neplatný pracovní vztah (rozhodnutí soudu, chybný druh činnosti nebo VS)"
+        },
+        "situation_hints": {
+          "late_termination": "REGZEC akce 2 (odhláška) a nulová opravná hlášení za měsíce po skončení. Nejdříve zapište skutečné datum skončení a pošlete opravná hlášení, potom odhlášku.",
+          "date_change": "REGZEC akce 3 (změna) nebo 4 (oprava) a opravná hlášení za dotčené měsíce. Nejdříve opravte data u vztahu a pošlete opravná hlášení, potom REGZEC.",
+          "invalid_employment": "REGZEC akce 8 (storno) s přílohou s důvodem a opravná hlášení na nulové hodnoty za všechna období vztahu. Měsíce v období vztahu aplikace sama nenuluje; je to ruční krok."
+        },
+        "environment_label": "Prostředí",
+        "environments": {
+          "production": "Produkce",
+          "test": "Test ČSSZ"
+        },
+        "load": "Zobrazit postup",
+        "load_failed": "Postup po 20. dni se nepodařilo načíst.",
+        "status": {
+          "open": "Čeká na podání",
+          "partially_done": "Částečně podáno",
+          "complete": "Obě části podány"
+        },
+        "order": {
+          "together": "ČSSZ doporučuje poslat REGZEC i opravná hlášení najednou.",
+          "amendments_first": "Metodicky nejdříve opravná hlášení, potom REGZEC; ideálně obojí najednou."
+        },
+        "registration_title": "Registrace REGZEC (akce {actions})",
+        "registration_missing": "Registrační událost s touto akcí u vztahu zatím není. Připravte ji v sekci registrace výše.",
+        "registration_event": "Akce {action} k {date}: {state}",
+        "registration_prepared": "připravena",
+        "registration_submitted": "zařazena do podání",
+        "months_title": "Měsíční hlášení (posledních {months} měsíců)",
+        "months_empty": "Žádné podané měsíční hlášení se tohoto vztahu v dotčených měsících netýká.",
+        "actions": {
+          "annul": "anulovat nulovým opravným hlášením",
+          "amended": "opravné hlášení je podané",
+          "review": "hraniční měsíc: zkontrolujte a případně opravte obsahovou opravou",
+          "manual": "aplikace sama neopraví, postupujte ručně"
+        },
+        "open_submissions": "Otevřít historii odeslání"
+      },
       "termination": {
         "title": "Skončení vztahu",
         "subtitle": "Způsob a důvod skončení se zadává jen tady. Odsud se předvyplní odhláška A2 i potvrzení pro Úřad práce a založí se proplacení dovolené a odstupné do posledního běhu.",
@@ -12279,6 +12325,20 @@
         "failed": "Storno vybraných vztahů se nepodařilo připravit.",
         "frozen": "Storno vybraných vztahů je připravené jako podání č. {id}; odešlete ho stejně jako řádné hlášení.",
         "already": "Storno vybraných vztahů už existuje jako podání č. {id}."
+      },
+      "zero_amendment": {
+        "mode": "Anulovat měsíc nulovým opravným hlášením",
+        "description": "Pro vztah, který v tomto měsíci už netrval (zapomenutá odhláška, zkrácení vztahu), se pošle opravný formulář s nulovými hodnotami podle Pravidel podání JMHZ. Po 20. dni a za leden až březen 2026 je to jediná cesta, storno součásti už nejde. K anulaci patří i odhláška nebo změna registrace REGZEC; pošlete obojí najednou.",
+        "cancellation_still_allowed": "Lhůta pro storno součásti ještě běží. Storno vybraných vztahů je pro tuto situaci jednodušší cesta.",
+        "employment_period": "Vztah v evidenci: {start} až {end}",
+        "situation": "Potvrzuji, že pracovněprávní vztah v tomto měsíci netrval a měsíc neměl být hlášen. Nejde o vztah, ve kterém se jen nepracovalo.",
+        "impact": "Rozumím, že anulace je nevratné opravné hlášení a ČSSZ podle ní zruší pojistný vztah vybraných zaměstnanců za tento měsíc.",
+        "disabled_reason": "Vyberte alespoň jeden vztah a potvrďte situaci i dopad anulace.",
+        "confirm": "Anulovat měsíc u vybraných vztahů ({count})",
+        "load_failed": "Vztahy řádného hlášení k anulaci se nepodařilo načíst.",
+        "failed": "Nulové opravné hlášení se nepodařilo připravit.",
+        "frozen": "Nulové opravné hlášení je připravené jako podání č. {id}; odešlete ho stejně jako řádné hlášení.",
+        "already": "Nulové opravné hlášení už existuje jako podání č. {id}."
       },
       "codes": {
         "eldp_correction_reference_invalid": "Opravný evidenční list neodkazuje na zmrazený list, který opravuje. Takový podklad aplikace nesestaví; kontaktujte podporu.",
