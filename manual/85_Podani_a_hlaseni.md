@@ -1741,6 +1741,17 @@ dnem. Cizinec se přihlašuje vždy plnou registrací před zahájením práce, 
 se u něj neukazuje. Dřív než osm dnů před nástupem aplikace přihlášku
 nepřipraví a napíše, od kterého dne to jde.
 
+**Události od 1. 1. 2027 (REGZEC27).** Ročník formuláře REGZEC určuje
+rozhodné datum události, ne den odeslání: nástup (A1), skončení (A2), skončení
+uvedené ve změně nebo opravě (A3, A4) a den platnosti (A5 až A7) od 1. 1. 2027
+se hlásí formulářem REGZEC27, dřívější události dál formulářem REGZEC25, i když
+je podáváte v roce 2027. Ostrá ČSSZ přijímá REGZEC27 až od 1. 1. 2027, proto
+plnou registraci s nástupem v prvních dnech ledna 2027 aplikace připraví
+nejdřív 1. 1. 2027. Částečné přihlášení PREZEC se ročníkem nemění a zaměstnance
+s českým občanstvím s nástupem v lednu 2027 jím přihlásíte už v prosinci, osm
+dnů před nástupem. U cizince ze státu mimo EHP chce REGZEC27 navíc platnost
+pobytu (od a do) a číslo orientační má u všech adres nejvýš čtyři znaky.
+
 **Nástup v jiný den (oprava A4).** Byla-li přihláška podaná s předpokládaným
 dnem nástupu a zaměstnanec nastoupil jindy, podejte opravu A4. Opravu
 skutečného dne nástupu ČSSZ zpracuje jen s průvodním dopisem v příloze;

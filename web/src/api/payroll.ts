@@ -4763,6 +4763,9 @@ export interface PayrollRegistrationA1ForeignWorker {
   permit_identifier: string | null
   permit_from: string | null
   permit_to: string | null
+  /** REGZEC27 (nástup od 1. 1. 2027), ID 10568 a 10569. */
+  stay_valid_from?: string | null
+  stay_valid_to?: string | null
 }
 
 export interface PayrollRegistrationA1Attachment {

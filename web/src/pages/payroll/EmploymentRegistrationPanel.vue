@@ -3963,6 +3963,32 @@ async function copyXml(): Promise<void> {
                 :disabled="a1Busy"
                 data-test="a1-foreign-worker-permit-to" />
             </label>
+            <label class="block">
+              <span :class="a1LabelClass">
+                {{ t('payroll.people.registration.a1.foreign_worker.stay_valid_from') }}
+              </span>
+              <DateInput
+                v-model="a1Form.foreign_worker.stay_valid_from"
+                v-bind="a1FieldAttrs('foreign_worker.stay_valid_from')"
+                :disabled="a1Busy"
+                data-test="a1-foreign-worker-stay-valid-from" />
+              <span
+                v-if="a1NoteText('foreign_worker.stay_valid_from')"
+                :class="a1NoteClass('foreign_worker.stay_valid_from')"
+              >
+                {{ a1NoteText('foreign_worker.stay_valid_from') }}
+              </span>
+            </label>
+            <label class="block">
+              <span :class="a1LabelClass">
+                {{ t('payroll.people.registration.a1.foreign_worker.stay_valid_to') }}
+              </span>
+              <DateInput
+                v-model="a1Form.foreign_worker.stay_valid_to"
+                v-bind="a1FieldAttrs('foreign_worker.stay_valid_to')"
+                :disabled="a1Busy"
+                data-test="a1-foreign-worker-stay-valid-to" />
+            </label>
           </div>
         </div>
 
