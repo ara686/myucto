@@ -145,6 +145,31 @@ final class JmhzEldpEvidenceBuilderTest extends TestCase
     }
 
     /**
+     * Poživatel předčasného starobního důchodu, který dovrší důchodový věk
+     * 16. 7.: kód D začíná dovršením věku (předčasný důchod ho nezakládá),
+     * takže se měsíc dělí stejně jako u kohokoli jiného.
+     */
+    public function testEarlyPensionerReachingPensionAgeMidMonthSplitsTheMonth(): void
+    {
+        $builder = new JmhzEldpEvidenceBuilder();
+        $mid = [...$this->source(), 'pension_status' => [
+            'pension_age_reached_on' => '2026-07-16',
+            'early_pension_from' => '2024-03-01',
+        ]];
+
+        $confirmation = $builder->deriveOrdinaryConfirmation(7, 101, $mid);
+        self::assertSame('1D+', $confirmation['code']);
+        self::assertSame(31, $confirmation['insurance_days']);
+        self::assertFalse($confirmation['in04_active']);
+        $sections = $builder->build(7, 101, $mid, $confirmation)->payload['eldp_sections'];
+
+        self::assertSame(['1++', '1D+'], array_column($sections, 'code'));
+        self::assertSame(['2026-07-15', '2026-07-31'], array_column($sections, 'valid_to'));
+        self::assertSame([15, 16], array_column($sections, 'insurance_days'));
+        self::assertSame([0, 10_000], array_column($sections, 'assessment_base_czk'));
+    }
+
+    /**
      * Po dovršení důchodového věku bez starobního důchodu tvoří omluvné
      * důvody i volno bez náhrady odečítané doby a IN04 (10375, 10462–10469)
      * je povinná (Pokyny MH 1.4.14, ID 10375 a 10466). Otcovská 13.–26. 7.

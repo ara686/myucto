@@ -777,19 +777,19 @@ final class JmhzEldpEvidenceBuilder
 
     /**
      * Kód ELDP měsíčního hlášení: druh činnosti, „+" a „+", a druhý znak „D"
-     * od dne dovršení důchodového věku nebo přiznání předčasného starobního
-     * důchodu. Pravidlo je společné s ročním evidenčním listem
+     * od dne dovršení důchodového věku (předčasný starobní důchod kód D
+     * nezakládá). Pravidlo je společné s ročním evidenčním listem
      * ({@see EldpPensionAgeCode}), takže se osoba v listu a v hlášení nemůže
      * rozejít.
      *
-     * Důchodové údaje čte z `$source['pension_status']` (`pension_age_reached_on`,
-     * `early_pension_from`); bez nich zůstává „++". Zdroj řezu
+     * Důchodové údaje čte z `$source['pension_status']`
+     * (`pension_age_reached_on`); bez nich zůstává „++". Zdroj řezu
      * ({@see \MyInvoice\Repository\Payroll\JmhzEldpEvidenceSnapshotRepository::lockSource()})
      * je plní ze zákonné evidence osoby (sekce Důchod) k vykazovanému měsíci
      * týmž pravidlem jako roční evidenční list
      * ({@see \MyInvoice\Service\Payroll\Pension\PayrollPensionStatus}); už
-     * zmrazené řezy se tím nemění. Předčasný důchod uprostřed měsíce se
-     * zastaví, protože pravidla podání rozdělení základu nestanoví.
+     * zmrazené řezy se tím nemění. Dovršení věku uprostřed měsíce dělí měsíc
+     * na dvě sekce ({@see self::pensionAgeSplitFrom()}).
      *
      * @param array<string,mixed> $source
      */
@@ -802,16 +802,6 @@ final class JmhzEldpEvidenceBuilder
         $code = $activityCode . '++';
         $codeFrom = $this->pensionAgeCodeFrom($source);
         $placement = EldpPensionAgeCode::placement($codeFrom, $insuranceFrom, $insuranceTo);
-        if ($placement === EldpPensionAgeCode::MID_INTERVAL
-            && $this->pensionAgeSplitFrom($source, $insuranceFrom, $insuranceTo) === null
-        ) {
-            $this->invalid(
-                'eldp_pension_age_mid_month_unsupported',
-                "Kód ELDP se mění uprostřed měsíce (od {$codeFrom}: přiznání předčasného starobního "
-                . 'důchodu). Rozdělení vyměřovacího základu mezi dvě sekce pro tento případ pravidla'
-                . ' podání nestanoví.',
-            );
-        }
 
         // Měsíc, ve kterém kód D začíná dovršením důchodového věku, potvrzuje
         // účetní kódem D; sekci před tím dnem odvodí řez sám.
@@ -829,28 +819,19 @@ final class JmhzEldpEvidenceBuilder
      * Kontrola 59 (3. část) určuje rozdělení základu: navazuje-li na sekci
      * před dovršením věku sekce s kódem D téže činnosti a se započtenými dny,
      * má sekce před dovršením základ 0 a celý základ měsíce nese sekce D.
-     * Pravidlo mluví o dovršení důchodového věku; pro předčasný starobní
-     * důchod uvnitř měsíce rozdělení nestanoví, a ten se proto nedělí.
+     * Kód D začíná jen dovršením věku ({@see EldpPensionAgeCode::codeFrom()}),
+     * takže se tak dělí i měsíc poživatele předčasného starobního důchodu.
      *
      * @param array<string,mixed> $source
      */
     private function pensionAgeSplitFrom(array $source, string $intervalFrom, string $intervalTo): ?string
     {
         $codeFrom = $this->pensionAgeCodeFrom($source);
-        if (EldpPensionAgeCode::placement($codeFrom, $intervalFrom, $intervalTo)
-            !== EldpPensionAgeCode::MID_INTERVAL
-        ) {
-            return null;
-        }
-        $status = $this->object($source['pension_status'] ?? null, 'pension_status');
-        $earlyFrom = $status['early_pension_from'] ?? null;
-        if (($status['pension_age_reached_on'] ?? null) !== $codeFrom
-            || (is_string($earlyFrom) && $earlyFrom <= $intervalTo)
-        ) {
-            return null;
-        }
 
-        return $codeFrom;
+        return EldpPensionAgeCode::placement($codeFrom, $intervalFrom, $intervalTo)
+            === EldpPensionAgeCode::MID_INTERVAL
+            ? $codeFrom
+            : null;
     }
 
     /**
