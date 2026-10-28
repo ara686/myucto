@@ -248,7 +248,11 @@ final class JmhzPreparationSnapshotBuilder
                             ? $selection['evidence']['scenario_key']
                             : null,
                     );
-                    if ($deferredType === '1' && $selection['supported']) {
+                    if (in_array(
+                        $deferredType,
+                        \MyInvoice\Repository\Payroll\PayrollDeferredIncomeRepository::SUPPORTED_TYPES,
+                        true,
+                    ) && $selection['supported']) {
                         $selection['preparation_supported'] = true;
                     }
                     if (!$selection['supported']) {

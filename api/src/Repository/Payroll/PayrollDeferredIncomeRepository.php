@@ -18,12 +18,20 @@ use PDO;
 final class PayrollDeferredIncomeRepository
 {
     /**
-     * Typy číselníku „Typ odloženého příjmu", které aplikace zpracuje sama.
-     * Ostatní (náhrada mzdy při neplatném skončení, roční zúčtování po
-     * skončení) mají vlastní pravidla pro ELDP a pojistné a potvrdit je tu
+     * Typy číselníku „Typ odloženého příjmu", které aplikace zpracuje sama:
+     * 1 příjem po skončení a 4 roční zúčtování po skončení (Pravidla podání
+     * JMHZ 1.4.5, kap. 6 body 1 a 3). Náhrada mzdy při neplatném skončení
+     * (2, 3, 6) má vlastní pravidla pro ELDP a pojistné a potvrdit ji tu
      * nejde.
      */
-    public const SUPPORTED_TYPES = ['1'];
+    public const SUPPORTED_TYPES = ['1', '4'];
+
+    /**
+     * Typy, které se hlásí bez zúčtovaného příjmu. Mzdový běh si skončený
+     * vztah s takovým potvrzením vezme, i když za měsíc nemá žádný vstup
+     * (typ 4: 10286 = 0, Pravidla podání JMHZ 1.4.5, kap. 6 bod 3).
+     */
+    public const TYPES_WITHOUT_INCOME = ['4'];
 
     public function __construct(private readonly Connection $db) {}
 
@@ -87,18 +95,35 @@ final class PayrollDeferredIncomeRepository
     ): array {
         if (!in_array($deferredType, self::SUPPORTED_TYPES, true)) {
             throw new \InvalidArgumentException(
-                'Aplikace zpracuje sama jen odložený příjem typu 1 (příjem po skončení'
-                . ' zaměstnaneckého poměru). Náhradu mzdy při neplatném skončení a roční'
-                . ' zúčtování po skončení podejte přes ePortál ČSSZ.',
+                'Aplikace zpracuje sama odložený příjem typu 1 (příjem po skončení'
+                . ' zaměstnaneckého poměru) a typu 4 (roční zúčtování po skončení).'
+                . ' Náhradu mzdy při neplatném skončení podejte přes ePortál ČSSZ.',
+            );
+        }
+        // Pravidla podání JMHZ 1.4.5, kap. 6 bod 3 b): roční zúčtování po
+        // skončení se hlásí za rozhodné období leden až březen.
+        if ($deferredType === '4' && !in_array(substr($periodStart, 5, 2), ['01', '02', '03'], true)) {
+            throw new \InvalidArgumentException(
+                'Roční zúčtování po skončení pracovního vztahu se hlásí jen za leden, únor nebo březen.',
             );
         }
         $employment = $this->db->pdo()->prepare(
-            'SELECT end_date FROM payroll_employments WHERE supplier_id = ? AND id = ?',
+            'SELECT end_date, relation_type FROM payroll_employments WHERE supplier_id = ? AND id = ?',
         );
         $employment->execute([$supplierId, $employmentId]);
-        $endDate = $employment->fetchColumn();
-        if ($endDate === false) {
+        $row = $employment->fetch(PDO::FETCH_ASSOC);
+        if ($row === false) {
             throw new PayrollEmploymentNotFoundException('Pracovní vztah nebyl nalezen.');
+        }
+        $endDate = $row['end_date'];
+        // Zdravotní pojistné z příjmu po skončení dohody patří do měsíce jejího
+        // konce; pozdější měsíc bez příjmu výpočet nespočítá (pojistka je
+        // i v běhu, `post_termination_annual_settlement_agreement_unsupported`).
+        if ($deferredType === '4' && in_array($row['relation_type'], ['dpp', 'dpc'], true)) {
+            throw new \InvalidArgumentException(
+                'Roční zúčtování po skončení dohody o provedení práce nebo o pracovní činnosti'
+                . ' aplikace sama nevykáže. Hlášení za dohodu podejte ručně přes ePortál ČSSZ.',
+            );
         }
         if (!is_string($endDate) || $endDate === '' || substr($endDate, 0, 7) >= substr($periodStart, 0, 7)) {
             throw new \InvalidArgumentException(

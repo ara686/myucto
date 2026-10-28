@@ -1238,7 +1238,7 @@ tyto formuláře:
 | 4 | výkon trestu nebo zabezpečovací detence: druh činnosti 1 až 9 s bližším určením 2 u pracovního poměru nebo zaměstnání malého rozsahu | vezen |
 | 5 | druh činnosti 11, 13 nebo 14 u pracovního poměru | jinyPrijem |
 | 6 | druh činnosti 12 (mezinárodní pronájem pracovní síly) u pracovního poměru | mezinarodniPronajemSily |
-| 8 | odložený příjem typu 1, volí se ručně potvrzením odloženého příjmu | odlozenyPrijem |
+| 8 | odložený příjem typu 1 a roční zúčtování po skončení (typ 4), volí se ručně potvrzením odloženého příjmu | odlozenyPrijem |
 
 Formuláře jiného příjmu (5) a mezinárodního pronájmu pracovní síly (6)
 nenesou pojištění. I u podporovaných scénářů zůstávají dvě výjimky, které test
