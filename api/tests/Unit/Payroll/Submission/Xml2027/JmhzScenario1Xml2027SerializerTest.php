@@ -124,6 +124,25 @@ final class JmhzScenario1Xml2027SerializerTest extends TestCase
     }
 
     /**
+     * Formulář bez účasti na pojištění (DPP v souběhu, pojistné osoby nese
+     * jiný vztah) vykazuje 10370 i 10481 nulou stejně jako verze 2026:
+     * scénáře 1.5.0.3 je vedou jako „P" (rozhodnutí Q5).
+     */
+    public function testFormWithoutParticipationReportsZeroSocialContributions(): void
+    {
+        $payload = self::fullPayload();
+        $employment = &$payload['people'][0]['employments'][0];
+        $employment['reports_social_contributions'] = false;
+        $employment['social_contributions'] = null;
+        $employment['social_base'] = ['assessment_base_czk' => null, 'reported_income_czk' => 1_000, 'paragraph5_letter' => null];
+        unset($employment);
+        $xpath = self::xpath($this->validator()->dryRun(self::resolution($payload), self::envelope())['xml']);
+
+        self::assertSame('0', self::value($xpath, '//f:pojisteni/f:pojisteniZamestnanec/f:socialniPojisteni'));
+        self::assertSame('0', self::value($xpath, '//f:pojisteni/f:pojisteniZamestnavatel/f:socialniPojisteni'));
+    }
+
+    /**
      * Náhradní volno za přesčas se odečte od 10268 i 10269 podle
      * JmhzReportedWorkHours (stejně jako hodiny rizikové práce v resolveru):
      * ve verzi 2027 je přesčas se znaménkem, 4 h − 8 h volna = −4 h.

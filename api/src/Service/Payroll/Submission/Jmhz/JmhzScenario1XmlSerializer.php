@@ -2204,11 +2204,16 @@ final class JmhzScenario1XmlSerializer
         // matice datových scénářů 1.4.0.2 je vede jako „P" bez podmínky ve
         // všech listech (1 až 9, M, K/N–S, odložený příjem), Pokyny MH 1.4.14
         // (kap. 3.6.7 a 3.6.8) jako „Povinný údaj" a chybějící povinný údaj
-        // odmítá kontrola 341. Formulář bez účasti na pojištění (DPP nebo
+        // odmítá kontrola 341 v prevalidaci ePortálu. Formulář bez účasti na pojištění (DPP nebo
         // DPČ pod hranicí, vztah v souběhu, který pojistné osoby nenese) je
         // proto vykazuje nulou, stejně jako ukázka MPSV „Jedna DPP do 11499".
         // Kontroly 118 a 315 berou chybějící 10477 jako nulu, nula pojistného
         // jim tedy odpovídá, a součet kontroly 12 se nezmění.
+        //
+        // Vzor ShopNow (příklad Přikryl v Pokynech 1.4.14, str. 121-129, PPV3
+        // DPP bez účasti) oba prvky vynechává. Aplikace se jím neřídí:
+        // normativní je matice scénářů a Pokyny („Povinný údaj"); DIS i cJMHZ
+        // přijmou obě varianty, nula tedy nic neriskuje.
         $reportsSocial = ($employment['reports_social_contributions'] ?? true) === true;
         $ownContributions = $this->object($employment['social_contributions'] ?? null);
         foreach ([

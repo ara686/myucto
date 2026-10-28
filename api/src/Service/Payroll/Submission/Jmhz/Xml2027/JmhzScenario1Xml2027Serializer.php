@@ -1686,14 +1686,24 @@ final class JmhzScenario1Xml2027Serializer
             $node->appendChild($sickness);
         }
 
+        // 10370 a 10481 jsou povinné na KAŽDÉM formuláři s blokem pojištění
+        // (scénáře 1.5.0.3 je vedou jako „P", Pokyny MH 1.4.14 kap. 3.6.7
+        // a 3.6.8 jako „Povinný údaj"). Formulář bez účasti na pojištění
+        // (DPP/DPČ pod hranicí, vztah v souběhu, který pojistné osoby nenese)
+        // je proto vykazuje nulou stejně jako verze 2026
+        // (JmhzScenario1XmlSerializer, oprava fix/jmhz-dpp-pojistne-nula).
         $reportsSocial = ($employment['reports_social_contributions'] ?? true) === true;
         $ownContributions = $this->object($employment['social_contributions'] ?? null);
         foreach ([
             'form:pojisteniZamestnanec' => ['employee_social_czk', '10370'],
             'form:pojisteniZamestnavatel' => ['employer_social_czk', '10481'],
         ] as $element => [$key, $attributeId]) {
-            $value = $ownContributions !== [] ? ($ownContributions[$key] ?? null) : ($summary[$key] ?? null);
-            if (!$reportsSocial || !is_int($value) || $amount === null) {
+            $value = match (true) {
+                $ownContributions !== [] => $ownContributions[$key] ?? null,
+                $reportsSocial => $summary[$key] ?? null,
+                default => 0,
+            };
+            if (!is_int($value)) {
                 continue;
             }
             $wrapper = $this->node($dom, Jmhz2027Schema::NS_FORM, $element);
