@@ -7798,10 +7798,18 @@ export interface PayrollJmhzPost20Month {
   submission_status: string
   form_guid: string
   scope: 'outside' | 'partial' | 'inside'
-  action: 'annul' | 'amended' | 'review' | 'manual'
+  action: 'annul' | 'amended' | 'review' | 'manual' | 'choose_variant'
   annullable: boolean
   blocker: { code: string; message: string } | null
   amendments: PayrollJmhzFormAmendment[]
+  /** Formulář s příjmem nebo pojistným: VAR 1 (plnění vráceno) a VAR 2 (nevráceno). */
+  variants?: PayrollJmhzPost20Variant[]
+}
+
+export interface PayrollJmhzPost20Variant {
+  key: 'returned' | 'not_returned'
+  route: 'content_correction' | 'manual_deferred_income'
+  supported: boolean
 }
 
 export interface PayrollJmhzPost20Guide {

@@ -7296,8 +7296,15 @@
           "annul": "anulovat nulovým opravným hlášením",
           "amended": "opravné hlášení je podané",
           "review": "hraniční měsíc: zkontrolujte a případně opravte obsahovou opravou",
-          "manual": "aplikace sama neopraví, postupujte ručně"
+          "manual": "aplikace sama neopraví, postupujte ručně",
+          "choose_variant": "formulář nesl příjem nebo pojistné: zvolte variantu nápravy"
         },
+        "variants_title": "Formulář nejde anulovat nulovým hlášením, protože nesl příjem nebo pojistné. Podle toho, zda zaměstnanec plnění vrátil, zvolte postup (Pravidla podání JMHZ, tabulka typových situací):",
+        "variants": {
+          "returned": "Plnění vráceno: opravte mzdový běh měsíce a pošlete obsahovou opravu z nové přípravy. Opraví se formulář, souhrnná i pojistná část za všechny zaměstnance měsíce.",
+          "not_returned": "Plnění nevráceno: vynulovaný formulář a původní hodnoty 1:1 ve formuláři Odložený příjem, souhrn a pojistná část se nemění. Aplikace tuto variantu zatím nesestaví, podejte ji ručně na ePortálu."
+        },
+        "variants_note": "V obou variantách podejte i REGZEC. Po lhůtě se podává vždy opravné hlášení, nikdy storno; mezi opravami vyčkejte 48 hodin.",
         "open_submissions": "Otevřít historii odeslání"
       },
       "termination": {
@@ -13167,7 +13174,7 @@
         "jmhz_zero_amendment_form_already_amended": "K formuláři už existuje opravné nebo stornovací podání. Anulace se staví jen z formuláře, který od řádného podání nikdo neměnil.",
         "jmhz_zero_amendment_interval_invalid": "První den pojištění v původním formuláři neleží v anulovaném měsíci; jde o technickou chybu, kterou musí posoudit podpora.",
         "jmhz_zero_amendment_original_incomplete": "Původní formulář nemá povinný údaj, který se v anulaci přebírá; jde o technickou chybu, kterou musí posoudit podpora.",
-        "jmhz_zero_amendment_original_not_zero": "Anulovaný formulář vykazuje příjem nebo pojistné. Jeho anulace by změnila i souhrnnou a pojistnou část hlášení; použijte obsahovou opravu z nové přípravy.",
+        "jmhz_zero_amendment_original_not_zero": "Anulovaný formulář vykazuje příjem nebo pojistné. Jeho anulace by změnila i souhrnnou a pojistnou část hlášení. Vrátil-li zaměstnanec plnění, opravte mzdový běh a použijte obsahovou opravu z nové přípravy; nevrátil-li ho, podejte opravné hlášení s formulářem Odložený příjem ručně.",
         "jmhz_zero_amendment_root_not_accepted": "Měsíc lze anulovat až po úplném přijetí řádného hlášení ČSSZ.",
         "jmhz_zero_amendment_scenario_unsupported": "Anulovat nulovým opravným hlášením lze zatím jen formulář bez zvláštního příznaku; pro ostatní datové scénáře Pravidla podání tabulku nulového hlášení neuvádějí.",
         "jmhz_zero_amendment_situation_required": "Anulaci měsíce je nutné výslovně potvrdit jako měsíc, který neměl být hlášen.",

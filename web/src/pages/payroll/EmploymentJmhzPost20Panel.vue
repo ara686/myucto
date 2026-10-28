@@ -79,6 +79,7 @@ const actionLabels = computed<Record<string, string>>(() => ({
   amended: t('payroll.people.post20.actions.amended'),
   review: t('payroll.people.post20.actions.review'),
   manual: t('payroll.people.post20.actions.manual'),
+  choose_variant: t('payroll.people.post20.actions.choose_variant'),
 }))
 
 function actionLabel(action: string): string {
@@ -191,12 +192,26 @@ function codeLabel(code: string): string {
             <span class="min-w-0 text-sm">
               <span class="font-medium text-neutral-900">{{ formatPeriod(month.period) }}</span>
               <span class="ml-2 text-neutral-700">{{ actionLabel(month.action) }}</span>
-              <span v-if="month.blocker && month.action !== 'amended'" class="mt-0.5 block text-xs text-neutral-600">
+              <span
+                v-if="month.blocker && month.action !== 'amended' && month.action !== 'choose_variant'"
+                class="mt-0.5 block text-xs text-neutral-600"
+              >
                 {{ codeLabel(month.blocker.code) }}
+              </span>
+              <span
+                v-if="month.action === 'choose_variant'"
+                class="mt-1 block space-y-1 text-xs text-neutral-700"
+                :data-test="`post20-variants-${month.period}`"
+              >
+                <span class="block">{{ t('payroll.people.post20.variants_title') }}</span>
+                <span v-for="variant in month.variants ?? []" :key="variant.key" class="block">
+                  {{ t(`payroll.people.post20.variants.${variant.key}`) }}
+                </span>
+                <span class="block text-neutral-600">{{ t('payroll.people.post20.variants_note') }}</span>
               </span>
             </span>
             <RouterLink
-              v-if="month.action === 'annul' || month.action === 'review'"
+              v-if="month.action === 'annul' || month.action === 'review' || month.action === 'choose_variant'"
               :to="{ name: 'payroll-submissions-tab', params: { tab: 'transport' } }"
               :class="[btnOutlineSm('warning'), 'whitespace-nowrap']"
             >

@@ -47,6 +47,29 @@ final readonly class JmhzPost20GuideService
     /** Kolik měsíců zpět průvodce hledá podaná hlášení. */
     public const LOOKBACK_MONTHS = 36;
 
+    /** Blokace nulové anulace formuláře, který nesl příjem nebo pojistné. */
+    private const ORIGINAL_NOT_ZERO = 'jmhz_zero_amendment_original_not_zero';
+
+    /**
+     * Varianty nápravy formuláře s příjmem nebo pojistným za měsíc, který
+     * neměl být hlášen (Pravidla podání 1.4.6, tabulka typových situací,
+     * str. 115-117). Účetní musí jednu výslovně zvolit; nulová anulace ze
+     * zmrazeného originálu zůstává pro takový formulář zablokovaná.
+     *
+     * - `returned` (VAR 1, plnění vráceno): oprava mzdového běhu měsíce
+     *   a obsahová oprava z nové přípravy, která přepočte formulář, souhrnnou
+     *   i pojistnou část (PVPOJ za všechny zaměstnance měsíce),
+     * - `not_returned` (VAR 2, plnění nevráceno): vynulovaný standardní
+     *   formulář a původní hodnoty 1:1 ve formuláři Odložený příjem, souhrn
+     *   a PVPOJ beze změny; aplikace ho zatím nesestaví, podává se ručně.
+     *
+     * V obou variantách se podá i REGZEC a po lhůtě vždy opravné hlášení.
+     */
+    private const VARIANTS = [
+        ['key' => 'returned', 'route' => 'content_correction', 'supported' => true],
+        ['key' => 'not_returned', 'route' => 'manual_deferred_income', 'supported' => false],
+    ];
+
     public function __construct(
         private PayrollJmhzPost20Repository $repository,
         private PayrollRegistrationEventRepository $events,
@@ -81,7 +104,11 @@ final readonly class JmhzPost20GuideService
 
         $pending = array_filter(
             $months,
-            static fn (array $month): bool => in_array($month['action'], ['annul', 'review', 'manual'], true),
+            static fn (array $month): bool => in_array(
+                $month['action'],
+                ['annul', 'choose_variant', 'review', 'manual'],
+                true,
+            ),
         );
         $status = match (true) {
             $registration['submitted'] && $pending === [] => 'complete',
@@ -193,12 +220,7 @@ final readonly class JmhzPost20GuideService
             }
             foreach ($candidates['forms'] as $form) {
                 $amendments = $form['amendments'];
-                $action = match (true) {
-                    $amendments !== [] => 'amended',
-                    $scope === 'outside' && $form['annullable'] => 'annul',
-                    $scope === 'partial' => 'review',
-                    default => 'manual',
-                };
+                $action = self::monthAction($amendments, $scope, $form['annullable'], $form['blocker']);
                 $months[] = [
                     'period' => substr($periodStart, 0, 7),
                     'submission_id' => $submission['submission_id'],
@@ -209,11 +231,38 @@ final readonly class JmhzPost20GuideService
                     'annullable' => $form['annullable'],
                     'blocker' => $form['blocker'],
                     'amendments' => $amendments,
+                    'variants' => $action === 'choose_variant' ? self::VARIANTS : [],
                 ];
             }
         }
 
         return $months;
+    }
+
+    /**
+     * Co s formulářem měsíce udělat. Formulář mimo období vztahu, který nesl
+     * příjem nebo pojistné, nulovou anulací opravit nejde
+     * ({@see JmhzZeroAmendmentXmlSerializer}); účetní volí variantu
+     * {@see self::VARIANTS}.
+     *
+     * @param list<mixed> $amendments
+     * @param array{code:string,message:string}|null $blocker
+     */
+    public static function monthAction(array $amendments, string $scope, bool $annullable, ?array $blocker): string
+    {
+        return match (true) {
+            $amendments !== [] => 'amended',
+            $scope === 'outside' && $annullable => 'annul',
+            $scope === 'outside' && ($blocker['code'] ?? null) === self::ORIGINAL_NOT_ZERO => 'choose_variant',
+            $scope === 'partial' => 'review',
+            default => 'manual',
+        };
+    }
+
+    /** @return list<array{key:string,route:string,supported:bool}> */
+    public static function variants(): array
+    {
+        return self::VARIANTS;
     }
 
     /**

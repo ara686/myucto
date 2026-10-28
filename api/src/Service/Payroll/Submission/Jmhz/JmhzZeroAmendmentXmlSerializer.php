@@ -307,8 +307,10 @@ final class JmhzZeroAmendmentXmlSerializer
                     throw new JmhzXmlException(
                         'jmhz_zero_amendment_original_not_zero',
                         'Anulovaný formulář vykazuje příjem nebo pojistné. Jeho anulace by'
-                            . ' změnila i souhrnnou a pojistnou část podání; použijte obsahovou'
-                            . ' opravu z nové přípravy.',
+                            . ' změnila i souhrnnou a pojistnou část podání. Vrátil-li zaměstnanec'
+                            . ' plnění, opravte mzdový běh a použijte obsahovou opravu z nové'
+                            . ' přípravy; nevrátil-li ho, podejte opravné hlášení s formulářem'
+                            . ' Odložený příjem ručně (Pravidla podání, tabulka typových situací).',
                     );
                 }
             }

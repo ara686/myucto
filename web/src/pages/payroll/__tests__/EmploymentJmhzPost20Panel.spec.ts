@@ -100,4 +100,30 @@ describe('EmploymentJmhzPost20Panel', () => {
     expect(month.text()).toContain('payroll.people.post20.actions.amended')
     expect(month.find('a').exists()).toBe(false)
   })
+
+  it('offers both variants for a form that carried income', async () => {
+    m.jmhzPost20Guide.mockResolvedValue(guide({
+      months: [{
+        ...guide().months[0],
+        action: 'choose_variant',
+        annullable: false,
+        blocker: { code: 'jmhz_zero_amendment_original_not_zero', message: 'příjem' },
+        variants: [
+          { key: 'returned', route: 'content_correction', supported: true },
+          { key: 'not_returned', route: 'manual_deferred_income', supported: false },
+        ],
+      }],
+    }))
+    const wrapper = mount(EmploymentJmhzPost20Panel, { props: { employmentId: 12 } })
+    await wrapper.find('[data-test="post20-situation"]').setValue('late_termination')
+    await wrapper.find('[data-test="post20-load"]').trigger('click')
+    await flushPromises()
+
+    const month = wrapper.find('[data-test="post20-month-2026-07"]')
+    expect(month.text()).toContain('payroll.people.post20.actions.choose_variant')
+    const variants = wrapper.find('[data-test="post20-variants-2026-07"]')
+    expect(variants.text()).toContain('payroll.people.post20.variants.returned')
+    expect(variants.text()).toContain('payroll.people.post20.variants.not_returned')
+    expect(month.find('a').attributes('href')).toContain('"tab":"transport"')
+  })
 })
