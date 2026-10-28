@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useWindowTitle } from '@/composables/useWindowTitle'
-import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick, watch, useId, defineAsyncComponent } from 'vue'
+import { ref, reactive, computed, toRaw, onMounted, onBeforeUnmount, nextTick, watch, useId, defineAsyncComponent } from 'vue'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
 // RouterLink se používá i v Add Currency modalu — import už pokrývá
 import { useI18n } from 'vue-i18n'
@@ -1187,6 +1187,32 @@ function startVatAllocations(): void {
   }))
 }
 
+// Řádek, který se v rámci sazby dopočítává jako zbytek rekapitulace. Jen stav
+// obrazovky (neukládá se): bez volby je to první řádek sazby.
+const residualAllocations = new WeakSet<object>()
+const residualVersion = ref(0)
+
+function allocationsForRate(rate: number): PurchaseVatAllocation[] {
+  return vatAllocations.value.filter(a => Number(a.vat_rate) === Number(rate))
+}
+
+function residualFor(rate: number): PurchaseVatAllocation | undefined {
+  void residualVersion.value
+  const rows = allocationsForRate(rate)
+  return rows.find(a => residualAllocations.has(toRaw(a))) ?? rows[0]
+}
+
+function isResidualAllocation(allocation: PurchaseVatAllocation): boolean {
+  return residualFor(allocation.vat_rate) === allocation
+}
+
+function setResidualAllocation(allocation: PurchaseVatAllocation): void {
+  for (const row of allocationsForRate(allocation.vat_rate)) residualAllocations.delete(toRaw(row))
+  residualAllocations.add(toRaw(allocation))
+  residualVersion.value++
+  syncAllocationResidual(allocation.vat_rate)
+}
+
 function addVatAllocation(rate: number): void {
   vatAllocations.value.push({
     description: t('purchase_invoice.vat_allocation.personal'),
@@ -1197,10 +1223,24 @@ function addVatAllocation(rate: number): void {
     vat_classification_code: form.value.vat_classification_code,
     order_index: vatAllocations.value.length,
   })
+  // Osobní část je typicky „celek minus podnikatelská": dopočítává se ona
+  // a podnikatelské částky se zadávají.
+  const added = vatAllocations.value[vatAllocations.value.length - 1]
+  if (residualFor(rate)?.usage_type === 'business') setResidualAllocation(added)
 }
 
-function allocationsForRate(rate: number): PurchaseVatAllocation[] {
-  return vatAllocations.value.filter(a => Number(a.vat_rate) === Number(rate))
+// Další podnikatelská část téže sazby, třeba na jiný nákladový účet (512 vs. 518).
+function addBusinessAllocation(rate: number): void {
+  vatAllocations.value.push({
+    description: t('purchase_invoice.vat_allocation.business'),
+    usage_type: 'business', vat_rate: rate,
+    base_amount: 0, vat_amount: 0, total_amount: 0,
+    vat_deduction: 'full', vat_deduction_percent: 100,
+    tax_treatment: 'deductible', account_code: defaultAllocationAccount('business'),
+    vat_classification_code: form.value.vat_classification_code,
+    order_index: vatAllocations.value.length,
+  })
+  syncAllocationResidual(rate)
 }
 
 function applyAllocationPreset(allocation: PurchaseVatAllocation): void {
@@ -1222,7 +1262,7 @@ function applyAllocationPreset(allocation: PurchaseVatAllocation): void {
 function syncAllocationResidual(rate: number): void {
   const recap = recapRows.value.find(r => Number(r.rate) === Number(rate))
   const rows = allocationsForRate(rate)
-  const residual = rows.find(a => a.usage_type === 'business')
+  const residual = residualFor(rate)
   if (!recap || !residual) return
   const others = rows.filter(a => a !== residual)
   residual.base_amount = round2(recap.base - others.reduce((s, a) => s + Number(a.base_amount || 0), 0))
@@ -1247,9 +1287,11 @@ function setAllocationGross(allocation: PurchaseVatAllocation, raw: string): voi
 }
 
 function removeVatAllocation(allocation: PurchaseVatAllocation): void {
-  if (allocation.usage_type === 'business') return
   const rate = allocation.vat_rate
+  if (allocationsForRate(rate).length <= 1) return
+  residualAllocations.delete(toRaw(allocation))
   vatAllocations.value = vatAllocations.value.filter(a => a !== allocation)
+  residualVersion.value++
   syncAllocationResidual(rate)
 }
 
@@ -2585,10 +2627,16 @@ useWindowTitle(
             <section v-for="r in recapRows" :key="'alloc-' + r.rate" class="rounded-md border border-neutral-200 p-3">
               <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
                 <h3 class="text-sm font-medium text-neutral-700">{{ r.rate }} %</h3>
-                <button type="button" @click="addVatAllocation(r.rate)"
-                  class="cursor-pointer text-xs text-primary-700 hover:underline whitespace-nowrap">
-                  + {{ t('purchase_invoice.vat_allocation.add') }}
-                </button>
+                <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
+                  <button type="button" data-test="allocation-add-business" @click="addBusinessAllocation(r.rate)"
+                    class="cursor-pointer text-xs text-primary-700 hover:underline whitespace-nowrap">
+                    + {{ t('purchase_invoice.vat_allocation.add_business') }}
+                  </button>
+                  <button type="button" data-test="allocation-add" @click="addVatAllocation(r.rate)"
+                    class="cursor-pointer text-xs text-primary-700 hover:underline whitespace-nowrap">
+                    + {{ t('purchase_invoice.vat_allocation.add') }}
+                  </button>
+                </div>
               </div>
               <div class="space-y-2">
                 <div v-for="(a, ai) in allocationsForRate(r.rate)" :key="a.id ?? ai"
@@ -2599,7 +2647,7 @@ useWindowTitle(
                   </div>
                   <div class="sm:col-span-2">
                     <label class="block text-xs text-neutral-500 mb-1">{{ t('purchase_invoice.vat_allocation.usage') }}</label>
-                    <select v-model="a.usage_type" :disabled="ai === 0" @change="applyAllocationPreset(a); syncAllocationResidual(r.rate)"
+                    <select v-model="a.usage_type" @change="applyAllocationPreset(a); syncAllocationResidual(r.rate)"
                       class="w-full h-9 px-2 border border-neutral-300 rounded text-sm bg-surface disabled:bg-neutral-100">
                       <option value="business">{{ t('purchase_invoice.vat_allocation.usage_business') }}</option>
                       <option value="personal">{{ t('purchase_invoice.vat_allocation.usage_personal') }}</option>
@@ -2609,10 +2657,18 @@ useWindowTitle(
                   </div>
                   <div class="sm:col-span-2">
                     <label class="block text-xs text-neutral-500 mb-1">{{ t('purchase_invoice.vat_allocation.total') }}</label>
-                    <input :value="a.total_amount" :disabled="ai === 0"
-                      @change="setAllocationGross(a, ($event.target as HTMLInputElement).value)"
-                      type="text" inputmode="decimal"
-                      class="w-full h-9 px-2 border border-neutral-300 rounded text-sm text-right font-mono disabled:bg-neutral-100" />
+                    <div class="flex items-center gap-1">
+                      <input :value="a.total_amount" :disabled="isResidualAllocation(a)" data-test="allocation-total"
+                        @change="setAllocationGross(a, ($event.target as HTMLInputElement).value)"
+                        type="text" inputmode="decimal"
+                        class="w-full h-9 px-2 border border-neutral-300 rounded text-sm text-right font-mono disabled:bg-neutral-100" />
+                      <button v-if="!isResidualAllocation(a)" type="button" data-test="allocation-make-residual" @click="setResidualAllocation(a)"
+                        class="cursor-pointer h-9 px-1.5 text-xs text-neutral-500 hover:text-primary-700 whitespace-nowrap"
+                        :title="t('purchase_invoice.vat_allocation.make_residual')">=</button>
+                    </div>
+                    <p v-if="isResidualAllocation(a) && allocationsForRate(r.rate).length > 1" class="mt-0.5 text-[11px] text-neutral-500">
+                      {{ t('purchase_invoice.vat_allocation.residual') }}
+                    </p>
                   </div>
                   <div class="sm:col-span-2">
                     <label class="block text-xs text-neutral-500 mb-1">{{ t('purchase_invoice.vat_allocation.deduction') }}</label>
@@ -2632,7 +2688,7 @@ useWindowTitle(
                       class="w-full h-9 px-2 border border-neutral-300 rounded text-sm font-mono" />
                   </div>
                   <div class="sm:col-span-1 text-right">
-                    <button v-if="ai > 0" type="button" @click="removeVatAllocation(a)"
+                    <button v-if="allocationsForRate(r.rate).length > 1" type="button" @click="removeVatAllocation(a)"
                       class="cursor-pointer h-9 px-2 text-danger-600 hover:text-danger-700" :title="t('common.delete')">×</button>
                   </div>
                   <div class="sm:col-span-12 flex flex-wrap justify-end gap-x-4 gap-y-1 text-[11px] text-neutral-500 border-t border-neutral-200 pt-2">

@@ -20413,8 +20413,11 @@
     "vat_allocation": {
       "enable": "Rozdělit odpočet a zaúčtování",
       "disable": "Zrušit účetní alokace",
-      "hint": "Alokace nemění rekapitulaci dodavatele. Určují pouze rozsah odpočtu DPH a účet MD jednotlivých částí dokladu. První podnikatelský řádek se dopočítává jako zbytek.",
-      "add": "Přidat alokaci",
+      "hint": "Alokace nemění rekapitulaci dodavatele. Určují pouze rozsah odpočtu DPH a účet MD jednotlivých částí dokladu. Jeden řádek sazby se dopočítává jako zbytek: bez osobní části první podnikatelský, po přidání osobní části osobní. Podnikatelskou část můžete rozdělit na více řádků s různými účty, tlačítkem „=“ určíte, který řádek se dopočítá.",
+      "add": "Přidat osobní nebo jinou část",
+      "add_business": "Přidat podnikatelskou část",
+      "make_residual": "Dopočítat tento řádek jako zbytek sazby",
+      "residual": "Dopočítává se jako zbytek",
       "business": "Podnikatelská část",
       "personal": "Osobní spotřeba",
       "description": "Popis",
