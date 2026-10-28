@@ -1608,6 +1608,40 @@ final class JmhzScenario1ControlValidatorTest extends TestCase
     }
 
     /**
+     * Kontrola 82 (katalog 1.4.2.11): při jakékoli specifické právní
+     * skutečnosti (10408) musí mít výplatní termín (10410) každá součást.
+     * Aplikace IN13 nevykazuje; kontrola je pojistka pro budoucí implementaci.
+     */
+    public function testPayoutDateRequiredForAnySpecificLegalFact(): void
+    {
+        $xml = static function (?string $fact, bool $payoutDate): string {
+            $document = JmhzXmlSample::minimal();
+            if ($fact !== null) {
+                $document = str_replace(
+                    '</so:souhrn>',
+                    "<so:specifickaSkutecnost><so:typ>{$fact}</so:typ><so:datum>2026-07-20</so:datum></so:specifickaSkutecnost></so:souhrn>",
+                    $document,
+                );
+            }
+            if ($payoutDate) {
+                $document = str_replace(
+                    '</form:dan>',
+                    '</form:dan><form:specifickaSkutecnost><form:vyplatniTermin>2026-07-15</form:vyplatniTermin></form:specifickaSkutecnost>',
+                    $document,
+                );
+            }
+
+            return $document;
+        };
+
+        self::assertSame(JmhzControlOutcome::NotApplicable, $this->finding($this->validate($xml(null, false)), 82)->outcome);
+        self::assertSame(JmhzControlOutcome::Passed, $this->finding($this->validate($xml('1', true)), 82)->outcome);
+        $missing = $this->finding($this->validate($xml('1', false)), 82);
+        self::assertSame(JmhzControlOutcome::Failed, $missing->outcome);
+        self::assertSame('Výplatní termín musí být uveden.', $missing->message);
+    }
+
+    /**
      * Kontrola 369 (katalog 1.4.2.11): sekce s kódem ELDP musí mít platnost
      * od i do. Chybějící konec platnosti podání zablokuje.
      */

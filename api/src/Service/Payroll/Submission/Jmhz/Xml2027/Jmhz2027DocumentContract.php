@@ -100,6 +100,9 @@ final class Jmhz2027DocumentContract
     /** Kategorizace rizika, u které se vykazuje počet směn 10580 (IN42). */
     public const RISK_SHIFT_CODE = '1';
 
+    /** Specifická právní skutečnost 10408 „účinnost rozhodnutí o úpadku" (CIS Rozhodná skutečnost). */
+    public const INSOLVENCY_LEGAL_FACT_CODE = '8';
+
     /** Kód obce „Mimo ČR" (CISOB, interakce IN41): adresa se nevyplňuje. */
     public const MUNICIPALITY_ABROAD = '111111';
 
@@ -239,6 +242,18 @@ final class Jmhz2027DocumentContract
     public static function riskShiftCountRequired(string $categorizationCode, int $workedMillihours): bool
     {
         return $categorizationCode === self::RISK_SHIFT_CODE && $workedMillihours > 0;
+    }
+
+    /**
+     * Nese podání výplatní termín 10410 na každém formuláři (IN38, kontrola 82
+     * katalogu 1.5.0.4)? Jen při specifické právní skutečnosti 10408 = 8
+     * „účinnost rozhodnutí o úpadku (§ 244 odst. 1 daňového řádu)"; u jiného
+     * kódu a bez skutečnosti 10410 být nesmí. Ve verzi 2026 (katalog
+     * 1.4.2.11) se 10410 žádá při jakékoli skutečnosti.
+     */
+    public static function payoutDateRequired(?string $specificLegalFactCode): bool
+    {
+        return $specificLegalFactCode === self::INSOLVENCY_LEGAL_FACT_CODE;
     }
 
     /** @param array<string,array<int,true>> $missing atribut => vztahy */

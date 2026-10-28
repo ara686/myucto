@@ -442,6 +442,42 @@ final class JmhzScenario1Control2027Test extends TestCase
         self::assertArrayNotHasKey(388, $this->evaluator(JmhzSpecVersion::V2027)->documentedDeviations());
     }
 
+    /**
+     * Kontrola 82 (katalog 1.5.0.4): výplatní termín 10410 na každém
+     * formuláři právě při 10408 = 8 (úpadek), u jiného kódu ani bez
+     * skutečnosti nesmí být. Aplikace IN13 nevykazuje; kontrola je pojistka.
+     */
+    public function testPayoutDateOnlyForInsolvencyLegalFact(): void
+    {
+        $xml = static function (?string $fact, bool $payoutDate): string {
+            $souhrn = Sample::souhrn(0);
+            if ($fact !== null) {
+                $souhrn = str_replace(
+                    '</so:kolektivniSmlouvy></so:souhrn>',
+                    "</so:kolektivniSmlouvy><so:specifickaSkutecnost><so:typ>{$fact}</so:typ>"
+                        . '<so:datum>2027-04-20</so:datum></so:specifickaSkutecnost></so:souhrn>',
+                    $souhrn,
+                );
+            }
+            $dan = $payoutDate
+                ? '<form:specifickaSkutecnost><form:vyplatniTermin>2027-04-15</form:vyplatniTermin></form:specifickaSkutecnost>'
+                : '';
+
+            return Sample::document(Sample::form(Sample::bezPriznaku(['dan' => $dan])), souhrn: $souhrn);
+        };
+
+        self::assertSame(JmhzControlOutcome::NotApplicable, $this->finding($this->validate($xml(null, false)), 82)->outcome);
+        self::assertSame(JmhzControlOutcome::Passed, $this->finding($this->validate($xml('8', true)), 82)->outcome);
+
+        $missing = $this->finding($this->validate($xml('8', false)), 82);
+        self::assertSame(JmhzControlOutcome::Failed, $missing->outcome);
+        self::assertSame(JmhzControlPassability::Blocking, $missing->passability);
+
+        self::assertSame(JmhzControlOutcome::Failed, $this->finding($this->validate($xml('1', true)), 82)->outcome);
+        self::assertSame(JmhzControlOutcome::Passed, $this->finding($this->validate($xml('1', false)), 82)->outcome);
+        self::assertSame(JmhzControlOutcome::Failed, $this->finding($this->validate($xml(null, true)), 82)->outcome);
+    }
+
     private function validate(string $xml, bool $schemaValid = true): JmhzControlEvaluationReport
     {
         if ($schemaValid) {

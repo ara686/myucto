@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MyInvoice\Service\Payroll\Submission\Jmhz;
 
 use MyInvoice\Service\Payroll\CzechBirthNumber;
+use MyInvoice\Service\Payroll\Submission\Jmhz\Xml2027\Jmhz2027DocumentContract;
 use MyInvoice\Service\Payroll\Submission\Registration\PayrollRegistrationIdentityService;
 
 /**
@@ -299,7 +300,7 @@ final class JmhzScenario1ControlEvaluator
     {
         return [
             1, 3, 4, 7, 8, 9, 10, 11, 12, 13, 20, 23, 29, 31, 36, 37, 43, 44, 45, 50, 56, 57, 58,
-            59, 60, 61, 62, 72, 74, 78, 79, 81, 84, 87, 88, 90, 93, 94, 95, 96, 97, 98, 99, 100,
+            59, 60, 61, 62, 72, 74, 78, 79, 81, 82, 84, 87, 88, 90, 93, 94, 95, 96, 97, 98, 99, 100,
             103, 109, 110, 112, 113, 114, 118, 121, 124, 126, 127, 128, 129, 131, 132, 134, 135, 137, 138, 142, 144, 145, 152,
             150, 151, 153, 154, 155, 156, 157, 158, 159, 162, 165, 167, 168, 170, 188, 194,
             204, 207, 208, 209, 213, 214, 215,
@@ -460,6 +461,7 @@ final class JmhzScenario1ControlEvaluator
 
         return match ($controlId) {
             1 => $this->employerDiscountHeadcount($projection),
+            82 => $this->payoutDateForSpecificLegalFact($projection),
             3 => $this->employerDiscountAmount($projection),
             4 => $this->insurancePayable($projection),
             45 => $this->shorterWorkingTimeWithinLimit($projection),
@@ -1787,6 +1789,57 @@ final class JmhzScenario1ControlEvaluator
 
             return null;
         });
+    }
+
+    /**
+     * Kontrola 82 — výplatní termín (10410) při specifické právní skutečnosti
+     * (10408).
+     *
+     * Katalog 1.4.2.11: je-li uvedena jakákoli skutečnost 10408, musí mít
+     * výplatní termín každá součást podání. Katalog 1.5.0.4 (od 1/2027): jen
+     * při 10408 = 8 (úpadek), jinak 10410 nesmí nabývat hodnot. Aplikace
+     * specifickou právní skutečnost (IN13) dnes nevykazuje, takže kontrola
+     * vychází „nepoužitelná"; je to pojistka pro budoucí implementaci IN13.
+     *
+     * @return list<JmhzControlVerdict>
+     */
+    private function payoutDateForSpecificLegalFact(JmhzAttributeProjection $projection): array
+    {
+        $fact = $projection->summary()->value('10408');
+        $required = $this->version === JmhzSpecVersion::V2027
+            ? Jmhz2027DocumentContract::payoutDateRequired($fact)
+            : $fact !== null;
+        $forbidden = $this->version === JmhzSpecVersion::V2027 && !$required;
+        $verdicts = [];
+        $evaluated = $fact !== null;
+        foreach ($projection->forms() as $form) {
+            $has = $form->has('10410');
+            $evaluated = $evaluated || $has;
+            if ($required && !$has) {
+                $verdicts[] = JmhzControlVerdict::failed(
+                    JmhzAttributeProjection::PART_FORM,
+                    $form->ordinal,
+                    'Výplatní termín musí být uveden.',
+                );
+            } elseif ($forbidden && $has) {
+                $verdicts[] = JmhzControlVerdict::failed(
+                    JmhzAttributeProjection::PART_FORM,
+                    $form->ordinal,
+                    'Výplatní termín se uvádí jen při specifické právní skutečnosti'
+                        . ' „účinnost rozhodnutí o úpadku" (10408 = 8).',
+                );
+            }
+        }
+        if (!$evaluated) {
+            return [JmhzControlVerdict::notApplicable(
+                JmhzAttributeProjection::PART_FORM,
+                'Podání neuvádí specifickou právní skutečnost ani výplatní termín.',
+            )];
+        }
+
+        return $verdicts === []
+            ? [JmhzControlVerdict::passed(JmhzAttributeProjection::PART_FORM)]
+            : $verdicts;
     }
 
     /** @return list<JmhzControlVerdict> */
