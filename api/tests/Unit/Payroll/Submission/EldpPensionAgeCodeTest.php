@@ -27,6 +27,28 @@ final class EldpPensionAgeCodeTest extends TestCase
         self::assertSame(EldpPensionAgeCode::PENSION_AGE, EldpPensionAgeCode::placement('2025-01-01', '2026-07-01', '2026-07-31'));
     }
 
+    /**
+     * Odečtené doby jen po dovršení věku bez pobírání starobního důchodu;
+     * předčasný důchod kód D zakládá, odečtené doby ne.
+     */
+    public function testDeductedPeriodsOnlyAfterPensionAgeWithoutPension(): void
+    {
+        $pension = static fn (?string $age, ?string $early = null, ?string $full = null): array => [
+            'pension_age_reached_on' => $age,
+            'early_pension_from' => $early,
+            'full_pension_paid_from' => $full,
+        ];
+
+        self::assertTrue(EldpPensionAgeCode::deductsPeriods($pension('2025-04-01'), '2025-05-01', '2025-05-31'));
+        self::assertTrue(EldpPensionAgeCode::deductsPeriods($pension('2025-05-01'), '2025-05-01', '2025-05-31'));
+        self::assertFalse(EldpPensionAgeCode::deductsPeriods($pension('2025-05-02'), '2025-05-01', '2025-05-31'));
+        self::assertFalse(EldpPensionAgeCode::deductsPeriods($pension(null, '2024-09-01'), '2025-05-01', '2025-05-31'));
+        self::assertFalse(EldpPensionAgeCode::deductsPeriods($pension('2025-04-01', '2023-01-01'), '2025-05-01', '2025-05-31'));
+        self::assertTrue(EldpPensionAgeCode::deductsPeriods($pension('2025-04-01', '2025-06-01'), '2025-05-01', '2025-05-31'));
+        self::assertFalse(EldpPensionAgeCode::deductsPeriods($pension('2025-04-01', null, '2025-05'), '2025-05-01', '2025-05-31'));
+        self::assertTrue(EldpPensionAgeCode::deductsPeriods($pension('2025-04-01', null, '2025-06'), '2025-05-01', '2025-05-31'));
+    }
+
     public function testSecondPositionBecomesD(): void
     {
         self::assertSame('1D+', EldpPensionAgeCode::withPensionAge('1++'));

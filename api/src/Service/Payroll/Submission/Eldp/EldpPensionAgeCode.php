@@ -63,6 +63,36 @@ final class EldpPensionAgeCode
     }
 
     /**
+     * Vedou se v intervalu odečtené doby (údaj 40 ELDP, JMHZ 10375 a rozpad
+     * 10462 až 10469)?
+     *
+     * Jen u pojištěnce, který důchodový věk dovršil nejpozději prvním dnem
+     * intervalu a v intervalu starobní důchod nepobírá: § 38 odst. 4 písm. h)
+     * zákona č. 582/1991 Sb. (doby „ode dne dosažení věku" pro zvýšení
+     * procentní výměry), Všeobecné zásady ELDP k údaji „Doby odečt."
+     * a datový slovník JMHZ 1.4.1.6 k 10375. Předčasný starobní důchod je
+     * starobní důchod: kód D zakládá, odečtené doby ne. Platí pro roční list
+     * i měsíční hlášení, aby se osoba v obou výstupech nerozešla.
+     *
+     * @param array{
+     *   pension_age_reached_on?:?string,early_pension_from?:?string,
+     *   full_pension_paid_from?:?string
+     * } $pension data RRRR-MM-DD, `full_pension_paid_from` měsíc RRRR-MM
+     */
+    public static function deductsPeriods(array $pension, string $intervalFrom, string $intervalTo): bool
+    {
+        $reachedOn = $pension['pension_age_reached_on'] ?? null;
+        if ($reachedOn === null || $reachedOn > $intervalFrom) {
+            return false;
+        }
+        $earlyFrom = $pension['early_pension_from'] ?? null;
+        $fullPaidFrom = $pension['full_pension_paid_from'] ?? null;
+
+        return ($earlyFrom === null || $earlyFrom > $intervalTo)
+            && ($fullPaidFrom === null || $fullPaidFrom > substr($intervalTo, 0, 7));
+    }
+
+    /**
      * Kód ELDP s druhým znakem „D" ("1++" => "1D+"). Druh činnosti na začátku
      * a třetí znak na konci zůstávají; druhý znak je vždy předposlední.
      */

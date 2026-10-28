@@ -153,6 +153,108 @@ final class EldpNormCoverageTest extends TestCase
     }
 
     /**
+     * Poživatel předčasného starobního důchodu má kód D (číselník kódů ELDP),
+     * ale odečtené doby ne: § 38 odst. 4 písm. h) zákona č. 582/1991 Sb.
+     * mluví o dobách „ode dne dosažení věku" pro zvýšení procentní výměry
+     * a Všeobecné zásady ELDP („Doby odečt.") je vedou jen u pojištěnce,
+     * který po dovršení důchodového věku plný starobní důchod nepobírá.
+     * Neplacené volno se mu proto neodečítá a dny zůstávají celým intervalem,
+     * stejně jako u měsíčního hlášení (atribut 10375).
+     */
+    public function testEarlyPensionerCodeDSectionHasNoDeductedDays(): void
+    {
+        $revisions = $this->months(2025, 1, 12);
+        $revisions[4] = $this->revision(2025, 5, absences: [
+            $this->absence(9030, 'unpaid_leave', '2025-05-12', '2025-05-16'),
+        ]);
+
+        $statement = $this->build(
+            $revisions,
+            confirmation: $this->confirmation(['early_pension_from' => '2024-09-01']),
+        );
+
+        $sections = $statement->sections();
+        self::assertSame(['1D+'], array_column($sections, 'code'));
+        self::assertSame(0, $sections[0]['deducted_days_total']);
+        self::assertSame(365, $sections[0]['insurance_days']);
+        $xml = (new EldpXmlSerializer())->serialize($statement);
+        self::assertStringNotContainsString('<odecitaneDobyCelkem>5</odecitaneDobyCelkem>', $xml);
+        (new EldpXmlValidator())->validate($statement, $xml);
+    }
+
+    /**
+     * Předčasný důchodce, který mezitím dovršil důchodový věk, důchod dál
+     * pobírá: odečtené doby se nevedou ani po dovršení věku.
+     */
+    public function testPensionAgeReachedWhileOnEarlyPensionHasNoDeductedDays(): void
+    {
+        $revisions = $this->months(2025, 1, 12);
+        $revisions[5] = $this->revision(2025, 6, absences: [
+            $this->absence(9031, 'unexcused', '2025-06-20', '2025-06-20'),
+        ]);
+
+        $sections = $this->build(
+            $revisions,
+            confirmation: $this->confirmation([
+                'pension_age_reached_on' => '2025-04-01',
+                'early_pension_from' => '2023-01-01',
+            ]),
+        )->sections();
+
+        self::assertSame(['1D+'], array_column($sections, 'code'));
+        self::assertSame(0, $sections[0]['deducted_days_total']);
+        self::assertSame(365, $sections[0]['insurance_days']);
+    }
+
+    /**
+     * Vyloučená doba předčasného důchodce v sekci s kódem D: odečtené doby
+     * se mu nevedou, logický test ELDP12 č. 39 přitom u kódu D chce vyloučené
+     * doby nejvýš rovné odečteným. List se proto zastaví, místo aby nemoc
+     * nepravdivě vykázal jako odečtenou dobu a o ni zkrátil dny pojištění.
+     */
+    public function testEarlyPensionerSicknessInCodeDSectionBlocks(): void
+    {
+        $revisions = $this->months(2025, 1, 12);
+        $revisions[5] = $this->revision(2025, 6, absences: [
+            $this->absence(9032, 'dpn', '2025-06-02', '2025-06-11'),
+        ]);
+
+        $this->expectException(EldpValidationException::class);
+        $this->expectExceptionMessage('logický test ELDP12 č. 39');
+        $this->build(
+            $revisions,
+            confirmation: $this->confirmation(['early_pension_from' => '2024-09-01']),
+        );
+    }
+
+    /**
+     * Měsíc „X" (§ 11 odst. 2, celé neplacené volno bez příjmu) v sekci D
+     * předčasného důchodce: logický test ELDP12 k údaji Odečtené doby chce
+     * u kódu D odečtené doby aspoň za dny měsíců „X", ty se mu ale nevedou.
+     */
+    public function testEarlyPensionerMonthWithoutInsuranceInCodeDSectionBlocks(): void
+    {
+        $revisions = $this->months(2025, 1, 12);
+        $revisions[5] = $this->revision(2025, 6, baseMinor: 0, absences: [
+            $this->absence(9033, 'unpaid_leave', '2025-06-01', '2025-06-30'),
+        ]);
+
+        try {
+            $this->build(
+                $revisions,
+                confirmation: $this->confirmation(['early_pension_from' => '2024-09-01']),
+            );
+            self::fail('Měsíc X v sekci D předčasného důchodce nesmí odejít bez odečtených dob.');
+        } catch (EldpValidationException $exception) {
+            self::assertSame(
+                ['eldp_code_d_month_without_insurance_unsupported'],
+                array_column($exception->blockers, 'code'),
+            );
+            self::assertSame('2025-06-01', $exception->blockers[0]['detail']['period_start']);
+        }
+    }
+
+    /**
      * Výjimka z testu 61: je-li celé období po dovršení věku dobou odečtenou,
      * uvede se základ úhrnem v řádku do dovršení věku.
      */
