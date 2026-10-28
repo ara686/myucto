@@ -447,7 +447,14 @@ final class PayrollRunSnapshotBuilder
                 }
             }
             $absences = $this->absences($absenceRows[$employmentId] ?? []);
-            if ($inputs === []) {
+            // Odložený příjem bez zúčtovaného příjmu (roční zúčtování po
+            // skončení, typ 4) vstup mít nemá; výzva k nule by tu jen mátla.
+            $deferredWithoutIncome = $deferredIncome !== null && in_array(
+                $deferredIncome['deferred_type'],
+                \MyInvoice\Repository\Payroll\PayrollDeferredIncomeRepository::TYPES_WITHOUT_INCOME,
+                true,
+            );
+            if ($inputs === [] && !$deferredWithoutIncome) {
                 // Vztah bez složky je většinou chyba zadání (zapomenutá mzda).
                 // Výjimku (override) tu NEnabízíme: když měsíc bez vstupu
                 // nevysvětluje schválená nepřítomnost, zastaví vztah zákonný
@@ -1433,6 +1440,19 @@ final class PayrollRunSnapshotBuilder
                            AND post_termination_input.period_start = ?
                            AND post_termination_input.status <> "cancelled"
                     )
+                    OR EXISTS (
+                        SELECT 1
+                          FROM payroll_employment_deferred_incomes deferred_without_income
+                         WHERE deferred_without_income.supplier_id =
+                               employment.supplier_id
+                           AND deferred_without_income.employment_id =
+                               employment.id
+                           AND deferred_without_income.period_start = ?
+                           AND deferred_without_income.deferred_type IN (' . implode(', ', array_map(
+                               static fn (string $type): string => '"' . $type . '"',
+                               \MyInvoice\Repository\Payroll\PayrollDeferredIncomeRepository::TYPES_WITHOUT_INCOME,
+                           )) . ')
+                    )
                 )
                 AND ' . $officeSql . '
               ORDER BY employment.employee_id, employment.id'
@@ -1454,6 +1474,7 @@ final class PayrollRunSnapshotBuilder
             $periodStart,
             $periodStart,
             $periodEnd,
+            $periodStart,
             $periodStart,
             $periodStart,
             ...($officeId === null ? [] : [$officeId]),

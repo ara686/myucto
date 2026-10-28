@@ -1131,6 +1131,137 @@ final class JmhzEldpEvidenceBuilderTest extends TestCase
     }
 
     /**
+     * Roční zúčtování po skončení (odložený příjem typu 4). Pravidla podání
+     * JMHZ 1.4.5, kap. 6 bod 3 c): 10356 = 0, kód ELDP se neuvádí; období
+     * 10537/10538 je měsíc hlášení (vzorové hlášení MPSV
+     * `TEST_odložený příjem_1.1.2026.xlsx`, list SLOVNÍK, sloupec P). Typ 4
+     * se váže i na DPP: ELDP se nemění, takže výjimka kódu P se ho netýká.
+     */
+    public function testAnnualSettlementAfterTerminationHasCodelessZeroDaySection(): void
+    {
+        foreach (['employment', 'dpp'] as $relationType) {
+            $source = $this->deferredAnnualSource($relationType, 0);
+            $builder = new JmhzEldpEvidenceBuilder();
+            $confirmation = $builder->deriveOrdinaryConfirmation(7, 101, $source);
+            self::assertNull($confirmation['code']);
+            self::assertSame(0, $confirmation['insurance_days']);
+            self::assertNull($confirmation['assessment_base_czk']);
+
+            $payload = $builder->build(7, 101, $source, $confirmation)->payload;
+
+            self::assertSame('scenario_8', $payload['scope']['scenario_key']);
+            self::assertSame(['type' => '4', 'periods' => [['month' => 2, 'year' => 2026]]], $payload['deferred_income']);
+            self::assertCount(1, $payload['eldp_sections']);
+            self::assertNull($payload['eldp_sections'][0]['code']);
+            self::assertNull($payload['eldp_sections'][0]['valid_from']);
+            self::assertNull($payload['eldp_sections'][0]['assessment_base_czk']);
+            self::assertSame(0, $payload['eldp_sections'][0]['insurance_days']);
+        }
+    }
+
+    /**
+     * Typ 4 se hlásí bez zúčtovaného příjmu („zároveň se tímto podáním
+     * nehlásí zúčtovaný příjem", Pravidla podání JMHZ 1.4.5, kap. 6 bod 3).
+     * Příjem v témže měsíci patří do typu 5; řez ho nesmí tiše zahodit.
+     */
+    public function testAnnualSettlementAfterTerminationRefusesIncome(): void
+    {
+        $source = $this->deferredAnnualSource('employment', 1_500_000);
+        $builder = new JmhzEldpEvidenceBuilder();
+
+        try {
+            $builder->build(7, 101, $source, $builder->deriveOrdinaryConfirmation(7, 101, $source));
+            self::fail('Roční zúčtování po skončení s příjmem se vykázat nesmí.');
+        } catch (JmhzEldpEvidenceException $exception) {
+            self::assertSame('jmhz_deferred_annual_settlement_income_present', $exception->validationCode);
+        }
+    }
+
+    /**
+     * Typ 5 = typ 1 + typ 4 (číselník 10548): ELDP nese příjem po skončení
+     * jako typ 1 (kód s „P", 0 dnů, vyměřovací základ, kap. 6 bod 1 c),
+     * roční zúčtování se do ELDP nepromítá. Výjimka ZMR a DPP (kontrola 133
+     * část 3) platí stejně jako u typu 1.
+     */
+    public function testIncomeWithAnnualSettlementAfterTerminationKeepsTypeOneSection(): void
+    {
+        $source = $this->deferredAnnualSource('employment', 1_500_000, '5');
+        $builder = new JmhzEldpEvidenceBuilder();
+        $payload = $builder->build(7, 101, $source, $builder->deriveOrdinaryConfirmation(7, 101, $source))->payload;
+
+        self::assertSame(['type' => '5', 'periods' => [['month' => 2, 'year' => 2026]]], $payload['deferred_income']);
+        self::assertSame('1P+', $payload['eldp_sections'][0]['code']);
+        self::assertSame(0, $payload['eldp_sections'][0]['insurance_days']);
+        self::assertSame(15_000, $payload['eldp_sections'][0]['assessment_base_czk']);
+
+        $smallScale = $this->deferredAnnualSource('small_scale_employment', 1_500_000, '5');
+        try {
+            $builder->deriveOrdinaryConfirmation(7, 101, $smallScale);
+            self::fail('Typ 5 u ZMR s kódem P nesmí vzniknout.');
+        } catch (JmhzEldpEvidenceException $exception) {
+            self::assertSame('jmhz_eldp_deferred_small_scale_unsupported', $exception->validationCode);
+        }
+    }
+
+    /**
+     * Potvrzení náhrady mzdy při neplatném skončení (typy 2, 3 a 6), které
+     * vzniklo mimo kartu vztahu (import, starší data), řez ELDP nesestaví:
+     * ELDP po měsících s náhradou aplikace doložitelně nezná.
+     */
+    public function testInvalidTerminationCompensationTypesAreRefused(): void
+    {
+        foreach (['2', '3', '6'] as $type) {
+            $source = $this->deferredAnnualSource('employment', 1_500_000, $type);
+            $builder = new JmhzEldpEvidenceBuilder();
+            try {
+                $builder->build(7, 101, $source, $builder->deriveOrdinaryConfirmation(7, 101, $source));
+                self::fail("Typ {$type} se sestavit nesmí.");
+            } catch (JmhzEldpEvidenceException $exception) {
+                self::assertSame('jmhz_deferred_income_type_unsupported', $exception->validationCode, "typ {$type}");
+            }
+        }
+    }
+
+    /**
+     * Skončený vztah s potvrzeným ročním zúčtováním po skončení za únor 2026.
+     *
+     * @return array<string,mixed>
+     */
+    private function deferredAnnualSource(string $relationType, int $baseMinor, string $type = '4'): array
+    {
+        $source = $this->source();
+        $input = json_decode($source['revision']['input_snapshot_json'], true, flags: JSON_THROW_ON_ERROR);
+        self::assertIsArray($input);
+        $input['period_start'] = '2026-02-01';
+        $entry = &$input['people'][0]['employments'][0];
+        $entry['employment']['relation_type'] = $relationType;
+        $entry['employment']['start_date'] = '2025-03-01';
+        $entry['employment']['actual_start_date'] = '2025-03-01';
+        $entry['employment']['end_date'] = '2025-09-30';
+        $entry['term']['activity_code'] = $relationType === 'dpp' ? 'T' : '1';
+        $entry['term']['jmhz_relationship_detail_code'] = $relationType === 'dpp' ? null : '1';
+        $entry['time_month'] = null;
+        $entry['deferred_income'] = ['deferred_type' => $type];
+        unset($entry);
+        $source['revision']['period_start'] = '2026-02-01';
+        $source = $this->withInput($source, $input);
+        $result = json_decode($source['revision']['result_snapshot_json'], true, flags: JSON_THROW_ON_ERROR);
+        self::assertIsArray($result);
+        $relationship = &$result['people'][0]['statutory']['social_insurance']['relationships'][0];
+        $relationship['kind'] = $relationType === 'small_scale_employment' ? 'employment' : $relationType;
+        $relationship['participation']['status'] = $baseMinor > 0 ? 'participates' : 'does_not_participate';
+        $relationship['participation']['participation_income_minor_units'] = $baseMinor;
+        $relationship['participation']['group_income_minor_units'] = $baseMinor;
+        $relationship['assessment_base_minor_units'] = $baseMinor;
+        $relationship['capped_assessment_base_minor_units'] = $baseMinor;
+        unset($relationship);
+        $source['revision']['result_snapshot_json'] = CanonicalJson::encode($result);
+        $source['revision']['result_snapshot_hash'] = hash('sha256', $source['revision']['result_snapshot_json']);
+
+        return $source;
+    }
+
+    /**
      * Náhradní volno za přesčas: hodiny jdou jen do úhrnu 10275 (mzda za ně
      * nepřísluší, § 114 odst. 1 ZP), vyloučenou dobou ELDP není, ale celé dny
      * jsou vyloučenými dny § 18 odst. 7 písm. a). Umí to až souhrn v5.

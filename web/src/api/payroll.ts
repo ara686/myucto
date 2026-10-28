@@ -4425,6 +4425,7 @@ export type PayrollJmhzRemediationKind =
   | 'employer_annual'
   | 'office'
   | 'annual_settlement'
+  | 'deferred_income'
   | 'takeover'
   | 'workplace'
   | 'correction'

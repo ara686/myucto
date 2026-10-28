@@ -1292,10 +1292,28 @@ měsíc je smí poskytnout jen jeden plátce a poplatník je mohl uplatnit u nov
 zaměstnavatele. Nárok si uplatní v ročním zúčtování nebo v přiznání. Bez
 potvrzení běh příjem po skončení odmítne a pošle vás sem.
 
-Ostatní druhy odloženého příjmu (např. doplatek za dřívější měsíce trvajícího
-vztahu) a odložený příjem z dohod podejte opravným hlášením na ePortálu ČSSZ.
+Roční zúčtování po skončení vztahu (roční úhrny za leden, výsledek ročního
+zúčtování za leden až březen) potvrďte jako druh *Roční zúčtování po skončení
+zaměstnání (4)* za měsíc, ve kterém se hlásí. Jde jen o leden, únor nebo březen
+a v měsíci se nezúčtovává žádný příjem. Mzdový běh si skončený vztah vezme
+i bez mzdových vstupů a JMHZ ho vykáže formulářem Odložený příjem typu 4
+s nulovým příjmem, 0 dny pojištění a evidenčním listem bez kódu; údaje
+ročního zúčtování převezme z agendy Roční zúčtování. Vyplácíte-li v témže
+měsíci i doplatek, typ 4 nestačí a hlášení vztah zastaví: potvrďte druh
+*Příjem po skončení s ročním zúčtováním (5)*. Hlášení pak nese evidenční list
+jako u příjmu po skončení (0 dnů, kód s „P" na druhé pozici, vyměřovací
+základ doplatku), pojistné za měsíc zúčtování a k tomu údaje ročního
+zúčtování; pravidla pro dohody a zaměstnání malého rozsahu jsou stejná jako
+u druhu 1. U dohody
+o provedení práce nebo o pracovní činnosti aplikace typ 4 nepotvrdí: měsíc
+bez příjmu po skončení dohody zdravotní pojištění nespočítá, hlášení za ni
+podejte ručně přes ePortál ČSSZ.
+
+Ostatní druhy odloženého příjmu (náhradu mzdy při neplatném skončení,
+doplatek za dřívější měsíce trvajícího vztahu) a odložený příjem z dohod
+podejte opravným hlášením na ePortálu ČSSZ.
 U vztahu, jehož účast stojí na výši příjmu (dohoda, zaměstnání malého rozsahu,
-člen orgánu), běh odložený příjem nepřijme ani po potvrzení: s příjmem
+člen orgánu), běh příjem po skončení (druh 1) nepřijme ani po potvrzení: s příjmem
 posledního měsíce může zpětně založit účast a opravu hlášení kvůli
 nemocenskému pojištění je třeba zaslat vždy. Kontrola běhu proto řekne, že
 hlášení i opravu podáte ručně přes ePortál ČSSZ.

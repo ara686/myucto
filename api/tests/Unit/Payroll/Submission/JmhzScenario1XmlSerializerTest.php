@@ -3459,6 +3459,71 @@ final class JmhzScenario1XmlSerializerTest extends TestCase
         );
     }
 
+    /**
+     * Roční zúčtování po skončení (odložený příjem typu 4) podle vzorového
+     * hlášení MPSV `TEST_odložený příjem_1.1.2026.xlsx`, list SLOVNÍK,
+     * sloupec P: únor 2026, 10319 a 10320 ANO, přeplatek 7 710 Kč, 10356 = 0,
+     * kód ELDP se neuvádí, 10476 = 0 (Pravidla podání JMHZ 1.4.5, kap. 6
+     * bod 3 c). Dokument projde XSD.
+     */
+    public function testDeferredAnnualSettlementAfterTerminationCarriesSettlementResult(): void
+    {
+        $document = $this->summaryMatrixDocument('odlozenyPrijem', 2);
+        $employment = &$document['people'][0]['employments'][0];
+        $employment['eldp']['deferred_income'] = [
+            'type' => '4',
+            'periods' => [['month' => 2, 'year' => 2026]],
+        ];
+        $employment['eldp']['eldp_sections'] = [[
+            'ordinal' => 1,
+            'code' => null,
+            'valid_from' => null,
+            'valid_to' => null,
+            'insurance_days' => 0,
+            'assessment_base_czk' => null,
+            'excluded_days' => null,
+            'excluded_days_total' => null,
+            'section18_days' => null,
+            'section18_days_total' => null,
+            'deducted_days_total' => null,
+        ]];
+        $employment['social_base']['assessment_base_czk'] = 0;
+        $employment['social_base']['reported_income_czk'] = 0;
+        unset($employment);
+        $document['people'][0]['summary']['annual'] = [
+            'requested' => true,
+            'performed' => true,
+            'result' => [
+                'settlement_difference_czk' => 7_710,
+                'tax_difference_czk' => 7_710,
+                'bonus_difference_czk' => 0,
+                'spouse_credit_claimed' => false,
+                'child_credit_claimed' => false,
+            ],
+            'withholding' => null,
+        ];
+
+        $xpath = $this->summaryMatrixXpath($document);
+        $value = static fn (string $path): array => array_map(
+            static fn (\DOMNode $node): string => $node->textContent,
+            iterator_to_array($xpath->query(self::formQuery('odlozenyPrijem', $path))),
+        );
+
+        self::assertSame(['4'], $value('typ'));
+        self::assertSame(['2'], $value('pojisteni/eldpObdobi/obdobi/mesic'));
+        self::assertSame(['2026'], $value('pojisteni/eldpObdobi/obdobi/rok'));
+        self::assertSame(['0'], $value('pojisteni/eldpObdobi/obdobi/eldpSeznam/eldp/pocetDnu'));
+        self::assertSame([], $value('pojisteni/eldpObdobi/obdobi/eldpSeznam/eldp/kod'));
+        self::assertSame([], $value('pojisteni/eldpObdobi/obdobi/eldpSeznam/eldp/vymerovaciZaklad'));
+        self::assertSame(['0'], $value('pojisteni/vymerovaciZaklad/prijemNepojistenaCinnost'));
+        self::assertSame(['0'], $value('pojisteni/vymerovaciZaklad/castkaOdvodPojistneho'));
+        self::assertSame(['true'], $value('souhrnDataZec/rocniUhrny/rocniZuctovaniZadost'));
+        self::assertSame(['true'], $value('souhrnDataZec/rocniUhrny/rocniZuctovaniProvedeno'));
+        self::assertSame(['7710'], $value('souhrnDataZec/rocniUhrny/vysledekRocnihoZuctovani/preplatekRok'));
+        self::assertSame(['7710'], $value('souhrnDataZec/rocniUhrny/vysledekRocnihoZuctovani/danPreplatekRok'));
+        self::assertSame(['0'], $value('souhrnDataZec/rocniUhrny/vysledekRocnihoZuctovani/danBonusPreplatekRok'));
+    }
+
     /** @param array<string,mixed> $document */
     private function summaryMatrixXpath(array $document): \DOMXPath
     {
