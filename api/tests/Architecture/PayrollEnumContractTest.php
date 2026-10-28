@@ -422,6 +422,9 @@ final class PayrollEnumContractTest extends TestCase
             => 'enum:MyInvoice\Service\Payroll\AnnualSettlement\AnnualNonTaxableKind',
         'payroll.ts::PayrollAnnualDependantRelation'
             => 'db:payroll_dependants.relation',
+        // Průvodce postupem po 20. dni (nulové opravné hlášení + REGZEC).
+        'payroll.ts::PayrollJmhzPost20Situation'
+            => 'keys:MyInvoice\Service\Payroll\Submission\Jmhz\JmhzPost20GuideService::SITUATIONS',
         'payroll.ts::PayrollAnnualSettlementOutcome'
             => 'enum:MyInvoice\Service\Payroll\AnnualSettlement\AnnualSettlementOutcome',
         'payroll.ts::PayrollAnnualSettlementBlocker'
