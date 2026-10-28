@@ -1014,7 +1014,11 @@ final readonly class PayrollRegistrationSubmissionService
                 . ' přihlášku s nástupem v lednu 2027 stihnete i tak, pokud ji'
                 . ' podáte nejpozději před nástupem. Chcete-li přihlásit'
                 . ' zaměstnance s českým občanstvím už v prosinci, podejte'
-                . ' částečné přihlášení PREZEC (nejdřív osm dnů před nástupem).',
+                . ' částečné přihlášení PREZEC (nejdřív osm dnů před nástupem).'
+                . ' U zahraničního zaměstnance částečné přihlášení nelze'
+                . ' (§ 19 odst. 2 zákona č. 323/2025 Sb.): přihlášku podejte'
+                . ' 1. 1. 2027 nebo později, vždy před nástupem, při nástupu'
+                . ' 1. 1. 2027 téhož dne před začátkem práce.',
         );
     }
 

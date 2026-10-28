@@ -1956,6 +1956,11 @@ final class PayrollRegistrationActionTest extends TestCase
         );
         self::assertSame(422, $production->getStatusCode(), (string) $production->getBody());
         self::assertSame('registration_regzec27_not_yet_accepted', $this->json($production)['error']['code']);
+        // Cizinec nemůže být přihlášen částečně (§ 19 odst. 2 z. 323/2025 Sb.).
+        self::assertStringContainsString(
+            'U zahraničního zaměstnance částečné přihlášení nelze',
+            (string) $this->json($production)['error']['message'],
+        );
         self::assertSame(0, $this->countSubmissions());
 
         $test = ($this->action)->prepare(
