@@ -420,6 +420,28 @@ final class JmhzScenario1Control2027Test extends TestCase
         self::assertSame(JmhzControlOutcome::Passed, $complete->outcome);
     }
 
+    /**
+     * Kontrola 388, věta „v ostatních případech nesmí být tyto atributy
+     * vyplněny": platí jen ve formuláři cinnostKS s 10587 = NE. Běžný
+     * formulář bez 10587 s tarifní mzdou kontrola neposuzuje.
+     */
+    public function testNonStateAttorneyInCinnostKsMustNotCarryWorkAndWageDetails(): void
+    {
+        $forbidden = $this->finding($this->validate(Sample::document(Sample::form(Sample::cinnostKs(false, true)))), 388);
+        self::assertSame(JmhzControlOutcome::Failed, $forbidden->outcome);
+        self::assertSame(JmhzControlPassability::Blocking, $forbidden->passability);
+        self::assertStringContainsString('není státní zástupce', $forbidden->message);
+
+        $empty = $this->finding($this->validate(Sample::document(Sample::form(Sample::cinnostKs(false, false)))), 388);
+        self::assertSame(JmhzControlOutcome::Passed, $empty->outcome);
+
+        // Běžný formulář nese dny v evidenčním stavu, hodiny a průměrný výdělek.
+        $ordinary = $this->validate(Sample::document(Sample::form(Sample::bezPriznaku())));
+        self::assertNotSame(JmhzControlOutcome::Failed, $this->finding($ordinary, 388)->outcome);
+
+        self::assertArrayNotHasKey(388, $this->evaluator(JmhzSpecVersion::V2027)->documentedDeviations());
+    }
+
     private function validate(string $xml, bool $schemaValid = true): JmhzControlEvaluationReport
     {
         if ($schemaValid) {

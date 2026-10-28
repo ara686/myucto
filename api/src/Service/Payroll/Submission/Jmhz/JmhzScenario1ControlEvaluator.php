@@ -362,11 +362,6 @@ final class JmhzScenario1ControlEvaluator
                 . ' kalendářní rok. Z jednoho hlášení je vidět jen měsíc, proto'
                 . ' se vynucuje jen to, že mez nepřekročí měsíční hodnota; součet'
                 . ' za rok porovná ČSSZ.',
-            388 => 'Katalog žádá u státního zástupce (10587 = ANO) počty dnů'
-                . ' a hodin, tarifní mzdu a průměrný výdělek; vynucuje se tahle'
-                . ' povinnost. Věta „v ostatních případech nesmí být tyto atributy'
-                . ' vyplněny" by doslova zakázala tarifní mzdu každému jinému'
-                . ' zaměstnanci, proto se nevynucuje a rozhodne protokol.',
         ];
     }
 
@@ -5910,16 +5905,38 @@ final class JmhzScenario1ControlEvaluator
         });
     }
 
-    /** @return list<JmhzControlVerdict> */
+    /**
+     * Kontrola 388 (katalog 1.5.0.4, pokrytí interakce IN43).
+     *
+     * Státní zástupce (10587 = ANO) musí mít 10265, 10268, 10329 a 10345.
+     * Věta „v ostatních případech nesmí být tyto atributy vyplněny" platí jen
+     * ve formuláři, který 10587 nese, tedy `cinnostKS` (XSD 1.5.0.3
+     * formCinnostKS.xsd, scénář K-S): tam se 10265, 10268, 10276, 10329
+     * a 10345 zpřístupňují výhradně přes IN43, takže při 10587 = NE být
+     * nesmí. 10276 je v atributech kontroly a v IN43 („N"), proto patří do
+     * zákazu, i když ho věta o povinnosti nejmenuje. Formulář bez 10587
+     * (běžný scénář, kde jsou atributy CORE DATA) kontrola neposuzuje.
+     *
+     * @return list<JmhzControlVerdict>
+     */
     private function stateAttorneyDetails2027(JmhzAttributeProjection $projection): array
     {
         return $this->perForm($projection, static function (JmhzAttributeScope $form): ?string {
-            if ($form->boolean('10587') !== true) {
+            if (!$form->has('10587')) {
                 return null;
             }
-            foreach (['10265', '10268', '10329', '10345'] as $attributeId) {
-                if (!$form->has($attributeId)) {
-                    return "U státního zástupce chybí atribut {$attributeId}.";
+            if ($form->boolean('10587') === true) {
+                foreach (['10265', '10268', '10329', '10345'] as $attributeId) {
+                    if (!$form->has($attributeId)) {
+                        return "U státního zástupce chybí atribut {$attributeId}.";
+                    }
+                }
+
+                return null;
+            }
+            foreach (['10265', '10268', '10276', '10329', '10345'] as $attributeId) {
+                if ($form->has($attributeId)) {
+                    return "U zaměstnance, který není státní zástupce, nesmí být vyplněn atribut {$attributeId}.";
                 }
             }
 
