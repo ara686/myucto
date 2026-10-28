@@ -319,6 +319,16 @@ final class PayrollComponentDefaults
                 // (§ 5 odst. 1 z. č. 589/1992 Sb., § 3 odst. 1 z. č. 592/1992 Sb.)
                 // a do JMHZ nepatří, stejně jako CESTOVNI_NAHRADA_LIMIT. Limit nemá.
                 ['PECE_O_ZDRAVI_PRILOHA4', 'Péče o zdraví zaměstnanců (příloha č. 4 ZDP)', 'benefit_health', 'non_monetary', 'one_off', 'exempt', 'excluded', 'excluded', 'excluded', 'excluded', 'excluded', 'included', null, 'not_subject_to_tax'],
+                // § 6 odst. 9 písm. g) a odst. 19 — spropitné ze stravovacích
+                // služeb, které zaměstnanci vyplácí zaměstnavatel (je jeho plátcem).
+                // Osvobozené za měsíc do podílu 7 % tržeb ze stravovacích služeb
+                // (koš `food_service_tips`, strop z evidence firmy); nadlimitní část
+                // odbaví složka `.nadlimit` jako běžný zdanitelný příjem a vyměřovací
+                // základ. Mzdou podle § 109 ZP není (plnění od hosta, ne odměna za
+                // práci od zaměstnavatele), proto mimo průměrný výdělek; srážky ze
+                // mzdy ze stejného důvodu jako u příspěvku na stravování ne. Do JMHZ
+                // patří jako osvobozený příjem ze závislé činnosti.
+                ['SPROPITNE', 'Spropitné ze stravovacích služeb', 'other', 'monetary', 'one_off', 'exempt', 'excluded', 'excluded', 'excluded', 'excluded', 'included', 'included', 'food_service_tips', 'periodic_benefit_limit'],
             ],
         ],
     ];
@@ -520,11 +530,12 @@ final class PayrollComponentDefaults
         // Ruleset roku musí existovat vždy; bez číselného limitu (§ 6 odst. 9
         // písm. d) bod 2 od 2027) v něm ale není co ověřovat.
         $incomeTax = $this->rulesets->forDate(PayrollRulesetDomain::IncomeTax, $validFrom);
-        if ($basket->isUnlimited($year)) {
+        $key = $basket->rulesetKey();
+        if ($key === null || $basket->isUnlimited($year)) {
             return $basket;
         }
         $limit = $incomeTax
-            ->parameter($basket->rulesetKey())
+            ->parameter($key)
             ->value;
         if (!is_int($limit)) {
             throw new PayrollRulesetException(

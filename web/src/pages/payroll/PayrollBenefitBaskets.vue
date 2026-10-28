@@ -37,6 +37,7 @@ import ColumnPicker from '@/components/ui/ColumnPicker.vue'
 import DensityToggle from '@/components/ui/DensityToggle.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import PaginationBar from '@/components/ui/PaginationBar.vue'
+import PayrollFoodServiceTipsPanel from '@/pages/payroll/PayrollFoodServiceTipsPanel.vue'
 import { formatMoneyMinor as money } from '@/composables/useFormat'
 import { useTablePrefs, type ColumnDef } from '@/composables/useTablePrefs'
 
@@ -335,6 +336,13 @@ onMounted(load)
         <DensityToggle class="hidden md:block" :ctrl="tbl" />
       </div>
     </div>
+
+    <!-- Spropitné ze stravovacích služeb (§ 6 odst. 9 písm. g) ZDP) až od roku 2027. -->
+    <PayrollFoodServiceTipsPanel
+      v-if="monthly && /^\d{4}-\d{2}$/.test(period) && Number(period.slice(0, 4)) >= 2027"
+      :period="period"
+      class="mb-4"
+    />
 
     <div v-if="loading" class="text-center text-neutral-500 py-12 text-sm">{{ t('common.loading') }}</div>
 

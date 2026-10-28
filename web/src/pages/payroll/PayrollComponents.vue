@@ -561,7 +561,7 @@ const taxTreatments: PayrollComponentTaxTreatment[] = ['included', 'exempt', 'wi
 const inclusionTreatments: PayrollComponentInclusion[] = ['included', 'excluded', 'manual_review']
 const exemptionBaskets: PayrollBenefitExemptionBasket[] = [
   'non_cash_health', 'non_cash_leisure', 'old_age_savings',
-  'meal_per_shift', 'temporary_accommodation', 'recreation',
+  'meal_per_shift', 'temporary_accommodation', 'recreation', 'food_service_tips',
 ]
 const exemptionBases: PayrollExemptionBasis[] = [
   'not_subject_to_tax', 'statutory_exempt', 'benefit_basket', 'periodic_benefit_limit',

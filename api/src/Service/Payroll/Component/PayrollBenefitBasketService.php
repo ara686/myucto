@@ -60,10 +60,16 @@ final class PayrollBenefitBasketService
         if ($basket->isUnlimited($taxYear)) {
             return null;
         }
+        $key = $basket->rulesetKey();
+        if ($key === null) {
+            throw new PayrollRulesetException(
+                "Limit koše {$basket->value} ({$basket->statute()}) stojí na evidenci firmy, ne v rulesetu.",
+            );
+        }
         $effectiveOn = $this->effectiveOn($basket, $periodStart);
         $incomeTax = $this->rulesets
             ->forCalculation(PayrollRulesetDomain::IncomeTax, $effectiveOn);
-        $value = $incomeTax->parameter($basket->rulesetKey())->value;
+        $value = $incomeTax->parameter($key)->value;
         if (!is_int($value) || $value <= 0) {
             throw new PayrollRulesetException(
                 "Limit koše {$basket->rulesetKey()} není částka v haléřích.",

@@ -70,7 +70,7 @@ final class PayrollBenefitBasketOverviewRepository
      * kalendářní měsíc. Roční koš by v něm ukázal jednu dvanáctinu čerpání proti
      * ročnímu limitu, tedy číslo, které nic neznamená.
      */
-    private const MONTHLY_BASKETS = '"meal_per_shift", "temporary_accommodation"';
+    private const MONTHLY_BASKETS = '"meal_per_shift", "temporary_accommodation", "food_service_tips"';
 
     /** Kolik nejvýš měsíců nabídne rozbalovátko období. */
     private const PERIOD_OPTIONS_LIMIT = 120;

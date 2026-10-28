@@ -82,6 +82,7 @@ use MyInvoice\Action\Payroll\PayrollActivationAction;
 use MyInvoice\Action\Payroll\PayrollAccountOptionsAction;
 use MyInvoice\Action\Payroll\PayrollAbsenceAction;
 use MyInvoice\Action\Payroll\PayrollBenefitBasketOverviewAction;
+use MyInvoice\Action\Payroll\PayrollFoodServiceTipAction;
 use MyInvoice\Action\Payroll\PayrollCapabilitiesAction;
 use MyInvoice\Action\Payroll\PayrollComponentsAction;
 use MyInvoice\Action\Payroll\PayrollComponentJmhzMappingsAction;
@@ -1049,6 +1050,15 @@ final class Routes
             $g->get(
                 '/benefit-baskets',
                 [PayrollBenefitBasketOverviewAction::class, 'list'],
+            );
+            // Spropitné ze stravovacích služeb (§ 6 odst. 9 písm. g) ZDP, od 2027).
+            $g->get(
+                '/food-service-tips/{period:[0-9]{4}-[0-9]{2}}',
+                [PayrollFoodServiceTipAction::class, 'show'],
+            );
+            $g->put(
+                '/food-service-tips/{period:[0-9]{4}-[0-9]{2}}',
+                [PayrollFoodServiceTipAction::class, 'save'],
             );
             $g->get('/inputs', [PayrollInputsAction::class, 'list']);
             // Export celého filtru výpisu; parametry filtru jsou tytéž jako u `/inputs`.

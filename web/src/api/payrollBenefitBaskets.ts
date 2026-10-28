@@ -23,6 +23,7 @@ export const BENEFIT_EXEMPTION_BASKETS: PayrollBenefitExemptionBasket[] = [
 export const MONTHLY_BENEFIT_EXEMPTION_BASKETS: PayrollBenefitExemptionBasket[] = [
   'meal_per_shift',
   'temporary_accommodation',
+  'food_service_tips',
 ]
 
 /**
@@ -127,7 +128,59 @@ export interface BenefitBasketMonthlyQuery {
   offset?: number
 }
 
+/** § 6 odst. 9 písm. g) ZDP — způsob rozdělení osvobozeného spropitného. */
+export type FoodServiceTipAllocationMode = 'per_capita' | 'employer_determined'
+
+export interface FoodServiceTipAllocation {
+  employee_id: number
+  exempt_cap_minor: number
+}
+
+/** Evidence měsíčních příjmů ze stravovacích služeb (od 2027). */
+export interface FoodServiceTipMonth {
+  id: number
+  period_start: string
+  revenue_minor: number
+  allocation_mode: FoodServiceTipAllocationMode
+  recipients_count: number | null
+  evidence_reference: string | null
+  note: string | null
+  allocations: FoodServiceTipAllocation[]
+  /** 7 % tržeb — úhrnný strop osvobozeného spropitného za měsíc. */
+  employer_cap_minor: number
+  /** Strop na zaměstnance při rovném dělení; `null` u určení zaměstnavatelem. */
+  per_capita_cap_minor: number | null
+}
+
+export interface FoodServiceTipView {
+  period_start: string
+  /** Osvobození existuje od roku 2027. */
+  available: boolean
+  statute: string
+  month: FoodServiceTipMonth | null
+  /** Zaměstnanci se schváleným spropitným v měsíci. */
+  approved_recipients: number[]
+  /** Schválené spropitné má zmrazený strop, evidenci nelze měnit. */
+  locked: boolean
+}
+
+export interface FoodServiceTipPayload {
+  revenue_minor: number
+  allocation_mode: FoodServiceTipAllocationMode
+  recipients_count: number | null
+  allocations: FoodServiceTipAllocation[]
+  evidence_reference: string | null
+  note: string | null
+}
+
 export const payrollBenefitBasketsApi = {
+  /** `period` ve tvaru `YYYY-MM`. */
+  foodServiceTips: (period: string) =>
+    api.get<FoodServiceTipView>(`/payroll/food-service-tips/${period}`).then(r => r.data),
+
+  saveFoodServiceTips: (period: string, payload: FoodServiceTipPayload) =>
+    api.put<FoodServiceTipView>(`/payroll/food-service-tips/${period}`, payload).then(r => r.data),
+
   overview: (query: BenefitBasketQuery) =>
     api
       .get<BenefitBasketOverview>('/payroll/benefit-baskets', {

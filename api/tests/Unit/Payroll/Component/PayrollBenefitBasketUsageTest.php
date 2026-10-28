@@ -168,6 +168,7 @@ final class PayrollBenefitBasketUsageTest extends TestCase
             'meal_per_shift' => 'per_shift',
             'temporary_accommodation' => 'calendar_month',
             'recreation' => 'tax_year',
+            'food_service_tips' => 'calendar_month',
         ], $bases);
     }
 

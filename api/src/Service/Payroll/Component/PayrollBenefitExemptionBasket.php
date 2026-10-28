@@ -113,11 +113,37 @@ enum PayrollBenefitExemptionBasket: string
      */
     case Recreation = 'recreation';
 
+    /**
+     * § 6 odst. 9 písm. g) ZDP od 1. 1. 2027 — spropitné ze stravovacích služeb,
+     * za kalendářní měsíc do 7 % měsíčních příjmů zaměstnavatele ze stravovacích
+     * služeb. Limit nestojí v rulesetu, ale na evidenci firmy
+     * ({@see PayrollFoodServiceTipService}). Spropitné není benefit, proto ho
+     * nese složka druhu `other` ({@see allowsComponentKind()}).
+     */
+    case FoodServiceTips = 'food_service_tips';
+
     /** První zdaňovací období přestavěného § 6 odst. 9 písm. d) ZDP. */
     public const BENEFITS_2027_FROM_YEAR = 2027;
 
-    /** Kanonický klíč limitu koše v rulesetu daně z příjmů (částka v haléřích). */
-    public function rulesetKey(): string
+    /** Stojí limit koše na evidenci firmy místo rulesetu? */
+    public function limitFromCompanyEvidence(): bool
+    {
+        return $this === self::FoodServiceTips;
+    }
+
+    /** Smí koš nést mzdová složka daného druhu? */
+    public function allowsComponentKind(PayrollComponentKind $kind): bool
+    {
+        return $this === self::FoodServiceTips
+            ? $kind === PayrollComponentKind::OTHER
+            : $kind->isBenefit();
+    }
+
+    /**
+     * Kanonický klíč limitu koše v rulesetu daně z příjmů (částka v haléřích).
+     * U spropitného `null` — limit je z evidence firmy.
+     */
+    public function rulesetKey(): ?string
     {
         return match ($this) {
             self::NonCashHealth => 'benefit_exemption.non_cash_health.yearly',
@@ -126,6 +152,7 @@ enum PayrollBenefitExemptionBasket: string
             self::MealPerShift => 'benefit_exemption.meal.per_shift',
             self::TemporaryAccommodation => 'benefit_exemption.temporary_accommodation.monthly',
             self::Recreation => 'benefit_exemption.recreation.yearly',
+            self::FoodServiceTips => null,
         };
     }
 
@@ -143,7 +170,8 @@ enum PayrollBenefitExemptionBasket: string
     /** Existuje koš v daném zdaňovacím období? */
     public function existsIn(int $taxYear): bool
     {
-        return $this !== self::Recreation || $taxYear >= self::BENEFITS_2027_FROM_YEAR;
+        return !in_array($this, [self::Recreation, self::FoodServiceTips], true)
+            || $taxYear >= self::BENEFITS_2027_FROM_YEAR;
     }
 
     /**
@@ -156,7 +184,7 @@ enum PayrollBenefitExemptionBasket: string
     {
         return match ($this) {
             self::NonCashHealth, self::NonCashLeisure, self::OldAgeSavings, self::Recreation => false,
-            self::MealPerShift, self::TemporaryAccommodation => true,
+            self::MealPerShift, self::TemporaryAccommodation, self::FoodServiceTips => true,
         };
     }
 
@@ -185,7 +213,7 @@ enum PayrollBenefitExemptionBasket: string
     {
         return match ($this) {
             self::NonCashHealth, self::NonCashLeisure, self::OldAgeSavings, self::Recreation => 'tax_year',
-            self::TemporaryAccommodation => 'calendar_month',
+            self::TemporaryAccommodation, self::FoodServiceTips => 'calendar_month',
             self::MealPerShift => 'per_shift',
         };
     }
@@ -199,6 +227,7 @@ enum PayrollBenefitExemptionBasket: string
             self::MealPerShift => '§ 6 odst. 9 písm. b) ZDP',
             self::TemporaryAccommodation => '§ 6 odst. 9 písm. i) ZDP',
             self::Recreation => '§ 6 odst. 9 písm. d) bod 3 ZDP',
+            self::FoodServiceTips => PayrollFoodServiceTipStatute::STATUTE,
         };
     }
 }

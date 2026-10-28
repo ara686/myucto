@@ -422,6 +422,9 @@ final class PayrollEnumContractTest extends TestCase
             => 'enum:MyInvoice\Service\Payroll\AnnualSettlement\AnnualNonTaxableKind',
         'payroll.ts::PayrollAnnualDependantRelation'
             => 'db:payroll_dependants.relation',
+        // Spropitné ze stravovacích služeb (§ 6 odst. 9 písm. g) — způsob rozdělení.
+        'payrollBenefitBaskets.ts::FoodServiceTipAllocationMode'
+            => 'db:payroll_food_service_tip_months.allocation_mode',
         // Sleva za umístění dítěte (§ 35bd odst. 6) — druh předškolního zařízení.
         'payroll.ts::PayrollAnnualPreschoolFacilityKind'
             => 'enum:MyInvoice\Service\Payroll\AnnualSettlement\AnnualPreschoolFacilityKind',

@@ -4822,7 +4822,8 @@
         "old_age_savings": "Spoření na stáří a dlouhodobá péče (§ 6 odst. 9 písm. m))",
         "meal_per_shift": "Příspěvek na stravování za směnu (§ 6 odst. 9 písm. b))",
         "temporary_accommodation": "Přechodné ubytování měsíčně (§ 6 odst. 9 písm. i))",
-        "recreation": "Rekreace a zájezd od roku 2027 (§ 6 odst. 9 písm. d) bod 3)"
+        "recreation": "Rekreace a zájezd od roku 2027 (§ 6 odst. 9 písm. d) bod 3)",
+        "food_service_tips": "Spropitné ze stravovacích služeb od roku 2027 (§ 6 odst. 9 písm. g))"
       },
       "exemption_basis": {
         "none": "Bez uvedeného podkladu",
@@ -11648,6 +11649,30 @@
         "official_form_own": "Vlastní čitelná sestava"
       }
     },
+    "food_service_tips": {
+      "title": "Spropitné ze stravovacích služeb",
+      "hint": "Spropitné vyplácené zaměstnancům je od roku 2027 osvobozené za měsíc do 7 % měsíčních příjmů ze stravovacích služeb, rovným dílem mezi zaměstnance, kteří spropitné dostali, nebo podle určení zaměstnavatele. Nadlimitní část se zdaní a je vyměřovacím základem pojistného.",
+      "load_failed": "Evidenci spropitného se nepodařilo načíst.",
+      "save_failed": "Evidenci spropitného se nepodařilo uložit.",
+      "saved": "Evidence spropitného byla uložena.",
+      "locked": "Spropitné je v tomto měsíci už schválené (zaměstnanců: {count}) a jeho strop je zmrazený. Evidenci lze změnit až po stornu schválených vstupů spropitného.",
+      "revenue": "Měsíční příjmy ze stravovacích služeb (Kč)",
+      "mode": "Rozdělení osvobozeného spropitného",
+      "mode_per_capita": "Rovným dílem mezi zaměstnance se spropitným",
+      "mode_employer_determined": "Podle určení zaměstnavatele",
+      "recipients": "Počet zaměstnanců, kteří v měsíci spropitné dostali",
+      "recipients_hint": "Strop na zaměstnance je 7 % příjmů dělených tímto počtem.",
+      "allocations": "Strop osvobozeného spropitného podle zaměstnanců",
+      "employee": "Zaměstnanec",
+      "cap": "Strop (Kč)",
+      "add_allocation": "Přidat zaměstnance",
+      "remove_allocation": "Odebrat",
+      "evidence_reference": "Čím jsou příjmy doložené",
+      "note": "Poznámka",
+      "employer_cap": "Úhrnný strop osvobození (7 %)",
+      "per_capita_cap": "Strop na zaměstnance",
+      "save": "Uložit evidenci spropitného"
+    },
     "benefit_baskets": {
       "title": "Koše osvobození benefitů",
       "subtitle_annual": "Kolik má který zaměstnanec za rok vyčerpáno z ročního limitu podle § 6 odst. 9 ZDP a kolik z toho se už zdanilo.",
@@ -11691,7 +11716,8 @@
         "old_age_savings": "Spoření na stáří a dlouhodobá péče",
         "meal_per_shift": "Příspěvek na stravování",
         "temporary_accommodation": "Přechodné ubytování",
-        "recreation": "Rekreace a zájezd"
+        "recreation": "Rekreace a zájezd",
+        "food_service_tips": "Spropitné"
       },
       "status": {
         "ok": "V limitu",

@@ -144,7 +144,32 @@ takže přehled **žádný limit ani zbytek netvrdí** a řekne to poznámkou: �
 znamená „tolik se za měsíc poskytlo", ne „limit je dodržený". Dodržení limitu za
 směnu se hlídá při schválení vstupu proti doloženému počtu směn z docházky.
 
-### 89.6.3 Jak přehled čte čísla
+### 89.6.3 Spropitné ze stravovacích služeb
+
+Od roku 2027 je spropitné ze stravovacích služeb, které zaměstnancům vyplácí
+zaměstnavatel, osvobozené od daně (§ 6 odst. 9 písm. g) a odst. 19 ZDP)
+a tím i od pojistného. Osvobození platí za kalendářní měsíc do **7 % měsíčních
+příjmů zaměstnavatele ze stravovacích služeb**:
+
+- **rovným dílem** mezi zaměstnance, kteří v měsíci spropitné dostali: strop
+  na zaměstnance je 7 % příjmů dělených jejich počtem, v haléřích dolů,
+- nebo **podle určení zaměstnavatele**: strop zadáte každému zaměstnanci zvlášť
+  a jejich součet nesmí přesáhnout 7 % příjmů.
+
+Na záložce **Měsíční koše** vyberte měsíc a v panelu **Spropitné ze stravovacích
+služeb** zadejte příjmy ze stravovacích služeb, způsob rozdělení a počet
+zaměstnanců nebo stropy, a uložte. Spropitné pak zadávejte složkou
+**Spropitné ze stravovacích služeb** (výchozí katalog od 2027). Při schválení
+vstupu se osvobozená část a část nad strop zmrazí; nadlimitní část se zdaní
+a je vyměřovacím základem sociálního i zdravotního pojištění.
+
+Bez evidence příjmů za měsíc vstup spropitného neprojde schválením. Dostane-li
+spropitné víc zaměstnanců, než kolik uvádí evidence, schválení se také
+zastaví. Jakmile je v měsíci schválené spropitné, evidenci už změnit nejde;
+nejdřív stornujte schválené vstupy spropitného. Spropitné majitele nebo
+podnikatele, který není zaměstnancem, se ve mzdách nezadává.
+
+### 89.6.4 Jak přehled čte čísla
 
 Řádek je jeden na zaměstnance a koš a sčítá se stejně jako náhled vstupu.
 Stav řádku: **V limitu**, **Blíží se limitu** (od 80 % koše), **Nad limitem**,
@@ -168,7 +193,7 @@ Přehled je čtecí a běží na základním oprávnění ke mzdám (`payroll`),
 jako seznam mzdových vstupů: je to jejich součet za osobu a období, ne nová
 třída údajů. Změna filtru ani otevření přehledu nemění mzdový běh.
 
-### 89.6.4 Účetní dopad u zaměstnavatele
+### 89.6.5 Účetní dopad u zaměstnavatele
 
 Pozor na směr: daňově neuznatelná je **osvobozená** část, ne nadlimitní. § 25
 odst. 1 písm. h) zákona o daních z příjmů ve znění od 1. 1. 2024 vylučuje
@@ -187,7 +212,7 @@ vůbec: náklad je v knihách už ze zdrojového dokladu a mzdový zápis by ho
 zaúčtoval podruhé. Do daně a pojistného přitom vstupuje normálně (viz
 [Shoda účtování mezd](81_Shoda_uctovani_mezd.md#8153-ucetne-neutralni-nepenezni-plneni)).
 
-### 89.6.5 Kontroly a časté chyby
+### 89.6.6 Kontroly a časté chyby
 
 Kontrolujte období, osobu, limit, duplicity a zákonnou klasifikaci plnění.
 Benefit nepoužívejte k obcházení zdanitelné mzdy. Zdravotní nebo rodinné údaje

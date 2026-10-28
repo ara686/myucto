@@ -4822,7 +4822,8 @@
         "old_age_savings": "Old-age savings and long-term care (§ 6(9)(m))",
         "meal_per_shift": "Meal contribution per shift (§ 6(9)(b))",
         "temporary_accommodation": "Temporary accommodation per month (§ 6(9)(i))",
-        "recreation": "Recreation and holidays from 2027 (§ 6(9)(d)(3))"
+        "recreation": "Recreation and holidays from 2027 (§ 6(9)(d)(3))",
+        "food_service_tips": "Food service tips from 2027 (§ 6(9)(g))"
       },
       "exemption_basis": {
         "none": "No basis stated",
@@ -11648,6 +11649,30 @@
         "official_form_own": "Own readable report"
       }
     },
+    "food_service_tips": {
+      "title": "Food service tips",
+      "hint": "From 2027, tips paid to employees are exempt per month up to 7 % of the monthly food service revenue, split equally among the employees who received tips or as determined by the employer. The part above the cap is taxed and counts towards the insurance assessment base.",
+      "load_failed": "The tip records could not be loaded.",
+      "save_failed": "The tip records could not be saved.",
+      "saved": "The tip records were saved.",
+      "locked": "Tips in this month are already approved (employees: {count}) and their cap is frozen. The records can be changed only after the approved tip inputs are reversed.",
+      "revenue": "Monthly food service revenue (CZK)",
+      "mode": "Split of exempt tips",
+      "mode_per_capita": "Equally among employees with tips",
+      "mode_employer_determined": "As determined by the employer",
+      "recipients": "Number of employees who received tips this month",
+      "recipients_hint": "The cap per employee is 7 % of the revenue divided by this number.",
+      "allocations": "Exempt tip cap per employee",
+      "employee": "Employee",
+      "cap": "Cap (CZK)",
+      "add_allocation": "Add employee",
+      "remove_allocation": "Remove",
+      "evidence_reference": "Revenue evidenced by",
+      "note": "Note",
+      "employer_cap": "Total exemption cap (7 %)",
+      "per_capita_cap": "Cap per employee",
+      "save": "Save tip records"
+    },
     "benefit_baskets": {
       "title": "Benefit exemption baskets",
       "subtitle_annual": "How much of the annual limit under Section 6(9) of the Income Tax Act each employee has used up this year, and how much of it has already been taxed.",
@@ -11691,7 +11716,8 @@
         "old_age_savings": "Old-age savings and long-term care",
         "meal_per_shift": "Meal contribution",
         "temporary_accommodation": "Temporary accommodation",
-        "recreation": "Recreation and holidays"
+        "recreation": "Recreation and holidays",
+        "food_service_tips": "Tips"
       },
       "status": {
         "ok": "Within limit",

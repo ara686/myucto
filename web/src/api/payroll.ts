@@ -1868,6 +1868,7 @@ export type PayrollBenefitExemptionBasket =
   | 'meal_per_shift'
   | 'temporary_accommodation'
   | 'recreation'
+  | 'food_service_tips'
 
 /**
  * Čím je nezdanění složky podložené. `not_subject_to_tax` NENÍ osvobození —

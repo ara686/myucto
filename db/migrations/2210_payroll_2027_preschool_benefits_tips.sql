@@ -103,13 +103,93 @@ ALTER TABLE payroll_annual_settlement_preschool_claims
     );
 
 -- Koš § 6 odst. 9 písm. d) bod 3 ZDP (rekreace a zájezd, 20 000 Kč za
--- zdaňovací období) od roku 2027. Limit drží ruleset, tady jen hodnota výčtu.
+-- zdaňovací období) a koš spropitného ze stravovacích služeb (§ 6 odst. 9
+-- písm. g) ZDP), oba od roku 2027. Limit rekreace drží ruleset, limit
+-- spropitného evidence níže; tady jen hodnoty výčtu.
 ALTER TABLE payroll_component_definitions
   MODIFY COLUMN exemption_basket
     ENUM('non_cash_health','non_cash_leisure','old_age_savings',
-         'meal_per_shift','temporary_accommodation','recreation') NULL;
+         'meal_per_shift','temporary_accommodation','recreation',
+         'food_service_tips') NULL;
 
 ALTER TABLE payroll_inputs
   MODIFY COLUMN benefit_basket
     ENUM('non_cash_health','non_cash_leisure','old_age_savings',
-         'meal_per_shift','temporary_accommodation','recreation') NULL;
+         'meal_per_shift','temporary_accommodation','recreation',
+         'food_service_tips') NULL;
+
+-- Spropitné ze stravovacích služeb (§ 6 odst. 9 písm. g) a odst. 19 ZDP):
+-- osvobozeno za kalendářní měsíc do podílu 7 % měsíčních příjmů zaměstnavatele
+-- ze stravovacích služeb a počtu zaměstnanců, kteří spropitné obdrželi
+-- (`per_capita`), nebo do výše určené zaměstnavatelem tak, aby úhrn nepřekročil
+-- 7 % (`employer_determined`, stropy v payroll_food_service_tip_allocations).
+CREATE TABLE IF NOT EXISTS payroll_food_service_tip_months (
+  id                          BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  supplier_id                 INT UNSIGNED NOT NULL,
+  period_start                DATE NOT NULL
+                              COMMENT 'První den kalendářního měsíce.',
+  revenue_minor               BIGINT NOT NULL
+                              COMMENT 'Měsíční příjmy ze stravovacích služeb zaměstnavatele, v haléřích.',
+  allocation_mode             ENUM('per_capita','employer_determined') NOT NULL,
+  recipients_count            SMALLINT UNSIGNED NULL
+                              COMMENT 'per_capita: počet zaměstnanců, kteří v měsíci spropitné obdrželi.',
+  evidence_reference          VARCHAR(500) NULL,
+  note                        VARCHAR(500) NULL,
+
+  created_by                  BIGINT UNSIGNED NULL,
+  updated_by                  BIGINT UNSIGNED NULL,
+  created_at                  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at                  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                                ON UPDATE CURRENT_TIMESTAMP,
+
+  UNIQUE KEY uq_payroll_food_service_tip_month_supplier_id (supplier_id, id),
+  UNIQUE KEY uq_payroll_food_service_tip_month_period (supplier_id, period_start),
+  KEY fk_payroll_food_service_tip_month_creator (created_by),
+  KEY fk_payroll_food_service_tip_month_editor (updated_by),
+
+  CONSTRAINT fk_payroll_food_service_tip_month_supplier
+    FOREIGN KEY (supplier_id) REFERENCES supplier (id) ON DELETE CASCADE,
+  CONSTRAINT fk_payroll_food_service_tip_month_creator
+    FOREIGN KEY (created_by) REFERENCES users (id) ON DELETE SET NULL,
+  CONSTRAINT fk_payroll_food_service_tip_month_editor
+    FOREIGN KEY (updated_by) REFERENCES users (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE payroll_food_service_tip_months
+  DROP CONSTRAINT IF EXISTS chk_payroll_food_service_tip_month;
+ALTER TABLE payroll_food_service_tip_months
+  ADD CONSTRAINT chk_payroll_food_service_tip_month
+    CHECK (
+      period_start >= '2027-01-01'
+      AND DAYOFMONTH(period_start) = 1
+      AND revenue_minor >= 0
+      AND (
+        (allocation_mode = 'per_capita' AND recipients_count >= 1)
+        OR (allocation_mode = 'employer_determined' AND recipients_count IS NULL)
+      )
+    );
+
+CREATE TABLE IF NOT EXISTS payroll_food_service_tip_allocations (
+  id                          BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  supplier_id                 INT UNSIGNED NOT NULL,
+  tip_month_id                BIGINT UNSIGNED NOT NULL,
+  employee_id                 BIGINT UNSIGNED NOT NULL,
+  exempt_cap_minor            BIGINT NOT NULL
+                              COMMENT 'Strop osvobozeného spropitného zaměstnance za měsíc, v haléřích.',
+
+  UNIQUE KEY uq_payroll_food_service_tip_allocation (supplier_id, tip_month_id, employee_id),
+  KEY fk_payroll_food_service_tip_allocation_employee (supplier_id, employee_id),
+
+  CONSTRAINT fk_payroll_food_service_tip_allocation_month
+    FOREIGN KEY (supplier_id, tip_month_id)
+    REFERENCES payroll_food_service_tip_months (supplier_id, id) ON DELETE CASCADE,
+  CONSTRAINT fk_payroll_food_service_tip_allocation_employee
+    FOREIGN KEY (supplier_id, employee_id)
+    REFERENCES payroll_employees (supplier_id, id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE payroll_food_service_tip_allocations
+  DROP CONSTRAINT IF EXISTS chk_payroll_food_service_tip_allocation_cap;
+ALTER TABLE payroll_food_service_tip_allocations
+  ADD CONSTRAINT chk_payroll_food_service_tip_allocation_cap
+    CHECK (exempt_cap_minor >= 0);
