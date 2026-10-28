@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace MyInvoice\Service\Payroll\Submission\Jmhz;
 
 use MyInvoice\Service\Payroll\Absence\PayrollSicknessInputMaterializer;
+use MyInvoice\Service\Payroll\Calculation\PayrollRounding;
 use MyInvoice\Service\Payroll\PayrollEmploymentJmhzActivityFamily;
+use MyInvoice\Service\Payroll\IncomeTax\SeparateTaxBaseRegime;
 use MyInvoice\Service\Payroll\IncomeTax\StudentTaxCredit;
 use MyInvoice\Service\Payroll\IncomeTax\TaxCreditKind;
 use MyInvoice\Service\Payroll\IncomeTax\TaxRegime;
@@ -393,6 +395,7 @@ final class JmhzScenario1DocumentResolver
             $advanceTaxCzk = $this->advanceTaxCzk($tax, $employeeId, $blockers);
             $withholdingTaxCzk = $this->withholdingTaxCzk($tax, $employeeId, $blockers);
             $taxCreditsCzk = $this->taxCreditsCzk($tax, $employeeId, $blockers);
+            $paragraph6IncomeCzk = null;
             $taxableIncomeCzk = $this->relationshipTaxableIncomeCzk(
                 $tax,
                 $employments,
@@ -401,6 +404,8 @@ final class JmhzScenario1DocumentResolver
                     : $advanceTaxCzk['taxable_income'] + ($withholdingTaxCzk['base'] ?? 0),
                 $employeeId,
                 $blockers,
+                $is2027,
+                $paragraph6IncomeCzk,
             );
             $relationshipContributions = $this->relationshipContributions(
                 $employments,
@@ -669,8 +674,7 @@ final class JmhzScenario1DocumentResolver
                 foreach ($normalizedEmployments as $index => $normalizedEmployment) {
                     $normalizedEmployments[$index] = $this->employment2027(
                         $normalizedEmployment,
-                        $declarationSigned,
-                        $withholdingTaxCzk,
+                        $paragraph6IncomeCzk,
                         is_int($normalizedEmployment['employment_id'] ?? null)
                             ? ($ordinaryEvidence[$normalizedEmployment['employment_id']] ?? null)
                             : null,
@@ -1624,9 +1628,29 @@ final class JmhzScenario1DocumentResolver
      * s jediným vztahem vykáže základem osoby (záloha nebo srážka). U víc
      * vztahů se rozdělit nedá a hlášení se zablokuje.
      *
+     * Verze 2027 ({@see JmhzSpecVersion::V2027}): srážková daň podle § 6
+     * odst. 4 ZDP se mění na zálohu ze samostatného základu
+     * ({@see SeparateTaxBaseRegime::SeparateAdvance}) a datový slovník 1.5.0.3
+     * příjem vztahu dělí do dvou atributů: 10535 „Příjem z PPV pro výpočet
+     * zálohy na daň bez příjmů osvobozených" nese jen vztah v záloze, 10555
+     * „Příjem z PPV podle § 6 odst. 4 ZDP bez příjmů osvobozených" vztah
+     * v samostatném základu. Kontrola 304 katalogu 1.5.0.4: „Oba atributy
+     * (10535) a (10555) musí být vyplněny, přičemž nesmí současně nabývat
+     * hodnoty vyšší než 0." Kontroly 380 a 381 chtějí u DPP pod 12 500 Kč
+     * a ostatních vztahů pod 5 000 Kč bez prohlášení příjem „pouze v atributu"
+     * 10555, tedy 10535 = 0. 10555 je podle slovníku „celé číslo" bez pravidla
+     * zaokrouhlení, proto jde nezaokrouhlený dílčí příjem vztahu
+     * (`separate_base_income_minor_units`) přes {@see self::wholeCzk()}:
+     * haléře jsou nález, ne zaokrouhlení. Zaokrouhlený samostatný základ
+     * (§ 6 odst. 18, nahoru) patří jen do souhrnu 10307. Rozpad po vztazích
+     * ho musí složit stejně jako ve verzi 2026 základ srážkové daně.
+     * Do `$paragraph6IncomeCzk` jde 10555 podle `employment_id`; `null` =
+     * nález už vznikl u osoby.
+     *
      * @param array<string,mixed> $tax
      * @param list<array<string,mixed>> $employments
      * @param list<JmhzScenario1Blocker> $blockers
+     * @param array<int,?int>|null $paragraph6IncomeCzk
      * @return array<int,?int>
      */
     private function relationshipTaxableIncomeCzk(
@@ -1635,19 +1659,22 @@ final class JmhzScenario1DocumentResolver
         ?int $personTaxableIncomeCzk,
         ?int $employeeId,
         array &$blockers,
+        bool $is2027 = false,
+        ?array &$paragraph6IncomeCzk = null,
     ): array {
+        $paragraph6IncomeCzk = null;
         $employmentIds = [];
         foreach ($employments as $employment) {
             if (is_int($employment['employment_id'] ?? null)) {
                 $employmentIds[] = $employment['employment_id'];
             }
         }
-        $unavailable = function () use ($employeeId, &$blockers): array {
+        $unavailable = function () use ($employeeId, &$blockers, $is2027): array {
             $blockers[] = $this->blocker(
                 'jmhz_scenario1_income_tax_result_not_calculated',
                 'person',
                 $employeeId,
-                ['10535'],
+                $is2027 ? ['10535', '10555'] : ['10535'],
             );
 
             return [];
@@ -1658,12 +1685,32 @@ final class JmhzScenario1DocumentResolver
             || $relationships === []
         ) {
             if (count($employments) === 1 && count($employmentIds) === 1) {
+                if (!$is2027) {
+                    return [$employmentIds[0] => $personTaxableIncomeCzk];
+                }
+                // Bez rozpadu po vztazích nejde samostatný základ přiřadit
+                // vztahu nezaokrouhlený; bez něj je celý příjem v záloze.
+                $groups = $tax['withholding_groups'] ?? null;
+                if (($tax['withholding_tax_minor_units'] ?? 0) !== 0 || (is_array($groups) && $groups !== [])) {
+                    $blockers[] = $this->blocker(self::SOURCE_MISSING_2027, 'person', $employeeId, ['10535', '10555']);
+
+                    return [];
+                }
+                $paragraph6IncomeCzk = [$employmentIds[0] => 0];
+
                 return [$employmentIds[0] => $personTaxableIncomeCzk];
             }
 
             return $unavailable();
         }
+        if ($is2027
+            && ($tax[SeparateTaxBaseRegime::RESULT_KEY] ?? null) !== SeparateTaxBaseRegime::SeparateAdvance->value
+        ) {
+            return $unavailable();
+        }
         $baseByReference = [];
+        $separateByReference = [];
+        $separateTotal = 0;
         $advanceTotal = 0;
         $withholdingByGroup = [];
         foreach ($relationships as $relationship) {
@@ -1671,14 +1718,17 @@ final class JmhzScenario1DocumentResolver
             $reference = $row['relationship_reference'] ?? null;
             $base = $row['taxable_base_minor_units'] ?? null;
             $regime = $row['regime'] ?? null;
+            $separate = $row['separate_base_income_minor_units'] ?? null;
             if (!is_string($reference)
                 || !is_int($base)
                 || !is_string($regime)
                 || array_key_exists($reference, $baseByReference)
+                || ($is2027 && !is_int($separate))
             ) {
                 return $unavailable();
             }
             $minor = 0;
+            $separateMinor = 0;
             if ($regime === TaxRegime::Advance->value) {
                 $minor = $base;
                 $advanceTotal += $base;
@@ -1687,25 +1737,38 @@ final class JmhzScenario1DocumentResolver
                 if (!is_string($group)) {
                     return $unavailable();
                 }
-                $minor = $base;
+                $minor = $is2027 ? 0 : $base;
+                $separateMinor = $base;
                 $withholdingByGroup[$group] = ($withholdingByGroup[$group] ?? 0) + $base;
             }
+            if ($is2027 && $separate !== $separateMinor) {
+                return $unavailable();
+            }
             $baseByReference[$reference] = $minor;
+            $separateByReference[$reference] = $separateMinor;
+            $separateTotal += $separateMinor;
         }
         $advance = $this->object($tax['advance_tax'] ?? null);
         if (($advance['taxable_income_minor_units'] ?? null) !== $advanceTotal) {
             return $unavailable();
         }
         // Základ srážkové daně (10307) je úhrn skupiny zaokrouhlený na celé
-        // koruny dolů (§ 36 odst. 3 ZDP); rozpad po vztazích ho musí složit.
+        // koruny dolů (§ 36 odst. 3 ZDP), samostatný základ zálohy od 2027
+        // nahoru (§ 6 odst. 18 ZDP); rozpad po vztazích ho musí složit.
         $withholdingRounded = 0;
         foreach ($withholdingByGroup as $groupBase) {
-            $withholdingRounded += intdiv($groupBase, 100) * 100;
+            $withholdingRounded += $is2027
+                ? PayrollRounding::ceilToCzk($groupBase)
+                : intdiv($groupBase, 100) * 100;
         }
         if ($withholdingRounded !== ($withholdingByGroup === [] ? 0 : ($tax['withholding_base_minor_units'] ?? null))) {
             return $unavailable();
         }
+        if ($is2027 && ($tax['separate_base_income_minor_units'] ?? null) !== $separateTotal) {
+            return $unavailable();
+        }
         $result = [];
+        $paragraph6 = [];
         foreach ($employmentIds as $employmentId) {
             $minor = $baseByReference["employment:{$employmentId}"] ?? null;
             if ($minor === null) {
@@ -1718,6 +1781,18 @@ final class JmhzScenario1DocumentResolver
                 $employmentId,
                 $blockers,
             );
+            if ($is2027) {
+                $paragraph6[$employmentId] = $this->wholeCzk(
+                    $separateByReference["employment:{$employmentId}"],
+                    '10555',
+                    'employment',
+                    $employmentId,
+                    $blockers,
+                );
+            }
+        }
+        if ($is2027) {
+            $paragraph6IncomeCzk = $paragraph6;
         }
 
         return $result;
@@ -3636,13 +3711,12 @@ final class JmhzScenario1DocumentResolver
      * verzi 2026, a nic jiného. Za období do 12/2026 se nevolá.
      *
      * - {@see Jmhz2027DocumentContract::EMPLOYMENT_PARAGRAPH6_INCOME} (10555):
-     *   příjem podle § 6 odst. 4 ZDP bez osvobozených. Kontrola 304 chce 10535
-     *   i 10555 u každého vztahu a nikdy obě kladné. S podepsaným prohlášením
-     *   se § 6 odst. 4 neuplatní (10555 = 0). Bez prohlášení je 10555 = 0 jen
-     *   tehdy, když výpočet daně osobě samostatný základ nevytvořil
-     *   (`withholding_tax_czk` je `null`) a celý příjem je v záloze (10535).
-     *   S takovým základem ho výpočet po vztazích nerozděluje: klíč chybí
-     *   a nález vzniká u osoby ({@see self::person2027()}).
+     *   příjem vztahu podle § 6 odst. 4 ZDP bez osvobozených z rozpadu výsledku
+     *   daně po vztazích ({@see self::relationshipTaxableIncomeCzk()}), který
+     *   ho dělí proti 10535 tak, aby nikdy nebyly kladné oba (kontrola 304).
+     *   S podepsaným prohlášením samostatný základ nevzniká a 10555 = 0.
+     *   `$paragraph6IncomeCzk` = `null` znamená, že nález vznikl u osoby;
+     *   chybějící vztah v něm nález vztahu.
      * - `social_base.reported_income_czk` (10476) nese ve verzi 2027 nový
      *   význam „započitatelný příjem pro účely nemocenského pojištění" (ZP 062):
      *   nezastropovaný vyměřovací základ účastného vztahu, u neúčastného vztahu
@@ -3660,24 +3734,25 @@ final class JmhzScenario1DocumentResolver
      * {@see self::SOURCE_MISSING_2027}, nikdy odhad.
      *
      * @param array<string,mixed> $employment normalizovaný vztah
-     * @param array{base:?int,tax:?int}|null $withholding
+     * @param array<int,?int>|null $paragraph6IncomeCzk
      * @param list<JmhzScenario1Blocker> $blockers
      * @return array<string,mixed>
      */
     private function employment2027(
         array $employment,
-        ?bool $declarationSigned,
-        ?array $withholding,
+        ?array $paragraph6IncomeCzk,
         ?array $evidence,
         array &$blockers,
     ): array {
         $employmentId = is_int($employment['employment_id'] ?? null)
             ? $employment['employment_id']
             : null;
-        if ($declarationSigned === true
-            || ($declarationSigned === false && $withholding === null)
-        ) {
-            $employment[Jmhz2027DocumentContract::EMPLOYMENT_PARAGRAPH6_INCOME] = 0;
+        if ($paragraph6IncomeCzk !== null) {
+            if ($employmentId === null || !array_key_exists($employmentId, $paragraph6IncomeCzk)) {
+                $blockers[] = $this->blocker(self::SOURCE_MISSING_2027, 'employment', $employmentId, ['10555']);
+            } elseif (is_int($paragraph6IncomeCzk[$employmentId])) {
+                $employment[Jmhz2027DocumentContract::EMPLOYMENT_PARAGRAPH6_INCOME] = $paragraph6IncomeCzk[$employmentId];
+            }
         }
 
         $socialBase = $employment['social_base'] ?? null;
@@ -3856,8 +3931,6 @@ final class JmhzScenario1DocumentResolver
                     ? null
                     : ['amount_czk' => $studentAmount, 'doctoral' => $student['doctoral']];
             }
-        } elseif ($declarationSigned === false && $withholding !== null) {
-            $blockers[] = $this->blocker(self::SOURCE_MISSING_2027, 'person', $employeeId, ['10535', '10555']);
         }
         if ($ozpWage !== null) {
             $social = $ozpEvidence['social_insurance_paid_on'] ?? null;

@@ -173,8 +173,8 @@ final class JmhzScenario1Document2027Test extends TestCase
     }
 
     /**
-     * Samostatný základ § 6 odst. 4 výpočet daně po vztazích nerozděluje:
-     * 10555 bez prohlášení se základem zůstává neuvedený a stojí. Základ
+     * Výsledek daně se samostatným základem § 6 odst. 4, ale bez rozpadu po
+     * vztazích: 10555 zůstává neuvedený a stojí, neodhaduje se. Základ
      * a sražená daň (10307, 10309) jdou do kontraktu z téhož výsledku.
      */
     public function testParagraph6BaseWithoutDeclarationBlocksRelationshipSplit(): void
@@ -197,6 +197,169 @@ final class JmhzScenario1Document2027Test extends TestCase
             Jmhz2027DocumentContract::EMPLOYMENT_PARAGRAPH6_INCOME,
             $document['people'][0]['employments'][0],
         );
+    }
+
+    /**
+     * Záloha ze samostatného základu (§ 6 odst. 4 ZDP od 2027): příjem vztahu
+     * v samostatném základu jde do 10555, 10535 vztahu je 0 (kontroly 304,
+     * 380). Souhrn 10307/10309 nese zaokrouhlený základ a zálohu z téhož
+     * výsledku daně. Datová věta projde XSD i kontrolami katalogu.
+     */
+    public function testSeparateBaseIncomeGoesToParagraph6AttributeOfTheRelationship(): void
+    {
+        $payload = $this->withSeparateBase($this->completePayload('2027-04-01'), 100_000);
+
+        $resolution = $this->resolveForSubmission($payload, '2027-04-01');
+
+        self::assertSame([], $this->blockers($resolution));
+        $document = $resolution->candidate?->payload ?? [];
+        $employment = $document['people'][0]['employments'][0];
+        self::assertSame(0, $employment['taxable_income_czk']);
+        self::assertSame(1000, $employment[Jmhz2027DocumentContract::EMPLOYMENT_PARAGRAPH6_INCOME]);
+        self::assertSame(
+            ['base' => 1000, 'withheld' => 150],
+            $document['people'][0]['summary'][Jmhz2027DocumentContract::SUMMARY_PARAGRAPH6_TAX],
+        );
+        $xml = $this->validator()->dryRun($resolution, $this->envelope())['xml'];
+        self::assertStringContainsString('<form:prijemPar6>1000</form:prijemPar6>', $xml);
+        self::assertStringContainsString('<form:prijem>0</form:prijem>', $xml);
+        $report = JmhzScenario1ControlValidator::create(CzechPayrollRulesets::provider(), null, JmhzSpecVersion::V2027)
+            ->validate($xml, new JmhzControlContext('2027-05-12', schemaValidated: true));
+        $failed = [];
+        foreach ($report->blocking() as $finding) {
+            $failed[] = $finding->controlId;
+        }
+        self::assertNotContains(304, $failed);
+    }
+
+    /**
+     * 10555 je podle slovníku 1.5.0.3 „celé číslo" bez pravidla zaokrouhlení:
+     * haléře nezaokrouhleného příjmu jsou nález vztahu, ne zaokrouhlení.
+     * Zaokrouhlení nahoru (§ 6 odst. 18) patří jen samostatnému základu 10307.
+     */
+    public function testParagraph6IncomeWithHalereIsAFindingNotRounding(): void
+    {
+        $payload = $this->withSeparateBase($this->completePayload('2027-04-01'), 100_050);
+
+        $resolution = $this->resolve($payload, '2027-04-01');
+
+        self::assertContains(
+            ['jmhz_scenario1_whole_czk_required', 'employment', 101, ['10555']],
+            $this->blockers($resolution),
+        );
+        self::assertSame([], $this->blockersWithCode($resolution, self::SOURCE_MISSING));
+        $document = $resolution->candidate?->payload ?? [];
+        self::assertArrayNotHasKey(
+            Jmhz2027DocumentContract::EMPLOYMENT_PARAGRAPH6_INCOME,
+            $document['people'][0]['employments'][0],
+        );
+        self::assertSame(
+            ['base' => 1001, 'withheld' => 151],
+            $document['people'][0]['summary'][Jmhz2027DocumentContract::SUMMARY_PARAGRAPH6_TAX],
+        );
+    }
+
+    /**
+     * Rozpad, který neodpovídá souhrnu výsledku daně (příjem vztahu jiný než
+     * jeho podíl na samostatném základu, nebo výsledek 2027 bez režimu
+     * samostatného základu), se nevykáže: 10535 ani 10555 se neodhadují.
+     */
+    public function testInconsistentSeparateBaseBreakdownBlocksBothIncomeAttributes(): void
+    {
+        $mismatch = $this->withSeparateBase($this->completePayload('2027-04-01'), 100_000);
+        $mismatch['people'][0]['person_summary']['statutory']['income_tax']['relationships'][0]
+            ['separate_base_income_minor_units'] = 0;
+        $withoutRegime = $this->withSeparateBase($this->completePayload('2027-04-01'), 100_000);
+        unset($withoutRegime['people'][0]['person_summary']['statutory']['income_tax']['separate_base_regime']);
+
+        foreach (['mismatch' => $mismatch, 'without-regime' => $withoutRegime] as $case => $payload) {
+            $resolution = $this->resolve($payload, '2027-04-01');
+
+            self::assertContains(
+                ['jmhz_scenario1_income_tax_result_not_calculated', 'person', 11, ['10535', '10555']],
+                $this->blockers($resolution),
+                $case,
+            );
+            self::assertArrayNotHasKey(
+                Jmhz2027DocumentContract::EMPLOYMENT_PARAGRAPH6_INCOME,
+                $resolution->candidate?->payload['people'][0]['employments'][0] ?? [],
+                $case,
+            );
+        }
+    }
+
+    /**
+     * Vztah v záloze: 10535 nese jeho příjem a 10555 = 0, i když výsledek daně
+     * nese rozpad po vztazích.
+     */
+    public function testAdvanceRelationshipFromBreakdownReportsZeroParagraph6Income(): void
+    {
+        $payload = $this->completePayload('2027-04-01');
+        $tax = &$payload['people'][0]['person_summary']['statutory']['income_tax'];
+        $tax['relationships'] = [[
+            'relationship_reference' => 'employment:101',
+            'kind' => 'employment',
+            'taxable_base_minor_units' => 100_000,
+            'regime' => 'advance',
+            'withholding_group' => null,
+            'separate_base_income_minor_units' => 0,
+        ]];
+        $tax['withholding_base_minor_units'] = 0;
+        $tax['separate_base_regime'] = 'separate-advance';
+        $tax['separate_base_income_minor_units'] = 0;
+        unset($tax);
+
+        $resolution = $this->resolveForSubmission($payload, '2027-04-01');
+
+        self::assertSame([], $this->blockers($resolution));
+        $employment = $resolution->candidate?->payload['people'][0]['employments'][0] ?? [];
+        self::assertSame(1000, $employment['taxable_income_czk']);
+        self::assertSame(0, $employment[Jmhz2027DocumentContract::EMPLOYMENT_PARAGRAPH6_INCOME]);
+    }
+
+    /**
+     * Výsledek daně se samostatným základem podle § 6 odst. 4 (2027) u jediného
+     * vztahu: celý příjem v samostatném základu, záloha 15 % nahoru.
+     *
+     * @param array<string,mixed> $payload
+     * @return array<string,mixed>
+     */
+    private function withSeparateBase(array $payload, int $incomeMinor): array
+    {
+        $roundedBase = (int) (ceil($incomeMinor / 100) * 100);
+        $taxMinor = (int) (ceil($roundedBase * 15 / 10_000) * 100);
+        $tax = &$payload['people'][0]['person_summary']['statutory']['income_tax'];
+        $tax['relationships'] = [[
+            'relationship_reference' => 'employment:101',
+            'kind' => 'dpp',
+            'taxable_base_minor_units' => $incomeMinor,
+            'regime' => 'withholding',
+            'withholding_group' => 'dpp',
+            'separate_base_income_minor_units' => $incomeMinor,
+        ]];
+        $tax['advance_tax'] = [
+            'taxable_income_minor_units' => 0,
+            'rounded_tax_base_minor_units' => 0,
+            'tax_before_credits_minor_units' => 0,
+            'non_refundable_credits_minor_units' => 0,
+            'child_credit_minor_units' => 0,
+            'tax_after_credits_minor_units' => 0,
+            'tax_bonus_minor_units' => 0,
+        ];
+        $tax['withholding_groups'] = [[
+            'group' => 'dpp',
+            'base_minor_units' => $roundedBase,
+            'tax_minor_units' => $taxMinor,
+        ]];
+        $tax['withholding_base_minor_units'] = $roundedBase;
+        $tax['withholding_tax_minor_units'] = $taxMinor;
+        $tax['separate_base_regime'] = 'separate-advance';
+        $tax['separate_base_income_minor_units'] = $incomeMinor;
+        unset($tax);
+        $payload['people'][0]['person_summary']['statutory']['net_pay']['net_before_deductions_minor_units'] = 100_000 - 4_500 - 7_100 - $taxMinor;
+        $payload['people'][0]['person_summary']['statutory']['net_pay']['net_payable_minor_units'] = 100_000 - 4_500 - 7_100 - $taxMinor;
+
+        return $payload;
     }
 
     /**
