@@ -16,6 +16,17 @@ final readonly class JmhzOrdinaryEvidenceService
     private const MANIFEST_SCHEMA = 'payroll-jmhz-ordinary-evidence-manifest.v1';
     private const REQUEST_SCHEMA = 'payroll-jmhz-ordinary-evidence-request.v1';
 
+    /**
+     * Nálezy vztahu s podporou zaměstnávání OZP (IN28), které automatické
+     * doložení neumí vyřešit samo: chybí podklady, které zadává účetní
+     * (datum úhrady, hotovost), nebo rozhodnutí u dohody o srážce.
+     */
+    public const OZP_ATTENTION_CODES = [
+        'jmhz_ordinary_evidence_ozp_wage_required',
+        'jmhz_ordinary_evidence_ozp_deduction_unclassified',
+        'jmhz_ordinary_evidence_ozp_employer_not_protected',
+    ];
+
     public function __construct(
         private JmhzOrdinaryEvidenceRepository $repository,
         private JmhzOrdinaryEvidenceBuilder $builder,
@@ -223,6 +234,7 @@ final readonly class JmhzOrdinaryEvidenceService
         ?string $ip,
         ?string $userAgent,
         string $sourceKind = 'explicit_confirmation',
+        ?array $ozpWage = null,
     ): array {
         return $this->confirmAgainst(
             null,
@@ -235,6 +247,7 @@ final readonly class JmhzOrdinaryEvidenceService
             $ip,
             $userAgent,
             $sourceKind,
+            $ozpWage,
         );
     }
 
@@ -255,6 +268,7 @@ final readonly class JmhzOrdinaryEvidenceService
         ?string $ip,
         ?string $userAgent,
         string $sourceKind,
+        ?array $ozpWage = null,
     ): array {
         if ($supplierId <= 0 || $revisionId <= 0 || $confirmedBy <= 0 || $employmentId <= 0) {
             throw new \InvalidArgumentException('Firma, revize, vztah a potvrzující uživatel musí být kladná čísla.');
@@ -273,6 +287,8 @@ final readonly class JmhzOrdinaryEvidenceService
                 'employment_id' => $employmentId,
                 'facts' => $facts,
                 'source_kind' => $sourceKind,
+                // Jen s výdělkem OZP, ať otisk dosavadních potvrzení zůstane.
+                ...($ozpWage === null ? [] : ['ozp_wage' => $ozpWage]),
             ]),
             'jmhz-ordinary-confirmation',
             $supplierId,
@@ -290,19 +306,25 @@ final readonly class JmhzOrdinaryEvidenceService
             $ip,
             $userAgent,
             $sourceKind,
+            $ozpWage,
         ): array {
             $source = $lockedSource ?? $this->repository->lockSource($supplierId, $revisionId);
             if ($source === null) {
                 throw new JmhzOrdinaryEvidenceException('jmhz_ordinary_evidence_not_found', 'Zdrojová revize nebyla nalezena.');
             }
+            // Čas potvrzení už pro náhled: datum úhrady výdělku OZP (10347)
+            // se kontroluje proti dni potvrzení.
+            $confirmedAt = $this->clock->now()->setTimezone(new \DateTimeZone('UTC'))
+                ->format('Y-m-d\TH:i:s.u\Z');
             $preview = $this->builder->build(
                 $supplierId,
                 $source,
                 $employmentId,
                 $facts,
                 $confirmedBy,
-                '2000-01-01T00:00:00Z',
+                $confirmedAt,
                 $sourceKind,
+                $ozpWage,
             );
             $scope = $preview->payload['scope'];
             if (!is_array($scope) || array_is_list($scope)) {
@@ -342,8 +364,6 @@ final readonly class JmhzOrdinaryEvidenceService
                 return $this->publicResult($stored, $this->verifyStored($stored), false);
             }
 
-            $confirmedAt = $this->clock->now()->setTimezone(new \DateTimeZone('UTC'))
-                ->format('Y-m-d\TH:i:s.u\Z');
             $snapshot = $this->builder->build(
                 $supplierId,
                 $source,
@@ -352,6 +372,7 @@ final readonly class JmhzOrdinaryEvidenceService
                 $confirmedBy,
                 $confirmedAt,
                 $sourceKind,
+                $ozpWage,
             );
             $plaintext = $snapshot->canonicalJson();
             $fingerprint = $this->sensitiveData->keyedFingerprint(
@@ -494,6 +515,7 @@ final readonly class JmhzOrdinaryEvidenceService
                             'jmhz_ordinary_evidence_profile_incomplete',
                             'jmhz_ordinary_evidence_monthly_exception_required',
                             'jmhz_ordinary_evidence_deduction_conflict',
+                            ...self::OZP_ATTENTION_CODES,
                         ], true)) {
                             throw $exception;
                         }
@@ -513,7 +535,9 @@ final readonly class JmhzOrdinaryEvidenceService
                         'code' => $code,
                         'entity_type' => 'employment',
                         'entity_id' => $employmentId,
-                        'attribute_ids' => ['10116', '10546'],
+                        'attribute_ids' => in_array($code, self::OZP_ATTENTION_CODES, true)
+                            ? ['10347', '10348', '10349', '10350', '10351', '10352', '10353']
+                            : ['10116', '10546'],
                     ];
                 }
             }
@@ -660,6 +684,7 @@ final readonly class JmhzOrdinaryEvidenceService
                 'deep_mining_work_occurred' =>
                     $payload['interaction_decisions'][2]['triggered'] ?? null,
             ],
+            'ozp_wage' => $payload['ozp_wage'] ?? null,
             'source_kind' => $payload['confirmation']['source_kind'],
             'confirmed_at' => $payload['confirmation']['confirmed_at'],
             'created_at' => $stored['created_at'],

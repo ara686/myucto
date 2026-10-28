@@ -407,6 +407,14 @@ final class JmhzBlockerCatalog
         'jmhz_ordinary_evidence_missing' => 'ordinary_evidence',
         'jmhz_ordinary_evidence_monthly_exception_required' => 'ordinary_evidence',
         'jmhz_ordinary_evidence_not_found' => 'support',
+        // Podpora zaměstnávání OZP (IN28) a srážky ve prospěch zaměstnavatele (IN24).
+        'jmhz_ordinary_evidence_ozp_deduction_unclassified' => 'ordinary_evidence',
+        'jmhz_ordinary_evidence_ozp_employer_not_protected' => 'office',
+        'jmhz_ordinary_evidence_ozp_payment_date_invalid' => 'ordinary_evidence',
+        'jmhz_ordinary_evidence_ozp_profile_mismatch' => 'employment_profile',
+        'jmhz_ordinary_evidence_ozp_wage_invalid' => 'ordinary_evidence',
+        'jmhz_ordinary_evidence_ozp_wage_required' => 'ordinary_evidence',
+        'jmhz_ordinary_evidence_ozp_wage_unexpected' => 'ordinary_evidence',
         'jmhz_ordinary_evidence_period_invalid' => 'support',
         'jmhz_ordinary_evidence_positive_unsupported' => 'ordinary_evidence',
         'jmhz_ordinary_evidence_profile_incomplete' => 'runs',
@@ -422,6 +430,8 @@ final class JmhzBlockerCatalog
         'jmhz_ordinary_evidence_source_mismatch' => 'retry',
         'jmhz_ordinary_evidence_specification_mismatch' => 'retry',
         'jmhz_ordinary_evidence_values_mismatch' => 'retry',
+        // Podporu zaměstnávání OZP má jen vedlejší vztah; souhrn nese primární.
+        'jmhz_ozp_wage_primary_mismatch' => ['employment_terms', 'is_primary'],
         'jmhz_period_invalid' => 'support',
         'jmhz_period_mismatch' => 'support',
         'jmhz_person_identifier' => ['employment_identity', 'jmhz.person_external_identifier'],
@@ -680,6 +690,9 @@ final class JmhzBlockerCatalog
         'jmhz_xml_no_valid_form' => 'submission',
         'jmhz_xml_not_byte_stable' => 'support',
         'jmhz_xml_overtime_exceeds_worked_hours' => 'time',
+        'jmhz_xml_ozp_deductions_inconsistent' => 'support',
+        // Výdělek OZP na formuláři bez čisté mzdy (vězeň, činnost KS): ručně.
+        'jmhz_xml_ozp_wage_form_unsupported' => 'manual',
         'jmhz_xml_paid_unworked_hours_below_sickness' => 'absences',
         'jmhz_xml_period_invalid' => 'submission',
         'jmhz_xml_primary_employment_invalid' => ['employment_terms', 'is_primary'],

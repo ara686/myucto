@@ -2504,6 +2504,15 @@ final class PayrollRunSnapshotBuilder
                 ...((($row['legal_basis'] ?? 'agreement') === 'agreement')
                     ? []
                     : ['legal_basis' => (string) $row['legal_basis']]),
+                // Věřitel a zařazení srážky pro JMHZ 10349 až 10353 (IN24/IN28).
+                // Jen u rozhodnuté dohody, nerozhodnuté a starší snímky zůstávají
+                // bajtově stejné; nerozhodnutou pozná JmhzOrdinaryEvidenceBuilder.
+                ...(($row['creditor_is_employer'] ?? null) === null ? [] : [
+                    'creditor_is_employer' => (int) $row['creditor_is_employer'] === 1,
+                    ...(($row['jmhz_target'] ?? null) === null
+                        ? []
+                        : ['jmhz_target' => (string) $row['jmhz_target']]),
+                ]),
             ],
             $rows,
         );

@@ -281,6 +281,59 @@ describe('PayrollJmhzOrdinaryEvidencePanel', () => {
     expect(guidanceCalls.count).toBe(callsAfterMount)
   })
 
+  /**
+   * Podpora zaměstnávání OZP (IN28): datum úhrady mzdy včetně pojistného
+   * (10347) a hotovost (10348) zadává účetní přímo u vztahu; potvrzení nese
+   * IN28 = Ano a výdělek OZP. Bez práva zápisu se formulář neukáže.
+   */
+  it('u vztahu s podporou OZP potvrdí datum úhrady a hotovost', async () => {
+    m.get.mockResolvedValue({
+      scopes: [{
+        employee_id: 11,
+        employment_id: 101,
+        employee_name: 'Osoba A',
+        confirmed: false,
+        resolution: 'attention_required',
+        attention_code: 'jmhz_ordinary_evidence_ozp_wage_required',
+        attention_message: 'Doplňte výdělek OZP.',
+      }],
+      evidences: [],
+    })
+    const stubs = {
+      DateInput: {
+        props: ['modelValue'],
+        emits: ['update:modelValue'],
+        template: '<input :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)">',
+      },
+    }
+    const wrapper = mount(PayrollJmhzOrdinaryEvidencePanel, {
+      props: { runs: [run] as never[] },
+      global: { stubs },
+    })
+    await flushPromises()
+
+    const confirm = wrapper.get('[data-test="jmhz-ozp-confirm-101"]')
+    expect(confirm.attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-test="jmhz-ozp-payment-date-101"]').setValue('2026-09-14')
+    await wrapper.get('[data-test="jmhz-ozp-cash-101"]').setValue('no')
+    await wrapper.get('[data-test="jmhz-ozp-wage-form-101"]').trigger('submit')
+    await flushPromises()
+
+    expect(m.confirm).toHaveBeenCalledWith(18, 101, expect.any(String), {
+      payment_date: '2026-09-14',
+      cash_paid: false,
+    })
+    expect(m.get).toHaveBeenCalledTimes(2)
+
+    m.canWrite.mockReturnValue(false)
+    const readOnly = mount(PayrollJmhzOrdinaryEvidencePanel, {
+      props: { runs: [run] as never[] },
+      global: { stubs },
+    })
+    await flushPromises()
+    expect(readOnly.find('[data-test="jmhz-ozp-wage-form-101"]').exists()).toBe(false)
+  })
+
   it('v režimu jen pro čtení nepovolí potvrzení', async () => {
     m.canWrite.mockReturnValue(false)
     const wrapper = mount(PayrollJmhzOrdinaryEvidencePanel, {

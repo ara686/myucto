@@ -2879,6 +2879,193 @@ final class JmhzScenario1XmlSerializerTest extends TestCase
         }
     }
 
+    /** @return iterable<string, array{string}> */
+    public static function ozpWageFormBodies(): iterable
+    {
+        yield 'bezPriznaku' => ['bezPriznaku'];
+        yield 'odlozenyPrijem' => ['odlozenyPrijem'];
+    }
+
+    /**
+     * Výdělek osob OZP (IN28: 10347 až 10349) a srážky ve prospěch
+     * zaměstnavatele (IN24: 10350 až 10353) z ordinary evidence primárního
+     * vztahu. Bloky stojí v čisté mzdě za 10116 v pořadí XSD 1.4.3.6
+     * (`mzdaCistaBezPriznakuType`, `mzdaCistaOdlozenyPrijemType`), nulová
+     * částka se nevypisuje a kontrola 258 projde. Dřív serializér bloky
+     * nevypsal nikdy a resolver měl IN28 natvrdo Ne.
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('ozpWageFormBodies')]
+    public function testOzpWageAndEmployerDeductionsAreSerializedFromOrdinaryEvidence(string $body): void
+    {
+        $document = $this->summaryMatrixDocument($body, 7, self::withOzpWage([
+            '10350' => 50_000,
+            '10351' => 30_000,
+            '10352' => 120_000,
+            '10353' => 25_000,
+        ]));
+        self::assertTrue($document['interactions']['IN28']);
+        self::assertTrue($document['interactions']['IN24']);
+        $xml = $this->summaryMatrixXml($document);
+        $xpath = $this->summaryMatrixXpath($document);
+
+        foreach ([
+            'souhrnDataZec/mzdaCista/vydelekOZP/mzdaOzpUhradaDatum' => ['2026-08-04'],
+            'souhrnDataZec/mzdaCista/vydelekOZP/mzdaOzpHotovost' => ['true'],
+            'souhrnDataZec/mzdaCista/vydelekOZP/mzdaOzpSrazka' => ['true'],
+            'souhrnDataZec/mzdaCista/srazky/srazkaPlneniZel' => ['500'],
+            'souhrnDataZec/mzdaCista/srazky/srazkaSkodaZec' => ['300'],
+            'souhrnDataZec/mzdaCista/srazky/srazkaStrava' => ['1200'],
+            'souhrnDataZec/mzdaCista/srazky/srazkaZavazkyZec' => ['250'],
+        ] as $path => $expected) {
+            self::assertSame(
+                $expected,
+                array_map(
+                    static fn (\DOMNode $node): string => $node->textContent,
+                    iterator_to_array($xpath->query(self::formQuery($body, $path))),
+                ),
+                "{$body}: {$path}",
+            );
+        }
+        self::assertSame([JmhzControlOutcome::Passed], $this->controlOutcomes($xml, 258));
+    }
+
+    /**
+     * Bez srážky ve prospěch zaměstnavatele je 10349 Ne a blok `srazky` se
+     * nevypisuje (IN24 se nespustí). Výdělek OZP bez IN28 se nevypisuje vůbec.
+     */
+    public function testOzpWageWithoutEmployerDeductionsOmitsTheDeductionBlock(): void
+    {
+        $document = $this->summaryMatrixDocument('bezPriznaku', 7, self::withOzpWage([]));
+        self::assertTrue($document['interactions']['IN28']);
+        self::assertArrayNotHasKey('IN24', $document['interactions']);
+        $xpath = $this->summaryMatrixXpath($document);
+        $read = static fn (string $path): array => array_map(
+            static fn (\DOMNode $node): string => $node->textContent,
+            iterator_to_array($xpath->query(self::formQuery('bezPriznaku', $path))),
+        );
+
+        self::assertSame(['false'], $read('souhrnDataZec/mzdaCista/vydelekOZP/mzdaOzpSrazka'));
+        self::assertSame([], $read('souhrnDataZec/mzdaCista/srazky'));
+
+        $plain = $this->summaryMatrixDocument('bezPriznaku');
+        self::assertFalse($plain['interactions']['IN28']);
+        self::assertArrayNotHasKey('ozp_wage', $plain['people'][0]['summary']);
+        self::assertSame([], array_map(
+            static fn (\DOMNode $node): string => $node->textContent,
+            iterator_to_array($this->summaryMatrixXpath($plain)->query(
+                self::formQuery('bezPriznaku', 'souhrnDataZec/mzdaCista/vydelekOZP'),
+            )),
+        ));
+    }
+
+    /**
+     * Kontrola 258 (katalog MH 1.4.2.10, nepropustná): 10349 = ANO bez jediné
+     * částky 10350 až 10353 neprojde. Dřív kontrola mezi implementovanými
+     * nebyla vůbec.
+     */
+    public function testControl258RejectsFlaggedDeductionsWithoutAmounts(): void
+    {
+        $xml = $this->summaryMatrixXml(
+            $this->summaryMatrixDocument('bezPriznaku', 7, self::withOzpWage(['10351' => 30_000])),
+        );
+        $dom = new \DOMDocument();
+        $dom->loadXML($xml);
+        $deductions = $dom->getElementsByTagNameNS('http://schemas.cssz.cz/JMHZ/form/1.0', 'srazky');
+        self::assertSame(1, $deductions->length);
+        $deductions->item(0)->parentNode->removeChild($deductions->item(0));
+
+        self::assertSame([JmhzControlOutcome::Failed], $this->controlOutcomes($dom->saveXML(), 258));
+    }
+
+    /** Serializér nevypíše 10349 = ANO bez částky, ani obráceně. */
+    public function testOzpDeductionFlagInconsistentWithAmountsIsRefused(): void
+    {
+        $document = $this->summaryMatrixDocument('bezPriznaku', 7, self::withOzpWage([]));
+        $document['people'][0]['summary']['ozp_wage']['employer_deductions_made'] = true;
+
+        try {
+            $this->summaryMatrixXml($document);
+            self::fail('10349 = ANO bez částky 10350 až 10353 se nesmí vypsat.');
+        } catch (JmhzXmlException $exception) {
+            self::assertSame('jmhz_xml_ozp_deductions_inconsistent', $exception->validationCode);
+        }
+    }
+
+    /**
+     * Formulář vězně výdělek OZP nevede (`mzdaCistaType` bez rozšíření), takže
+     * se na něm hlášení s IN28 zastaví, místo aby se údaj tiše ztratil.
+     */
+    public function testOzpWageOnPrisonerFormIsRefused(): void
+    {
+        $document = $this->summaryMatrixDocument('vezen', 7, self::withOzpWage([]));
+
+        try {
+            $this->summaryMatrixXml($document);
+            self::fail('Výdělek OZP na formuláři vězně se nesmí ztratit.');
+        } catch (JmhzXmlException $exception) {
+            self::assertSame('jmhz_xml_ozp_wage_form_unsupported', $exception->validationCode);
+        }
+    }
+
+    /**
+     * Souhrn (10347 až 10353) nese jen primární vztah (kontroly 248 a 321).
+     * Podpora OZP jen u vedlejšího vztahu by se do hlášení nedostala, proto
+     * resolver hlášení zastaví. Haléřový zbytek srážky se nezaokrouhluje.
+     */
+    public function testOzpWageOnlyOnSecondaryEmploymentOrInHellersBlocks(): void
+    {
+        $payload = $this->payloadWithChildCredit();
+        $secondary = $payload['people'][0]['employments'][0];
+        $secondary['employment_id'] = 102;
+        $secondary['employment']['is_primary'] = false;
+        $payload['people'][0]['employments'][] = $secondary;
+        $payload['ordinary_evidence'][] = [
+            'scope' => ['employee_id' => 11, 'employment_id' => 102],
+            'attribute_values' => ['10116' => false, '10546' => false],
+            'ozp_wage' => self::ozpWage([]),
+        ];
+        $codes = array_map(
+            static fn ($blocker): string => $blocker->code,
+            $this->resolutionFor($payload)->blockers,
+        );
+        self::assertContains('jmhz_ozp_wage_primary_mismatch', $codes);
+
+        $payload = $this->payloadWithChildCredit();
+        self::withOzpWage(['10352' => 120_050])($payload);
+        $blockers = array_values(array_filter(
+            $this->resolutionFor($payload)->blockers,
+            static fn ($blocker): bool => $blocker->code === 'jmhz_scenario1_whole_czk_required',
+        ));
+        self::assertCount(1, $blockers);
+        self::assertSame(['10352'], $blockers[0]->attributeIds);
+    }
+
+    /**
+     * @param array<string,int> $deductions
+     * @return callable(array<string,mixed>&):void
+     */
+    private static function withOzpWage(array $deductions): callable
+    {
+        return static function (array &$payload) use ($deductions): void {
+            $payload['ordinary_evidence'][0]['ozp_wage'] = self::ozpWage($deductions);
+        };
+    }
+
+    /**
+     * @param array<string,int> $deductions
+     * @return array<string,mixed>
+     */
+    private static function ozpWage(array $deductions): array
+    {
+        return [
+            'payment_date' => '2026-08-04',
+            'cash_paid' => true,
+            'employer_deductions_made' => $deductions !== [],
+            'employer_deductions_minor' => $deductions,
+            'employer_deduction_sources' => [],
+        ];
+    }
+
     /**
      * Roční výsledek se slevou na manžela (IN19): blok slevaNaPartnera stojí
      * mezi 10420 a 10454 a celé hlášení projde XSD 1.4.3.6.

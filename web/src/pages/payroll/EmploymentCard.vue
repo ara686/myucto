@@ -1840,7 +1840,14 @@ const GRID = 'mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3'
               <div class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <label v-for="field in ordinaryProfileFields" :key="field.key" class="flex items-start gap-2 text-sm text-neutral-700">
                   <input v-model="termsForm[field.key]" :data-a1-field="field.key" type="checkbox" :disabled="!canEditTerms || busy" class="mt-0.5 rounded border-neutral-300 text-warning-600 focus:ring-warning-500">
-                  <span class="min-w-0">{{ t(`payroll.people.jmhz_ordinary_profile.${field.label}`) }}</span>
+                  <span class="min-w-0">
+                    {{ t(`payroll.people.jmhz_ordinary_profile.${field.label}`) }}
+                    <span
+                      v-if="field.key === 'jmhz_ozp_employment_support_applies'"
+                      class="mt-0.5 block text-xs text-neutral-500"
+                      data-test="jmhz-ozp-support-hint"
+                    >{{ t('payroll.people.jmhz_ordinary_profile.ozp_employment_support_hint') }}</span>
+                  </span>
                 </label>
               </div>
               <p class="mt-2 text-xs text-neutral-500">{{ t('payroll.people.jmhz_ordinary_profile.monthly_hint') }}</p>

@@ -56,15 +56,22 @@ final class PayrollJmhzOrdinaryEvidenceAction
         $body = $request->getParsedBody();
         $bodyKeys = is_array($body) ? array_keys($body) : [];
         sort($bodyKeys, SORT_STRING);
+        // `ozp_wage` (datum úhrady 10347 a hotovost 10348) jen u vztahu
+        // s podporou zaměstnávání OZP; jinak se neposílá.
+        $ozpWage = is_array($body) ? ($body['ozp_wage'] ?? null) : null;
         if (!is_array($body) || array_is_list($body)
-            || $bodyKeys !== ['evidence_confirmed', 'facts']
+            || !in_array($bodyKeys, [
+                ['evidence_confirmed', 'facts'],
+                ['evidence_confirmed', 'facts', 'ozp_wage'],
+            ], true)
             || !is_array($body['facts']) || array_is_list($body['facts'])
             || $body['evidence_confirmed'] !== true
+            || ($ozpWage !== null && (!is_array($ozpWage) || array_is_list($ozpWage)))
         ) {
             return Json::error(
                 $response,
                 'validation_failed',
-                'Tělo musí obsahovat přesně facts a výslovné evidence_confirmed=true.',
+                'Tělo musí obsahovat přesně facts, výslovné evidence_confirmed=true a případně ozp_wage.',
                 422,
             );
         }
@@ -89,6 +96,8 @@ final class PayrollJmhzOrdinaryEvidenceAction
                 $actor,
                 $this->ipMatcher->clientIpFromRequest($serverParams),
                 $request->getHeaderLine('User-Agent'),
+                'explicit_confirmation',
+                $ozpWage,
             );
         } catch (JmhzOrdinaryEvidenceException $exception) {
             return $this->domainError($response, $exception);

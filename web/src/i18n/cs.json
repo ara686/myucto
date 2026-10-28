@@ -6425,7 +6425,8 @@
         "specific_legal_fact_applies": "Může nastat specifická právní skutečnost vykazovaná v JMHZ",
         "ozp_employment_support_applies": "Zaměstnavatel může čerpat příspěvek na podporu zaměstnávání osob se zdravotním postižením",
         "deep_mining_work_applies": "Práce probíhá v hlubinném hornictví",
-        "monthly_hint": "Označené výjimky automatická příprava JMHZ zatím neumí zpracovat. Pokud se vás některá skutečně týká, kontaktujte podporu; správný údaj nevypínejte kvůli odeslání. Exekuce, insolvence a dohody o srážkách se přebírají z příslušných agend."
+        "monthly_hint": "Označené výjimky automatická příprava JMHZ zatím neumí zpracovat. Pokud se vás některá skutečně týká, kontaktujte podporu; správný údaj nevypínejte kvůli odeslání. Exekuce, insolvence a dohody o srážkách se přebírají z příslušných agend.",
+        "ozp_employment_support_hint": "Jen u zaměstnavatele uznaného na chráněném trhu práce. Měsíční hlášení pak nese výdělek OZP: datum úhrady mzdy včetně pojistného a hotovost potvrdíte v Mzdových podáních, srážky ve prospěch zaměstnavatele se odvodí z dohod o srážkách."
       },
       "cz_isco_code": "Kód CZ-ISCO",
       "cz_isco": {
@@ -9168,7 +9169,12 @@
             "activity_invalid": "Druh činnosti uložený ve mzdové revizi není platnou hodnotou číselníku JMHZ.",
             "detail_missing": "Chybí bližší určení pracovněprávního vztahu, které vybraný druh činnosti vyžaduje.",
             "detail_invalid": "Bližší určení pracovněprávního vztahu není platnou hodnotou číselníku JMHZ.",
-            "detail_not_applicable": "Vyplněné bližší určení pracovněprávního vztahu se nesmí používat s vybraným druhem činnosti."
+            "detail_not_applicable": "Vyplněné bližší určení pracovněprávního vztahu se nesmí používat s vybraným druhem činnosti.",
+            "ozp_wage": "Zaměstnanec má podporu zaměstnávání OZP a chybí datum úhrady mzdy včetně pojistného a údaj o výplatě v hotovosti.",
+            "ozp_payment_date": "Datum úhrady mzdy včetně pojistného není v povoleném rozsahu.",
+            "ozp_profile": "Podpora zaměstnávání OZP v potvrzení neodpovídá nastavení pracovního vztahu.",
+            "ozp_deductions": "U dohody o srážce chybí rozhodnutí, zda je věřitelem zaměstnavatel a jak se srážka vykáže v JMHZ.",
+            "ozp_employer": "Zaměstnavatel není v registraci uveden jako uznaný na chráněném trhu práce."
           },
           "steps": {
             "specification": "Otevřete mzdy pro uvedené období. Pro další přípravu nebo skutečně potřebnou opravu vytvořte a schvalte novou opravnou revizi a z ní připravte hlášení. Již přijatá hlášení kvůli tomuto upozornění znovu neodesílejte. Pokud potíž trvá i v nové revizi, kontaktujte podporu.",
@@ -9203,7 +9209,12 @@
             "activity_invalid": "Otevřete uvedený pracovní vztah a jeho účinné podmínky. V základních údajích zkontrolujte pole Druh činnosti a Bližší určení pracovněprávního vztahu a jejich kombinaci podle skutečné smlouvy. Uložte správnou verzi podmínek s účinností pro vykazovaný měsíc, poté mzdu přepočítejte a schvalte novou revizi. Správné údaje neměňte na jiné jen kvůli průchodu kontroly.",
             "detail_missing": "Otevřete uvedený pracovní vztah a jeho účinné podmínky. V základních údajích zkontrolujte pole Druh činnosti a Bližší určení pracovněprávního vztahu a jejich kombinaci podle skutečné smlouvy. Uložte správnou verzi podmínek s účinností pro vykazovaný měsíc, poté mzdu přepočítejte a schvalte novou revizi. Správné údaje neměňte na jiné jen kvůli průchodu kontroly.",
             "detail_invalid": "Otevřete uvedený pracovní vztah a jeho účinné podmínky. V základních údajích zkontrolujte pole Druh činnosti a Bližší určení pracovněprávního vztahu a jejich kombinaci podle skutečné smlouvy. Uložte správnou verzi podmínek s účinností pro vykazovaný měsíc, poté mzdu přepočítejte a schvalte novou revizi. Správné údaje neměňte na jiné jen kvůli průchodu kontroly.",
-            "detail_not_applicable": "Otevřete uvedený pracovní vztah a jeho účinné podmínky. V základních údajích zkontrolujte pole Druh činnosti a Bližší určení pracovněprávního vztahu a jejich kombinaci podle skutečné smlouvy. Uložte správnou verzi podmínek s účinností pro vykazovaný měsíc, poté mzdu přepočítejte a schvalte novou revizi. Správné údaje neměňte na jiné jen kvůli průchodu kontroly."
+            "detail_not_applicable": "Otevřete uvedený pracovní vztah a jeho účinné podmínky. V základních údajích zkontrolujte pole Druh činnosti a Bližší určení pracovněprávního vztahu a jejich kombinaci podle skutečné smlouvy. Uložte správnou verzi podmínek s účinností pro vykazovaný měsíc, poté mzdu přepočítejte a schvalte novou revizi. Správné údaje neměňte na jiné jen kvůli průchodu kontroly.",
+            "ozp_wage": "Níže u vztahu vyplňte den úhrady (nejpozdější z výplaty mzdy, odvodu sociálního a zdravotního pojištění) a zda byla část mzdy vyplacena v hotovosti, a potvrďte.",
+            "ozp_payment_date": "Zadejte den, kdy byla mzda včetně pojistného skutečně uhrazena; nesmí být v budoucnu ani před začátkem měsíce.",
+            "ozp_profile": "Na kartě pracovního vztahu ověřte příznak podpory zaměstnávání OZP a připravte hlášení znovu.",
+            "ozp_deductions": "U dohody vyberte věřitele (zaměstnavatel, nebo třetí osoba) a u srážky ve prospěch zaměstnavatele její zařazení 10350 až 10353; pak připravte hlášení znovu.",
+            "ozp_employer": "V nastavení zaměstnavatele zkontrolujte uznání na chráněném trhu práce, nebo u vztahu podporu zaměstnávání OZP vypněte."
           },
           "actions": {
             "run": "Otevřít mzdy tohoto měsíce",
@@ -9211,7 +9222,8 @@
             "employment": "Zkontrolovat podmínky vztahu",
             "deductions": "Otevřít exekuce a srážky osoby",
             "agreements": "Otevřít dohody o srážkách osoby",
-            "support": "Otevřít podporu"
+            "support": "Otevřít podporu",
+            "employer": "Otevřít nastavení zaměstnavatele"
           },
           "fields": {
             "orchard_discount_eligible": "Sleva na pojistném v ovocnářství nebo při pěstování zeleniny",
@@ -9222,6 +9234,19 @@
           "technical_details": "Technické podrobnosti pro podporu",
           "xsd_versions": "Formát hlášení: uložená verze {old}, aktuální verze {current}.",
           "control_versions": "Kontrolní pravidla: uložená verze {old}, aktuální verze {current}."
+        },
+        "jmhz_ozp_wage": {
+          "hint": "Datum úhrady (10347) je nejpozdější z: den výplaty mzdy, den odvodu sociálního pojištění, den odvodu zdravotního pojištění. Srážky ve prospěch zaměstnavatele (10349 až 10353) se odvodí z mzdového běhu.",
+          "payment_date": "Datum úhrady mzdy včetně pojistného",
+          "cash_paid": "Část mzdy vyplacena v hotovosti",
+          "cash_select": "Vyberte",
+          "cash_yes": "Ano",
+          "cash_no": "Ne",
+          "confirm": "Potvrdit výdělek OZP",
+          "failed": "Výdělek OZP se nepodařilo potvrdit.",
+          "summary": "Výdělek OZP (vztah {employment}): úhrada {date}, hotovost {cash}.",
+          "no_deductions": "Bez srážek ve prospěch zaměstnavatele.",
+          "deduction": "{attribute}: {amount} Kč"
         }
       },
       "manual_acceptance": {
@@ -10509,7 +10534,8 @@
         "employee": "Vyberte zaměstnance, kterému dohoda patří.",
         "title": "Doplňte název dohody - pod ním se srážka objeví na výplatním lístku.",
         "read_only": "Na mzdové vstupy máte jen právo ke čtení, dohodu uložit nemůžete.",
-        "started_on": "U srážky ze zákona vyplňte den zahájení srážek - určuje její pořadí vůči exekucím a dohodám."
+        "started_on": "U srážky ze zákona vyplňte den zahájení srážek - určuje její pořadí vůči exekucím a dohodám.",
+        "jmhz_target": "U srážky ve prospěch zaměstnavatele vyberte, jak se vykáže v JMHZ."
       },
       "legal_basis_label": "Právní titul srážky",
       "legal_basis_hint_agreement": "Dohoda o srážkách ze mzdy se zaměstnancem (§ 146 písm. b) zákoníku práce). Pořadí vůči exekucím určuje den doručení dohody.",
@@ -10566,6 +10592,29 @@
         "reversed": "Storno srážky",
         "paid": "Odesláno příjemci",
         "payment_reversed": "Storno odeslání"
+      },
+      "section_jmhz": "Měsíční hlášení JMHZ (zaměstnanci OZP)",
+      "jmhz_hint": "Vyplňuje se u zaměstnance, u kterého zaměstnavatel uznaný na chráněném trhu práce uplatňuje podporu zaměstnávání OZP. Do hlášení jdou jen srážky ve prospěch zaměstnavatele; exekuce a srážky ze zákona ne.",
+      "jmhz_creditor": "Věřitel srážky",
+      "jmhz_creditor_options": {
+        "undecided": "Nerozhodnuto",
+        "employer": "Zaměstnavatel",
+        "third_party": "Třetí osoba"
+      },
+      "jmhz_target": "Vykázat v JMHZ jako",
+      "jmhz_target_select": "Vyberte zařazení",
+      "jmhz_target_badge": "JMHZ {attribute}",
+      "jmhz_targets": {
+        "10350": "10350 Plnění zaměstnavatele podle OZ",
+        "10351": "10351 Náhrada škody",
+        "10352": "10352 Závodní stravování (§ 236 ZP)",
+        "10353": "10353 Jiný závazek (§ 146 písm. b) ZP)"
+      },
+      "jmhz_target_hints": {
+        "10350": "Dohoda o srážkách podle § 2045 OZ ve prospěch zaměstnavatele, například zaměstnanecká zápůjčka nebo splátky zálohy nad nárok.",
+        "10351": "Srážka k náhradě škody, za kterou zaměstnanec odpovídá (§ 250 a násl. ZP), vždy na základě dohody.",
+        "10352": "Příspěvek zaměstnance na stravování poskytované zaměstnavatelem, ne stravenkový paušál.",
+        "10353": "Jiný závazek zaměstnance vůči zaměstnavateli, například úhrada benefitů nebo splátka půjčky."
       }
     },
     "insolvency": {
@@ -12999,7 +13048,17 @@
         "jmhz_zero_amendment_situation_required": "Anulaci měsíce je nutné výslovně potvrdit jako měsíc, který neměl být hlášen.",
         "jmhz_zero_amendment_target_invalid": "Anulovat nulovým opravným hlášením lze jen formulář řádného měsíčního hlášení.",
         "jmhz_zero_report_attribute_unknown": "Požadovaný atribut nulového hlášení JMHZ není v aplikaci definován; jde o technickou chybu, kterou musí posoudit podpora.",
-        "jmhz_zero_report_situation_unknown": "Situace nulového hlášení JMHZ není v pravidlech aplikace popsaná; jde o technickou chybu, kterou musí posoudit podpora."
+        "jmhz_zero_report_situation_unknown": "Situace nulového hlášení JMHZ není v pravidlech aplikace popsaná; jde o technickou chybu, kterou musí posoudit podpora.",
+        "jmhz_ordinary_evidence_ozp_deduction_unclassified": "U dohody o srážce zaměstnance s podporou zaměstnávání OZP chybí rozhodnutí, zda je věřitelem zaměstnavatel a jak se srážka vykáže v JMHZ (10350 až 10353).",
+        "jmhz_ordinary_evidence_ozp_employer_not_protected": "Podpora zaměstnávání OZP se hlásí jen u zaměstnavatele uznaného na chráněném trhu práce; v registraci zaměstnavatele to uvedeno není.",
+        "jmhz_ordinary_evidence_ozp_payment_date_invalid": "Datum úhrady mzdy včetně pojistného (10347) musí ležet mezi začátkem vykazovaného měsíce a dneškem; hlášení se podává až po úhradě.",
+        "jmhz_ordinary_evidence_ozp_profile_mismatch": "Podpora zaměstnávání OZP v potvrzení neodpovídá nastavení pracovního vztahu.",
+        "jmhz_ordinary_evidence_ozp_wage_invalid": "Výdělek OZP musí obsahovat platné datum úhrady mzdy a výslovné Ano nebo Ne u výplaty v hotovosti.",
+        "jmhz_ordinary_evidence_ozp_wage_required": "U zaměstnance s podporou zaměstnávání OZP chybí datum úhrady mzdy včetně pojistného (10347) a údaj o výplatě v hotovosti (10348).",
+        "jmhz_ordinary_evidence_ozp_wage_unexpected": "Výdělek OZP (10347 až 10349) se uvádí jen u vztahu s podporou zaměstnávání OZP.",
+        "jmhz_ozp_wage_primary_mismatch": "Podporu zaměstnávání OZP má jen vedlejší pracovní vztah osoby, výdělek OZP ale nese souhrn hlavního vztahu.",
+        "jmhz_xml_ozp_deductions_inconsistent": "Příznak srážek ve prospěch zaměstnavatele (10349) neodpovídá částkám 10350 až 10353 (kontrola 258).",
+        "jmhz_xml_ozp_wage_form_unsupported": "Výdělek osob OZP a srážky ve prospěch zaměstnavatele (10347 až 10353) formulář tohoto druhu nevede; hlášení zpracujte ručně."
       }
     },
     "server_codes": {

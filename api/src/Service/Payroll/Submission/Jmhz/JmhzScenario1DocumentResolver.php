@@ -263,6 +263,8 @@ final class JmhzScenario1DocumentResolver
         // Bez osob není co potvrzovat — a hlavně není čím právní skutečnosti
         // doložit, takže prázdná příprava zůstává blokovaná jako dřív.
         $ordinaryEvidenceComplete = $people !== [];
+        $in28Triggered = false;
+        $in24Triggered = false;
         foreach ($people as $person) {
             $employeeId = is_int($person['employee_id'] ?? null)
                 ? $person['employee_id']
@@ -278,6 +280,7 @@ final class JmhzScenario1DocumentResolver
              * všechny vztahy téže osoby ho proto nesou stejný.
              */
             $personEvidence = [];
+            $ozpWageEmployments = [];
             foreach ($employments as $employmentRow) {
                 $employmentKey = $employmentRow['employment_id'] ?? null;
                 $evidence = is_int($employmentKey)
@@ -287,11 +290,24 @@ final class JmhzScenario1DocumentResolver
                     $ordinaryEvidenceComplete = false;
                     continue;
                 }
+                if (is_array($evidence['ozp_wage'] ?? null)) {
+                    $ozpWageEmployments[] = $employmentKey;
+                }
                 if ($personEvidence === []
                     || ($this->object($employmentRow['employment'] ?? null)['is_primary'] ?? null) === true
                 ) {
                     $personEvidence = $evidence;
                 }
+            }
+            $ozpWage = $this->ozpWageSummary(
+                $personEvidence,
+                $ozpWageEmployments,
+                $employeeId,
+                $blockers,
+            );
+            if ($ozpWage !== null) {
+                $in28Triggered = true;
+                $in24Triggered = $in24Triggered || $ozpWage['employer_deductions_made'];
             }
             if ($employments === []) {
                 $ordinaryEvidenceComplete = false;
@@ -691,6 +707,9 @@ final class JmhzScenario1DocumentResolver
                     'deductions_recorded' => $personEvidence === []
                         ? null
                         : ($personEvidence['attribute_values']['10116'] ?? null),
+                    // Výdělek OZP a srážky ve prospěch zaměstnavatele (IN28,
+                    // IN24); klíč jen u osoby s IN28, ostatní dokumenty se nemění.
+                    ...($ozpWage === null ? [] : ['ozp_wage' => $ozpWage]),
                     'taxpayer_declaration_signed' => $declarationSigned,
                     // Rezidence z výpočtu daně (10068 se v profilu nevykazuje);
                     // podle ní serializér plní kontrolu 243. `null` = starší výsledek.
@@ -874,7 +893,8 @@ final class JmhzScenario1DocumentResolver
             'people' => $normalizedPeople,
             'interactions' => [
                 'IN13' => $ordinaryEvidenceComplete ? false : null,
-                'IN28' => $ordinaryEvidenceComplete ? false : null,
+                'IN28' => $ordinaryEvidenceComplete ? $in28Triggered : null,
+                ...($in24Triggered ? ['IN24' => true] : []),
                 'IN30' => $ordinaryEvidenceComplete ? false : null,
                 'IN36' => $ordinaryEvidenceComplete ? false : null,
             ],
@@ -3456,6 +3476,63 @@ final class JmhzScenario1DocumentResolver
      *
      * @param list<JmhzScenario1Blocker> $blockers
      */
+    /**
+     * Výdělek osob OZP a srážky ve prospěch zaměstnavatele za osobu.
+     *
+     * Souhrnná data (10347 až 10353) nese jen formulář primárního vztahu
+     * (kontroly 248 a 321), proto se čtou z evidence primárního vztahu. Má-li
+     * podporu zaměstnávání OZP jen vedlejší vztah, údaje by se do hlášení
+     * nedostaly vůbec; takový stav se zastaví. Částky srážek jsou v celých
+     * korunách (10350 až 10353 jsou celá čísla); haléřový zbytek se
+     * nezaokrouhluje, ale zastaví jako u ostatních částek souhrnu.
+     *
+     * @param array<string,mixed> $personEvidence
+     * @param list<mixed> $ozpWageEmployments
+     * @param list<JmhzScenario1Blocker> $blockers
+     * @return array{payment_date:string,cash_paid:bool,employer_deductions_made:bool,employer_deductions_czk:array<string,int>}|null
+     */
+    private function ozpWageSummary(
+        array $personEvidence,
+        array $ozpWageEmployments,
+        ?int $employeeId,
+        array &$blockers,
+    ): ?array {
+        $wage = $personEvidence['ozp_wage'] ?? null;
+        if (!is_array($wage)) {
+            if ($ozpWageEmployments !== []) {
+                $blockers[] = $this->blocker(
+                    'jmhz_ozp_wage_primary_mismatch',
+                    'person',
+                    $employeeId,
+                    ['10347', '10348', '10349'],
+                );
+            }
+            return null;
+        }
+        $amounts = [];
+        $sums = $wage['employer_deductions_minor'] ?? [];
+        foreach (is_array($sums) ? $sums : [] as $target => $minor) {
+            $czk = $this->wholeCzk(
+                is_int($minor) ? $minor : null,
+                (string) $target,
+                'person',
+                $employeeId,
+                $blockers,
+            );
+            if ($czk !== null) {
+                $amounts[(string) $target] = $czk;
+            }
+        }
+        ksort($amounts, SORT_STRING);
+
+        return [
+            'payment_date' => (string) ($wage['payment_date'] ?? ''),
+            'cash_paid' => ($wage['cash_paid'] ?? null) === true,
+            'employer_deductions_made' => ($wage['employer_deductions_made'] ?? null) === true,
+            'employer_deductions_czk' => $amounts,
+        ];
+    }
+
     private function wholeCzk(
         ?int $minor,
         string $attributeId,
