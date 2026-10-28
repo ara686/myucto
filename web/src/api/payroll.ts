@@ -210,6 +210,18 @@ export interface PayrollAgreementAnnualHours {
 export interface PayrollPersonListItem {
   id: number
   full_name: string
+  /** Jméno a příjmení z platné historie identit; starší osoba je mít nemusí. */
+  first_name?: string | null
+  last_name?: string | null
+  birth_date?: string | null
+  /** Nejdřívější nástup a poslední konec vztahů bez archivovaných; `null` konce = trvá. */
+  start_date?: string | null
+  end_date?: string | null
+  /** Pracovní pozice z podmínek hlavního vztahu (CZ-ISCO) a její název z číselníku. */
+  cz_isco_code?: string | null
+  position_label?: string | null
+  /** Jen na žádost (`include_contacts`) a jen uživateli s `payroll.person.read_sensitive`. */
+  contacts?: { email: string | null; phone: string | null }
   is_active: boolean
   profile_status: string
   legacy_taxpayer_type: string
@@ -7911,6 +7923,9 @@ export const payrollApi = {
     offset: number
     filter?: PayrollPeopleFilter
     q?: string
+    sort_key?: string
+    sort_dir?: 'asc' | 'desc'
+    include_contacts?: boolean
   }) =>
     api.get<PayrollPeopleResponse>('/payroll/people', {
       params: {
@@ -7918,6 +7933,9 @@ export const payrollApi = {
         offset: params.offset,
         filter: params.filter,
         q: params.q === '' ? undefined : params.q,
+        sort_key: params.sort_key,
+        sort_dir: params.sort_dir,
+        include_contacts: params.include_contacts ? 1 : undefined,
       },
     }).then(response => response.data),
   /**

@@ -1257,7 +1257,10 @@
     "company_switch": "Přepnout na tuto firmu",
     "group_clients": "Klienti / dodavatelé",
     "group_invoices": "Vydané faktury",
-    "group_purchase": "Přijaté faktury"
+    "group_purchase": "Přijaté faktury",
+    "group_employees": "Zaměstnanci",
+    "employee_code": "Os. č. {code}",
+    "employee_inactive": "neaktivní"
   },
   "command": {
     "title": "Paleta příkazů",
@@ -5666,6 +5669,16 @@
       "empty_description": "Jakmile budou ve mzdové agendě dostupné osoby, zobrazí se zde jejich pracovní vztahy.",
       "columns": {
         "person": "Zaměstnanec",
+        "last_name": "Příjmení",
+        "first_name": "Jméno",
+        "full_name": "Celé jméno",
+        "personal_number": "Osobní číslo",
+        "start_date": "Nástup",
+        "end_date": "Ukončení",
+        "birth_date": "Datum narození",
+        "position": "Pracovní pozice",
+        "email": "E-mail",
+        "phone": "Telefon",
         "status": "Stav",
         "relations": "Pracovní vztahy",
         "count": "Počet vztahů",

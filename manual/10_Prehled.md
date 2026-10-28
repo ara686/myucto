@@ -263,6 +263,8 @@ Na desktopu má aplikace dvě stálé lišty:
 
 Máte-li víc firem, hledání (**Alt+Q**) i paleta příkazů (**Ctrl+K**) nabízí ve skupině **Přepnout firmu** i firmy podle názvu nebo IČ. Aktuální firma se nenabízí.
 
+Hledání (**Alt+Q**) najde také zaměstnance podle jména, příjmení nebo osobního čísla, a to ve všech firmách, kde smíte číst mzdy. U zaměstnance z jiné firmy je uveden její název; jeho volbou se firma přepne a otevře se karta osoby.
+
 Otevřete-li odkaz na doklad jiné firmy (vydaná či přijatá faktura, zápis v deníku, pokladní doklad, ostatní položka, bankovní výpis, dokument, skladový doklad nebo objednávka) a máte do té firmy přístup, aplikace na ni přepne sama a doklad otevře. Do firmy, ke které přístup nemáte, se nepřepíná a doklad se nezobrazí.
 
 Pokud v sekci **Systém** zůstane pouze **Nápověda (manuál)**, horní menu tuto sekci nezobrazuje. Nápověda je dál dostupná přes kontextovou ikonu.

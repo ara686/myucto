@@ -422,6 +422,20 @@ podání** a **DPP u limitu 300 h**. Hledání i stránkování běží na serve
 osobách, takže se stejně pracuje s deseti i pěti sty zaměstnanci. Na telefonu
 se tabulka mění na karty.
 
+Seznam je řazený podle **příjmení a jména** v české abecedě. Kliknutím na
+hlavičku sloupce se řadí podle něj (sestupně, druhým kliknutím vzestupně, třetím
+zpět na výchozí pořadí); křížek vpravo v hlavičce řazení zruší. Řadí server, takže
+pořadí platí pro všechny stránky. Tlačítkem **Sloupce** přidáte další sloupce:
+**Celé jméno** (včetně titulů), **Osobní číslo**, **Nástup**, **Ukončení**,
+**Datum narození** a **Pracovní pozice** (název zaměstnání CZ-ISCO z podmínek
+hlavního pracovního vztahu; řadí se podle kódu, takže příbuzné pozice stojí
+u sebe). Kdo smí zobrazit citlivé údaje osoby, může přidat i **E-mail**
+a **Telefon** v plném znění; každé zobrazení stránky s kontakty se zapíše do
+auditu. Ostatním se tyto sloupce nenabízejí. Pořadí sloupců změníte přetažením
+hlavičky. Volba sloupců
+i řazení se pamatuje k vašemu účtu. Starší karta bez rozděleného jména má ve
+sloupci Příjmení celé jméno.
+
 **Hodiny na DPP.** U osoby s dohodou o provedení práce ukazuje seznam i hlavička
 karty osoby značku **DPP 245 / 300 h**: kolik hodin osoba v aktuálním
 kalendářním roce odpracovala na všech svých DPP u firmy, včetně hodin převzatých

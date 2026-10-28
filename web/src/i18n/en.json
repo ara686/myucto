@@ -1257,7 +1257,10 @@
     "company_switch": "Switch to this company",
     "group_clients": "Clients / vendors",
     "group_invoices": "Issued invoices",
-    "group_purchase": "Received invoices"
+    "group_purchase": "Received invoices",
+    "group_employees": "Employees",
+    "employee_code": "No. {code}",
+    "employee_inactive": "inactive"
   },
   "command": {
     "title": "Command palette",
@@ -5666,6 +5669,16 @@
       "empty_description": "People will appear here with their employment relationships as soon as they are available in payroll.",
       "columns": {
         "person": "Employee",
+        "last_name": "Last name",
+        "first_name": "First name",
+        "full_name": "Full name",
+        "personal_number": "Personal number",
+        "start_date": "Start",
+        "end_date": "End",
+        "birth_date": "Date of birth",
+        "position": "Job position",
+        "email": "E-mail",
+        "phone": "Phone",
         "status": "Status",
         "relations": "Employment relationships",
         "count": "Relationship count",

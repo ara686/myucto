@@ -17,7 +17,9 @@ use MyInvoice\Service\IpMatcher;
 use MyInvoice\Service\License\LicenseCapacityGate;
 use MyInvoice\Service\License\LicensePayrollLimitExceeded;
 use MyInvoice\Service\License\LicenseState;
+use MyInvoice\Service\Payroll\CzIscoCodebook;
 use MyInvoice\Service\Payroll\PayrollModuleAccess;
+use MyInvoice\Service\Payroll\People\PayrollPeopleContactColumns;
 use MyInvoice\Service\Payroll\PayrollPersonCreateService;
 use MyInvoice\Service\Payroll\Security\PayrollEnforcementDisclosure;
 use MyInvoice\Service\Payroll\Security\PayrollIdentifierProbeGuard;
@@ -41,6 +43,8 @@ final class PayrollPeopleAction
         private readonly PayrollEmployeeDeletionRepository $deletion,
         private readonly PayrollIdentifierProbeGuard $identifierProbes,
         private readonly PayrollAgreementAnnualHours $agreementHours,
+        private readonly CzIscoCodebook $czIsco,
+        private readonly PayrollPeopleContactColumns $contactColumns,
     ) {}
 
     public function list(Request $request, Response $response): Response
@@ -102,6 +106,20 @@ final class PayrollPeopleAction
         ));
         $offset = max(0, (int) ($query['offset'] ?? 0));
 
+        $sortKey = $query['sort_key'] ?? '';
+        $sortDir = $query['sort_dir'] ?? '';
+        if (!is_string($sortKey) || !is_string($sortDir)) {
+            return Json::error($response, 'validation_failed', 'Neplatné řazení seznamu osob.', 422);
+        }
+        if ($sortKey === '') {
+            $sortKey = PayrollPeopleRepository::LIST_DEFAULT_SORT;
+        }
+        if (!array_key_exists($sortKey, PayrollPeopleRepository::LIST_SORTS)
+            || !in_array($sortDir, ['', 'asc', 'desc'], true)
+        ) {
+            return Json::error($response, 'validation_failed', 'Neplatné řazení seznamu osob.', 422);
+        }
+
         $year = (int) date('Y');
         $page = $this->people->listForTenant(
             $supplierId,
@@ -112,8 +130,30 @@ final class PayrollPeopleAction
             $filter === PayrollPeopleRepository::FILTER_DPP_HOURS_LIMIT
                 ? $this->agreementHours->employeesNearLimit($supplierId, $year)
                 : [],
+            $sortKey,
+            $sortDir === 'desc',
         );
         $items = $this->withAgreementHours($supplierId, $page['items'], $year);
+        $items = $this->withPositionLabels($items);
+        // Kontakty se dešifrují jen na výslovnou žádost (sloupec je zapnutý)
+        // a jen oprávněnému; jinak by každé otevření seznamu psalo do auditu.
+        if (($query['include_contacts'] ?? '') === '1') {
+            $serverParams = $request->getServerParams();
+            $contacts = $this->contactColumns->forPage(
+                $request,
+                $supplierId,
+                array_map(static fn (array $person): int => (int) $person['id'], $items),
+                $this->ipMatcher->clientIpFromRequest(array_filter($serverParams, 'is_string', ARRAY_FILTER_USE_KEY)),
+                $request->getHeaderLine('User-Agent'),
+            );
+            if (PayrollPeopleContactColumns::allowed($request)) {
+                $items = array_map(static function (array $person) use ($contacts): array {
+                    $person['contacts'] = $contacts[(int) $person['id']] ?? ['email' => null, 'phone' => null];
+
+                    return $person;
+                }, $items);
+            }
+        }
 
         // Klíč `items` zůstává, aby stávající volající nespadli; `total`/`limit`/
         // `offset` přibyly vedle něj, protože seznam už nemusí být úplný.
@@ -155,6 +195,23 @@ final class PayrollPeopleAction
             $person,
             PayrollEnforcementDisclosure::canSeeEnforcement($request),
         )]);
+    }
+
+    /**
+     * Název pracovní pozice z číselníku CZ-ISCO. Číselník je soubor načtený
+     * jednou za požadavek, takže dohledání na řádek nestojí dotaz.
+     *
+     * @param list<array<string,mixed>> $people
+     * @return list<array<string,mixed>>
+     */
+    private function withPositionLabels(array $people): array
+    {
+        return array_map(function (array $person): array {
+            $code = $person['cz_isco_code'] ?? null;
+            $person['position_label'] = is_string($code) ? ($this->czIsco->find($code)['label'] ?? null) : null;
+
+            return $person;
+        }, $people);
     }
 
     /**
