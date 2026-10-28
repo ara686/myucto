@@ -27,7 +27,7 @@ variabilních symbolů, číselné cykly, e-mailové šablony a další nastaven
 ## 95.2 Než začnete
 
 1. **Oprávnění.** Novou firmu může založit superadmin nebo uživatel s pevnou rolí **Admin Plus**. Běžná role **Admin** pracuje jen s firmami, které jí přidělí superadmin. Smazat firmu smí superadmin. Údaje v detailu firmy smí měnit admin; jedinou výjimkou je zapnutí skladu, které smí přepnout i role **účetní**.
-2. **Přístup k firmám.** Ke každému uživateli lze v `Systém → Uživatelé` v editaci účtu v části **Přístup k firmám** zaškrtnout, ke kterým firmám smí. Bez zaškrtnutí vidí všechny.
+2. **Přístup k firmám.** Ke každému uživateli lze v `Systém → Uživatelé` v editaci účtu v části **Přístup k firmám** zaškrtnout, ke kterým firmám smí. Uživatel bez zaškrtnuté firmy nemá přístup k žádné firmě; systémový superadmin vidí všechny.
 3. **Pro přehled firem** potřebujete přístup k více než jedné firmě. Role klient k přehledu nemá přístup vůbec.
 4. **ARES a registr plátců DPH** pro automatické předvyplnění údajů nové firmy (volitelně).
 
@@ -313,7 +313,7 @@ vidět termíny a resty napříč všemi firmami najednou.
 **Jak poznáte, že je hotovo:** U všech firem vidíte termíny a resty a víte, kterou řešit jako první.
 
 Přehled respektuje **přístup k firmám**: pokud vám admin v `Systém → Uživatelé` zaškrtl jen některé firmy,
-vidíte v přehledu jen ty. Globální admin a účty bez omezení (nic nezaškrtnuto) vidí všechny firmy v instalaci.
+vidíte v přehledu jen ty. Systémový superadmin vidí všechny firmy v instalaci. Uživatel, kterému není zaškrtnuta žádná firma, nevidí žádnou.
 
 ## 95.11 Krok za krokem: smazat firmu
 

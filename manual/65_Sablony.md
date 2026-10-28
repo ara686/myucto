@@ -219,7 +219,8 @@ doložených zaúčtovanou historií. Tímto krokem se historické doklady ani d
 přeúčtuje. Po ostrém běhu mají doklady nové kontace v deníku.
 
 > [!WARNING]
-> Volba **Přeúčtovat všechny doklady v období** může nahradit ručně zadané účtování. Ostrý běh
+> Volba **Přeúčtovat všechny doklady v období** může nahradit ručně zadané účtování (doklady převzaté z jiného
+> programu se ale nepřepisují nikdy). Ostrý běh
 > vyžaduje dokončený dry-run stejného balíčku se zcela shodným rozsahem dat i režimem výběru.
 > Smazání zálohy je nevratné: deník se nezmění, ale zmizí možnost obnovy daného běhu.
 
@@ -401,6 +402,11 @@ DPH 343 a ostatní nohy převezme beze změny. Nevytváří storno ani další k
 na drobný hmotný nebo nehmotný majetek, ve stejné transakci se synchronizuje také karta v
 `Nákup → Drobný majetek`. Dlouhodobý majetek zůstává kandidátem k ručnímu založení karty a odpisového plánu.
 Tento job mění pouze přijaté faktury; již zaúčtovanou bankovní historii nemění.
+
+Doklad převzatý z jiného účetního programu (například převodem z POHODY nebo jiného systému v části
+`Systém → Přechod z jiných účetních systémů`) se přeskočí vždy, i při volbě **Přeúčtovat všechny doklady
+v období**: jeho kontace se nepřepisuje a v dry-runu je uveden jako přeskočený. Přeskočí se také doklad s
+autoritativním rozdělením DPH a doklad bez aktivního účetního zápisu.
 
 Uzavřené, uzavírané a měkce uzamčené období se vždy přeskočí. Stav období se ověří při dry-runu a znovu
 atomicky bezprostředně před přepisem. Pokud se zápis nebo vypočtený výsledek od dry-runu změnil, asistent jej

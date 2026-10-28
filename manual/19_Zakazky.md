@@ -102,6 +102,11 @@ a odešle. Zakázka se v detailu označí odznakem **Schválení výkazu zákazn
 > Faktura bez výkazu víceprací (například fixní paušál) schvalování přeskočí
 > a jde vystavit normálně.
 
+> [!WARNING]
+> Schválení hlídá ruční vystavení tlačítkem **Vystavit**. Pravidelná fakturace v režimu
+> **Na začátku období** ([§ 17.8.7](17_Pravidelne_fakturace.md#1787-otevreny-koncept-prubezny-vykaz-vicepraci))
+> koncept na konci období vystaví a odešle bez ohledu na schválení výkazu.
+
 Kam jde schvalovací e-mail, viz [§ 19.9.6](#1996-prijemci-schvalovaciho-e-mailu).
 Přehled všech žádostí je v `Prodej → Schvalování` (viz
 [§ 19.9.8](#1998-fronta-schvalovani)).
