@@ -1023,8 +1023,11 @@ final class PayrollAnnualSettlementRepository
                      facility_kind, facility_name, expenses_minor, households_count,
                      agreed_cap_minor, claimed_by_other_taxpayer,
                      claimed_as_business_expense, grandchild_care_replaces_parents,
+                     other_supporting_taxpayer, other_taxpayer_name,
+                     other_taxpayer_claimed_minor, other_taxpayer_confirmation_reference,
+                     agreement_reference,
                      evidence_status, evidence_reference, note, created_by, updated_by)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
             );
             foreach ($preschool as $row) {
                 $insert->execute([
@@ -1040,6 +1043,11 @@ final class PayrollAnnualSettlementRepository
                     !empty($row['claimed_by_other_taxpayer']) ? 1 : 0,
                     !empty($row['claimed_as_business_expense']) ? 1 : 0,
                     !empty($row['grandchild_care_replaces_parents']) ? 1 : 0,
+                    !empty($row['other_supporting_taxpayer']) ? 1 : 0,
+                    $row['other_taxpayer_name'] ?? null,
+                    $row['other_taxpayer_claimed_minor'] ?? null,
+                    $row['other_taxpayer_confirmation_reference'] ?? null,
+                    $row['agreement_reference'] ?? null,
                     $row['evidence_status'] ?? 'unverified',
                     $row['evidence_reference'] ?? null,
                     $row['note'] ?? null,
@@ -1319,12 +1327,14 @@ final class PayrollAnnualSettlementRepository
         ] as $key) {
             $row[$key] = (int) $row[$key];
         }
-        if ($row['agreed_cap_minor'] !== null) {
-            $row['agreed_cap_minor'] = (int) $row['agreed_cap_minor'];
+        foreach (['agreed_cap_minor', 'other_taxpayer_claimed_minor'] as $key) {
+            if ($row[$key] !== null) {
+                $row[$key] = (int) $row[$key];
+            }
         }
         foreach ([
             'claimed_by_other_taxpayer', 'claimed_as_business_expense',
-            'grandchild_care_replaces_parents',
+            'grandchild_care_replaces_parents', 'other_supporting_taxpayer',
         ] as $key) {
             $row[$key] = (int) $row[$key] === 1;
         }

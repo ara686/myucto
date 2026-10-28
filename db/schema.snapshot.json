@@ -1114,7 +1114,8 @@
         "2210_payroll_component_jmhz_catalog_1_4_2_11_package.sql",
         "2211_payroll_student_tax_credit.sql",
         "2212_payroll_2027_preschool_benefits_tips.sql",
-        "2213_payroll_jmhz_2027_sources.sql"
+        "2213_payroll_jmhz_2027_sources.sql",
+        "2214_payroll_preschool_credit_documents.sql"
     ],
     "tables": {
         "abra_flexi_connections": {
@@ -10971,6 +10972,7 @@
             "collation": "utf8mb4_unicode_ci",
             "columns": {
                 "agreed_cap_minor": "bigint(20) NULL DEFAULT NULL",
+                "agreement_reference": "varchar(500) NULL DEFAULT NULL",
                 "child_dependant_id": "bigint(20) unsigned NOT NULL",
                 "claimed_as_business_expense": "tinyint(1) NOT NULL DEFAULT 0",
                 "claimed_by_other_taxpayer": "tinyint(1) NOT NULL DEFAULT 0",
@@ -10986,6 +10988,10 @@
                 "households_count": "tinyint(3) unsigned NOT NULL DEFAULT 1",
                 "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
                 "note": "varchar(500) NULL DEFAULT NULL",
+                "other_supporting_taxpayer": "tinyint(1) NOT NULL DEFAULT 0",
+                "other_taxpayer_claimed_minor": "bigint(20) NULL DEFAULT NULL",
+                "other_taxpayer_confirmation_reference": "varchar(500) NULL DEFAULT NULL",
+                "other_taxpayer_name": "varchar(191) NULL DEFAULT NULL",
                 "supplier_id": "int(10) unsigned NOT NULL",
                 "tax_year": "smallint(5) unsigned NOT NULL",
                 "updated_at": "timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE CURRENT_TIMESTAMP()",
@@ -11006,9 +11012,9 @@
                 "fk_payroll_annual_settlement_preschool_employee": "(supplier_id, employee_id) -> payroll_employees (supplier_id, id) ON UPDATE RESTRICT ON DELETE CASCADE"
             },
             "checks": {
-                "chk_payroll_annual_settlement_preschool_amounts": "`expenses_minor` > 0 and `households_count` between 1 and 9 and (`agreed_cap_minor` is null or `agreed_cap_minor` >= 0)",
+                "chk_payroll_annual_settlement_preschool_amounts": "`expenses_minor` > 0 and `households_count` between 1 and 9 and (`agreed_cap_minor` is null or `agreed_cap_minor` >= 0) and (`other_taxpayer_claimed_minor` is null or `other_taxpayer_claimed_minor` >= 0)",
                 "chk_payroll_annual_settlement_preschool_evidence": "`evidence_status` <> 'verified' or `evidence_reference` is not null and `evidence_reference` <> ''",
-                "chk_payroll_annual_settlement_preschool_flags": "`claimed_by_other_taxpayer` in (0,1) and `claimed_as_business_expense` in (0,1) and `grandchild_care_replaces_parents` in (0,1)",
+                "chk_payroll_annual_settlement_preschool_flags": "`claimed_by_other_taxpayer` in (0,1) and `claimed_as_business_expense` in (0,1) and `grandchild_care_replaces_parents` in (0,1) and `other_supporting_taxpayer` in (0,1)",
                 "chk_payroll_annual_settlement_preschool_year": "`tax_year` between 2027 and 2199"
             }
         },

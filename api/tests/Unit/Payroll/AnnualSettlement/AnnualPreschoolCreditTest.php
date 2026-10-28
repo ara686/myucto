@@ -294,6 +294,68 @@ final class AnnualPreschoolCreditTest extends TestCase
         self::assertSame(2_490_000, $result->trace['rates']['minimum_wage_minor_units']);
     }
 
+    /**
+     * § 38l odst. 2 písm. g) bod 2: vyživuje-li totéž dítě další poplatník,
+     * plátce slevu bez jeho potvrzení (jméno, dítě, výše uplatněné slevy)
+     * nepřizná. Střídavá péče 24 900 / 2 = 12 450 Kč bez potvrzení neprojde,
+     * s potvrzením o slevě 12 450 Kč ano.
+     */
+    public function testSharedCareWithoutOtherTaxpayerConfirmationBlocks(): void
+    {
+        $missing = self::makeClaim(expenses: 3_000_000, households: 2, documents: false);
+        $result = $this->settle(60_000_000, [$missing]);
+
+        self::assertFalse($result->performed);
+        self::assertContains('preschool_credit_conditions_not_met', $result->blockerCodes());
+        self::assertSame(
+            ['other_taxpayer_confirmation_missing'],
+            $result->trace['preschool_credit_failures']['dependant-1'],
+        );
+
+        $confirmed = self::makeClaim(expenses: 3_000_000, households: 2, otherClaimed: 1_245_000);
+        $ok = $this->settle(60_000_000, [$confirmed]);
+        self::assertTrue($ok->performed, implode(',', $ok->blockerCodes()));
+        self::assertSame(1_245_000, $ok->trace['credits']['preschool']['amount_minor_units']);
+    }
+
+    /** Další vyživující poplatník v téže domácnosti (manžel) potvrzuje i nulovou slevu. */
+    public function testOtherSupportingTaxpayerInTheSameHouseholdNeedsConfirmation(): void
+    {
+        $missing = self::makeClaim(otherSupporting: true, documents: false);
+        self::assertSame(
+            ['other_taxpayer_confirmation_missing'],
+            $missing->conditionFailures(self::YEAR, 2_490_000),
+        );
+        self::assertSame([], self::makeClaim(otherSupporting: true)->conditionFailures(self::YEAR, 2_490_000));
+    }
+
+    /** § 38l odst. 2 písm. g) bod 3: dohodnutý strop jen s doloženou písemnou dohodou. */
+    public function testAgreedCapWithoutAgreementDocumentBlocks(): void
+    {
+        $claim = new AnnualPreschoolCreditClaim(
+            'dependant-1', 'child_own', '2023-03-01', '2023-03-01', null,
+            AnnualPreschoolFacilityKind::Kindergarten, 'Mateřská škola',
+            3_000_000, 2, 2_000_000, false, false, false,
+            TaxEvidenceStatus::Verified, 'Potvrzení MŠ 2027',
+            false, 'Druhý Rodič', 490_000, 'Potvrzení druhého rodiče 2027', null,
+        );
+
+        self::assertSame(['agreement_document_missing'], $claim->conditionFailures(self::YEAR, 2_490_000));
+    }
+
+    /**
+     * Úhrn vlastní slevy a slevy potvrzené jiným poplatníkem nesmí překročit
+     * minimální mzdu: 12 450 + 12 451 > 24 900 je překážka.
+     */
+    public function testCombinedCreditOverMinimumWageBlocks(): void
+    {
+        $over = self::makeClaim(expenses: 3_000_000, households: 2, otherClaimed: 1_245_100);
+        self::assertSame(['combined_credit_over_minimum_wage'], $over->conditionFailures(self::YEAR, 2_490_000));
+
+        $exact = self::makeClaim(expenses: 3_000_000, households: 2, otherClaimed: 1_245_000);
+        self::assertSame([], $exact->conditionFailures(self::YEAR, 2_490_000));
+    }
+
     // ---- pomocné ----
 
     /** @param list<AnnualPreschoolCreditClaim> $claims */
@@ -343,7 +405,14 @@ final class AnnualPreschoolCreditTest extends TestCase
         bool $businessExpense = false,
         bool $grandchildCare = false,
         TaxEvidenceStatus $status = TaxEvidenceStatus::Verified,
+        bool $documents = true,
+        bool $otherSupporting = false,
+        ?int $otherClaimed = 0,
     ): AnnualPreschoolCreditClaim {
+        // Doklady § 38l odst. 2 písm. g) body 2 a 3 dodá pomocník tam, kde je
+        // zákon vyžaduje; testy dokladů je vypínají přes $documents.
+        $confirmation = $documents && ($households > 1 || $otherSupporting);
+
         return new AnnualPreschoolCreditClaim(
             $reference,
             $relation,
@@ -360,6 +429,11 @@ final class AnnualPreschoolCreditTest extends TestCase
             $grandchildCare,
             $status,
             $status === TaxEvidenceStatus::Verified ? 'Potvrzení MŠ 2027' : null,
+            $otherSupporting,
+            $confirmation ? 'Druhý Rodič' : null,
+            $confirmation ? $otherClaimed : null,
+            $confirmation ? 'Potvrzení druhého rodiče 2027' : null,
+            $documents && $agreedCap !== null ? 'Dohoda rodičů 2027' : null,
         );
     }
 

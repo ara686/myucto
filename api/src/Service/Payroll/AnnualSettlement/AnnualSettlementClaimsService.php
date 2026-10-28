@@ -128,6 +128,11 @@ final class AnnualSettlementClaimsService
                 TaxEvidenceStatus::tryFrom((string) $row['evidence_status'])
                     ?? TaxEvidenceStatus::Unverified,
                 self::text($row['evidence_reference'] ?? null),
+                $row['other_supporting_taxpayer'],
+                self::text($row['other_taxpayer_name'] ?? null),
+                $row['other_taxpayer_claimed_minor'],
+                self::text($row['other_taxpayer_confirmation_reference'] ?? null),
+                self::text($row['agreement_reference'] ?? null),
             );
             $preschoolRows[] = [
                 'child_dependant_id' => $row['child_dependant_id'],
@@ -139,6 +144,11 @@ final class AnnualSettlementClaimsService
                 'claimed_by_other_taxpayer' => $row['claimed_by_other_taxpayer'],
                 'claimed_as_business_expense' => $row['claimed_as_business_expense'],
                 'grandchild_care_replaces_parents' => $row['grandchild_care_replaces_parents'],
+                'other_supporting_taxpayer' => $row['other_supporting_taxpayer'],
+                'other_taxpayer_name' => self::text($row['other_taxpayer_name'] ?? null),
+                'other_taxpayer_claimed_minor_units' => $row['other_taxpayer_claimed_minor'],
+                'other_taxpayer_confirmation_reference' => self::text($row['other_taxpayer_confirmation_reference'] ?? null),
+                'agreement_reference' => self::text($row['agreement_reference'] ?? null),
                 'evidence_status' => (string) $row['evidence_status'],
                 'evidence_reference' => self::text($row['evidence_reference'] ?? null),
                 'note' => self::text($row['note'] ?? null),
@@ -332,6 +342,13 @@ final class AnnualSettlementClaimsService
         $reference = self::bounded($row['evidence_reference'] ?? null, 500, 'Doklad');
         $facilityName = self::bounded($row['facility_name'] ?? null, 191, 'Zařízení');
         $note = self::bounded($row['note'] ?? null, 500, 'Poznámka');
+        $otherName = self::bounded($row['other_taxpayer_name'] ?? null, 191, 'Jméno jiného poplatníka');
+        $otherConfirmation = self::bounded(
+            $row['other_taxpayer_confirmation_reference'] ?? null,
+            500,
+            'Potvrzení jiného poplatníka',
+        );
+        $agreement = self::bounded($row['agreement_reference'] ?? null, 500, 'Dohoda poplatníků');
         self::assertEvidence($status, $reference);
 
         // Konstruktor domény odmítne nulové výdaje a neplatný počet domácností.
@@ -351,6 +368,11 @@ final class AnnualSettlementClaimsService
             self::flag($row['grandchild_care_replaces_parents'] ?? false),
             $status,
             $reference,
+            self::flag($row['other_supporting_taxpayer'] ?? false),
+            $otherName,
+            self::integer($row['other_taxpayer_claimed_minor_units'] ?? null, 'Sleva jiného poplatníka'),
+            $otherConfirmation,
+            $agreement,
         );
 
         return [
@@ -363,6 +385,11 @@ final class AnnualSettlementClaimsService
             'claimed_by_other_taxpayer' => $claim->claimedByOtherTaxpayer,
             'claimed_as_business_expense' => $claim->claimedAsBusinessExpense,
             'grandchild_care_replaces_parents' => $claim->grandchildCareReplacesParents,
+            'other_supporting_taxpayer' => $claim->otherSupportingTaxpayer,
+            'other_taxpayer_name' => $claim->otherTaxpayerName,
+            'other_taxpayer_claimed_minor' => $claim->otherTaxpayerClaimedMinorUnits,
+            'other_taxpayer_confirmation_reference' => $claim->otherTaxpayerConfirmationReference,
+            'agreement_reference' => $claim->agreementReference,
             'evidence_status' => $claim->evidenceStatus->value,
             'evidence_reference' => $claim->evidenceReference,
             'note' => $note,

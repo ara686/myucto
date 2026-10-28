@@ -1110,10 +1110,54 @@ describe('Roční zúčtování', () => {
       claimed_by_other_taxpayer: false,
       claimed_as_business_expense: false,
       grandchild_care_replaces_parents: false,
+      other_supporting_taxpayer: false,
+      other_taxpayer_name: null,
+      other_taxpayer_claimed_minor_units: null,
+      other_taxpayer_confirmation_reference: null,
+      agreement_reference: null,
       evidence_status: 'unverified',
       evidence_reference: null,
       note: null,
     }])
+  })
+
+  it('u střídavé péče nabídne potvrzení druhého poplatníka a odešle ho', async () => {
+    const dependants = [
+      { id: 6, relation: 'child_own', full_name: 'Dítě', birth_date: '2023-05-05', ztp_p: false },
+    ]
+    m.previewAnnualSettlement.mockResolvedValue(previewResponse({
+      annual_claims: {
+        deductions: [], spouse: null, preschool: [], preschool_available: true, dependants,
+        statute: { counted_donation_values: {} },
+      },
+    }))
+    m.saveAnnualSettlementAnnualClaims.mockResolvedValue({ deductions: [], spouse: null, preschool: [] })
+    const wrapper = mountPage()
+    await flushPromises()
+    await wrapper.find('[data-test="annual-settlement-person"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.find('[data-test="annual-settlement-preschool-add"]').trigger('click')
+    expect(wrapper.find('[data-test="annual-settlement-preschool-other-confirmation"]').exists()).toBe(false)
+    await wrapper.find('[data-test="annual-settlement-preschool-expenses"]').setValue('30000')
+    await wrapper.find('[data-test="annual-settlement-preschool-households"]').setValue(2)
+    const block = wrapper.find('[data-test="annual-settlement-preschool-other-confirmation"]')
+    expect(block.exists()).toBe(true)
+    const inputs = block.findAll('input')
+    await inputs[0].setValue('Druhý Rodič')
+    await inputs[1].setValue('12450')
+    await inputs[2].setValue('Potvrzení 2027')
+    await wrapper.find('[data-test="annual-settlement-save-claims"]').trigger('click')
+    await flushPromises()
+
+    const [, , payload] = m.saveAnnualSettlementAnnualClaims.mock.calls[0]
+    expect(payload.preschool[0]).toMatchObject({
+      households_count: 2,
+      other_taxpayer_name: 'Druhý Rodič',
+      other_taxpayer_claimed_minor_units: 1_245_000,
+      other_taxpayer_confirmation_reference: 'Potvrzení 2027',
+      agreement_reference: null,
+    })
   })
 
   it('rozpis nezdanitelných částí a důvody blokátoru slevy na manžela vypíše', async () => {

@@ -56,6 +56,19 @@ final readonly class AnnualPreschoolCreditClaim implements JsonSerializable
         public bool $grandchildCareReplacesParents = false,
         public TaxEvidenceStatus $evidenceStatus = TaxEvidenceStatus::Unverified,
         public ?string $evidenceReference = null,
+        /**
+         * § 38l odst. 2 písm. g) bod 2: totéž dítě v roce vyživuje další
+         * poplatník (druhý rodič v jiné domácnosti, manžel v téže domácnosti).
+         */
+        public bool $otherSupportingTaxpayer = false,
+        /** Jméno jiného poplatníka z jeho potvrzení. */
+        public ?string $otherTaxpayerName = null,
+        /** Výše slevy, kterou jiný poplatník uplatňuje, podle jeho potvrzení (i 0). */
+        public ?int $otherTaxpayerClaimedMinorUnits = null,
+        /** Odkaz na potvrzení jiného poplatníka. */
+        public ?string $otherTaxpayerConfirmationReference = null,
+        /** § 38l odst. 2 písm. g) bod 3: odkaz na písemnou dohodu poplatníků. */
+        public ?string $agreementReference = null,
     ) {
         foreach ([$childBirthDate, $childExistenceFrom] as $date) {
             self::assertDate($date);
@@ -76,6 +89,20 @@ final readonly class AnnualPreschoolCreditClaim implements JsonSerializable
         if ($agreedCapMinorUnits !== null && $agreedCapMinorUnits < 0) {
             throw new \InvalidArgumentException('Dohodnutý strop slevy nesmí být záporný.');
         }
+        if ($otherTaxpayerClaimedMinorUnits !== null && $otherTaxpayerClaimedMinorUnits < 0) {
+            throw new \InvalidArgumentException('Sleva jiného poplatníka nesmí být záporná.');
+        }
+    }
+
+    /**
+     * Vyžaduje nárok potvrzení jiného poplatníka (§ 38l odst. 2 písm. g)
+     * bod 2)? Ano, když totéž dítě v roce vyživuje další poplatník: dítě žije
+     * ve více domácnostech, nebo účetní označí dalšího vyživujícího
+     * poplatníka (podle důvodové zprávy i manžela v téže domácnosti).
+     */
+    public function requiresOtherTaxpayerConfirmation(): bool
+    {
+        return $this->householdsCount > 1 || $this->otherSupportingTaxpayer;
     }
 
     public function isVerified(): bool
@@ -157,9 +184,37 @@ final readonly class AnnualPreschoolCreditClaim implements JsonSerializable
             ) {
                 $failures[] = 'agreed_cap_over_minimum_wage';
             }
+            // § 38l odst. 2 písm. g) bod 3: dohodnutý strop jen s doloženou dohodou.
+            if (self::blank($this->agreementReference)) {
+                $failures[] = 'agreement_document_missing';
+            }
+        }
+        // § 38l odst. 2 písm. g) bod 2: potvrzení musí obsahovat jméno jiného
+        // poplatníka a výši jím uplatněné slevy (i nulovou).
+        if ($this->requiresOtherTaxpayerConfirmation()
+            && (self::blank($this->otherTaxpayerConfirmationReference)
+                || self::blank($this->otherTaxpayerName)
+                || $this->otherTaxpayerClaimedMinorUnits === null)
+        ) {
+            $failures[] = 'other_taxpayer_confirmation_missing';
+        }
+        // Účel potvrzení podle důvodové zprávy: úhrn slev na dítě nesmí
+        // překročit zákonný strop, tedy minimální mzdu (§ 35bd odst. 1 a 2).
+        if ($this->otherTaxpayerClaimedMinorUnits !== null
+            && $minimumWageMinorUnits !== null
+            && $minimumWageMinorUnits > 0
+            && $this->creditMinorUnits($minimumWageMinorUnits) + $this->otherTaxpayerClaimedMinorUnits
+                > $minimumWageMinorUnits
+        ) {
+            $failures[] = 'combined_credit_over_minimum_wage';
         }
 
         return $failures;
+    }
+
+    private static function blank(?string $value): bool
+    {
+        return $value === null || trim($value) === '';
     }
 
     /** @return array<string,mixed> */
@@ -174,6 +229,11 @@ final readonly class AnnualPreschoolCreditClaim implements JsonSerializable
             'agreed_cap_minor_units' => $this->agreedCapMinorUnits,
             'evidence_status' => $this->evidenceStatus->value,
             'evidence_reference' => $this->evidenceReference,
+            'other_supporting_taxpayer' => $this->otherSupportingTaxpayer,
+            'other_taxpayer_name' => $this->otherTaxpayerName,
+            'other_taxpayer_claimed_minor_units' => $this->otherTaxpayerClaimedMinorUnits,
+            'other_taxpayer_confirmation_reference' => $this->otherTaxpayerConfirmationReference,
+            'agreement_reference' => $this->agreementReference,
         ];
     }
 

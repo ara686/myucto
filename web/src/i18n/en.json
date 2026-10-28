@@ -5306,7 +5306,10 @@
         "claimed_by_other_taxpayer": "Another taxpayer in the same household claims the credit for the child.",
         "claimed_as_business_expense": "The expenses are claimed as a business expense.",
         "agreement_without_shared_care": "An agreement on the credit cap applies only when the child lives in more households.",
-        "agreed_cap_over_minimum_wage": "The agreed cap exceeds the minimum wage."
+        "agreed_cap_over_minimum_wage": "The agreed cap exceeds the minimum wage.",
+        "agreement_document_missing": "The reference to the parents' written agreement on the credit cap is missing (Section 38l(2)(g)(3) of the Income Tax Act).",
+        "other_taxpayer_confirmation_missing": "Another taxpayer supports the same child. Their confirmation with their name and the amount of the credit they claim, even zero, is missing (Section 38l(2)(g)(2) of the Income Tax Act).",
+        "combined_credit_over_minimum_wage": "The employee's credit together with the credit confirmed by the other taxpayer exceeds the minimum wage."
       },
       "claims": {
         "section": "Annually claimed items",
@@ -5393,7 +5396,15 @@
         "preschool_other_taxpayer": "Another person in the same household claims the credit for this child",
         "preschool_business_expense": "The expenses are claimed as a business expense",
         "preschool_grandchild_care": "The grandchild is in care replacing parental care",
-        "preschool_evidence_placeholder": "Facility's confirmation of the expenses paid"
+        "preschool_evidence_placeholder": "Facility's confirmation of the expenses paid",
+        "preschool_agreement_reference": "Written agreement of the parents",
+        "preschool_agreement_reference_placeholder": "Reference to the agreement on the credit cap",
+        "preschool_other_supporting": "Another taxpayer also supports the same child in the year (other parent, spouse)",
+        "preschool_other_confirmation_hint": "The other taxpayer's confirmation of the childcare credit they claim. If they are employed and their employer performs their annual settlement, the employer issues it. If they claim no credit, enter 0.",
+        "preschool_other_taxpayer_name": "Name of the other taxpayer",
+        "preschool_other_taxpayer_claimed": "Credit they claim (CZK)",
+        "preschool_other_confirmation_reference": "Other taxpayer's confirmation",
+        "preschool_other_confirmation_placeholder": "Reference to the confirmation"
       },
       "open_employee_card": "Open employee card",
       "settle_read_only": "Only a user allowed to approve payroll can perform the settlement.",

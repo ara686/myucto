@@ -193,6 +193,11 @@ interface PreschoolForm {
   claimed_by_other_taxpayer: boolean
   claimed_as_business_expense: boolean
   grandchild_care_replaces_parents: boolean
+  other_supporting_taxpayer: boolean
+  other_taxpayer_name: string
+  other_taxpayer_claimed: string
+  other_taxpayer_confirmation_reference: string
+  agreement_reference: string
   evidence_status: 'unverified' | 'verified'
   evidence_reference: string
   note: string
@@ -212,6 +217,9 @@ const PRESCHOOL_FAILURE_CODES: readonly string[] = [
   'claimed_as_business_expense',
   'agreement_without_shared_care',
   'agreed_cap_over_minimum_wage',
+  'agreement_document_missing',
+  'other_taxpayer_confirmation_missing',
+  'combined_credit_over_minimum_wage',
 ]
 
 const deductions = ref<DeductionForm[]>([])
@@ -622,10 +630,20 @@ function preschoolForm(row: PayrollAnnualClaimsSet['preschool'][number]): Presch
     claimed_by_other_taxpayer: row.claimed_by_other_taxpayer,
     claimed_as_business_expense: row.claimed_as_business_expense,
     grandchild_care_replaces_parents: row.grandchild_care_replaces_parents,
+    other_supporting_taxpayer: row.other_supporting_taxpayer,
+    other_taxpayer_name: row.other_taxpayer_name ?? '',
+    other_taxpayer_claimed: amountToInput(row.other_taxpayer_claimed_minor_units ?? null),
+    other_taxpayer_confirmation_reference: row.other_taxpayer_confirmation_reference ?? '',
+    agreement_reference: row.agreement_reference ?? '',
     evidence_status: row.evidence_status,
     evidence_reference: row.evidence_reference ?? '',
     note: row.note ?? '',
   }
+}
+
+/** § 38l odst. 2 písm. g) bod 2: totéž dítě vyživuje další poplatník. */
+function preschoolNeedsOtherConfirmation(row: PreschoolForm): boolean {
+  return row.households_count > 1 || row.other_supporting_taxpayer
 }
 
 function addPreschool(): void {
@@ -640,6 +658,11 @@ function addPreschool(): void {
     claimed_by_other_taxpayer: false,
     claimed_as_business_expense: false,
     grandchild_care_replaces_parents: false,
+    other_supporting_taxpayer: false,
+    other_taxpayer_name: '',
+    other_taxpayer_claimed: '',
+    other_taxpayer_confirmation_reference: '',
+    agreement_reference: '',
     evidence_status: 'unverified',
     evidence_reference: '',
     note: '',
@@ -759,6 +782,19 @@ function buildClaimsPayload(): PayrollAnnualClaimsSet {
         claimed_as_business_expense: row.claimed_as_business_expense,
         grandchild_care_replaces_parents: isGrandchild(row.child_dependant_id)
           && row.grandchild_care_replaces_parents,
+        other_supporting_taxpayer: row.other_supporting_taxpayer,
+        other_taxpayer_name: preschoolNeedsOtherConfirmation(row)
+          ? row.other_taxpayer_name.trim() || null
+          : null,
+        other_taxpayer_claimed_minor_units: preschoolNeedsOtherConfirmation(row)
+          ? inputToAmount(row.other_taxpayer_claimed)
+          : null,
+        other_taxpayer_confirmation_reference: preschoolNeedsOtherConfirmation(row)
+          ? row.other_taxpayer_confirmation_reference.trim() || null
+          : null,
+        agreement_reference: row.households_count > 1 && row.agreed_cap.trim() !== ''
+          ? row.agreement_reference.trim() || null
+          : null,
         evidence_status: row.evidence_status,
         evidence_reference: row.evidence_reference.trim() || null,
         note: row.note.trim() || null,
@@ -2553,10 +2589,33 @@ onMounted(async () => {
                       {{ t('payroll.annual_settlement.claims.preschool_agreed_cap_hint') }}
                     </span>
                   </label>
+                  <label v-if="row.households_count > 1 && row.agreed_cap.trim() !== ''" class="block">
+                    <span class="mb-1 block text-xs font-medium text-neutral-600">
+                      {{ t('payroll.annual_settlement.claims.preschool_agreement_reference') }}
+                    </span>
+                    <input
+                      v-model="row.agreement_reference"
+                      type="text"
+                      maxlength="500"
+                      :disabled="!canEditCertificates"
+                      data-test="annual-settlement-preschool-agreement-reference"
+                      :placeholder="t('payroll.annual_settlement.claims.preschool_agreement_reference_placeholder')"
+                      class="h-9 w-full rounded-md border border-neutral-300 bg-surface px-3 text-sm text-neutral-900"
+                    >
+                  </label>
                   <div class="space-y-1 sm:col-span-2">
                     <label class="flex items-center gap-2 text-sm text-neutral-700">
                       <input v-model="row.claimed_by_other_taxpayer" type="checkbox" :disabled="!canEditCertificates">
                       {{ t('payroll.annual_settlement.claims.preschool_other_taxpayer') }}
+                    </label>
+                    <label class="flex items-center gap-2 text-sm text-neutral-700">
+                      <input
+                        v-model="row.other_supporting_taxpayer"
+                        type="checkbox"
+                        :disabled="!canEditCertificates"
+                        data-test="annual-settlement-preschool-other-supporting"
+                      >
+                      {{ t('payroll.annual_settlement.claims.preschool_other_supporting') }}
                     </label>
                     <label class="flex items-center gap-2 text-sm text-neutral-700">
                       <input v-model="row.claimed_as_business_expense" type="checkbox" :disabled="!canEditCertificates">
@@ -2565,6 +2624,53 @@ onMounted(async () => {
                     <label v-if="isGrandchild(row.child_dependant_id)" class="flex items-center gap-2 text-sm text-neutral-700">
                       <input v-model="row.grandchild_care_replaces_parents" type="checkbox" :disabled="!canEditCertificates">
                       {{ t('payroll.annual_settlement.claims.preschool_grandchild_care') }}
+                    </label>
+                  </div>
+                  <div
+                    v-if="preschoolNeedsOtherConfirmation(row)"
+                    class="grid gap-3 rounded-md border border-neutral-200 p-3 sm:col-span-2 sm:grid-cols-3"
+                    data-test="annual-settlement-preschool-other-confirmation"
+                  >
+                    <p class="text-xs text-neutral-500 sm:col-span-3">
+                      {{ t('payroll.annual_settlement.claims.preschool_other_confirmation_hint') }}
+                    </p>
+                    <label class="block">
+                      <span class="mb-1 block text-xs font-medium text-neutral-600">
+                        {{ t('payroll.annual_settlement.claims.preschool_other_taxpayer_name') }}
+                      </span>
+                      <input
+                        v-model="row.other_taxpayer_name"
+                        type="text"
+                        maxlength="191"
+                        :disabled="!canEditCertificates"
+                        class="h-9 w-full rounded-md border border-neutral-300 bg-surface px-3 text-sm text-neutral-900"
+                      >
+                    </label>
+                    <label class="block">
+                      <span class="mb-1 block text-xs font-medium text-neutral-600">
+                        {{ t('payroll.annual_settlement.claims.preschool_other_taxpayer_claimed') }}
+                      </span>
+                      <input
+                        v-model="row.other_taxpayer_claimed"
+                        type="text"
+                        inputmode="decimal"
+                        :disabled="!canEditCertificates"
+                        :placeholder="t('payroll.annual_settlement.certificate_amount_placeholder')"
+                        class="h-9 w-full rounded-md border border-neutral-300 bg-surface px-3 text-right text-sm tabular-nums text-neutral-900"
+                      >
+                    </label>
+                    <label class="block">
+                      <span class="mb-1 block text-xs font-medium text-neutral-600">
+                        {{ t('payroll.annual_settlement.claims.preschool_other_confirmation_reference') }}
+                      </span>
+                      <input
+                        v-model="row.other_taxpayer_confirmation_reference"
+                        type="text"
+                        maxlength="500"
+                        :disabled="!canEditCertificates"
+                        :placeholder="t('payroll.annual_settlement.claims.preschool_other_confirmation_placeholder')"
+                        class="h-9 w-full rounded-md border border-neutral-300 bg-surface px-3 text-sm text-neutral-900"
+                      >
                     </label>
                   </div>
                   <label class="block">

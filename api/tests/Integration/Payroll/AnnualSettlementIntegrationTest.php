@@ -1112,6 +1112,10 @@ final class AnnualSettlementIntegrationTest extends TestCase
                 'expenses_minor_units' => 2_600_000,
                 'households_count' => 2,
                 'agreed_cap_minor_units' => 1_000_000,
+                'other_taxpayer_name' => 'Syntetický druhý rodič',
+                'other_taxpayer_claimed_minor_units' => 1_490_000,
+                'other_taxpayer_confirmation_reference' => 'potvrzeni-druhy-rodic-2027',
+                'agreement_reference' => 'dohoda-rodicu-2027',
                 'evidence_status' => 'verified',
                 'evidence_reference' => 'potvrzeni-ms-2027',
             ];
@@ -1129,6 +1133,11 @@ final class AnnualSettlementIntegrationTest extends TestCase
             self::assertSame(2, $saved['preschool'][0]['households_count']);
             self::assertSame(1_000_000, $saved['preschool'][0]['agreed_cap_minor_units']);
             self::assertTrue($saved['preschool'][1]['grandchild_care_replaces_parents']);
+            // Doklady § 38l odst. 2 písm. g) body 2 a 3 se uloží i načtou.
+            self::assertSame('Syntetický druhý rodič', $saved['preschool'][0]['other_taxpayer_name']);
+            self::assertSame(1_490_000, $saved['preschool'][0]['other_taxpayer_claimed_minor_units']);
+            self::assertSame('dohoda-rodicu-2027', $saved['preschool'][0]['agreement_reference']);
+            self::assertNull($saved['preschool'][1]['other_taxpayer_claimed_minor_units']);
 
             $loaded = $claims->load($supplierId, $employeeId, 2027);
             self::assertCount(2, $loaded['preschool']);
@@ -1136,6 +1145,7 @@ final class AnnualSettlementIntegrationTest extends TestCase
             self::assertSame('2023-04-01', $loaded['preschool'][0]->childBirthDate);
             self::assertSame('grandchild', $loaded['preschool'][1]->childRelation);
             self::assertSame($saved['preschool'], $loaded['preschool_rows']);
+            self::assertSame([], $loaded['preschool'][0]->conditionFailures(2027, 2_490_000));
 
             $rejected = [
                 'rok 2026' => [2026, [$row]],

@@ -6281,6 +6281,13 @@ export interface PayrollAnnualPreschoolClaim {
   claimed_by_other_taxpayer: boolean
   claimed_as_business_expense: boolean
   grandchild_care_replaces_parents: boolean
+  /** § 38l odst. 2 písm. g) bod 2: totéž dítě vyživuje další poplatník. */
+  other_supporting_taxpayer: boolean
+  other_taxpayer_name: string | null
+  other_taxpayer_claimed_minor_units: number | null
+  other_taxpayer_confirmation_reference: string | null
+  /** § 38l odst. 2 písm. g) bod 3: písemná dohoda poplatníků. */
+  agreement_reference: string | null
   evidence_status: 'verified' | 'unverified'
   evidence_reference: string | null
   note: string | null

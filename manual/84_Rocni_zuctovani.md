@@ -316,7 +316,11 @@ dítě přidejte jeden řádek a vyplňte:
   provozovaná na živnostenské oprávnění (i obdobné zařízení v zahraničí),
 - výdaje za rok podle potvrzení zařízení, bez stravného,
 - počet domácností, ve kterých dítě žije, a u sdílené péče případně strop
-  z písemné dohody rodičů,
+  z písemné dohody rodičů s odkazem na tuto dohodu,
+- vyživuje-li totéž dítě v roce i další poplatník (druhý rodič v jiné
+  domácnosti, manžel v téže domácnosti), jeho potvrzení: jméno, výši jím
+  uplatněné slevy (i 0 Kč) a odkaz na potvrzení; je-li zaměstnaný a dělá mu
+  roční zúčtování zaměstnavatel, potvrzení vydává zaměstnavatel,
 - doložení potvrzením zařízení.
 
 Sleva se rovná skutečně zaplaceným výdajům, nejvýše minimální mzdě
@@ -330,9 +334,11 @@ tak zvýšit daňový bonus.
 
 Zúčtování zastaví nedoložená sleva a nesplněné podmínky: dítě v roce
 se zaměstnancem nežilo, slevu na totéž dítě v téže domácnosti uplatňuje
-jiná osoba, výdaje jsou uplatněné jako výdaj na dosažení příjmů, nebo
-dohodnutý strop je vyšší než minimální mzda. Které to jsou, vypíše výsledek
-u překážky.
+jiná osoba, výdaje jsou uplatněné jako výdaj na dosažení příjmů,
+dohodnutý strop je vyšší než minimální mzda, chybí písemná dohoda nebo
+potvrzení dalšího poplatníka, nebo sleva zaměstnance spolu se slevou
+potvrzenou dalším poplatníkem překročí minimální mzdu. Které to jsou,
+vypíše výsledek u překážky.
 
 ## 84.8 Související kapitoly
 
