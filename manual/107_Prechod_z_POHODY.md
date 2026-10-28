@@ -675,7 +675,8 @@ nezaúčtovanými pohyby.
    zastaví, když u kteréhokoli vybraného roku:
    - export patří firmě s jiným IČO,
    - v exportu chybí nebo nejde přečíst účetní deník, osnova nebo členění DPH,
-   - účetní období v MyÚčtu už obsahuje zápisy, které nevznikly převodem,
+   - účetní období v MyÚčtu už obsahuje zápisy, které nevznikly převodem
+     (uzávěrkové zápisy a kurzové přecenění se nepočítají),
    - období je v MyÚčtu uzavřené.
 
    Obojí platí i pro vybrané období následujícího roku, do kterého padají
@@ -806,6 +807,14 @@ doklady a úhrady a doklady uhrazené v tomto roce označí jako uhrazené. Záp
 přinesla už agenda minulého roku, převod dalšího roku podruhé nezaloží.
 Zápis, který dřívější převod posunul k 31. 12., opakovaný převod přesune do
 období podle jeho data (jen v otevřených obdobích a mimo uzamčené datum).
+
+Kontrola před převodem ([§ 107.9.4](#10794-postup)) běží i při opakovaném převodu
+a stejně přísně: vznikl-li mezitím v některém z převáděných roků (včetně
+pozdějšího roku agendy) ruční zápis, který nepochází z převodu, převod se zastaví
+a nic nezapíše. Opakovaný převod do roku s vlastními zápisy tedy nejde; další rok
+převádějte dřív, než v něm začnete účtovat ručně. Výjimkou je opravný převod vazeb
+už převedené firmy: vlastní zápisy v MyÚčtu nechá beze změny a nové doklady
+z POHODY nepřidá.
 
 Už převedené doklady ani zápisy deníku opakovaný převod nepřepisuje, protože
 mohly být mezitím zaúčtované, spárované nebo upravené v MyÚčtu. Změnila-li se

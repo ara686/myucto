@@ -1121,7 +1121,8 @@ Export již obsahuje právě vybranou firmu, JSONL data, kontrolní součty a so
 Není potřeba zavádět nový formát zálohy. Běžný databázový ZIP ze sekce Zálohy
 není vstupem tohoto příkazu.
 
-V aplikaci otevřete **Importy → MyÚčto**. Vyberte ZIP, vyplňte stabilní název
+V aplikaci otevřete `Systém → Přechod z jiných účetních systémů`, u dlaždice
+**MyÚčto / MyInvoice** klikněte na **Otevřít průvodce**. Vyberte ZIP, vyplňte stabilní název
 původní instance a případně heslo ZIPu. Klikněte na **Zkontrolovat nanečisto**.
 Po úspěšné kontrole uvidíte přehled ověřených, nových a již přenesených řádků
 včetně oblastí mimo rozsah. Potvrďte cílovou firmu a klikněte na
@@ -1222,7 +1223,8 @@ Heslo nezadávejte jako argument příkazu.
 ### 21.9.17 Převod databázové zálohy původního MyInvoice
 
 Databázový ZIP z funkce **Zálohy** původního MyInvoice lze převést na balíček
-pro **Importy → MyÚčto / MyInvoice**. V průvodci zvolte **MyInvoice – databázová
+pro dlaždici **MyÚčto / MyInvoice** v `Systém → Přechod z jiných účetních
+systémů`. V průvodci zvolte **MyInvoice – databázová
 záloha**, nahrajte databázový ZIP a případné ZIPy s originály dokladů. Firma
 se vybere podle IČO cílové firmy; záloha musí obsahovat právě jednu shodu.
 Převod používá účetní režim a historii DPH cílové firmy. Nejprve je nastavte
@@ -1297,7 +1299,8 @@ podporované databázové řádky **celé zdrojové instance** do 64 MiB / 100 0
 řádků stávajícího importéru. Starší bankovní výpis bez firmy se přiřadí podle
 účtu a banky; pokud nelze v záloze určit jedinou firmu, převod skončí chybou.
 
-Výsledný ZIP nahrajte do **Importy → MyÚčto**, použijte stabilní název původní
+Výsledný ZIP nahrajte přes dlaždici **MyÚčto / MyInvoice** v `Systém → Přechod z jiných účetních
+systémů`, použijte stabilní název původní
 instance a nejprve spusťte kontrolu nanečisto. Obnova pak běží ve stávajícím
 workeru s jeho průběhem a protokoly; opakované spuštění stejného balíčku a
 názvu instance nevytváří duplicity.

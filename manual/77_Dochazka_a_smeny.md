@@ -46,7 +46,10 @@ Kapitolu otevřete, když:
 2. Zkontrolujte pracovní kalendář, úvazek a naplánované směny. Chybí-li
    směny, klikněte na **Rozvrhnout směny podle kalendáře**. Směny potřebuje
    i náhrada mzdy při nemoci a za dovolenou.
-3. Doplňte skutečně odpracovaný čas (**Skutečně odpracovaný čas**). Noční,
+3. Doplňte skutečně odpracovaný čas (**Skutečně odpracovaný čas**). V měsíční
+   mřížce můžete použít **Vyplnit pracovní dny**, **Zkopírovat minulý měsíc**
+   nebo **Import z CSV nebo XLSX** a změny uložit tlačítkem **Uložit mřížku**.
+   Noční,
    víkendovou, svátkovou práci a ztížené prostředí zapište jako příznak
    **k** odpracované době, ne místo ní.
 4. U směny s pracovní pohotovostí vyplňte **Pohotovost (min)**.

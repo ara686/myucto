@@ -2635,7 +2635,7 @@ final class PostingService
      * @param array<string,mixed> $inv hlavička vyúčtovací faktury (z fetchDocHeader)
      * @param list<array{account_code:string, side:'debit'|'credit', amount:float, cost_center?:?string}> $lines
      * @param float $receivable předpis na 311 v tomhle zápisu (strop zúčtování)
-     * @param array{active:bool, base:float, foreign_base:float, drawn_vat:float, item_ids:list<int>} $deduction
+     * @param array{active:bool, partial:bool, base:float, foreign_base:float, drawn_vat:float, item_ids:list<int>} $deduction
      */
     private function appendAdvanceSettlementSale(int $supplierId, array $inv, array &$lines, float $receivable, array $deduction): void
     {
@@ -2649,6 +2649,11 @@ final class PostingService
         $parent = $this->fetchDocHeader('invoices', $supplierId, $parentId);
         if ($parent === null || (string) ($parent['invoice_type'] ?? '') !== 'proforma') {
             return; // parent není proforma → nejde o zálohový cyklus
+        }
+
+        if ($deduction['partial']) {
+            $this->appendPartialAdvanceSettlementSale($supplierId, (int) $inv['id'], $parentId, $parent, $lines, $receivable, $deduction);
+            return;
         }
 
         if ($this->activeFinalInvoiceCount($supplierId, $parentId) > 1) {
@@ -2693,6 +2698,80 @@ final class PostingService
         }
         $lines[] = $this->line($draw, 'debit', $received, null);
         $lines[] = $this->line($recv, 'credit', $received, null);
+    }
+
+    /**
+     * Zúčtování zálohy čerpané postupně víc fakturami ({@see advanceDeduction} s `partial`).
+     * Každá faktura zúčtuje 324 MD / 311 D jen základ, který sama odečetla — ten
+     * {@see buildFromInvoice} vrátil do předpisu 311 i výnosu. Daň zálohy z 324 odčerpal
+     * už DDKP, takže součet zúčtování všech faktur s daní DDKP vyrovná celou přijatou zálohu.
+     *
+     * Strop je zaúčtovaná úhrada zálohy po odečtu daně DDKP a základu, který zúčtovaly
+     * ostatní faktury téže proformy; co nad něj zbývá, je nezaúčtovaná úhrada a zúčtování
+     * nejde určit (hlasitě, stejně jako u celého vyúčtování).
+     *
+     * @param array<string,mixed> $parent hlavička proformy
+     * @param list<array{account_code:string, side:'debit'|'credit', amount:float, cost_center?:?string}> $lines
+     * @param array{active:bool, partial:bool, base:float, foreign_base:float, drawn_vat:float, item_ids:list<int>} $deduction
+     */
+    private function appendPartialAdvanceSettlementSale(
+        int $supplierId,
+        int $invoiceId,
+        int $parentId,
+        array $parent,
+        array &$lines,
+        float $receivable,
+        array $deduction,
+    ): void {
+        $received = $this->postedAdvanceReceived($supplierId, $parentId);
+        if (self::cents($received) > 0 && (string) ($parent['currency_code'] ?? 'CZK') !== 'CZK') {
+            $received = round($received * $this->fxRate($parent), 2);
+        }
+        $available = round($received - $deduction['drawn_vat'] - $this->otherFinalsDrawnBase($supplierId, $parentId, $invoiceId), 2);
+        if ($deduction['base'] > $available + self::ADVANCE_DEDUCTION_TOLERANCE_CZK) {
+            throw new PostingException(
+                'advance_settlement_ambiguous',
+                sprintf(
+                    'Proforma #%d: faktura čerpá ze zálohy základ %.2f Kč, ale zaúčtovaná úhrada zálohy po odečtu '
+                        . 'daně daňových dokladů a čerpání ostatních faktur pokrývá jen %.2f Kč — zaúčtuj úhradu '
+                        . 'zálohy (banka/pokladna) nebo zúčtování ručně.',
+                    $parentId,
+                    $deduction['base'],
+                    max(0.0, $available),
+                ),
+            );
+        }
+        $amount = min($deduction['base'], $receivable);
+        if (self::cents($amount) <= 0) {
+            return;
+        }
+        ['debit' => $draw, 'credit' => $recv] = $this->advanceSettlementAccounts($supplierId, 'sale');
+        if ($draw === $recv) {
+            return;
+        }
+        $lines[] = $this->line($draw, 'debit', $amount, null);
+        $lines[] = $this->line($recv, 'credit', $amount, null);
+    }
+
+    /** Základ odečtený ze zálohy ostatními nestornovanými fakturami proformy (v Kč). */
+    private function otherFinalsDrawnBase(int $supplierId, int $proformaId, int $invoiceId): float
+    {
+        $stmt = $this->db->pdo()->prepare(
+            "SELECT f.id, f.exchange_rate, -SUM(ii.total_without_vat) AS base
+               FROM invoices f
+               JOIN invoice_items ii ON ii.invoice_id = f.id
+              WHERE f.supplier_id = ? AND f.parent_invoice_id = ? AND f.invoice_type = 'invoice'
+                AND f.status NOT IN ('draft', 'cancelled') AND f.id <> ?
+                AND ii.total_with_vat < 0 AND COALESCE(ii.item_kind, 'standard') <> 'discount'
+              GROUP BY f.id, f.exchange_rate"
+        );
+        $stmt->execute([$supplierId, $proformaId, $invoiceId]);
+        $sum = 0.0;
+        foreach ($stmt->fetchAll(\PDO::FETCH_ASSOC) as $row) {
+            $rate = (float) ($row['exchange_rate'] ?? 0) > 0 ? (float) $row['exchange_rate'] : 1.0;
+            $sum += round((float) $row['base'] * $rate, 2);
+        }
+        return round($sum, 2);
     }
 
     /**
@@ -2898,11 +2977,11 @@ final class PostingService
      *     OSS se daňový doklad k záloze nevydává).
      *
      * @param array<string,mixed> $inv hlavička vyúčtovací faktury
-     * @return array{active:bool, base:float, foreign_base:float, drawn_vat:float, item_ids:list<int>}
+     * @return array{active:bool, partial:bool, base:float, foreign_base:float, drawn_vat:float, item_ids:list<int>}
      */
     private function advanceDeduction(int $supplierId, int $invoiceId, array $inv, float $rate): array
     {
-        $none = ['active' => false, 'base' => 0.0, 'foreign_base' => 0.0, 'drawn_vat' => 0.0, 'item_ids' => []];
+        $none = ['active' => false, 'partial' => false, 'base' => 0.0, 'foreign_base' => 0.0, 'drawn_vat' => 0.0, 'item_ids' => []];
         if ((string) ($inv['invoice_type'] ?? 'invoice') !== 'invoice') {
             return $none;
         }
@@ -2986,28 +3065,66 @@ final class PostingService
             $gross += round(-((float) $row['total_without_vat'] + (float) $row['total_vat']) * $rate, 2);
         }
 
+        // Celé vyúčtování jedinou fakturou odečítá přesně DDKP. Jinak jde o postupné čerpání
+        // zálohy víc fakturami (AdvancePartialDrawdown): každá nese kladný odpočet a všechny
+        // dohromady nesmí odečíst víc, než DDKP přiznaly. Faktura bez odpočtu (smazaný
+        // v konceptu, ručně navázaná) zůstává nejednoznačná v obou případech.
+        $partial = false;
         if (abs($gross - $ddkpGross) > self::ADVANCE_DEDUCTION_TOLERANCE_CZK) {
-            throw new PostingException(
-                'advance_settlement_ambiguous',
-                sprintf(
-                    'Vyúčtovací faktura #%d odečítá zálohu %.2f Kč, ale daňové doklady k platbě proformy #%d '
-                        . 'přiznaly %.2f Kč. Odpočtové řádky (§ 37a) musí odpovídat vystaveným daňovým dokladům — '
-                        . 'jinak nejde určit výnos ani zúčtování zálohy. Oprav odpočtové řádky, nebo zaúčtuj ručně.',
-                    $invoiceId,
-                    $gross,
-                    $parentId,
-                    $ddkpGross,
-                ),
-            );
+            $drawnTotal = $this->advanceDrawnGross($supplierId, $parentId, $invoiceId, $gross, $rate);
+            // Odečet úhrad bez DDKP v hlavičce (advance_paid_amount) patří jen k celému
+            // vyúčtování — při postupném čerpání by zúčtování nešlo rozdělit mezi faktury.
+            $paidOff = $this->db->pdo()->prepare('SELECT advance_paid_amount FROM invoices WHERE id = ? AND supplier_id = ?');
+            $paidOff->execute([$invoiceId, $supplierId]);
+            $partial = self::cents($gross) > 0
+                && self::cents((float) $paidOff->fetchColumn()) === 0
+                && $drawnTotal <= $ddkpGross + self::ADVANCE_DEDUCTION_TOLERANCE_CZK;
+            if (!$partial) {
+                throw new PostingException(
+                    'advance_settlement_ambiguous',
+                    sprintf(
+                        'Vyúčtovací faktura #%d odečítá zálohu %.2f Kč, ale daňové doklady k platbě proformy #%d '
+                            . 'přiznaly %.2f Kč (všechny vyúčtovací faktury proformy odečítají %.2f Kč). '
+                            . 'Odpočtové řádky (§ 37a) musí odpovídat vystaveným daňovým dokladům, nebo při postupném '
+                            . 'čerpání zálohy nesmí dohromady přesáhnout jejich částku — jinak nejde určit výnos ani '
+                            . 'zúčtování zálohy. Oprav odpočtové řádky, nebo zaúčtuj ručně.',
+                        $invoiceId,
+                        $gross,
+                        $parentId,
+                        $ddkpGross,
+                        $drawnTotal,
+                    ),
+                );
+            }
         }
 
         return [
             'active'       => true,
+            'partial'      => $partial,
             'base'         => round($base, 2),
             'foreign_base' => round($foreignBase, 2),
             'drawn_vat'    => round($drawnVat, 2),
             'item_ids'     => $ids,
         ];
+    }
+
+    /**
+     * Σ odpočtu zálohy (s DPH, v Kč) na všech nestornovaných vyúčtovacích fakturách proformy.
+     * Odpočet vyúčtovávané faktury se bere z jejích řádků už spočítaný (`$ownGross`), ostatní
+     * faktury kurzem dokladu vyúčtovávané faktury — postupné čerpání je jen ve stejné měně.
+     */
+    private function advanceDrawnGross(int $supplierId, int $proformaId, int $invoiceId, float $ownGross, float $rate): float
+    {
+        $stmt = $this->db->pdo()->prepare(
+            "SELECT -COALESCE(SUM(ii.total_with_vat), 0)
+               FROM invoices f
+               JOIN invoice_items ii ON ii.invoice_id = f.id
+              WHERE f.supplier_id = ? AND f.parent_invoice_id = ? AND f.invoice_type = 'invoice'
+                AND f.status <> 'cancelled' AND f.id <> ?
+                AND ii.total_with_vat < 0 AND COALESCE(ii.item_kind, 'standard') <> 'discount'"
+        );
+        $stmt->execute([$supplierId, $proformaId, $invoiceId]);
+        return round($ownGross + round((float) $stmt->fetchColumn() * $rate, 2), 2);
     }
 
     private function activeFinalInvoiceCount(int $supplierId, int $proformaId): int

@@ -308,9 +308,10 @@ kroků ve třech skupinách:
    průvodce předá štafetu běžnému měsíčnímu zpracování.
 
 Když první mzdové období neleží v lednu, přibude před první mzdový měsíc
-skupina **Přechod v průběhu roku** se sedmi kroky: převzaté mzdy, počáteční
-stavy, děti a prohlášení od začátku roku, identifikátory pro ČSSZ, průměrný
-výdělek pro první čtvrtletí, zůstatek dovolené a kontrola převzaté části roku.
+skupina **Přechod v průběhu roku** se sedmi kroky: **Převezměte mzdy za měsíce
+před přechodem**, **Zkontrolujte počáteční stavy**, **Děti a prohlášení od
+začátku roku**, **Identifikátory pro ČSSZ**, **Průměrný výdělek pro první
+čtvrtletí**, **Zůstatek dovolené** a **Kontrola převzaté části roku**.
 Podrobně je popisuje [Přechod mezd v průběhu roku](113_Prechod_mezd_v_prubehu_roku.md).
 
 Každý krok jde odškrtnout. Kroky, na které nemáte oprávnění, se nenabízejí;
@@ -407,8 +408,8 @@ stopy. Bez převzetí odpovědnosti běh schválit nejde.
 čisté mzdy**, **Rozklad sociálního a zdravotního pojištění** a **Rozpad daně
 ze závislé činnosti**. Historie je pod odkazem **Zobrazit historii a změny**.
 
-**Schválení** uloží výsledek jako závazný, samo založí výplatní pásky každé
-zpracované osoby, v podvojném účetnictví připraví rozdílový mzdový deník
+**Schválení** uloží výsledek jako závazný, zařadí generování výplatních pásek
+každé zpracované osoby na pozadí, v podvojném účetnictví připraví rozdílový mzdový deník
 a zapíše kontrolu i schválení do historie běhu. Samostatná kontrola je
 součástí schválení.
 

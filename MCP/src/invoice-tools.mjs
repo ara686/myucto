@@ -414,6 +414,46 @@ export const INVOICE_TOOLS = [
     ),
   },
   {
+    name: 'list_invoice_advance_drawdown_candidates',
+    title: 'Zálohy k postupnému čerpání',
+    description:
+      'Ke KONCEPTU faktury vrátí zálohové faktury téhož odběratele a měny, které mají vystavený '
+      + 'daňový doklad k platbě, s dosud nevyčerpanou částkou (`available`, s DPH). Čerpá se přes '
+      + '`apply_invoice_advance_drawdown`.',
+    inputSchema: schema({ id: id('ID konceptu faktury.') }, ['id']),
+    write: false,
+    run: (c, a, tool) => c.get(`/invoices/${seg(a.id)}/advance-drawdown`, null, tool),
+  },
+  {
+    name: 'apply_invoice_advance_drawdown',
+    title: 'Odečíst část zálohy na faktuře',
+    description:
+      'Postupné čerpání zálohy (smlouva s milníky): na KONCEPT běžné faktury s vlastními položkami '
+      + 'doplní záporné odpočtové řádky § 37a ZDPH na `amount` (s DPH) z dané zálohy a naváže fakturu '
+      + 'na zálohu. Záloha musí mít vystavený daňový doklad k platbě. Opakované volání odpočet '
+      + 'nahradí. Na rozdíl od `create_final_invoice_from_proforma` nekopíruje položky zálohy a jednu '
+      + 'zálohu může čerpat víc faktur, dokud se nevyčerpá.',
+    inputSchema: schema({
+      id: id('ID konceptu faktury.'),
+      proforma_id: id('ID zálohové faktury.'),
+      amount: num('Čerpaná částka zálohy s DPH v měně dokladu.', { exclusiveMinimum: 0 }),
+    }, ['id', 'proforma_id', 'amount']),
+    write: true,
+    run: (c, a, tool) => c.post(
+      `/invoices/${seg(a.id)}/advance-drawdown`,
+      { proforma_id: a.proforma_id, amount: a.amount },
+      tool,
+    ),
+  },
+  {
+    name: 'remove_invoice_advance_drawdown',
+    title: 'Odebrat čerpání zálohy z faktury',
+    description: 'Z KONCEPTU faktury odebere odpočtové řádky zálohy i vazbu na zálohovou fakturu.',
+    inputSchema: schema({ id: id('ID konceptu faktury.') }, ['id']),
+    write: true,
+    run: (c, a, tool) => c.del(`/invoices/${seg(a.id)}/advance-drawdown`, tool),
+  },
+  {
     name: 'list_invoice_advance_candidates',
     title: 'Zálohy k propojení s fakturou',
     description:

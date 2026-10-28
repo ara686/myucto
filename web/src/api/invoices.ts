@@ -85,6 +85,19 @@ export interface RelatedBankTransaction {
 }
 
 /** Nespárovaná zálohová faktura (proforma) nabídnutá k propojení s daňovým dokladem. */
+export interface AdvanceDrawdownCandidate {
+  id: number
+  varsymbol: string | null
+  issue_date: string | null
+  total_with_vat: number
+  available: number
+}
+
+export interface AdvanceDrawdownResult {
+  drawdown: { proforma_id: number; amount: number; available: number; remaining: number }
+  invoice: Invoice
+}
+
 export interface AdvanceCandidate {
   id: number
   varsymbol: string | null
@@ -959,6 +972,13 @@ export const invoicesApi = {
     api.post<Invoice>(`/invoices/${id}/link-advance`, { advance_id: advanceId }).then(r => r.data),
   unlinkAdvance: (id: number) =>
     api.delete<Invoice>(`/invoices/${id}/link-advance`).then(r => r.data),
+  // Postupné čerpání zálohy (koncept faktury odečte část daňového dokladu k záloze)
+  advanceDrawdownCandidates: (id: number) =>
+    api.get<AdvanceDrawdownCandidate[]>(`/invoices/${id}/advance-drawdown`).then(r => r.data),
+  applyAdvanceDrawdown: (id: number, body: { proforma_id: number; amount: number }) =>
+    api.post<AdvanceDrawdownResult>(`/invoices/${id}/advance-drawdown`, body).then(r => r.data),
+  removeAdvanceDrawdown: (id: number) =>
+    api.delete<Invoice>(`/invoices/${id}/advance-drawdown`).then(r => r.data),
   clone: (id: number, opts?: { increment_month_in_descriptions?: boolean; issue_date?: string }) =>
     api.post<{ draft_id: number }>(`/invoices/${id}/clone`, opts || {}).then(r => r.data),
   bulkReissue: (invoiceIds: number[], opts?: { increment_month_in_descriptions?: boolean; issue_date?: string }) =>

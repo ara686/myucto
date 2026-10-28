@@ -8,7 +8,7 @@ import DocumentSidePreview from '@/components/documents/DocumentSidePreview.vue'
 import { ref, reactive, computed, onMounted, onBeforeUnmount, watch, defineAsyncComponent } from 'vue'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { invoicesApi, type Invoice, type WorkReport, type ApprovalStatus, type InvoiceAttachment, type AdvanceCandidate, type InvoicePayment, type PenaltyPreview, type RelatedBankTransaction } from '@/api/invoices'
+import { invoicesApi, type Invoice, type WorkReport, type ApprovalStatus, type InvoiceAttachment, type AdvanceCandidate, type AdvanceDrawdownCandidate, type InvoicePayment, type PenaltyPreview, type RelatedBankTransaction } from '@/api/invoices'
 import {
   settingsApi,
   type PdfSignatureDocumentEntityType,
@@ -1148,6 +1148,9 @@ const canPairFinal = computed(() =>
 // Propojeno se zálohou (proforma) → lze odpojit. Rodič storna/dobropisu (non-proforma) ne.
 const linkedProforma = computed(() =>
   invoice.value?.parent_invoice?.invoice_type === 'proforma' ? invoice.value.parent_invoice : null)
+// Odpočtový řádek zálohy § 37a = záporný řádek mimo slevový (stejná definice jako na serveru).
+const hasAdvanceDeduction = computed(() =>
+  (invoice.value?.items ?? []).some(i => Number(i.total_with_vat) < 0 && (i.item_kind ?? 'standard') !== 'discount'))
 
 async function openPairModal(mode: 'advance' | 'final') {
   if (!invoice.value) return
@@ -1211,6 +1214,84 @@ async function unlinkAdvance(targetId?: number) {
     toast.error(apiErrorMessage(e))
   } finally {
     linkingAdvance.value = false
+  }
+}
+
+// ── Postupné čerpání zálohy (koncept faktury odečte část zaplacené zálohy) ──
+const drawdownOpen = ref(false)
+const drawdownCandidates = ref<AdvanceDrawdownCandidate[]>([])
+const drawdownLoading = ref(false)
+const drawdownSaving = ref(false)
+const drawdownProformaId = ref<number | null>(null)
+const drawdownAmount = ref<number | null>(null)
+const drawdownError = ref('')
+
+const selectedDrawdown = computed(() =>
+  drawdownCandidates.value.find(c => c.id === drawdownProformaId.value) ?? null)
+const drawdownAmountValid = computed(() => {
+  const c = selectedDrawdown.value
+  const a = Number(drawdownAmount.value)
+  return !!c && Number.isFinite(a) && a > 0 && a <= Number(c.available) + 0.005
+})
+
+function selectDrawdown(id: number) {
+  drawdownProformaId.value = id
+  const c = drawdownCandidates.value.find(x => x.id === id)
+  drawdownAmount.value = c ? Number(c.available) : null
+}
+
+async function openDrawdownModal() {
+  if (!invoice.value) return
+  drawdownError.value = ''
+  drawdownCandidates.value = []
+  drawdownProformaId.value = null
+  drawdownAmount.value = null
+  drawdownOpen.value = true
+  drawdownLoading.value = true
+  try {
+    drawdownCandidates.value = await invoicesApi.advanceDrawdownCandidates(invoice.value.id)
+    const current = invoice.value.parent_invoice?.id
+    const pre = drawdownCandidates.value.find(c => c.id === current) ?? drawdownCandidates.value[0]
+    if (pre) selectDrawdown(pre.id)
+  } catch (e) {
+    drawdownError.value = apiErrorMessage(e)
+  } finally {
+    drawdownLoading.value = false
+  }
+}
+
+async function confirmDrawdown() {
+  if (!invoice.value || drawdownSaving.value || !drawdownAmountValid.value || drawdownProformaId.value === null) return
+  drawdownSaving.value = true
+  drawdownError.value = ''
+  try {
+    const r = await invoicesApi.applyAdvanceDrawdown(invoice.value.id, {
+      proforma_id: drawdownProformaId.value,
+      amount: Number(drawdownAmount.value),
+    })
+    invoice.value = r.invoice
+    drawdownOpen.value = false
+    toast.success(t('invoice.advance_drawdown.applied'))
+    invoicesApi.activity(r.invoice.id).then(a => { activity.value = a }).catch(() => {})
+  } catch (e) {
+    drawdownError.value = apiErrorMessage(e)
+  } finally {
+    drawdownSaving.value = false
+  }
+}
+
+async function removeDrawdown() {
+  if (!invoice.value || busy.value !== null) return
+  if (!confirm(t('invoice.advance_drawdown.remove_confirm'))) return
+  busy.value = 'drawdown-remove'
+  try {
+    invoice.value = await invoicesApi.removeAdvanceDrawdown(invoice.value.id)
+    toast.success(t('invoice.advance_drawdown.removed'))
+    invoicesApi.activity(invoice.value.id).then(a => { activity.value = a }).catch(() => {})
+  } catch (e) {
+    toast.error(apiErrorMessage(e))
+  } finally {
+    busy.value = null
   }
 }
 
@@ -1878,6 +1959,12 @@ const invoiceActions = computed<ActionItem[]>(() => {
       show: isDoubleEntry.value && auth.canWrite('accounting.offsets') && isIssued.value && inv.invoice_type === 'invoice'
         && (inv.currency ?? 'CZK') === 'CZK' && Number(inv.amount_to_pay ?? 0) - Number(inv.paid_total ?? 0) > 0.005,
       to: offsetRoute(Number(inv.client_id), [{ doc_type: 'invoice', doc_id: inv.id, amount: null }]) },
+    { key: 'advance-drawdown', label: t('invoice.advance_drawdown.action'), icon: 'coin', tier: 'secondary', variant: 'warning',
+      show: isDraft.value && inv.invoice_type === 'invoice' && w && !lockedForMe.value, disabled: b,
+      title: t('invoice.advance_drawdown.tooltip') as string, run: openDrawdownModal },
+    { key: 'advance-drawdown-remove', label: t('invoice.advance_drawdown.remove'), icon: 'uturn', tier: 'overflow', variant: 'neutral',
+      show: isDraft.value && inv.invoice_type === 'invoice' && inv.parent_invoice?.invoice_type === 'proforma' && w && !lockedForMe.value,
+      disabled: b, loading: busy.value === 'drawdown-remove', run: removeDrawdown },
     { key: 'wr', label: t('invoice.wr_btn'), icon: 'chart', tier: 'secondary', variant: 'primary',
       show: isDraft.value && inv.invoice_type !== 'tax_document' && w && !lockedForMe.value,
       title: t('invoice.wr_btn') as string, run: () => { wrModalOpen.value = true } },
@@ -1955,7 +2042,7 @@ useWindowRefresh(['invoices', 'clients', 'bank', 'bank-transactions', 'cash', 'a
   if (stockIntegrationVisible.value) void loadStockDocuments(invoiceId, generation)
 }, () => !loading.value && !busy.value && !accrualEditing.value && !accrualSaving.value
   && !sendOpen.value && !reminderOpen.value && !cancelOpen.value && !partialOpen.value
-  && !markPaidOpen.value && !advanceModalOpen.value && !penaltyOpen.value
+  && !markPaidOpen.value && !advanceModalOpen.value && !drawdownOpen.value && !penaltyOpen.value
   && !approvalStatusOpen.value && !wrModalOpen.value && !refundDialogOpen.value && !bankMatchTarget.value)
 </script>
 
@@ -2406,8 +2493,15 @@ useWindowRefresh(['invoices', 'clients', 'bank', 'bank-transactions', 'cash', 'a
           </RouterLink>
         </span>
         <!-- Daňový doklad k přijaté platbě (#89) má vazbu strukturální (drží § 37a
-             odpočty finálu i vazbu na platbu) — rozpojit nelze, backend to odmítá. -->
-        <button v-if="auth.canWrite('invoices') && invoice.invoice_type !== 'tax_document' && !lockedForMe" type="button" @click="unlinkAdvance()" :disabled="linkingAdvance"
+             odpočty finálu i vazbu na platbu) — rozpojit nelze, backend to odmítá.
+             Koncept s odpočtem zálohy § 37a rozpojí jen odebrání čerpání (smaže i odpočet);
+             vystavený doklad s odpočtem backend rozpojit nedovolí. -->
+        <button v-if="auth.canWrite('invoices') && invoice.invoice_type !== 'tax_document' && !lockedForMe && hasAdvanceDeduction && isDraft"
+          type="button" @click="removeDrawdown()" :disabled="busy !== null"
+          class="cursor-pointer text-xs px-2 py-1 border border-neutral-300 rounded text-neutral-600 hover:bg-neutral-50 disabled:opacity-50 shrink-0 bg-surface">
+          {{ t('invoice.advance_drawdown.remove') }}
+        </button>
+        <button v-else-if="auth.canWrite('invoices') && invoice.invoice_type !== 'tax_document' && !lockedForMe && !hasAdvanceDeduction" type="button" @click="unlinkAdvance()" :disabled="linkingAdvance"
           class="cursor-pointer text-xs px-2 py-1 border border-neutral-300 rounded text-neutral-600 hover:bg-neutral-50 disabled:opacity-50 shrink-0 bg-surface">
           {{ t('invoice.advance_link.unlink') }}
         </button>
@@ -2441,6 +2535,50 @@ useWindowRefresh(['invoices', 'clients', 'bank', 'bank-transactions', 'cash', 'a
                 </button>
               </li>
             </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal postupného čerpání zálohy -->
+      <div v-if="drawdownOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" @click.self="drawdownOpen = false">
+        <div class="bg-surface rounded-lg shadow-xl max-w-lg w-full max-h-[80vh] overflow-hidden flex flex-col">
+          <div class="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
+            <h3 class="font-medium">{{ t('invoice.advance_drawdown.modal_title') }}</h3>
+            <button type="button" @click="drawdownOpen = false" class="cursor-pointer text-neutral-400 hover:text-neutral-600">✕</button>
+          </div>
+          <div class="p-4 overflow-y-auto space-y-3">
+            <div v-if="drawdownLoading" class="text-sm text-neutral-500">{{ t('common.loading') }}</div>
+            <div v-else-if="drawdownCandidates.length === 0 && !drawdownError" class="text-sm text-neutral-500">{{ t('invoice.advance_drawdown.no_candidates') }}</div>
+            <template v-else-if="drawdownCandidates.length > 0">
+              <ul class="space-y-2">
+                <li v-for="cand in drawdownCandidates" :key="cand.id">
+                  <label class="cursor-pointer flex items-center gap-3 px-3 py-2 border rounded-md"
+                    :class="drawdownProformaId === cand.id ? 'border-primary-500 bg-primary-50' : 'border-neutral-200 hover:border-primary-400'">
+                    <input type="radio" name="drawdown-proforma" :value="cand.id" :checked="drawdownProformaId === cand.id" @change="selectDrawdown(cand.id)" />
+                    <span class="font-mono text-sm">{{ cand.varsymbol || ('#' + cand.id) }}</span>
+                    <span class="text-xs text-neutral-500 ml-auto text-right">
+                      {{ cand.issue_date ? formatDate(cand.issue_date) : '' }} · {{ t('invoice.advance_drawdown.total') }} {{ formatMoney(cand.total_with_vat, invoice.currency) }}
+                      <br />{{ t('invoice.advance_drawdown.available') }} {{ formatMoney(cand.available, invoice.currency) }}
+                    </span>
+                  </label>
+                </li>
+              </ul>
+              <div>
+                <label class="block text-sm text-neutral-600 mb-1" for="drawdown-amount">{{ t('invoice.advance_drawdown.amount') }}</label>
+                <input id="drawdown-amount" v-model.number="drawdownAmount" type="number" step="0.01" min="0.01"
+                  :max="selectedDrawdown?.available" class="w-full border border-neutral-300 rounded-md px-3 py-2 text-sm bg-surface" />
+                <p class="text-xs text-neutral-500 mt-1">{{ t('invoice.advance_drawdown.amount_hint') }}</p>
+              </div>
+            </template>
+            <p v-if="drawdownError" class="text-sm text-danger-600">{{ drawdownError }}</p>
+          </div>
+          <div class="px-5 py-3 border-t border-neutral-100 flex justify-end gap-2">
+            <button type="button" @click="drawdownOpen = false"
+              class="cursor-pointer text-sm px-3 py-1.5 border border-neutral-300 rounded-md hover:bg-neutral-50">{{ t('common.cancel') }}</button>
+            <button type="button" @click="confirmDrawdown" :disabled="!drawdownAmountValid || drawdownSaving"
+              class="cursor-pointer text-sm px-3 py-1.5 rounded-md bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-50">
+              {{ t('invoice.advance_drawdown.confirm') }}
+            </button>
           </div>
         </div>
       </div>

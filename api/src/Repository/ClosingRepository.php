@@ -1509,10 +1509,16 @@ final class ClosingRepository
                   LEFT JOIN invoices pf ON pf.id = ip.invoice_id
                                        AND pf.supplier_id = ip.supplier_id
                                        AND pf.invoice_type = 'proforma'
-                  LEFT JOIN invoices ch ON ch.parent_invoice_id = pf.id
-                                       AND ch.supplier_id = ip.supplier_id
-                                       AND ch.invoice_type NOT IN ('proforma', 'tax_document')
-                                       AND ch.cancelled_at IS NULL
+                  -- Zálohu čerpanou postupně víc fakturami (milníky) nese jen první z nich,
+                  -- shodně se skupinou DDKP v `doc` níž; jinak by se úhrada rozpadla na
+                  -- každou konečnou fakturu zvlášť a započetla se vícekrát.
+                  LEFT JOIN invoices ch ON ch.id = (
+                                SELECT MIN(fin.id) FROM invoices fin
+                                 WHERE fin.supplier_id = ip.supplier_id
+                                   AND fin.parent_invoice_id = pf.id
+                                   AND fin.invoice_type NOT IN ('proforma', 'tax_document')
+                                   AND fin.cancelled_at IS NULL
+                            )
                  WHERE ip.supplier_id = ?
                 UNION ALL
                 -- Větev 2 — úhrady spárované jen přes bank_transactions.matched_invoice_id

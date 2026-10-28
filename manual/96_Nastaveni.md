@@ -280,7 +280,7 @@ Všechny tři volby (sloupce, hustota, řazení) se ukládají **automaticky**, 
 ## 96.9 Krok za krokem: automatické účtování
 
 V sekci **Daňové nastavení** (jen u firem v režimu podvojné účetnictví; u daňové evidence se doklady neúčtují a blok se
-vůbec nezobrazí) jsou dva přepínače, ve výchozím stavu vypnuté:
+vůbec nezobrazí) jsou dva přepínače. Nová právnická osoba je má od založení zapnuté, stejně jako firma po dokončení průvodce aktivací účetnictví:
 
 <!-- cols: 40 60 -->
 | Přepínač | Co dělá |
@@ -838,10 +838,15 @@ a přepínač **Ranní přehled e-mailem** připravuje souhrn pro automatizačn�
 
 Podrobné nastavení je rozdělené do skupin:
 
-- **Platby a převody**: spárované bankovní platby, vlastní převody a jejich detektor,
+- **Platby a převody**: řádky **Vystavené faktury** a **Přijaté faktury**, spárované bankovní platby, vlastní převody a jejich detektor,
 - **Odvody**: jednotlivé druhy daní, sociální a zdravotní pojištění a rozpoznávání odvodů,
 - **Banka**: poplatky, úroky, vlastní pravidla a naučené kontace,
 - **AI**: návrhy bankovních plateb a dokladů; úroveň Automaticky je zde technicky zakázaná.
+
+Řádky **Vystavené faktury** a **Přijaté faktury** odpovídají přepínačům automatického účtování faktur v Daňovém
+nastavení ([§ 96.9](#969-krok-za-krokem-automaticke-uctovani)). Dokud řádek v tomto boxu nezměníte, řídí se zaúčtování
+faktur přepínačem. Úroveň uložená u řádku má potom přednost a faktura se automaticky zaúčtuje jen na úrovni
+**Automaticky**.
 
 Výsledná úroveň je vždy nejvýše tak automatická, jak dovoluje preset a konkrétní řádek. Nastavení **Vypnuto** detektor
 nebo typ operace nepustí, **Jen návrhy** vyžaduje potvrzení a **Automaticky** pouze dovoluje motoru pokračovat

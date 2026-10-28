@@ -11183,6 +11183,76 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Invoice' }
 
+  /api/v1/invoices/{id}/advance-drawdown:
+    parameters:
+      - $ref: '#/components/parameters/SupplierIdHeader'
+      - in: path
+        name: id
+        required: true
+        schema: { type: integer, format: int64 }
+    get:
+      tags: [InvoiceOps]
+      summary: Zálohy, ze kterých může koncept faktury postupně čerpat
+      description: Zálohové faktury téhož odběratele a měny s vystaveným daňovým dokladem k platbě a dosud nevyčerpanou částkou s DPH.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: integer, format: int64 }
+                    varsymbol: { type: string, nullable: true }
+                    issue_date: { type: string, format: date }
+                    total_with_vat: { type: number }
+                    available: { type: number }
+        '409': { description: Doklad není koncept běžné faktury }
+    post:
+      tags: [InvoiceOps]
+      summary: Odečte na konceptu faktury část zálohy (postupné čerpání)
+      description: Nahradí odpočtové řádky § 37a na konceptu čerpáním `amount` (s DPH) ze zálohy a naváže fakturu na zálohu.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [proforma_id, amount]
+              properties:
+                proforma_id: { type: integer, format: int64 }
+                amount: { type: number }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  drawdown:
+                    type: object
+                    properties:
+                      proforma_id: { type: integer, format: int64 }
+                      amount: { type: number }
+                      available: { type: number }
+                      remaining: { type: number }
+                  invoice: { $ref: '#/components/schemas/Invoice' }
+        '400': { description: Neplatný vstup }
+        '409': { description: Čerpání selhalo }
+    delete:
+      tags: [InvoiceOps]
+      summary: Odebere z konceptu faktury čerpání zálohy
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invoice' }
+        '409': { description: Doklad není koncept běžné faktury }
+
   # ── Přijaté faktury — párování zálohy ────────────────────────────────────
   /api/v1/purchase-invoices/{id}/advance-candidates:
     parameters:

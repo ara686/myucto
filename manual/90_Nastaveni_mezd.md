@@ -877,6 +877,17 @@ docházky** (zařazení JMHZ 10329), **Odměna** na **Odměnu** z číselníku,
 zařadí účetní jednou za firmu) a **Srážka z čisté mzdy** založí dohodu o srážce
 na daný měsíc. Sloupce, které vzor nezná, i ostatní listy sešitu se ignorují.
 
+**Správa profilů mapování.** Seznam profilů firmy v záložce **Mapování
+sloupců** nabízí **Nový profil** a **Import JSON**. Profil uložený jako
+soubor JSON (dříve vytvořený tlačítkem **Export JSON**, třeba z jiné firmy)
+nahrajete tlačítkem **Import JSON**; soubor, který není platný JSON, není
+export profilu mapování docházky, pochází z novější verze aplikace nebo mu
+chybí název či pravidla, aplikace odmítne s vysvětlením. U vybraného profilu
+jsou tlačítka **Uložit**, **Zahodit změny**, **Duplikovat**, **Export JSON**
+(stáhne profil do souboru JSON), **Kopírovat do jiné firmy** a **Smazat**.
+Úpravy vyžadují oprávnění k nastavení mezd, bez něj profily jen prohlížíte
+a zkoušíte na souborech.
+
 **Verze vzoru.** Vzorové profily GIRITON a MyÚčto dostane každá firma, každý
 jednou, a s novou verzí aplikace se aktualizují samy, pokud jste je neupravili.
 Upravený vzor se

@@ -23210,6 +23210,21 @@
       "proforma": "Advance (proforma) invoice",
       "parent": "Original invoice"
     },
+    "advance_drawdown": {
+      "action": "Deduct advance",
+      "tooltip": "Deduct part of a paid advance (partial drawdown)",
+      "remove": "Remove advance drawdown",
+      "remove_confirm": "Remove the advance deduction from this invoice?",
+      "modal_title": "Deduct advance",
+      "no_candidates": "No advance available (a paid advance with a tax document for the same client and currency is required).",
+      "total": "total",
+      "available": "available",
+      "amount": "Amount to deduct (incl. VAT)",
+      "amount_hint": "At most the remaining undrawn amount of the selected advance.",
+      "confirm": "Deduct",
+      "applied": "Advance deducted.",
+      "removed": "Advance drawdown removed."
+    },
     "advance_link": {
       "none": "Not linked to any advance invoice.",
       "none_final": "Not linked to any tax document.",

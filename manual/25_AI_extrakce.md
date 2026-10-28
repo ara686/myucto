@@ -79,6 +79,9 @@ Volitelné kroky:
 - **Model pro dotaz účetnímu asistentovi.** V `Účetnictví → AI asistent` vyberete u vstupu dotazu **Model** aktivního
   poskytovatele, například `gpt-5.5` místo `gpt-5.4-mini`. Volba platí pro další odesílané dotazy na této stránce a nemění
   výchozí model firmy. U každé odpovědi je uveden použitý model, také při otevření uložené konverzace.
+  Navrhne-li asistent v odpovědi ostatní pohledávku nebo závazek, nabídne tlačítko **Založit v Ostatních pohledávkách
+  a závazcích**. Po potvrzení vznikne pouze koncept, který po kontrole zaúčtujete sami. K založení potřebujete právo
+  zapisovat do Ostatních pohledávek a závazků.
 - **Smazání klíče.** Tlačítko **koš** u poskytovatele smaže jeho uložené přihlašovací údaje (po potvrzení). Pokud byl aktivní,
   extrakce přestane fungovat, dokud nenastavíte jiného poskytovatele nebo klíč nevložíte znovu.
 
