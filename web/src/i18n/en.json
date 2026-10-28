@@ -5278,8 +5278,7 @@
         "donation": "Gifts: claimed {claimed}, cap {cap}",
         "threshold_not_met": "minimum gift threshold not met",
         "housing_interest": "Housing loan interest: claimed {claimed}, {months} mo., limit {cap}",
-        "retirement_and_care": "Pension, life insurance, long-term investment and care: claimed {claimed}, limit {cap}",
-        "spouse": "Spouse credit: {months} mo., of which ZTP/P {ztp} mo."
+        "retirement_and_care": "Pension, life insurance, long-term investment and care: claimed {claimed}, limit {cap}"
       },
       "spouse_failure": {
         "spouse_relation": "The selected person is not recorded as a spouse.",

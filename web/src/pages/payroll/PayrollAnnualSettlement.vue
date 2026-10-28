@@ -237,7 +237,6 @@ const items = computed<PayrollAnnualSettlementListItem[]>(() => data.value?.item
 const result = computed(() => preview.value?.result ?? null)
 const blockers = computed(() => result.value?.blockers ?? [])
 const nonTaxable = computed(() => result.value?.trace?.non_taxable ?? null)
-const spouseCreditTrace = computed(() => result.value?.trace?.credits?.spouse ?? null)
 const spouseCreditFailures = computed<string[]>(() =>
   (result.value?.trace?.spouse_credit_failures ?? [])
     .filter(code => SPOUSE_FAILURE_CODES.includes(code)),
@@ -2496,23 +2495,6 @@ onMounted(async () => {
                       {{ money(result.tax_before_credits_minor_units) }}
                     </td>
                   </tr>
-                  <tr v-for="row in preview?.credit_rows ?? []" :key="row.label">
-                    <td class="py-2 pl-4 text-neutral-500">{{ row.label }}</td>
-                    <td class="py-2 text-right tabular-nums text-neutral-700">
-                      −{{ money(row.amount_minor_units) }}
-                    </td>
-                  </tr>
-                  <tr v-if="spouseCreditTrace" data-test="annual-settlement-trace-spouse">
-                    <td class="py-2 pl-4 text-neutral-500">
-                      {{ t('payroll.annual_settlement.trace.spouse', {
-                        months: spouseCreditTrace.months,
-                        ztp: spouseCreditTrace.ztp_p_months,
-                      }) }}
-                    </td>
-                    <td class="py-2 text-right tabular-nums text-neutral-700">
-                      −{{ money(spouseCreditTrace.amount_minor_units) }}
-                    </td>
-                  </tr>
                   <tr
                     v-if="(result.enforcement_credit_minor_units ?? 0) > 0"
                     data-test="annual-settlement-trace-enforcement"
@@ -2520,6 +2502,12 @@ onMounted(async () => {
                     <td class="py-2 pl-4 text-neutral-500">{{ t('payroll.annual_settlement.row_enforcement_credit') }}</td>
                     <td class="py-2 text-right tabular-nums text-neutral-700">
                       −{{ money(result.enforcement_credit_minor_units) }}
+                    </td>
+                  </tr>
+                  <tr v-for="row in preview?.credit_rows ?? []" :key="row.label">
+                    <td class="py-2 pl-4 text-neutral-500">{{ row.label }}</td>
+                    <td class="py-2 text-right tabular-nums text-neutral-700">
+                      −{{ money(row.amount_minor_units) }}
                     </td>
                   </tr>
                   <tr v-for="row in preview?.child_rows ?? []" :key="row.label">

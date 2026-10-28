@@ -1087,7 +1087,6 @@ describe('Roční zúčtování', () => {
 
     expect(wrapper.find('[data-test="annual-settlement-base-before-deductions"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="annual-settlement-trace-donation"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="annual-settlement-trace-spouse"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="annual-settlement-trace-enforcement"]').exists()).toBe(true)
 
     m.previewAnnualSettlement.mockResolvedValue(previewResponse({

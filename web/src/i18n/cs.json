@@ -5278,8 +5278,7 @@
         "donation": "Dary: uplatněno {claimed}, strop {cap}",
         "threshold_not_met": "minimální hranice daru nesplněna",
         "housing_interest": "Úroky z úvěru na bydlení: uplatněno {claimed}, {months} měs., limit {cap}",
-        "retirement_and_care": "Penzijní, životní pojištění, DIP a dlouhodobá péče: uplatněno {claimed}, limit {cap}",
-        "spouse": "Sleva na manžela: {months} měs., z toho ZTP/P {ztp} měs."
+        "retirement_and_care": "Penzijní, životní pojištění, DIP a dlouhodobá péče: uplatněno {claimed}, limit {cap}"
       },
       "spouse_failure": {
         "spouse_relation": "Vybraná osoba není v evidenci vedená jako manžel nebo manželka.",

@@ -416,6 +416,12 @@ final class PayrollEnumContractTest extends TestCase
             => 'enum:MyInvoice\Service\Payroll\AnnualSettlement\AnnualSettlementAnnualClaims',
         'payroll.ts::PayrollAnnualSettlementCaregiverStatus'
             => 'db:payroll_annual_settlement_requests.other_household_caregiver_status',
+        // Ročně uplatňované položky (§ 15, § 35 odst. 4) a osoby pro slevu na
+        // manžela — formulář evidence i rozpis výsledku.
+        'payroll.ts::PayrollAnnualDeductionKind'
+            => 'enum:MyInvoice\Service\Payroll\AnnualSettlement\AnnualNonTaxableKind',
+        'payroll.ts::PayrollAnnualDependantRelation'
+            => 'db:payroll_dependants.relation',
         'payroll.ts::PayrollAnnualSettlementOutcome'
             => 'enum:MyInvoice\Service\Payroll\AnnualSettlement\AnnualSettlementOutcome',
         'payroll.ts::PayrollAnnualSettlementBlocker'
