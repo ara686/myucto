@@ -62,9 +62,11 @@ final class JmhzEldpEvidenceBuilderTest extends TestCase
     }
 
     /**
-     * Kód D (činnost po dovršení důchodového věku, předčasný důchod) skládá
-     * měsíční hlášení stejným pravidlem jako roční evidenční list. Bez
-     * potvrzených důchodových údajů zůstává „++" a snapshot se nemění.
+     * Kód D (činnost po dovršení důchodového věku) skládá měsíční hlášení
+     * stejným pravidlem jako roční evidenční list. Bez potvrzených důchodových
+     * údajů zůstává „++" a snapshot se nemění. Předčasný starobní důchod
+     * kód D nezakládá (Zadání ELDP12 v1.04, údaj 20; CIS Kód ELDP „1D+ …
+     * výdělečná čin. po dovršení důchodového věku").
      */
     public function testPensionAgeCodeDIsComposedByTheSharedRule(): void
     {
@@ -82,12 +84,14 @@ final class JmhzEldpEvidenceBuilderTest extends TestCase
         self::assertSame('1D+', $snapshot->payload['eldp_sections'][0]['code']);
         self::assertSame('2026-03-15', $snapshot->payload['source_evidence']['pension_age_code_from']);
 
-        // Předčasný důchod dřív než dovršení věku rozhoduje; "++" při něm neprojde.
+        // Předčasný důchodce před dovršením věku má běžný kód; D se u něj nepřijme.
         $early = [...$source, 'pension_status' => ['pension_age_reached_on' => '2027-01-01', 'early_pension_from' => '2026-07-01']];
-        self::assertSame('1D+', $builder->deriveOrdinaryConfirmation(7, 101, $early)['code']);
+        self::assertSame('1++', $builder->deriveOrdinaryConfirmation(7, 101, $early)['code']);
+        $earlySnapshot = $builder->build(7, 101, $early, $this->confirmation());
+        self::assertSame('1++', $earlySnapshot->payload['eldp_sections'][0]['code']);
         try {
-            $builder->build(7, 101, $early, $this->confirmation());
-            self::fail('Kód ++ u předčasného důchodce se nesmí přijmout.');
+            $builder->build(7, 101, $early, ['code' => '1D+'] + $this->confirmation());
+            self::fail('Kód D u předčasného důchodce před dovršením věku se nesmí přijmout.');
         } catch (JmhzEldpEvidenceException $exception) {
             self::assertSame('jmhz_eldp_code_activity_mismatch', $exception->validationCode);
         }
@@ -96,14 +100,9 @@ final class JmhzEldpEvidenceBuilderTest extends TestCase
         $later = [...$source, 'pension_status' => ['pension_age_reached_on' => '2026-08-01', 'early_pension_from' => null]];
         self::assertSame('1++', $builder->deriveOrdinaryConfirmation(7, 101, $later)['code']);
 
-        // Předčasný důchod uprostřed měsíce: rozdělení základu pravidla nestanoví.
+        // Předčasný důchod uprostřed měsíce sekci nedělí, kód se nemění.
         $earlyMid = [...$source, 'pension_status' => ['pension_age_reached_on' => '2027-01-01', 'early_pension_from' => '2026-07-16']];
-        try {
-            $builder->deriveOrdinaryConfirmation(7, 101, $earlyMid);
-            self::fail('Předčasný důchod uprostřed měsíce se na sekce nedělí.');
-        } catch (JmhzEldpEvidenceException $exception) {
-            self::assertSame('eldp_pension_age_mid_month_unsupported', $exception->validationCode);
-        }
+        self::assertSame('1++', $builder->deriveOrdinaryConfirmation(7, 101, $earlyMid)['code']);
     }
 
     /**
@@ -151,7 +150,8 @@ final class JmhzEldpEvidenceBuilderTest extends TestCase
      * je povinná (Pokyny MH 1.4.14, ID 10375 a 10466). Otcovská 13.–26. 7.
      * je 14 dnů vyloučené doby (10362) i odečtené doby (10466); dny pojištění
      * jsou interval minus odečtené doby, 31 − 14 = 17 (kontrola 309).
-     * Předčasný důchodce důchod pobírá, takže se ho to netýká.
+     * Předčasný důchodce před dovršením věku kód D nemá a otcovská je u něj
+     * jen vyloučená doba.
      */
     public function testPensionAgeMonthWithPaternityReportsDeductedDays(): void
     {
@@ -197,7 +197,7 @@ final class JmhzEldpEvidenceBuilderTest extends TestCase
         self::assertSame(31, $earlyConfirmation['insurance_days']);
         self::assertFalse($earlyConfirmation['in04_active']);
         $snapshot = $builder->build(7, 101, $early, $earlyConfirmation);
-        self::assertSame('1D+', $snapshot->payload['eldp_sections'][0]['code']);
+        self::assertSame('1++', $snapshot->payload['eldp_sections'][0]['code']);
         self::assertSame(14, $snapshot->payload['eldp_sections'][0]['excluded_days_total']);
         self::assertNull($snapshot->payload['eldp_sections'][0]['deducted_days_total']);
         self::assertArrayNotHasKey('deducted_days', $snapshot->payload['eldp_sections'][0]);
