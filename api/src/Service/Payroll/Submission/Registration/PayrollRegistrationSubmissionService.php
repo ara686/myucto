@@ -7,6 +7,7 @@ namespace MyInvoice\Service\Payroll\Submission\Registration;
 use MyInvoice\Repository\Payroll\PayrollRegistrationSubmissionRepository;
 use MyInvoice\Repository\Payroll\PayrollSubmissionRepository;
 use MyInvoice\Service\Payroll\Ruleset\CanonicalJson;
+use MyInvoice\Service\Payroll\Submission\Jmhz\JmhzSpecVersion;
 use MyInvoice\Service\Payroll\Submission\Jmhz\JmhzSubmissionGuidFactory;
 use MyInvoice\Service\Payroll\Submission\Jmhz\Transport\JmhzSoftwareIdentification;
 use MyInvoice\Service\Payroll\Submission\PayrollObligationService;
@@ -691,6 +692,22 @@ final readonly class PayrollRegistrationSubmissionService
             $event,
             $effectiveOn,
         );
+        // Ročník formuláře určuje rozhodné datum události (nástup, skončení,
+        // platnost změny), ne den odeslání: od 1. 1. 2027 REGZEC27. PREZEC
+        // ročník nemění (viz PayrollRegistrationSchemaCatalog::documentTypeFor()).
+        $decisiveOn = PayrollRegistrationSchemaCatalog::decisiveDate(
+            $interaction->actionCode,
+            $effectiveOn,
+            is_array($event['data'] ?? null) ? $event['data'] : null,
+        );
+        $form = (new PayrollRegistrationSchemaCatalog())->documentTypeFor(
+            $interaction->documentType,
+            $decisiveOn,
+        );
+        $specVersion = $form === 'REGZEC27'
+            ? JmhzSpecVersion::V2027
+            : JmhzSpecVersion::V2026;
+        $this->assertFormAccepted($form, $environment, $decisiveOn);
         $payload = $this->payload(
             $snapshot,
             $interaction,
@@ -701,22 +718,8 @@ final readonly class PayrollRegistrationSubmissionService
             $interaction->interaction === 'pre_registration_no_show'
                 ? $preRegistration?->variableSymbol
                 : null,
+            $specVersion,
         );
-        // Ročník formuláře určuje datum události (nástup, skončení, platnost
-        // změny), ne den odeslání: od 1. 1. 2027 REGZEC27. Serializér zatím
-        // umí jen formuláře 2026, takže jiný ročník se fail-closed nesestaví.
-        $documentType = (new PayrollRegistrationSchemaCatalog())->documentTypeFor(
-            $interaction->documentType,
-            $effectiveOn,
-        );
-        if ($documentType !== $interaction->documentType) {
-            throw new PayrollRegistrationXmlException(
-                PayrollRegistrationSchemaCatalog::UNAVAILABLE_CODE,
-                "Událost k {$effectiveOn} se hlásí formulářem {$documentType},"
-                    . ' který tahle verze aplikace zatím neumí sestavit. Podání se'
-                    . ' proto nepřipraví.',
-            );
-        }
         $xml = $this->serializer->serialize($payload);
         // Validátor si XML serializuje znovu a porovná bajty; volá se i tady,
         // v produkční cestě, ne jen v testu. XSD a hranice agendy jsou to
@@ -741,7 +744,7 @@ final readonly class PayrollRegistrationSubmissionService
                     'referenced_form_guid' => $referencedGuid,
                 ])))
                 : $this->eventFingerprint($event),
-            'schema_version' => $interaction->documentType,
+            'schema_version' => $form,
             'deadline' => $this->deadlineFor(
                 $interaction,
                 $context,
@@ -899,6 +902,7 @@ final readonly class PayrollRegistrationSubmissionService
         ?array $event,
         ?string $referencedFormGuid = null,
         ?string $preRegistrationVariableSymbol = null,
+        JmhzSpecVersion $specVersion = JmhzSpecVersion::V2026,
     ): PayrollRegistrationXmlPayload {
         $eventEmployer = is_array($event['employer'] ?? null)
             ? $event['employer']
@@ -980,6 +984,37 @@ final readonly class PayrollRegistrationSubmissionService
                 : null,
             eventSnapshot: $event,
             referencedFormGuid: $referencedFormGuid,
+            specVersion: $specVersion,
+        );
+    }
+
+    /**
+     * REGZEC27 přijímá ostrá ČSSZ až od 1. 1. 2027 („Zahájení ostrého
+     * provozu: 1. 1. 2027 – REGZEC", developers.mpsv.cz, JMHZ 1.5.0,
+     * stránka Testování). REGZEC25 s rozhodným datem od 1. 1. 2027 ČSSZ
+     * zamítne (EDV 1.4.0.7, Slovník, záhlaví REGZEC 2025), takže přihlášku
+     * s nástupem 1. až 8. 1. 2027 nejde podat dřív než 1. 1. 2027, ani když
+     * by to pravidlo osmi dnů jinak dovolilo. Testovací prostředí ČSSZ
+     * přijímá REGZEC27 už teď (fáze 2 od 2. 11. 2026).
+     */
+    private function assertFormAccepted(string $form, string $environment, string $decisiveOn): void
+    {
+        if ($form !== 'REGZEC27'
+            || $environment !== 'production'
+            || $this->today() >= JmhzSpecVersion::FIRST_2027_EVENT_DATE
+        ) {
+            return;
+        }
+        throw new PayrollRegistrationXmlException(
+            'registration_regzec27_not_yet_accepted',
+            "Událost s rozhodným datem {$decisiveOn} se hlásí formulářem REGZEC27"
+                . ' (specifikace JMHZ 2027), který ostrá ČSSZ přijímá až od'
+                . ' 1. 1. 2027. Starší formulář REGZEC25 ČSSZ pro takovou událost'
+                . ' odmítne. Podání připravte a odešlete 1. 1. 2027 nebo později;'
+                . ' přihlášku s nástupem v lednu 2027 stihnete i tak, pokud ji'
+                . ' podáte nejpozději před nástupem. Chcete-li přihlásit'
+                . ' zaměstnance s českým občanstvím už v prosinci, podejte'
+                . ' částečné přihlášení PREZEC (nejdřív osm dnů před nástupem).',
         );
     }
 

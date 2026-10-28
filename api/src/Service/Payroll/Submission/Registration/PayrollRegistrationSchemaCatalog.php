@@ -16,26 +16,72 @@ final class PayrollRegistrationSchemaCatalog
     public const UNAVAILABLE_CODE = 'registration_spec_version_unavailable';
 
     /**
-     * Připnuté XSD REGZEC27 (balík 1.5, WP-1): `[vstupní soubor, SHA-256,
-     * baseTypes, SHA-256 baseTypes]` relativně k `api/xsd/jmhz`. Dokud je
-     * `null`, REGZEC s událostí od 1. 1. 2027 se nesestaví. Integrátor
-     * doplní cesty a otisky po připnutí balíku.
+     * Připnuté XSD REGZEC27 (balík 1.5 z 30. 9. 2026, `REGZEC27_podaní_1.5.zip`):
+     * `[vstupní soubor, SHA-256, baseTypes, SHA-256 baseTypes]` relativně
+     * k `api/xsd/jmhz`. Otisky drží i `api/xsd/jmhz/SHA256SUMS`.
      *
-     * @var array{0:string,1:string,2:string,3:string}|null
+     * @var array{0:string,1:string,2:string,3:string}
      */
-    private const REGZEC27_SCHEMA = null;
+    private const REGZEC27_SCHEMA = [
+        'regzec-1.5/REGZEC27_1_5.xsd',
+        'e82159b3fa7a1ce33dde905034d003f182d1cc0e2acd07755d867e9abf35315d',
+        'regzec-1.5/baseTypes2.xsd',
+        '0ed12320dc9f9230fb60182ac0389dd10b2b76ea5e2aaacf3f71715cbfa82e58',
+    ];
+
+    /**
+     * Rozhodné datum, podle kterého ČSSZ přijme REGZEC 2025, nebo 2027.
+     *
+     * EDV 1.5.0.3 a 1.4.0.7, list Slovník, záhlaví (DM-296): REGZEC 2027 jen
+     * když je
+     * - A1: nástup 10223 (je-li vyplněno i skončení 10224, pak 10224) >= 1. 1. 2027,
+     * - A2: skončení 10224 >= 1. 1. 2027,
+     * - A3, A4: skončení 10224 prázdné, nebo >= 1. 1. 2027,
+     * - A5 až A7: platnost 10009 >= 1. 1. 2027,
+     * - A8: obě verze bez omezení.
+     * REGZEC 2025 zrcadlově jen s daty do 31. 12. 2026.
+     *
+     * U A3/A4 bez skončení připouští ČSSZ obě verze; rozhoduje pak den
+     * platnosti změny, stejně jako u ostatních akcí. U A8 taky (storno
+     * podané stejným ročníkem jako stornovaná událost).
+     *
+     * @param array<string,mixed>|null $eventData `data` zmrazené události
+     */
+    public static function decisiveDate(
+        int $actionCode,
+        string $effectiveOn,
+        ?array $eventData,
+    ): string {
+        if (in_array($actionCode, [3, 4], true) && is_array($eventData)) {
+            $employment = $eventData['delta']['employment'] ?? null;
+            $endOn = is_array($employment) ? ($employment['end_on'] ?? null) : null;
+            if (is_string($endOn) && $endOn !== '') {
+                return $endOn;
+            }
+        }
+
+        return $effectiveOn;
+    }
 
     /**
      * Ročníkový formulář pro podání s událostí k danému dni (nástup, skončení,
      * platnost změny). Volba verze je v {@see JmhzSpecVersion}; tady se jen
      * překládá na formulář a fail-closed odmítne verze, které aplikace neumí.
      *
+     * PREZEC ročník nemění: balík „PREZEC27_podani_1.5.zip" (30. 9. 2026)
+     * nese soubor `PREZEC27_1_5.xsd`, ale s `targetNamespace`
+     * `http://schemas.cssz.cz/PREZEC/2026` a bajtově shodný s
+     * `PREZEC26_1_5.xsd`; jmenný prostor `/PREZEC/2027` z návrhu 1.2.0
+     * (15. 9. 2026) ČSSZ ve verzi 1.5.0.0 vrátila. Příručka „JMHZ testování
+     * změn 2027" (kap. 3.1, 13.2) mění `eType` jen u JMHZ a REGZEC. Přihláška
+     * před nástupem v roce 2027 proto odchází jako PREZEC26.
+     *
      * @param string $documentType formulář tak, jak ho určila interakce (`REGZEC25`, `PREZEC26`)
      */
     public function documentTypeFor(string $documentType, string $eventDate): string
     {
         $version = JmhzSpecVersion::forRegistrationEventDate($eventDate);
-        if ($version === JmhzSpecVersion::V2026) {
+        if ($version === JmhzSpecVersion::V2026 || $documentType === 'PREZEC26') {
             return $documentType;
         }
         $versioned = match ($documentType) {
@@ -43,8 +89,6 @@ final class PayrollRegistrationSchemaCatalog
             default => null,
         };
         if ($versioned === null) {
-            // PREZEC27: `eType` obálky ČSSZ zatím doložený není (O-4), takže
-            // by takové podání nešlo ani odeslat.
             throw new PayrollRegistrationXmlException(
                 self::UNAVAILABLE_CODE,
                 "Formulář {$documentType} s datem události od 1. 1. 2027 se podává"
@@ -66,11 +110,22 @@ final class PayrollRegistrationSchemaCatalog
         return $versioned;
     }
 
+    /**
+     * Formulář datové věty pro agendu (`REGZEC25`, `PREZEC26`) a verzi
+     * specifikace. Kód agendy se s ročníkem nemění ({@see JmhzSpecVersion}),
+     * ročník nese až formulář: jmenný prostor, XSD a `eType` obálky.
+     */
+    public static function formFor(string $documentType, JmhzSpecVersion $version): string
+    {
+        return $documentType === 'REGZEC25' && $version === JmhzSpecVersion::V2027
+            ? 'REGZEC27'
+            : $documentType;
+    }
+
     public static function isPinned(string $documentType): bool
     {
         return match ($documentType) {
-            'PREZEC26', 'REGZEC25' => true,
-            'REGZEC27' => self::REGZEC27_SCHEMA !== null,
+            'PREZEC26', 'REGZEC25', 'REGZEC27' => true,
             default => false,
         };
     }
@@ -93,19 +148,12 @@ final class PayrollRegistrationSchemaCatalog
                 $root . '/regzec-1.4.0.4/baseTypes2.xsd',
                 self::NS_REGZEC_2026,
             ],
-            'REGZEC27' => self::REGZEC27_SCHEMA === null
-                ? throw new PayrollRegistrationXmlException(
-                    self::UNAVAILABLE_CODE,
-                    'Předloha formuláře REGZEC27 (specifikace JMHZ 2027) v téhle'
-                        . ' verzi aplikace zatím není, podání se proto nedá'
-                        . ' zkontrolovat ani odeslat.',
-                )
-                : [
-                    $root . '/' . self::REGZEC27_SCHEMA[0],
-                    self::REGZEC27_SCHEMA[1],
-                    $root . '/' . self::REGZEC27_SCHEMA[2],
-                    self::NS_REGZEC_2027,
-                ],
+            'REGZEC27' => [
+                $root . '/' . self::REGZEC27_SCHEMA[0],
+                self::REGZEC27_SCHEMA[1],
+                $root . '/' . self::REGZEC27_SCHEMA[2],
+                self::NS_REGZEC_2027,
+            ],
             // Výjimka tu zůstává schválně: bez předlohy formuláře se podání
             // nedá ani zkontrolovat, natož odeslat. Není to neúplný vstup
             // účetní, ale požadavek na formulář, který appka neumí.
@@ -117,7 +165,7 @@ final class PayrollRegistrationSchemaCatalog
                     . 'přes portál ČSSZ.',
             ),
         };
-        if ($documentType === 'REGZEC27' && self::REGZEC27_SCHEMA !== null) {
+        if ($documentType === 'REGZEC27') {
             $baseTypesHash = self::REGZEC27_SCHEMA[3];
         }
         [$entry, $entryHash, $dependency, $namespace] = $definition;

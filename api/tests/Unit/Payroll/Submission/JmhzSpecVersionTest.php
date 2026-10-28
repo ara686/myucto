@@ -280,25 +280,28 @@ final class JmhzSpecVersionTest extends TestCase
         self::assertSame(JmhzSpecVersion::V2027, $identity->specVersion);
     }
 
-    public function testRegzecVersionFollowsTheEventDateAndFailsClosedFor2027(): void
+    /**
+     * REGZEC se od rozhodného data 1. 1. 2027 skládá jako REGZEC27 (XSD 1.5,
+     * `.../REGZEC/2027`). PREZEC ročník nemění: balík „PREZEC27_podani_1.5"
+     * nese jmenný prostor `/PREZEC/2026`, takže přihláška před nástupem
+     * v roce 2027 odchází jako PREZEC26. Neznámý formulář zůstává fail-closed.
+     */
+    public function testRegzecVersionFollowsTheEventDateAndPrezecKeepsItsVintage(): void
     {
         $catalog = new PayrollRegistrationSchemaCatalog();
         self::assertSame('REGZEC25', $catalog->documentTypeFor('REGZEC25', '2026-12-31'));
         self::assertSame('PREZEC26', $catalog->documentTypeFor('PREZEC26', '2026-12-31'));
-
-        foreach ([
-            static fn () => $catalog->documentTypeFor('REGZEC25', '2027-01-01'),
-            static fn () => $catalog->documentTypeFor('PREZEC26', '2027-01-01'),
-            static fn () => $catalog->schemaFor('REGZEC27'),
-        ] as $index => $call) {
-            try {
-                $call();
-                self::fail("Registrace 2027 prošla bránou č. {$index}.");
-            } catch (PayrollRegistrationXmlException $exception) {
-                self::assertSame(PayrollRegistrationSchemaCatalog::UNAVAILABLE_CODE, $exception->validationCode);
-            }
-        }
+        self::assertSame('REGZEC27', $catalog->documentTypeFor('REGZEC25', '2027-01-01'));
+        self::assertSame('PREZEC26', $catalog->documentTypeFor('PREZEC26', '2027-01-04'));
+        self::assertSame(PayrollRegistrationSchemaCatalog::NS_REGZEC_2027, $catalog->schemaFor('REGZEC27')['namespace']);
         self::assertSame(PayrollRegistrationSchemaCatalog::NS_REGZEC_2026, $catalog->schemaFor('REGZEC25')['namespace']);
+
+        try {
+            $catalog->documentTypeFor('REGZEL25', '2027-01-01');
+            self::fail('Neznámý formulář 2027 prošel.');
+        } catch (PayrollRegistrationXmlException $exception) {
+            self::assertSame(PayrollRegistrationSchemaCatalog::UNAVAILABLE_CODE, $exception->validationCode);
+        }
     }
 
     private static function frozen(string $namespace, int $year, int $month, string $type): string
