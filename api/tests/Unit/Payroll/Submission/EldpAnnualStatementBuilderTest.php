@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace MyInvoice\Tests\Unit\Payroll\Submission;
 
+use MyInvoice\Service\Payroll\Pension\PayrollPensionStatus;
 use MyInvoice\Service\Payroll\Ruleset\CanonicalJson;
 use MyInvoice\Service\Payroll\Submission\Eldp\EldpAnnualStatement;
 use MyInvoice\Service\Payroll\Submission\Eldp\EldpAnnualStatementBuilder;
@@ -322,6 +323,36 @@ final class EldpAnnualStatementBuilderTest extends TestCase
         self::assertSame(70_000, $sections[0]['assessment_base_czk']);
         self::assertCount(7, $statement->payload['source_revisions']);
         self::assertSame('2025-08-01', $statement->payload['pension']['not_kept_from']);
+    }
+
+    /**
+     * Důchod přiznaný od 15. 4. náleží k výplatě od dubna: list se vede do
+     * měsíce, od něhož náleží výplata (Všeobecné zásady ELDP; Metodická pomůcka
+     * ELDP, příklad 8a), tedy do 30. 4., ne do května. Měsíc výplaty odvozuje
+     * ze zákonné evidence {@see PayrollPensionStatus::forInterval()}.
+     */
+    public function testFullOldAgePensionFromMidAprilEndsTheStatementInApril(): void
+    {
+        $evidence = PayrollPensionStatus::normalize([], [[
+            'pension_type_code' => '1',
+            'early_retirement' => '0',
+            'reduced_retirement_age' => '0',
+            'effective_from' => '2025-04-15',
+            'effective_to' => null,
+        ]]);
+        $pension = PayrollPensionStatus::forInterval($evidence, '2025-01-01', '2025-12-31');
+        self::assertSame('2025-04', $pension['full_pension_paid_from']);
+
+        $statement = $this->build(
+            $this->wholeYear(2025),
+            confirmation: $this->confirmation(pension: ['full_pension_paid_from' => $pension['full_pension_paid_from']]),
+        );
+
+        $sections = $statement->sections();
+        self::assertCount(1, $sections);
+        self::assertSame('2025-04-30', $sections[0]['valid_to']);
+        self::assertSame(120, $sections[0]['insurance_days']);
+        self::assertSame('2025-05-01', $statement->payload['pension']['not_kept_from']);
     }
 
     public function testFullOldAgePensionerInsuredAbroadKeepsTheWholeYear(): void

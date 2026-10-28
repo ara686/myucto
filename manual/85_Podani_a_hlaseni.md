@@ -1528,19 +1528,19 @@ pracujícího důchodce aplikace považuje zaměstnance s ověřenou slevou
 pracujícího důchodce v zákonné evidenci osoby.
 
 **Zaměstnanec po dosažení důchodového věku** bez ověřené slevy pracujícího
-důchodce a **poživatel předčasného starobního důchodu**: kód ELDP v hlášení
-nese druhý znak `D` (například `1D+`) od dne dosažení důchodového věku nebo
-od přiznání předčasného důchodu, podle toho, co nastalo dřív. Údaje se berou
+důchodce: kód ELDP v hlášení nese druhý znak `D` (například `1D+`) od dne
+dosažení důchodového věku. Předčasný starobní důchod kód `D` nezakládá, jeho
+poživatel má před dosažením věku běžný kód (například `1++`). Údaje se berou
 ze zákonné evidence osoby (sekce **Důchodový věk** a **Pobíraný důchod**)
 k vykazovanému měsíci, stejně jako u evidenčního listu. Bez zapsaného dne
 dosažení věku kód `D` nevznikne. Měsíc, ve kterém zaměstnanec věk dovrší, se
-rozdělí na dvě sekce: do dne před dovršením bez `D` se základem 0, od
-dovršení s `D` a celým základem měsíce. Předčasný důchod přiznaný uprostřed
-měsíce hlášení zastaví, protože pravidla podání rozdělení základu
-nestanoví. Hlášení už připravené za dřívější měsíc se změnou evidence nemění;
-projeví se až v hlášení, které se teprve sestaví (i v opravném).
+rozdělí na dvě sekce (i u poživatele předčasného důchodu): do dne před
+dovršením bez `D` se základem 0, od dovršení s `D` a celým základem měsíce.
+Hlášení už připravené za dřívější měsíc se změnou evidence nemění; projeví se
+až v hlášení, které se teprve sestaví (i v opravném).
 
-Kdo dosáhl důchodového věku a starobní důchod nepobírá, má za nemoc,
+Kdo dosáhl důchodového věku a starobní důchod v plné výši nepobírá (i poživatel
+předčasného důchodu po dosažení věku), má za nemoc,
 ošetřování, mateřskou, otcovskou, neplacené volno, neomluvenou absenci
 a měsíc bez účasti **odečítané doby** (10375, interakce IN04). Aplikace je
 odvodí ze schválených nepřítomností stejně jako u evidenčního listu a zapíše
@@ -1548,8 +1548,8 @@ do hlášení úhrn 10375 s rozpadem: pracovní neschopnost (10462), mateřská
 (10463), ošetřovné v podpůrčí době (10464) a po ní (10465), otcovská (10466),
 neplacené volno (10468) a neomluvená absence (10469). Počet dnů pojištění
 (10356) je pak interval měsíce minus odečítané doby. Měsíc bez odečítaných
-dob element nenese. Předčasný důchod je důchod, takže u jeho poživatele se
-odečítané doby nevedou.
+dob element nenese. Odečítané doby nese i měsíc, od kterého náleží výplata
+plného důchodu.
 
 Příprava hlášení zastaví tři případy, které pravidla podání vykázat
 nedovolují nebo pro ně nestanoví postup: dobu po neplatném skončení vztahu
@@ -2909,8 +2909,9 @@ se potvrzuje jen ve formuláři.
 
 - **Den dosažení důchodového věku** a den, od kterého zaměstnanec pobírá
   předčasný starobní důchod (pole **Poživatel předčasného starobního důchodu
-  od**). Od dřívějšího z nich má činnost druhý znak kódu `D` (například
-  `1D+`, `AD+`); řádek se k tomuto dni rozdělí na dvě sekce. Připadne-li den
+  od**). Od dosažení důchodového věku má činnost druhý znak kódu `D`
+  (například `1D+`, `AD+`); předčasný důchod kód `D` nezakládá. Řádek se
+  k tomuto dni rozdělí na dvě sekce. Připadne-li den
   doprostřed měsíce, aplikace list nesestaví, protože vyměřovací základ za
   část měsíce nevede; takový list podejte mimo aplikaci. Řádek s kódem `D`
   nese **odečtené doby**, které aplikace odvodí z nepřítomností: neplacené
@@ -2923,12 +2924,12 @@ se potvrzuje jen ve formuláři.
   přípravu zastaví.
 - **První měsíc výplaty starobního důchodu v plné výši.** Od roku 2025 se za
   poživatele plného starobního důchodu evidenční list nevede (§ 38 odst. 1
-  věta druhá zákona č. 582/1991 Sb.). Měsíce od tohoto měsíce se z listu
-  vypustí; nezbude-li žádný, list se nesestaví a hláška to řekne. Za roky do
-  2024 se list za pracujícího důchodce vede dál. Z evidence se bere první
-  celý měsíc starobního důchodu (druh 1 bez příznaku předčasnosti): důchod
-  přiznaný uprostřed měsíce se počítá od následujícího měsíce, takže měsíc
-  přiznání v listu zůstane.
+  věta druhá zákona č. 582/1991 Sb.). List se vede do měsíce, od něhož
+  náleží výplata, včetně; následující měsíce se z listu vypustí a nezbude-li
+  žádný, list se nesestaví a hláška to řekne. Za roky do 2024 se list za
+  pracujícího důchodce vede dál. Z evidence se bere měsíc začátku
+  starobního důchodu (druh 1 bez příznaku předčasnosti): důchod přiznaný od
+  15. dubna ukončí list dubnem.
 - **Účast na důchodovém pojištění v cizině.** Je-li zaměstnanec účasten
   pojištění v cizině, vede se list i za poživatele plného starobního důchodu.
 
