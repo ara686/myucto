@@ -692,9 +692,11 @@ nemění.
   **snížený důchodový věk**. Každý druh je vlastní řada, takže cizí a český
   důchod mohou běžet souběžně; překryv téhož druhu se odmítne.
 
-Předčasný starobní důchod dává kód `D` od dne přiznání. Starobní důchod ukončuje
-odečítané doby od prvního celého měsíce výplaty (přiznaný uprostřed měsíce od
-dalšího měsíce) a od roku 2025 i vedení ročního evidenčního listu. Invalidní
+Kód `D` dává jen dosažení důchodového věku; předčasný starobní důchod ho
+nezakládá a odečítané doby po dosažení věku neruší. Starobní důchod v plné výši
+ukončuje od roku 2025 odečítané doby i vedení ročního evidenčního listu po
+prvním celém měsíci výplaty (přiznaný uprostřed měsíce od dalšího měsíce),
+který se ještě vede. Invalidní
 a cizí důchody kód `D` nezakládají. Import přihlášek REGZEC doplní pobíraný
 důchod do prázdné evidence; vyplněnou nemění a rozdíl jen ohlásí.
 

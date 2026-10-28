@@ -120,7 +120,6 @@ final class JmhzBlockerCatalog
         'eldp_takeover_excluded_days_breakdown_missing' => 'takeover',
         'eldp_takeover_excluded_days_mismatch' => 'takeover',
         'eldp_deducted_days_unknown' => 'manual',
-        'eldp_code_d_month_without_insurance_unsupported' => 'manual',
         'eldp_section_15a_history_unavailable' => 'manual',
         'eldp_statement_continues_previous_employment' => 'submission',
         'eldp_prepared_on_future' => 'submission',

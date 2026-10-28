@@ -62,9 +62,11 @@ final class JmhzEldpEvidenceBuilderTest extends TestCase
     }
 
     /**
-     * Kód D (činnost po dovršení důchodového věku, předčasný důchod) skládá
-     * měsíční hlášení stejným pravidlem jako roční evidenční list. Bez
-     * potvrzených důchodových údajů zůstává „++" a snapshot se nemění.
+     * Kód D (činnost po dovršení důchodového věku) skládá měsíční hlášení
+     * stejným pravidlem jako roční evidenční list. Bez potvrzených důchodových
+     * údajů zůstává „++" a snapshot se nemění. Předčasný starobní důchod
+     * kód D nezakládá (Zadání ELDP12 v1.04, údaj 20; CIS Kód ELDP „1D+ …
+     * výdělečná čin. po dovršení důchodového věku").
      */
     public function testPensionAgeCodeDIsComposedByTheSharedRule(): void
     {
@@ -82,12 +84,14 @@ final class JmhzEldpEvidenceBuilderTest extends TestCase
         self::assertSame('1D+', $snapshot->payload['eldp_sections'][0]['code']);
         self::assertSame('2026-03-15', $snapshot->payload['source_evidence']['pension_age_code_from']);
 
-        // Předčasný důchod dřív než dovršení věku rozhoduje; "++" při něm neprojde.
+        // Předčasný důchodce před dovršením věku má běžný kód; D se u něj nepřijme.
         $early = [...$source, 'pension_status' => ['pension_age_reached_on' => '2027-01-01', 'early_pension_from' => '2026-07-01']];
-        self::assertSame('1D+', $builder->deriveOrdinaryConfirmation(7, 101, $early)['code']);
+        self::assertSame('1++', $builder->deriveOrdinaryConfirmation(7, 101, $early)['code']);
+        $earlySnapshot = $builder->build(7, 101, $early, $this->confirmation());
+        self::assertSame('1++', $earlySnapshot->payload['eldp_sections'][0]['code']);
         try {
-            $builder->build(7, 101, $early, $this->confirmation());
-            self::fail('Kód ++ u předčasného důchodce se nesmí přijmout.');
+            $builder->build(7, 101, $early, ['code' => '1D+'] + $this->confirmation());
+            self::fail('Kód D u předčasného důchodce před dovršením věku se nesmí přijmout.');
         } catch (JmhzEldpEvidenceException $exception) {
             self::assertSame('jmhz_eldp_code_activity_mismatch', $exception->validationCode);
         }
@@ -96,14 +100,9 @@ final class JmhzEldpEvidenceBuilderTest extends TestCase
         $later = [...$source, 'pension_status' => ['pension_age_reached_on' => '2026-08-01', 'early_pension_from' => null]];
         self::assertSame('1++', $builder->deriveOrdinaryConfirmation(7, 101, $later)['code']);
 
-        // Předčasný důchod uprostřed měsíce: rozdělení základu pravidla nestanoví.
+        // Předčasný důchod uprostřed měsíce sekci nedělí, kód se nemění.
         $earlyMid = [...$source, 'pension_status' => ['pension_age_reached_on' => '2027-01-01', 'early_pension_from' => '2026-07-16']];
-        try {
-            $builder->deriveOrdinaryConfirmation(7, 101, $earlyMid);
-            self::fail('Předčasný důchod uprostřed měsíce se na sekce nedělí.');
-        } catch (JmhzEldpEvidenceException $exception) {
-            self::assertSame('eldp_pension_age_mid_month_unsupported', $exception->validationCode);
-        }
+        self::assertSame('1++', $builder->deriveOrdinaryConfirmation(7, 101, $earlyMid)['code']);
     }
 
     /**
@@ -146,10 +145,33 @@ final class JmhzEldpEvidenceBuilderTest extends TestCase
     }
 
     /**
+     * Poživatel předčasného starobního důchodu, který dovrší důchodový věk
+     * 16. 7.: kód D začíná dovršením věku (předčasný důchod ho nezakládá),
+     * takže se měsíc dělí stejně jako u kohokoli jiného.
+     */
+    public function testEarlyPensionerReachingPensionAgeMidMonthSplitsTheMonth(): void
+    {
+        $builder = new JmhzEldpEvidenceBuilder();
+        $mid = [...$this->source(), 'pension_status' => [
+            'pension_age_reached_on' => '2026-07-16',
+            'early_pension_from' => '2024-03-01',
+        ]];
+
+        $confirmation = $builder->deriveOrdinaryConfirmation(7, 101, $mid);
+        self::assertSame('1D+', $confirmation['code']);
+        $sections = $builder->build(7, 101, $mid, $confirmation)->payload['eldp_sections'];
+
+        self::assertSame(['1++', '1D+'], array_column($sections, 'code'));
+        self::assertSame(['2026-07-15', '2026-07-31'], array_column($sections, 'valid_to'));
+        self::assertSame([0, 10_000], array_column($sections, 'assessment_base_czk'));
+    }
+
+    /**
      * Po dovršení důchodového věku bez starobního důchodu tvoří omluvné
      * důvody i volno bez náhrady odečítané doby a IN04 (10375, 10462–10469)
-     * je povinná. Měsíc s takovou nepřítomností se nesmí sestavit bez nich;
-     * předčasný důchodce důchod pobírá, takže se ho to netýká.
+     * je povinná. Měsíc s takovou nepřítomností se nesmí sestavit bez nich.
+     * Předčasný důchodce před dovršením věku kód D nemá a otcovská je u něj
+     * jen vyloučená doba.
      */
     public function testPensionAgeMonthWithDeductedAbsenceIsRefused(): void
     {
@@ -173,9 +195,12 @@ final class JmhzEldpEvidenceBuilderTest extends TestCase
             'pension_age_reached_on' => '2027-01-01',
             'early_pension_from' => '2026-03-01',
         ]];
-        $snapshot = $builder->build(7, 101, $early, $builder->deriveOrdinaryConfirmation(7, 101, $early));
-        self::assertSame('1D+', $snapshot->payload['eldp_sections'][0]['code']);
+        $earlyConfirmation = $builder->deriveOrdinaryConfirmation(7, 101, $early);
+        self::assertSame(31, $earlyConfirmation['insurance_days']);
+        $snapshot = $builder->build(7, 101, $early, $earlyConfirmation);
+        self::assertSame('1++', $snapshot->payload['eldp_sections'][0]['code']);
         self::assertSame(14, $snapshot->payload['eldp_sections'][0]['excluded_days_total']);
+        self::assertNull($snapshot->payload['eldp_sections'][0]['deducted_days_total']);
     }
 
     public function testRejectsOffByOneCalendarDay(): void
