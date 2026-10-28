@@ -1108,7 +1108,8 @@
         "2204_supplier_receipt_payable_account.sql",
         "2205_bank_rule_template_vat_refund.sql",
         "2206_payroll_import_profile_sample_key.sql",
-        "2207_other_item_settled_outside.sql"
+        "2207_other_item_settled_outside.sql",
+        "2208_payroll_annual_settlement_claims.sql"
     ],
     "tables": {
         "abra_flexi_connections": {
@@ -10833,6 +10834,48 @@
                 "chk_payroll_certificate_employment_period": "`employment_from` is null or `employment_to` is null or `employment_to` >= `employment_from`"
             }
         },
+        "payroll_annual_settlement_deductions": {
+            "type": "BASE TABLE",
+            "engine": "InnoDB",
+            "collation": "utf8mb4_unicode_ci",
+            "columns": {
+                "amount_minor": "bigint(20) NULL DEFAULT NULL",
+                "counterparty_name": "varchar(191) NULL DEFAULT NULL",
+                "created_at": "timestamp NOT NULL DEFAULT current_timestamp()",
+                "created_by": "bigint(20) unsigned NULL DEFAULT NULL",
+                "employee_id": "bigint(20) unsigned NOT NULL",
+                "evidence_reference": "varchar(500) NULL DEFAULT NULL",
+                "evidence_status": "enum('unverified','verified') NOT NULL DEFAULT 'unverified'",
+                "housing_acquired_before_2021": "tinyint(1) NOT NULL DEFAULT 0",
+                "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
+                "kind": "enum('donation','blood_donation','organ_donation','stem_cell_donation','housing_interest','pension_savings','life_insurance','long_term_investment','long_term_care_insurance','enforcement_stop') NOT NULL",
+                "months_mask": "smallint(5) unsigned NULL DEFAULT NULL",
+                "note": "varchar(500) NULL DEFAULT NULL",
+                "quantity": "smallint(5) unsigned NULL DEFAULT NULL",
+                "sort_order": "smallint(5) unsigned NOT NULL DEFAULT 0",
+                "supplier_id": "int(10) unsigned NOT NULL",
+                "tax_year": "smallint(5) unsigned NOT NULL",
+                "updated_at": "timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE CURRENT_TIMESTAMP()",
+                "updated_by": "bigint(20) unsigned NULL DEFAULT NULL"
+            },
+            "indexes": {
+                "PRIMARY": "UNIQUE BTREE (id)",
+                "fk_payroll_annual_settlement_deduction_creator": "BTREE (created_by)",
+                "fk_payroll_annual_settlement_deduction_editor": "BTREE (updated_by)",
+                "idx_payroll_annual_settlement_deduction_scope": "BTREE (supplier_id, employee_id, tax_year)",
+                "uq_payroll_annual_settlement_deduction_supplier_id": "UNIQUE BTREE (supplier_id, id)"
+            },
+            "foreign_keys": {
+                "fk_payroll_annual_settlement_deduction_creator": "(created_by) -> users (id) ON UPDATE RESTRICT ON DELETE SET NULL",
+                "fk_payroll_annual_settlement_deduction_editor": "(updated_by) -> users (id) ON UPDATE RESTRICT ON DELETE SET NULL",
+                "fk_payroll_annual_settlement_deduction_employee": "(supplier_id, employee_id) -> payroll_employees (supplier_id, id) ON UPDATE RESTRICT ON DELETE CASCADE"
+            },
+            "checks": {
+                "chk_payroll_annual_settlement_deduction_amount": "`amount_minor` is null or `amount_minor` > 0",
+                "chk_payroll_annual_settlement_deduction_evidence": "`evidence_status` <> 'verified' or `evidence_reference` is not null and `evidence_reference` <> ''",
+                "chk_payroll_annual_settlement_deduction_year": "`tax_year` between 2000 and 2199"
+            }
+        },
         "payroll_annual_settlement_other_caregivers": {
             "type": "BASE TABLE",
             "engine": "InnoDB",
@@ -10922,7 +10965,7 @@
             "engine": "InnoDB",
             "collation": "utf8mb4_unicode_ci",
             "columns": {
-                "annual_claims": "enum('unknown','none','present_unsupported') NOT NULL DEFAULT 'unknown'",
+                "annual_claims": "enum('unknown','none','present','present_unsupported') NOT NULL DEFAULT 'unknown'",
                 "annual_claims_note": "varchar(500) NULL DEFAULT NULL",
                 "created_at": "timestamp NOT NULL DEFAULT current_timestamp()",
                 "created_by": "bigint(20) unsigned NULL DEFAULT NULL",
@@ -10958,6 +11001,51 @@
             },
             "checks": {
                 "chk_payroll_annual_settlement_request_year": "`tax_year` between 2000 and 2199"
+            }
+        },
+        "payroll_annual_settlement_spouse_claims": {
+            "type": "BASE TABLE",
+            "engine": "InnoDB",
+            "collation": "utf8mb4_unicode_ci",
+            "columns": {
+                "child_dependant_id": "bigint(20) unsigned NOT NULL",
+                "created_at": "timestamp NOT NULL DEFAULT current_timestamp()",
+                "created_by": "bigint(20) unsigned NULL DEFAULT NULL",
+                "employee_id": "bigint(20) unsigned NOT NULL",
+                "evidence_reference": "varchar(500) NULL DEFAULT NULL",
+                "evidence_status": "enum('unverified','verified') NOT NULL DEFAULT 'unverified'",
+                "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
+                "months_mask": "smallint(5) unsigned NOT NULL",
+                "note": "varchar(500) NULL DEFAULT NULL",
+                "spouse_dependant_id": "bigint(20) unsigned NOT NULL",
+                "spouse_income_minor": "bigint(20) NULL DEFAULT NULL",
+                "supplier_id": "int(10) unsigned NOT NULL",
+                "tax_year": "smallint(5) unsigned NOT NULL",
+                "updated_at": "timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE CURRENT_TIMESTAMP()",
+                "updated_by": "bigint(20) unsigned NULL DEFAULT NULL",
+                "ztp_p_months_mask": "smallint(5) unsigned NOT NULL DEFAULT 0"
+            },
+            "indexes": {
+                "PRIMARY": "UNIQUE BTREE (id)",
+                "fk_payroll_annual_settlement_spouse_child": "BTREE (supplier_id, child_dependant_id)",
+                "fk_payroll_annual_settlement_spouse_creator": "BTREE (created_by)",
+                "fk_payroll_annual_settlement_spouse_editor": "BTREE (updated_by)",
+                "fk_payroll_annual_settlement_spouse_spouse": "BTREE (supplier_id, spouse_dependant_id)",
+                "uq_payroll_annual_settlement_spouse_scope": "UNIQUE BTREE (supplier_id, employee_id, tax_year)",
+                "uq_payroll_annual_settlement_spouse_supplier_id": "UNIQUE BTREE (supplier_id, id)"
+            },
+            "foreign_keys": {
+                "fk_payroll_annual_settlement_spouse_child": "(supplier_id, child_dependant_id) -> payroll_dependants (supplier_id, id) ON UPDATE RESTRICT ON DELETE RESTRICT",
+                "fk_payroll_annual_settlement_spouse_creator": "(created_by) -> users (id) ON UPDATE RESTRICT ON DELETE SET NULL",
+                "fk_payroll_annual_settlement_spouse_editor": "(updated_by) -> users (id) ON UPDATE RESTRICT ON DELETE SET NULL",
+                "fk_payroll_annual_settlement_spouse_employee": "(supplier_id, employee_id) -> payroll_employees (supplier_id, id) ON UPDATE RESTRICT ON DELETE CASCADE",
+                "fk_payroll_annual_settlement_spouse_spouse": "(supplier_id, spouse_dependant_id) -> payroll_dependants (supplier_id, id) ON UPDATE RESTRICT ON DELETE RESTRICT"
+            },
+            "checks": {
+                "chk_payroll_annual_settlement_spouse_evidence": "`evidence_status` <> 'verified' or `evidence_reference` is not null and `evidence_reference` <> ''",
+                "chk_payroll_annual_settlement_spouse_income": "`spouse_income_minor` is null or `spouse_income_minor` >= 0",
+                "chk_payroll_annual_settlement_spouse_months": "`months_mask` between 1 and 4095 and `ztp_p_months_mask` between 0 and 4095",
+                "chk_payroll_annual_settlement_spouse_year": "`tax_year` between 2000 and 2199"
             }
         },
         "payroll_attendance_import_rows": {

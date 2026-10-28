@@ -8,8 +8,10 @@ use DateTimeImmutable;
 use MyInvoice\Bootstrap;
 use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Repository\Payroll\PayrollAnnualSettlementRepository;
+use MyInvoice\Repository\Payroll\PayrollEmployeeDeletionRepository;
 use MyInvoice\Repository\Payroll\PayrollStatutoryAccumulatorRepository;
 use MyInvoice\Service\Payroll\AnnualSettlement\AnnualSettlementBlocker;
+use MyInvoice\Service\Payroll\AnnualSettlement\AnnualSettlementClaimsService;
 use MyInvoice\Service\Payroll\AnnualSettlement\AnnualSettlementOutcome;
 use MyInvoice\Service\Payroll\AnnualSettlement\AnnualSettlementStatute;
 use MyInvoice\Service\Payroll\AnnualSettlement\AnnualTaxSettlementService;
@@ -927,6 +929,337 @@ final class AnnualSettlementIntegrationTest extends TestCase
             }
             $connection->close();
         }
+    }
+
+    /**
+     * Roční nároky (§ 38h odst. 6): uložení a načtení celé sady, odmítnutí
+     * cizí osoby z evidence a nesmyslných hodnot jako validační chyby.
+     */
+    public function testAnnualClaimsRoundTripAndValidation(): void
+    {
+        $container = Bootstrap::buildContainer();
+        $connection = $container->get(Connection::class);
+        $claims = $container->get(AnnualSettlementClaimsService::class);
+        $sensitive = $container->get(PayrollSensitiveData::class);
+        self::assertInstanceOf(Connection::class, $connection);
+        self::assertInstanceOf(AnnualSettlementClaimsService::class, $claims);
+        self::assertInstanceOf(PayrollSensitiveData::class, $sensitive);
+        if (!$connection->hasTable('payroll_annual_settlement_deductions')) {
+            $this->markTestSkipped('Migrace ročních nároků neproběhla.');
+        }
+
+        $pdo = $connection->pdo();
+        $sourceSupplierId = (int) $pdo->query(
+            'SELECT id FROM supplier ORDER BY id LIMIT 1',
+        )->fetchColumn();
+
+        $pdo->beginTransaction();
+        try {
+            [$supplierId, $employeeId] = $this->fixture($pdo, $sourceSupplierId, $sensitive);
+            $spouseId = $this->dependant($pdo, $supplierId, $employeeId, 'spouse', '1990-01-01');
+            $childId = $this->dependant($pdo, $supplierId, $employeeId, 'child_own', '2025-06-01');
+
+            $pdo->prepare(
+                'INSERT INTO payroll_employees
+                    (supplier_id, full_name, taxpayer_type, is_active)
+                 VALUES (?, "Jiná syntetická osoba", "employee", 1)',
+            )->execute([$supplierId]);
+            $otherEmployeeId = (int) $pdo->lastInsertId();
+            $foreignId = $this->dependant($pdo, $supplierId, $otherEmployeeId, 'child_own', '2025-01-01');
+
+            $deductions = [
+                [
+                    'kind' => 'donation',
+                    'amount_minor_units' => 500_000,
+                    'counterparty_name' => 'Syntetická nadace',
+                    'evidence_status' => 'verified',
+                    'evidence_reference' => 'potvrzeni-1',
+                ],
+                [
+                    'kind' => 'blood_donation',
+                    'quantity' => 2,
+                    'evidence_status' => 'unverified',
+                ],
+                [
+                    'kind' => 'housing_interest',
+                    'amount_minor_units' => 1_200_000,
+                    'months_mask' => 0b111111,
+                    'housing_acquired_before_2021' => true,
+                ],
+            ];
+            $spouse = [
+                'spouse_dependant_id' => $spouseId,
+                'child_dependant_id' => $childId,
+                'months_mask' => 0xFFF,
+                'ztp_p_months_mask' => 0,
+                'spouse_income_minor_units' => 0,
+                'evidence_status' => 'verified',
+                'evidence_reference' => 'prohlaseni-manzela',
+            ];
+
+            $saved = $claims->save($supplierId, $employeeId, self::YEAR, $deductions, $spouse, null);
+            self::assertCount(3, $saved['deductions']);
+            self::assertSame('donation', $saved['deductions'][0]['kind']);
+            self::assertSame(500_000, $saved['deductions'][0]['amount_minor_units']);
+            self::assertSame(2, $saved['deductions'][1]['quantity']);
+            self::assertNull($saved['deductions'][1]['amount_minor_units']);
+            self::assertTrue($saved['deductions'][2]['housing_acquired_before_2021']);
+            self::assertSame(0b111111, $saved['deductions'][2]['months_mask']);
+            self::assertSame($spouseId, $saved['spouse']['spouse_dependant_id']);
+            self::assertSame(0, $saved['spouse']['spouse_income_minor_units']);
+
+            $loaded = $claims->load($supplierId, $employeeId, self::YEAR);
+            self::assertCount(3, $loaded['claims']);
+            self::assertSame('deduction-' . $saved['deductions'][0]['id'], $loaded['claims'][0]->reference);
+            self::assertNotNull($loaded['spouse']);
+            self::assertSame($saved['deductions'], $loaded['deductions']);
+
+            $people = $claims->dependants($supplierId, $employeeId);
+            self::assertCount(2, $people);
+            self::assertArrayNotHasKey('birth_number_masked', $people[0]);
+
+            // Přepis nahrazuje celou sadu, nepřidává k ní.
+            $claims->save($supplierId, $employeeId, self::YEAR, [$deductions[0]], null, null);
+            $reloaded = $claims->load($supplierId, $employeeId, self::YEAR);
+            self::assertCount(1, $reloaded['claims']);
+            self::assertNull($reloaded['spouse']);
+
+            $rejected = [
+                'cizí dítě' => [[$deductions[0]], [...$spouse, 'child_dependant_id' => $foreignId]],
+                'neexistující manžel' => [[], [...$spouse, 'spouse_dependant_id' => 999_999_999]],
+                'stejná osoba' => [[], [...$spouse, 'child_dependant_id' => $spouseId]],
+                'prázdné měsíce' => [[], [...$spouse, 'months_mask' => 0]],
+                'záporný příjem' => [[], [...$spouse, 'spouse_income_minor_units' => -1]],
+                'záporná částka' => [[['kind' => 'donation', 'amount_minor_units' => -100]], null],
+                'neznámý druh' => [[['kind' => 'nope', 'amount_minor_units' => 100]], null],
+                'doložené bez dokladu' => [[[
+                    'kind' => 'donation',
+                    'amount_minor_units' => 100,
+                    'evidence_status' => 'verified',
+                ]], null],
+                'částka u odběru' => [[[
+                    'kind' => 'blood_donation',
+                    'quantity' => 1,
+                    'amount_minor_units' => 100,
+                ]], null],
+                'úroky bez měsíců' => [[['kind' => 'housing_interest', 'amount_minor_units' => 100]], null],
+            ];
+            foreach ($rejected as $label => [$rows, $spouseInput]) {
+                try {
+                    $claims->save($supplierId, $employeeId, self::YEAR, $rows, $spouseInput, null);
+                    self::fail("Vstup „{$label}“ měl být odmítnut.");
+                } catch (\InvalidArgumentException) {
+                    // očekávaná validační chyba (v akci 422)
+                }
+            }
+
+            // Odmítnutý vstup nesmí rozbít dosud uloženou sadu.
+            self::assertCount(1, $claims->load($supplierId, $employeeId, self::YEAR)['claims']);
+        } finally {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            $connection->close();
+        }
+    }
+
+    /**
+     * Doložený dar sníží základ daně, sleva na manžela se objeví mezi slevami
+     * a rozpor mezi žádostí a evidencí zastaví zúčtování.
+     */
+    public function testAnnualClaimsFeedTheAssessmentAndInconsistencyBlocks(): void
+    {
+        $container = Bootstrap::buildContainer();
+        $connection = $container->get(Connection::class);
+        $service = $container->get(AnnualTaxSettlementService::class);
+        $claims = $container->get(AnnualSettlementClaimsService::class);
+        $sensitive = $container->get(PayrollSensitiveData::class);
+        self::assertInstanceOf(Connection::class, $connection);
+        self::assertInstanceOf(AnnualTaxSettlementService::class, $service);
+        self::assertInstanceOf(AnnualSettlementClaimsService::class, $claims);
+        self::assertInstanceOf(PayrollSensitiveData::class, $sensitive);
+        if (!$connection->hasTable('payroll_annual_settlement_deductions')) {
+            $this->markTestSkipped('Migrace ročních nároků neproběhla.');
+        }
+
+        $pdo = $connection->pdo();
+        $sourceSupplierId = (int) $pdo->query(
+            'SELECT id FROM supplier ORDER BY id LIMIT 1',
+        )->fetchColumn();
+        $today = new DateTimeImmutable(sprintf('%04d-03-10', self::YEAR + 1));
+        $setClaims = static function (string $value) use ($pdo, &$supplierId, &$employeeId): void {
+            $pdo->prepare(
+                'UPDATE payroll_annual_settlement_requests
+                    SET annual_claims = ?
+                  WHERE supplier_id = ? AND employee_id = ?',
+            )->execute([$value, $supplierId, $employeeId]);
+        };
+
+        $pdo->beginTransaction();
+        try {
+            [$supplierId, $employeeId] = $this->fixture($pdo, $sourceSupplierId, $sensitive);
+
+            $baseline = $service->preview($supplierId, $employeeId, self::YEAR, $today);
+            self::assertTrue($baseline['result']->performed);
+            self::assertSame([], $baseline['annual_claims']['deductions']);
+            self::assertNull($baseline['annual_claims']['spouse']);
+
+            // Žádost říká „present", ale nic není zadané.
+            $setClaims('present');
+            $empty = $service->preview($supplierId, $employeeId, self::YEAR, $today);
+            self::assertFalse($empty['result']->performed);
+            self::assertContains('annual_claims_inconsistent', $empty['result']->blockerCodes());
+
+            // Doložený dar sníží základ, takže přeplatek vzroste.
+            $claims->save($supplierId, $employeeId, self::YEAR, [[
+                'kind' => 'donation',
+                'amount_minor_units' => 500_000,
+                'counterparty_name' => 'Syntetická nadace',
+                'evidence_status' => 'verified',
+                'evidence_reference' => 'potvrzeni-daru',
+            ]], null, null);
+            $withDonation = $service->preview($supplierId, $employeeId, self::YEAR, $today);
+            self::assertSame([], $withDonation['result']->blockerCodes());
+            self::assertTrue($withDonation['result']->performed);
+            self::assertGreaterThan(
+                $baseline['result']->taxDifferenceMinorUnits,
+                $withDonation['result']->taxDifferenceMinorUnits,
+            );
+            self::assertCount(1, $withDonation['annual_claims']['deductions']);
+            self::assertCount(0, $withDonation['annual_claims']['dependants']);
+
+            // Evidované položky, ale žádost tvrdí „none" nebo „unknown".
+            foreach (['none', 'unknown'] as $state) {
+                $setClaims($state);
+                $conflict = $service->preview($supplierId, $employeeId, self::YEAR, $today);
+                self::assertContains(
+                    'annual_claims_inconsistent',
+                    $conflict['result']->blockerCodes(),
+                    $state,
+                );
+            }
+
+            // Sleva na manžela se objeví mezi slevami s popiskem a počtem měsíců.
+            $setClaims('present');
+            $spouseId = $this->dependant($pdo, $supplierId, $employeeId, 'spouse', '1990-01-01');
+            $childId = $this->dependant($pdo, $supplierId, $employeeId, 'child_own', '2025-06-01');
+            $claims->save($supplierId, $employeeId, self::YEAR, [], [
+                'spouse_dependant_id' => $spouseId,
+                'child_dependant_id' => $childId,
+                'months_mask' => 0xFFF,
+                'ztp_p_months_mask' => 0,
+                'spouse_income_minor_units' => 0,
+                'evidence_status' => 'verified',
+                'evidence_reference' => 'prohlaseni-manzela',
+            ], null);
+            $withSpouse = $service->preview($supplierId, $employeeId, self::YEAR, $today);
+            self::assertSame([], $withSpouse['result']->blockerCodes());
+            $labels = array_column($withSpouse['credit_rows'], 'label');
+            self::assertCount(2, $labels);
+            self::assertTrue(
+                array_any($labels, static fn (string $label): bool
+                    => str_starts_with($label, 'Sleva na manžela/manželku (12 měs.')),
+                implode(' | ', $labels),
+            );
+            self::assertCount(2, $withSpouse['annual_claims']['dependants']);
+        } finally {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            $connection->close();
+        }
+    }
+
+    /**
+     * Smazání zaměstnance smaže i jeho roční nároky, ačkoli sleva na manžela
+     * ukazuje na osoby v evidenci s FK RESTRICT.
+     */
+    public function testDeletingEmployeeRemovesAnnualClaims(): void
+    {
+        $container = Bootstrap::buildContainer();
+        $connection = $container->get(Connection::class);
+        $claims = $container->get(AnnualSettlementClaimsService::class);
+        $deletion = $container->get(PayrollEmployeeDeletionRepository::class);
+        self::assertInstanceOf(Connection::class, $connection);
+        self::assertInstanceOf(AnnualSettlementClaimsService::class, $claims);
+        self::assertInstanceOf(PayrollEmployeeDeletionRepository::class, $deletion);
+        if (!$connection->hasTable('payroll_annual_settlement_spouse_claims')) {
+            $this->markTestSkipped('Migrace ročních nároků neproběhla.');
+        }
+
+        $pdo = $connection->pdo();
+        $sourceSupplierId = (int) $pdo->query(
+            'SELECT id FROM supplier ORDER BY id LIMIT 1',
+        )->fetchColumn();
+
+        $pdo->beginTransaction();
+        try {
+            $supplierId = $this->createIsolatedSupplier($pdo, $sourceSupplierId);
+            $pdo->prepare(
+                'INSERT INTO payroll_employees
+                    (supplier_id, full_name, taxpayer_type, is_active)
+                 VALUES (?, "Syntetická mazaná osoba", "employee", 1)',
+            )->execute([$supplierId]);
+            $employeeId = (int) $pdo->lastInsertId();
+            $spouseId = $this->dependant($pdo, $supplierId, $employeeId, 'spouse', '1990-01-01');
+            $childId = $this->dependant($pdo, $supplierId, $employeeId, 'child_own', '2025-06-01');
+            $claims->save($supplierId, $employeeId, self::YEAR, [[
+                'kind' => 'donation',
+                'amount_minor_units' => 100_000,
+            ]], [
+                'spouse_dependant_id' => $spouseId,
+                'child_dependant_id' => $childId,
+                'months_mask' => 1,
+            ], null);
+
+            $deletion->delete($supplierId, $employeeId, null, null, null);
+
+            foreach ([
+                'payroll_annual_settlement_deductions',
+                'payroll_annual_settlement_spouse_claims',
+                'payroll_dependants',
+            ] as $table) {
+                self::assertSame(
+                    0,
+                    (int) $pdo->query(sprintf(
+                        'SELECT COUNT(*) FROM %s WHERE supplier_id = %d AND employee_id = %d',
+                        $table,
+                        $supplierId,
+                        $employeeId,
+                    ))->fetchColumn(),
+                    $table,
+                );
+            }
+        } finally {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            $connection->close();
+        }
+    }
+
+    private function dependant(
+        PDO $pdo,
+        int $supplierId,
+        int $employeeId,
+        string $relation,
+        string $birthDate,
+    ): int {
+        $pdo->prepare(
+            'INSERT INTO payroll_dependants
+                (supplier_id, employee_id, relation, full_name, birth_date,
+                 existence_from)
+             VALUES (?, ?, ?, ?, ?, ?)',
+        )->execute([
+            $supplierId,
+            $employeeId,
+            $relation,
+            'Syntetická osoba ' . $relation,
+            $birthDate,
+            $birthDate,
+        ]);
+
+        return (int) $pdo->lastInsertId();
     }
 
     /**
