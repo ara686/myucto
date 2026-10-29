@@ -19765,6 +19765,7 @@
         "vat_343_vs_return": "Account 343 balance vs. VAT return for the period",
         "vat_clearing_stale": "VAT clearing does not match the period turnover",
         "deposits_314_324_open": "Unsettled advance accounts 314/324 at the balance-sheet date",
+        "voucher_balance_negative": "Negative balance of sold vouchers and credit (more redeemed than sold)",
         "paid_invoices_open_saldo": "Paid issued invoices with an open balance on 311 (payment missing in the journal)",
         "paid_purchases_open_saldo": "Paid purchase invoices with an open balance on 321 (payment missing in the journal)",
         "clearing_accounts_open": "Clearing (suspense) accounts with an open balance at the balance-sheet date",
@@ -40368,6 +40369,9 @@
       "fx_to_eet": "To EET: {amount} (rate {rate} CZK/{currency})",
       "foreign_hint": "A payment in {currency} is recorded in EET in CZK, converted at the rate used to post the payment on the day it was received. In-person QR payment is available only for CZK invoices.",
       "stored_value_hint": "The customer pays with a previously bought stored-value voucher or credit. EET records it as credit use. The invoice payment is booked as an offset; the accountant settles the advance received for the voucher manually.",
+      "warnings": {
+        "voucher_balance_insufficient": "The balance of sold vouchers and credit ({balance}) is not enough; check whether this is a single-purpose voucher (it is not booked on redemption)."
+      },
       "credit_topup": "Of which intended for later use (credit, voucher): {amount}.",
       "credit_draw": "Of which credit use: {amount}.",
       "delegation_single": "This device records the sale on authorisation of taxpayer {eic}.",

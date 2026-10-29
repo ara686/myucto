@@ -19765,6 +19765,7 @@
         "vat_343_vs_return": "Saldo účtu 343 vs. DPH přiznání za období",
         "vat_clearing_stale": "Zúčtování DPH neodpovídá obratu období",
         "deposits_314_324_open": "Nevypořádané zálohové účty 314/324 k rozvahovému dni",
+        "voucher_balance_negative": "Záporný zůstatek prodaných poukazů a kreditu (uplatněno víc, než se prodalo)",
         "paid_invoices_open_saldo": "Zaplacené vydané faktury s otevřeným saldem na 311 (úhrada chybí v deníku)",
         "paid_purchases_open_saldo": "Zaplacené přijaté faktury s otevřeným saldem na 321 (úhrada chybí v deníku)",
         "realized_fx_unbooked": "Realizovaný kurzový rozdíl nezaúčtovaný na 563/663 (zaplacený cizoměnový doklad)",
@@ -40368,6 +40369,9 @@
       "fx_to_eet": "Do EET: {amount} (kurz {rate} Kč/{currency})",
       "foreign_hint": "Platba v {currency} se do EET zaeviduje v Kč, přepočtená kurzem, jakým se úhrada zaúčtuje ke dni přijetí. QR platba na místě je jen pro faktury v Kč.",
       "stored_value_hint": "Zákazník platí dříve zakoupeným hodnotovým poukazem nebo kreditem. Do EET se zaeviduje jako čerpání kreditu. Úhrada faktury se zapíše jako zápočet; zúčtování přijaté zálohy na poukaz řeší účetní ručně.",
+      "warnings": {
+        "voucher_balance_insufficient": "Zůstatek prodaných poukazů a kreditu ({balance}) nestačí, ověřte, zda nejde o jednoúčelový poukaz (ten se při uplatnění neúčtuje)."
+      },
       "credit_topup": "Z toho určeno k čerpání (kredit, poukaz): {amount}.",
       "credit_draw": "Z toho čerpání kreditu: {amount}.",
       "delegation_single": "Zařízení eviduje tržbu v pověření poplatníka {eic}.",

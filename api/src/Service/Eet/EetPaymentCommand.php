@@ -8,6 +8,7 @@ use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Infrastructure\Database\TransactionFailure;
 use MyInvoice\Service\Accounting\InvoiceSettlementService;
 use MyInvoice\Service\Accounting\SettlementException;
+use MyInvoice\Service\Accounting\VoucherLiabilityAccount;
 use MyInvoice\Service\Bank\VariableSymbolNormalizer;
 use MyInvoice\Service\Invoice\InvoicePaymentService;
 use MyInvoice\Service\Pdf\InvoicePdfRenderer;
@@ -92,7 +93,23 @@ final class EetPaymentCommand
         private readonly EetCurrency $fx,
         private readonly EetStoredValueCalculator $storedValue,
         private readonly InvoiceSettlementService $settlements,
+        private readonly VoucherLiabilityAccount $vouchers,
     ) {}
+
+    /**
+     * Varování k uplatnění poukazu nad zůstatek prodaných poukazů a kreditu
+     * ({@see VoucherLiabilityAccount::shortfallWarning()}). Platbu neblokuje.
+     *
+     * @return list<array<string,mixed>>
+     */
+    private function voucherWarnings(int $supplierId, ?string $channel, ?string $amountCzk): array
+    {
+        if ($channel !== 'stored_value' || $amountCzk === null) {
+            return [];
+        }
+        $warning = $this->vouchers->shortfallWarning($supplierId, (float) $amountCzk);
+        return $warning === null ? [] : [$warning];
+    }
 
     /**
      * Účetní úhrada faktury k přijaté platbě. Uplatnění poukazu (kanál `stored_value`) čerpá
@@ -181,6 +198,7 @@ final class EetPaymentCommand
             // Části tržby v Kč, které jdou do urceno_cerp_zuct / cerp_zuct (null = pole se neuvádí).
             'credit_topup_amount' => $credit['credit_topup_amount'],
             'credit_draw_amount' => $credit['credit_draw_amount'],
+            'warnings' => $this->voucherWarnings($supplierId, $in['channel'], $fx['amount'] ?? null),
             'invoice' => $invoice,
         ];
     }
@@ -241,7 +259,11 @@ final class EetPaymentCommand
 
         $this->afterCommit($created['invoice_id'], $created['record_id']);
         $event = $this->events->find($supplierId, $created['event_id']);
-        return $this->result($supplierId, (array) $event, false);
+        $out = $this->result($supplierId, (array) $event, false);
+        if ($created['warnings'] !== []) {
+            $out['warnings'] = $created['warnings'];
+        }
+        return $out;
     }
 
     /**
@@ -255,7 +277,7 @@ final class EetPaymentCommand
      * Klíč je interní (`sys:…`): idempotenci celé operace drží volající.
      *
      * @param array<string,mixed> $input stejné tělo jako u accept(), `invoice_id` povinné
-     * @return array{event_id:int, record_id:?int, decision:EetPolicyDecision}
+     * @return array{event_id:int, record_id:?int, decision:EetPolicyDecision, warnings:list<array<string,mixed>>}
      * @throws EetCommandException
      */
     public function acceptWithinTransaction(int $supplierId, int $userId, string $internalKey, array $input): array
@@ -286,7 +308,7 @@ final class EetPaymentCommand
         if ($created['record_id'] !== null) {
             $this->dispatch->dispatchAfterCommit($created['record_id']);
         }
-        return ['event_id' => $created['event_id'], 'record_id' => $created['record_id'], 'decision' => $decision];
+        return ['event_id' => $created['event_id'], 'record_id' => $created['record_id'], 'decision' => $decision, 'warnings' => $created['warnings']];
     }
 
     /**
@@ -295,7 +317,7 @@ final class EetPaymentCommand
      * @param array<string,mixed> $in
      * @param array<string,mixed> $settings
      * @param array<string,mixed> $fx
-     * @return array{event_id:int, record_id:?int, invoice_id:?int}
+     * @return array{event_id:int, record_id:?int, invoice_id:?int, warnings:list<array<string,mixed>>}
      */
     private function persistAccepted(
         int $supplierId,
@@ -342,6 +364,8 @@ final class EetPaymentCommand
             'created_by' => $userId > 0 ? $userId : null,
         ]);
 
+        // Zůstatek poukazů se posuzuje PŘED čerpáním touto platbou.
+        $warnings = $this->voucherWarnings($supplierId, $in['channel'], $fx['amount']);
         $invoiceId = null;
         $credit = $this->creditAmounts($supplierId, $in, $fx['amount'], null);
         if ($in['invoice_id'] !== null) {
@@ -379,7 +403,7 @@ final class EetPaymentCommand
                 ->execute([$record['device_id'], $record['unit_id'], $eventId, $supplierId]);
         }
 
-        return ['event_id' => $eventId, 'record_id' => $recordId, 'invoice_id' => $invoiceId];
+        return ['event_id' => $eventId, 'record_id' => $recordId, 'invoice_id' => $invoiceId, 'warnings' => $warnings];
     }
 
     /**

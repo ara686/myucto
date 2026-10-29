@@ -10,8 +10,11 @@ use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Repository\AccountingPeriodRepository;
 use MyInvoice\Repository\CashJournalRepository;
 use MyInvoice\Repository\InvoiceRepository;
+use MyInvoice\Repository\PostingRuleRepository;
 use MyInvoice\Service\Invoice\NewInvoiceVatClassification;
 use MyInvoice\Service\Accounting\ChartOfAccountsSeeder;
+use MyInvoice\Service\Accounting\Closing\CheckFindingNormalizer;
+use MyInvoice\Service\Accounting\Closing\ClosingService;
 use MyInvoice\Service\Accounting\PostingService;
 use MyInvoice\Service\Eet\EetCredentialProvider;
 use MyInvoice\Service\Eet\EetPaymentCommand;
@@ -27,12 +30,13 @@ use Symfony\Component\Clock\MockClock;
 /**
  * Víceúčelový poukaz a kredit (§ 37c ZDPH) přes přijaté zálohy:
  *
- *   • prodej (skladová karta `stored_value`, řádek bez daně) jde na 324 místo výnosu,
+ *   • prodej (skladová karta `stored_value`, řádek bez daně) jde na analytiku přijatých záloh
+ *     „Prodané poukazy a kredit" (324.900) místo výnosu,
  *     daň a pohledávka ostatních řádků se nemění,
  *   • řádek s daní (jednoúčelový poukaz § 37b, nebo karta `stored_value` se sazbou z doby
  *     před validací) zůstává výnosem; nový zdaněný víceúčelový poukaz uložení odmítne,
  *   • řádek víceúčelového poukazu nikdy nenese klasifikaci DPH a o kódu hlavičky nerozhoduje,
- *   • uplatnění kanálem „Poukaz / kredit" je v podvojném účetnictví zápočet 324 MD / 311 D,
+ *   • uplatnění kanálem „Poukaz / kredit" je v podvojném účetnictví zápočet 324.900 MD / 311 D,
  *     v daňové evidenci a u jiných kanálů zůstává ruční úhrada.
  *
  * Vše v jedné transakci, tearDown rollbackne.
@@ -52,6 +56,7 @@ final class VoucherAdvanceTest extends TestCase
     private int $czk = 0;
     private int $vat = 0;
     private int $userId = 0;
+    private int $periodId = 0;
     private bool $inTx = false;
 
     protected function setUp(): void
@@ -84,7 +89,7 @@ final class VoucherAdvanceTest extends TestCase
         $pdo->prepare("UPDATE supplier SET accounting_mode = 'double_entry' WHERE id = ?")->execute([$this->supplierId]);
         $this->setVatPayerAt($pdo, $this->supplierId, '2000-01-01', true);
         $this->container->get(ChartOfAccountsSeeder::class)->seedForSupplier($this->supplierId);
-        $this->container->get(AccountingPeriodRepository::class)->create($this->supplierId, 2026, '2026-01-01', '2026-12-31');
+        $this->periodId = $this->container->get(AccountingPeriodRepository::class)->create($this->supplierId, 2026, '2026-01-01', '2026-12-31');
 
         $pdo->prepare(
             'INSERT INTO clients (supplier_id, company_name, street, city, zip, country_id, main_email, language, currency_default_id, is_customer)
@@ -121,10 +126,10 @@ final class VoucherAdvanceTest extends TestCase
         $byAccount = $this->byAccount($this->post($invoiceId));
 
         self::assertEqualsWithDelta(1121.00, $byAccount['311']['debit'], 0.001);
-        self::assertEqualsWithDelta(1000.00, $byAccount['324']['credit'], 0.001, 'Poukaz je přijatá záloha.');
+        self::assertEqualsWithDelta(1000.00, $byAccount['324.900']['credit'], 0.001, 'Poukaz je přijatá záloha na analytice poukazů.');
         self::assertEqualsWithDelta(100.00, $byAccount['602']['credit'], 0.001, 'Výnosem je jen nápoj.');
         self::assertEqualsWithDelta(21.00, $this->vatCredit($byAccount), 0.001, 'Poukaz daň nenese.');
-        self::assertSame(['324', '602'], $this->sorted(array_values($this->posting->issuedItemRevenueAccounts($this->supplierId, $invoiceId)['accounts'])));
+        self::assertSame(['324.900', '602'], $this->sorted(array_values($this->posting->issuedItemRevenueAccounts($this->supplierId, $invoiceId)['accounts'])));
     }
 
     /** Obrana nad daty z doby před validací sazby: zapsáno přímo, editor by řádek odmítl. */
@@ -134,7 +139,7 @@ final class VoucherAdvanceTest extends TestCase
 
         $byAccount = $this->byAccount($this->post($invoiceId));
 
-        self::assertArrayNotHasKey('324', $byAccount, 'Zdaněný řádek se při uplatnění znovu nedaní, nesmí tedy čekat na 324.');
+        self::assertArrayNotHasKey('324.900', $byAccount, 'Zdaněný řádek se při uplatnění znovu nedaní, nesmí tedy čekat na 324.');
         self::assertEqualsWithDelta(1500.00, $byAccount['602']['credit'], 0.001);
         self::assertEqualsWithDelta(315.00, $this->vatCredit($byAccount), 0.001);
     }
@@ -152,9 +157,9 @@ final class VoucherAdvanceTest extends TestCase
               WHERE s.supplier_id = ? AND s.doc_type = 'invoice' AND s.doc_id = ? AND s.status = 'confirmed'",
             [$this->supplierId, $invoiceId],
         );
-        self::assertSame('324', $settlement['account_code']);
+        self::assertSame('324.900', $settlement['account_code']);
         $byAccount = $this->byAccount((int) $settlement['journal_entry_id']);
-        self::assertEqualsWithDelta(290.00, $byAccount['324']['debit'], 0.001);
+        self::assertEqualsWithDelta(290.00, $byAccount['324.900']['debit'], 0.001);
         self::assertEqualsWithDelta(290.00, $byAccount['311']['credit'], 0.001);
         self::assertSame('paid', $this->row('SELECT status FROM invoices WHERE id = ?', [$invoiceId])['status']);
         self::assertSame('290.00', $this->row('SELECT credit_draw_amount FROM eet_records WHERE supplier_id = ?', [$this->supplierId])['credit_draw_amount']);
@@ -245,7 +250,103 @@ final class VoucherAdvanceTest extends TestCase
         self::assertNull($body['items'][1]['vat_classification_code']);
     }
 
+    public function testVoucherAnalyticIsCreatedUnderAdvanceSyntheticFromPostingRule(): void
+    {
+        self::assertNull($this->accountRow('324.900'), 'Analytiku zakládá až první poukaz.');
+        $this->post($this->invoice([[1000.00, 0.00, 0, 'stored_value']]));
+
+        $analytic = $this->accountRow('324.900');
+        self::assertNotNull($analytic);
+        self::assertSame(['Prodané poukazy a kredit', '324'], [$analytic['name'], $analytic['parent_code']]);
+
+        // Firma, která přijaté zálohy účtuje jinam, dostane analytiku pod svou syntetikou.
+        $this->container->get(PostingRuleRepository::class)->upsertOverride($this->supplierId, 'advance.received.collection', '221', '325', 'Zálohy na 325');
+        $byAccount = $this->byAccount($this->post($this->invoice([[500.00, 0.00, 0, 'stored_value']])));
+        self::assertEqualsWithDelta(500.00, $byAccount['325.900']['credit'] ?? 0.0, 0.001);
+        self::assertSame('325', $this->accountRow('325.900')['parent_code'] ?? null);
+    }
+
+    /** Jediná analytika 324 je vyhrazená poukazům: běžná záloha na holé 324 se na ni nepřesměruje. */
+    public function testAdvanceOnBare324IsNotRedirectedToVoucherAnalytic(): void
+    {
+        $this->post($this->invoice([[1000.00, 0.00, 0, 'stored_value']]));
+
+        $entryId = $this->posting->postDocument($this->supplierId, 'manual', 0, [
+            ['account_code' => '221', 'side' => 'debit', 'amount' => 700.00],
+            ['account_code' => '324', 'side' => 'credit', 'amount' => 700.00],
+        ], ['entry_date' => self::DAY, 'description' => 'Záloha z proformy', 'posted_by' => $this->userId]);
+
+        $byAccount = $this->byAccount($entryId);
+        self::assertArrayHasKey('324', $byAccount, 'Záloha z proformy zůstává na syntetice.');
+        self::assertArrayNotHasKey('324.900', $byAccount);
+    }
+
+    public function testRedemptionOverVoucherBalanceWarnsButPays(): void
+    {
+        $command = $this->container->get(EetPaymentCommand::class);
+        $redemption = $this->invoice([[239.67, 50.33, 21, 'standard']]);
+        $body = ['invoice_id' => $redemption, 'amount' => '290', 'currency' => 'CZK', 'channel' => 'stored_value', 'contact_context' => 'in_person'];
+
+        $preview = $command->preview($this->supplierId, $body);
+        self::assertSame(['voucher_balance_insufficient'], array_column($preview['warnings'], 'code'));
+
+        $result = $command->acceptWithinTransaction($this->supplierId, $this->userId, 'sys:voucher-over-' . $redemption, $body);
+        self::assertSame(['voucher_balance_insufficient'], array_column($result['warnings'], 'code'));
+        self::assertStringContainsString('jednoúčelový poukaz', $result['warnings'][0]['message']);
+        self::assertSame('paid', $this->row('SELECT status FROM invoices WHERE id = ?', [$redemption])['status'], 'Platba neblokuje.');
+
+        $this->post($this->invoice([[1000.00, 0.00, 0, 'stored_value']]));
+        $second = $this->invoice([[239.67, 50.33, 21, 'standard']]);
+        $covered = $command->acceptWithinTransaction($this->supplierId, $this->userId, 'sys:voucher-ok-' . $second, ['invoice_id' => $second] + $body);
+        self::assertSame([], $covered['warnings'], 'Zůstatek 710 Kč na úhradu 290 Kč stačí.');
+    }
+
+    public function testClosingShowsVoucherBalanceAndFlagsNegative(): void
+    {
+        $this->post($this->invoice([[1000.00, 0.00, 0, 'stored_value']]));
+        $checks = $this->checks(['deposits_314_324_open', 'voucher_balance_negative', 'clearing_accounts_open']);
+        self::assertTrue($checks['deposits_314_324_open']['ok'], 'Nevyčerpané poukazy nejsou zapomenutá záloha.');
+        self::assertSame(['account' => '324.900', 'balance' => 1000.0], $checks['deposits_314_324_open']['value']['vouchers']);
+        self::assertSame(0.0, $checks['deposits_314_324_open']['value']['324']);
+        self::assertTrue($checks['voucher_balance_negative']['ok']);
+        self::assertTrue($checks['clearing_accounts_open']['ok'], 'Poukazy nejsou otevřený zůstatek průběžného účtu 324.');
+
+        foreach ([1, 2, 3, 4] as $i) {
+            $this->accept($this->invoice([[239.67, 50.33, 21, 'standard']]), 'stored_value', '290');
+        }
+        $checks = $this->checks(['voucher_balance_negative']);
+        self::assertSame('error', $checks['voucher_balance_negative']['severity']);
+        self::assertFalse($checks['voucher_balance_negative']['ok'], 'Uplatněno 1 160 Kč z prodaných 1 000 Kč.');
+        self::assertSame(-160.0, $checks['voucher_balance_negative']['value']['balance']);
+    }
+
     // ── pomocníci ───────────────────────────────────────────────────────────
+
+    /** @param list<string> $keys @return array<string,array<string,mixed>> */
+    private function checks(array $keys): array
+    {
+        $period = $this->container->get(AccountingPeriodRepository::class)->findById($this->supplierId, $this->periodId);
+        $out = [];
+        foreach ($this->container->get(ClosingService::class)->buildChecks(
+            $this->supplierId, (array) $period, '2026-01-01', '2026-12-31', CheckFindingNormalizer::CAP, $keys,
+        ) as $check) {
+            $out[$check['key']] = $check;
+        }
+        return $out;
+    }
+
+    /** @return array{name:string, parent_code:?string}|null */
+    private function accountRow(string $code): ?array
+    {
+        $stmt = $this->db->pdo()->prepare(
+            'SELECT a.name, p.account_code AS parent_code FROM chart_of_accounts a
+               LEFT JOIN chart_of_accounts p ON p.id = a.parent_id
+              WHERE a.supplier_id = ? AND a.account_code = ?'
+        );
+        $stmt->execute([$this->supplierId, $code]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $row === false ? null : $row;
+    }
 
     private function stockItem(string $kind): int
     {

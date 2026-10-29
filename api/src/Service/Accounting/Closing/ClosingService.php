@@ -236,6 +236,7 @@ final class ClosingService
         // z kontrol 261/395/průběžných účtů, ať se tentýž zůstatek nehlásí dvakrát.
         private readonly \MyInvoice\Service\Accounting\Card\CardClearingOverview $cardClearing,
         private readonly \MyInvoice\Service\Tax\Nonprofit\NonprofitTaxAssessmentGuard $nonprofitTaxAssessment,
+        private readonly \MyInvoice\Service\Accounting\VoucherLiabilityAccount $vouchers,
     ) {}
 
     // ── stav pro FE ───────────────────────────────────────────────────────────
@@ -5198,14 +5199,42 @@ final class ClosingService
         // WARNING (ne error): účetní ověří, že jde o skutečně nevypořádané zálohy,
         // ne o zapomenutý průběžný zůstatek. Účty jsou saldokontní (per partner),
         // takže drobný haléřový zbytek po vypořádání není chyba.
+        //
+        // Analytika prodaných poukazů a kreditu (VoucherLiabilityAccount) zapomenutá záloha
+        // není: její zůstatek je hodnota nevyčerpaných poukazů. Do 324 se proto nepočítá,
+        // kontrola ho jen ukáže (`vouchers`). Záporný zůstatek (uplatněno víc, než se
+        // prodalo) je chyba, hlásí ho samostatná kontrola `voucher_balance_negative`.
+        $voucherCode = null;
+        $voucherOutstanding = null;
+        if ($wants('deposits_314_324_open', 'voucher_balance_negative', 'clearing_accounts_open')) {
+            $voucherCode = $this->vouchers->code($supplierId);
+            $voucherOutstanding = $this->vouchers->outstanding($supplierId, $rangeTo);
+        }
         if ($wants('deposits_314_324_open')) {
             $bal314 = $balances['314'];
             $bal324 = $balances['324'];
+            $value = ['314' => $bal314, '324' => $bal324];
+            if ($voucherOutstanding !== null && abs($voucherOutstanding) >= 0.005) {
+                if (str_starts_with((string) $voucherCode, '324')) {
+                    $bal324 = round($bal324 + $voucherOutstanding, 2);
+                    $value['324'] = $bal324;
+                }
+                $value['vouchers'] = ['account' => $voucherCode, 'balance' => $voucherOutstanding];
+            }
             $checks[] = [
                 'key' => 'deposits_314_324_open',
                 'severity' => 'warning',
                 'ok' => abs($bal314) < 0.005 && abs($bal324) < 0.005,
-                'value' => ['314' => $bal314, '324' => $bal324],
+                'value' => $value,
+            ];
+        }
+        // Firma bez poukazů kontrolu v seznamu nemá (stejně jako kontroly karet bez karet).
+        if ($wants('voucher_balance_negative') && $voucherOutstanding !== null && abs($voucherOutstanding) >= 0.005) {
+            $checks[] = [
+                'key' => 'voucher_balance_negative',
+                'severity' => 'error',
+                'ok' => $voucherOutstanding > -0.005,
+                'value' => ['account' => $voucherCode, 'balance' => $voucherOutstanding],
             ];
         }
 
@@ -5216,10 +5245,11 @@ final class ClosingService
         // (nedočerpaná záloha, pořízení na cestě) → warning, ne error. Zůstatek počítán
         // BEZ filtru na reversed_by (originál + storno se v SUM vyruší).
         if ($wants('clearing_accounts_open')) {
+            // Analytiku poukazů hlídají kontroly záloh a záporného zůstatku výše.
             $clearingOpen = $this->closing->clearingAccountsWithBalance(
                 $supplierId,
                 $rangeTo,
-                array_keys($this->cardClearing->clearingAccounts($supplierId)),
+                [...array_keys($this->cardClearing->clearingAccounts($supplierId)), ...($voucherCode !== null ? [$voucherCode] : [])],
             );
             $checks[] = [
                 'key' => 'clearing_accounts_open',

@@ -2919,11 +2919,12 @@ final class PostingService
      * Účet přijatých záloh na víceúčelové poukazy a kredit (§ 37c ZDPH): na něj jde prodej
      * poukazu z položky vydané faktury ({@see MultiPurposeVoucher::isUntaxedLine()}) a z něj se poukaz
      * čerpá zápočtem při uplatnění ({@see InvoiceSettlementService::settleVoucherRedemption()}).
-     * Stejný účet jako inkaso zálohové proformy (`advance.received.collection`).
+     * Vlastní analytika přijatých záloh „Prodané poukazy a kredit" ({@see VoucherLiabilityAccount}),
+     * chybějící se dohraje do osnovy.
      */
     public function voucherAdvanceAccount(int $supplierId): string
     {
-        return $this->ruleCode($supplierId, 'advance.received.collection', 'credit', '324');
+        return (new VoucherLiabilityAccount($this->db, $this->rules, $this->accounts))->ensure($supplierId);
     }
 
     /**
@@ -3460,7 +3461,10 @@ final class PostingService
      *  - záchranná analytika neevidovaných karet (378/261/395 .199),
      *  - analytika úvěrového účtu kreditní karty (231.101 …): holé 231 z jiného zápisu
      *    (bankovní úvěr) by jinak skončilo na dluhu kreditky,
-     *  - analytika mezičlenu úvěrového účtu kreditní karty (378.1xx, stejná řada jako karty).
+     *  - analytika mezičlenu úvěrového účtu kreditní karty (378.1xx, stejná řada jako karty),
+     *  - analytika prodaných poukazů a kreditu (324.900, {@see VoucherLiabilityAccount}):
+     *    přesměr by na ni poslal zálohy z proforem a zůstatek by přestal říkat, kolik
+     *    poukazů zbývá vyčerpat.
      */
     public static function dedicatedAnalyticSql(string $child, string $parent): string
     {
@@ -3479,7 +3483,8 @@ final class PostingService
                     SELECT 1 FROM credit_card_accounts cca
                      WHERE cca.supplier_id = {$child}.supplier_id AND cca.analytic_suffix IS NOT NULL
                        AND {$child}.account_code = CONCAT('231.', cca.analytic_suffix)
-                ))";
+                )
+                OR " . VoucherLiabilityAccount::dedicatedAnalyticSql($child, $parent) . ")";
     }
 
     /**

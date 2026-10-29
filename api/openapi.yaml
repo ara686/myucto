@@ -3474,6 +3474,13 @@ paths:
                   remaining: { type: number, format: float }
                   eet: { $ref: '#/components/schemas/InvoicePaymentEetResult' }
                   eet_decision: { $ref: '#/components/schemas/EetDecision' }
+                  warnings:
+                    type: array
+                    description: |
+                      Upozornění, která platbu neblokují (stejná jako `eet.warnings`). Úhrada
+                      poukazem (`channel = stored_value`) nad zůstatek prodaných poukazů
+                      a kreditu vrací `voucher_balance_insufficient`.
+                    items: { $ref: '#/components/schemas/EetPaymentWarning' }
         '400':
           description: |
             Chybí částka (`invalid_amount`) nebo u evidované tržby hlavička
@@ -34531,6 +34538,25 @@ components:
         odeslání, POK) a `idempotent_replay`. `amount` a `currency` jsou částka
         a měna platby, `amount_czk` částka evidovaná v EET (vždy Kč), u cizí měny
         s `exchange_rate` a `exchange_rate_source` (např. `cnb:2026-11-02`).
+        `warnings` (jen při přijetí platby, ne při opakování se stejným klíčem) nese
+        upozornění, která platbu neblokují.
+      properties:
+        warnings:
+          type: array
+          items: { $ref: '#/components/schemas/EetPaymentWarning' }
+    EetPaymentWarning:
+      type: object
+      description: |
+        Upozornění k platbě, které ji neblokuje. `voucher_balance_insufficient`: úhrada
+        poukazem nebo kreditem převyšuje zůstatek prodaných víceúčelových poukazů
+        a kreditu (analytika přijatých záloh „Prodané poukazy a kredit"); může jít
+        o jednoúčelový poukaz, který se při uplatnění neúčtuje.
+      required: [code, message]
+      properties:
+        code: { type: string, enum: [voucher_balance_insufficient] }
+        message: { type: string }
+        balance: { type: number, format: float, description: Zůstatek nevyčerpaných poukazů a kreditu v Kč před platbou }
+        amount: { type: number, format: float, description: Částka úhrady poukazem v Kč }
     CreditNoteRefundEetResult:
       type: object
       description: |
@@ -34633,6 +34659,10 @@ components:
             money: { type: string, description: "payment_order_status platby (settled, operator_confirmed)" }
             document: { type: string, description: "Stav dokladu (paid)" }
             eet: { type: string, description: "Stav záznamu EET (pending, confirmed…), bez záznamu rozhodnutí politiky (inactive, not_subject…)" }
+        warnings:
+          type: array
+          description: Upozornění, která účtenku neblokují (úhrada poukazem nad zůstatek prodaných poukazů a kreditu)
+          items: { $ref: '#/components/schemas/EetPaymentWarning' }
         eet:
           type: object
           properties:
