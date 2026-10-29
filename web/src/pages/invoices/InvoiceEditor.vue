@@ -2690,6 +2690,7 @@ async function submit() {
         accrual_to: it.accrual_to || null,
         // Výnosový účet položky (F1) — round-trip jako ostatní pole položky.
         revenue_account_code: (it.revenue_account_code ?? '').trim() || null,
+        seller_item_code: it.seller_item_code ?? null,
         oss_applicable: it.oss_applicable ?? false,
         oss_consumer_country: it.oss_applicable ? (it.oss_consumer_country || null) : null,
         // Prázdný typ sazby se posílá jako null, ne jako „standard" — dosazení základní

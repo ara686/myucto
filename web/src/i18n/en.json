@@ -18946,6 +18946,27 @@
       "err_target_account_tax_evidence": "In tax evidence a rule sets no account, only the kind and tax deductibility of the expense.",
       "err_recurring_prepaid_tax_evidence": "Prepaid annual subscriptions are not accrued in tax evidence."
     },
+    "revenue_rules": {
+      "title": "Revenue rules",
+      "subtitle": "Set the account of an issued invoice line by item code, text or VAT rate. Applied when importing invoices and when posting lines that have no own account and no product account.",
+      "empty": "No revenue rules.",
+      "col_target": "Account",
+      "form_help": "A rule applies when ALL filled-in criteria match. The first one by priority wins. An account set on the line or product takes precedence.",
+      "criteria_group": "Criteria (at least one is required)",
+      "form_item_code": "Item code",
+      "item_code_hint": "Exact match with the imported item code (ISDOC SellersItemIdentification), case-insensitive.",
+      "form_description_contains": "Line text contains",
+      "form_vat_rate": "VAT rate (%)",
+      "criteria_hint": "Fill in at least one of: item code, line text or VAT rate.",
+      "form_target_account": "Line account",
+      "target_account_hint": "A revenue account (601, 602, 604…), or a balance sheet account for rebilling. Receivable, payable, tax and cash accounts are not allowed.",
+      "code_label": "code",
+      "vat_label": "rate {rate} %",
+      "target_required": "Select the line account.",
+      "err_criteria_missing": "Fill in at least one criterion: item code, line text or VAT rate.",
+      "err_vat_rate": "The VAT rate must be a number between 0 and 100.",
+      "err_generic": "The operation could not be completed."
+    },
     "assets": {
       "revision": {
         "original_life_label": "Original depreciation life (months)",
@@ -22682,7 +22703,7 @@
     "item_account": {
       "show": "Line accounts",
       "hide": "Hide line accounts",
-      "hint": "Account of individual lines: a revenue account, or a balance sheet account for rebilling (except receivable, payable, tax and cash accounts). Empty = product account, its category, otherwise the invoice posting template.",
+      "hint": "Account of individual lines: a revenue account, or a balance sheet account for rebilling (except receivable, payable, tax and cash accounts). Empty = product account, its category, a revenue rule, otherwise the invoice posting template.",
       "label": "Line account",
       "placeholder": "by product / document"
     },
@@ -26932,6 +26953,7 @@
   "template_tools": {
     "journal": "Entry templates",
     "expense": "Expense rules",
+    "revenue": "Revenue rules",
     "posting": "Posting rules",
     "requires_double_entry": "Templates belong to journal posting",
     "requires_double_entry_hint": "Posting templates, expense rules and bank posting rules are used when posting to the journal, so they have nothing to offer in tax evidence. This company keeps tax evidence.",

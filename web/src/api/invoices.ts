@@ -165,6 +165,8 @@ export interface InvoiceItem {
   accrual_to?: string | null
   /** Výnosový účet položky (6xx); null = produkt > kategorie > předkontace dokladu. Round-trip jako ostatní pole položky. */
   revenue_account_code?: string | null
+  /** Kód položky prodávajícího z importu (ISDOC SellersItemIdentification), páruje podle něj pravidla výnosů. */
+  seller_item_code?: string | null
   /** Název karty z JOINu (read-only) — našeptávač jím zobrazí vybranou položku bez dalšího dotazu. */
   small_asset_name?: string | null
   asset_name?: string | null
@@ -617,6 +619,7 @@ export interface InvoicePayload {
     accrual_from?: string | null
     accrual_to?: string | null
     revenue_account_code?: string | null
+    seller_item_code?: string | null
     oss_applicable?: boolean
     oss_consumer_country?: string | null
     oss_rate_type?: string | null

@@ -7,8 +7,11 @@ namespace MyInvoice\Service\Import;
 use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Repository\InvoiceRepository;
 use MyInvoice\Repository\ProjectRepository;
+use MyInvoice\Repository\RevenueClassificationRuleRepository;
 use MyInvoice\Repository\TaxConstantsRepository;
 use MyInvoice\Service\Accounting\AccountingPeriodProvisioner;
+use MyInvoice\Service\Accounting\Product\ProductPostingDefaults;
+use MyInvoice\Service\Accounting\Revenue\RevenueRuleMatcher;
 use MyInvoice\Service\Bank\VariableSymbolNormalizer;
 use MyInvoice\Service\Invoice\InvoiceCalculator;
 use MyInvoice\Service\Invoice\TimeBilling;
@@ -144,6 +147,11 @@ final class InvoiceImportService
      * @var array<string, list<array{rate_type:string, rate_percent:float}>>
      */
     private array $domesticScaleRates = [];
+
+    private ?RevenueRuleMatcher $revenueRules = null;
+
+    /** @var array<string,bool> „firma|účet" => účet pravidla výnosů je platný */
+    private array $revenueRuleAccountValid = [];
 
     public function __construct(
         private readonly Connection $db,
@@ -1427,7 +1435,7 @@ final class InvoiceImportService
         $invoiceId = (int) $pdo->lastInsertId();
 
         // Items
-        $this->insertItems($invoiceId, $plan['rows']);
+        $this->insertItems($invoiceId, $plan['rows'], $supplierId);
 
         // Recompute totals (z položek)
         $this->calculator->recompute($invoiceId);
@@ -1987,6 +1995,7 @@ final class InvoiceImportService
 
             $plan['rows'][] = [
                 'description'             => (string) ($item['description'] ?? ''),
+                'seller_item_code'        => InvoiceRepository::sellerItemCode($item['seller_item_code'] ?? null),
                 'quantity'                => $quantity,
                 'duration_minutes'        => $item['duration_minutes']
                     ?? TimeBilling::inferDurationMinutes($quantity, $unit),
@@ -2320,11 +2329,18 @@ final class InvoiceImportService
      * OSS sloupců: mezi migracemi 0137 a 1293 je řada verzí, takže instance s OSS
      * schématem a bez příznaku je běžný, ne teoretický stav.
      *
+     * Účet položky určí pravidla výnosů ({@see RevenueRuleMatcher}) podle kódu položky,
+     * textu a sazby. Uloží se jako účet položky, takže ho účetní vidí a opraví v editoru
+     * a zaúčtování ani Doúčtovat doklady ho znovu nevyhodnocují. Pravidlo, jehož účet
+     * mezitím z rozvrhu zmizel, se přeskočí.
+     *
      * @param list<array<string,mixed>> $rows z {@see planItems()}
      */
-    private function insertItems(int $invoiceId, array $rows): void
+    private function insertItems(int $invoiceId, array $rows, int $supplierId): void
     {
         if (empty($rows)) return;
+
+        $revenueAccounts = $this->revenueRuleAccounts($supplierId, array_values($rows));
 
         // Názvy sloupců jsou zároveň klíči `OssItemDecision::toItemColumns()`, takže se
         // seznam a dosazované hodnoty nemohou rozejít pořadím.
@@ -2339,9 +2355,10 @@ final class InvoiceImportService
             'INSERT INTO invoice_items
                 (invoice_id, description, quantity, duration_minutes, unit, unit_price_without_vat,
                  vat_rate_id, vat_rate_snapshot,
-                 total_without_vat, total_vat, total_with_vat, order_index, vat_classification_code'
+                 total_without_vat, total_vat, total_with_vat, order_index, vat_classification_code,
+                 seller_item_code, revenue_account_code'
             . ($ossColumns !== [] ? ', ' . implode(', ', $ossColumns) : '')
-            . ') VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?'
+            . ') VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?'
             . str_repeat(', ?', count($ossColumns))
             . ')'
         );
@@ -2359,12 +2376,46 @@ final class InvoiceImportService
                 $row['vat_rate_snapshot'],
                 $i,
                 $row['vat_classification_code'],
+                $row['seller_item_code'] ?? null,
+                $revenueAccounts[$i] ?? null,
             ];
             foreach ($ossColumns as $column) {
                 $params[] = $row['oss'][$column];
             }
             $stmt->execute($params);
         }
+    }
+
+    /**
+     * @param list<array<string,mixed>> $rows
+     * @return array<int,string> index řádku => účet z pravidla
+     */
+    private function revenueRuleAccounts(int $supplierId, array $rows): array
+    {
+        $matches = ($this->revenueRules ??= new RevenueRuleMatcher($this->db))->match($supplierId, $rows);
+        if ($matches === []) {
+            return [];
+        }
+        $defaults = new ProductPostingDefaults($this->db);
+        $out = [];
+        $hits = [];
+        foreach ($matches as $i => $hit) {
+            $account = $hit['account'];
+            if (!array_key_exists($supplierId . '|' . $account, $this->revenueRuleAccountValid)) {
+                try {
+                    $defaults->validateIssuedItemAccount($supplierId, $account);
+                    $this->revenueRuleAccountValid[$supplierId . '|' . $account] = true;
+                } catch (\InvalidArgumentException) {
+                    $this->revenueRuleAccountValid[$supplierId . '|' . $account] = false;
+                }
+            }
+            if ($this->revenueRuleAccountValid[$supplierId . '|' . $account]) {
+                $out[(int) $i] = $account;
+                $hits[$hit['rule_id']] = ($hits[$hit['rule_id']] ?? 0) + 1;
+            }
+        }
+        (new RevenueClassificationRuleRepository($this->db))->recordHits($supplierId, $hits);
+        return $out;
     }
 
     private function currencyId(int $supplierId, string $code): int

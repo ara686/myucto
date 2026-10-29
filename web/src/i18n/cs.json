@@ -18946,6 +18946,27 @@
       "err_target_account_tax_evidence": "V daňové evidenci pravidlo účet nenastavuje, určuje jen druh a daňovou uznatelnost výdaje.",
       "err_recurring_prepaid_tax_evidence": "Časové rozlišení ročního předplatného se v daňové evidenci nevede."
     },
+    "revenue_rules": {
+      "title": "Pravidla výnosů",
+      "subtitle": "Určí účet položky vydané faktury podle kódu položky, textu nebo sazby DPH. Uplatní se při importu faktur a při zaúčtování položek, které nemají vlastní účet ani účet produktu.",
+      "empty": "Žádné pravidlo výnosů.",
+      "col_target": "Účet",
+      "form_help": "Pravidlo se uplatní, když sedí VŠECHNA vyplněná kritéria. První podle priority vyhrává. Účet zadaný na položce nebo produktu má přednost.",
+      "criteria_group": "Kritéria (aspoň jedno je povinné)",
+      "form_item_code": "Kód položky",
+      "item_code_hint": "Přesná shoda s kódem položky z importu (ISDOC SellersItemIdentification), bez ohledu na velikost písmen.",
+      "form_description_contains": "Text položky obsahuje",
+      "form_vat_rate": "Sazba DPH (%)",
+      "criteria_hint": "Vyplňte aspoň jedno z: kód položky, text položky nebo sazbu DPH.",
+      "form_target_account": "Účet položky",
+      "target_account_hint": "Výnosový účet (601, 602, 604…), u přefakturace i rozvahový. Saldokontní, daňové a peněžní účty nejsou povolené.",
+      "code_label": "kód",
+      "vat_label": "sazba {rate} %",
+      "target_required": "Vyberte účet položky.",
+      "err_criteria_missing": "Vyplňte aspoň jedno kritérium: kód položky, text položky nebo sazbu DPH.",
+      "err_vat_rate": "Sazba DPH musí být číslo v rozsahu 0 až 100.",
+      "err_generic": "Operaci se nepodařilo dokončit."
+    },
     "assets": {
       "revision": {
         "original_life_label": "Původní doba odpisování (měsíce)",
@@ -22682,7 +22703,7 @@
     "item_account": {
       "show": "Účty položek",
       "hide": "Skrýt účty položek",
-      "hint": "Účet jednotlivých položek: výnosový, u přefakturace i rozvahový (kromě saldokontních, daňových a peněžních účtů). Prázdné pole = účet produktu, jeho kategorie, jinak předkontace faktury.",
+      "hint": "Účet jednotlivých položek: výnosový, u přefakturace i rozvahový (kromě saldokontních, daňových a peněžních účtů). Prázdné pole = účet produktu, jeho kategorie, pravidlo výnosů, jinak předkontace faktury.",
       "label": "Účet položky",
       "placeholder": "podle produktu / dokladu"
     },
@@ -26932,6 +26953,7 @@
   "template_tools": {
     "journal": "Šablony zápisů",
     "expense": "Pravidla nákladů",
+    "revenue": "Pravidla výnosů",
     "posting": "Pravidla účtování",
     "requires_double_entry": "Šablony jsou k účtování do deníku",
     "requires_double_entry_hint": "Předkontace, pravidla nákladů i zaúčtování banky se používají při účtování do deníku, takže v daňové evidenci nemají co nabídnout. Firma vede daňovou evidenci.",

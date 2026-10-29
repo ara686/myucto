@@ -180,7 +180,7 @@ zaúčtování téhož dokladu - viz [Účetní deník](52_Ucetni_denik.md).
 | # | Vrstva | Co určuje | Na co se použije | Kde ji najdete |
 |---|---|---|---|---|
 | 1 | **Předkontace** | výchozí dvojici účtů **MD/Dal** pro systémový typ operace (stabilní klíč, například `invoice.services.issued` nebo `payment.receivable.bank`) | každý doklad, který systém účtuje sám | **Nástroje → Účetní nastavení**, záložka **Předkontace** |
-| 2 | **Pravidla nákladů** | druh řádku přijaté faktury a konkrétní nákladový účet | řádky přijatých faktur | **Nástroje → Šablony účtování**, záložka **Pravidla nákladů** |
+| 2 | **Pravidla nákladů** a **výnosů** | druh řádku přijaté faktury a konkrétní nákladový účet; účet řádku vydané faktury podle kódu, textu nebo sazby DPH | řádky přijatých a vydaných faktur | **Nástroje → Šablony účtování**, záložky **Pravidla nákladů** a **Pravidla výnosů** |
 | 3 | **Pravidla účtování** | kontaci opakovaného bankovního pohybu, ke kterému neexistuje doklad | bankovní pohyby bez faktury (poplatky, odvody, úroky, nájem, splátky) | **Nástroje → Šablony účtování**, záložka **Pravidla účtování**, nebo **Účetnictví → Automat**, záložka **Pravidla** |
 | 4 | **Šablony zápisů** | předvyplněné řádky ručního zápisu | ruční zápis v deníku a náhled kontace dokladu | **Nástroje → Šablony účtování**, záložka **Šablony zápisů** |
 

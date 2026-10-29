@@ -515,7 +515,7 @@ odmítne.
 Vydaná faktura i šablona pravidelné fakturace mají u položek volitelný
 **účet položky**. Pole se v editoru zapne odkazem **Účty položek** nad položkami
 (samo se zapne, když už některá položka účet má). Prázdné pole znamená účet
-produktu, jeho kategorie, jinak předkontaci dokladu.
+produktu, jeho kategorie, pravidlo výnosů, jinak předkontaci dokladu.
 
 Na rozdíl od produktu a kategorie (jen třída 6) smí položka nést i rozvahový nebo
 nákladový účet, například přefakturaci na 315 nebo 378. Nepovolené jsou jen
@@ -545,7 +545,7 @@ položky, produktu nebo kategorie, s odkazem na kartu produktu.
 <!-- cols: 24 76 -->
 | Co | Pořadí přednosti |
 |---|---|
-| Účet výnosů vydané faktury | prodej majetku > účet položky > produkt > kategorie > předkontace dokladu |
+| Účet výnosů vydané faktury | prodej majetku > účet položky > produkt > kategorie > pravidlo výnosů ([§ 65.10.9](65_Sablony.md#65109-pravidla-vynosu)) > předkontace dokladu |
 | Účet nákladů přijaté faktury | účet položky > druh výdaje > produkt > kategorie > předkontace dokladu; u pořízení dlouhodobého majetku se účet produktu ani kategorie nepoužije |
 | Dimenze | položka > produkt > kategorie > hlavička > zakázka > klient > pravidlo dimenzí |
 
