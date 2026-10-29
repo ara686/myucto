@@ -17106,7 +17106,7 @@
         "daily_limit": "Denní limit volání AI je vyčerpaný. Zkuste to znovu zítra."
       },
       "intro_title": "Na co se můžete zeptat",
-      "intro_body": "Popište situaci vlastními slovy, případně přiložte soubory z disku nebo dokumenty z Dokumentů. Asistent vysvětlí, jak účtovat, nabídne zápisy do deníku a navrhne, kam soubor v Dokumentech uložit. Nic se nezaúčtuje bez vašeho potvrzení.",
+      "intro_body": "Popište situaci vlastními slovy, případně přiložte soubory z disku nebo dokumenty z Dokumentů. Asistent vysvětlí, jak účtovat, nabídne zápisy do deníku, interní doklady nebo ostatní pohledávky a závazky a navrhne, kam soubor v Dokumentech uložit. Nic se nezaúčtuje bez vašeho potvrzení.",
       "intro_example": "Například: „Přes dokumenty jsem vložila notářský zápis a pokladní doklady, potřebuji vytvořit pohledávky za upsaný základní kapitál.\"",
       "placeholder": "Napište dotaz k účtování…",
       "model": "Model",
@@ -17173,6 +17173,27 @@
         "installments_failed": "Položka je založená, ale splátkový kalendář se nepodařilo uložit.",
         "link_failed": "Položka je založená, ale některý dokument se na ni nepodařilo navázat.",
         "no_permission": "K založení potřebujete právo zapisovat do Ostatních pohledávek a závazků."
+      },
+      "internal_document": {
+        "heading": "Navržené interní doklady",
+        "entry_date": "Datum účetního případu",
+        "document_date": "Datum dokladu",
+        "partner": "Partner",
+        "partner_matched": "nalezen v adresáři",
+        "note": "Poznámka",
+        "save_draft": "Uložit jako koncept",
+        "save_and_post": "Založit a zaúčtovat",
+        "confirm_draft": "Založit navržený interní doklad jako koncept? Nic se tím nezaúčtuje.",
+        "confirm_post": "Založit navržený interní doklad a rovnou ho zaúčtovat do deníku?",
+        "draft_hint": "Koncept zkontrolujete a zaúčtujete v detailu dokladu.",
+        "created": "Koncept interního dokladu je založený.",
+        "posted": "Interní doklad {no} je zaúčtovaný.",
+        "post_failed": "Koncept je založený, ale zaúčtovat ho nešlo: {message}",
+        "created_label": "Založeno jako interní doklad",
+        "open": "Otevřít doklad",
+        "link_failed": "Doklad je založený, ale některý dokument se na něj nepodařilo navázat.",
+        "problems_reason": "Návrh nejde založit, nejdřív opravte nalezené chyby (zeptejte se asistenta znovu nebo doklad založte ručně).",
+        "no_permission": "K založení potřebujete právo zapisovat do účetního deníku."
       },
       "history": {
         "title": "Historie dotazů",

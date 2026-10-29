@@ -13064,7 +13064,7 @@ paths:
     get:
       tags: [Accounting]
       summary: Konverzace AI asistenta se zprávami; cizí konverzace vrací 404
-      description: Zpráva asistenta nese v `response` strukturovanou odpověď (other_items, journal_entries, document_suggestions, warnings) a v `applied` značky použitých návrhů {druh -> {index -> id}}.
+      description: Zpráva asistenta nese v `response` strukturovanou odpověď (other_items, internal_documents, journal_entries, document_suggestions, warnings) a v `applied` značky použitých návrhů {druh -> {index -> id}}; druh je journal_entry, other_item, internal_document nebo document.
       parameters:
       - $ref: '#/components/parameters/SupplierIdHeader'
       - { in: path, name: id, required: true, schema: { type: integer } }
