@@ -17106,7 +17106,7 @@
         "daily_limit": "The daily AI limit has been reached. Try again tomorrow."
       },
       "intro_title": "What you can ask",
-      "intro_body": "Describe the situation in your own words and optionally attach files from disk or documents from Documents. The assistant explains how to book it, offers journal entries and suggests where to store the file in Documents. Nothing is posted without your confirmation.",
+      "intro_body": "Describe the situation in your own words and optionally attach files from disk or documents from Documents. The assistant explains how to book it, offers journal entries, internal documents or other receivables and payables and suggests where to store the file in Documents. Nothing is posted without your confirmation.",
       "intro_example": "For example: \"I uploaded a notarial deed and cash receipts to Documents, I need to create receivables for subscribed share capital.\"",
       "placeholder": "Type your bookkeeping question…",
       "model": "Model",
@@ -17173,6 +17173,27 @@
         "installments_failed": "The item was created, but the instalment schedule could not be saved.",
         "link_failed": "The item was created, but some documents could not be linked to it.",
         "no_permission": "Creating requires permission to write to Other receivables and payables."
+      },
+      "internal_document": {
+        "heading": "Proposed internal documents",
+        "entry_date": "Transaction date",
+        "document_date": "Document date",
+        "partner": "Partner",
+        "partner_matched": "found in contacts",
+        "note": "Note",
+        "save_draft": "Save as draft",
+        "save_and_post": "Create and post",
+        "confirm_draft": "Create the proposed internal document as a draft? Nothing will be posted.",
+        "confirm_post": "Create the proposed internal document and post it to the journal right away?",
+        "draft_hint": "Review and post the draft in the document detail.",
+        "created": "The internal document draft has been created.",
+        "posted": "Internal document {no} has been posted.",
+        "post_failed": "The draft was created, but it could not be posted: {message}",
+        "created_label": "Created as an internal document",
+        "open": "Open document",
+        "link_failed": "The document was created, but some documents could not be linked to it.",
+        "problems_reason": "The proposal cannot be created until the issues found are fixed (ask the assistant again or create the document manually).",
+        "no_permission": "Creating requires permission to write to the journal."
       },
       "history": {
         "title": "Question history",

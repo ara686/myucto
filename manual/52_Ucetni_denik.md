@@ -1628,6 +1628,15 @@ Seznam a detail vidí uživatel s přístupem k účetnictví. Koncept zakládá
 kdo smí zapisovat ruční zápisy. Zaúčtování, storno a vytvoření dokladu nad ručním
 zápisem vyžadují oprávnění zaúčtovat v deníku.
 
+#### 52.14.15.6 Návrh od AI asistenta
+
+Interní doklad vám může připravit `Účetnictví → AI asistent`. Popište operaci vlastními
+slovy, například „přeúčtuj 5 000 z 518 na 501". Asistent vrátí náhled dokladu s řádky MD
+a D a součty, server ho zkontroluje stejnými pravidly jako zaúčtování ručního dokladu.
+Po potvrzení vznikne koncept, nebo rovnou zaúčtovaný doklad, stejnou cestou jako z formuláře
+**Nový interní doklad**. Podrobnosti v
+[AI extrakci, § 25.3](25_AI_extrakce.md#253-krok-za-krokem-nastavit-poskytovatele-ai).
+
 ## 52.15 Související kapitoly
 
 - [Průvodce účetního](50_Pruvodce_ucetniho.md) - jak se zápisy tvoří a kdy co dělat

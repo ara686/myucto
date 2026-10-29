@@ -82,6 +82,18 @@ Volitelné kroky:
   Navrhne-li asistent v odpovědi ostatní pohledávku nebo závazek, nabídne tlačítko **Založit v Ostatních pohledávkách
   a závazcích**. Po potvrzení vznikne pouze koncept, který po kontrole zaúčtujete sami. K založení potřebujete právo
   zapisovat do Ostatních pohledávek a závazků.
+- **Interní doklad od asistenta.** Na vnitřní účetní operace („přeúčtuj 5 000 z 518 na 501", „zaúčtuj odpisy",
+  „dohadná položka na energie", zápočet, kurzový rozdíl) asistent v podvojném účetnictví navrhne interní doklad: druh,
+  popis, datum účetního případu, datum dokladu a řádky MD a D s částkami, případně s dimenzemi firmy. Půjčky, nájem,
+  kauce a jiné pohledávky či závazky se sledováním úhrad navrhne jako ostatní pohledávku nebo závazek. Když z dotazu
+  nepozná, kam operace patří, nebo chybí částka či datum, zeptá se. Návrh zkontroluje server stejnými pravidly jako
+  zaúčtování ručního interního dokladu: účty musí být v účtové osnově firmy a aktivní k datu, strany MD a D vyrovnané,
+  účetní období otevřené a datum mimo zámek účtování, závěrkové účty ani podrozvaha proti rozvaze projít nemohou.
+  Nalezené chyby asistent vypíše u návrhu a tlačítka zůstanou neaktivní. Platný návrh uložíte tlačítkem **Uložit jako
+  koncept**, nebo ho tlačítkem **Založit a zaúčtovat** rovnou zaúčtujete s číslem z řady ID; po založení vede odkaz
+  **Otevřít doklad** na jeho detail. Dokumenty přiložené k dotazu se na doklad navážou. Návrh interního dokladu asistent
+  nabídne jen uživateli s právem zapisovat ruční zápisy, zaúčtovat ho lze jen s oprávněním zaúčtovat v deníku. Viz
+  [Interní doklady](52_Ucetni_denik.md#521415-interni-doklady).
 - **Smazání klíče.** Tlačítko **koš** u poskytovatele smaže jeho uložené přihlašovací údaje (po potvrzení). Pokud byl aktivní,
   extrakce přestane fungovat, dokud nenastavíte jiného poskytovatele nebo klíč nevložíte znovu.
 
