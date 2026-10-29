@@ -22682,8 +22682,8 @@
     "item_account": {
       "show": "Účty položek",
       "hide": "Skrýt účty položek",
-      "hint": "Výnosový účet jednotlivých položek. Prázdné pole = účet produktu, jeho kategorie, jinak předkontace faktury.",
-      "label": "Výnosový účet",
+      "hint": "Účet jednotlivých položek: výnosový, u přefakturace i rozvahový (kromě saldokontních, daňových a peněžních účtů). Prázdné pole = účet produktu, jeho kategorie, jinak předkontace faktury.",
+      "label": "Účet položky",
       "placeholder": "podle produktu / dokladu"
     },
     "title": "Vydané faktury",

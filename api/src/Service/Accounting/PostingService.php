@@ -2260,6 +2260,13 @@ final class PostingService
             return $this->ruleCode($supplierId, 'small_asset.sale.revenue', 'credit', '642');
         }
         if ($item['item_revenue_account'] !== null) {
+            if (($item['item_revenue_source'] ?? null) === 'item') {
+                try {
+                    return (string) $this->productDefaults()->validateIssuedItemAccount($supplierId, (string) $item['item_revenue_account'], $entryDate, $currentRead);
+                } catch (\InvalidArgumentException $e) {
+                    throw new PostingException('invalid_item_account', $e->getMessage(), 422);
+                }
+            }
             return $this->validateItemAccount($supplierId, (string) $item['item_revenue_account'], ProductPostingDefaults::KIND_REVENUE, $entryDate, $currentRead);
         }
         return $defaultAccount;
@@ -2286,8 +2293,10 @@ final class PostingService
             array_map(static fn (array $r): int => (int) ($r['stock_item_id'] ?? 0), $items),
         );
         foreach ($items as $i => $row) {
-            $items[$i]['item_revenue_account'] = ProductPostingDefaults::code($row['revenue_account_code'] ?? null)
-                ?? ($products[(int) ($row['stock_item_id'] ?? 0)]['revenue']['code'] ?? null);
+            $own = ProductPostingDefaults::code($row['revenue_account_code'] ?? null);
+            $product = $products[(int) ($row['stock_item_id'] ?? 0)]['revenue']['code'] ?? null;
+            $items[$i]['item_revenue_account'] = $own ?? $product;
+            $items[$i]['item_revenue_source'] = $own !== null ? 'item' : ($product !== null ? 'product' : null);
         }
         return $items;
     }
@@ -2463,7 +2472,7 @@ final class PostingService
     private function validatePurchaseDebitOverride(int $supplierId, string $code, string $entryDate, bool $currentRead): string
     {
         $code = trim($code);
-        if ($code === '' || preg_match('/^(?:311|321|314|324|325|33|34|221|211)/', $code) === 1) {
+        if ($code === '' || SettlementAccounts::isSettlement($code)) {
             throw new PostingException('invalid_override', 'Navržený účet nelze použít pro náklad přijaté faktury.', 422);
         }
         $query = $this->db->pdo()->prepare('SELECT * FROM ' . \MyInvoice\Repository\AccountDefinitionRepository::relation($entryDate, $supplierId, $currentRead) . ' a WHERE supplier_id=? AND account_code=?');

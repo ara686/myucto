@@ -2386,6 +2386,12 @@ final class ClosingService
             $contexts[$invoiceId] = $resolved + ['single' => count($posted) === 1 ? (string) $posted[0] : null];
         }
         $context = $contexts[$invoiceId];
+        // Řádek s rozvahovým nebo nákladovým účtem (přefakturace na 315/378) výnos není,
+        // takže se časově nerozlišuje ani při jediném výnosovém účtu dokladu.
+        $itemAccount = $context['accounts'][(int) $row['item_id']] ?? null;
+        if ($itemAccount !== null && !str_starts_with($itemAccount, '6')) {
+            return [0.0, []];
+        }
         $accounts = $context['single'] !== null
             ? [$context['single'] => 1.0]
             : ($context['mapped'][(int) $row['item_id']] ?? ['602' => 1.0]);

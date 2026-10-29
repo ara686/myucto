@@ -22682,8 +22682,8 @@
     "item_account": {
       "show": "Line accounts",
       "hide": "Hide line accounts",
-      "hint": "Revenue account of individual lines. Empty = product account, its category, otherwise the invoice posting template.",
-      "label": "Revenue account",
+      "hint": "Account of individual lines: a revenue account, or a balance sheet account for rebilling (except receivable, payable, tax and cash accounts). Empty = product account, its category, otherwise the invoice posting template.",
+      "label": "Line account",
       "placeholder": "by product / document"
     },
     "title": "Issued invoices",

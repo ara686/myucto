@@ -153,6 +153,27 @@ final class ClosingDeferredRevenueAccrualTest extends TestCase
         self::assertEqualsWithDelta(18200.00, (float) $preview['by_account']['604'], 0.001);
     }
 
+    public function testRebilledItemOnBalanceSheetAccountIsNotDeferred(): void
+    {
+        // Přefakturace na 378 s obdobím přes konec roku není výnos, uzávěrka ji neodkládá
+        // ani tehdy, když doklad nese jediný výnosový účet.
+        $invoiceId = $this->invoice('20910012', 73200.00, self::YEAR . '-07-01');
+        $this->item($invoiceId, 36600.00, '2091-07-01', '2092-06-30');
+        $rebillId = $this->item($invoiceId, 36600.00, '2091-07-01', '2092-06-30');
+        $this->db->pdo()->prepare('UPDATE invoice_items SET revenue_account_code = ? WHERE id = ?')->execute(['378', $rebillId]);
+        $this->posting->postDocument($this->supplierId, 'invoice', $invoiceId, [
+            ['account_code' => '311', 'side' => 'debit', 'amount' => 73200.00],
+            ['account_code' => '602', 'side' => 'credit', 'amount' => 36600.00],
+            ['account_code' => '378', 'side' => 'credit', 'amount' => 36600.00],
+        ], ['entry_date' => self::YEAR . '-07-01', 'posted' => true, 'posted_by' => $this->userId, 'user_id' => $this->userId]);
+
+        $preview = $this->closing->deferredRevenueAccrualPreview($this->supplierId, $this->periodId);
+
+        self::assertCount(1, $preview['items']);
+        self::assertEqualsWithDelta(18200.00, (float) $preview['total'], 0.001);
+        self::assertSame(['602'], array_map('strval', array_keys($preview['by_account'])));
+    }
+
     public function testRunPostsDeferralIdempotentlyAndCreditNoteReducesIt(): void
     {
         $invoiceId = $this->invoice('20910005', 36600.00, self::YEAR . '-07-01');

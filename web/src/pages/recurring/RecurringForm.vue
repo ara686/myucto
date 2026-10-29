@@ -1338,7 +1338,7 @@ async function submit() {
                 </div>
                 <label v-if="showItemAccounts && resultAccounts.available.value" class="mt-1.5 flex items-start gap-2 text-xs text-neutral-500">
                   <span class="whitespace-nowrap pt-2">{{ t('invoice.item_account.label') }}</span>
-                  <ChartAccountSelect v-model="it.revenue_account_code" :accounts="resultAccounts.revenueAccounts.value"
+                  <ChartAccountSelect v-model="it.revenue_account_code" :accounts="resultAccounts.issuedItemAccounts.value"
                     class="w-56 max-w-full" compact :placeholder="t('invoice.item_account.placeholder')" />
                 </label>
                 <p v-if="priceListEnabled && it.price_list_item_id" class="mt-1 text-xs text-neutral-500">
@@ -1485,7 +1485,7 @@ async function submit() {
               <input v-model="it.description" type="text" data-row-input="rec-item" :disabled="priceListEnabled && !!it.price_list_item_id && it.description_source === 'catalog'" class="w-full h-10 px-3 border border-neutral-300 rounded bg-surface text-sm disabled:bg-neutral-100" />
               <label v-if="showItemAccounts && resultAccounts.available.value" class="mt-1.5 block text-xs font-medium text-neutral-600">
                 <span class="mb-1 block">{{ t('invoice.item_account.label') }}</span>
-                <ChartAccountSelect v-model="it.revenue_account_code" :accounts="resultAccounts.revenueAccounts.value"
+                <ChartAccountSelect v-model="it.revenue_account_code" :accounts="resultAccounts.issuedItemAccounts.value"
                   compact :placeholder="t('invoice.item_account.placeholder')" />
               </label>
               <div v-if="docDims.enabled.value" class="mt-1.5">

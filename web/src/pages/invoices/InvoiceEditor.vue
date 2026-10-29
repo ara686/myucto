@@ -3332,7 +3332,7 @@ useWindowTitle(
                 <label v-if="showItemAccounts && itemAccountsAvailable && !item.asset_id && !item.small_asset_id"
                   class="mt-1.5 flex items-start gap-2 text-xs text-neutral-500" data-test="invoice-item-account">
                   <span class="whitespace-nowrap pt-2">{{ t('invoice.item_account.label') }}</span>
-                  <ChartAccountSelect v-model="item.revenue_account_code" :accounts="resultAccounts.revenueAccounts.value"
+                  <ChartAccountSelect v-model="item.revenue_account_code" :accounts="resultAccounts.issuedItemAccounts.value"
                     class="w-56 max-w-full" compact :placeholder="t('invoice.item_account.placeholder')" />
                 </label>
                 <div v-if="stockRowBaseQtyText(item) || stockRowPriceBadge(item)" data-test="stock-row-meta"
@@ -3572,7 +3572,7 @@ useWindowTitle(
               <label v-if="showItemAccounts && itemAccountsAvailable && !item.asset_id && !item.small_asset_id"
                 class="mt-1.5 block text-xs font-medium text-neutral-600">
                 <span class="mb-1 block">{{ t('invoice.item_account.label') }}</span>
-                <ChartAccountSelect v-model="item.revenue_account_code" :accounts="resultAccounts.revenueAccounts.value"
+                <ChartAccountSelect v-model="item.revenue_account_code" :accounts="resultAccounts.issuedItemAccounts.value"
                   compact :placeholder="t('invoice.item_account.placeholder')" />
               </label>
               <div v-if="stockRowBaseQtyText(item) || stockRowPriceBadge(item)" class="mt-1 flex flex-wrap items-center gap-1.5 text-xs">

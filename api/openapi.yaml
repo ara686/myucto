@@ -48511,7 +48511,7 @@ components:
           description: "FK na kartu dlouhodobého majetku (/accounting/assets). Výnos řádku jde na 641 (asset.sale.revenue) a po vystavení faktury se karta vyřadí (type=sold) včetně doúčtování zůstatkové ceny 541/08x."
         accrual_from: { type: [string, "null"], format: date, description: "Začátek období, do kterého výnos řádku patří (časové rozlišení výnosů 384). NULL = bez rozlišení." }
         accrual_to: { type: [string, "null"], format: date, description: "Konec období výnosu řádku. Část výnosu za koncem účetního období odloží uzávěrka na 384 (MD výnos / D 384) a v dalším roce ji rozpustí." }
-        revenue_account_code: { type: [string, "null"], maxLength: 10, example: "604", description: "Výnosový účet položky (třída 6). NULL = účet produktu (stock_item_id) > jeho kategorie > předkontace dokladu. Prodej majetku (asset_id / small_asset_id) má přednost." }
+        revenue_account_code: { type: [string, "null"], maxLength: 10, example: "604", description: "Účet položky: výnosový, nebo u přefakturace rozvahový či nákladový; saldokontní, daňové a peněžní účty (311, 314, 321, 324, 325, 33x, 34x, 211, 221) nejsou povolené. NULL = účet produktu (stock_item_id) > jeho kategorie > předkontace dokladu. Prodej majetku (asset_id / small_asset_id) má přednost." }
         small_asset_name: { type: [string, "null"], description: "Název navázané karty drobného majetku (read-only, z JOINu)." }
         asset_name: { type: [string, "null"], description: "Název navázané karty dlouhodobého majetku (read-only, z JOINu)." }
         oss_applicable: { type: boolean }
@@ -48582,7 +48582,7 @@ components:
         revenue_account_code:
           type: [string, "null"]
           maxLength: 10
-          description: "Výnosový účet položky (třída 6, aktivní účet rozvrhu firmy), jinak 400 validation_failed. Vynecháno/NULL = účet produktu > kategorie > předkontace dokladu při zaúčtování. Kopie, dobropis, vyúčtování proformy i pravidelná fakturace ho přenášejí. Round-trip: uložení položek je DELETE + INSERT, nepošlete-li ho zpět, zanikne."
+          description: "Účet položky (aktivní účet rozvrhu firmy mimo saldokontní, daňové a peněžní účty 311, 314, 321, 324, 325, 33x, 34x, 211, 221), jinak 400 validation_failed. Kromě výnosu smí být i rozvahový nebo nákladový (přefakturace). Vynecháno/NULL = účet produktu > kategorie > předkontace dokladu při zaúčtování. Kopie, dobropis, vyúčtování proformy i pravidelná fakturace ho přenášejí. Round-trip: uložení položek je DELETE + INSERT, nepošlete-li ho zpět, zanikne."
         oss_applicable: { type: boolean, default: false }
         oss_consumer_country: { type: [string, "null"], minLength: 2, maxLength: 2 }
         oss_rate_type: { type: [string, "null"], enum: [standard, reduced, second_reduced, parking, null] }
@@ -48695,7 +48695,7 @@ components:
               oss_supply_type: { type: [string, "null"], enum: [goods, services, null] }
               stock_item_id: { type: [integer, "null"], description: "Skladová karta položky; generátor ji přenese na fakturu." }
               warehouse_id: { type: [integer, "null"] }
-              revenue_account_code: { type: [string, "null"], maxLength: 10, description: "Výnosový účet položky (třída 6) přenášený na vygenerovanou fakturu. NULL = produkt > kategorie > předkontace." }
+              revenue_account_code: { type: [string, "null"], maxLength: 10, description: "Účet položky (výnosový, u přefakturace i rozvahový) přenášený na vygenerovanou fakturu. NULL = produkt > kategorie > předkontace." }
 
     RecurringTemplateInput:
       type: object
@@ -48794,7 +48794,7 @@ components:
               revenue_account_code:
                 type: [string, "null"]
                 maxLength: 10
-                description: "Výnosový účet položky (třída 6, aktivní účet rozvrhu firmy), jinak 400. Vygenerovaná faktura ho dostane; účet, který mezitím z rozvrhu zmizel, se při generování vynechá. Dimenze šablony se ukládají přes /api/v1/accounting/dimensions/documents/recurring-templates/{id} a generátor je zkopíruje na fakturu."
+                description: "Účet položky (aktivní účet rozvrhu firmy mimo saldokontní, daňové a peněžní účty), jinak 400. Vygenerovaná faktura ho dostane; účet, který mezitím z rozvrhu zmizel, se při generování vynechá. Dimenze šablony se ukládají přes /api/v1/accounting/dimensions/documents/recurring-templates/{id} a generátor je zkopíruje na fakturu."
               oss_applicable:
                 type: boolean
                 default: false

@@ -1729,7 +1729,7 @@ final class InvoiceRepository
         if ($bad !== []) {
             throw new \InvalidArgumentException(\MyInvoice\Http\TenantReferenceGuard::message($bad));
         }
-        // Výnosový účet položky (F1, migrace 1948): v rozvrhu firmy, aktivní, třída 6.
+        // Účet položky (F1, migrace 1948): v rozvrhu firmy, aktivní, mimo saldokonto.
         // Ověří se PŘED smazáním starých řádků, chyba nechá fakturu netknutou.
         $revenueAccounts = [];
         $productDefaults = new \MyInvoice\Service\Accounting\Product\ProductPostingDefaults($this->db);
@@ -1738,10 +1738,9 @@ final class InvoiceRepository
                 continue;   // slevový řádek se generuje níž, účet dědí; textový žádný nemá
             }
             try {
-                $revenueAccounts[$i] = $productDefaults->validateAccount(
+                $revenueAccounts[$i] = $productDefaults->validateIssuedItemAccount(
                     $ownerId,
                     $item['revenue_account_code'] ?? null,
-                    \MyInvoice\Service\Accounting\Product\ProductPostingDefaults::KIND_REVENUE,
                 );
             } catch (\InvalidArgumentException $e) {
                 throw new \InvalidArgumentException('Položka ' . ($i + 1) . ': ' . $e->getMessage(), 0, $e);
