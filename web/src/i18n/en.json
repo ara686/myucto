@@ -18674,6 +18674,13 @@
       "account": "Account",
       "total": "Total"
     },
+    "accrual_spread": {
+      "toggle": "Interim accruals",
+      "toggle_hint": "Counts expenses and revenues of documents with a from–to period only pro rata by days up to the reporting date and shows the rest as prepaid expenses (381) and deferred revenue (384). Nothing is posted to the journal.",
+      "note_title": "Interim accruals outside the journal.",
+      "note": "Expenses and revenues of documents with a from–to period are spread pro rata by days up to the reporting date. Prepaid expenses (381): {prepaid}, deferred revenue (384): {deferred}, documents adjusted: {documents}. The adjustment is not posted to the journal; the Accruals step of the year-end closing posts it.",
+      "skipped_dimension": "A statement filtered by a dimension value does not apply interim accruals and shows the journal balances."
+    },
     "balance_sheet": {
       "title": "Balance sheet",
       "subtitle": "Balance sheet in the structure of annex 1 of decree no. 500/2002 Coll.",

@@ -18674,6 +18674,13 @@
       "account": "Účet",
       "total": "Celkem"
     },
+    "accrual_spread": {
+      "toggle": "Průběžné časové rozlišení",
+      "toggle_hint": "Náklady a výnosy dokladů s obdobím od–do započte k rozvahovému dni jen poměrně podle dnů, zbytek ukáže jako náklady (381) a výnosy (384) příštích období. Do deníku se nic nezapisuje.",
+      "note_title": "Průběžné časové rozlišení mimo deník.",
+      "note": "Náklady a výnosy dokladů s obdobím od–do jsou rozložené poměrně podle dnů do rozvahového dne. Na náklady příštích období (381) jde {prepaid}, na výnosy příštích období (384) {deferred}, upravených dokladů: {documents}. Úprava není zaúčtovaná v deníku; v účetnictví ji zaúčtuje až krok uzávěrky Časové rozlišení.",
+      "skipped_dimension": "Výkaz za hodnotu dimenze průběžné časové rozlišení neuplatní a ukazuje stav deníku."
+    },
     "balance_sheet": {
       "title": "Rozvaha",
       "subtitle": "Rozvaha ve struktuře přílohy 1 vyhlášky č. 500/2002 Sb.",

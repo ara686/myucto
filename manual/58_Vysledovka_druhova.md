@@ -30,9 +30,10 @@ Cesta: `Účetnictví → Výkaz zisku a ztráty`. Výkaz je dostupný jen pro p
 3. V poli **Sestaveno k** zvolte datum. Prázdná hodnota znamená dřívější z posledního dne období a dneška.
 4. V poli **Rozsah** ponechte **Automaticky (dle kategorie ÚJ)**, nebo zvolte plný či zkrácený rozsah.
 5. Podle potřeby přepněte **Kč / tis. Kč**. PDF a XLSX zůstávají v korunách.
-6. Pod výkazem zkontrolujte **Výsledek hospodaření za účetní období** a **Čistý obrat za účetní období**.
-7. Řádek rozbalte kliknutím. Uvidíte přímo namapované účty a jejich příspěvky. Kód účtu otevře opis od začátku období do data sestavení.
-8. Klikněte na **Export PDF** nebo **Export XLSX**.
+6. Posíláte-li průběžnou výsledovku klientovi, zaškrtněte **Průběžné časové rozlišení**. Náklady a výnosy dokladů s obdobím od–do se pak započtou jen poměrnou částí do data **Sestaveno k** (viz [§ 58.7.7](#5877-prubezne-casove-rozliseni)).
+7. Pod výkazem zkontrolujte **Výsledek hospodaření za účetní období** a **Čistý obrat za účetní období**.
+8. Řádek rozbalte kliknutím. Uvidíte přímo namapované účty a jejich příspěvky. Kód účtu otevře opis od začátku období do data sestavení.
+9. Klikněte na **Export PDF** nebo **Export XLSX**.
 
 **Jak poznáte, že je hotovo:** Výkaz má vyplněné řádky, výsledek hospodaření odpovídá výsledku z výsledkových účtů a nad tabulkou není upozornění na nezařazený účet.
 
@@ -235,6 +236,38 @@ zbytku roku odhad neobsahuje, jde o uzávěrku k dnešnímu stavu účetnictví.
 U každého řádku je odkaz na stránku, ze které číslo pochází. Blok se
 nezobrazí u fyzické osoby, v uzavřeném roce, při filtru dimenze ani
 uživateli bez práva na přiznání k dani z příjmů.
+
+### 58.7.7 Průběžné časové rozlišení
+
+Přijatá faktura s obdobím od–do (pojistné, předplatné, nájem) jde při
+zaúčtování celá do nákladu dne dokladu, vydaná faktura s obdobím celá do výnosu.
+Část, která patří do dalších měsíců, odloží na účty 381 a 384 až krok uzávěrky
+**Časové rozlišení** ([kap. 72](72_Uzaverka.md)). Průběžná výsledovka je proto
+v měsíci dokladu zatížená celým nákladem či výnosem.
+
+Volba **Průběžné časové rozlišení** výkaz k datu **Sestaveno k** sestaví tak,
+jako by uzávěrka proběhla k tomu dni:
+
+- do nákladů a výnosů se započte jen poměrná část období do data **Sestaveno k**
+  včetně, podle počtu dnů, stejně jako v kroku uzávěrky,
+- zbytek je v rozvaze jako **náklady příštích období** (381) a **výnosy příštích
+  období** (384); období celé po datu jde na 381/384 celé,
+- výsledek hospodaření běžného období v rozvaze se upraví o totéž, takže rozvaha
+  dál bilancuje.
+
+Upravují se jen doklady zaúčtované od začátku období do data **Sestaveno k**.
+Doklad, jehož odklad už je v deníku (zaúčtovaný krok uzávěrky k tomuto dni,
+rozpuštění z minulého roku, faktura rozúčtovaná rovnou na 381/384 nebo ruční
+interní doklad k faktuře), se znovu neupravuje. Účet nákladu či výnosu je ten,
+na který doklad zaúčtoval řádek, včetně analytik účtotvorné dimenze. Stejné
+pravidlo platí pro sloupec **Minulé období** k jeho konci.
+
+Do deníku se nic nezapisuje a uzávěrka zůstává stejná. Nad výkazem je poznámka
+s částkami na 381 a 384 a počtem upravených dokladů, totéž je v záhlaví PDF a XLSX.
+Volba je výchozí vypnutá, aplikace si ji pamatuje pro každého uživatele a platí
+společně pro výsledovku v obou členěních i pro rozvahu. Výkaz za hodnotu dimenze
+a výkazy podle vyhlášky 504 ji neuplatní. Podání účetní závěrky, přiznání
+k dani z příjmů, uzávěrka ani kontroly ji nepoužívají nikdy.
 
 ## 58.8 Související kapitoly
 

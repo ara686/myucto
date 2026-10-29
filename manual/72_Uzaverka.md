@@ -195,6 +195,8 @@ Oba kroky fungují stejně. Jde o asistenta pro ruční zaúčtování rozvahov�
 - u **výnosů příštích období** se nabídnou řádky vydaných faktur s vyplněným obdobím výnosu přesahujícím rozvahový den, jejichž zápis leží v uzavíraném roce. Aplikace vypočte poměrně podle dnů část připadající na další období a po potvrzení ji zaúčtuje na vrub výnosového účtu, na který se faktura zaúčtovala, a ve prospěch 384. Dobropis se stejným obdobím odklad sníží. Otevření dalšího roku odloženou část rozpustí zpět do výnosů (víceleté plnění po ročních tranších),
 - pro **drobný majetek** zvolíte politiku **Bez rozlišení**, **Poměrně dle data pořízení** (poměr podle budoucí, nespotřebované doby užitku), nebo **Paušální %** (pevné procento). Náhled porovná cenu karet s rozpisem nákladů 501 a po potvrzení vytvoří časové rozlišení na 381. Politika se ukládá per období (ne per firma).
 
+Během roku, ještě před uzávěrkou, ukáže stejný odklad nákladů a výnosů příštích období výsledovka a rozvaha s volbou **Průběžné časové rozlišení** ([§ 58.7.7](58_Vysledovka_druhova.md#5877-prubezne-casove-rozliseni)). Počítá se stejným pravidlem jako tento krok, ale jen ve výkazu, do deníku nic nezapisuje. Po zaúčtování kroku výkaz k rozvahovému dni doklady s už zaúčtovaným odkladem neupravuje.
+
 **Jak poznáte, že je hotovo:** U kroku je datum potvrzení a zápisy jsou v seznamu vytvořených zápisů.
 
 > [!WARNING]
