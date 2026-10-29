@@ -99,7 +99,8 @@ final class PurchaseSettledExpr
      *
      *   - Stejná měna transakce a dokladu → částka párování, jak je.
      *   - Korunový pohyb k cizoměnovému dokladu → úhrada CELÉHO nominálu, pokud se pohyb
-     *     vejde do kurzové tolerance ({@see FxPaymentSettlement::matchTolerance()}). Přesně
+     *     vejde do kurzové tolerance ({@see FxPaymentSettlement::matchTolerance()}, u platby
+     *     kartou širší). Přesně
      *     tak ho zaúčtuje banka: 321 jde ven v nominálu kurzem předpisu a rozdíl je kurzový
      *     (`BankPostingService::buildOutgoingCzkCardFx`). Mimo toleranci se přepočte kurzem
      *     dokladu — pak jde o skutečnou částečnou úhradu.
@@ -146,7 +147,8 @@ final class PurchaseSettledExpr
             $d,
             $nominalLocal,
             self::sqlNumber(FxPaymentSettlement::AMOUNT_TOLERANCE),
-            self::sqlNumber(FxPaymentSettlement::MATCH_TOLERANCE_PCT),
+            "(CASE WHEN {$bt}.card_last4 IS NOT NULL THEN " . self::sqlNumber(FxPaymentSettlement::CARD_MATCH_TOLERANCE_PCT)
+                . ' ELSE ' . self::sqlNumber(FxPaymentSettlement::MATCH_TOLERANCE_PCT) . ' END)',
             $bt,
             "(CASE WHEN {$bt}.amount > 0 THEN -1 ELSE 1 END)",
         );

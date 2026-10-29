@@ -279,7 +279,8 @@ final class BankPostingBackfill
                                           AND UPPER(COALESCE(NULLIF(bt.currency, ''), NULLIF(bs.currency, ''))) = 'CZK'
                                           AND UPPER(pic.code) <> 'CZK' AND pi.exchange_rate > 0
                                           AND ABS(ABS(bt.amount) - pi.amount_to_pay * pi.exchange_rate)
-                                              <= GREATEST(?, pi.amount_to_pay * pi.exchange_rate * ?)
+                                              <= GREATEST(?, pi.amount_to_pay * pi.exchange_rate
+                                                             * CASE WHEN bt.card_last4 IS NOT NULL THEN ? ELSE ? END)
                                       )
                                   )
                                   AND ABS(pm.amount - ABS(bt.amount)) < 0.005
@@ -301,6 +302,7 @@ final class BankPostingBackfill
                 $supplierId,
                 FxPaymentSettlement::AMOUNT_TOLERANCE,
                 FxPaymentSettlement::AMOUNT_TOLERANCE,
+                FxPaymentSettlement::CARD_MATCH_TOLERANCE_PCT,
                 FxPaymentSettlement::MATCH_TOLERANCE_PCT,
                 $supplierId,
             ],

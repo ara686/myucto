@@ -1070,7 +1070,14 @@ final class BankPostingService
         $foreign = round((float) $remainingStmt->fetchColumn(), 2);
         $docRate = (float) ($purchase['exchange_rate'] ?? 0) > 0.0 ? (float) $purchase['exchange_rate'] : $rate;
         if ($foreign <= 0.005
-            || !FxPaymentSettlement::isFullCzkSettlement($bankCzk, $foreign, (string) $purchase['currency'], $docRate, FxPaymentSettlement::LOCAL_CURRENCY)
+            || !FxPaymentSettlement::isFullCzkSettlement(
+                $bankCzk,
+                $foreign,
+                (string) $purchase['currency'],
+                $docRate,
+                FxPaymentSettlement::LOCAL_CURRENCY,
+                ($tx['card_last4'] ?? null) !== null,
+            )
         ) {
             throw new PostingException(
                 'cross_currency',
@@ -1593,6 +1600,17 @@ final class BankPostingService
         $payable = $rule['debit_account_code'] ?? '321';
         $bankAcc = $cashAccount ?? ($rule['credit_account_code'] ?? '221');
 
+        if (count($allocations) === 1) {
+            $purchase = $this->loadPurchase($supplierId, (int) $allocations[0]['purchase_invoice_id']);
+            $purchaseCurrency = strtoupper((string) ($purchase['currency'] ?? ''));
+            if ($purchase !== null && $purchaseCurrency !== 'CZK' && $purchaseCurrency !== $currency) {
+                return $this->buildOutgoingCrossCurrencyFx(
+                    $supplierId, $tx, $purchase, round((float) $allocations[0]['amount'], 2),
+                    (string) $payable, (string) $bankAcc,
+                );
+            }
+        }
+
         $paymentRate = $this->paymentRateForDay($supplierId, $currency, (string) $tx['posted_at']);
         $bankCzk = round($absForeign * $paymentRate, 2);
 
@@ -1613,6 +1631,79 @@ final class BankPostingService
         $this->assertFxAllocation($absForeign, round($allocForeignSum, 2));
         $remainderCzk = round(($absForeign - round($allocForeignSum, 2)) * $paymentRate, 2);
         $this->appendFxDifference($lines, $supplierId, (string) $tx['posted_at'], $remainderCzk, false);
+        return ['lines' => $lines];
+    }
+
+    /**
+     * Úhrada přijaté faktury v jedné cizí měně z účtu v jiné cizí měně (dolarová služba
+     * zaplacená kartou z eurového účtu). Závazek 321 se odúčtuje v nominálu zbytku dokladu
+     * kurzem předpisu, banka v CZK hodnotě skutečně odepsané cizí částky kurzem dne úhrady,
+     * obě nohy s cizoměnovou stopou své měny. Rozdíl je kurzový zisk/ztráta 563/663.
+     *
+     * Celý zbytek smí platba vypořádat jen doloženě: banka uvádí původní částku nákupu
+     * v měně dokladu a ta zbytek pokrývá, nebo CZK hodnota platby leží v kurzové toleranci
+     * od CZK hodnoty závazku (u karty širší). Jinak jde o částečnou nebo cizí úhradu
+     * a návrh zůstane k ručnímu ověření (`cross_currency`).
+     *
+     * @param array<string,mixed> $tx
+     * @param array<string,mixed> $purchase
+     * @return array{lines:list<array<string,mixed>>}
+     */
+    private function buildOutgoingCrossCurrencyFx(
+        int $supplierId,
+        array $tx,
+        array $purchase,
+        float $allocated,
+        string $payable,
+        string $bankAcc,
+    ): array {
+        $purchaseId = (int) $purchase['id'];
+        $currency = $this->effectiveCurrency($tx);
+        $absForeign = round(abs((float) $tx['amount']), 2);
+        if ((string) $purchase['document_kind'] === 'advance' || (float) ($purchase['amount_to_pay'] ?? 0) <= 0.0) {
+            throw new PostingException('fx_not_supported', 'Křížovou měnu této přijaté faktury nelze automaticky zaúčtovat.');
+        }
+        $this->assertFxAllocation($absForeign, $allocated);
+
+        $saldo = $this->predpisSaldo($supplierId, $this->predpis(
+            $supplierId, 'purchase_invoice', $purchaseId, false,
+            'Přijatá faktura #' . $purchaseId . ' nemá zaúčtovaný předpis.',
+        ), $this->purchasePayable($supplierId, $purchaseId, $payable));
+        $rate = $this->predpisFxRate($supplierId, $saldo, $purchase);
+
+        $settled = PurchaseSettledExpr::settled('pi', excludeBankTransactionId: (int) $tx['id']);
+        $remainingStmt = $this->db->pdo()->prepare(
+            "SELECT pi.amount_to_pay - ({$settled}) FROM purchase_invoices pi WHERE pi.id = ? AND pi.supplier_id = ?"
+        );
+        $remainingStmt->execute([$purchaseId, $supplierId]);
+        $foreign = round((float) $remainingStmt->fetchColumn(), 2);
+
+        $paymentRate = $this->paymentRateForDay($supplierId, $currency, (string) $tx['posted_at']);
+        $bankCzk = round($absForeign * $paymentRate, 2);
+        $predpisCzk = FxPaymentSettlement::expectedLocalAmount($foreign, $rate);
+
+        $documentCurrency = strtoupper((string) $purchase['currency']);
+        $original = strtoupper((string) ($tx['original_currency'] ?? '')) === $documentCurrency
+            ? round(abs((float) ($tx['original_amount'] ?? 0)), 2)
+            : null;
+        $covers = $original !== null
+            ? abs($original - $foreign) < 0.005
+            : abs($bankCzk - $predpisCzk) <= FxPaymentSettlement::matchTolerance(
+                $predpisCzk,
+                card: ($tx['card_last4'] ?? null) !== null,
+            );
+        if ($foreign <= 0.005 || !$covers) {
+            throw new PostingException(
+                'cross_currency',
+                'Platba v ' . $currency . ' nepokrývá zbytek přijaté faktury #' . $purchaseId . ' v ' . $documentCurrency . ' - vyžaduje ruční ověření.',
+            );
+        }
+
+        $lines = [
+            $this->withFxTrace($this->line($saldo['code'], 'debit', $predpisCzk), $documentCurrency, $rate, $foreign),
+            $this->withFxTrace($this->line($bankAcc, 'credit', $bankCzk), $currency, $paymentRate, $absForeign),
+        ];
+        $this->appendFxDifference($lines, $supplierId, (string) $tx['posted_at'], 0.0, false);
         return ['lines' => $lines];
     }
 
@@ -4509,7 +4600,7 @@ final class BankPostingService
         $pdo = $this->db->pdo();
         $stmt = $pdo->prepare(
             "SELECT bt.id, bt.source, bt.amount, bt.currency AS tx_currency, bt.match_status, bt.posted_at,
-                    bs.currency AS statement_currency,
+                    bt.card_last4, bs.currency AS statement_currency,
                     pm.id AS match_id, pm.invoice_id, pm.purchase_invoice_id, pm.amount AS allocated,
                     pm.match_type, pm.match_confidence,
                     pi.status, pi.amount_to_pay, pi.rounding, pi.exchange_rate, cur.code AS invoice_currency
@@ -4561,7 +4652,7 @@ final class BankPostingService
             && FxPaymentSettlement::isCzkPaymentOfForeignInvoice($txCurrency, $invoiceCurrency)
             && ($manualMatch || $confidence >= 60)
             && $expectedCzk > 0.0
-            && abs($txAmount - $expectedCzk) <= FxPaymentSettlement::matchTolerance($expectedCzk);
+            && abs($txAmount - $expectedCzk) <= FxPaymentSettlement::matchTolerance($expectedCzk, card: $row['card_last4'] !== null);
         if ((string) $row['source'] !== 'statement'
             || ($refund ? (float) $row['amount'] <= 0.0 : (float) $row['amount'] >= 0.0)
             // auto_exact patří do seznamu taky: rozdíl do EXACT_MATCH_TOLERANCE (0,05) sice

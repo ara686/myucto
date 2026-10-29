@@ -408,10 +408,10 @@ final class StatementImporter
 
         $insertTx = $pdo->prepare(
             'INSERT INTO bank_transactions
-                 (statement_id, posted_at, amount, currency, variable_symbol, constant_symbol, specific_symbol,
+                 (statement_id, posted_at, amount, currency, original_amount, original_currency, variable_symbol, constant_symbol, specific_symbol,
                   counterparty_account, counterparty_bank, counterparty_name, card_last4, description, bank_ref, import_fingerprint, portable_fingerprint,
                   processing_pending_at)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
         );
         $pendingSince = StatementProcessingState::pendingSince();
         $findDuplicateTx = $pdo->prepare(
@@ -475,6 +475,7 @@ final class StatementImporter
             try {
                 $insertTx->execute([
                     $statementId, $tx['posted_at'], $tx['amount'], $txCurrency,
+                    $tx['original_amount'] ?? null, $tx['original_currency'] ?? null,
                     $tx['variable_symbol'], $tx['constant_symbol'], $tx['specific_symbol'],
                     $tx['counterparty_account'], $tx['counterparty_bank'], $tx['counterparty_name'],
                     \MyInvoice\Service\Bank\Card\CardNumberMask::forParsedTransaction($tx),

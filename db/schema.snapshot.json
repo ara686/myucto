@@ -1115,7 +1115,8 @@
         "2211_payroll_student_tax_credit.sql",
         "2212_payroll_2027_preschool_benefits_tips.sql",
         "2213_payroll_jmhz_2027_sources.sql",
-        "2214_payroll_preschool_credit_documents.sql"
+        "2214_payroll_preschool_credit_documents.sql",
+        "2215_bank_card_original_amount_merchant_map.sql"
     ],
     "tables": {
         "abra_flexi_connections": {
@@ -2741,6 +2742,31 @@
             },
             "checks": []
         },
+        "bank_card_merchant_map": {
+            "type": "BASE TABLE",
+            "engine": "InnoDB",
+            "collation": "utf8mb4_unicode_ci",
+            "columns": {
+                "client_id": "bigint(20) unsigned NOT NULL",
+                "created_at": "timestamp NOT NULL DEFAULT current_timestamp()",
+                "id": "int(10) unsigned NOT NULL AUTO_INCREMENT",
+                "last_match_at": "datetime NULL DEFAULT NULL",
+                "manual_count": "smallint(5) unsigned NOT NULL DEFAULT 0",
+                "merchant_key": "varchar(190) NOT NULL",
+                "supplier_id": "int(10) unsigned NOT NULL",
+                "updated_at": "timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE CURRENT_TIMESTAMP()"
+            },
+            "indexes": {
+                "PRIMARY": "UNIQUE BTREE (id)",
+                "fk_bcmm_client": "BTREE (client_id)",
+                "uq_bcmm_merchant_client": "UNIQUE BTREE (supplier_id, merchant_key, client_id)"
+            },
+            "foreign_keys": {
+                "fk_bcmm_client": "(client_id) -> clients (id) ON UPDATE RESTRICT ON DELETE CASCADE",
+                "fk_bcmm_supplier": "(supplier_id) -> supplier (id) ON UPDATE RESTRICT ON DELETE CASCADE"
+            },
+            "checks": []
+        },
         "bank_connections": {
             "type": "BASE TABLE",
             "engine": "InnoDB",
@@ -3570,6 +3596,8 @@
                 "matched_at": "timestamp NULL DEFAULT NULL",
                 "matched_by": "bigint(20) unsigned NULL DEFAULT NULL",
                 "matched_invoice_id": "bigint(20) unsigned NULL DEFAULT NULL",
+                "original_amount": "decimal(14,2) NULL DEFAULT NULL",
+                "original_currency": "char(3) NULL DEFAULT NULL",
                 "portable_fingerprint": "char(64) NULL DEFAULT NULL",
                 "posted_at": "date NOT NULL",
                 "processing_error": "varchar(500) NULL DEFAULT NULL",

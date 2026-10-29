@@ -2381,7 +2381,7 @@ final class BankStatementAction
 
         // Efektivní měna transakce = měna transakce, jinak měna výpisu (= měna účtu), jinak CZK.
         $stmt = $pdo->prepare(
-            "SELECT bt.amount, bt.posted_at,
+            "SELECT bt.amount, bt.posted_at, bt.card_last4,
                     UPPER(COALESCE(NULLIF(bt.currency,''), NULLIF(bs.currency,''), 'CZK')) AS ccy
                FROM bank_transactions bt
                JOIN bank_statements bs ON bs.id = bt.statement_id
@@ -2408,14 +2408,14 @@ final class BankStatementAction
             return Json::ok($response, ['candidates' => $candidates, 'fallback' => false]);
         }
 
-        $candidates = $this->searchMatchCandidates($sid, $posted, $txAmount, $txCcy, self::CANDIDATE_DAY_WINDOW, false);
+        $candidates = $this->searchMatchCandidates($sid, $posted, $txAmount, $txCcy, self::CANDIDATE_DAY_WINDOW, false, ($tx['card_last4'] ?? null) !== null);
         if (RequestAuthorization::isClientType($request)) {
             $candidates = array_values(array_filter($candidates, static fn (array $candidate): bool => ClientBankAccess::canRead($request, (string) $candidate['type'])));
         }
         $fallback = false;
         if ($candidates === []) {
             $fallback = true;
-            $candidates = $this->searchMatchCandidates($sid, $posted, $txAmount, $txCcy, self::CANDIDATE_FALLBACK_DAY_WINDOW, true);
+            $candidates = $this->searchMatchCandidates($sid, $posted, $txAmount, $txCcy, self::CANDIDATE_FALLBACK_DAY_WINDOW, true, ($tx['card_last4'] ?? null) !== null);
         }
 
         if (RequestAuthorization::isClientType($request)) {
@@ -2429,7 +2429,7 @@ final class BankStatementAction
      *   converted_amount:?float,converted_currency:?string,issue_date:string,due_date:string,
      *   party:?string,paid:bool,currency_mismatch:bool}>
      */
-    private function searchMatchCandidates(int $sid, string $posted, float $txAmount, string $txCcy, int $win, bool $allowRawAmountFallback): array
+    private function searchMatchCandidates(int $sid, string $posted, float $txAmount, string $txCcy, int $win, bool $allowRawAmountFallback, bool $card = false): array
     {
         $pdo = $this->db->pdo();
 
@@ -2489,7 +2489,7 @@ final class BankStatementAction
             } elseif ($txCcy === $local) {
                 // Cizoměnová faktura placená v CZK → přepočet kurzem faktury (CZK = částka × kurz).
                 $expected = FxPaymentSettlement::expectedLocalAmount($invMag, $rate);
-                $tol = FxPaymentSettlement::matchTolerance($expected, $absTol);
+                $tol = FxPaymentSettlement::matchTolerance($expected, $absTol, $card);
                 $converted = $expected;
             } elseif ($allowRawAmountFallback) {
                 // Fallback (nic nesedí přesně): porovnej syrovou magnitudu BEZ FX převodu —
@@ -4244,7 +4244,7 @@ final class BankStatementAction
         }
         // Load transaction for amount + posted_at
         $tx = $pdo->prepare(
-            'SELECT bt.posted_at, bt.amount, bt.statement_id,
+            'SELECT bt.posted_at, bt.amount, bt.statement_id, bt.card_last4,
                     COALESCE(NULLIF(bt.currency, ""), NULLIF(bs.currency, "")) AS currency
                FROM bank_transactions bt
                JOIN bank_statements bs ON bs.id = bt.statement_id
@@ -4368,7 +4368,14 @@ final class BankStatementAction
                 // i automatické párování). Menší platba nechá doklad částečně uhrazený a UI
                 // nabídne rozdíl vyrovnat zápočtem proti účtu. Sloučená úhrada
                 // (manualMatchPurchaseSplit) nesoulad odmítá celou, proto ji to netýká.
-                $settlesFully = FxPaymentSettlement::settlesRemaining($absAmount, $remaining, $docCurrency, $docRate, $txCurrency);
+                $settlesFully = FxPaymentSettlement::settlesRemaining(
+                    $absAmount,
+                    $remaining,
+                    $docCurrency,
+                    $docRate,
+                    $txCurrency,
+                    ($txRow['card_last4'] ?? null) !== null,
+                );
             }
 
             // Mark purchase paid — jen pokud ještě není (ručně zaplacenou jen navážeme,

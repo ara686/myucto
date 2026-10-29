@@ -361,7 +361,7 @@ final class GlobalSeedTables
         'attachment_checks',
         'automation_recommendation_coverage', 'automation_recommendation_items',
         'automation_recommendation_snapshots',
-        'bank_api_evidence_months', 'bank_api_months', 'bank_connector_cooldowns', 'bank_counterparty_map',
+        'bank_api_evidence_months', 'bank_api_months', 'bank_card_merchant_map', 'bank_connector_cooldowns', 'bank_counterparty_map',
         'bank_counterparty_observations', 'bank_email_attachment_ingests', 'bank_email_processed_messages',
         'bank_match_audit', 'bank_match_suggestions', 'bank_payment_order_submissions', 'bank_payment_submission_items',
         'bank_posting_suggestions', 'bank_statements', 'bank_transaction_imports', 'bank_transactions',

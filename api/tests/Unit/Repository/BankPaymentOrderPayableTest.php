@@ -20,7 +20,7 @@ final class BankPaymentOrderPayableTest extends TestCase
         $pdo->exec('CREATE TABLE payment_order_items (payment_order_id INTEGER, purchase_invoice_id INTEGER, amount NUMERIC, invoice_id INTEGER, tax_submission_id INTEGER, tax_advance_schedule_id INTEGER)');
         $pdo->exec('CREATE TABLE invoices (id INTEGER, supplier_id INTEGER, currency_id INTEGER, invoice_type TEXT, status TEXT, payment_method TEXT, amount_to_pay NUMERIC, parent_invoice_id INTEGER)');
         $pdo->exec('CREATE TABLE payment_matches (supplier_id INTEGER, purchase_invoice_id INTEGER, amount NUMERIC, bank_transaction_id INTEGER)');
-        $pdo->exec('CREATE TABLE bank_transactions (id INTEGER, statement_id INTEGER, currency TEXT, amount NUMERIC)');
+        $pdo->exec('CREATE TABLE bank_transactions (id INTEGER, statement_id INTEGER, currency TEXT, amount NUMERIC, card_last4 TEXT)');
         $pdo->exec('CREATE TABLE bank_statements (id INTEGER, currency TEXT)');
         $pdo->exec('CREATE TABLE cash_documents (id INTEGER, supplier_id INTEGER, purchase_invoice_id INTEGER, doc_type TEXT, status TEXT, total_amount NUMERIC, currency_code TEXT, amount_foreign NUMERIC)');
         $pdo->exec('CREATE TABLE offset_agreements (id INTEGER, status TEXT)');
@@ -63,7 +63,7 @@ final class BankPaymentOrderPayableTest extends TestCase
         $pdo->exec('CREATE TABLE payment_order_items (payment_order_id INTEGER, purchase_invoice_id INTEGER, amount NUMERIC, invoice_id INTEGER, tax_submission_id INTEGER, tax_advance_schedule_id INTEGER)');
         $pdo->exec('CREATE TABLE invoices (id INTEGER, supplier_id INTEGER, currency_id INTEGER, invoice_type TEXT, status TEXT, payment_method TEXT, amount_to_pay NUMERIC, parent_invoice_id INTEGER)');
         $pdo->exec('CREATE TABLE payment_matches (supplier_id INTEGER, purchase_invoice_id INTEGER, amount NUMERIC, bank_transaction_id INTEGER)');
-        $pdo->exec('CREATE TABLE bank_transactions (id INTEGER, statement_id INTEGER, currency TEXT, amount NUMERIC)');
+        $pdo->exec('CREATE TABLE bank_transactions (id INTEGER, statement_id INTEGER, currency TEXT, amount NUMERIC, card_last4 TEXT)');
         $pdo->exec('CREATE TABLE bank_statements (id INTEGER, currency TEXT)');
         $pdo->exec('CREATE TABLE cash_documents (id INTEGER, supplier_id INTEGER, purchase_invoice_id INTEGER, doc_type TEXT, status TEXT, total_amount NUMERIC, currency_code TEXT, amount_foreign NUMERIC)');
         $pdo->exec('CREATE TABLE offset_agreements (id INTEGER, status TEXT)');

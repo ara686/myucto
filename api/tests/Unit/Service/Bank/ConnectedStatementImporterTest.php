@@ -35,7 +35,7 @@ final class ConnectedStatementImporterTest extends TestCase
             UNIQUE (supplier_id, file_hash)
         )');
         $this->pdo->exec("CREATE TABLE bank_transactions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, statement_id INTEGER, posted_at TEXT, amount NUMERIC, currency TEXT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT, statement_id INTEGER, posted_at TEXT, amount NUMERIC, currency TEXT, original_amount NUMERIC, original_currency TEXT,
             variable_symbol TEXT, constant_symbol TEXT, specific_symbol TEXT, counterparty_account TEXT,
             counterparty_bank TEXT, counterparty_name TEXT, card_last4 TEXT, description TEXT, bank_ref TEXT,
             import_fingerprint TEXT UNIQUE, portable_fingerprint TEXT, match_status TEXT DEFAULT 'unmatched',
