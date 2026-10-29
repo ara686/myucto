@@ -974,11 +974,16 @@ final class DphPriznaniBuilder
         $textFilter = $this->db->hasColumn('invoice_items', 'item_kind')
             ? "AND ii.item_kind <> 'text'"
             : '';
+        // Prodej víceúčelového poukazu (skladová karta `stored_value`, sazba 0 %) není
+        // předmětem daně záměrně: daní se až plnění při uplatnění poukazu
+        // (PostingService::isVoucherAdvanceItem). Nejde o zapomenutou klasifikaci.
         $unclassifiedZero = $this->db->pdo()->prepare(
             "SELECT DISTINCT i.varsymbol
                FROM invoices i
                JOIN invoice_items ii ON ii.invoice_id = i.id
+          LEFT JOIN stock_items si ON si.id = ii.stock_item_id AND si.supplier_id = i.supplier_id
               WHERE i.supplier_id = ?
+                AND COALESCE(si.eet_item_kind, 'standard') <> 'stored_value'
                 AND i.status NOT IN ('draft', 'cancelled')
                 AND i.invoice_type <> 'proforma'
                 AND COALESCE(i.tax_date, i.issue_date) BETWEEN ? AND ?

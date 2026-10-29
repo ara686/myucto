@@ -2209,7 +2209,7 @@ final class PostingService
         $itemWeights = [];
         foreach ($items as $row) {
             $anyClassified = $anyClassified || $row['asset_id'] !== null || $row['small_asset_id'] !== null
-                || $row['item_revenue_account'] !== null;
+                || $row['item_revenue_account'] !== null || self::isVoucherAdvanceItem($row);
             $itemAccounts[(int) $row['id']] = $this->issuedItemRevenueAccount($supplierId, $row, $defaultAccount, $entryDate, $currentRead);
             $itemWeights[(int) $row['id']] = round((float) $row['total_without_vat'] * $rate, 2);
         }
@@ -2261,6 +2261,9 @@ final class PostingService
         if ($item['small_asset_id'] !== null) {
             return $this->ruleCode($supplierId, 'small_asset.sale.revenue', 'credit', '642');
         }
+        if (self::isVoucherAdvanceItem($item)) {
+            return $this->voucherAdvanceAccount($supplierId);
+        }
         if ($item['item_revenue_account'] !== null) {
             if (in_array($item['item_revenue_source'] ?? null, ['item', 'rule'], true)) {
                 try {
@@ -2289,12 +2292,14 @@ final class PostingService
     private function issuedItemRows(int $supplierId, int $invoiceId): array
     {
         $stmt = $this->db->pdo()->prepare(
-            'SELECT id, small_asset_id, asset_id, total_without_vat, revenue_account_code, stock_item_id,
-                    item_kind, vat_rate_id, vat_classification_code, description, seller_item_code, vat_rate_snapshot
-               FROM invoice_items
-              WHERE invoice_id = ?'
+            'SELECT ii.id, ii.small_asset_id, ii.asset_id, ii.total_without_vat, ii.revenue_account_code, ii.stock_item_id,
+                    ii.item_kind, ii.vat_rate_id, ii.vat_classification_code, ii.description, ii.seller_item_code,
+                    ii.vat_rate_snapshot, ii.total_vat, si.eet_item_kind
+               FROM invoice_items ii
+          LEFT JOIN stock_items si ON si.id = ii.stock_item_id AND si.supplier_id = ?
+              WHERE ii.invoice_id = ?'
         );
-        $stmt->execute([$invoiceId]);
+        $stmt->execute([$supplierId, $invoiceId]);
         $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
         $products = $this->productDefaults()->accountsFor(
             $supplierId,
@@ -2307,7 +2312,7 @@ final class PostingService
             $items[$i]['item_revenue_account'] = $own ?? $product;
             $items[$i]['item_revenue_source'] = $own !== null ? 'item' : ($product !== null ? 'product' : null);
             if ($own === null && $product === null && ($row['item_kind'] ?? 'standard') === 'standard'
-                && $row['asset_id'] === null && $row['small_asset_id'] === null) {
+                && $row['asset_id'] === null && $row['small_asset_id'] === null && !self::isVoucherAdvanceItem($row)) {
                 $unresolved[$i] = $row;
             }
         }
@@ -2904,6 +2909,42 @@ final class PostingService
                 'debit'  => $this->ruleCode($supplierId, 'advance.paid.settlement', 'debit', '321'),
                 'credit' => $this->ruleCode($supplierId, 'advance.paid.settlement', 'credit', '314'),
             ];
+    }
+
+    /**
+     * Účet přijatých záloh na víceúčelové poukazy a kredit (§ 37c ZDPH): na něj jde prodej
+     * poukazu z položky vydané faktury ({@see isVoucherAdvanceItem()}) a z něj se poukaz
+     * čerpá zápočtem při uplatnění ({@see InvoiceSettlementService::settleVoucherRedemption()}).
+     * Stejný účet jako inkaso zálohové proformy (`advance.received.collection`).
+     */
+    public function voucherAdvanceAccount(int $supplierId): string
+    {
+        return $this->ruleCode($supplierId, 'advance.received.collection', 'credit', '324');
+    }
+
+    /**
+     * Je řádek vydané faktury prodejem víceúčelového poukazu nebo dobitím kreditu?
+     *
+     * Rozhoduje druh skladové karty `stored_value` (tentýž, podle kterého EET určuje
+     * část tržby „určeno k čerpání", {@see \MyInvoice\Service\Eet\EetStoredValueCalculator})
+     * a nulová daň řádku. Víceúčelový poukaz při prodeji není předmětem DPH, jde tedy na
+     * přijaté zálohy bez daně a daní se až plnění, za které se poukazem zaplatí. Řádek
+     * s daní je zdaněný už při prodeji (jednoúčelový poukaz § 37b, druh `specific_voucher`,
+     * nebo chybně nastavená sazba) a zůstává výnosem, jinak by se daň z téhož plnění
+     * vybrala podruhé při uplatnění.
+     *
+     * Výjimka ze zákazu saldokontních účtů na položce ({@see SettlementAccounts}) platí jen
+     * pro tento druh řádku, ne pro účet 324 obecně.
+     *
+     * @param array<string,mixed> $row řádek z {@see issuedItemRows()}
+     */
+    public static function isVoucherAdvanceItem(array $row): bool
+    {
+        return ($row['eet_item_kind'] ?? null) === 'stored_value'
+            && ($row['item_kind'] ?? 'standard') === 'standard'
+            && $row['asset_id'] === null && $row['small_asset_id'] === null
+            && self::cents((float) ($row['vat_rate_snapshot'] ?? 0)) === 0
+            && self::cents((float) ($row['total_vat'] ?? 0)) === 0;
     }
 
     /**

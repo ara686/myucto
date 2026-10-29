@@ -15088,7 +15088,7 @@
         "stored_value": "Stored-value voucher / credit top-up",
         "hint_standard": "The sale is recorded as a regular sale.",
         "hint_specific_voucher": "A voucher for a predetermined supply (e.g. a back massage) is a regular sale of that supply. Redeeming it later is not recorded.",
-        "hint_stored_value": "A voucher for unspecified goods or a credit top-up (wallet, prepaid pass). Its share of the sale goes to EET as \"intended for later use\"; redemption is then recorded as credit use (payment method Voucher / credit)."
+        "hint_stored_value": "A voucher for unspecified goods or a credit top-up (wallet, prepaid pass). Its share of the sale goes to EET as \"intended for later use\"; redemption is then recorded as credit use (payment method Voucher / credit). A line at 0 % VAT is posted to advances received (324); VAT is charged only on the supply paid for with the voucher."
       }
     },
     "item_detail": {

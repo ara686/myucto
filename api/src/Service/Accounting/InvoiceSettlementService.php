@@ -181,6 +181,42 @@ final class InvoiceSettlementService
     }
 
     /**
+     * Uplatnění víceúčelového poukazu nebo čerpání kreditu na vydané faktuře: zápočet
+     * pohledávky proti přijaté záloze, na kterou se poukaz při prodeji zaúčtoval
+     * ({@see PostingService::voucherAdvanceAccount()}, 324 MD / 311 D). Daň z plnění
+     * přiznává sama faktura podle svých řádků, zápočet DPH nemění.
+     *
+     * Vrací id úhrady faktury, nebo null, když se zápočet nepoužije a úhradu má zapsat
+     * volající dosavadní cestou: daňová evidence (zálohy se tam neúčtují), proforma
+     * (sama visí na 324), doklad v cizí měně (zápočet umí jen CZK), účet chybí v osnově.
+     */
+    public function settleVoucherRedemption(int $supplierId, int $invoiceId, float $amount, string $settledOn, ?string $note, ?int $userId): ?int
+    {
+        if ($this->supplierAccountingMode($supplierId) === 'tax_evidence') {
+            return null;
+        }
+        $inv = $this->repo->lockInvoice($supplierId, $invoiceId);
+        if ($inv === null || $inv['kind'] === 'proforma' || $inv['currency'] !== 'CZK') {
+            return null;
+        }
+        $account = $this->accounts->findByCode($supplierId, $this->posting->voucherAdvanceAccount($supplierId));
+        if ($account === null || !($account['is_active'] ?? true)) {
+            return null;
+        }
+        $settlement = $this->create($supplierId, 'invoice', $invoiceId, [
+            'settled_on' => $settledOn,
+            'amount'     => $amount,
+            'account_id' => (int) $account['id'],
+            'note'       => $note,
+        ], $userId);
+        $row = $this->repo->find($supplierId, (int) $settlement['id']);
+        if ($row === null || $row['invoice_payment_id'] === null) {
+            throw new \LogicException('Zápočet poukazu #' . $settlement['id'] . ' nemá úhradu faktury.');
+        }
+        return (int) $row['invoice_payment_id'];
+    }
+
+    /**
      * Zruší zápočet: protizápis účetního zápisu + odvolání vyrovnání dokladu.
      * Hlavička zůstává (status='cancelled') kvůli auditní stopě.
      *

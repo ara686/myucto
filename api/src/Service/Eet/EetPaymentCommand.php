@@ -6,6 +6,8 @@ namespace MyInvoice\Service\Eet;
 
 use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Infrastructure\Database\TransactionFailure;
+use MyInvoice\Service\Accounting\InvoiceSettlementService;
+use MyInvoice\Service\Accounting\SettlementException;
 use MyInvoice\Service\Bank\VariableSymbolNormalizer;
 use MyInvoice\Service\Invoice\InvoicePaymentService;
 use MyInvoice\Service\Pdf\InvoicePdfRenderer;
@@ -37,9 +39,10 @@ use Psr\Clock\ClockInterface;
  *
  * Kredit: podíl platby připadající na položky hodnotového poukazu / kreditu jde do
  * `urceno_cerp_zuct` ({@see EetStoredValueCalculator}), úhrada poukazem či kreditem
- * (kanál `stored_value`) celou částkou do `cerp_zuct`. Úhrada faktury poukazem se
- * účetně zapisuje jako ruční úhrada (zdroj `manual`, způsob `offset`): MyÚčto nemá
- * zvláštní účtování přijatých záloh na poukazy, jejich zúčtování řeší účetní ručně.
+ * (kanál `stored_value`) celou částkou do `cerp_zuct`. Úhrada faktury poukazem je
+ * v podvojném účetnictví zápočet proti přijaté záloze, na kterou se poukaz prodal
+ * ({@see InvoiceSettlementService::settleVoucherRedemption()}); jinde ruční úhrada
+ * (zdroj `manual`, způsob `offset`).
  *
  * Externí evidence (`eet_context = external`, {@see acceptExternal()}): tržbu už
  * zaevidoval jiný systém (e-shop). Úhrada se zapíše běžnou účetní cestou a EET záznam
@@ -88,7 +91,18 @@ final class EetPaymentCommand
         private readonly ClockInterface $clock,
         private readonly EetCurrency $fx,
         private readonly EetStoredValueCalculator $storedValue,
+        private readonly InvoiceSettlementService $settlements,
     ) {}
+
+    /** Zápočet uplatněného poukazu proti přijaté záloze, null = zapíše se ruční úhrada. */
+    private function voucherRedemption(int $supplierId, int $invoiceId, float $amount, string $paidOn, string $note, int $userId): ?int
+    {
+        try {
+            return $this->settlements->settleVoucherRedemption($supplierId, $invoiceId, $amount, $paidOn, $note, $userId > 0 ? $userId : null);
+        } catch (SettlementException $e) {
+            throw EetCommandException::validation($e->getMessage(), 'amount');
+        }
+    }
 
     /** Tělo požadavku hlásí, že tržbu evidoval jiný systém. */
     public static function isExternal(array $input): bool
@@ -317,7 +331,15 @@ final class EetPaymentCommand
             $this->assertInvoiceAccepts($supplierId, $invoice, $in['amount'], $in['currency']);
             // Podíl kreditu z úhrad PŘED touto platbou, pod zámkem faktury.
             $credit = $this->creditAmounts($supplierId, $in, $fx['amount'], $invoice);
-            $payment = $this->invoicePayments->recordPayment(
+            $note = $in['note'] ?? ($in['channel'] === 'stored_value'
+                ? 'Uplatnění poukazu / kreditu (EET)' : 'Platba přijatá s posouzením EET');
+            // Uplatnění poukazu v podvojném účetnictví čerpá přijatou zálohu, na kterou
+            // se poukaz prodal: zápočet 324 MD / 311 D. Kde zápočet nejde (daňová
+            // evidence, proforma, cizí měna), zůstává ruční úhrada jako dřív.
+            $paymentId = $in['channel'] === 'stored_value'
+                ? $this->voucherRedemption($supplierId, (int) $invoice['id'], (float) $in['amount'], $receivedAt->format('Y-m-d'), $note, $userId)
+                : null;
+            $paymentId ??= (int) $this->invoicePayments->recordPayment(
                 (int) $invoice['id'],
                 (float) $in['amount'],
                 $receivedAt->format('Y-m-d'),
@@ -325,18 +347,15 @@ final class EetPaymentCommand
                     // Zdroj jako u ruční úhrady před EET (manual / mark_paid), i u
                     // hotovosti: `cash` patří jen úhradě z pokladního dokladu
                     // a peněžní deník ho bere jako poznámku k PPD, ne jako příjem.
-                    // Uplatnění poukazu jde stejnou cestou; zúčtování přijaté zálohy
-                    // na poukaz řeší účetní ručně (zvláštní účtování neexistuje).
                     'source' => $invoicePaymentSource,
-                    'note' => $in['note'] ?? ($in['channel'] === 'stored_value'
-                        ? 'Uplatnění poukazu / kreditu (EET)' : 'Platba přijatá s posouzením EET'),
+                    'note' => $note,
                     'created_by' => $userId > 0 ? $userId : null,
                 ],
-            );
+            )['payment_id'];
             // Alokace je v měně faktury (stejně jako úhrada), částka události v CZK.
             $this->events->allocate($supplierId, $eventId, $in['amount'], [
                 'invoice_id' => (int) $invoice['id'],
-                'invoice_payment_id' => (int) $payment['payment_id'],
+                'invoice_payment_id' => $paymentId,
             ]);
             $invoiceId = (int) $invoice['id'];
         }
