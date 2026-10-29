@@ -3579,6 +3579,41 @@ paths:
         '409':
           description: Podmínky nesplněny (neplátce DPH, reverse charge, není proforma)
 
+  /api/v1/invoices/{id}/convert-to-tax-document:
+    parameters:
+      - $ref: '#/components/parameters/SupplierIdHeader'
+      - in: path
+        name: id
+        required: true
+        schema: { type: integer, format: int64 }
+    post:
+      tags: [Invoices]
+      summary: Změní koncept vyúčtovací faktury k záloze na daňový doklad k přijaté platbě
+      description: |
+        Koncept faktury vzniklý ze **zálohové faktury** nahradí koncepty daňových
+        dokladů k přijaté platbě (`invoice_type = tax_document`, § 28 odst. 2 ZDPH)
+        ke všem platbám zálohy, které ho ještě nemají; koncept faktury se odstraní.
+        Vyžaduje právo `invoices.delete` i `invoices.mark_paid`. Vystavenou fakturu
+        změnit nelze.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  proforma_id: { type: integer, format: int64 }
+                  tax_document_ids:
+                    type: array
+                    items: { type: integer, format: int64 }
+        '403':
+          description: Chybí oprávnění
+        '404':
+          description: Faktura nenalezena
+        '409':
+          description: Podmínky nesplněny (není koncept, nevznikl ze zálohy, žádná platba bez dokladu, přílohy, uzavřené období)
+
   /api/v1/invoices/{id}/pdf:
     parameters:
       - $ref: '#/components/parameters/SupplierIdHeader'
