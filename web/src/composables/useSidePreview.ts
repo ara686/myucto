@@ -37,14 +37,18 @@ export interface SidePreviewCtrl {
  * @param pageKey klíč z `SavedFilterAction::PAGE_KEYS` (BE jiný nepřijme) — volba se
  *                pamatuje per agenda, aby si přijaté a vydané doklady nešahaly do stavu.
  */
-export function useSidePreview(pageKey: string, flagKey: string = SIDE_PREVIEW_FLAG): SidePreviewCtrl {
+export function useSidePreview(
+  pageKey: string,
+  flagKey: string = SIDE_PREVIEW_FLAG,
+  options: { defaultOpen?: boolean; query?: string } = {},
+): SidePreviewCtrl {
   const prefs = getPagePrefs(pageKey)
-  const open = ref(false)
-  const wide = useSidePreviewWide()
+  const open = ref(options.defaultOpen ?? false)
+  const wide = useSidePreviewWide(options.query)
 
   onMounted(async () => {
     // Lepkavá volba se čte až po ensurePrefsLoaded(), takže se náhled může otevřít
-    // o tik později než první vykreslení. Výchozí stav zůstává zavřený.
+    // o tik později než první vykreslení. Bez uložené volby platí `defaultOpen`.
     await ensurePrefsLoaded()
     const stored = prefs.value.flags?.[flagKey]
     if (typeof stored === 'boolean') open.value = stored

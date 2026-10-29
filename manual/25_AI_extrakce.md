@@ -118,6 +118,9 @@ potřebují: mají hlášení z vytěžení, nebo jim chybí dimenze povinná po
 [pravidel dimenzí](114_Dimenze.md#1141110-pravidla-dimenzi-podle-uctu) (bez ní by doklad nešel zaúčtovat). Když takový doklad není,
 okno jen oznámí, že není co kontrolovat.
 
+Vedle formuláře (na užší obrazovce pod ním) okno ukazuje **Náhled originálu** právě kontrolovaného dokladu, takže vytěžené údaje
+porovnáte s PDF bez přepínání; tlačítkem **Skrýt PDF** / **Zobrazit PDF** v patičce ho schováte nebo znovu zobrazíte.
+
 1. Nahoře zkontrolujte dodavatele, číslo dokladu, datum, stav a částku. Odkaz **Otevřít doklad** otevře editor.
 2. Projděte ostatní části hlášení (reverse charge, nesouhlasící součty apod.). U každé, kterou jste ověřili, klikněte na **Vyřešeno**.
 3. U **druhu nákladu po položkách** zkontrolujte položky orámované červeně (AI navrhuje druh, ale zatím není zvolený). Návrh
