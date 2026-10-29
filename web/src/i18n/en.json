@@ -801,6 +801,11 @@
     "light": "Light",
     "dark": "Dark"
   },
+  "list_nav": {
+    "group": "Browse the list",
+    "previous": "Previous document in the list ({key})",
+    "next": "Next document in the list ({key})"
+  },
   "app": {
     "title": "MyÚčto.cz",
     "subtitle": "Invoicing system"

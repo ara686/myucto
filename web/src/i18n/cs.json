@@ -801,6 +801,11 @@
     "light": "Světlý",
     "dark": "Tmavý"
   },
+  "list_nav": {
+    "group": "Listování seznamem",
+    "previous": "Předchozí doklad v seznamu ({key})",
+    "next": "Další doklad v seznamu ({key})"
+  },
   "app": {
     "title": "MyÚčto.cz",
     "subtitle": "Fakturační systém"

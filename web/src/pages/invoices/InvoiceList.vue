@@ -10,6 +10,7 @@ import { invoicesApi, type MonthGroup, type InvoiceListItem, type InvoiceItem,
   type OssBulkResult, type OssBulkScope, type OssBulkSet, type OssBulkFailure, type OssReviewScope } from '@/api/invoices'
 import { formatMoney, formatMoneyWhole, formatDate, formatMonth, formatNumber, statusLabel, typeLabel, statusBadgeClass, isOverdue, invoiceRowClass, displayStatus, taxDateClass } from '@/composables/useFormat'
 import { useRowLink } from '@/composables/useRowLink'
+import { useListNavigationSource } from '@/composables/useListNavigation'
 import { useToast } from '@/composables/useToast'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
@@ -860,38 +861,9 @@ async function load(reset = true) {
     page.value++
   }
   try {
-    const result = await invoicesApi.listGrouped({
-      q: search.value || undefined,
-      status: statusFilter.value || undefined,
-      type: typeFilter.value || undefined,
-      client_id: clientFilter.value === '' ? undefined : Number(clientFilter.value),
-      year: dateFrom.value || dateTo.value ? undefined : (yearFilter.value === '' ? undefined : Number(yearFilter.value)),
-      month: dateFrom.value || dateTo.value || yearFilter.value === '' || monthFilter.value === '' ? undefined : Number(monthFilter.value),
-      date_from: dateFrom.value || undefined,
-      date_to:   dateTo.value || undefined,
-      currency:  currencyFilter.value || undefined,
-      overdue: overdueOnly.value || undefined,
-      unpaid_only: unpaidOnly.value || undefined,
-      unpaid_as_of: unpaidAsOf.value || undefined,
-      booked: bookedFilter.value || undefined,
-      oss_review: ossReviewFilter.value || undefined,
-      revenue_category_id: revenueCategoryMode.value === 'include' && revenueCategoryIds.value.length
-        ? revenueCategoryIds.value : undefined,
-      revenue_category_exclude: revenueCategoryMode.value === 'exclude' && revenueCategoryIds.value.length
-        ? revenueCategoryIds.value : undefined,
-      page: page.value,
-      per_page: 50,
-      sort_key: tbl.sort.value?.key,
-      sort_dir: tbl.sort.value?.dir,
-      group_by_month: groupByMonth.value,
-      include_kh: tbl.isVisible('kh'),
-      include_vat_classification: tbl.isVisible('vat_classification') || tbl.isVisible('vat_return_lines'),
-      include_journal_notes: auth.canRead('accounting') && tbl.isVisible('journal_notes'),
-      include_document_tags: auth.canRead('documents') && tbl.isVisible('document_tags'),
-      include_vat_breakdown: tbl.isVisible('vat_breakdown'),
-      include_posting_accounts: tbl.isVisible('debit_accounts') || tbl.isVisible('credit_accounts'),
-      include_dimensions: tbl.isVisible('dimensions'),
-    })
+    const params = listParams()
+    loadedParams = params
+    const result = await invoicesApi.listGrouped({ ...params, page: page.value })
     if (seq !== loadSeq) return
     if (reset) {
       groups.value = result.data
@@ -918,6 +890,50 @@ async function load(reset = true) {
     }
   }
 }
+
+// Parametry dotazu seznamu bez čísla stránky. Stejné parametry použije detail
+// při listování za hranici načtených řádků (useListNavigation).
+type InvoiceListParams = NonNullable<Parameters<typeof invoicesApi.listGrouped>[0]>
+let loadedParams: InvoiceListParams = {}
+function listParams(): InvoiceListParams {
+  return {
+    q: search.value || undefined,
+    status: statusFilter.value || undefined,
+    type: typeFilter.value || undefined,
+    client_id: clientFilter.value === '' ? undefined : Number(clientFilter.value),
+    year: dateFrom.value || dateTo.value ? undefined : (yearFilter.value === '' ? undefined : Number(yearFilter.value)),
+    month: dateFrom.value || dateTo.value || yearFilter.value === '' || monthFilter.value === '' ? undefined : Number(monthFilter.value),
+    date_from: dateFrom.value || undefined,
+    date_to:   dateTo.value || undefined,
+    currency:  currencyFilter.value || undefined,
+    overdue: overdueOnly.value || undefined,
+    unpaid_only: unpaidOnly.value || undefined,
+    unpaid_as_of: unpaidAsOf.value || undefined,
+    booked: bookedFilter.value || undefined,
+    oss_review: ossReviewFilter.value || undefined,
+    revenue_category_id: revenueCategoryMode.value === 'include' && revenueCategoryIds.value.length
+      ? revenueCategoryIds.value : undefined,
+    revenue_category_exclude: revenueCategoryMode.value === 'exclude' && revenueCategoryIds.value.length
+      ? revenueCategoryIds.value : undefined,
+    per_page: 50,
+    sort_key: tbl.sort.value?.key,
+    sort_dir: tbl.sort.value?.dir,
+    group_by_month: groupByMonth.value,
+    include_kh: tbl.isVisible('kh'),
+    include_vat_classification: tbl.isVisible('vat_classification') || tbl.isVisible('vat_return_lines'),
+    include_journal_notes: auth.canRead('accounting') && tbl.isVisible('journal_notes'),
+    include_document_tags: auth.canRead('documents') && tbl.isVisible('document_tags'),
+    include_vat_breakdown: tbl.isVisible('vat_breakdown'),
+    include_posting_accounts: tbl.isVisible('debit_accounts') || tbl.isVisible('credit_accounts'),
+    include_dimensions: tbl.isVisible('dimensions'),
+  }
+}
+const listNav = useListNavigationSource('invoices', () => ({
+  ids: flatRows.value.map(inv => inv.id),
+  page: page.value,
+  pages: pages.value,
+  params: loadedParams as Record<string, unknown>,
+}), () => route.fullPath, () => supplierStore.currentSupplierId)
 
 // Sync filtrů s URL query (stejný pattern jako PurchaseInvoiceList) — detekuje menu
 // link click přes route.query change z !empty na empty → reset.
@@ -1190,6 +1206,7 @@ const loadedCount = computed(() => groups.value.reduce((s, g) => s + g.count, 0)
 
 const navigateRow = useRowLink()
 function openInvoice(inv: InvoiceListItem, e?: MouseEvent) {
+  listNav.markOpen(inv.id)
   navigateRow(`/invoices/${inv.id}`, e)
 }
 
@@ -1578,7 +1595,7 @@ useWindowRefresh(['invoices', 'clients', 'bank', 'bank-transactions', 'cash', 'a
                 </td>
                 <template v-for="c in tbl.orderedColumns.value.filter(c => tbl.isVisible(c.key))" :key="c.key">
                 <td v-if="c.key === 'number'" :data-custom-color="!!colors.color('number')" :style="colors.cellStyle('number')" class="px-3 py-2.5 font-mono text-xs">
-                  <RouterLink class="row-link" :to="`/invoices/${inv.id}`" @click.stop @auxclick.stop>
+                  <RouterLink class="row-link" :to="`/invoices/${inv.id}`" @click.stop="listNav.markOpen(inv.id)" @auxclick.stop="listNav.markOpen(inv.id)">
                     <span v-if="inv.varsymbol">{{ inv.varsymbol }}</span>
                     <span v-else class="text-neutral-400">{{ t('invoice.draft_id_short', { id: inv.id }) }}</span>
                   </RouterLink>
@@ -1775,7 +1792,7 @@ useWindowRefresh(['invoices', 'clients', 'bank', 'bank-transactions', 'cash', 'a
                 </div>
                 <div class="flex items-baseline justify-between gap-2 mt-0.5 text-xs text-neutral-500">
                   <div class="truncate">
-                    <RouterLink class="row-link font-mono" :data-custom-color="!!colors.color('number')" :style="colors.cellStyle('number')" :to="`/invoices/${inv.id}`" @click.stop @auxclick.stop>
+                    <RouterLink class="row-link font-mono" :data-custom-color="!!colors.color('number')" :style="colors.cellStyle('number')" :to="`/invoices/${inv.id}`" @click.stop="listNav.markOpen(inv.id)" @auxclick.stop="listNav.markOpen(inv.id)">
                       <span v-if="inv.varsymbol">{{ inv.varsymbol }}</span>
                       <span v-else class="text-neutral-400">{{ t('invoice.draft_id_short', { id: inv.id }) }}</span>
                     </RouterLink>

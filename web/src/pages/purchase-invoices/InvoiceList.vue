@@ -19,6 +19,7 @@ import {
 } from '@/api/purchaseInvoices'
 import { formatMoney, formatMoneyWhole, formatDate, formatMonth, formatNumber, taxDateClass } from '@/composables/useFormat'
 import { useRowLink } from '@/composables/useRowLink'
+import { useListNavigationSource } from '@/composables/useListNavigation'
 import { useToast } from '@/composables/useToast'
 import { ACCOUNTING_PERIOD_MISSING_CODES, accountingPeriodRoute, apiErrorMessage } from '@/api/errors'
 import { useYearOptions } from '@/composables/useYearOptions'
@@ -658,42 +659,9 @@ async function fetchPage(reset: boolean) {
   }
   error.value = ''
   try {
-    const res = await purchaseInvoicesApi.listGrouped({
-      status:        statusFilter.value || undefined,
-      document_kind: kindFilter.value   || undefined,
-      year:          yearFilter.value   || undefined,
-      month:         monthFilter.value  || undefined,
-      date_from:     dateFrom.value     || undefined,
-      date_to:       dateTo.value       || undefined,
-      currency:      currencyFilter.value || undefined,
-      vendor_id:     vendorFilter.value   || undefined,
-      project_id:    projectFilter.value  || undefined,
-      unpaid_only:   unpaidOnly.value   || undefined,
-      overdue:       overdueOnly.value  || undefined,
-      unpaid_as_of:  unpaidAsOf.value   || undefined,
-      unmatched:     unmatchedOnly.value || undefined,
-      paid_shortfall: paidShortfallOnly.value || undefined,
-      needs_review:  needsReviewOnly.value || undefined,
-      approval_status: approvalFilter.value || undefined,
-      payment_ordered: paymentOrderedFilter.value || undefined,
-      booked:        bookedFilter.value  || undefined,
-      import_batch_id: importBatchFilter.value || undefined,
-      q:             search.value       || undefined,
-      page: page.value,
-      per_page: 50,
-      sort_key: tbl.sort.value?.key,
-      sort_dir: tbl.sort.value?.dir,
-      group_by_month: groupByMonth.value,
-      include_kh: tbl.isVisible('kh'),
-      include_vat_classification: tbl.isVisible('vat_classification') || tbl.isVisible('vat_return_lines'),
-      include_journal_notes: auth.canRead('accounting') && tbl.isVisible('journal_notes'),
-      include_document_tags: auth.canRead('documents') && tbl.isVisible('document_tags'),
-      include_vat_breakdown: tbl.isVisible('vat_breakdown'),
-      include_posting_accounts: tbl.isVisible('debit_accounts') || tbl.isVisible('credit_accounts'),
-      include_dimensions: tbl.isVisible('dimensions'),
-      // Koncept bez povinné dimenze patří do kontroly vytěžení stejně jako doklad s hlášením.
-      include_review: dimensions.enabled.value,
-    })
+    const params = listParams()
+    loadedParams = params
+    const res = await purchaseInvoicesApi.listGrouped({ ...params, page: page.value })
     if (seq !== loadSeq) return
     if (reset) {
       groups.value = res.data
@@ -719,8 +687,57 @@ async function fetchPage(reset: boolean) {
   }
 }
 
+// Parametry dotazu seznamu bez čísla stránky. Stejné parametry použije detail
+// při listování za hranici načtených řádků (useListNavigation).
+type PurchaseListParams = NonNullable<Parameters<typeof purchaseInvoicesApi.listGrouped>[0]>
+let loadedParams: PurchaseListParams = {}
+function listParams(): PurchaseListParams {
+  return {
+    status:        statusFilter.value || undefined,
+    document_kind: kindFilter.value   || undefined,
+    year:          yearFilter.value   || undefined,
+    month:         monthFilter.value  || undefined,
+    date_from:     dateFrom.value     || undefined,
+    date_to:       dateTo.value       || undefined,
+    currency:      currencyFilter.value || undefined,
+    vendor_id:     vendorFilter.value   || undefined,
+    project_id:    projectFilter.value  || undefined,
+    unpaid_only:   unpaidOnly.value   || undefined,
+    overdue:       overdueOnly.value  || undefined,
+    unpaid_as_of:  unpaidAsOf.value   || undefined,
+    unmatched:     unmatchedOnly.value || undefined,
+    paid_shortfall: paidShortfallOnly.value || undefined,
+    needs_review:  needsReviewOnly.value || undefined,
+    approval_status: approvalFilter.value || undefined,
+    payment_ordered: paymentOrderedFilter.value || undefined,
+    booked:        bookedFilter.value  || undefined,
+    import_batch_id: importBatchFilter.value || undefined,
+    q:             search.value       || undefined,
+    per_page: 50,
+    sort_key: tbl.sort.value?.key,
+    sort_dir: tbl.sort.value?.dir,
+    group_by_month: groupByMonth.value,
+    include_kh: tbl.isVisible('kh'),
+    include_vat_classification: tbl.isVisible('vat_classification') || tbl.isVisible('vat_return_lines'),
+    include_journal_notes: auth.canRead('accounting') && tbl.isVisible('journal_notes'),
+    include_document_tags: auth.canRead('documents') && tbl.isVisible('document_tags'),
+    include_vat_breakdown: tbl.isVisible('vat_breakdown'),
+    include_posting_accounts: tbl.isVisible('debit_accounts') || tbl.isVisible('credit_accounts'),
+    include_dimensions: tbl.isVisible('dimensions'),
+    // Koncept bez povinné dimenze patří do kontroly vytěžení stejně jako doklad s hlášením.
+    include_review: dimensions.enabled.value,
+  }
+}
+const listNav = useListNavigationSource('purchase-invoices', () => ({
+  ids: flatRows.value.map(inv => inv.id),
+  page: page.value,
+  pages: pages.value,
+  params: loadedParams as Record<string, unknown>,
+}), () => route.fullPath, () => supplierStore.currentSupplierId)
+
 const navigateRow = useRowLink()
 function openInvoice(inv: PurchaseInvoiceListItem, e?: MouseEvent) {
+  listNav.markOpen(inv.id)
   navigateRow(`/purchase-invoices/${inv.id}`, e)
 }
 
@@ -1411,7 +1428,7 @@ useWindowRefresh(['purchase-invoices', 'clients', 'bank', 'bank-transactions', '
                   </td>
                   <template v-for="c in tbl.orderedColumns.value.filter(c => tbl.isVisible(c.key))" :key="c.key">
                 <td v-if="c.key === 'number'" :data-custom-color="!!colors.color('number')" :style="colors.cellStyle('number')" class="px-3 py-2.5 font-mono text-xs">
-                    <RouterLink class="row-link" :to="`/purchase-invoices/${inv.id}`" @click.stop @auxclick.stop>
+                    <RouterLink class="row-link" :to="`/purchase-invoices/${inv.id}`" @click.stop="listNav.markOpen(inv.id)" @auxclick.stop="listNav.markOpen(inv.id)">
                       <span v-if="inv.varsymbol">{{ inv.varsymbol }}</span>
                       <span v-else class="text-neutral-400">#{{ inv.id }}</span>
                     </RouterLink>
@@ -1646,7 +1663,7 @@ useWindowRefresh(['purchase-invoices', 'clients', 'bank', 'bank-transactions', '
                 </div>
                 <div class="flex items-baseline justify-between gap-2 mt-1 text-xs text-neutral-500">
                   <div class="font-mono truncate">
-                    <RouterLink class="row-link" :data-custom-color="!!colors.color('number')" :style="colors.cellStyle('number')" :to="`/purchase-invoices/${inv.id}`" @click.stop @auxclick.stop>{{ inv.varsymbol || '#' + inv.id }}</RouterLink>
+                    <RouterLink class="row-link" :data-custom-color="!!colors.color('number')" :style="colors.cellStyle('number')" :to="`/purchase-invoices/${inv.id}`" @click.stop="listNav.markOpen(inv.id)" @auxclick.stop="listNav.markOpen(inv.id)">{{ inv.varsymbol || '#' + inv.id }}</RouterLink>
                     <span class="text-neutral-400"> · </span>
                     <span :data-custom-color="!!colors.color('vendor_number')" :style="colors.cellStyle('vendor_number')">{{ inv.vendor_invoice_number }}</span>
                   </div>
