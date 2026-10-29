@@ -8,6 +8,7 @@ use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Repository\TaxConstantsRepository;
 use MyInvoice\Service\Accounting\PostingException;
 use MyInvoice\Service\Invoice\InvoiceItemKind;
+use MyInvoice\Service\Invoice\MultiPurposeVoucher;
 
 /**
  * Kanonický producent VAT řádků — JEDNO místo se sdílenou logikou pro všechny
@@ -469,6 +470,24 @@ final class VatLedgerService
         $textFilter = $this->db->hasColumn('invoice_items', 'item_kind')
             ? 'AND ' . InvoiceItemKind::sqlAmountLine('ii')
             : '';
+        // Prodej víceúčelového poukazu (§ 37c ZDPH) není plněním: do evidence DPH nevstupuje
+        // ani s kódem, ani přes kód hlavičky či fallback níž (MultiPurposeVoucher). Řádek
+        // s daní zůstává, jeho daň se z přiznání ztratit nesmí.
+        // Hodnota dokladu pro limit KH (§ 101e) je hodnota plnění, poukaz do ní nepatří.
+        $vouchers = $this->db->hasColumn('stock_items', 'eet_item_kind');
+        [$voucherJoin, $voucherFilter, $voucherParams, $voucherTotal] = $vouchers
+            ? [
+                MultiPurposeVoucher::stockJoinSql('ii', 'vsi', 'i.supplier_id') . "
+         LEFT JOIN (SELECT vii.invoice_id, SUM(vii.total_with_vat) AS total
+                      FROM stock_items vs
+                      JOIN invoice_items vii ON vii.stock_item_id = vs.id
+                     WHERE vs.supplier_id = ? AND " . MultiPurposeVoucher::untaxedLineSql('vii', 'vs') . "
+                  GROUP BY vii.invoice_id) vtot ON vtot.invoice_id = i.id",
+                'AND NOT ' . MultiPurposeVoucher::untaxedLineSql('ii', 'vsi'),
+                [$supplierId],
+                ' - COALESCE(vtot.total, 0)',
+            ]
+            : ['', '', [], ''];
         // Práh základní/snížená sazba pro fallback klasifikaci — per rok období
         // (číselník daňových konstant, ne natvrdo 20.5).
         // ZÁKLADNÍ sazba, ne práh mezi buckety: fallback rozhoduje, jestli je sazba česká
@@ -490,7 +509,7 @@ final class VatLedgerService
                    --
                    -- Normalizuje se CELÝ DOKLAD jedním znaménkem podle jeho součtu, ne každá
                    -- položka zvlášť — zdůvodnění a precedent viz tentýž výraz ve fetchPurchases().
-                   ({$saleSign}) * i.total_with_vat AS inv_total,
+                   ({$saleSign}) * (i.total_with_vat{$voucherTotal}) AS inv_total,
                    i.reverse_charge AS rc_flag,
                    c.company_name AS counterparty_name, {$dicExpr} AS counterparty_dic,
                    co.iso2 AS country_iso2, COALESCE(co.is_eu, 0) AS country_is_eu,
@@ -536,16 +555,18 @@ final class VatLedgerService
               JOIN invoice_items ii ON ii.invoice_id = i.id
          LEFT JOIN vat_rates vr ON vr.id = ii.vat_rate_id
          LEFT JOIN currencies cur ON cur.id = i.currency_id
+         {$voucherJoin}
              WHERE i.supplier_id = ?
                AND {$statusFilter}
                AND i.invoice_type NOT IN ('proforma', 'penalty')
                {$ossFilter}
                {$textFilter}
+               {$voucherFilter}
                {$documentFilter}
                AND i.effective_tax_date BETWEEN ? AND ?
           ORDER BY i.effective_tax_date, i.id, ii.id
         ");
-        $stmt->execute([$standardRate, $supplierId, ...$documentParams, $start, $end]);
+        $stmt->execute([$standardRate, ...$voucherParams, $supplierId, ...$documentParams, $start, $end]);
         $stmt->setFetchMode(\PDO::FETCH_ASSOC);
         return $stmt;
     }

@@ -8,6 +8,8 @@ use DI\Container;
 use MyInvoice\Bootstrap;
 use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Repository\AccountingPeriodRepository;
+use MyInvoice\Repository\InvoiceRepository;
+use MyInvoice\Service\Invoice\NewInvoiceVatClassification;
 use MyInvoice\Service\Accounting\ChartOfAccountsSeeder;
 use MyInvoice\Service\Accounting\PostingService;
 use MyInvoice\Service\Eet\EetCredentialProvider;
@@ -26,7 +28,9 @@ use Symfony\Component\Clock\MockClock;
  *
  *   • prodej (skladová karta `stored_value`, řádek bez daně) jde na 324 místo výnosu,
  *     daň a pohledávka ostatních řádků se nemění,
- *   • řádek s daní (jednoúčelový poukaz § 37b nebo zdaněný kredit) zůstává výnosem,
+ *   • řádek s daní (jednoúčelový poukaz § 37b, nebo karta `stored_value` se sazbou z doby
+ *     před validací) zůstává výnosem; nový zdaněný víceúčelový poukaz uložení odmítne,
+ *   • řádek víceúčelového poukazu nikdy nenese klasifikaci DPH a o kódu hlavičky nerozhoduje,
  *   • uplatnění kanálem „Poukaz / kredit" je v podvojném účetnictví zápočet 324 MD / 311 D,
  *     v daňové evidenci a u jiných kanálů zůstává ruční úhrada.
  *
@@ -122,6 +126,7 @@ final class VoucherAdvanceTest extends TestCase
         self::assertSame(['324', '602'], $this->sorted(array_values($this->posting->issuedItemRevenueAccounts($this->supplierId, $invoiceId)['accounts'])));
     }
 
+    /** Obrana nad daty z doby před validací sazby: zapsáno přímo, editor by řádek odmítl. */
     public function testTaxedVoucherLinesStayRevenue(): void
     {
         $invoiceId = $this->invoice([[1000.00, 210.00, 21, 'stored_value'], [500.00, 105.00, 21, 'specific_voucher']]);
@@ -169,7 +174,75 @@ final class VoucherAdvanceTest extends TestCase
         self::assertSame('0', (string) $this->row('SELECT COUNT(*) AS n FROM invoice_settlements WHERE supplier_id = ?', [$this->supplierId])['n']);
     }
 
+    public function testVoucherLineNeverCarriesVatClassification(): void
+    {
+        $pdo = $this->db->pdo();
+        $de = (int) $pdo->query("SELECT id FROM countries WHERE iso2 = 'DE' LIMIT 1")->fetchColumn();
+        $pdo->prepare('UPDATE clients SET country_id = ? WHERE id = ?')->execute([$de, $this->clientId]);
+        $invoiceId = $this->invoice([]);
+        $voucher = $this->stockItem('stored_value');
+
+        $this->container->get(InvoiceRepository::class)->replaceItems($invoiceId, [
+            ['description' => 'Poukaz', 'quantity' => 1, 'unit' => 'ks', 'unit_price_without_vat' => 1000, 'vat_rate_id' => $this->rateId(0), 'stock_item_id' => $voucher],
+            ['description' => 'Poukaz s kódem', 'quantity' => 1, 'unit' => 'ks', 'unit_price_without_vat' => 500, 'vat_rate_id' => $this->rateId(0),
+                'vat_classification_code' => '1', 'stock_item_id' => $voucher],
+            ['description' => 'Služba do EU', 'quantity' => 1, 'unit' => 'ks', 'unit_price_without_vat' => 300, 'vat_rate_id' => $this->rateId(0)],
+        ]);
+
+        $stmt = $pdo->prepare('SELECT vat_classification_code FROM invoice_items WHERE invoice_id = ? ORDER BY order_index');
+        $stmt->execute([$invoiceId]);
+        self::assertSame([null, null, '22'], $stmt->fetchAll(PDO::FETCH_COLUMN), 'Poukaz nedostane ani výchozí 22, ani ručně zadaný kód.');
+    }
+
+    public function testTaxedMultiPurposeVoucherLineIsRejected(): void
+    {
+        $invoiceId = $this->invoice([[100.00, 21.00, 21, 'standard']]);
+        $voucher = $this->stockItem('stored_value');
+
+        try {
+            $this->container->get(InvoiceRepository::class)->replaceItems($invoiceId, [
+                ['description' => 'Poukaz', 'quantity' => 1, 'unit' => 'ks', 'unit_price_without_vat' => 1000, 'vat_rate_id' => $this->rateId(21), 'stock_item_id' => $voucher],
+            ]);
+            self::fail('Zdaněný víceúčelový poukaz musí být odmítnut.');
+        } catch (\InvalidArgumentException $e) {
+            self::assertStringContainsString('jednoúčelový poukaz', $e->getMessage());
+        }
+        self::assertSame('1', (string) $this->row('SELECT COUNT(*) AS n FROM invoice_items WHERE invoice_id = ?', [$invoiceId])['n'],
+            'Odmítnutí nechá původní řádky beze změny.');
+    }
+
+    public function testHeaderClassificationIgnoresVoucherLines(): void
+    {
+        $voucher = $this->stockItem('stored_value');
+        $body = ['client_id' => $this->clientId, 'issue_date' => self::DAY, 'tax_date' => self::DAY, 'items' => [
+            ['description' => 'Káva', 'quantity' => 1, 'unit' => 'ks', 'unit_price_without_vat' => 100, 'vat_rate_id' => $this->rateId(21)],
+            ['description' => 'Poukaz', 'quantity' => 1, 'unit' => 'ks', 'unit_price_without_vat' => 1000, 'vat_rate_id' => $this->rateId(0), 'stock_item_id' => $voucher],
+        ]];
+
+        $this->container->get(NewInvoiceVatClassification::class)->apply($body, $this->supplierId);
+
+        self::assertSame('1', $body['vat_classification_code'], 'O hlavičce rozhoduje plnění, ne převažující poukaz.');
+        self::assertNull($body['items'][1]['vat_classification_code']);
+    }
+
     // ── pomocníci ───────────────────────────────────────────────────────────
+
+    private function stockItem(string $kind): int
+    {
+        $pdo = $this->db->pdo();
+        $pdo->prepare('INSERT INTO stock_items (supplier_id, sku, name, eet_item_kind) VALUES (?, ?, ?, ?)')
+            ->execute([$this->supplierId, 'VA-' . bin2hex(random_bytes(4)), 'Synthetic ' . $kind, $kind]);
+        return (int) $pdo->lastInsertId();
+    }
+
+    private function rateId(int $rate): int
+    {
+        $stmt = $this->db->pdo()->prepare(
+            "SELECT id FROM vat_rates WHERE country = 'CZ' AND is_reverse_charge = 0 AND valid_to IS NULL AND rate_percent = ? ORDER BY id LIMIT 1"
+        );
+        $stmt->execute([$rate]);
+        return (int) $stmt->fetchColumn();
+    }
 
     private function accept(int $invoiceId, string $channel, string $amount): void
     {

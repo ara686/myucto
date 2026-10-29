@@ -1754,6 +1754,21 @@ final class InvoiceRepository
                 throw new \InvalidArgumentException('Položka ' . ($i + 1) . ': ' . $e->getMessage(), 0, $e);
             }
         }
+        // Víceúčelový poukaz (§ 37c ZDPH) se při prodeji nedaní: nenulová sazba je chyba
+        // vstupu, nic se tiše nepřepočítává. Ověří se PŘED smazáním starých řádků.
+        $standardItems = array_filter($items, static fn (array $item): bool => InvoiceItemKind::of($item) === InvoiceItemKind::STANDARD);
+        $voucherCards = \MyInvoice\Service\Invoice\MultiPurposeVoucher::stockItemIds(
+            $pdo,
+            $ownerId,
+            array_map(static fn (array $item): int => (int) ($item['stock_item_id'] ?? 0), $standardItems),
+        );
+        $vatRates = $this->loadVatRates();
+        foreach ($standardItems as $i => $item) {
+            if (isset($voucherCards[(int) ($item['stock_item_id'] ?? 0)])
+                && (int) round(abs((float) ($vatRates[(int) ($item['vat_rate_id'] ?? 0)] ?? 0)) * 100) !== 0) {
+                throw new \InvalidArgumentException('Položka ' . ($i + 1) . ': ' . \MyInvoice\Service\Invoice\MultiPurposeVoucher::TAXED_LINE_MESSAGE);
+            }
+        }
 
         // Řádky výdejek ukazují na řádky dokladu (FK ON DELETE SET NULL) a DELETE níž by
         // jejich vazbu vynuloval. Na ní stojí rezervace, prodeje karty i Intrastat.
@@ -1801,7 +1816,6 @@ final class InvoiceRepository
             . ')'
         );
 
-        $vatRates = $this->loadVatRates();
         $textRateId = InvoiceItemKind::textRowRateId($items, $pdo, $vatRates);
 
         // Reverse charge + země klienta + jazyk + sleva — z hlavičky.
@@ -1872,8 +1886,13 @@ final class InvoiceRepository
             // `VatLedgerService` držet a s dosazenou '1' by cizí daň dopadla na ř. 1.
             // Shodně s importem ({@see \MyInvoice\Service\Import\InvoiceImportService}),
             // který tuhle větev řeší stejně; ručně zadaný kód má přednost i tady.
+            //
+            // Víceúčelový poukaz klasifikaci nenese NIKDY, ani ručně zadanou: jeho převod
+            // není plněním (§ 37c ZDPH) a do přiznání ani KH nepatří (MultiPurposeVoucher).
+            $isVoucher = isset($voucherCards[(int) ($item['stock_item_id'] ?? 0)]);
             $explicitCode = ($item['vat_classification_code'] ?? null) !== null;
             $code = match (true) {
+                $isVoucher                      => null,
                 $explicitCode                   => $item['vat_classification_code'],
                 !empty($item['oss_applicable']) => null,
                 default                         => self::defaultSaleClassificationCode(

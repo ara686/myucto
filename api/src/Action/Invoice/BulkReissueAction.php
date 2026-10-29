@@ -279,6 +279,11 @@ final class BulkReissueAction
                 . str_repeat(', ?', count($ossColumns))
                 . ')'
             );
+            $voucherCards = \MyInvoice\Service\Invoice\MultiPurposeVoucher::stockItemIds(
+                $pdo,
+                (int) $source['supplier_id'],
+                array_map(static fn (array $it): int => (int) ($it['stock_item_id'] ?? 0), $source['items']),
+            );
             foreach ($source['items'] as $item) {
                 $kind = (string) ($item['item_kind'] ?? 'standard');
                 // Slevovou položku needitujeme přes MonthIncrementer (popis "Sleva X %").
@@ -286,8 +291,11 @@ final class BulkReissueAction
                     ? \MyInvoice\Service\Invoice\MonthIncrementer::increment((string) $item['description'])
                     : (string) $item['description'];
 
-                // Textový řádek klasifikaci DPH nemá a mít nesmí (nic nevykazuje).
-                $code = \MyInvoice\Service\Invoice\InvoiceItemKind::isText($item) ? null : $item['vat_classification_code']
+                // Textový řádek ani víceúčelový poukaz (MultiPurposeVoucher) klasifikaci DPH
+                // nemá a mít nesmí (nic nevykazuje).
+                $code = \MyInvoice\Service\Invoice\InvoiceItemKind::isText($item)
+                    || ($kind === 'standard' && isset($voucherCards[(int) ($item['stock_item_id'] ?? 0)]))
+                    ? null : $item['vat_classification_code']
                     ?? \MyInvoice\Repository\InvoiceRepository::defaultSaleClassificationCode(
                         (float) $item['vat_rate_snapshot'],
                         (bool) ($source['reverse_charge'] ?? false),

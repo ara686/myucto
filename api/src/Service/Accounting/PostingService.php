@@ -25,6 +25,7 @@ use MyInvoice\Service\Accounting\Product\IssuedDiscountAllocation;
 use MyInvoice\Service\Accounting\Product\ProductPostingDefaults;
 use MyInvoice\Service\Accounting\Revenue\RevenueRuleMatcher;
 use MyInvoice\Service\ActivityLogger;
+use MyInvoice\Service\Invoice\MultiPurposeVoucher;
 use MyInvoice\Service\Payroll\Payment\PayrollBankEvidenceGuard;
 use MyInvoice\Service\Property\Charges\Issuance\IssuancePostingBatchContext;
 use MyInvoice\Service\Report\VatLedgerService;
@@ -1437,6 +1438,9 @@ final class PostingService
         // obsahuje) neseděla na základ+daň a doklad končil na 'totals_mismatch',
         // resp. u čistě OSS dokladu rovnou na 'document_not_postable'.
         [$ossNet, $ossVat] = $this->ossItemTotals($invoiceId, $rate);
+        // Víceúčelový poukaz evidence DPH vyřazuje stejně jako OSS, doklad se o něj doplní
+        // zvlášť; rozpad výnosu ho pošle na přijaté zálohy.
+        $voucherNet = $this->voucherItemNet($supplierId, $invoiceId, $rate);
 
         // Vyúčtování zálohy s daňovými doklady k platbě (§ 37a): odpočtové řádky snížily
         // základ vyúčtování o základ DDKP, jenže DDKP účtoval jen daň (324/343), výnos
@@ -1448,7 +1452,7 @@ final class PostingService
         $net = round($net + $deduction['base'], 2);
         $totalCzk = round($totalCzk + $deduction['base'], 2);
 
-        if ($net + $vat + $ossNet + $ossVat === 0.0) {
+        if ($net + $vat + $ossNet + $ossVat + $voucherNet === 0.0) {
             throw new PostingException('document_not_postable', 'Faktura #' . $invoiceId . ' nemá DPH řádky k zaúčtování (proforma/storno?).');
         }
 
@@ -1498,7 +1502,7 @@ final class PostingService
         // Výnos je výnos bez ohledu na to, kterému státu patří daň — OSS základ jde na
         // TÝŽ výnosový účet (a do téhož rozpadu; revenueWeights počítá váhy ze VŠECH
         // položek dokladu, tedy i z těch OSS, takže by rozpad jinak nesouhlasil).
-        $this->appendSplit($lines, $weights, $revenue, $otherSide, $net + $ossNet, $cc);
+        $this->appendSplit($lines, $weights, $revenue, $otherSide, $net + $ossNet + $voucherNet, $cc);
         if ($vat !== 0.0) {
             $lines[] = $this->line($this->outputVatAccount($supplierId), $vatSide($vat), abs($vat), $cc);
         }
@@ -1509,7 +1513,7 @@ final class PostingService
             $ossAccount = $this->ruleCode($supplierId, 'oss.output.vat', 'credit', self::OSS_OUTPUT_VAT_ACCOUNT);
             $lines[] = $this->line($ossAccount, $vatSide($ossVat), abs($ossVat), $cc);
         }
-        $this->appendRounding($lines, $totalCzk, $net + $vat + $ossNet + $ossVat, $cc, $isCreditNote);
+        $this->appendRounding($lines, $totalCzk, $net + $vat + $ossNet + $ossVat + $voucherNet, $cc, $isCreditNote);
 
         // Vyúčtovací faktura z proformy (parent_invoice_id → proforma): DOPLŇ zúčtování
         // skutečně přijaté zálohy 324 MD / 311 D (self-balanced pár — nemění vyváženost
@@ -2913,7 +2917,7 @@ final class PostingService
 
     /**
      * Účet přijatých záloh na víceúčelové poukazy a kredit (§ 37c ZDPH): na něj jde prodej
-     * poukazu z položky vydané faktury ({@see isVoucherAdvanceItem()}) a z něj se poukaz
+     * poukazu z položky vydané faktury ({@see MultiPurposeVoucher::isUntaxedLine()}) a z něj se poukaz
      * čerpá zápočtem při uplatnění ({@see InvoiceSettlementService::settleVoucherRedemption()}).
      * Stejný účet jako inkaso zálohové proformy (`advance.received.collection`).
      */
@@ -2923,28 +2927,22 @@ final class PostingService
     }
 
     /**
-     * Je řádek vydané faktury prodejem víceúčelového poukazu nebo dobitím kreditu?
+     * Jde řádek vydané faktury na přijaté zálohy jako prodej víceúčelového poukazu?
      *
-     * Rozhoduje druh skladové karty `stored_value` (tentýž, podle kterého EET určuje
-     * část tržby „určeno k čerpání", {@see \MyInvoice\Service\Eet\EetStoredValueCalculator})
-     * a nulová daň řádku. Víceúčelový poukaz při prodeji není předmětem DPH, jde tedy na
-     * přijaté zálohy bez daně a daní se až plnění, za které se poukazem zaplatí. Řádek
-     * s daní je zdaněný už při prodeji (jednoúčelový poukaz § 37b, druh `specific_voucher`,
-     * nebo chybně nastavená sazba) a zůstává výnosem, jinak by se daň z téhož plnění
-     * vybrala podruhé při uplatnění.
+     * Definice je ve SSOT {@see MultiPurposeVoucher::isUntaxedLine()}. Prodej majetku má
+     * přednost (účet z karty majetku), proto ho tahle podmínka vyřazuje dřív. Řádek
+     * s daní (chybná data z doby před validací sazby) zůstává výnosem, jinak by se daň
+     * z téhož plnění vybrala podruhé při uplatnění.
      *
      * Výjimka ze zákazu saldokontních účtů na položce ({@see SettlementAccounts}) platí jen
      * pro tento druh řádku, ne pro účet 324 obecně.
      *
      * @param array<string,mixed> $row řádek z {@see issuedItemRows()}
      */
-    public static function isVoucherAdvanceItem(array $row): bool
+    private static function isVoucherAdvanceItem(array $row): bool
     {
-        return ($row['eet_item_kind'] ?? null) === 'stored_value'
-            && ($row['item_kind'] ?? 'standard') === 'standard'
-            && $row['asset_id'] === null && $row['small_asset_id'] === null
-            && self::cents((float) ($row['vat_rate_snapshot'] ?? 0)) === 0
-            && self::cents((float) ($row['total_vat'] ?? 0)) === 0;
+        return $row['asset_id'] === null && $row['small_asset_id'] === null
+            && MultiPurposeVoucher::isUntaxedLine($row);
     }
 
     /**
@@ -4097,6 +4095,31 @@ final class PostingService
             $vat += round((float) $row['total_vat'] * $rate, 2);
         }
         return [round($net, 2), round($vat, 2)];
+    }
+
+    /**
+     * Základ řádků víceúčelových poukazů v CZK ({@see MultiPurposeVoucher::isUntaxedLine()}).
+     * Evidence DPH je vyřazuje (převod poukazu není plněním), zápis ale potřebuje doklad
+     * CELÝ: poukaz jde rozpadem výnosu na přijaté zálohy ({@see voucherAdvanceAccount()}).
+     * Zrcadlo {@see ossItemTotals()}, zaokrouhlení per řádek ze stejného důvodu.
+     */
+    private function voucherItemNet(int $supplierId, int $invoiceId, float $rate): float
+    {
+        if (!$this->db->hasColumn('stock_items', 'eet_item_kind')) {
+            return 0.0;
+        }
+        $stmt = $this->db->pdo()->prepare(
+            'SELECT ii.total_without_vat
+               FROM invoice_items ii
+               ' . MultiPurposeVoucher::stockJoinSql('ii', 'si', '?') . '
+              WHERE ii.invoice_id = ? AND ' . MultiPurposeVoucher::untaxedLineSql('ii', 'si')
+        );
+        $stmt->execute([$supplierId, $invoiceId]);
+        $net = 0.0;
+        foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $base) {
+            $net += round((float) $base * $rate, 2);
+        }
+        return round($net, 2);
     }
 
     /**
