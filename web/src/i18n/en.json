@@ -14098,6 +14098,7 @@
     "edit_document": "Edit cash document",
     "save_draft": "Save as draft",
     "post_document": "Post",
+    "post_and_next": "Post and next",
     "post_confirm": "Post document {number}? A series number will be assigned and the document posted.",
     "balance": "Balance",
     "balance_as_of": "balance as of {date}",

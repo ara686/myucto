@@ -14098,6 +14098,7 @@
     "edit_document": "Úprava pokladního dokladu",
     "save_draft": "Uložit jako koncept",
     "post_document": "Vystavit",
+    "post_and_next": "Vystavit a další",
     "post_confirm": "Vystavit doklad {number}? Přidělí se číslo z řady a doklad se zaúčtuje.",
     "balance": "Zůstatek",
     "balance_as_of": "zůstatek k {date}",
