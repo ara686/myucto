@@ -14186,7 +14186,7 @@ paths:
   /api/v1/accounting/revenue-rules:
     get:
       tags: [Accounting]
-      summary: Pravidla výnosů pro položky vydaných faktur — stránkovaně
+      summary: Pravidla výnosů pro položky vydaných faktur, stránkovaně
       description: Jen podvojné účetnictví (jinak 403 `wrong_accounting_mode`).
       parameters:
         - $ref: '#/components/parameters/SupplierIdHeader'

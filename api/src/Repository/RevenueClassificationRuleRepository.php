@@ -8,7 +8,7 @@ use MyInvoice\Infrastructure\Database\Connection;
 use PDO;
 
 /**
- * Repository pro revenue_classification_rules — per-tenant pravidla účtu položky
+ * Repository pro revenue_classification_rules: per-tenant pravidla účtu položky
  * vydané faktury (migrace 2217). Kontrakt shodný s {@see ExpenseClassificationRuleRepository}:
  * priority ASC, při shodě rozhoduje hit_count, tenant predikát je v každém SQL.
  */

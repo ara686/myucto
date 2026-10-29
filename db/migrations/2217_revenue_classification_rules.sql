@@ -1,4 +1,4 @@
--- MyÚčto.cz — pravidla výnosů pro položky vydaných faktur.
+-- MyÚčto.cz: pravidla výnosů pro položky vydaných faktur.
 --
 -- PROČ: importované vydané faktury (ISDOC) nesou směs výrobků, zboží a služeb, ale
 -- položky nejsou navázané na skladové karty, takže celý výnos padal na předkontaci

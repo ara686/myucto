@@ -22,7 +22,7 @@ use PDO;
  * (materialized path `/12/45/98/`).
  *
  * Validace účtu ({@see validateAccount()}) platí pro kartu a kategorii: účet musí být
- * v účtovém rozvrhu firmy, aktivní a výsledkový — výnos třídy 6, náklad třídy 5. Účet
+ * v účtovém rozvrhu firmy, aktivní a výsledkový (výnos třídy 6, náklad třídy 5). Účet
  * zadaný přímo na položce vydané faktury ověřuje volnější {@see validateIssuedItemAccount()}.
  */
 final class ProductPostingDefaults

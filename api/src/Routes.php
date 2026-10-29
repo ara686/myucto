@@ -2849,7 +2849,7 @@ final class Routes
             $g->put   ('/expense-rules/{id:[0-9]+}',                [\MyInvoice\Action\Accounting\ExpenseClassificationRuleAction::class, 'update']);
             $g->delete('/expense-rules/{id:[0-9]+}',                [\MyInvoice\Action\Accounting\ExpenseClassificationRuleAction::class, 'delete']);
             $g->get   ('/purchase-invoices/{id:[0-9]+}/expense-suggestions', [\MyInvoice\Action\Accounting\ExpenseClassificationRuleAction::class, 'suggestions']);
-            // Pravidla výnosů (2217) — účet položky vydané faktury podle kódu, textu nebo sazby.
+            // Pravidla výnosů (2217): účet položky vydané faktury podle kódu, textu nebo sazby.
             $g->get   ('/revenue-rules',                            [\MyInvoice\Action\Accounting\RevenueClassificationRuleAction::class, 'list']);
             $g->get   ('/revenue-rules/{id:[0-9]+}',                [\MyInvoice\Action\Accounting\RevenueClassificationRuleAction::class, 'get']);
             $g->post  ('/revenue-rules',                            [\MyInvoice\Action\Accounting\RevenueClassificationRuleAction::class, 'create']);

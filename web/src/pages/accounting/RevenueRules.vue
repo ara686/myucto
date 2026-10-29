@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Pravidla výnosů — editor pro tabulku revenue-rules, protějšek Pravidel nákladů.
+ * Pravidla výnosů: editor pro tabulku revenue-rules, protějšek Pravidel nákladů.
  *
  * Pravidlo určí účet položky vydané faktury podle kódu položky, textu nebo sazby DPH.
  * Shoda = VŠECHNA vyplněná kritéria, první podle priority vyhrává.

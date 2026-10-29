@@ -256,7 +256,7 @@ final class ExpenseClassificationRuleAction
      *
      * Ověřuje se TADY, ne až při účtování: neplatný účet v pravidle by se projevil až
      * `unknown_account` u nic netušícího uživatele nad cizím dokladem. Zakázané prefixy
-     * určuje {@see \MyInvoice\Service\Accounting\SettlementAccounts} — saldokonta, DPH,
+     * určuje {@see \MyInvoice\Service\Accounting\SettlementAccounts}: saldokonta, DPH,
      * banka ani pokladna nákladem přijaté faktury nejsou.
      */
     private function assertTargetAccount(int $supplierId, mixed $value): ?string

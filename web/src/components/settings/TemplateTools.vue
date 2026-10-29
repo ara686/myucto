@@ -78,7 +78,7 @@ const tabClass = (value: Tab) =>
     <BankPostingRules v-else-if="journalEnabled && effectiveTab === 'posting'" />
     <JournalTemplates v-else-if="journalEnabled" embedded />
 
-    <!-- Bez podvojného účetnictví není co zobrazit — všechny záložky jsou
+    <!-- Bez podvojného účetnictví není co zobrazit, všechny záložky jsou
          šablony k účtování do deníku. Prázdná stránka by ale vypadala jako
          rozbitá aplikace, tak je tu aspoň důvod a cesta dál. -->
     <div v-else class="rounded-lg border border-neutral-200 bg-surface p-5 text-sm">

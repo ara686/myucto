@@ -16,7 +16,7 @@ use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
 /**
- * Pravidla výnosů (migrace 2217) — REST API. RBAC, tenant scoping i tvar odpovědí
+ * Pravidla výnosů (migrace 2217), REST API. RBAC, tenant scoping i tvar odpovědí
  * zrcadlí {@see ExpenseClassificationRuleAction}: čtení readonly+, zápisy účetní|admin.
  * Pravidlo určuje účet položky vydané faktury, takže je jen pro podvojné účetnictví.
  */
