@@ -186,14 +186,24 @@ final class InvoiceSettlementService
      * ({@see PostingService::voucherAdvanceAccount()}, 324 MD / 311 D). Daň z plnění
      * přiznává sama faktura podle svých řádků, zápočet DPH nemění.
      *
+     * Daňová evidence zálohy neúčtuje, příjem tam vznikl už při prodeji poukazu (peníze
+     * přišly tehdy). Uplatnění je proto jen vyrovnání faktury bez peněžního pohybu:
+     * úhrada se zdrojem `settlement`, kterou peněžní deník
+     * ({@see \MyInvoice\Repository\CashJournalRepository}, noha C) jako příjem nepočítá.
+     * Ruční úhrada (`manual`) by tutéž částku započetla do příjmů podruhé.
+     *
      * Vrací id úhrady faktury, nebo null, když se zápočet nepoužije a úhradu má zapsat
-     * volající dosavadní cestou: daňová evidence (zálohy se tam neúčtují), proforma
-     * (sama visí na 324), doklad v cizí měně (zápočet umí jen CZK), účet chybí v osnově.
+     * volající dosavadní cestou: proforma (sama visí na 324), doklad v cizí měně
+     * (zápočet umí jen CZK), účet chybí v osnově.
      */
     public function settleVoucherRedemption(int $supplierId, int $invoiceId, float $amount, string $settledOn, ?string $note, ?int $userId): ?int
     {
         if ($this->supplierAccountingMode($supplierId) === 'tax_evidence') {
-            return null;
+            return (int) $this->invoicePayments->recordPayment($invoiceId, $amount, $settledOn, [
+                'source'     => 'settlement',
+                'note'       => $note,
+                'created_by' => $userId,
+            ])['payment_id'];
         }
         $inv = $this->repo->lockInvoice($supplierId, $invoiceId);
         if ($inv === null || $inv['kind'] === 'proforma' || $inv['currency'] !== 'CZK') {

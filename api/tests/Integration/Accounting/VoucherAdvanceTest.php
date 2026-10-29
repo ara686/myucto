@@ -8,6 +8,7 @@ use DI\Container;
 use MyInvoice\Bootstrap;
 use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Repository\AccountingPeriodRepository;
+use MyInvoice\Repository\CashJournalRepository;
 use MyInvoice\Repository\InvoiceRepository;
 use MyInvoice\Service\Invoice\NewInvoiceVatClassification;
 use MyInvoice\Service\Accounting\ChartOfAccountsSeeder;
@@ -161,16 +162,35 @@ final class VoucherAdvanceTest extends TestCase
         self::assertSame((int) $this->row('SELECT id FROM invoice_payments WHERE invoice_id = ?', [$invoiceId])['id'], (int) $allocation['invoice_payment_id']);
     }
 
-    public function testCashPaymentAndTaxEvidenceKeepManualPayment(): void
+    public function testCashPaymentKeepsManualPayment(): void
     {
         $cash = $this->invoice([[239.67, 50.33, 21, 'standard']]);
         $this->accept($cash, 'cash', '290');
         self::assertSame('manual', $this->row('SELECT source FROM invoice_payments WHERE invoice_id = ?', [$cash])['source']);
+    }
 
+    /**
+     * Daňová evidence: příjem vznikl při prodeji poukazu. Uplatnění poukazu vyrovná fakturu
+     * bez peněžního pohybu a peněžní deník ho podruhé jako příjem nezapočte.
+     */
+    public function testTaxEvidenceRedemptionIsNotIncomeAgain(): void
+    {
         $this->db->pdo()->prepare("UPDATE supplier SET accounting_mode = 'tax_evidence' WHERE id = ?")->execute([$this->supplierId]);
-        $voucher = $this->invoice([[239.67, 50.33, 21, 'standard']]);
-        $this->accept($voucher, 'stored_value', '290');
-        self::assertSame('manual', $this->row('SELECT source FROM invoice_payments WHERE invoice_id = ?', [$voucher])['source']);
+        $sale = $this->invoice([[1000.00, 0.00, 0, 'stored_value']]);
+        $this->accept($sale, 'cash', '1000');
+        $redemption = $this->invoice([[239.67, 50.33, 21, 'standard']]);
+        $this->accept($redemption, 'stored_value', '290');
+
+        $income = [];
+        foreach ($this->container->get(CashJournalRepository::class)->movements($this->supplierId, self::DAY, self::DAY) as $movement) {
+            if ($movement['direction'] === 'in' && $movement['invoice_id'] !== null) {
+                $income[(int) $movement['invoice_id']] = ($income[(int) $movement['invoice_id']] ?? 0.0) + (float) $movement['amount'];
+            }
+        }
+        self::assertEqualsWithDelta(1000.00, $income[$sale] ?? 0.0, 0.001, 'Příjmem je prodej poukazu.');
+        self::assertArrayNotHasKey($redemption, $income, 'Uplatnění poukazu není druhý příjem.');
+        self::assertSame('settlement', $this->row('SELECT source FROM invoice_payments WHERE invoice_id = ?', [$redemption])['source']);
+        self::assertSame('paid', $this->row('SELECT status FROM invoices WHERE id = ?', [$redemption])['status']);
         self::assertSame('0', (string) $this->row('SELECT COUNT(*) AS n FROM invoice_settlements WHERE supplier_id = ?', [$this->supplierId])['n']);
     }
 
