@@ -325,6 +325,10 @@ Položka **Vytvořit pravidlo účtování** otevře původní formulář bankov
 a variabilním symbolem. Obsahuje rozsah částky od/do, prioritu, strop automatiky, účty MD/Dal a test na historii.
 Neobsahuje pevnou výchozí částku. Pravidlo samo nemění fakturu. Úhrady faktur se nadále párují, nikoli účtují tímto pravidlem.
 
+Otevřete-li detail ze seznamu přijatých faktur, vlevo od odkazu **Zpět na seznam** jsou šipky předchozí a další
+faktury (zkratky `[` a `]`), které listují v pořadí a s filtry seznamu, ze kterého jste přišli; detail otevřený
+přímým odkazem šipky nemá.
+
 ### 23.11.2 Stavy přijaté faktury
 
 <!-- cols: 22 44 34 -->

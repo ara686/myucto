@@ -56,6 +56,8 @@ import DateInput from '@/components/ui/DateInput.vue'
 import ItemAccrualFields from '@/components/invoice/ItemAccrualFields.vue'
 import CreditNoteOffsetNotice from '@/components/invoices/CreditNoteOffsetNotice.vue'
 import WorkspaceTeleport from '@/components/workspace/WorkspaceTeleport.vue'
+import ListNavArrows from '@/components/ui/ListNavArrows.vue'
+import { useListNavigation } from '@/composables/useListNavigation'
 
 const PaymentMethodModal = defineAsyncComponent(() => import('@/components/invoices/PaymentMethodModal.vue'))
 const RefundPaymentDialog = defineAsyncComponent(() => import('@/components/invoices/RefundPaymentDialog.vue'))
@@ -85,6 +87,16 @@ function formatRate(rate: number): string {
 
 const route = useRoute()
 const router = useRouter()
+const listNav = useListNavigation({
+  kind: 'invoices',
+  currentId: () => Number(route.params.id) || 0,
+  detailRoute: id => ({ name: 'invoice-detail', params: { id } }),
+  fetchPage: async (params, page) => {
+    const result = await invoicesApi.listGrouped({ ...(params as Parameters<typeof invoicesApi.listGrouped>[0]), page })
+    return { ids: result.data.flatMap(g => g.invoices.map(inv => inv.id)), pages: result.meta.pages ?? 1 }
+  },
+  scope: () => supplierStore.currentSupplierId,
+})
 
 const invoice = ref<Invoice | null>(null)
 
@@ -2079,7 +2091,11 @@ useWindowRefresh(['invoices', 'clients', 'bank', 'bank-transactions', 'cash', 'a
        celou šířku - proto je vnější div v ostatních případech jen průhledný obal. -->
   <div v-else-if="invoice" :class="importedPdfSideBySide ? 'flex items-start gap-4' : ''">
     <div class="max-w-5xl space-y-4 min-w-0" :class="importedPdfSideBySide ? 'flex-1' : ''">
-      <RouterLink to="/invoices" class="text-sm text-neutral-600 hover:text-neutral-900">{{ t('invoice.back_to_list') }}</RouterLink>
+      <div class="flex items-center gap-2">
+        <ListNavArrows v-if="listNav.active.value" :has-previous="listNav.hasPrevious.value" :has-next="listNav.hasNext.value"
+          :busy="listNav.busy.value" @previous="listNav.previous" @next="listNav.next" />
+        <RouterLink :to="listNav.listPath.value ?? '/invoices'" class="text-sm text-neutral-600 hover:text-neutral-900">{{ t('invoice.back_to_list') }}</RouterLink>
+      </div>
       <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-3 md:gap-4">
         <h1 class="text-2xl font-semibold flex items-center gap-3 flex-wrap min-w-0">
           <span v-if="invoice.varsymbol" class="font-mono">{{ invoice.varsymbol }}</span>

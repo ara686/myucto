@@ -42,6 +42,8 @@ import { purchaseApprovalsApi, approvalErrorMessage } from '@/api/purchaseApprov
 import { announceApprovalRequested } from '@/utils/purchaseApproval'
 import { useDimensions } from '@/composables/useDimensions'
 import WorkspaceTeleport from '@/components/workspace/WorkspaceTeleport.vue'
+import ListNavArrows from '@/components/ui/ListNavArrows.vue'
+import { useListNavigation } from '@/composables/useListNavigation'
 
 const ExtractionReviewModal = defineAsyncComponent(() => import('@/components/purchase/ExtractionReviewModal.vue'))
 const PaymentCalendarModal = defineAsyncComponent(() => import('@/components/purchase/PaymentCalendarModal.vue'))
@@ -59,6 +61,16 @@ const router = useRouter()
 const toast = useToast()
 const auth = useAuthStore()
 const supplierStore = useSupplierStore()
+const listNav = useListNavigation({
+  kind: 'purchase-invoices',
+  currentId: () => Number(route.params.id) || 0,
+  detailRoute: id => ({ name: 'purchase-invoice-detail', params: { id } }),
+  fetchPage: async (params, page) => {
+    const result = await purchaseInvoicesApi.listGrouped({ ...(params as Parameters<typeof purchaseInvoicesApi.listGrouped>[0]), page })
+    return { ids: result.data.flatMap(g => g.invoices.map(inv => inv.id)), pages: result.meta.pages ?? 1 }
+  },
+  scope: () => supplierStore.currentSupplierId,
+})
 
 // Chrome/Edge: dialog Uložit jako ve složce, kam se naposledy ukládalo PDF této firmy
 // (#104). Jinde odkaz stáhne PDF jako dřív.
@@ -1000,9 +1012,13 @@ useWindowRefresh(['purchase-invoices', 'clients', 'bank', 'bank-transactions', '
        celou šířku - proto je vnější div v ostatních případech jen průhledný obal. -->
   <div v-else-if="invoice" :class="pdfSideBySide ? 'flex items-start gap-4' : ''">
     <div class="max-w-5xl space-y-4 min-w-0" :class="pdfSideBySide ? 'flex-1' : ''">
-      <RouterLink to="/purchase-invoices" class="text-sm text-neutral-600 hover:text-neutral-900">
-        {{ t('purchase_invoice.back_to_list') }}
-      </RouterLink>
+      <div class="flex items-center gap-2">
+        <ListNavArrows v-if="listNav.active.value" :has-previous="listNav.hasPrevious.value" :has-next="listNav.hasNext.value"
+          :busy="listNav.busy.value" @previous="listNav.previous" @next="listNav.next" />
+        <RouterLink :to="listNav.listPath.value ?? '/purchase-invoices'" class="text-sm text-neutral-600 hover:text-neutral-900">
+          {{ t('purchase_invoice.back_to_list') }}
+        </RouterLink>
+      </div>
 
       <!-- AI extraction warning — uživatel by měl řádky ověřit proti PDF před zaúčtováním. -->
       <div v-if="invoice.extraction_warning" class="p-3 bg-warning-50 border border-warning-500/40 rounded-md flex gap-3 items-start">

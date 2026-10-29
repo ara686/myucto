@@ -210,6 +210,10 @@ Detail ukazuje:
   (náhled a stažení). Je oddělené od vygenerovaného PDF, viz [21. Importy](21_Importy.md).
 - **Activity log** - kdo a kdy fakturu vytvořil, vystavil, odeslal a označil jako zaplacenou.
 
+Otevřete-li detail ze seznamu faktur, vlevo od odkazu **Zpět na seznam** jsou šipky
+předchozí a další faktury (zkratky `[` a `]`), které listují v pořadí a s filtry
+seznamu, ze kterého jste přišli; detail otevřený přímým odkazem šipky nemá.
+
 Akční tlačítka vpravo nahoře závisí na stavu faktury:
 
 | Stav | Dostupné akce |
