@@ -708,6 +708,7 @@ final class Routes
         $app->post   ('/api/invoices/{id:[0-9]+}/payments', CreatePaymentAction::class);
         $app->delete ('/api/invoices/{id:[0-9]+}/payments/{paymentId:[0-9]+}', DeletePaymentAction::class);
         $app->post   ('/api/invoices/{id:[0-9]+}/payments/{paymentId:[0-9]+}/tax-document', CreatePaymentTaxDocumentAction::class);
+        $app->post   ('/api/invoices/{id:[0-9]+}/convert-to-tax-document', \MyInvoice\Action\Invoice\ConvertFinalDraftToTaxDocumentAction::class);
         $app->post   ('/api/invoices/{id:[0-9]+}/cancel',    CancelInvoiceAction::class);
         $app->post   ('/api/invoices/{id:[0-9]+}/uncancel',  \MyInvoice\Action\Invoice\UncancelInvoiceAction::class);
         // Ruční book/unbook (Epic F6, §4.6) — zámek pro roli client u tax_evidence firem.

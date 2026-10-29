@@ -1295,6 +1295,21 @@ async function removeDrawdown() {
   }
 }
 
+async function convertToTaxDocument() {
+  if (!invoice.value || busy.value !== null) return
+  if (!confirm(t('invoice.convert_to_tax_document.confirm'))) return
+  busy.value = 'convert-tax-doc'
+  try {
+    const r = await invoicesApi.convertToTaxDocument(invoice.value.id)
+    toast.success(t('invoice.convert_to_tax_document.done'))
+    router.push(`/invoices/${r.tax_document_ids[0] ?? r.proforma_id}`)
+  } catch (e) {
+    toast.error(apiErrorMessage(e))
+  } finally {
+    busy.value = null
+  }
+}
+
 async function cloneInvoice() {
   if (!invoice.value) return
   if (!confirm(t('invoice.clone_confirm', { varsymbol: invoice.value.varsymbol || `#${invoice.value.id}` }))) return
@@ -1975,6 +1990,13 @@ const invoiceActions = computed<ActionItem[]>(() => {
     { key: 'journal', label: t('common.view_in_journal'), icon: 'chart', tier: 'secondary', variant: 'neutral',
       show: isDoubleEntry.value && (!!inv.booked_at || !!inv.locked?.journal_entry_id),
       to: { name: 'accounting-journal', query: { source_type: 'invoice', source_id: String(inv.id) } } },
+    // Koncept vyúčtovací faktury po úhradě zálohy → daňový doklad k přijaté platbě
+    // (záloha na plnění, které ještě nenastalo). Route vyžaduje invoices.delete
+    // (koncept zmizí), akce navíc invoices.mark_paid.
+    { key: 'convert-tax-doc', label: t('invoice.convert_to_tax_document.action'), icon: 'swap', tier: 'overflow', variant: 'warning',
+      show: isDraft.value && inv.invoice_type === 'invoice' && inv.parent_invoice?.invoice_type === 'proforma'
+        && supplierIsVatPayer.value && !inv.reverse_charge && canDeletePermission && canMarkPaidPermission && !lockedForMe.value,
+      disabled: b, loading: busy.value === 'convert-tax-doc', run: convertToTaxDocument },
     { key: 'posting-rule', label: t('accounting.template.create_posting_rule'), icon: 'doc', tier: 'overflow', variant: 'neutral',
       show: isDoubleEntry.value && auth.canWrite('bank.rules'), run: () => { postingRuleOpen.value = true } },
     // ── overflow ──

@@ -949,6 +949,11 @@ export const invoicesApi = {
     api.post<{ tax_document_id: number; payments: InvoicePayment[] }>(
       `/invoices/${id}/payments/${paymentId}/tax-document`,
     ).then(r => r.data),
+  // Koncept vyúčtovací faktury k záloze → daňový doklad k přijaté platbě (koncept se odstraní)
+  convertToTaxDocument: (id: number) =>
+    api.post<{ proforma_id: number; tax_document_ids: number[] }>(
+      `/invoices/${id}/convert-to-tax-document`,
+    ).then(r => r.data),
   cancel: (id: number, mode: 'internal' | 'credit_note', reason: string = '') =>
     api.post<{ cancellation_id?: number; credit_note_id?: number; edit_url?: string; invoice?: Invoice }>(
       `/invoices/${id}/cancel`,

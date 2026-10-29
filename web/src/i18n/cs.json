@@ -23210,6 +23210,11 @@
       "proforma": "Zálohová faktura",
       "parent": "Původní faktura"
     },
+    "convert_to_tax_document": {
+      "action": "Změnit na daňový doklad k platbě",
+      "confirm": "Koncept faktury se odstraní a místo něj vznikne koncept daňového dokladu k přijaté platbě s DUZP ke dni platby. Pokračovat?",
+      "done": "Koncept faktury byl nahrazen daňovým dokladem k přijaté platbě."
+    },
     "advance_drawdown": {
       "action": "Odečíst zálohu",
       "tooltip": "Odečíst část zaplacené zálohy (postupné čerpání)",

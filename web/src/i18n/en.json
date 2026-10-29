@@ -23210,6 +23210,11 @@
       "proforma": "Advance (proforma) invoice",
       "parent": "Original invoice"
     },
+    "convert_to_tax_document": {
+      "action": "Change to tax document for payment",
+      "confirm": "The draft invoice will be removed and replaced by a draft tax document for the received payment, dated on the payment day. Continue?",
+      "done": "The draft invoice was replaced by a tax document for the received payment."
+    },
     "advance_drawdown": {
       "action": "Deduct advance",
       "tooltip": "Deduct part of a paid advance (partial drawdown)",

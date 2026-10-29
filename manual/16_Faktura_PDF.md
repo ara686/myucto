@@ -276,6 +276,13 @@ finálu s odpočtovými řádky § 37a nelze samostatně stornovat nebo rozpojit
 chybný cyklus se opravuje nejdřív stornem finální faktury. U cizoměnové platby
 se pro DPH použije kurz k datu přijetí platby, ne kurz původní proformy.
 
+Má-li firma v nastavení po úhradě zálohy vystavovat **vyúčtovací fakturu**,
+vznikne po doplacení zálohy koncept faktury. Pokud plnění ještě nenastalo
+(záloha na zakázku), otevřete koncept a v menu **…** zvolte **Změnit na daňový
+doklad k platbě**. Koncept faktury se odstraní a místo něj vznikne koncept
+daňového dokladu ke každé platbě zálohy, která ho ještě nemá. Vystavenou fakturu
+takto změnit nejde, tu je potřeba stornovat.
+
 ### 16.10.3 Zaúčtování do deníku
 
 Vystavená faktura sama o sobě do [Účetního deníku](52_Ucetni_denik.md) nic
