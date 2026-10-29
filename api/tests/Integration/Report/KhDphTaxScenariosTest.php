@@ -2069,6 +2069,41 @@ final class KhDphTaxScenariosTest extends TestCase
         $this->assertStringNotContainsString('TEXT-ROW-0 obsahuje neklasifikovaný', implode(' | ', $result['warnings']));
     }
 
+    /**
+     * Prodej víceúčelového poukazu (§ 37c, skladová karta `stored_value`, sazba 0 %) není
+     * předmětem daně: nejde do přiznání a není to zapomenutá klasifikace. Varování
+     * „neklasifikovaný řádek" se ho netýká, běžný řádek téhož dokladu se vykáže dál.
+     */
+    public function testMultiPurposeVoucherSaleIsOutsideVatWithoutWarning(): void
+    {
+        $d = sprintf('%04d-%02d-15', self::YEAR, self::MONTH);
+        $customer = $this->client('Odběratel poukazu', $this->czId, 'CZ58585858', customer: true);
+        $this->sale('VOUCHER-0', $customer, null, false, $d, $d, [[700, 147, 21]]);
+        $id = end($this->invoiceIds);
+        $pdo = $this->db->pdo();
+        $rate = (int) $pdo->query('SELECT vat_rate_id FROM invoice_items WHERE invoice_id = ' . (int) $id)->fetchColumn();
+        $pdo->prepare("INSERT INTO stock_items (supplier_id, sku, name, eet_item_kind) VALUES (?, ?, 'Poukaz 1000 Kč', 'stored_value')")
+            ->execute([$this->supplierId, uniqid('POUKAZ-')]);
+        $stockItemId = (int) $pdo->lastInsertId();
+        try {
+            $pdo->prepare(
+                "INSERT INTO invoice_items (invoice_id, description, quantity, unit, unit_price_without_vat, vat_rate_id,
+                                            vat_rate_snapshot, total_without_vat, total_vat, total_with_vat, order_index, stock_item_id)
+                 VALUES (?, 'Poukaz 1000 Kč', 1, 'ks', 1000, ?, 0, 1000, 0, 1000, 1, ?)"
+            )->execute([$id, $rate, $stockItemId]);
+
+            $result = $this->dph->build($this->supplierId, self::YEAR, self::MONTH, 'monthly');
+
+            $this->assertStringNotContainsString('VOUCHER-0 obsahuje neklasifikovaný', implode(' | ', $result['warnings']));
+            $dp = (new \SimpleXMLElement($result['xml']))->DPHDP3;
+            $this->assertSame('700', (string) $dp->Veta1['obrat23']);
+            $this->assertSame('', (string) $dp->Veta4['pln_osv']);
+        } finally {
+            $pdo->prepare('DELETE FROM invoice_items WHERE stock_item_id = ?')->execute([$stockItemId]);
+            $pdo->prepare('DELETE FROM stock_items WHERE id = ?')->execute([$stockItemId]);
+        }
+    }
+
     public function testCreditNoteAndUnclassifiedZeroRateProduceWarnings(): void
     {
         $d = sprintf('%04d-%02d-14', self::YEAR, self::MONTH);

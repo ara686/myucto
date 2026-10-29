@@ -1,0 +1,268 @@
+<?php
+
+declare(strict_types=1);
+
+namespace MyInvoice\Tests\Integration\Accounting;
+
+use DI\Container;
+use MyInvoice\Bootstrap;
+use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Repository\AccountingPeriodRepository;
+use MyInvoice\Service\Accounting\ChartOfAccountsSeeder;
+use MyInvoice\Service\Accounting\PostingService;
+use MyInvoice\Service\Eet\EetCredentialProvider;
+use MyInvoice\Service\Eet\EetPaymentCommand;
+use MyInvoice\Service\Eet\Transport\EetTransportInterface;
+use MyInvoice\Tests\Support\IsolatedSupplierTrait;
+use MyInvoice\Tests\Support\ScriptedEetTransport;
+use PDO;
+use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\TestCase;
+use Psr\Clock\ClockInterface;
+use Symfony\Component\Clock\MockClock;
+
+/**
+ * Víceúčelový poukaz a kredit (§ 37c ZDPH) přes přijaté zálohy:
+ *
+ *   • prodej (skladová karta `stored_value`, řádek bez daně) jde na 324 místo výnosu,
+ *     daň a pohledávka ostatních řádků se nemění,
+ *   • řádek s daní (jednoúčelový poukaz § 37b nebo zdaněný kredit) zůstává výnosem,
+ *   • uplatnění kanálem „Poukaz / kredit" je v podvojném účetnictví zápočet 324 MD / 311 D,
+ *     v daňové evidenci a u jiných kanálů zůstává ruční úhrada.
+ *
+ * Vše v jedné transakci, tearDown rollbackne.
+ */
+#[Group('integration')]
+final class VoucherAdvanceTest extends TestCase
+{
+    use IsolatedSupplierTrait;
+
+    private const DAY = '2026-11-02';
+
+    private Container $container;
+    private Connection $db;
+    private PostingService $posting;
+    private int $supplierId = 0;
+    private int $clientId = 0;
+    private int $czk = 0;
+    private int $vat = 0;
+    private int $userId = 0;
+    private bool $inTx = false;
+
+    protected function setUp(): void
+    {
+        if (!is_file(dirname(__DIR__, 4) . '/cfg.php')) {
+            $this->markTestSkipped('cfg.php neexistuje, test vyžaduje DB.');
+        }
+        $this->container = Bootstrap::buildContainer();
+        $this->container->set(EetTransportInterface::class, new ScriptedEetTransport());
+        $this->container->set(EetCredentialProvider::class, ScriptedEetTransport::credentials());
+        $this->container->set(ClockInterface::class, new MockClock(new \DateTimeImmutable(self::DAY . ' 10:00:00', new \DateTimeZone('Europe/Prague'))));
+        $this->db = $this->container->get(Connection::class);
+        $this->posting = $this->container->get(PostingService::class);
+        $pdo = $this->db->pdo();
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        $source = (int) $pdo->query('SELECT id FROM supplier ORDER BY id LIMIT 1')->fetchColumn();
+        $country = (int) $pdo->query("SELECT id FROM countries WHERE iso2 = 'CZ' LIMIT 1")->fetchColumn();
+        $this->czk = (int) $pdo->query("SELECT id FROM currencies WHERE code = 'CZK' ORDER BY id LIMIT 1")->fetchColumn();
+        $this->vat = (int) $pdo->query('SELECT id FROM vat_rates ORDER BY id LIMIT 1')->fetchColumn();
+        $this->userId = (int) $pdo->query('SELECT id FROM users ORDER BY id LIMIT 1')->fetchColumn();
+        if (min($source, $country, $this->czk, $this->vat, $this->userId) <= 0) {
+            $this->markTestSkipped('Chybí základní data v DB.');
+        }
+
+        $pdo->beginTransaction();
+        $this->inTx = true;
+        $this->supplierId = $this->createIsolatedSupplier($pdo, $source);
+        $pdo->prepare("UPDATE supplier SET accounting_mode = 'double_entry' WHERE id = ?")->execute([$this->supplierId]);
+        $this->setVatPayerAt($pdo, $this->supplierId, '2000-01-01', true);
+        $this->container->get(ChartOfAccountsSeeder::class)->seedForSupplier($this->supplierId);
+        $this->container->get(AccountingPeriodRepository::class)->create($this->supplierId, 2026, '2026-01-01', '2026-12-31');
+
+        $pdo->prepare(
+            'INSERT INTO clients (supplier_id, company_name, street, city, zip, country_id, main_email, language, currency_default_id, is_customer)
+             VALUES (?, "Odběratel poukazu", "Test 1", "Praha", "11000", ?, "poukaz@example.invalid", "cs", ?, 1)'
+        )->execute([$this->supplierId, $country, $this->czk]);
+        $this->clientId = (int) $pdo->lastInsertId();
+        $pdo->prepare("INSERT INTO eet_units (supplier_id, unit_number, name, kind, valid_from) VALUES (?, 1552, 'Recepce', 'premises', '2026-01-01')")
+            ->execute([$this->supplierId]);
+        $unitId = (int) $pdo->lastInsertId();
+        $pdo->prepare("INSERT INTO eet_devices (supplier_id, unit_id, code, name) VALUES (?, ?, ?, 'Pokladna')")
+            ->execute([$this->supplierId, $unitId, 'V' . substr(bin2hex(random_bytes(6)), 0, 10)]);
+        $deviceId = (int) $pdo->lastInsertId();
+        $pdo->prepare(
+            "INSERT INTO eet_settings (supplier_id, enabled, environment, eic, active_from, regime, default_device_id)
+             VALUES (?, 1, 'playground', 'CZ00000019', '2026-01-01', 'standard', ?)"
+        )->execute([$this->supplierId, $deviceId]);
+    }
+
+    protected function tearDown(): void
+    {
+        if (isset($this->db) && $this->inTx) {
+            $pdo = $this->db->pdo();
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            $this->db->close();
+        }
+    }
+
+    public function testMultiPurposeVoucherSaleGoesToReceivedAdvanceWithoutVat(): void
+    {
+        $invoiceId = $this->invoice([[100.00, 21.00, 21, 'standard'], [1000.00, 0.00, 0, 'stored_value']]);
+
+        $byAccount = $this->byAccount($this->post($invoiceId));
+
+        self::assertEqualsWithDelta(1121.00, $byAccount['311']['debit'], 0.001);
+        self::assertEqualsWithDelta(1000.00, $byAccount['324']['credit'], 0.001, 'Poukaz je přijatá záloha.');
+        self::assertEqualsWithDelta(100.00, $byAccount['602']['credit'], 0.001, 'Výnosem je jen nápoj.');
+        self::assertEqualsWithDelta(21.00, $this->vatCredit($byAccount), 0.001, 'Poukaz daň nenese.');
+        self::assertSame(['324', '602'], $this->sorted(array_values($this->posting->issuedItemRevenueAccounts($this->supplierId, $invoiceId)['accounts'])));
+    }
+
+    public function testTaxedVoucherLinesStayRevenue(): void
+    {
+        $invoiceId = $this->invoice([[1000.00, 210.00, 21, 'stored_value'], [500.00, 105.00, 21, 'specific_voucher']]);
+
+        $byAccount = $this->byAccount($this->post($invoiceId));
+
+        self::assertArrayNotHasKey('324', $byAccount, 'Zdaněný řádek se při uplatnění znovu nedaní, nesmí tedy čekat na 324.');
+        self::assertEqualsWithDelta(1500.00, $byAccount['602']['credit'], 0.001);
+        self::assertEqualsWithDelta(315.00, $this->vatCredit($byAccount), 0.001);
+    }
+
+    public function testRedemptionDrawsReceivedAdvanceBySettlement(): void
+    {
+        $invoiceId = $this->invoice([[239.67, 50.33, 21, 'standard']]);
+
+        $this->accept($invoiceId, 'stored_value', '290');
+
+        $payment = $this->row('SELECT source, amount FROM invoice_payments WHERE invoice_id = ?', [$invoiceId]);
+        self::assertSame(['settlement', '290.00'], [$payment['source'], $payment['amount']]);
+        $settlement = $this->row(
+            "SELECT s.journal_entry_id, a.account_code FROM invoice_settlements s JOIN chart_of_accounts a ON a.id = s.account_id
+              WHERE s.supplier_id = ? AND s.doc_type = 'invoice' AND s.doc_id = ? AND s.status = 'confirmed'",
+            [$this->supplierId, $invoiceId],
+        );
+        self::assertSame('324', $settlement['account_code']);
+        $byAccount = $this->byAccount((int) $settlement['journal_entry_id']);
+        self::assertEqualsWithDelta(290.00, $byAccount['324']['debit'], 0.001);
+        self::assertEqualsWithDelta(290.00, $byAccount['311']['credit'], 0.001);
+        self::assertSame('paid', $this->row('SELECT status FROM invoices WHERE id = ?', [$invoiceId])['status']);
+        self::assertSame('290.00', $this->row('SELECT credit_draw_amount FROM eet_records WHERE supplier_id = ?', [$this->supplierId])['credit_draw_amount']);
+        $allocation = $this->row('SELECT invoice_payment_id FROM payment_event_allocations WHERE supplier_id = ? AND invoice_id = ?', [$this->supplierId, $invoiceId]);
+        self::assertSame((int) $this->row('SELECT id FROM invoice_payments WHERE invoice_id = ?', [$invoiceId])['id'], (int) $allocation['invoice_payment_id']);
+    }
+
+    public function testCashPaymentAndTaxEvidenceKeepManualPayment(): void
+    {
+        $cash = $this->invoice([[239.67, 50.33, 21, 'standard']]);
+        $this->accept($cash, 'cash', '290');
+        self::assertSame('manual', $this->row('SELECT source FROM invoice_payments WHERE invoice_id = ?', [$cash])['source']);
+
+        $this->db->pdo()->prepare("UPDATE supplier SET accounting_mode = 'tax_evidence' WHERE id = ?")->execute([$this->supplierId]);
+        $voucher = $this->invoice([[239.67, 50.33, 21, 'standard']]);
+        $this->accept($voucher, 'stored_value', '290');
+        self::assertSame('manual', $this->row('SELECT source FROM invoice_payments WHERE invoice_id = ?', [$voucher])['source']);
+        self::assertSame('0', (string) $this->row('SELECT COUNT(*) AS n FROM invoice_settlements WHERE supplier_id = ?', [$this->supplierId])['n']);
+    }
+
+    // ── pomocníci ───────────────────────────────────────────────────────────
+
+    private function accept(int $invoiceId, string $channel, string $amount): void
+    {
+        $this->container->get(EetPaymentCommand::class)->acceptWithinTransaction($this->supplierId, $this->userId, 'sys:voucher-' . $invoiceId, [
+            'invoice_id' => $invoiceId, 'amount' => $amount, 'channel' => $channel, 'contact_context' => 'in_person',
+        ]);
+    }
+
+    private function post(int $invoiceId): int
+    {
+        return $this->posting->postDocument(
+            $this->supplierId,
+            'invoice',
+            $invoiceId,
+            $this->posting->buildFromInvoice($this->supplierId, $invoiceId),
+            ['entry_date' => self::DAY, 'posted_by' => $this->userId],
+        );
+    }
+
+    /** @param list<array{0:float, 1:float, 2:int, 3:string}> $lines základ, daň, sazba, druh skladové karty */
+    private function invoice(array $lines): int
+    {
+        $pdo = $this->db->pdo();
+        $base = round(array_sum(array_column($lines, 0)), 2);
+        $vat = round(array_sum(array_column($lines, 1)), 2);
+        $pdo->prepare(
+            'INSERT INTO invoices
+                (supplier_id, varsymbol, invoice_type, client_id, issue_date, tax_date, due_date, currency_id, reverse_charge,
+                 total_without_vat, total_vat, total_with_vat, advance_paid_amount, bank_snapshot, status, created_by)
+             VALUES (?, ?, "invoice", ?, ?, ?, ?, ?, 0, ?, ?, ?, 0, ?, "issued", ?)'
+        )->execute([$this->supplierId, (string) random_int(1000000, 9999999), $this->clientId, self::DAY, self::DAY, self::DAY, $this->czk,
+            $base, $vat, round($base + $vat, 2), json_encode(['account_number' => '1000000005', 'bank_code' => '0100']), $this->userId]);
+        $invoiceId = (int) $pdo->lastInsertId();
+        foreach ($lines as $i => [$net, $tax, $rate, $kind]) {
+            $pdo->prepare('INSERT INTO stock_items (supplier_id, sku, name, eet_item_kind) VALUES (?, ?, ?, ?)')
+                ->execute([$this->supplierId, 'VA-' . $invoiceId . '-' . $i, 'Synthetic ' . $kind, $kind]);
+            $stockItemId = (int) $pdo->lastInsertId();
+            $pdo->prepare(
+                'INSERT INTO invoice_items (invoice_id, description, quantity, unit, unit_price_without_vat, vat_rate_id, vat_rate_snapshot,
+                                            total_without_vat, total_vat, total_with_vat, order_index, vat_classification_code, stock_item_id)
+                 VALUES (?, ?, 1, "ks", ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+            )->execute([$invoiceId, 'Synthetic ' . $kind, $net, $this->vat, $rate, $net, $tax, round($net + $tax, 2), $i,
+                $rate > 0 ? '1' : null, $stockItemId]);
+        }
+        return $invoiceId;
+    }
+
+    /** @return array<string,array{debit:float,credit:float}> */
+    private function byAccount(int $entryId): array
+    {
+        $stmt = $this->db->pdo()->prepare(
+            'SELECT a.account_code, l.side, l.amount FROM journal_entry_lines l JOIN chart_of_accounts a ON a.id = l.account_id
+              WHERE l.entry_id = ?'
+        );
+        $stmt->execute([$entryId]);
+        $out = [];
+        $balance = 0;
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $line) {
+            $code = (string) $line['account_code'];
+            $out[$code] ??= ['debit' => 0.0, 'credit' => 0.0];
+            $out[$code][$line['side']] += (float) $line['amount'];
+            $balance += ($line['side'] === 'debit' ? 1 : -1) * (int) round((float) $line['amount'] * 100);
+        }
+        self::assertSame(0, $balance, 'Σ MD == Σ D (v haléřích).');
+        self::assertNotSame([], $out);
+        return $out;
+    }
+
+    /** @param array<string,array{debit:float,credit:float}> $byAccount */
+    private function vatCredit(array $byAccount): float
+    {
+        $sum = 0.0;
+        foreach ($byAccount as $code => $sides) {
+            if (str_starts_with((string) $code, '343')) {
+                $sum += $sides['credit'] - $sides['debit'];
+            }
+        }
+        return $sum;
+    }
+
+    /** @param list<string> $codes @return list<string> */
+    private function sorted(array $codes): array
+    {
+        $codes = array_values(array_unique(array_map('strval', $codes)));
+        sort($codes);
+        return $codes;
+    }
+
+    /** @param list<mixed> $params @return array<string,mixed> */
+    private function row(string $sql, array $params): array
+    {
+        $stmt = $this->db->pdo()->prepare($sql);
+        $stmt->execute($params);
+        return (array) $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+}

@@ -15094,7 +15094,7 @@
         "stored_value": "Hodnotový poukaz / dobití kreditu",
         "hint_standard": "Prodej se eviduje jako běžná tržba.",
         "hint_specific_voucher": "Poukaz na předem určené plnění (např. masáž zad) je běžný prodej tohoto plnění. Jeho pozdější uplatnění se už neeviduje.",
-        "hint_stored_value": "Poukaz na blíže neurčené zboží nebo dobití kreditu (peněženka, permanentka s kreditem). Jeho část tržby jde do EET jako „určeno k čerpání\"; uplatnění se pak eviduje jako čerpání kreditu (způsob platby Poukaz / kredit)."
+        "hint_stored_value": "Poukaz na blíže neurčené zboží nebo dobití kreditu (peněženka, permanentka s kreditem). Jeho část tržby jde do EET jako „určeno k čerpání\"; uplatnění se pak eviduje jako čerpání kreditu (způsob platby Poukaz / kredit). Položka se sazbou 0 % se zaúčtuje na přijaté zálohy (324), DPH se odvede až z plnění, za které se poukazem zaplatí."
       }
     },
     "item_detail": {
