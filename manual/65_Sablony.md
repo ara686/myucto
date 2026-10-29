@@ -13,7 +13,7 @@ Kapitolu otevřete, když:
 - převzali jste firmu s historickým účetnictvím a chcete z něj odvodit pravidla,
 - chcete doplnit předkontace o analytické účty.
 
-Stránka `Nástroje → Šablony účtování` má čtyři záložky. Nejde o jeden univerzální
+Stránka `Nástroje → Šablony účtování` má pět záložek. Nejde o jeden univerzální
 automat: každá záložka zasahuje do jiné části zpracování.
 
 <!-- cols: 26 44 30 -->
@@ -23,10 +23,12 @@ automat: každá záložka zasahuje do jiné části zpracování.
 | **Pravidla nákladů** | Návrh druhu nákladu a účtu na řádku přijaté faktury | [§ 65.4](#654-krok-za-krokem-pravidlo-nakladu) |
 | **Pravidla výnosů** | Účet položky vydané faktury podle kódu, textu nebo sazby DPH | [§ 65.10.9](#65109-pravidla-vynosu) |
 | **Pravidla účtování** | Návrh nebo automatizace opakovaných bankovních plateb | [§ 65.5](#655-krok-za-krokem-pravidlo-uctovani-banky) |
+| **Šablony pravidel** | Katalog předloh, ze kterých tlačítko **Ze šablony** založí pravidlo účtování | [§ 65.6](#656-krok-za-krokem-sablona-bankovniho-pravidla) |
 
-Vedle toho jsou v nabídce `Nástroje` samostatné stránky **Šablony bank. pravidel**
-(katalog typických bankovních pravidel, [§ 65.6](#656-krok-za-krokem-sablona-bankovniho-pravidla))
-a **Asistent nastavení účtování** ([§ 65.8](#658-krok-za-krokem-asistent-nastaveni-uctovani)).
+Záložka **Šablony pravidel** se zobrazí jen s oprávněním ke správě bankovních pravidel.
+Kdo toto oprávnění má, ale Šablony účtování nevidí, najde katalog v nabídce `Nástroje`
+jako samostatnou stránku **Šablony bank. pravidel**. Vedle toho je v nabídce `Nástroje`
+**Asistent nastavení účtování** ([§ 65.8](#658-krok-za-krokem-asistent-nastaveni-uctovani)).
 
 ## 65.2 Než začnete
 
@@ -146,7 +148,7 @@ smazáním pravidla zůstanou.
 
 Každá firma má vlastní katalog typických bankovních pravidel.
 
-1. Otevřete `Nástroje → Šablony bank. pravidel`.
+1. Otevřete `Nástroje → Šablony účtování`, záložka **Šablony pravidel**.
 2. Chcete-li přidat vlastní šablonu, klikněte na **Nová šablona** a vyplňte název a klíč, směr a kritéria, předkontaci, pořadí a stav **Aktivní**.
 3. Na stránce bankovních pravidel klikněte u šablony na **Použít šablonu**. Vznikne pravidlo pro aktuální firmu.
 4. Chybí-li údaj, který šablona potřebuje (například VS ČSSZ, číslo zdravotního pojištění nebo DIČ), aplikace nabídne **Otevřít nastavení**.

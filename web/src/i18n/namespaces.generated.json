@@ -1172,6 +1172,7 @@
       "activation",
       "automation",
       "bank",
+      "bank_template_admin",
       "dimensions",
       "purchase_invoice",
       "template_tools",

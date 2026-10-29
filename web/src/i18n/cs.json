@@ -26962,6 +26962,7 @@
     "expense": "Pravidla nákladů",
     "revenue": "Pravidla výnosů",
     "posting": "Pravidla účtování",
+    "rule_templates": "Šablony pravidel",
     "requires_double_entry": "Šablony jsou k účtování do deníku",
     "requires_double_entry_hint": "Předkontace, pravidla nákladů i zaúčtování banky se používají při účtování do deníku, takže v daňové evidenci nemají co nabídnout. Firma vede daňovou evidenci.",
     "open_accounting_settings": "Otevřít Nastavení → Daně a účetnictví"

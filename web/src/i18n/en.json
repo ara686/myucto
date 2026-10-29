@@ -26962,6 +26962,7 @@
     "expense": "Expense rules",
     "revenue": "Revenue rules",
     "posting": "Posting rules",
+    "rule_templates": "Rule templates",
     "requires_double_entry": "Templates belong to journal posting",
     "requires_double_entry_hint": "Posting templates, expense rules and bank posting rules are used when posting to the journal, so they have nothing to offer in tax evidence. This company keeps tax evidence.",
     "open_accounting_settings": "Open Settings → Taxes and accounting"

@@ -692,7 +692,7 @@ lze šablonu vytvořit, upravit její název, popis i jednotlivé řádky (úče
 výchozí částku, pojmenování a středisko), smazat ji nebo z ní rovnou založit nový
 ruční zápis.
 
-Stránka **Nástroje → Šablony bank. pravidel** spravuje firemní katalog pravidel
+Záložka **Nástroje → Šablony účtování → Šablony pravidel** spravuje firemní katalog pravidel
 nabízených přes **Nástroje → Šablony účtování → Pravidla účtování → Ze šablony**.
 U šablony lze nastavit český a anglický název, směr, kritéria shody, typ operace,
 kontaci, prioritu, pořadí a aktivní stav. Úprava se projeví jen při

@@ -445,7 +445,7 @@ Bankovní pravidlo založíte na záložce **Pravidla účtování** tlačítkem
 **Nové pravidlo**, rovnou z rozbalovacího menu pohybu volbou
 **Vytvořit účtovací pravidlo** (formulář se předvyplní protistranou, zprávou,
 směrem a měnou), nebo z hotové **šablony** v katalogu
-**Nástroje → Šablony bank. pravidel** (odvody, bankovní poplatky, přijaté úroky,
+**Nástroje → Šablony účtování → Šablony pravidel** (odvody, bankovní poplatky, přijaté úroky,
 nájem, předplatné). Pravidlo obsahuje:
 
 - **směr** (příchozí/odchozí),

@@ -685,7 +685,9 @@ const navSections = computed<NavSection[]>(() => {
         { to: '/templates', label: t('nav.section_templates'), icon: ICONS.documents, permission: 'accounting.templates' },
         { to: '/accounting/setup-assistant', label: t('nav.accounting_setup_assistant'), icon: ICONS.ai, permission: 'accounting' },
         ...(dimensionsEnabled && nonprofitScope ? [{ to: '/accounting/joint-allocations', label: t('jointAllocations.title'), icon: ICONS.reports, permission: 'accounting' as PermissionKey }] : []),
-        { to: '/admin/bank-rule-templates', label: t('nav.bank_rule_templates'), icon: ICONS.bank, permission: 'bank.rules' as PermissionKey },
+        // Katalog šablon bankovních pravidel je záložkou Šablon účtování; samostatná položka
+        // jen pro toho, kdo má správu bankovních pravidel, ale Šablony účtování nevidí.
+        ...(auth.canRead('accounting.templates') ? [] : [{ to: '/admin/bank-rule-templates', label: t('nav.bank_rule_templates'), icon: ICONS.bank, permission: 'bank.rules' as PermissionKey }]),
         { to: '/accounting/accounts',       label: t('nav.accounting_accounts'), icon: ICONS.codebooks },
         { to: '/accounting/offsets',          label: t('nav.accounting_offsets'),          icon: ICONS.coin },
         { to: '/admin/accounting-activation', label: t('nav.accounting_activation'), icon: ICONS.updates, permission: 'accounting.periods.manage' as PermissionKey, access: 'write' },
