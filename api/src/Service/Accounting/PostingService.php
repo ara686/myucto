@@ -23,6 +23,7 @@ use MyInvoice\Service\Accounting\Expense\ExpenseKind;
 use MyInvoice\Service\Accounting\Expense\PurchaseDiscountAllocation;
 use MyInvoice\Service\Accounting\Product\IssuedDiscountAllocation;
 use MyInvoice\Service\Accounting\Product\ProductPostingDefaults;
+use MyInvoice\Service\Accounting\Revenue\RevenueRuleMatcher;
 use MyInvoice\Service\ActivityLogger;
 use MyInvoice\Service\Payroll\Payment\PayrollBankEvidenceGuard;
 use MyInvoice\Service\Property\Charges\Issuance\IssuancePostingBatchContext;
@@ -154,6 +155,7 @@ final class PostingService
     private ?DimensionStamper $dimensionStamper = null;
 
     private ?ProductPostingDefaults $productDefaults = null;
+    private ?RevenueRuleMatcher $revenueRules = null;
 
     private ?BankDocumentNumber $bankDocumentNumber = null;
 
@@ -2260,14 +2262,27 @@ final class PostingService
             return $this->ruleCode($supplierId, 'small_asset.sale.revenue', 'credit', '642');
         }
         if ($item['item_revenue_account'] !== null) {
+            if (in_array($item['item_revenue_source'] ?? null, ['item', 'rule'], true)) {
+                try {
+                    return (string) $this->productDefaults()->validateIssuedItemAccount($supplierId, (string) $item['item_revenue_account'], $entryDate, $currentRead);
+                } catch (\InvalidArgumentException $e) {
+                    throw new PostingException('invalid_item_account', $e->getMessage(), 422);
+                }
+            }
             return $this->validateItemAccount($supplierId, (string) $item['item_revenue_account'], ProductPostingDefaults::KIND_REVENUE, $entryDate, $currentRead);
         }
         return $defaultAccount;
     }
 
     /**
-     * Položky vydané faktury s výnosovým účtem z položky, jinak z produktu a jeho
-     * kategorie (`item_revenue_account`, NULL = předkontace dokladu).
+     * Položky vydané faktury s účtem z položky, jinak z produktu a jeho kategorie, jinak
+     * z pravidel výnosů (`item_revenue_account`, NULL = předkontace dokladu).
+     *
+     * Pravidla výnosů ({@see RevenueRuleMatcher}) jdou až za produktem: karta je konkrétní
+     * nastavení, pravidlo podle sazby nebo textu obecné. Importovaná položka bez karty
+     * dostane účet z pravidla už při importu a nese ho jako účet položky; tady pravidla
+     * doplní položky, které účet nemají (doklady starší než pravidlo, ruční doklady).
+     * Slevový, textový řádek ani prodej majetku pravidlo nebere.
      *
      * @return list<array<string,mixed>>
      */
@@ -2275,7 +2290,7 @@ final class PostingService
     {
         $stmt = $this->db->pdo()->prepare(
             'SELECT id, small_asset_id, asset_id, total_without_vat, revenue_account_code, stock_item_id,
-                    item_kind, vat_rate_id, vat_classification_code
+                    item_kind, vat_rate_id, vat_classification_code, description, seller_item_code, vat_rate_snapshot
                FROM invoice_items
               WHERE invoice_id = ?'
         );
@@ -2285,11 +2300,27 @@ final class PostingService
             $supplierId,
             array_map(static fn (array $r): int => (int) ($r['stock_item_id'] ?? 0), $items),
         );
+        $unresolved = [];
         foreach ($items as $i => $row) {
-            $items[$i]['item_revenue_account'] = ProductPostingDefaults::code($row['revenue_account_code'] ?? null)
-                ?? ($products[(int) ($row['stock_item_id'] ?? 0)]['revenue']['code'] ?? null);
+            $own = ProductPostingDefaults::code($row['revenue_account_code'] ?? null);
+            $product = $products[(int) ($row['stock_item_id'] ?? 0)]['revenue']['code'] ?? null;
+            $items[$i]['item_revenue_account'] = $own ?? $product;
+            $items[$i]['item_revenue_source'] = $own !== null ? 'item' : ($product !== null ? 'product' : null);
+            if ($own === null && $product === null && ($row['item_kind'] ?? 'standard') === 'standard'
+                && $row['asset_id'] === null && $row['small_asset_id'] === null) {
+                $unresolved[$i] = $row;
+            }
+        }
+        foreach ($this->revenueRules()->match($supplierId, $unresolved) as $i => $hit) {
+            $items[$i]['item_revenue_account'] = $hit['account'];
+            $items[$i]['item_revenue_source'] = 'rule';
         }
         return $items;
+    }
+
+    private function revenueRules(): RevenueRuleMatcher
+    {
+        return $this->revenueRules ??= new RevenueRuleMatcher($this->db);
     }
 
     /**
@@ -2463,7 +2494,7 @@ final class PostingService
     private function validatePurchaseDebitOverride(int $supplierId, string $code, string $entryDate, bool $currentRead): string
     {
         $code = trim($code);
-        if ($code === '' || preg_match('/^(?:311|321|314|324|325|33|34|221|211)/', $code) === 1) {
+        if ($code === '' || SettlementAccounts::isSettlement($code)) {
             throw new PostingException('invalid_override', 'Navržený účet nelze použít pro náklad přijaté faktury.', 422);
         }
         $query = $this->db->pdo()->prepare('SELECT * FROM ' . \MyInvoice\Repository\AccountDefinitionRepository::relation($entryDate, $supplierId, $currentRead) . ' a WHERE supplier_id=? AND account_code=?');

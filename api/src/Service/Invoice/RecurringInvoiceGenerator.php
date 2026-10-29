@@ -660,10 +660,9 @@ final class RecurringInvoiceGenerator
     private function recurringRevenueAccount(int $supplierId, array $item): ?string
     {
         try {
-            return (new \MyInvoice\Service\Accounting\Product\ProductPostingDefaults($this->db))->validateAccount(
+            return (new \MyInvoice\Service\Accounting\Product\ProductPostingDefaults($this->db))->validateIssuedItemAccount(
                 $supplierId,
                 $item['revenue_account_code'] ?? null,
-                \MyInvoice\Service\Accounting\Product\ProductPostingDefaults::KIND_REVENUE,
             );
         } catch (\InvalidArgumentException) {
             return null;

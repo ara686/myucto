@@ -253,7 +253,7 @@ final class GlobalSeedTables
         'accounting_periods', 'entity_category_history',
         'accounting_account_definition_history', 'chart_of_accounts', 'accounting_supplier_settings', 'accounting_document_series',
         'accounting_fixed_exchange_rates',
-        'auto_posting_policy', 'expense_classification_rules', 'posting_rules',
+        'auto_posting_policy', 'expense_classification_rules', 'revenue_classification_rules', 'posting_rules',
         'journal_entry_templates', 'journal_entry_template_lines',
         'bank_posting_rules', 'bank_rule_templates', 'tax_evidence_bank_rules',
         'statement_account_overrides', 'statement_function_map',

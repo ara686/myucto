@@ -1116,7 +1116,8 @@
         "2212_payroll_2027_preschool_benefits_tips.sql",
         "2213_payroll_jmhz_2027_sources.sql",
         "2214_payroll_preschool_credit_documents.sql",
-        "2215_bank_card_original_amount_merchant_map.sql"
+        "2215_bank_card_original_amount_merchant_map.sql",
+        "2216_revenue_classification_rules.sql"
     ],
     "tables": {
         "abra_flexi_connections": {
@@ -7106,6 +7107,7 @@
                 "oss_vat_amount_return": "decimal(14,2) NULL DEFAULT NULL",
                 "quantity": "decimal(10,3) NOT NULL DEFAULT 1.000",
                 "revenue_account_code": "varchar(10) NULL DEFAULT NULL",
+                "seller_item_code": "varchar(64) NULL DEFAULT NULL",
                 "small_asset_id": "bigint(20) unsigned NULL DEFAULT NULL",
                 "stock_item_id": "bigint(20) unsigned NULL DEFAULT NULL",
                 "total_vat": "decimal(12,2) NOT NULL",
@@ -23073,6 +23075,39 @@
                 "fk_rc_supplier": "(supplier_id) -> supplier (id) ON UPDATE RESTRICT ON DELETE RESTRICT"
             },
             "checks": []
+        },
+        "revenue_classification_rules": {
+            "type": "BASE TABLE",
+            "engine": "InnoDB",
+            "collation": "utf8mb4_unicode_ci",
+            "columns": {
+                "created_at": "timestamp NOT NULL DEFAULT current_timestamp()",
+                "created_by": "bigint(20) unsigned NULL DEFAULT NULL",
+                "description_contains": "varchar(120) NULL DEFAULT NULL",
+                "hit_count": "int(10) unsigned NOT NULL DEFAULT 0",
+                "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
+                "is_active": "tinyint(1) NOT NULL DEFAULT 1",
+                "item_code": "varchar(64) NULL DEFAULT NULL",
+                "last_hit_at": "datetime NULL DEFAULT NULL",
+                "name": "varchar(120) NOT NULL",
+                "priority": "smallint(5) unsigned NOT NULL DEFAULT 100",
+                "supplier_id": "int(10) unsigned NOT NULL",
+                "target_account_code": "varchar(10) NOT NULL",
+                "updated_at": "timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE CURRENT_TIMESTAMP()",
+                "vat_rate": "decimal(5,2) NULL DEFAULT NULL"
+            },
+            "indexes": {
+                "PRIMARY": "UNIQUE BTREE (id)",
+                "fk_rcr_user": "BTREE (created_by)",
+                "idx_rcr_supplier": "BTREE (supplier_id, is_active, priority)"
+            },
+            "foreign_keys": {
+                "fk_rcr_supplier": "(supplier_id) -> supplier (id) ON UPDATE RESTRICT ON DELETE CASCADE",
+                "fk_rcr_user": "(created_by) -> users (id) ON UPDATE RESTRICT ON DELETE SET NULL"
+            },
+            "checks": {
+                "chk_rcr_criteria": "`item_code` is not null or `description_contains` is not null or `vat_rate` is not null"
+            }
         },
         "role_permissions": {
             "type": "BASE TABLE",

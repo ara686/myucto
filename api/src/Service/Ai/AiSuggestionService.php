@@ -425,7 +425,7 @@ final class AiSuggestionService
 
     private function validPurchaseDebit(int $supplierId, string $debit): bool
     {
-        if (preg_match('/^(?:311|321|314|324|325|33|34|221|211)/', $debit) === 1) {
+        if (\MyInvoice\Service\Accounting\SettlementAccounts::isSettlement($debit)) {
             return false;
         }
         $stmt = $this->db->pdo()->prepare(

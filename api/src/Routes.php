@@ -2849,6 +2849,12 @@ final class Routes
             $g->put   ('/expense-rules/{id:[0-9]+}',                [\MyInvoice\Action\Accounting\ExpenseClassificationRuleAction::class, 'update']);
             $g->delete('/expense-rules/{id:[0-9]+}',                [\MyInvoice\Action\Accounting\ExpenseClassificationRuleAction::class, 'delete']);
             $g->get   ('/purchase-invoices/{id:[0-9]+}/expense-suggestions', [\MyInvoice\Action\Accounting\ExpenseClassificationRuleAction::class, 'suggestions']);
+            // Pravidla výnosů (2217): účet položky vydané faktury podle kódu, textu nebo sazby.
+            $g->get   ('/revenue-rules',                            [\MyInvoice\Action\Accounting\RevenueClassificationRuleAction::class, 'list']);
+            $g->get   ('/revenue-rules/{id:[0-9]+}',                [\MyInvoice\Action\Accounting\RevenueClassificationRuleAction::class, 'get']);
+            $g->post  ('/revenue-rules',                            [\MyInvoice\Action\Accounting\RevenueClassificationRuleAction::class, 'create']);
+            $g->put   ('/revenue-rules/{id:[0-9]+}',                [\MyInvoice\Action\Accounting\RevenueClassificationRuleAction::class, 'update']);
+            $g->delete('/revenue-rules/{id:[0-9]+}',                [\MyInvoice\Action\Accounting\RevenueClassificationRuleAction::class, 'delete']);
             // Karty evidence drobného majetku (§DM krok 3) — §28/5 ZoÚ a ČÚS 013 chtějí
             // evidenci majetku účtovaného rovnou do spotřeby. Karta NIC neúčtuje; náklad
             // na 501 vzniká už zaúčtováním dokladu podle expense_kind (1092).

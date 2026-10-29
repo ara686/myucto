@@ -13,7 +13,7 @@ Kapitolu otevřete, když:
 - převzali jste firmu s historickým účetnictvím a chcete z něj odvodit pravidla,
 - chcete doplnit předkontace o analytické účty.
 
-Stránka `Nástroje → Šablony účtování` má tři záložky. Nejde o jeden univerzální
+Stránka `Nástroje → Šablony účtování` má čtyři záložky. Nejde o jeden univerzální
 automat: každá záložka zasahuje do jiné části zpracování.
 
 <!-- cols: 26 44 30 -->
@@ -21,6 +21,7 @@ automat: každá záložka zasahuje do jiné části zpracování.
 |---|---|---|
 | **Šablony zápisů** | Předvyplnění řádků ručního účetního zápisu | [§ 65.3](#653-krok-za-krokem-sablona-ucetniho-zapisu) |
 | **Pravidla nákladů** | Návrh druhu nákladu a účtu na řádku přijaté faktury | [§ 65.4](#654-krok-za-krokem-pravidlo-nakladu) |
+| **Pravidla výnosů** | Účet položky vydané faktury podle kódu, textu nebo sazby DPH | [§ 65.10.9](#65109-pravidla-vynosu) |
 | **Pravidla účtování** | Návrh nebo automatizace opakovaných bankovních plateb | [§ 65.5](#655-krok-za-krokem-pravidlo-uctovani-banky) |
 
 Vedle toho jsou v nabídce `Nástroje` samostatné stránky **Šablony bank. pravidel**
@@ -29,13 +30,13 @@ a **Asistent nastavení účtování** ([§ 65.8](#658-krok-za-krokem-asistent-n
 
 ## 65.2 Než začnete
 
-1. **Podvojné účetnictví.** Všechny tři záložky se zobrazují jen firmě v podvojném
+1. **Podvojné účetnictví.** Všechny záložky se zobrazují jen firmě v podvojném
    účetnictví. U firmy v daňové evidenci stránka nabídne odkaz **Otevřít Nastavení → Daně a účetnictví**.
 2. **Správná firma.** Šablony a pravidla jsou firemní a používají firmu zvolenou
    v hlavní liště aplikace. Pravidla druhé firmy se nepřimíchávají (u **Pravidel
    účtování** je jméno firmy uvedeno i nad seznamem).
 3. **Oprávnění.** Šablony zápisů si čtete s oprávněním k šablonám účtování a měníte
-   se zápisovou variantou téhož oprávnění. Pravidla nákladů používají účetní
+   se zápisovou variantou téhož oprávnění. Pravidla nákladů a výnosů používají účetní
    oprávnění. Bankovní pravidla a katalog jejich šablon řídí oprávnění ke správě
    bankovních pravidel: čtení zobrazí, zápis dovolí správu (viz [§ 65.10.6](#65106-opravneni-audit-a-chyby)).
 4. **Účtový rozvrh.** Účty použité v šabloně a pravidlech musí v osnově firmy
@@ -414,6 +415,39 @@ také přeskočí a vyžádá novou kontrolu. Po ostrém běhu lze původní ú�
 smí změnit jen otevřené a nezamčené období a odmítne doklad mezitím ručně změněný. Jakmile už záloha není
 potřeba, lze snapshot samostatně a nevratně smazat. Smazání snapshotu účetní deník ani klasifikaci položek
 nemění, pouze odstraní možnost obnovy daného běhu.
+
+### 65.10.9 Pravidla výnosů
+
+Pravidlo výnosů určí účet položky vydané faktury. Hodí se hlavně u importovaných faktur,
+jejichž položky nejsou navázané na skladové karty, takže by celý výnos šel na předkontaci
+dokladu (602).
+
+1. Otevřete `Nástroje → Šablony účtování` a záložku **Pravidla výnosů**.
+2. Klikněte na **Nové pravidlo** a vyplňte **Název pravidla**.
+3. V části **Kritéria** vyplňte aspoň jedno z polí **Kód položky**, **Text položky obsahuje**
+   nebo **Sazba DPH (%)**. Vyplněná kritéria musí sedět všechna.
+4. Zvolte **Účet položky**: výnosový účet (601, 602, 604…), u přefakturace i rozvahový.
+   Saldokontní, daňové a peněžní účty povolené nejsou (stejně jako u účtu položky,
+   viz [§ 114.11.9](114_Dimenze.md#114119-produkt-a-kategorie)).
+5. Nastavte **Prioritu** (0 až 999, nižší jde první) a uložte.
+
+**Kód položky** je kód prodávajícího z ISDOC (`SellersItemIdentification`). Import vydaných
+faktur ho ukládá k položce a pravidlo s ním porovnává přesnou shodu bez ohledu na velikost
+písmen. **Text položky obsahuje** se porovnává bez ohledu na velikost písmen a diakritiku.
+
+Kdy se pravidlo uplatní:
+
+- **Import vydaných faktur** zapíše účet z pravidla na položku. Účetní ho vidí v editoru
+  faktury v poli **Účet položky** a může ho přepsat. Ve sloupci **Použití** se pravidlu
+  přičte každá takto označená položka.
+- **Zaúčtování** faktury i `Účetnictví → Doúčtovat doklady` doplní účet z pravidla
+  položkám, které nemají vlastní účet ani účet produktu nebo kategorie. Pořadí je tedy
+  prodej majetku > účet položky > produkt > kategorie > pravidlo výnosů > předkontace
+  dokladu. Slevový a textový řádek pravidlo nebere.
+
+Změna pravidla už uložený účet položky ani zaúčtované zápisy nemění. Pravidla výnosů se
+nastavují ručně, z historie se neučí. Evidenci DPH a kontrolní hlášení účet položky
+neovlivňuje.
 
 ## 65.11 Související kapitoly
 

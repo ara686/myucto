@@ -506,15 +506,24 @@ Kde se nastavují:
   **Účtování produktů kategorie**. Platí pro produkty, které mají kategorii jako
   primární. Nemá-li účet nebo dimenzi kategorie, použije se nadřízená kategorie.
 
-Účet musí být v účtovém rozvrhu firmy, aktivní a výsledkový: účet výnosů ze
-třídy 6, účet nákladů ze třídy 5. Jiný účet aplikace při uložení odmítne.
+Účet produktu a kategorie musí být v účtovém rozvrhu firmy, aktivní a výsledkový:
+účet výnosů ze třídy 6, účet nákladů ze třídy 5. Jiný účet aplikace při uložení
+odmítne.
 
-#### Výnosový účet položky
+#### Účet položky vydané faktury
 
 Vydaná faktura i šablona pravidelné fakturace mají u položek volitelný
-**výnosový účet**. Pole se v editoru zapne odkazem **Účty položek** nad položkami
+**účet položky**. Pole se v editoru zapne odkazem **Účty položek** nad položkami
 (samo se zapne, když už některá položka účet má). Prázdné pole znamená účet
-produktu, jeho kategorie, jinak předkontaci dokladu. Výběr skladové karty
+produktu, jeho kategorie, pravidlo výnosů, jinak předkontaci dokladu.
+
+Na rozdíl od produktu a kategorie (jen třída 6) smí položka nést i rozvahový nebo
+nákladový účet, například přefakturaci na 315 nebo 378. Nepovolené jsou jen
+saldokontní, daňové a peněžní účty (311, 314, 321, 324, 325, skupiny 33 a 34, 211
+a 221), stejně jako u položky přijaté faktury. Přefakturace v základu DPH zůstává
+v přiznání k DPH i v kontrolním hlášení podle sazby a členění řádku, účet položky
+na evidenci DPH nemá vliv. Položka s jiným než výnosovým účtem se v uzávěrce
+časově nerozlišuje (384). Výběr skladové karty
 v položce předvyplní prázdný účet i prázdné dimenze položky z produktu.
 Předvyplněné hodnoty jde přepsat. Když na řádku vyberete jinou kartu, nahradí se
 jen hodnoty předvyplněné z předchozí karty, ruční volba zůstává.
@@ -536,7 +545,7 @@ položky, produktu nebo kategorie, s odkazem na kartu produktu.
 <!-- cols: 24 76 -->
 | Co | Pořadí přednosti |
 |---|---|
-| Účet výnosů vydané faktury | prodej majetku > účet položky > produkt > kategorie > předkontace dokladu |
+| Účet výnosů vydané faktury | prodej majetku > účet položky > produkt > kategorie > pravidlo výnosů ([§ 65.10.9](65_Sablony.md#65109-pravidla-vynosu)) > předkontace dokladu |
 | Účet nákladů přijaté faktury | účet položky > druh výdaje > produkt > kategorie > předkontace dokladu; u pořízení dlouhodobého majetku se účet produktu ani kategorie nepoužije |
 | Dimenze | položka > produkt > kategorie > hlavička > zakázka > klient > pravidlo dimenzí |
 

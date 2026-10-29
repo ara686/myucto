@@ -706,6 +706,7 @@ final class InvoiceRepository
                     ii.order_index, ii.item_kind, ii.linked_work_report_id,
                     ii.vat_classification_code, ii.stock_item_id, ii.warehouse_id,
                     ii.small_asset_id, ii.asset_id, ii.accrual_from, ii.accrual_to, ii.revenue_account_code,
+                    ii.seller_item_code,
                     sa.name AS small_asset_name, a.name AS asset_name' . $ossSelect . ',
                     vr.code AS vat_code, vr.label_cs AS vat_label_cs, vr.label_en AS vat_label_en
                FROM invoice_items ii
@@ -1542,6 +1543,13 @@ final class InvoiceRepository
      * Příchozí položky s item_kind='discount' se ignorují (sleva je vždy generovaná
      * z header pole, nikdy se neukládá z UI jako uživatelský řádek → žádné zdvojení).
      */
+    /** Kód položky prodávajícího (ISDOC SellersItemIdentification) oříznutý na šířku sloupce. */
+    public static function sellerItemCode(mixed $value): ?string
+    {
+        $code = is_scalar($value) ? trim((string) $value) : '';
+        return $code === '' ? null : mb_substr($code, 0, 64);
+    }
+
     /** Kladné id z payloadu, jinak NULL (0, '', null i nesmysly padnou na NULL). */
     private static function positiveIdOrNull(mixed $value): ?int
     {
@@ -1729,7 +1737,7 @@ final class InvoiceRepository
         if ($bad !== []) {
             throw new \InvalidArgumentException(\MyInvoice\Http\TenantReferenceGuard::message($bad));
         }
-        // Výnosový účet položky (F1, migrace 1948): v rozvrhu firmy, aktivní, třída 6.
+        // Účet položky (F1, migrace 1948): v rozvrhu firmy, aktivní, mimo saldokonto.
         // Ověří se PŘED smazáním starých řádků, chyba nechá fakturu netknutou.
         $revenueAccounts = [];
         $productDefaults = new \MyInvoice\Service\Accounting\Product\ProductPostingDefaults($this->db);
@@ -1738,10 +1746,9 @@ final class InvoiceRepository
                 continue;   // slevový řádek se generuje níž, účet dědí; textový žádný nemá
             }
             try {
-                $revenueAccounts[$i] = $productDefaults->validateAccount(
+                $revenueAccounts[$i] = $productDefaults->validateIssuedItemAccount(
                     $ownerId,
                     $item['revenue_account_code'] ?? null,
-                    \MyInvoice\Service\Accounting\Product\ProductPostingDefaults::KIND_REVENUE,
                 );
             } catch (\InvalidArgumentException $e) {
                 throw new \InvalidArgumentException('Položka ' . ($i + 1) . ': ' . $e->getMessage(), 0, $e);
@@ -1787,9 +1794,9 @@ final class InvoiceRepository
                 (invoice_id, description, quantity, duration_minutes, unit, unit_price_without_vat,
                  vat_rate_id, vat_rate_snapshot,
                  total_without_vat, total_vat, total_with_vat, order_index, item_kind, vat_classification_code,
-                 stock_item_id, warehouse_id, small_asset_id, asset_id, accrual_from, accrual_to, revenue_account_code'
+                 stock_item_id, warehouse_id, small_asset_id, asset_id, accrual_from, accrual_to, revenue_account_code, seller_item_code'
             . ($ossColumns !== [] ? ', ' . implode(', ', $ossColumns) : '')
-            . ') VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?'
+            . ') VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?'
             . str_repeat(', ?', count($ossColumns))
             . ')'
         );
@@ -1839,7 +1846,7 @@ final class InvoiceRepository
                 $params = [
                     $invoiceId, (string) $item['description'], 0.0, null, '', 0.0,
                     $vatRateId, $vatRates[$vatRateId] ?? 0.0, $orderIndex, InvoiceItemKind::TEXT,
-                    null, null, null, null, null, null, null, null,
+                    null, null, null, null, null, null, null, null, null,
                 ];
                 if ($supportsOss) {
                     $params = array_merge($params, self::ossItemParams($item, $supportsManualReview));
@@ -1908,6 +1915,7 @@ final class InvoiceRepository
                 $assetId,
                 ...self::accrualPeriod($item),
                 $revenueAccounts[$i] ?? null,
+                self::sellerItemCode($item['seller_item_code'] ?? null),
             ];
             $accrualPeriods[implode('|', self::accrualPeriod($item))] = self::accrualPeriod($item);
             if ($supportsOss) {
@@ -2068,6 +2076,7 @@ final class InvoiceRepository
                 ...$accrualPeriod,
                 // Výnosový účet (F1): sleva vlastní účet nemá, zaúčtování ji rozpustí do účtů
                 // zlevněných položek (IssuedDiscountAllocation).
+                null,
                 null,
             ];
             if ($supportsOss && isset($g['oss']) && is_array($g['oss'])) {
