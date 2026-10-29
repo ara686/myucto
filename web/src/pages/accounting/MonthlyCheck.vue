@@ -157,6 +157,8 @@ const BALANCE_CHECK_CODES: Record<string, string[]> = {
   procurement_111_131_open: ['111', '131'],
   estimates_balances: ['388', '389'],
   deferrals_balances: ['381', '382', '383', '384', '385'],
+  deposits_314_324_open: ['314', '324'],
+  voucher_balance_negative: [],
 }
 function balanceEntries(key: string, value: unknown): { code: string; amount: number }[] {
   const codes = BALANCE_CHECK_CODES[key]
@@ -165,7 +167,13 @@ function balanceEntries(key: string, value: unknown): { code: string; amount: nu
   if ('account' in v && 'balance' in v) {
     return [{ code: String(v.account), amount: Number(v.balance) }]
   }
-  return codes.filter(c => c in v).map(c => ({ code: c, amount: Number(v[c]) }))
+  const entries = codes.filter(c => c in v).map(c => ({ code: c, amount: Number(v[c]) }))
+  // Zůstatek prodaných poukazů a kreditu se u záloh jen ukazuje, za zálohu se nepočítá.
+  const vouchers = v.vouchers as { account?: unknown; balance?: unknown } | undefined
+  if (vouchers && typeof vouchers === 'object' && 'account' in vouchers) {
+    entries.push({ code: String(vouchers.account), amount: Number(vouchers.balance) })
+  }
+  return entries
 }
 
 function accountIdForCode(code: string): number | null {

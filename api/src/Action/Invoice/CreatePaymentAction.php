@@ -155,6 +155,10 @@ final class CreatePaymentAction
         ];
         if ($eet !== null) {
             $payload['eet'] = $eet;
+            // Uplatnění poukazu nad zůstatek prodaných poukazů: platba proběhla, jen se upozorní.
+            if (!empty($eet['warnings'])) {
+                $payload['warnings'] = $eet['warnings'];
+            }
         } elseif ($route['decision'] !== null) {
             $payload['eet_decision'] = $route['decision'];
         }

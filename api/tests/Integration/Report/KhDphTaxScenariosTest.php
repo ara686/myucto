@@ -2104,6 +2104,44 @@ final class KhDphTaxScenariosTest extends TestCase
         }
     }
 
+    /**
+     * Řádek víceúčelového poukazu do evidence DPH nevstoupí ani s kódem klasifikace
+     * (data z doby před validací), ani přes kód hlavičky. Hodnota dokladu pro limit KH
+     * je hodnota plnění: poukaz za 10 000 Kč nepřesune nápoj za 847 Kč do A.4.
+     */
+    public function testMultiPurposeVoucherLineNeverReachesReturnOrKhLimit(): void
+    {
+        $d = sprintf('%04d-%02d-16', self::YEAR, self::MONTH);
+        $customer = $this->client('Odběratel poukazu s DIČ', $this->czId, 'CZ11111118', customer: true);
+        $this->sale('VOUCHER-1', $customer, '1', false, $d, $d, [[700, 147, 21]]);
+        $id = (int) end($this->invoiceIds);
+        $pdo = $this->db->pdo();
+        $rate = (int) $pdo->query('SELECT vat_rate_id FROM invoice_items WHERE invoice_id = ' . $id)->fetchColumn();
+        $pdo->prepare("INSERT INTO stock_items (supplier_id, sku, name, eet_item_kind) VALUES (?, ?, 'Poukaz 10 000 Kč', 'stored_value')")
+            ->execute([$this->supplierId, uniqid('POUKAZ-')]);
+        $stockItemId = (int) $pdo->lastInsertId();
+        try {
+            $pdo->prepare(
+                "INSERT INTO invoice_items (invoice_id, description, quantity, unit, unit_price_without_vat, vat_rate_id,
+                                            vat_rate_snapshot, total_without_vat, total_vat, total_with_vat, order_index,
+                                            vat_classification_code, stock_item_id)
+                 VALUES (?, 'Poukaz 10 000 Kč', 1, 'ks', 10000, ?, 0, 10000, 0, 10000, 1, '1', ?)"
+            )->execute([$id, $rate, $stockItemId]);
+            $pdo->prepare('UPDATE invoices SET total_without_vat = total_without_vat + 10000, total_with_vat = total_with_vat + 10000 WHERE id = ?')
+                ->execute([$id]);
+
+            $dp = (new \SimpleXMLElement($this->dph->build($this->supplierId, self::YEAR, self::MONTH, 'monthly')['xml']))->DPHDP3;
+            $this->assertSame('700', (string) $dp->Veta1['obrat23'], 'Poukaz s kódem 1 nesmí na ř. 1.');
+
+            $kh = (new \SimpleXMLElement($this->kh->build($this->supplierId, self::YEAR, self::MONTH)['xml']))->DPHKH1;
+            $this->assertCount(0, $kh->VetaA4, 'Doklad s plněním 847 Kč patří do A.5, poukaz limit nezvedá.');
+            $this->assertSame('700.00', (string) $kh->VetaA5['zakl_dane1']);
+        } finally {
+            $pdo->prepare('DELETE FROM invoice_items WHERE stock_item_id = ?')->execute([$stockItemId]);
+            $pdo->prepare('DELETE FROM stock_items WHERE id = ?')->execute([$stockItemId]);
+        }
+    }
+
     public function testCreditNoteAndUnclassifiedZeroRateProduceWarnings(): void
     {
         $d = sprintf('%04d-%02d-14', self::YEAR, self::MONTH);

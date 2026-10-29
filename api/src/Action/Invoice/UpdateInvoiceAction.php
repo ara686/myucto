@@ -1108,7 +1108,13 @@ final class UpdateInvoiceAction
             && $this->repo->clientIsEuForeign((int) $body['client_id']);
 
         if (!empty($body['items']) && is_array($body['items'])) {
-            foreach ($body['items'] as &$item) {
+            // Víceúčelový poukaz klasifikaci nenese (MultiPurposeVoucher), stejně jako při založení.
+            $annotated = \MyInvoice\Service\Invoice\MultiPurposeVoucher::annotate($this->db->pdo(), $supplierId, $body['items']);
+            foreach ($body['items'] as $key => &$item) {
+                if (is_array($annotated[$key] ?? null) && \MyInvoice\Service\Invoice\MultiPurposeVoucher::isLine($annotated[$key])) {
+                    $item['vat_classification_code'] = null;
+                    continue;
+                }
                 if (!empty($item['vat_classification_code']) || InvoiceItemKind::isText($item)) continue;
                 $rateId = (int) ($item['vat_rate_id'] ?? 0);
                 $rate = (float) ($vatRates[$rateId] ?? 0);
@@ -1120,7 +1126,10 @@ final class UpdateInvoiceAction
             unset($item);
         }
 
-        if (empty($body['vat_classification_code']) && $headerItems !== []) {
+        // O kódu hlavičky rozhodují jen plnění; doklad jen z poukazů zůstane bez kódu.
+        $headerSupplies = \MyInvoice\Service\Invoice\MultiPurposeVoucher::withoutLines($this->db->pdo(), $supplierId, $headerItems);
+        if (empty($body['vat_classification_code']) && $headerItems !== [] && $headerSupplies !== []) {
+            $headerItems = $headerSupplies;
             $itemsWithTotals = array_map(function ($it) use ($vatRates) {
                 $rateId = (int) ($it['vat_rate_id'] ?? 0);
                 $rate = (float) ($vatRates[$rateId] ?? 0);

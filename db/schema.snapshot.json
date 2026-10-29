@@ -1117,7 +1117,8 @@
         "2213_payroll_jmhz_2027_sources.sql",
         "2214_payroll_preschool_credit_documents.sql",
         "2215_bank_card_original_amount_merchant_map.sql",
-        "2216_revenue_classification_rules.sql"
+        "2216_revenue_classification_rules.sql",
+        "2217_voucher_liability_rule.sql"
     ],
     "tables": {
         "abra_flexi_connections": {

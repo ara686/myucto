@@ -421,11 +421,17 @@ final class CancelInvoiceAction
                 (int) $invoice['supplier_id'],
                 array_map(static fn (array $it): int => (int) ($it['stock_item_id'] ?? 0), $invoice['items']),
             );
+            $voucherCards = \MyInvoice\Service\Invoice\MultiPurposeVoucher::stockItemIds(
+                $pdo,
+                (int) $invoice['supplier_id'],
+                array_map(static fn (array $it): int => (int) ($it['stock_item_id'] ?? 0), $invoice['items']),
+            );
             foreach ($invoice['items'] as $item) {
                 // Textový řádek jde na dobropis jako textový, bez částky a bez klasifikace.
-                // Ostatní řádky (i slevový) jdou jako běžné, jako dřív.
+                // Ostatní řádky (i slevový) jdou jako běžné, jako dřív. Vrácený víceúčelový
+                // poukaz klasifikaci nenese stejně jako jeho prodej (MultiPurposeVoucher).
                 $isText = \MyInvoice\Service\Invoice\InvoiceItemKind::isText($item);
-                $code = $isText ? null : $item['vat_classification_code']
+                $code = $isText || isset($voucherCards[(int) ($item['stock_item_id'] ?? 0)]) ? null : $item['vat_classification_code']
                     ?? \MyInvoice\Repository\InvoiceRepository::defaultSaleClassificationCode(
                         (float) $item['vat_rate_snapshot'],
                         (bool) ($invoice['reverse_charge'] ?? false),
