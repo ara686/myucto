@@ -10,15 +10,18 @@ ALTER TABLE bank_transactions
     AFTER original_amount;
 
 -- Doplnění z uložených odpovědí API CREDITAS (originalAmount u karetních plateb).
+-- Textové sloupce JSON_TABLE nesou collation výslovně: bez ní dědí výchozí collation
+-- databáze (na MariaDB 11.8 často utf8mb4_uca1400_ai_ci) a porovnání s bank_ref
+-- (utf8mb4_unicode_ci) skončí chybou 1267.
 UPDATE bank_transactions bt
   JOIN bank_statements bs ON bs.id = bt.statement_id
   JOIN JSON_TABLE(
          bs.file_content,
          '$.transactions[*]' COLUMNS (
-           tid VARCHAR(64) PATH '$.transactionId',
-           amount_currency CHAR(3) PATH '$.amount.currency',
+           tid VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci PATH '$.transactionId',
+           amount_currency CHAR(3) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci PATH '$.amount.currency',
            original_value DECIMAL(14,2) PATH '$.originalAmount.value',
-           original_currency CHAR(3) PATH '$.originalAmount.currency'
+           original_currency CHAR(3) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci PATH '$.originalAmount.currency'
          )
        ) j ON j.tid = bt.bank_ref
    SET bt.original_amount = IF(bt.amount < 0, -ABS(j.original_value), ABS(j.original_value)),
