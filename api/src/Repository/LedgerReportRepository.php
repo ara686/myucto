@@ -435,8 +435,13 @@ final class LedgerReportRepository
      * z několika stovek). Vynechané účty se vůbec nečtou, zůstatky vyjmenovaných jsou
      * stejné jako bez filtru.
      *
+     * `$extraDeltas` (účet => MD − D) přičte k zůstatkům listových účtů úpravu mimo deník
+     * (průběžné časové rozlišení ve výkazu) ještě před roll-upem, aby úprava prošla stejnou
+     * syntetikou, analytikou i rozdělením salda jako zápisy deníku.
+     *
      * @param list<string> $splitCodes syntetické prefixy k rozdělení per analytika
      * @param list<string>|null $onlyCodes jen tyto syntetiky; null = všechny
+     * @param array<string,float> $extraDeltas listový účet => změna zůstatku MD − D
      * @return list<array{account_id:int, code:string, name:string, account_type:string, md:float, d:float}>
      */
     public function syntheticBalances(
@@ -447,6 +452,7 @@ final class LedgerReportRepository
         array $preserveCodes = [],
         ?DimensionFilter $dimension = null,
         ?array $onlyCodes = null,
+        array $extraDeltas = [],
     ): array
     {
         $accountDefinitions=AccountDefinitionRepository::relation($asOf,$supplierId);
@@ -507,7 +513,65 @@ final class LedgerReportRepository
               ORDER BY code"
         );
         $stmt->execute($params);
-        return $this->rollupSyntheticBalances($stmt->fetchAll(PDO::FETCH_ASSOC), $splitCodes, $preserveCodes);
+        $leafRows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        if ($extraDeltas !== []) {
+            $leafRows = $this->applyLeafDeltas($supplierId, $asOf, $leafRows, $extraDeltas);
+        }
+        return $this->rollupSyntheticBalances($leafRows, $splitCodes, $preserveCodes);
+    }
+
+    /**
+     * Přičte změny zůstatků (účet => MD − D) k listovým řádkům zůstatků. Účet bez pohybu
+     * v deníku se doplní z osnovy platné k `asOf` se svou syntetikou. Účet, který osnova
+     * nezná, je chyba: úprava by z výkazu tiše vypadla a rozvaha by nebilancovala.
+     *
+     * @param list<array<string,mixed>> $leafRows
+     * @param array<string,float> $deltas
+     * @return list<array<string,mixed>>
+     */
+    private function applyLeafDeltas(int $supplierId, string $asOf, array $leafRows, array $deltas): array
+    {
+        $byCode = [];
+        foreach ($leafRows as $i => $r) {
+            $byCode[(string) $r['leaf_code']] = $i;
+        }
+        $missing = array_values(array_filter(array_map('strval', array_keys($deltas)), static fn (string $c): bool => !isset($byCode[$c])));
+        if ($missing !== []) {
+            $accountDefinitions = AccountDefinitionRepository::relation($asOf, $supplierId);
+            $stmt = $this->db->pdo()->prepare(
+                "SELECT COALESCE(p.id, a.id) AS account_id,
+                        COALESCE(p.account_code, a.account_code) AS code,
+                        COALESCE(p.name, a.name) AS name,
+                        a.account_type,
+                        a.id AS leaf_id,
+                        a.account_code AS leaf_code,
+                        a.name AS leaf_name
+                   FROM {$accountDefinitions} a
+                   LEFT JOIN {$accountDefinitions} p ON p.id = a.parent_id
+                  WHERE a.supplier_id = ? AND a.account_code IN (" . implode(',', array_fill(0, count($missing), '?')) . ')'
+            );
+            $stmt->execute([$supplierId, ...$missing]);
+            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                $byCode[(string) $r['leaf_code']] = count($leafRows);
+                $leafRows[] = $r + ['md' => 0.0, 'd' => 0.0];
+            }
+        }
+        foreach ($deltas as $code => $delta) {
+            $i = $byCode[(string) $code] ?? null;
+            if ($i === null) {
+                throw new \MyInvoice\Service\Accounting\Reports\ReportException(
+                    'accrual_account_missing',
+                    'Účet ' . $code . ' z průběžného časového rozlišení není v účtové osnově firmy.',
+                );
+            }
+            $delta = round((float) $delta, 2);
+            if ($delta > 0) {
+                $leafRows[$i]['md'] = round((float) $leafRows[$i]['md'] + $delta, 2);
+            } else {
+                $leafRows[$i]['d'] = round((float) $leafRows[$i]['d'] - $delta, 2);
+            }
+        }
+        return $leafRows;
     }
 
     /**

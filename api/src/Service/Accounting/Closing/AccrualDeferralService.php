@@ -434,10 +434,14 @@ final class AccrualDeferralService
     /**
      * Část základu řádku s obdobím [from..to], která k rozvahovému dni `asOf` připadá na dny
      * za ním a odkládá se na 381/384: základ − kumulativně uznaná část k `asOf` včetně.
-     * Období celé za `asOf` = celý základ, období končící do `asOf` = 0.
+     * Období celé za `asOf` = celý základ, období končící do `asOf` = 0. Neplatné období
+     * (konec před začátkem) se nerozlišuje.
      */
     public static function deferredAmount(float $netCzk, string $from, string $to, string $asOf): float
     {
+        if (self::daysInclusive($from, $to) <= 0) {
+            return 0.0;
+        }
         return round($netCzk - self::cumRecognized($netCzk, $from, $to, $asOf), 2);
     }
 

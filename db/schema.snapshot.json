@@ -1117,7 +1117,8 @@
         "2213_payroll_jmhz_2027_sources.sql",
         "2214_payroll_preschool_credit_documents.sql",
         "2215_bank_card_original_amount_merchant_map.sql",
-        "2216_revenue_classification_rules.sql"
+        "2216_revenue_classification_rules.sql",
+        "2218_accrual_period_indexes.sql"
     ],
     "tables": {
         "abra_flexi_connections": {
@@ -7127,6 +7128,7 @@
                 "fk_ii_vat": "BTREE (vat_rate_id)",
                 "fk_ii_warehouse": "BTREE (warehouse_id)",
                 "fk_ii_wr": "BTREE (linked_work_report_id)",
+                "idx_ii_accrual_to": "BTREE (accrual_to)",
                 "idx_ii_asset": "BTREE (asset_id)",
                 "idx_ii_invoice": "BTREE (invoice_id, order_index)",
                 "idx_ii_small_asset": "BTREE (small_asset_id)",
@@ -22416,6 +22418,7 @@
                 "fk_pii_pol": "BTREE (purchase_order_line_id)",
                 "fk_pii_stock_item": "BTREE (stock_item_id)",
                 "fk_pii_vat": "BTREE (vat_rate_id)",
+                "idx_pii_accrual_to": "BTREE (accrual_to)",
                 "idx_pii_expense_rule": "BTREE (expense_rule_id)",
                 "idx_pii_invoice": "BTREE (purchase_invoice_id, order_index)"
             },
