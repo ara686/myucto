@@ -22452,6 +22452,7 @@
     "close": "Close",
     "preview_side_title": "Original preview",
     "preview_side_close": "Close preview",
+    "preview_side_empty": "The document has no original attached.",
     "of": "of",
     "from": "From",
     "to": "To",
