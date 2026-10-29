@@ -31,9 +31,10 @@ Rozvaha je dostupná jen pro podvojné účetnictví.
 3. V poli **Rozvahový den** zvolte datum uvnitř období. Prázdná hodnota znamená dřívější z posledního dne období a dneška.
 4. V poli **Rozsah** ponechte **Automaticky (dle kategorie ÚJ)**, nebo zvolte **Plný rozsah**, **Zkrácený - malá ÚJ** či **Zkrácený - mikro ÚJ**.
 5. Podle potřeby přepněte **Kč / tis. Kč**. Mění jen zobrazení, výpočet i export zůstávají v korunách.
-6. Zkontrolujte kontrolu **Aktiva = Pasiva** (porovnává **Aktiva netto** a **Pasiva celkem** na haléře).
-7. Podezřelý řádek rozbalte kliknutím. Uvidíte **Účty řádku**, částku a u aktiv cíl Brutto nebo korekce. Kód účtu otevře opis od začátku období do rozvahového dne.
-8. Klikněte na **Export PDF** nebo **Export XLSX**.
+6. Pro průběžnou rozvahu ke klientské výsledovce zaškrtněte **Průběžné časové rozlišení**. Přesah dokladů s obdobím od–do za rozvahovým dnem se ukáže na 381 a 384 a výsledek běžného období se upraví stejně jako ve výsledovce ([§ 58.7.7](58_Vysledovka_druhova.md#5877-prubezne-casove-rozliseni)).
+7. Zkontrolujte kontrolu **Aktiva = Pasiva** (porovnává **Aktiva netto** a **Pasiva celkem** na haléře).
+8. Podezřelý řádek rozbalte kliknutím. Uvidíte **Účty řádku**, částku a u aktiv cíl Brutto nebo korekce. Kód účtu otevře opis od začátku období do rozvahového dne.
+9. Klikněte na **Export PDF** nebo **Export XLSX**.
 
 **Jak poznáte, že je hotovo:** **Aktiva = Pasiva** je zelená, nad tabulkou není varování o záporném netto a výsledek hospodaření v rozvaze odpovídá výsledku z nákladových a výnosových účtů.
 
@@ -100,6 +101,10 @@ Podrobnosti jsou v [§ 57.7.7](#5777-mapovani-uctu-pro-konkretni-firmu).
   mikro účetní jednotku.
 - **Kč / tis. Kč** mění pouze obrazovkové zobrazení. Výpočet i export zůstávají
   v korunách.
+- **Průběžné časové rozlišení** přičte k zůstatkům deníku odklad dokladů s obdobím
+  od–do na 381 a 384 k rozvahovému dni mimo deník; pravidla popisuje
+  [§ 58.7.7](58_Vysledovka_druhova.md#5877-prubezne-casove-rozliseni). Výchozí je
+  vypnuté a volba platí společně s výsledovkou.
 
 Systém vybere verzi definice výkazu platnou k rozvahovému dni. Její kód se
 zobrazuje v záhlaví. Minulé období se sestaví z předchozího fiskálního období
