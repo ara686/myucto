@@ -22739,6 +22739,8 @@
     "item_account": {
       "show": "Line accounts",
       "hide": "Hide line accounts",
+      "open": "Show line account",
+      "close": "Hide line account",
       "hint": "Account of individual lines: a revenue account, or a balance sheet account for rebilling (except receivable, payable, tax and cash accounts). Empty = product account, its category, a revenue rule, otherwise the invoice posting template.",
       "label": "Line account",
       "placeholder": "by product / document"

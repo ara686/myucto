@@ -57,6 +57,7 @@ import { appIsoDate, addDaysIso } from '@/utils/date'
 import DateInput from '@/components/ui/DateInput.vue'
 import ItemAccrualFields from '@/components/invoice/ItemAccrualFields.vue'
 import ChartAccountSelect from '@/components/accounting/ChartAccountSelect.vue'
+import { ICONS } from '@/components/ui/buttonStyles'
 import { useResultAccounts } from '@/composables/useResultAccounts'
 import DurationInput from '@/components/ui/DurationInput.vue'
 import DimensionFields from '@/components/dimensions/DimensionFields.vue'
@@ -1022,19 +1023,27 @@ function hydrateAssetSelections() {
   if (form.value.items.some(it => it.accrual_from || it.accrual_to)) {
     showAccrual.value = true
   }
-  if (form.value.items.some(it => it.revenue_account_code)) {
-    showItemAccounts.value = true
+  for (const it of form.value.items) {
+    if (it.revenue_account_code) itemAccountOpen.add(it)
   }
 }
 
 // ─── ÚČET A DIMENZE POLOŽKY Z PRODUKTU (F1) ─────────────────────────────
-// Volitelný výnosový účet položky je „pokročilá" volba: pole se ukážou až po zapnutí
-// odkazem (nebo samy, když už některá položka účet má). Prázdné pole = účet produktu,
-// jeho kategorie, jinak předkontace dokladu — totéž rozhodne zaúčtování.
+// Volitelný účet položky je „pokročilá" volba: pole se u řádku otevře šipkou stejně jako
+// u přijaté faktury (samo, když už položka účet má). Prázdné pole = účet produktu, jeho
+// kategorie, pravidlo výnosů, jinak předkontace dokladu — totéž rozhodne zaúčtování.
 const resultAccounts = useResultAccounts()
-const showItemAccounts = ref(false)
+const itemAccountOpen = reactive(new Set<InvoiceItem>())
 const itemAccountsAvailable = computed(() => assetSaleAvailable.value && resultAccounts.available.value)
 onMounted(() => { void resultAccounts.load() })
+
+function itemAccountEditable(item: InvoiceItem): boolean {
+  return itemAccountsAvailable.value && !item.asset_id && !item.small_asset_id
+}
+function toggleItemAccount(item: InvoiceItem) {
+  if (itemAccountOpen.has(item)) itemAccountOpen.delete(item)
+  else itemAccountOpen.add(item)
+}
 
 /**
  * Výběr karty předvyplní prázdný účet a prázdné dimenze položky z produktu (produkt >
@@ -1052,7 +1061,7 @@ function applyProductDefaults(item: InvoiceItem, account: string | null, dims: R
   if (!item.revenue_account_code && account && itemAccountsAvailable.value) {
     item.revenue_account_code = account
     productPrefilledAccount.set(item, account)
-    showItemAccounts.value = true
+    itemAccountOpen.add(item)
   }
   if (docDims.enabled.value && docDims.canEdit.value) {
     const result = applyPrefill(docDims.itemDimsOf(item), productPrefilledDims.get(item) ?? {}, dims)
@@ -3200,11 +3209,6 @@ useWindowTitle(
               :title="t('accrual_period.hint')" data-test="accrual-toggle" @click="showAccrual = !showAccrual">
               {{ showAccrual ? t('accrual_period.hide') : t('accrual_period.show') }}
             </button>
-            <button v-if="itemAccountsAvailable" type="button" class="cursor-pointer text-xs hover:underline whitespace-nowrap mr-1"
-              :class="showItemAccounts ? 'text-danger-600' : 'text-primary-700'"
-              :title="t('invoice.item_account.hint')" data-test="item-accounts-toggle" @click="showItemAccounts = !showItemAccounts">
-              {{ showItemAccounts ? t('invoice.item_account.hide') : t('invoice.item_account.show') }}
-            </button>
             <label v-if="assetSaleAvailable" class="inline-flex items-center gap-1.5 text-sm text-neutral-700 mr-1"
               :title="t('invoice.asset_sale.hint')">
               <input v-model="assetSaleMode" type="checkbox" class="rounded border-neutral-300 text-primary-600" />
@@ -3330,7 +3334,7 @@ useWindowTitle(
                   @update:model-value="(v) => onTrackingChange(item, v)" />
                 <ItemAccrualFields v-if="showAccrual" :description="item.description"
                   v-model:from="item.accrual_from" v-model:to="item.accrual_to" />
-                <label v-if="showItemAccounts && itemAccountsAvailable && !item.asset_id && !item.small_asset_id"
+                <label v-if="itemAccountEditable(item) && itemAccountOpen.has(item)" :title="t('invoice.item_account.hint')"
                   class="mt-1.5 flex items-start gap-2 text-xs text-neutral-500" data-test="invoice-item-account">
                   <span class="whitespace-nowrap pt-2">{{ t('invoice.item_account.label') }}</span>
                   <ChartAccountSelect v-model="item.revenue_account_code" :accounts="resultAccounts.issuedItemAccounts.value"
@@ -3393,6 +3397,17 @@ useWindowTitle(
                       @change="onOssApplicableChange(item)" />
                     <span>{{ t('invoice.oss.enabled') }}</span>
                   </label>
+                  <button v-if="itemAccountEditable(item)" type="button" data-test="item-account-toggle"
+                    :title="itemAccountOpen.has(item) ? t('invoice.item_account.close') : t('invoice.item_account.open')"
+                    :aria-label="itemAccountOpen.has(item) ? t('invoice.item_account.close') : t('invoice.item_account.open')"
+                    :aria-expanded="itemAccountOpen.has(item)"
+                    class="shrink-0 w-7 h-7 inline-flex items-center justify-center rounded border"
+                    :class="item.revenue_account_code
+                      ? 'border-primary-300 bg-primary-50 text-primary-700'
+                      : itemAccountOpen.has(item) ? 'border-neutral-300 bg-neutral-100 text-neutral-700' : 'border-transparent text-neutral-400 hover:text-neutral-700 hover:border-neutral-300'"
+                    @click="toggleItemAccount(item)">
+                    <svg class="w-4 h-4 transition-transform" :class="itemAccountOpen.has(item) ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" :d="ICONS.chevron" /></svg>
+                  </button>
                   <button type="button" @click="removeItem(i)" class="text-danger-500 hover:text-danger-600 text-lg leading-none">×</button>
                 </div>
               </td>
@@ -3506,6 +3521,15 @@ useWindowTitle(
                 <ItemDimensionsToggle v-if="docDims.enabled.value && !isTextItem(item)"
                   :open="docDims.isItemOpen(item)" :filled="docDims.itemHasDims(item)" :disabled="!docDims.canEdit.value"
                   @toggle="docDims.toggleItem(item)" />
+                <button v-if="!isTextItem(item) && itemAccountEditable(item)" type="button" data-test="item-account-toggle-mobile"
+                  :title="itemAccountOpen.has(item) ? t('invoice.item_account.close') : t('invoice.item_account.open')"
+                  :aria-label="itemAccountOpen.has(item) ? t('invoice.item_account.close') : t('invoice.item_account.open')"
+                  :aria-expanded="itemAccountOpen.has(item)"
+                  class="cursor-pointer w-8 h-8 inline-flex items-center justify-center border rounded"
+                  :class="item.revenue_account_code ? 'border-primary-300 bg-primary-50 text-primary-700' : 'border-neutral-300 hover:bg-neutral-50'"
+                  @click="toggleItemAccount(item)">
+                  <svg class="w-4 h-4 transition-transform" :class="itemAccountOpen.has(item) ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" :d="ICONS.chevron" /></svg>
+                </button>
                 <button type="button" @click="moveUp(i)" :disabled="i === 0" class="cursor-pointer w-8 h-8 inline-flex items-center justify-center border border-neutral-300 rounded hover:bg-neutral-50 disabled:opacity-30 disabled:cursor-not-allowed">▲</button>
                 <button type="button" @click="moveDown(i)" :disabled="i === form.items.length - 1" class="cursor-pointer w-8 h-8 inline-flex items-center justify-center border border-neutral-300 rounded hover:bg-neutral-50 disabled:opacity-30 disabled:cursor-not-allowed">▼</button>
                 <button type="button" @click="removeItem(i)" class="cursor-pointer w-8 h-8 inline-flex items-center justify-center border border-danger-500/40 text-danger-500 hover:bg-danger-50 rounded text-lg leading-none">×</button>
@@ -3570,7 +3594,7 @@ useWindowTitle(
                 @update:model-value="(v) => onTrackingChange(item, v)" />
               <ItemAccrualFields v-if="showAccrual" stacked :description="item.description"
                 v-model:from="item.accrual_from" v-model:to="item.accrual_to" />
-              <label v-if="showItemAccounts && itemAccountsAvailable && !item.asset_id && !item.small_asset_id"
+              <label v-if="itemAccountEditable(item) && itemAccountOpen.has(item)" :title="t('invoice.item_account.hint')"
                 class="mt-1.5 block text-xs font-medium text-neutral-600">
                 <span class="mb-1 block">{{ t('invoice.item_account.label') }}</span>
                 <ChartAccountSelect v-model="item.revenue_account_code" :accounts="resultAccounts.issuedItemAccounts.value"
