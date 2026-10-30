@@ -203,6 +203,35 @@ final class PohodaImportTest extends TestCase
         self::assertSame($payments, $this->rows('invoice_payments', $supplierId), 'Úhrady převzatých faktur se dopočítají znovu.');
     }
 
+    public function testKeepOwnJournalAddsOnlyRecordsBeforeFirstOwnEntry(): void
+    {
+        $supplierId = $this->supplier();
+        $first = $this->importer->run($supplierId, $this->userId, PohodaExport::open(SyntheticPohodaExport::write($this->tmp . '/a')), false);
+        self::assertFalse($first->hasErrors(), $this->explain($first));
+        $pdo = $this->db->pdo();
+        $periodId = (int) $pdo->query("SELECT id FROM accounting_periods WHERE supplier_id = {$supplierId} ORDER BY starts_on DESC LIMIT 1")->fetchColumn();
+        $account = static fn (string $code): int => (int) $pdo->query("SELECT id FROM chart_of_accounts WHERE supplier_id = {$supplierId} AND account_code = '{$code}'")->fetchColumn();
+        $ownDate = SyntheticPohodaExport::YEAR . '-01-01';
+        $pdo->prepare("INSERT INTO journal_entries (supplier_id, period_id, entry_date, description, source_type, posted_at) VALUES (?, ?, ?, 'Vlastní zápis v MyÚčtu', 'manual', NOW())")
+            ->execute([$supplierId, $periodId, $ownDate]);
+        $ownId = (int) $pdo->lastInsertId();
+        $pdo->prepare("INSERT INTO journal_entry_lines (entry_id, supplier_id, account_id, side, amount, line_no) VALUES (?, ?, ?, 'debit', 100, 1), (?, ?, ?, 'credit', 100, 2)")
+            ->execute([$ownId, $supplierId, $account('518000') ?: $account('518'), $ownId, $supplierId, $account('321001') ?: $account('321')]);
+        $entries = $this->rows('journal_entries', $supplierId);
+        $purchases = $this->rows('purchase_invoices', $supplierId);
+
+        $newer = PohodaExport::open(SyntheticPohodaExport::write($this->tmp . '/b', true));
+        self::assertTrue($this->importer->run($supplierId, $this->userId, $newer, false)->hasErrors(), 'Bez dorovnání zůstává zákaz.');
+
+        $merge = $this->importer->run($supplierId, $this->userId, $newer, false, keepOwnJournal: true);
+        self::assertContains('own_journal_cutoff', $this->messageCodes($merge), $this->explain($merge));
+        self::assertNotContains('unexpected', $this->messageCodes($merge), $this->explain($merge));
+        self::assertNotContains('journal_not_empty', $this->messageCodes($merge), $this->explain($merge));
+        self::assertSame($entries, $this->rows('journal_entries', $supplierId), 'Vše z novější zálohy je po prvním vlastním zápisu, nic se nepřidá.');
+        self::assertSame($purchases, $this->rows('purchase_invoices', $supplierId));
+        self::assertSame(1, $this->rows('journal_entries', $supplierId, "id = {$ownId}"));
+    }
+
     public function testUnknownDocumentTypesWarnAndKeepImportingKnownDocuments(): void
     {
         $supplierId = $this->supplier();

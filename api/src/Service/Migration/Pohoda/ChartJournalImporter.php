@@ -360,6 +360,23 @@ final class ChartJournalImporter
         return (int) $stmt->fetchColumn();
     }
 
+    /** Datum nejstaršího zápisu firmy, který nevznikl převodem (ani uzávěrkou nad ním). */
+    public function firstForeignEntryDate(int $supplierId): ?string
+    {
+        $stmt = $this->db->pdo()->prepare(
+            "SELECT MIN(e.entry_date)
+               FROM journal_entries e
+              WHERE e.supplier_id = ? AND e.source_type NOT IN ('closing', 'fx_revaluation')
+                AND NOT EXISTS (
+                    SELECT 1 FROM pohoda_import_map m
+                     WHERE m.supplier_id = e.supplier_id AND m.kind IN (?, ?) AND m.target_id = e.id
+                )"
+        );
+        $stmt->execute([$supplierId, PohodaImportRepository::KIND_JOURNAL_ENTRY, PohodaImportRepository::KIND_DERIVED_ENTRY]);
+        $date = $stmt->fetchColumn();
+        return is_string($date) ? substr($date, 0, 10) : null;
+    }
+
     /**
      * Roky po roce agendy, do kterých padají zápisy deníku (agenda POHODY vede doklady
      * i po 31. 12.) - převod je dá do jejich vlastního účetního období.

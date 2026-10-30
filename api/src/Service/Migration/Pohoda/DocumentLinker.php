@@ -566,8 +566,8 @@ final class DocumentLinker
      *    interního dokladu se na doklad naváže jako ruční vyrovnání
      *    ({@see \MyInvoice\Support\Sql\LinkedManualSettlementSql}). Vazba platí jen pro
      *    jediný doklad téhož typu v zápisu. Víc vydaných faktur se rozepíše na řádky zápisu
-     *    ({@see allocateInternalSettlement()}), víc přijatých faktur nese zůstatek samo
-     *    (`settled_outside_amount`) a zůstane k ruční kontrole vazby.
+     *    ({@see allocateInternalSettlement()}), víc přijatých faktur dostane vazbu bez částky,
+     *    zůstatek nese `settled_outside_amount`.
      *
      * Stav a uhrazenou částku dokladů vede převod podle POHODY, tady se nic nepřepisuje.
      * Opakovaný převod nic nezdvojí.
@@ -631,9 +631,18 @@ final class DocumentLinker
                     continue;
                 }
                 if (count($ofType) > 1) {
-                    // Přijaté doklady drží zůstatek v settled_outside_amount, rozpad by je uzavřel podruhé.
                     if ($type === 'invoice' && $this->allocateInternalSettlement($ctx, $entryId, $ofType)) {
                         $p->count(self::STEP_PAYMENTS, 'internal_settlement_allocated');
+                        continue;
+                    }
+                    // Přijatý doklad drží zůstatek v settled_outside_amount, rozpad by ho uzavřel
+                    // podruhé. Vazba na zápis navázaný na víc dokladů se do vyrovnání nepočítá,
+                    // jen ukáže, kterým interním dokladem byl doklad uhrazen.
+                    if ($type === 'purchase_invoice') {
+                        foreach ($ofType as $doc) {
+                            $link->execute([$ctx->supplierId, $entryId, $type, $doc['id'], "Úhrada interním dokladem {$number} (převzato z Pohody)", $ctx->userOrNull()]);
+                        }
+                        $p->count(self::STEP_PAYMENTS, 'internal_settlement_linked_multi');
                         continue;
                     }
                     $p->count(self::STEP_PAYMENTS, 'internal_settlement_unresolved');

@@ -42,6 +42,12 @@ final class PohodaContext
     /** @var array<string,string> kód střediska z nově převedených řádků deníku => název */
     public array $costCenters = [];
 
+    /**
+     * Dorovnání novější zálohou: datum prvního zápisu zadaného v MyÚčtu. Od něj se účtuje
+     * v MyÚčtu, záznamy POHODY s tímto nebo pozdějším datem převod nepřebírá (nevznikne dvojí zápis).
+     */
+    public ?string $ownJournalFrom = null;
+
     /** Řádky deníku, kterým převod hlavní činnost nastavil už při zápisu (firma 504 z dřívějšího převodu). */
     public int $nonprofitLines = 0;
 
@@ -173,7 +179,13 @@ final class PohodaContext
     /** Datum padá do období po období agendy, které se nepřevádí ({@see $skippedYears}). */
     public function skipsDate(?string $date): bool
     {
-        if ($this->skippedYears === [] || $date === null || preg_match('/^\d{4}-\d{2}-\d{2}/', $date) !== 1) {
+        if ($date === null || preg_match('/^\d{4}-\d{2}-\d{2}/', $date) !== 1) {
+            return false;
+        }
+        if ($this->ownJournalFrom !== null && substr($date, 0, 10) >= $this->ownJournalFrom) {
+            return true;
+        }
+        if ($this->skippedYears === []) {
             return false;
         }
         $year = $this->calendar->fiscalYearOfDate(substr($date, 0, 10));

@@ -822,6 +822,12 @@ převádějte dřív, než v něm začnete účtovat ručně. Výjimkou je oprav
 už převedené firmy: vlastní zápisy v MyÚčtu nechá beze změny a nové doklady
 z POHODY nepřidá.
 
+**Dorovnání novější zálohou.** Když už se v MyÚčtu účtuje a v POHODĚ mezitím přibyly
+starší záznamy, převod s volbou dorovnání vlastní zápisy nechá a převezme jen záznamy
+POHODY starší než první zápis zadaný v MyÚčtu. Novější záznamy POHODY nepřebere, aby
+nevznikl dvojí zápis, a protokol uvede datum, od kterého se nepřebírají. Rekonciliace
+tu může hlásit rozdíl, protože deník nese i vlastní zápisy.
+
 Už převedené doklady ani zápisy deníku opakovaný převod nepřepisuje, protože
 mohly být mezitím zaúčtované, spárované nebo upravené v MyÚčtu. Změnila-li se
 v POHODĚ celková částka faktury, protokol ji vypíše jako změněnou v POHODĚ
