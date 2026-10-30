@@ -116,7 +116,11 @@ const outsideSaldo = computed(() => props.tx.match_status === 'unmatched'
   && (props.tx.resolution === 'outside_saldo' || props.tx.posting?.outside_saldo === true))
 // Avízo, jehož pohyb převzal oficiální výpis: je vyřešené, úhradu nese výpis.
 const supersededNotice = computed(() => props.tx.notice_superseded === true)
-const noInvoiceExpected = computed(() => payrollMatched.value || ownTransfer.value || outsideSaldo.value || supersededNotice.value)
+// Pohyb přiřazený ostatní pohledávce či závazku: doklad má, jen to není faktura.
+const otherItems = computed(() => props.tx.match_status === 'unmatched' ? props.tx.matched_other_items ?? [] : [])
+const otherItemMatched = computed(() => otherItems.value.length > 0)
+const otherItemLinks = computed(() => auth.canRead('other_items') ? otherItems.value : [])
+const noInvoiceExpected = computed(() => payrollMatched.value || ownTransfer.value || outsideSaldo.value || supersededNotice.value || otherItemMatched.value)
 // Úhrady jednotek SVJ: řádek se jen přihlásí o vazbu, dotaz jde jednou za dávku řádků.
 // Firma bez profilu SVJ se neptá vůbec, SVJ bez povolených vazeb jen jednou (usePropertyBankLinks).
 const supplierStore = useSupplierStore()
@@ -134,14 +138,18 @@ const statusText = computed(() => supersededNotice.value
   ? t('bank.match_status.superseded')
   : payrollMatched.value ? t('bank.match_status.payroll')
     : ownTransfer.value ? t('bank.match_status.transfer')
-      : outsideSaldo.value ? t('bank.match_status.outside_saldo') : statusLabel(props.tx.match_status))
-const statusBadgeClass = computed(() => statusBadge(supersededNotice.value || outsideSaldo.value
+      : otherItemMatched.value ? t('bank.match_status.other_item')
+        : outsideSaldo.value ? t('bank.match_status.outside_saldo') : statusLabel(props.tx.match_status))
+const statusBadgeClass = computed(() => statusBadge(otherItemMatched.value
+  ? 'manual'
+  : supersededNotice.value || outsideSaldo.value
   ? 'ignored'
   : noInvoiceExpected.value ? 'auto_exact' : props.tx.match_status))
 // Štítek „Nespárováno" je zkratka k párování — stejná podmínka jako akce „Spárovat" v menu.
 const badgeMatchable = computed(() => !noInvoiceExpected.value && props.actions.canRunDetailAction(props.tx, 'match'))
 const statusTitle = computed(() => supersededNotice.value
   ? t('bank.notice_superseded_hint')
+  : otherItemMatched.value ? t('bank.other_item_matched_hint')
   : outsideSaldo.value ? t('bank.outside_saldo_hint')
     : badgeMatchable.value ? t('bank.match_badge_hint') : undefined)
 // Dialog přeúčtování drží řádek, ne PostingRowActions: řádek se vykresluje ve
@@ -427,6 +435,14 @@ function candidateReject() {
             class="text-primary-600 hover:underline">
             {{ tx.matched_purchase_ref || `#${tx.matched_purchase_invoice_id}` }}
           </RouterLink>
+          <template v-else-if="otherItemLinks.length > 0">
+            <div v-for="item in otherItemLinks" :key="item.other_item_id" data-test="tx-other-item">
+              <RouterLink :to="`/other-items/${item.other_item_id}`" class="text-primary-600 hover:underline">
+                {{ item.document_no || `#${item.other_item_id}` }}
+              </RouterLink>
+              <div v-if="item.partner_name" class="text-neutral-500 text-xs">{{ item.partner_name }}</div>
+            </div>
+          </template>
           <span v-else class="text-neutral-400">—</span>
           <div v-if="tx.matched_client_name" class="text-neutral-500 text-xs">{{ tx.matched_client_name }}</div>
           <div v-else-if="tx.matched_vendor_name" class="text-neutral-500 text-xs">{{ tx.matched_vendor_name }}</div>
@@ -625,6 +641,14 @@ function candidateReject() {
         {{ tx.matched_purchase_ref || `#${tx.matched_purchase_invoice_id}` }}
       </RouterLink>
       <span v-if="tx.matched_vendor_name" class="text-neutral-500 ml-2">{{ tx.matched_vendor_name }}</span>
+    </div>
+    <div v-else-if="otherItemLinks.length > 0" class="text-xs">
+      <div v-for="item in otherItemLinks" :key="item.other_item_id" data-test="tx-other-item">
+        <RouterLink :to="`/other-items/${item.other_item_id}`" class="text-primary-600 hover:underline font-mono">
+          {{ item.document_no || `#${item.other_item_id}` }}
+        </RouterLink>
+        <span v-if="item.partner_name" class="text-neutral-500 ml-2">{{ item.partner_name }}</span>
+      </div>
     </div>
     <MatchSuggestionPanel v-if="!payrollMatched && expandedSuggestions.has(tx.id) && suggestionFor(tx.id)" variant="inline"
       :suggestion="suggestionFor(tx.id)!" :reviewing="reviewingSuggestion"

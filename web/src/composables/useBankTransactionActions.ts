@@ -17,6 +17,7 @@ import {
   type MatchPostingResult,
 } from '@/api/bank'
 import { invoicesApi } from '@/api/invoices'
+import { otherItemsApi } from '@/api/otherItems'
 import { purchaseInvoicesApi } from '@/api/purchaseInvoices'
 import { documentRequestsApi } from '@/api/documentRequests'
 import { gopayApi, type GoPayPayoutCandidate } from '@/api/gopay'
@@ -59,8 +60,15 @@ export function useBankTransactionActions(opts: { reload: () => Promise<void> | 
     return auth.canWrite('bank.match') && (!auth.isClientRole || auth.canRead('bank'))
   }
 
+  /** Ostatní pohledávky a závazky v dialogu „Spárovat" — klientským rolím se nenabízí. */
+  function canSeeOtherItemCandidates(): boolean {
+    const auth = useAuthStore()
+    return !auth.isClientRole && auth.canRead('other_items') && auth.canRead('bank')
+  }
+
   function canMatchDocument(type: MatchCandidate['type']): boolean {
     const auth = useAuthStore()
+    if (type === 'other_item') return canMatchBank() && canSeeOtherItemCandidates() && auth.canWrite('other_items')
     return canMatchBank() && (!auth.isClientRole || (type === 'invoice'
       ? auth.canRead('invoices') && auth.canWrite('invoices.mark_paid')
       : auth.canRead('purchase_invoices') && auth.canWrite('purchase_invoices.transition')))
@@ -257,10 +265,17 @@ export function useBankTransactionActions(opts: { reload: () => Promise<void> | 
     loadingCandidates.value = true
     try {
       const search = matchSearch.value.trim()
-      const result = await (search ? bankApi.matchCandidates(txId, search) : bankApi.matchCandidates(txId))
+      const [result, otherItems] = await Promise.all([
+        search ? bankApi.matchCandidates(txId, search) : bankApi.matchCandidates(txId),
+        // Chyba u ostatních položek nesmí schovat kandidáty faktur.
+        canSeeOtherItemCandidates()
+          ? otherItemsApi.bankCandidates(txId, search).catch(() => [] as MatchCandidate[])
+          : Promise.resolve([] as MatchCandidate[]),
+      ])
       if (version !== candidateLoadVersion || matchingTx.value !== txId) return
-      matchCandidates.value = result.candidates
-      candidatesFallback.value = result.fallback
+      matchCandidates.value = [...result.candidates, ...otherItems]
+      // Varování o širším okně patří jen k nalezeným fakturám, ne k ostatním položkám.
+      candidatesFallback.value = result.fallback && result.candidates.length > 0
     } catch (error) {
       if (version === candidateLoadVersion && matchingTx.value === txId) matchError.value = apiErrorMessage(error, t('bank.match_failed'))
     } finally {
@@ -497,8 +512,28 @@ export function useBankTransactionActions(opts: { reload: () => Promise<void> | 
     await opts.reload()
   }
 
+  async function matchOtherItem(txId: number, c: Pick<MatchCandidate, 'id' | 'ref'>): Promise<boolean> {
+    matchingCandidate.value = true
+    const supplierId = matchSupplier.currentSupplierId
+    matchError.value = ''
+    try {
+      await otherItemsApi.matchBankTransaction(c.id, txId)
+      if (supplierId !== matchSupplier.currentSupplierId) return true
+      if (matchingTx.value === txId) { detailReturnTarget.value = null; dismissMatch() }
+      toast.success(t('bank.other_item_matched', { ref: c.ref || `#${c.id}` }))
+      await opts.reload()
+      return true
+    } catch (e: any) {
+      if (supplierId === matchSupplier.currentSupplierId) matchError.value = apiErrorMessage(e, t('bank.match_failed'))
+      return false
+    } finally {
+      matchingCandidate.value = false
+    }
+  }
+
   async function matchCandidate(txId: number, c: Pick<MatchCandidate, 'id' | 'type' | 'ref'>, fromDocument = false): Promise<boolean> {
     if (matchBusy.value || !canMatchDocument(c.type)) return false
+    if (c.type === 'other_item') return !fromDocument && matchOtherItem(txId, c)
     if (useAuthStore().isClientRole && fromDocument) return false
     matchingCandidate.value = true
     const supplierId = matchSupplier.currentSupplierId

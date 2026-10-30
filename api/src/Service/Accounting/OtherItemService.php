@@ -416,13 +416,7 @@ final class OtherItemService
                          GROUP BY bank_transaction_id) a
                      ON a.bank_transaction_id = bt.id
                   WHERE ' . $direction . '
-                    AND COALESCE(bt.currency, bs.currency, \'CZK\') = \'CZK\'
-                    AND bt.match_status = \'unmatched\' AND bt.matched_invoice_id IS NULL
-                    AND ABS(bt.amount) > COALESCE(a.used_amount, 0)
-                    AND NOT EXISTS (SELECT 1 FROM payment_matches pm WHERE pm.bank_transaction_id = bt.id)
-                    AND NOT EXISTS (SELECT 1 FROM invoice_payments ip WHERE ip.bank_transaction_id = bt.id)
-                    AND NOT EXISTS (SELECT 1 FROM payroll_payment_matches ppm WHERE ppm.bank_transaction_id = bt.id)
-                    AND NOT EXISTS (SELECT 1 FROM tax_advance_schedules tas WHERE tas.matched_transaction_id = bt.id)
+                    AND ' . self::freeBankPaymentSql() . '
                     AND (
                         NOT EXISTS (SELECT 1 FROM other_item_allocations previous
                                      WHERE previous.supplier_id = bs.supplier_id
@@ -674,6 +668,36 @@ final class OtherItemService
             throw new OtherItemException('payment_used', 'Pokladní doklad není volnou úhradou této položky.', 409);
         }
         return $row;
+    }
+
+    /**
+     * Bankovní pohyb je volný k přiřazení ostatní položce: CZK, nespárovaný s fakturou,
+     * mzdou ani zálohou na daň a má nevyčerpanou částku. Předpokládá aliasy `bt`
+     * (bank_transactions), `bs` (bank_statements) a `a` (součet aktivních přiřazení
+     * pohybu jako `used_amount`). Sdílí ji výběr plateb z detailu položky i párování
+     * z banky ({@see OtherItemBankMatchService}), aby se pravidla nerozešla.
+     */
+    public static function freeBankPaymentSql(): string
+    {
+        return 'COALESCE(bt.currency, bs.currency, \'CZK\') = \'CZK\'
+                    AND bt.match_status = \'unmatched\' AND bt.matched_invoice_id IS NULL
+                    AND ABS(bt.amount) > COALESCE(a.used_amount, 0)
+                    AND NOT EXISTS (SELECT 1 FROM payment_matches pm
+                                     WHERE pm.bank_transaction_id = bt.id AND pm.supplier_id = bs.supplier_id)
+                    AND NOT EXISTS (SELECT 1 FROM invoice_payments ip
+                                     WHERE ip.bank_transaction_id = bt.id AND ip.supplier_id = bs.supplier_id)
+                    AND NOT EXISTS (SELECT 1 FROM payroll_payment_matches ppm
+                                     WHERE ppm.bank_transaction_id = bt.id AND ppm.supplier_id = bs.supplier_id)
+                    AND NOT EXISTS (SELECT 1 FROM tax_advance_schedules tas
+                                     WHERE tas.matched_transaction_id = bt.id AND tas.supplier_id = bs.supplier_id)';
+    }
+
+    /** Kód účtu pohledávky/závazku ze zápisu položky; null, když položka zápis nemá. */
+    public function settlementAccountCode(int $supplierId, array $item): ?string
+    {
+        if ($item['journal_entry_id'] === null) return null;
+        $account = $this->accounts->findById($supplierId, $this->settlementAccountId($supplierId, $item));
+        return $account === null ? null : (string) $account['account_code'];
     }
 
     private function settlementAccountId(int $supplierId, array $item): int

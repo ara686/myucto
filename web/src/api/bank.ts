@@ -127,6 +127,8 @@ export interface BankTransaction {
   /** Seznam vystavených faktur uhrazených touto transakcí (sloučená úhrada → víc než 1). */
   matched_invoices?: MatchedInvoice[]
   matched_purchase_invoices?: MatchedPurchaseInvoice[]
+  /** Ostatní pohledávky a závazky, kterým je pohyb přiřazen (match_status zůstává unmatched). */
+  matched_other_items?: MatchedOtherItem[]
   ignore_origin?: string | null
   ignore_note?: string | null
   /** Avízo, jehož pohyb převzal oficiální výpis (jen detail výpisu). */
@@ -186,6 +188,14 @@ export interface MatchedInvoice {
   client_name: string | null
 }
 
+export interface MatchedOtherItem {
+  other_item_id: number
+  document_no: string | null
+  side: 'receivable' | 'payable'
+  partner_name: string | null
+  amount: number
+}
+
 export interface MatchedPurchaseInvoice {
   purchase_invoice_id: number
   ref: string | null
@@ -196,8 +206,11 @@ export interface MatchedPurchaseInvoice {
 
 /** Kandidát na spárování dle částky + data (±14 dní, fallback ±90 dní) — vystavená i přijatá faktura. */
 export interface MatchCandidate {
-  type: 'invoice' | 'purchase_invoice'
+  /** `other_item` = ostatní pohledávka/závazek (kandidáti z /accounting/other-items/bank-candidates). */
+  type: 'invoice' | 'purchase_invoice' | 'other_item'
   id: number
+  /** Jen u `other_item`: strana položky. */
+  side?: 'receivable' | 'payable'
   ref: string | null
   amount: number
   currency: string

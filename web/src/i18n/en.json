@@ -24334,6 +24334,7 @@
       "ignored": "Ignored",
       "unmatched": "Unmatched",
       "outside_saldo": "No document",
+      "other_item": "Other item",
       "superseded": "Replaced by statement"
     },
     "notice_superseded_hint": "The same transaction is on the official bank statement, which carries the payment. The notice is resolved and is not matched automatically again.",
@@ -24441,6 +24442,10 @@
     "match_by_vs": "Or match manually by VS",
     "candidate_issued": "Issued",
     "candidate_purchase": "Received",
+    "candidate_other_receivable": "Other receivable",
+    "candidate_other_payable": "Other payable",
+    "other_item_matched": "Payment allocated to {ref}",
+    "other_item_matched_hint": "The payment is allocated to an other receivable or payable. Remove the allocation in the item detail.",
     "candidate_paid": "Paid",
     "candidates_fallback_hint": "Nothing matched within ±14 days — these are wider suggestions (±90 days), including matches without currency conversion. Verify manually before matching.",
     "candidate_currency_mismatch": "Different currency",
