@@ -14,6 +14,7 @@ use MyInvoice\Service\Accounting\OtherItemService;
 use MyInvoice\Service\Accounting\TakenOverRecord;
 use MyInvoice\Service\Migration\MoneyS3\ImportProtocol;
 use MyInvoice\Service\Migration\Shared\JournalEntryLinker;
+use MyInvoice\Support\Sql\PurchaseSettledExpr;
 use PDO;
 
 /**
@@ -446,6 +447,7 @@ final class DocumentLinker
         $this->settleByInternalDocuments($ctx, $internal);
         $this->restoreOtherItemSettlements($ctx);
         $this->inferAdvanceSettlements($ctx);
+        $this->restorePurchaseSettlements($ctx);
         $this->recordBankFxSettlements($ctx);
         $this->markBookedWithoutDocument($ctx);
         if ($cashMulti !== []) {
@@ -977,6 +979,43 @@ final class DocumentLinker
             $update->execute([number_format($paid, 2, '.', ''), $ctx->supplierId, $id]);
             if ($update->rowCount() > 0) {
                 $ctx->protocol->count(self::STEP_PAYMENTS, 'other_item_settled_outside');
+            }
+        }
+    }
+
+    /**
+     * Úhrada přijaté faktury, kterou POHODA eviduje a převod ji nemá kam navázat (minulý rok,
+     * nenavázaný zápočet), jde do `settled_outside_amount`. Nastavuje se absolutně. Rozhodují
+     * úhrady POHODY, zůstatek dokladu je jen strop: POHODA ho u cizí měny přepočítává jiným
+     * kurzem, takže sám o úhradě nevypovídá. Doklady v cizí měně se nedoplňují, úhrady
+     * POHODY jsou v Kč a částku v měně dokladu spolehlivě nenese.
+     */
+    private function restorePurchaseSettlements(PohodaContext $ctx): void
+    {
+        $paid = [];
+        foreach ($ctx->liquidations as $l) {
+            if ($l['doc'] === 'purchase_invoice' && !$ctx->skipsDate($l['date'])) {
+                $paid[(int) $l['id']] = ($paid[(int) $l['id']] ?? 0.0) + abs((float) $l['amount']);
+            }
+        }
+        $pdo = $this->db->pdo();
+        $settled = PurchaseSettledExpr::settled('pi');
+        $update = $pdo->prepare('UPDATE purchase_invoices SET settled_outside_amount = ? WHERE id = ? AND supplier_id = ?');
+        foreach (array_chunk(array_keys($paid), 500) as $chunk) {
+            $in = implode(',', array_fill(0, count($chunk), '?'));
+            $rows = $pdo->prepare("SELECT pi.id, pi.amount_to_pay, pi.settled_outside_amount AS outside, ({$settled}) - pi.settled_outside_amount AS settled
+                  FROM purchase_invoices pi JOIN currencies c ON c.id = pi.currency_id AND c.supplier_id = pi.supplier_id
+                 WHERE pi.supplier_id = ? AND pi.id IN ({$in}) AND c.code = 'CZK' AND pi.amount_to_pay > 0");
+            $rows->execute([$ctx->supplierId, ...$chunk]);
+            foreach ($rows->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                $id = (int) $row['id'];
+                $toPay = (float) $row['amount_to_pay'];
+                $sourcePaid = min($paid[$id], $toPay - max(0.0, $ctx->remaining['purchase_invoice|' . $id] ?? 0.0));
+                $outside = round(max(0.0, $sourcePaid - (float) $row['settled']), 2);
+                if (abs($outside - (float) $row['outside']) >= 0.005) {
+                    $update->execute([number_format($outside, 2, '.', ''), $id, $ctx->supplierId]);
+                    $ctx->protocol->count(self::STEP_PAYMENTS, 'purchase_settled_outside');
+                }
             }
         }
     }

@@ -352,6 +352,29 @@ final class SyntheticPohodaExport
         }
     }
 
+    /** Přijatá faktura částečně uhrazená v minulém roce ({@see withPurchasePaidEarlier()}). */
+    public const PURCHASE_PAID_EARLIER = '25PF0099';
+
+    /**
+     * Přijatá faktura minulého roku z 1 000 Kč, z toho 600 Kč uhrazeno v minulém roce, zůstává 400 Kč.
+     * Pohyb minulého roku v agendě není a v deníku roku agendy zápis nemá.
+     */
+    public static function withPurchasePaidEarlier(string $dir): void
+    {
+        self::append($dir . '/20_faktury_receivedInvoice.xml', '</lst:listInvoice>',
+            '<lst:invoice version="2.0"><inv:invoiceHeader><inv:invoiceType>receivedInvoice</inv:invoiceType>'
+            . '<inv:number><typ:numberRequested>' . self::PURCHASE_PAID_EARLIER . '</typ:numberRequested></inv:number>'
+            . '<inv:symVar>2599</inv:symVar><inv:originalDocument>RE-2025-99</inv:originalDocument><inv:date>2025-11-15</inv:date><inv:dateTax>2025-11-15</inv:dateTax>'
+            . '<inv:dateAccounting>2025-11-15</inv:dateAccounting><inv:dateDue>2025-12-01</inv:dateDue>'
+            . '<inv:classificationVAT><typ:ids>PN</typ:ids></inv:classificationVAT><inv:text>Leasing</inv:text>'
+            . '<inv:partnerIdentity><typ:address><typ:company>Leasing Test a.s.</typ:company></typ:address></inv:partnerIdentity>'
+            . '<inv:liquidation><typ:amountHome>400</typ:amountHome></inv:liquidation></inv:invoiceHeader>'
+            . '<inv:invoiceSummary><inv:homeCurrency><typ:priceNone>1000</typ:priceNone><typ:priceLow>0</typ:priceLow><typ:priceLowVAT>0</typ:priceLowVAT>'
+            . '<typ:priceHigh>0</typ:priceHigh><typ:priceHighVAT>0</typ:priceHighVAT></inv:homeCurrency></inv:invoiceSummary>'
+            . '<inv:liquidations><typ:liquidation><typ:id>' . abs(crc32('25PF0099liq')) . '</typ:id><typ:date>2025-12-10</typ:date><typ:sourceAgenda>bank</typ:sourceAgenda>'
+            . '<typ:sourceDocument><typ:number>BAN9990001</typ:number></typ:sourceDocument><typ:amount>600</typ:amount></typ:liquidation></inv:liquidations></lst:invoice>');
+    }
+
     /** Oprava odpočtu § 74b a její pozdější vrácení ({@see withDebtorDeductionCorrection()}). */
     public const S74B_REDUCTION = '26DD0074';
     public const S74B_RESTORATION = '26DD0075';

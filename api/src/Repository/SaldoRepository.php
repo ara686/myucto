@@ -526,7 +526,7 @@ final class SaldoRepository
                                  WHERE pm.supplier_id = d.supplier_id AND pm.purchase_invoice_id = d.id AND DATE(bt.posted_at) <= ?)
                              + (SELECT COALESCE(SUM(cd.total_amount), 0) FROM cash_documents cd
                                  WHERE cd.supplier_id = d.supplier_id AND cd.purchase_invoice_id = d.id AND cd.status = 'posted' AND cd.issue_date <= ?)
-                             + " . PurchaseSettledExpr::offsetSettledAsOf('d') . " AS settled
+                             + " . PurchaseSettledExpr::offsetSettledAsOf('d') . " + d.settled_outside_amount AS settled
                           FROM purchase_invoices d
                           JOIN clients cl ON cl.id = d.vendor_id
                           JOIN currencies cur ON cur.id = d.currency_id
@@ -1983,7 +1983,8 @@ final class SaldoRepository
         // se do poměru nepromítá a zkratka je jediné, co je uzavírá. SQL práh je o haléř
         // nižší než PHP ({@see SHORTFALL_TOLERANCE_CZK}), aby filtr zůstal nadmnožinou.
         $ratioFor = static function (string $offsets) use ($matchedExpr, $cashExpr, $advanceExpr, $toPayExpr, $afterExpr, $bookedExpr): string {
-            $signal = "{$matchedExpr} + {$cashExpr} + ({$offsets}) + {$advanceExpr}";
+            // settled_outside_amount: úhrada převzatého dokladu mimo evidované kanály, datum nenese.
+            $signal = "{$matchedExpr} + {$cashExpr} + ({$offsets}) + {$advanceExpr} + d.settled_outside_amount";
             $signalRatio = self::paidRatioSql($signal, "{$toPayExpr} + {$advanceExpr}");
             $shortfallThreshold = number_format(self::SHORTFALL_TOLERANCE_CZK - 0.01, 2, '.', '');
 
@@ -2044,6 +2045,7 @@ final class SaldoRepository
                    {$cashExpr} AS paid_from_cash,
                    {$afterExpr} AS matches_after_as_of,
                    {$offsets} AS settled_by_offsets,
+                   d.settled_outside_amount,
                    {$advanceExpr} AS advance_on_account,
                    {$manualExpr} AS manual_settled,
                    {$bookedExpr} AS booked_signed,
@@ -2060,7 +2062,7 @@ final class SaldoRepository
                AND (d.status <> 'cancelled' OR d.cancelled_at IS NULL OR DATE(d.cancelled_at) > ?)
                " . self::partnerSql($partnerId) . self::dueBeforeSql('d', $dueBefore) . $documentFilter . "
              GROUP BY d.id, d.supplier_id, doc_no, d.issue_date, d.due_date, d.status, d.paid_at,
-                      cl.id, cl.company_name, cur.code, d.amount_to_pay,
+                      cl.id, cl.company_name, cur.code, d.amount_to_pay, d.settled_outside_amount,
                       m.matched_sum, m.matched_after, ch.cash_sum, adv.advance_sum, man.settled
             HAVING " . ($componentsOnly ? '1=1' : self::openFilterSql($bookedExpr, self::withManualSettlementSql(
                 $ratioFor(PurchaseSettledExpr::offsetSettledAsOf('d', $currentRead)),
@@ -2088,7 +2090,7 @@ final class SaldoRepository
                 $advance = round((float) $r['advance_on_account'], 2);
                 $booked = round((float) $r['booked_signed'], 2);
                 $signal = (float) $r['paid_from_matches'] + (float) $r['paid_from_cash']
-                    + (float) $r['settled_by_offsets'] + $advance;
+                    + (float) $r['settled_by_offsets'] + (float) $r['settled_outside_amount'] + $advance;
                 $toPay = (float) $r['amount_to_pay'] + $advance;
                 // Nedoplatek na „uhrazeném" dokladu (viz $ratioFor výš): úhrady existují,
                 // ale nechávají na saldokontě zbytek nad toleranci → zkratka neplatí.

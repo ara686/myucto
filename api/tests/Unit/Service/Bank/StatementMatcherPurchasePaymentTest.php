@@ -26,6 +26,7 @@ final class StatementMatcherPurchasePaymentTest extends TestCase
         $this->pdo->exec("CREATE TABLE currencies (id INTEGER PRIMARY KEY, code TEXT);
             INSERT INTO currencies VALUES (1, 'CZK');
             CREATE TABLE purchase_invoices (
+                settled_outside_amount REAL NOT NULL DEFAULT 0,
                 id INTEGER PRIMARY KEY, supplier_id INTEGER DEFAULT 1,
                 varsymbol TEXT DEFAULT 'PF-2099-001', vendor_invoice_number TEXT DEFAULT 'FV-2099-002',
                 payment_variable_symbol TEXT, currency_id INTEGER DEFAULT 1,

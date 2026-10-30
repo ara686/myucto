@@ -397,6 +397,30 @@ final class PohodaImportTest extends TestCase
     }
 
     /**
+     * Přijatá faktura uhrazená zčásti v minulém roce: zůstatek sedí na POHODU, opakovaný
+     * převod částku nenásobí a faktura zůstává otevřená.
+     */
+    public function testPurchasePaidInEarlierYearKeepsPohodaBalance(): void
+    {
+        $supplierId = $this->supplier();
+        $dir = SyntheticPohodaExport::write($this->tmp);
+        SyntheticPohodaExport::withPurchasePaidEarlier($dir);
+        $export = PohodaExport::open($dir);
+        $pdo = $this->db->pdo();
+        $id = null;
+        foreach ([1, 2] as $run) {
+            $protocol = $this->importer->run($supplierId, $this->userId, $export, false);
+            self::assertFalse($protocol->hasErrors(), $this->explain($protocol));
+            $id ??= $this->documentId('purchase_invoices', $supplierId, SyntheticPohodaExport::PURCHASE_PAID_EARLIER);
+            $row = $pdo->query('SELECT pi.status, pi.settled_outside_amount, ' . \MyInvoice\Support\Sql\PurchaseSettledExpr::remaining('pi') . " AS remaining
+                FROM purchase_invoices pi WHERE pi.id = {$id}")->fetch(\PDO::FETCH_ASSOC);
+            self::assertSame('600.00', (string) $row['settled_outside_amount'], "běh {$run}");
+            self::assertEqualsWithDelta(400.0, (float) $row['remaining'], 0.001, "běh {$run}");
+            self::assertNotSame('paid', $row['status'], "běh {$run}");
+        }
+    }
+
+    /**
      * Oprava odpočtu § 74b z interního dokladu POHODY se dostane do evidence § 74b, a tím
      * do přiznání a KH: vrácení v měsíci opravy, opětovné uplatnění v měsíci úhrady.
      */
