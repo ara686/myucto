@@ -7,6 +7,7 @@ namespace MyInvoice\Service\Migration\Pohoda;
 use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Service\Accounting\AccountingFrameworkException;
 use MyInvoice\Service\Accounting\AccountingFrameworkImportGuard;
+use MyInvoice\Service\Accounting\Dimension\SystemDimensionCatalog;
 use MyInvoice\Infrastructure\Database\TableStatistics;
 use MyInvoice\Infrastructure\Database\TransactionFailure;
 use MyInvoice\Repository\AccountingPeriodRepository;
@@ -145,10 +146,15 @@ final class PohodaImporter
         $allLaterYears = $laterYears !== null && $agendaYear->calendar->isCalendar() ? array_map('intval', $laterYears) : $agendaYear->laterYears();
         $laterYears = array_values(array_diff($allLaterYears, $skipYears));
         $skipped = array_values(array_intersect($allLaterYears, $skipYears));
+        $nonprofit = $export->hasNonprofitChart();
         try {
-            $guard = new AccountingFrameworkImportGuard($this->db);
+            $guard = new AccountingFrameworkImportGuard($this->db, $nonprofit);
             $guard->assertCz500Periods($supplierId, $guard->periodsForYears($supplierId, [$agendaLabel, ...$laterYears]));
         } catch (AccountingFrameworkException $e) { $add('error', $e->errorCode, $e->getMessage()); }
+        if ($nonprofit && !$this->periodsLeaveFramework500($supplierId, [$agendaLabel, ...$laterYears])) {
+            // Účty 9xx a výkazy neziskovky do firmy v rámci 500 nepatří.
+            $add('error', 'nonprofit_agenda_needs_504', 'Agenda POHODY je vedená v osnově pro neziskové organizace, firma v MyÚčtu ale účtuje podle vyhlášky 500. Nastavte firmě účetní rámec vyhlášky 504 a převod spusťte znovu.');
+        }
 
         $journalMapped = $this->map->hasAny($supplierId, PohodaImportRepository::KIND_JOURNAL_ENTRY);
         if ($relinkOnly && !$journalMapped) {
@@ -189,6 +195,50 @@ final class PohodaImporter
             $add('info', 'payroll_separate', 'Export obsahuje mzdy z datového souboru POHODY (91_mzdy.xml). Převod účetnictví je nepřevádí, zaměstnanci a mzdy se převádějí zvlášť.');
         }
         return $out;
+    }
+
+    /**
+     * Výkazy vyhlášky 504 potřebují u každého řádku nákladů a výnosů činnost (hlavní,
+     * hospodářská) a bez ní se nesestaví. Činnost převod z POHODY nečte, proto řádky bez
+     * ní dostanou hlavní činnost, kterou účetní přeřadí; opakovaný převod jejich změnu nepřepíše.
+     */
+    private function stampNonprofitActivity(PohodaContext $ctx): void
+    {
+        if (!$ctx->export->hasNonprofitChart()) {
+            return;
+        }
+        $pdo = $this->db->pdo();
+        $activity = (new SystemDimensionCatalog($this->db))->ensureForFramework($ctx->supplierId, $ctx->periodStart(), $ctx->userOrNull())['activity'] ?? null;
+        if ($activity === null) {
+            return;
+        }
+        $stmt = $pdo->prepare("INSERT IGNORE INTO journal_entry_line_dimensions
+                (line_id, dimension_type_id, supplier_id, dimension_value_id, assignment_origin, assignment_origin_ref)
+            SELECT l.id, ?, l.supplier_id, ?, 'explicit', 'pohoda_import'
+              FROM journal_entry_lines l
+              JOIN journal_entries e ON e.id = l.entry_id AND e.supplier_id = l.supplier_id
+              JOIN chart_of_accounts a ON a.id = l.account_id AND a.supplier_id = l.supplier_id
+             WHERE l.supplier_id = ? AND e.posted_at IS NOT NULL AND a.account_code REGEXP '^[56]'
+               AND NOT EXISTS (SELECT 1 FROM journal_entry_line_dimension_splits sp WHERE sp.line_id = l.id AND sp.dimension_type_id = ?)");
+        $stmt->execute([$activity['id'], $activity['values']['main'], $ctx->supplierId, $activity['id']]);
+        if ($stmt->rowCount() > 0) {
+            $ctx->protocol->warn(PohodaReconciler::STEP, 'nonprofit_activity_default', sprintf(
+                '%d řádkům nákladů a výnosů převod nastavil hlavní činnost, činnost z POHODY nepřebírá. Účetní přeřadí hospodářskou činnost podle skutečnosti, ovlivňuje to výkazy i daň z příjmů.',
+                $stmt->rowCount(),
+            ), ['lines' => $stmt->rowCount()]);
+        }
+    }
+
+    /** @param list<int> $years */
+    private function periodsLeaveFramework500(int $supplierId, array $years): bool
+    {
+        $strict = new AccountingFrameworkImportGuard($this->db);
+        try {
+            $strict->assertCz500Periods($supplierId, $strict->periodsForYears($supplierId, $years));
+            return false;
+        } catch (AccountingFrameworkException) {
+            return true;
+        }
     }
 
     /**
@@ -241,7 +291,7 @@ final class PohodaImporter
         $ctx->stock = $stock;
         $ctx->relinkOnly = $relinkOnly;
 
-        $frameworkGuard = new AccountingFrameworkImportGuard($this->db);
+        $frameworkGuard = new AccountingFrameworkImportGuard($this->db, $export->hasNonprofitChart());
         $frameworkPeriods = $frameworkGuard->periodsForYears($supplierId, [$agendaYear->label, ...array_values(array_diff($agendaYear->laterYears(), $skipYears))]);
         $pdo = $this->db->pdo();
         // Zkouška nanečisto uvnitř cizí transakce (testy, vnořené volání) jede přes savepoint -
@@ -381,7 +431,10 @@ final class PohodaImporter
                 $ctx->userId,
                 $ctx->protocol,
             ),
-            PohodaReconciler::STEP => fn () => $this->reconciler->run($ctx),
+            PohodaReconciler::STEP => function () use ($ctx): void {
+                $this->stampNonprofitActivity($ctx);
+                $this->reconciler->run($ctx);
+            },
         ];
     }
 

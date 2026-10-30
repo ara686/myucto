@@ -336,6 +336,22 @@ final class SyntheticPohodaExport
             str_replace('<bnk:id>' . abs(crc32('BAN0010020')) . '</bnk:id>', '<bnk:id>999001</bnk:id>', $bank));
     }
 
+    /**
+     * Agenda z {@see write()} v osnově pro neziskové organizace: vlastní zdroje na 901
+     * místo 411, jako má POHODA pro nevýdělečné organizace.
+     */
+    public static function withNonprofitChart(string $dir): void
+    {
+        foreach (['/02_uctova_osnova.xml', '/01_ucetni_denik.xml'] as $file) {
+            $source = (string) file_get_contents($dir . $file);
+            file_put_contents($dir . $file, str_replace(['411000', '701000', '568000'], ['901000', '961000', '549000'], $source));
+        }
+        $chart = (string) file_get_contents($dir . '/02_uctova_osnova.xml');
+        if (!str_contains($chart, '901000')) {
+            self::append($dir . '/02_uctova_osnova.xml', '</lst:listAccount>', '<lst:itemAccount id="901000" code="901000" name="Vlastní jmění"/>');
+        }
+    }
+
     /** Oprava odpočtu § 74b a její pozdější vrácení ({@see withDebtorDeductionCorrection()}). */
     public const S74B_REDUCTION = '26DD0074';
     public const S74B_RESTORATION = '26DD0075';

@@ -35,11 +35,13 @@ z POHODY Mzdy nebo PAMICA převádí samostatný průvodce, viz
 
 ## 107.2 Než začnete
 
-Převod nebyl ověřen pro neziskové organizace a další účetní jednotky podle
-vyhlášky 504/2002 Sb. Průvodce je výrazně upozorní a převod účetnictví do
-období vedeného podle vyhlášky 504 odmítne (podrobnosti v kapitole
-[Přechod z Money S3](106_Prechod_z_Money_S3.md), oddíl 106.2). Neziskovka
-před převodem kontaktuje podporu.
+Agendu neziskové organizace (osnova podle vyhlášky 504/2002 Sb. s účty skupiny 9)
+převod přijme jen do firmy, která účtuje podle vyhlášky 504; agendu podnikatele
+do takové firmy odmítne. Převod přebírá deník a doklady a ověřuje rovnováhu rozvahy.
+Hlavní a hospodářskou činnost, fondy, dotace ani členské příspěvky z POHODY zvlášť
+nepřebírá a výkazy s POHODOU neporovnává, proto je zkontrolujte. Průvodce na to
+upozorní (podrobnosti v kapitole [Přechod z Money S3](106_Prechod_z_Money_S3.md),
+oddíl 106.2).
 
 1. **Firma v MyÚčtu.** Musí existovat a mít vyplněné stejné IČO jako v POHODĚ.
    Převádí se do firmy, ve které právě pracujete; novou firmu nejdřív založte

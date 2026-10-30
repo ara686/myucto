@@ -6,6 +6,7 @@ namespace MyInvoice\Service\Migration\Pohoda;
 
 use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Service\Accounting\Reports\FinancialStatementService;
+use MyInvoice\Service\Accounting\Reports\ReportException;
 use MyInvoice\Service\Accounting\Reports\TrialBalanceService;
 use MyInvoice\Service\Migration\Shared\ForeignCurrencyTakeover;
 use MyInvoice\Service\Migration\Shared\ReconciliationTolerance;
@@ -88,7 +89,16 @@ final class PohodaReconciler
             }
             $checks[] = ['key' => 'documents_' . $d['key'], 'ok' => $d['ok']];
         }
-        $balanceSheet = TrialBalanceReconciliation::balanceSheet($this->statements->balanceSheet($ctx->supplierId, $periodId, null, 'full'));
+        try {
+            $balanceSheet = TrialBalanceReconciliation::balanceSheet($this->statements->balanceSheet($ctx->supplierId, $periodId, null, 'full'), $ctx->export->hasNonprofitChart());
+        } catch (ReportException $e) {
+            if (!$ctx->export->hasNonprofitChart()) {
+                throw $e;
+            }
+            // Výkaz 504 je přísnější než mapa rozvahy 500: účet bez řádku výkazu ho nesestaví.
+            $p->warn(self::STEP, 'nonprofit_statement_failed', "Rok {$year}: výkaz podle vyhlášky 504 nejde sestavit: {$e->getMessage()}", ['year' => $year]);
+            $balanceSheet = ['check' => ['key' => 'balance_sheet_balanced', 'ok' => false], 'unmapped' => [], 'negative_net_rows' => []];
+        }
         $unmapped = $balanceSheet['unmapped'];
         $checks[] = $balanceSheet['check'];
 

@@ -355,6 +355,48 @@ final class PohodaImportTest extends TestCase
     }
 
     /**
+     * Agenda neziskové organizace jde jen do firmy s rámcem 504: do firmy v rámci 500 ji převod
+     * odmítne (účty 9xx a výkazy by tam nesedly), ve firmě 504 se deník převede a rozvaha
+     * se ověří. Běžná agenda do firmy 504 dál nesmí.
+     */
+    public function testNonprofitAgendaRequiresFramework504(): void
+    {
+        $dir = SyntheticPohodaExport::write($this->tmp);
+        SyntheticPohodaExport::withNonprofitChart($dir);
+        $export = PohodaExport::open($dir);
+        self::assertTrue($export->hasNonprofitChart());
+
+        $framework500 = $this->supplier();
+        $refused = $this->importer->run($framework500, $this->userId, $export, false);
+        self::assertContains('nonprofit_agenda_needs_504', $this->messageCodes($refused), $this->explain($refused));
+        self::assertSame(0, $this->rows('journal_entries', $framework500));
+
+        $framework504 = $this->supplier();
+        $this->adopt504($framework504);
+        $imported = $this->importer->run($framework504, $this->userId, $export, false);
+        self::assertFalse($imported->hasErrors(), $this->explain($imported));
+        self::assertGreaterThan(0, $this->rows('journal_entries', $framework504));
+        self::assertSame('cz_504', $this->db->pdo()->query("SELECT accounting_framework FROM supplier_accounting_frameworks WHERE supplier_id = {$framework504}")->fetchColumn());
+        self::assertSame(1, $this->rows('chart_of_accounts', $framework504, "account_code = '901' AND account_type = 'equity'"));
+
+        $ordinaryDir = $this->tmp . DIRECTORY_SEPARATOR . 'ordinary';
+        mkdir($ordinaryDir);
+        $ordinary = PohodaExport::open(SyntheticPohodaExport::write($ordinaryDir));
+        self::assertFalse($ordinary->hasNonprofitChart());
+        $mismatch = $this->supplier();
+        $this->adopt504($mismatch);
+        $wrong = $this->importer->run($mismatch, $this->userId, $ordinary, false);
+        self::assertContains('accounting_framework_import_unsupported', $this->messageCodes($wrong), $this->explain($wrong));
+    }
+
+    private function adopt504(int $supplierId): void
+    {
+        $this->db->pdo()->exec("UPDATE supplier SET legal_form = '706' WHERE id = {$supplierId}");
+        $service = new \MyInvoice\Service\Accounting\AccountingFrameworkService($this->db, new \MyInvoice\Repository\AccountingFrameworkRepository($this->db));
+        self::assertTrue($service->adoptCz504BaselineForNewSupplier($supplierId, $this->userId));
+    }
+
+    /**
      * Oprava odpočtu § 74b z interního dokladu POHODY se dostane do evidence § 74b, a tím
      * do přiznání a KH: vrácení v měsíci opravy, opětovné uplatnění v měsíci úhrady.
      */
