@@ -31,6 +31,9 @@ final class DocumentLinker
     public const STEP_LINK = 'link';
     public const STEP_PAYMENTS = 'payments';
 
+    /** Pohyb a zápis se stejným číslem dokladu dál od sebe než půl roku jsou různé doklady. */
+    private const SAME_BANK_NUMBER_SECONDS = 183 * 86400;
+
     private readonly JournalEntryLinker $entries;
 
     public function __construct(
@@ -84,6 +87,12 @@ final class DocumentLinker
                 if ($docType === 'bank' && count($entries) > 1 && $date !== null) {
                     $sameDay = array_values(array_filter($entries, static fn (array $e): bool => $e['date'] === $date));
                     $entries = $sameDay !== [] ? $sameDay : $entries;
+                }
+                // Číselná řada banky se každý rok začíná znovu a agenda vede i pohyby po konci
+                // roku: nezaúčtovaný pohyb nesmí převzít zápis stejného čísla o rok dřív.
+                if ($docType === 'bank' && $date !== null && count($ctx->bankTransactions[$number] ?? []) > 1) {
+                    $entries = array_values(array_filter($entries, static fn (array $e): bool =>
+                        abs(strtotime((string) $e['date']) - strtotime($date)) <= self::SAME_BANK_NUMBER_SECONDS));
                 }
                 $entryIds = array_column($entries, 'id');
                 if ($entryIds === []) {
@@ -435,6 +444,7 @@ final class DocumentLinker
             $p->count(self::STEP_PAYMENTS, $l['agenda'] !== '' ? 'other_' . $l['agenda'] : 'without_document');
         }
         $this->settleByInternalDocuments($ctx, $internal);
+        $this->restoreOtherItemSettlements($ctx);
         $this->inferAdvanceSettlements($ctx);
         $this->recordBankFxSettlements($ctx);
         $this->markBookedWithoutDocument($ctx);
@@ -928,6 +938,13 @@ final class DocumentLinker
         $pdo = $this->db->pdo();
         $pdo->exec('SAVEPOINT pohoda_other_item_payment');
         try {
+            if (isset($input['cash_document_id'])) {
+                // Pokladna převzala doklad jako obecný příjem či výdej; vazbu na položku dostává až tady.
+                $pdo->prepare("UPDATE cash_documents SET purpose = 'other'
+                    WHERE id = ? AND supplier_id = ? AND purpose IN ('sale', 'purchase') AND invoice_id IS NULL AND purchase_invoice_id IS NULL
+                      AND NOT EXISTS (SELECT 1 FROM cash_document_vat_lines v WHERE v.cash_document_id = cash_documents.id AND v.vat_amount <> 0)")
+                    ->execute([$input['cash_document_id'], $ctx->supplierId]);
+            }
             $this->otherItems->allocate($ctx->supplierId, (int) $l['id'], $input, $ctx->userOrNull());
             $pdo->exec('RELEASE SAVEPOINT pohoda_other_item_payment');
         } catch (OtherItemException $e) {
@@ -942,6 +959,26 @@ final class DocumentLinker
         $allocation->execute([$ctx->supplierId, (int) $l['id'], $input[$column]]);
         $this->map->put($ctx->supplierId, PohodaImportRepository::KIND_PAYMENT, $mapKey, (int) $allocation->fetchColumn(), $ctx->runId);
         $p->count(self::STEP_PAYMENTS, 'other_item_' . ($column === 'bank_transaction_id' ? 'bank' : 'cash'));
+    }
+
+    /**
+     * Co POHODA vede jako uhrazené a co nepokryla párovaná úhrada z banky či pokladny (zápočet,
+     * interní doklad, platba v minulém roce), nese `settled_outside_amount`. Nastavuje se
+     * absolutně, opakovaný převod ho nenásobí; víc alokací než zdroj položku neotevře.
+     */
+    private function restoreOtherItemSettlements(PohodaContext $ctx): void
+    {
+        $update = $this->db->pdo()->prepare('UPDATE other_items oi
+            SET oi.settled_outside_amount = GREATEST(0, LEAST(oi.amount, ?) - COALESCE((SELECT SUM(a.amount)
+                FROM other_item_allocations a WHERE a.supplier_id = oi.supplier_id AND a.other_item_id = oi.id
+                    AND a.reversed_on IS NULL), 0))
+            WHERE oi.supplier_id = ? AND oi.id = ?');
+        foreach ($ctx->otherItemPaid as $id => $paid) {
+            $update->execute([number_format($paid, 2, '.', ''), $ctx->supplierId, $id]);
+            if ($update->rowCount() > 0) {
+                $ctx->protocol->count(self::STEP_PAYMENTS, 'other_item_settled_outside');
+            }
+        }
     }
 
     /**
