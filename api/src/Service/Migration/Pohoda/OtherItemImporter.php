@@ -61,6 +61,7 @@ final class OtherItemImporter
                 if (isset($mapped[$key])) {
                     // Úhrady se párují i při opakovaném převodu - mohly mezitím přibýt.
                     self::captureLiquidations($ctx, 'other_item', (int) $mapped[$key], $number, $record);
+                    self::rememberSourcePaid($ctx, (int) $mapped[$key], self::candidate($record, $agenda, $ctx->vat), $record);
                     $p->count(self::STEP, 'existing');
                     continue;
                 }
@@ -118,6 +119,7 @@ final class OtherItemImporter
                     if ($id !== null) {
                         $this->map->put($ctx->supplierId, PohodaImportRepository::KIND_OTHER_ITEM, $key, $id, $ctx->runId);
                         self::captureLiquidations($ctx, 'other_item', $id, $number, $record);
+                        self::rememberSourcePaid($ctx, $id, $candidate, $record);
                         $p->count(self::STEP, 'created_unposted');
                         $p->count(self::STEP, $candidate['remaining'] >= 0.005 ? 'open' : 'settled');
                     }
@@ -158,6 +160,7 @@ final class OtherItemImporter
                 }
                 $this->map->put($ctx->supplierId, PohodaImportRepository::KIND_OTHER_ITEM, $key, $id, $ctx->runId);
                 self::captureLiquidations($ctx, 'other_item', $id, $number, $record);
+                self::rememberSourcePaid($ctx, $id, $candidate, $record);
                 $p->count(self::STEP, 'created');
                 $p->count(self::STEP, $candidate['remaining'] >= 0.005 ? 'open' : 'settled');
             }
@@ -403,6 +406,26 @@ final class OtherItemImporter
     public static function moduleOwned(string $account): bool
     {
         return MigratedOtherItemPolicy::moduleOwned($account);
+    }
+
+    /**
+     * Uhrazená část podle POHODY. Úhrada v roce, který se nepřevádí, se nepočítá: její pohyb
+     * v převodu není a doplní ji až opakovaný převod s tímto rokem.
+     *
+     * @param array{amount:float,remaining:float}|null $candidate
+     */
+    private static function rememberSourcePaid(PohodaContext $ctx, int $id, ?array $candidate, array $record): void
+    {
+        if ($candidate === null) {
+            return;
+        }
+        $skipped = 0.0;
+        foreach (PohodaXml::all($record, 'liquidations/liquidation') as $l) {
+            if ($ctx->skipsDate(PohodaXml::date($l, 'date'))) {
+                $skipped += abs(PohodaXml::num($l, 'amount'));
+            }
+        }
+        $ctx->otherItemPaid[$id] = max(0.0, round($candidate['amount'] - $candidate['remaining'] - $skipped, 2));
     }
 
     /** @param 'other_item'|'tax_advance' $doc */

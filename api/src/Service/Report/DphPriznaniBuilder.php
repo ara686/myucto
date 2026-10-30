@@ -985,7 +985,7 @@ final class DphPriznaniBuilder
               WHERE i.supplier_id = ?
                 AND NOT " . MultiPurposeVoucher::untaxedLineSql('ii', 'si') . "
                 AND i.status NOT IN ('draft', 'cancelled')
-                AND i.invoice_type <> 'proforma'
+                AND i.invoice_type NOT IN ('proforma','rent_calendar','advance_calendar')
                 AND COALESCE(i.tax_date, i.issue_date) BETWEEN ? AND ?
                 AND COALESCE(i.reverse_charge, 0) = 0
                 AND ii.vat_rate_snapshot = 0

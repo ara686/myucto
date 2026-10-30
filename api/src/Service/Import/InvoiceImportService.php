@@ -24,6 +24,7 @@ use MyInvoice\Service\Oss\OssItemDecision;
 use MyInvoice\Service\Oss\OssItemDeriver;
 use MyInvoice\Service\Oss\OssItemPlanner;
 use MyInvoice\Service\Oss\OssRateCodebook;
+use MyInvoice\Service\PurchaseInvoice\PurchaseInvoiceReceiver;
 use MyInvoice\Service\Vat\VatRateResolver;
 use ZipArchive;
 
@@ -127,7 +128,9 @@ final class InvoiceImportService
         'tax_document'     => 'daňový doklad k přijaté platbě',
         'cancellation'     => 'storno',
         'penalty'          => 'penalizační faktura',
-        'payment_calendar' => 'splátkový kalendář',
+        'payment_calendar' => 'kalendář',
+        'rent_calendar' => 'splátkový kalendář',
+        'advance_calendar' => 'platební kalendář',
     ];
 
     /**
@@ -173,6 +176,7 @@ final class InvoiceImportService
         private readonly TaxConstantsRepository $taxConstants,
         private readonly StatsRecomputer $stats,
         private readonly AccountingPeriodProvisioner $periodProvisioner,
+        private readonly PurchaseInvoiceReceiver $purchaseReceiver,
     ) {}
 
     /**
@@ -950,10 +954,9 @@ final class InvoiceImportService
         try {
             // Schvalování manažerem střediska (F6) se tu vědomě NEuplatňuje: dávkový
             // import ISDOC / Pohoda XML je převzetí hotových dokladů z jiného systému
-            // (výchozí `received` volí účetní s právem importu), doklad při založení
-            // nenese dimenze dokladu a přijetí tu ani nespouští háčky přijetí. Kdo chce
-            // doklady schvalovat, importuje je jako koncepty (`purchase_status=draft`)
-            // a ke schválení je pošle jejich přijetí.
+            // (výchozí `received` volí účetní s právem importu) a doklad při založení
+            // nenese dimenze dokladu. Kdo chce doklady schvalovat, importuje je jako
+            // koncepty (`purchase_status=draft`) a ke schválení je pošle jejich přijetí.
             $r = $this->purchaseMapper->map($inv, $supplierId, $userId, $purchaseStatus);
             $duplicate = !empty($r['duplicate']);
             // Čitelné PDF (z ISDOCX balíčku nebo nahraného PDF/A-3 s embedded ISDOC)
@@ -976,6 +979,17 @@ final class InvoiceImportService
                     $sourceBytes,
                     $sourceName,
                     $sourceFormat,
+                );
+            }
+            // Doklad založený rovnou jako přijatý přeskočil přechod draft → received, takže
+            // háčky přijetí (automatické zaúčtování, kartové vypořádání, drobný majetek)
+            // musí spustit import. Duplicita je už přijatá z dřívějška, až po archivaci
+            // proto, aby zaúčtování i háčky viděly úplný doklad.
+            if ($purchaseStatus === 'received' && !$duplicate) {
+                $this->purchaseReceiver->afterReceived(
+                    $supplierId,
+                    (int) $r['purchase_invoice_id'],
+                    $userId > 0 ? $userId : null,
                 );
             }
             return [

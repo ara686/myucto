@@ -8,6 +8,7 @@ use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Service\Accounting\PostingService;
 use MyInvoice\Service\Bank\VariableSymbolNormalizer;
 use MyInvoice\Service\Invoice\CzkRecap;
+use MyInvoice\Service\Invoice\InvoiceCalendar;
 use MyInvoice\Service\Invoice\InvoiceRounding;
 use MyInvoice\Service\Invoice\InvoiceCalculator;
 use MyInvoice\Service\Invoice\InvoiceHeaderDiscount;
@@ -948,7 +949,7 @@ final class InvoiceRepository
             // (záloha pokryla celek) — není nezaplacený, jen status zůstal 'issued'.
             // Dobropisy (záporný total) ponecháváme. Částečné úhrady (#89): dlužná
             // částka = amount_to_pay - paid_total.
-            $where[] = "(i.invoice_type NOT IN ('invoice','proforma','tax_document') OR i.amount_to_pay - i.paid_total > 0)";
+            $where[] = "(i.invoice_type NOT IN ('rent_calendar','advance_calendar') AND (i.invoice_type NOT IN ('invoice','proforma','tax_document') OR i.amount_to_pay - i.paid_total > 0))";
         }
         if (!empty($filters['overdue'])) {
             $operator = $this->overduePolicy->comparisonOperator();
@@ -956,7 +957,7 @@ final class InvoiceRepository
             // Stejná pohledávková sémantika jako unpaid (vč. nespárovaných proforem).
             $where[] = "(i.invoice_type != 'proforma'"
                 . ' OR NOT ' . AdvanceSettledSql::proforma('i') . ')';
-            $where[] = "(i.invoice_type NOT IN ('invoice','proforma','tax_document') OR i.amount_to_pay - i.paid_total > 0)";
+            $where[] = "(i.invoice_type NOT IN ('rent_calendar','advance_calendar') AND (i.invoice_type NOT IN ('invoice','proforma','tax_document') OR i.amount_to_pay - i.paid_total > 0))";
         }
         // Neuhrazené K DATU X (task #4, účetní sestava „saldo bez saldokonta") — na rozdíl
         // od `unpaid_only`/`overdue` výše NEJDE o dnešní status/amount_to_pay, ale o stav,
@@ -979,6 +980,7 @@ final class InvoiceRepository
             $params[] = $asOf;
             // Stejná pohledávková sémantika jako unpaid_only/overdue: spárovaná proforma dluh
             // nenese, dluh nese ostrý doklad.
+            $where[] = "i.invoice_type NOT IN ('rent_calendar','advance_calendar')";
             $where[] = "(i.invoice_type != 'proforma'"
                 . ' OR NOT ' . AdvanceSettledSql::proforma('i') . ')';
             // Guard „amount_to_pay > 0" (viz AGENTS.md) je tu implicitní: je-li amount_to_pay
@@ -1120,7 +1122,7 @@ final class InvoiceRepository
 
         $sql = "SELECT $ossReviewSelect
                        i.id, i.varsymbol, i.payment_variable_symbol, i.supplier_order_number,
-                       i.invoice_type, i.parent_invoice_id, i.recurring_template_id,
+                       i.invoice_type, i.parent_invoice_id, i.calendar_id, i.recurring_template_id,
                        i.client_id, i.project_id, i.supplier_id,
                        i.issue_date, i.tax_date, i.due_date,
                        i.currency_id, cur.code AS currency, cur.symbol AS currency_symbol, cur.decimals AS currency_decimals,
@@ -1334,7 +1336,7 @@ final class InvoiceRepository
             $supplierId,
             $brandingProfileId,
             (string) $data['issue_date'],
-            ($data['invoice_type'] ?? 'invoice') === 'proforma' ? null : (string) ($data['tax_date'] ?? $data['issue_date']),
+            in_array($data['invoice_type'] ?? 'invoice', ['proforma', ...InvoiceCalendar::TYPES], true) ? null : (string) ($data['tax_date'] ?? $data['issue_date']),
             (string) $data['due_date'],
             (int) $data['currency_id'],
             !empty($data['reverse_charge']) ? 1 : 0,
@@ -1418,7 +1420,7 @@ final class InvoiceRepository
         // Typ dokladu lze měnit jen u draftu (faktura/proforma/dobropis) — viz UpdateInvoiceAction,
         // který u vystavené faktury posílá nezměněný typ. Storno/cancellation se přes update nenastaví.
         $hasType = array_key_exists('invoice_type', $data)
-            && in_array((string) $data['invoice_type'], ['invoice', 'proforma', 'credit_note', 'payment_calendar'], true);
+            && in_array((string) $data['invoice_type'], ['invoice', 'proforma', 'credit_note', 'payment_calendar', 'rent_calendar', 'advance_calendar'], true);
 
         $hasExempt = $this->supportsIncomeTaxExempt();
         $hasReminders = $this->supportsAutoSendReminders();

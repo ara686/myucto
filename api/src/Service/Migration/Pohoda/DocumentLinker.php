@@ -14,6 +14,7 @@ use MyInvoice\Service\Accounting\OtherItemService;
 use MyInvoice\Service\Accounting\TakenOverRecord;
 use MyInvoice\Service\Migration\MoneyS3\ImportProtocol;
 use MyInvoice\Service\Migration\Shared\JournalEntryLinker;
+use MyInvoice\Support\Sql\PurchaseSettledExpr;
 use PDO;
 
 /**
@@ -30,6 +31,9 @@ final class DocumentLinker
 {
     public const STEP_LINK = 'link';
     public const STEP_PAYMENTS = 'payments';
+
+    /** Pohyb a zápis se stejným číslem dokladu dál od sebe než půl roku jsou různé doklady. */
+    private const SAME_BANK_NUMBER_SECONDS = 183 * 86400;
 
     private readonly JournalEntryLinker $entries;
 
@@ -84,6 +88,12 @@ final class DocumentLinker
                 if ($docType === 'bank' && count($entries) > 1 && $date !== null) {
                     $sameDay = array_values(array_filter($entries, static fn (array $e): bool => $e['date'] === $date));
                     $entries = $sameDay !== [] ? $sameDay : $entries;
+                }
+                // Číselná řada banky se každý rok začíná znovu a agenda vede i pohyby po konci
+                // roku: nezaúčtovaný pohyb nesmí převzít zápis stejného čísla o rok dřív.
+                if ($docType === 'bank' && $date !== null && count($ctx->bankTransactions[$number] ?? []) > 1) {
+                    $entries = array_values(array_filter($entries, static fn (array $e): bool =>
+                        abs(strtotime((string) $e['date']) - strtotime($date)) <= self::SAME_BANK_NUMBER_SECONDS));
                 }
                 $entryIds = array_column($entries, 'id');
                 if ($entryIds === []) {
@@ -435,7 +445,9 @@ final class DocumentLinker
             $p->count(self::STEP_PAYMENTS, $l['agenda'] !== '' ? 'other_' . $l['agenda'] : 'without_document');
         }
         $this->settleByInternalDocuments($ctx, $internal);
+        $this->restoreOtherItemSettlements($ctx);
         $this->inferAdvanceSettlements($ctx);
+        $this->restorePurchaseSettlements($ctx);
         $this->recordBankFxSettlements($ctx);
         $this->markBookedWithoutDocument($ctx);
         if ($cashMulti !== []) {
@@ -928,6 +940,13 @@ final class DocumentLinker
         $pdo = $this->db->pdo();
         $pdo->exec('SAVEPOINT pohoda_other_item_payment');
         try {
+            if (isset($input['cash_document_id'])) {
+                // Pokladna převzala doklad jako obecný příjem či výdej; vazbu na položku dostává až tady.
+                $pdo->prepare("UPDATE cash_documents SET purpose = 'other'
+                    WHERE id = ? AND supplier_id = ? AND purpose IN ('sale', 'purchase') AND invoice_id IS NULL AND purchase_invoice_id IS NULL
+                      AND NOT EXISTS (SELECT 1 FROM cash_document_vat_lines v WHERE v.cash_document_id = cash_documents.id AND v.vat_amount <> 0)")
+                    ->execute([$input['cash_document_id'], $ctx->supplierId]);
+            }
             $this->otherItems->allocate($ctx->supplierId, (int) $l['id'], $input, $ctx->userOrNull());
             $pdo->exec('RELEASE SAVEPOINT pohoda_other_item_payment');
         } catch (OtherItemException $e) {
@@ -942,6 +961,63 @@ final class DocumentLinker
         $allocation->execute([$ctx->supplierId, (int) $l['id'], $input[$column]]);
         $this->map->put($ctx->supplierId, PohodaImportRepository::KIND_PAYMENT, $mapKey, (int) $allocation->fetchColumn(), $ctx->runId);
         $p->count(self::STEP_PAYMENTS, 'other_item_' . ($column === 'bank_transaction_id' ? 'bank' : 'cash'));
+    }
+
+    /**
+     * Co POHODA vede jako uhrazené a co nepokryla párovaná úhrada z banky či pokladny (zápočet,
+     * interní doklad, platba v minulém roce), nese `settled_outside_amount`. Nastavuje se
+     * absolutně, opakovaný převod ho nenásobí; víc alokací než zdroj položku neotevře.
+     */
+    private function restoreOtherItemSettlements(PohodaContext $ctx): void
+    {
+        $update = $this->db->pdo()->prepare('UPDATE other_items oi
+            SET oi.settled_outside_amount = GREATEST(0, LEAST(oi.amount, ?) - COALESCE((SELECT SUM(a.amount)
+                FROM other_item_allocations a WHERE a.supplier_id = oi.supplier_id AND a.other_item_id = oi.id
+                    AND a.reversed_on IS NULL), 0))
+            WHERE oi.supplier_id = ? AND oi.id = ?');
+        foreach ($ctx->otherItemPaid as $id => $paid) {
+            $update->execute([number_format($paid, 2, '.', ''), $ctx->supplierId, $id]);
+            if ($update->rowCount() > 0) {
+                $ctx->protocol->count(self::STEP_PAYMENTS, 'other_item_settled_outside');
+            }
+        }
+    }
+
+    /**
+     * Úhrada přijaté faktury, kterou POHODA eviduje a převod ji nemá kam navázat (minulý rok,
+     * nenavázaný zápočet), jde do `settled_outside_amount`. Nastavuje se absolutně. Rozhodují
+     * úhrady POHODY, zůstatek dokladu je jen strop: POHODA ho u cizí měny přepočítává jiným
+     * kurzem, takže sám o úhradě nevypovídá. Doklady v cizí měně se nedoplňují, úhrady
+     * POHODY jsou v Kč a částku v měně dokladu spolehlivě nenese.
+     */
+    private function restorePurchaseSettlements(PohodaContext $ctx): void
+    {
+        $paid = [];
+        foreach ($ctx->liquidations as $l) {
+            if ($l['doc'] === 'purchase_invoice' && !$ctx->skipsDate($l['date'])) {
+                $paid[(int) $l['id']] = ($paid[(int) $l['id']] ?? 0.0) + abs((float) $l['amount']);
+            }
+        }
+        $pdo = $this->db->pdo();
+        $settled = PurchaseSettledExpr::settled('pi');
+        $update = $pdo->prepare('UPDATE purchase_invoices SET settled_outside_amount = ? WHERE id = ? AND supplier_id = ?');
+        foreach (array_chunk(array_keys($paid), 500) as $chunk) {
+            $in = implode(',', array_fill(0, count($chunk), '?'));
+            $rows = $pdo->prepare("SELECT pi.id, pi.amount_to_pay, pi.settled_outside_amount AS outside, ({$settled}) - pi.settled_outside_amount AS settled
+                  FROM purchase_invoices pi JOIN currencies c ON c.id = pi.currency_id AND c.supplier_id = pi.supplier_id
+                 WHERE pi.supplier_id = ? AND pi.id IN ({$in}) AND c.code = 'CZK' AND pi.amount_to_pay > 0");
+            $rows->execute([$ctx->supplierId, ...$chunk]);
+            foreach ($rows->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                $id = (int) $row['id'];
+                $toPay = (float) $row['amount_to_pay'];
+                $sourcePaid = min($paid[$id], $toPay - max(0.0, $ctx->remaining['purchase_invoice|' . $id] ?? 0.0));
+                $outside = round(max(0.0, $sourcePaid - (float) $row['settled']), 2);
+                if (abs($outside - (float) $row['outside']) >= 0.005) {
+                    $update->execute([number_format($outside, 2, '.', ''), $id, $ctx->supplierId]);
+                    $ctx->protocol->count(self::STEP_PAYMENTS, 'purchase_settled_outside');
+                }
+            }
+        }
     }
 
     /**

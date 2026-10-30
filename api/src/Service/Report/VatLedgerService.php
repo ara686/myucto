@@ -451,6 +451,25 @@ final class VatLedgerService
     }
 
     /**
+     * Splátka kalendáře se hlásí pod číslem kalendáře a limit kontrolního hlášení se posuzuje
+     * podle jeho součtu: odběratel zná jen kalendář, FS posuzuje celý doklad (§ 31, § 31a).
+     *
+     * @return array{0:string, 1:string, 2:string} JOIN, výraz čísla, výraz celkové částky
+     */
+    private function calendarInstalmentSql(): array
+    {
+        if (!$this->db->hasColumn('invoices', 'calendar_id')) {
+            return ['', 'i.varsymbol', 'i.total_with_vat'];
+        }
+
+        return [
+            'LEFT JOIN invoices cal ON cal.id = i.calendar_id AND cal.supplier_id = i.supplier_id',
+            'COALESCE(cal.varsymbol, i.varsymbol)',
+            'COALESCE(cal.total_with_vat, i.total_with_vat)',
+        ];
+    }
+
+    /**
      * @param list<int>|null $invoiceIds zúžení na vybrané doklady (null = celé období)
      * @return iterable<array<string,mixed>>
      */
@@ -461,6 +480,7 @@ final class VatLedgerService
         $saleSign = self::saleTaxSignExpr($this->db, 'i');
         // DIČ protistrany ze snapshotu dokladu s fallbackem na živého klienta (viz helper).
         $dicExpr = self::saleCounterpartyDicExpr($this->db, 'i', 'c');
+        [$calendarJoin, $calendarNumber, $calendarTotal] = $this->calendarInstalmentSql();
         $ossFilter = $this->db->hasColumn('invoice_items', 'oss_applicable')
             ? 'AND COALESCE(ii.oss_applicable, 0) = 0'
             : '';
@@ -494,7 +514,7 @@ final class VatLedgerService
         // základní. Práh (21+12)/2 = 16,5 by za základní prohlásil i německých 19 %.
         $standardRate = $this->taxConstants->vatRateStandard((int) substr($start, 0, 4));
         $stmt = $this->db->pdo()->prepare("
-            SELECT i.id AS invoice_id, i.varsymbol AS doc_number, i.varsymbol AS vendor_invoice_number,
+            SELECT i.id AS invoice_id, {$calendarNumber} AS doc_number, {$calendarNumber} AS vendor_invoice_number,
                    i.invoice_type AS document_kind, i.status,
                    i.effective_tax_date AS tax_date, i.issue_date,
                    -- RAW kurz (bez COALESCE ...,1) — normalize() rozliší chybějící kurz
@@ -509,7 +529,7 @@ final class VatLedgerService
                    --
                    -- Normalizuje se CELÝ DOKLAD jedním znaménkem podle jeho součtu, ne každá
                    -- položka zvlášť — zdůvodnění a precedent viz tentýž výraz ve fetchPurchases().
-                   ({$saleSign}) * (i.total_with_vat{$voucherTotal}) AS inv_total,
+                   ({$saleSign}) * ({$calendarTotal}{$voucherTotal}) AS inv_total,
                    i.reverse_charge AS rc_flag,
                    c.company_name AS counterparty_name, {$dicExpr} AS counterparty_dic,
                    co.iso2 AS country_iso2, COALESCE(co.is_eu, 0) AS country_is_eu,
@@ -550,6 +570,7 @@ final class VatLedgerService
                    ({$saleSign}) * COALESCE(ii.total_without_vat, 0) AS base,
                    ({$saleSign}) * COALESCE(ii.total_vat, 0) AS vat
               FROM invoices i
+         {$calendarJoin}
               JOIN clients c ON c.id = i.client_id
          LEFT JOIN countries co ON co.id = c.country_id
               JOIN invoice_items ii ON ii.invoice_id = i.id
@@ -558,7 +579,7 @@ final class VatLedgerService
          {$voucherJoin}
              WHERE i.supplier_id = ?
                AND {$statusFilter}
-               AND i.invoice_type NOT IN ('proforma', 'penalty')
+               AND i.invoice_type NOT IN ('proforma', 'penalty','rent_calendar','advance_calendar')
                {$ossFilter}
                {$textFilter}
                {$voucherFilter}
@@ -608,7 +629,7 @@ final class VatLedgerService
               WHERE i.supplier_id = ?
                 AND ii.oss_applicable = 1
                 AND i.status NOT IN ('draft', 'cancelled')
-                AND i.invoice_type NOT IN ('proforma', 'penalty')
+                AND i.invoice_type NOT IN ('proforma', 'penalty','rent_calendar','advance_calendar')
                 AND i.effective_tax_date BETWEEN ? AND ?
            ORDER BY i.effective_tax_date, i.id, ii.order_index, ii.id"
         );
@@ -685,12 +706,13 @@ final class VatLedgerService
         [$documentFilter, $documentParams] = self::idFilter('i.id', $invoiceIds);
         $saleSign = self::saleTaxSignExpr($this->db, 'i');
         $dicExpr = self::saleCounterpartyDicExpr($this->db, 'i', 'c');
+        [$calendarJoin, $calendarNumber, $calendarTotal] = $this->calendarInstalmentSql();
         $stmt = $this->db->pdo()->prepare("
-            SELECT i.id AS invoice_id, i.varsymbol AS doc_number, i.varsymbol AS vendor_invoice_number,
+            SELECT i.id AS invoice_id, {$calendarNumber} AS doc_number, {$calendarNumber} AS vendor_invoice_number,
                    i.invoice_type AS document_kind, i.status,
                    i.effective_tax_date AS tax_date, i.issue_date,
                    i.exchange_rate AS exchange_rate, COALESCE(cur.code, 'CZK') AS currency,
-                   ({$saleSign}) * i.total_with_vat AS inv_total,
+                   ({$saleSign}) * {$calendarTotal} AS inv_total,
                    0 AS rc_flag,
                    c.company_name AS counterparty_name, {$dicExpr} AS counterparty_dic,
                    co.iso2 AS country_iso2, COALESCE(co.is_eu, 0) AS country_is_eu,
@@ -701,13 +723,14 @@ final class VatLedgerService
                    ({$saleSign}) * COALESCE(ii.total_without_vat, 0) AS base,
                    0 AS vat
               FROM invoices i
+         {$calendarJoin}
               JOIN clients c ON c.id = i.client_id
          LEFT JOIN countries co ON co.id = c.country_id
               JOIN invoice_items ii ON ii.invoice_id = i.id
          LEFT JOIN currencies cur ON cur.id = i.currency_id
              WHERE i.supplier_id = ?
                AND {$statusFilter}
-               AND i.invoice_type NOT IN ('proforma', 'penalty')
+               AND i.invoice_type NOT IN ('proforma', 'penalty','rent_calendar','advance_calendar')
                AND ii.oss_applicable = 1
                {$documentFilter}
                AND i.effective_tax_date BETWEEN ? AND ?
@@ -864,7 +887,7 @@ final class VatLedgerService
               JOIN invoice_items ii ON ii.invoice_id = i.id
              WHERE i.supplier_id = ?
                AND {$statusFilter}
-               AND i.invoice_type NOT IN ('proforma', 'penalty')
+               AND i.invoice_type NOT IN ('proforma', 'penalty','rent_calendar','advance_calendar')
                AND {$predicate}
                AND i.effective_tax_date BETWEEN ? AND ?
           GROUP BY i.id, i.varsymbol

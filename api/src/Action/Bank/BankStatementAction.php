@@ -4028,7 +4028,8 @@ final class BankStatementAction
                                   WHERE oi.supplier_id = p.supplier_id AND oi.doc_type = 'purchase_invoice' AND oi.doc_id = p.id), 0)
                         + COALESCE((SELECT SUM(s.amount) FROM invoice_settlements s
                                     WHERE s.supplier_id = p.supplier_id AND s.doc_type = 'purchase_invoice'
-                                      AND s.doc_id = p.id AND s.status = 'confirmed'), 0) AS offset_paid,
+                                      AND s.doc_id = p.id AND s.status = 'confirmed'), 0)
+                        + p.settled_outside_amount AS offset_paid,
                         (SELECT COUNT(*) FROM cash_documents cd
                           WHERE cd.supplier_id = p.supplier_id AND cd.purchase_invoice_id = p.id
                             AND cd.status = 'posted') AS cash_count,

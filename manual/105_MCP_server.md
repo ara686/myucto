@@ -794,7 +794,7 @@ Kromě konceptu umí asistent s vydanými doklady totéž, co detail faktury v a
 | `preview_invoice_penalty`, `create_invoice_penalty` | výpočet úroku z prodlení a koncept penalizační faktury |
 | `add_invoice_payment`, `delete_invoice_payment`, `unmark_invoice_paid` | evidence částečné i celé úhrady, smazání úhrady, vrácení stavu zaplaceno |
 | `create_payment_tax_document` | koncept daňového dokladu k přijaté platbě zálohy |
-| `set_invoice_payment_schedule` | rozpis plateb platebního nebo splátkového kalendáře |
+| `set_invoice_payment_schedule` | rozpis plateb splátkového kalendáře (`rent_calendar`, splátky s vlastním DUZP) nebo platebního kalendáře (`advance_calendar`, bez DUZP) |
 | `get_invoice_isdoc` | ISDOC XML vystaveného dokladu jako text |
 | `get_invoice_recipients` | komu by se doklad nebo upomínka poslaly |
 | `send_invoice_reminders_bulk` | upomínky k více fakturám naráz, nejvýš 50 |
@@ -810,10 +810,14 @@ Platí přitom:
   (po podání přiznání k DPH) aplikace nepovolí.
 - Finální faktura ze zálohy, dobropis, kopie, penalizační faktura i daňový doklad
   k platbě vznikají jako **koncepty**. Daňový dopad mají až po vystavení.
-- **Platební kalendář** je jeden daňový doklad s rozpisem plateb (§ 31 a § 31a ZDPH).
+- **Splátkový kalendář** k nájmu (§ 31 ZDPH) a **platební kalendář** záloh (§ 31a ZDPH)
+  jsou pro odběratele jeden daňový doklad s rozpisem plateb. Splátkový kalendář potřebuje
+  nájemní smlouvu a jeho splátky mají vlastní DUZP, platební kalendář DUZP nemá.
   Rozpis může asistent sestavit z podkladu, který mu dáte (smlouva, tabulka splátek),
-  a před uložením vám ho ukáže. Součet splátek musí přesně sedět na celkovou částku
-  dokladu; když nesedí, asistent nic neuloží a řekne rozdíl.
+  a před uložením vám ho ukáže. Součet základu, DPH i celkové částky splátek musí přesně
+  sedět na doklad; když nesedí, asistent nic neuloží a řekne rozdíl. Úhrady pak asistent
+  eviduje na dokladech splátek, ne na kalendáři
+  ([§ 15.9.2](15_Faktura_editor.md#1592-hlavicka)).
 - Platby z bankovního výpisu se párují v bance. Ručně se evidují hotovost,
   zápočet nebo platba, kterou banka nespárovala.
 - Upomínka i poděkování za platbu jsou e-maily odběrateli, posílají se jen na váš pokyn.

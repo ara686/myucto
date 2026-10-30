@@ -355,7 +355,7 @@ const INVOICE_HEADER_FIELDS = [
   'income_tax_exempt', 'income_tax_exempt_reason', 'language', 'supplier_order_number',
   'payment_variable_symbol', 'note_above_items', 'note_below_items', 'advance_paid_amount',
   'discount_percent', 'payment_method', 'rounding_mode', 'auto_send_reminders', 'varsymbol',
-  'vat_classification_code', 'revenue_category', 'revenue_category_id',
+  'vat_classification_code', 'revenue_category', 'revenue_category_id', 'calendar_contract_ref',
 ];
 
 /**
@@ -1402,9 +1402,12 @@ export const TOOLS = [
       + 'Před voláním si zjisti `client_id` (`search_clients`) a `vat_rate_id` '
       + '(`list_vat_rates`). Ceny položek se zadávají BEZ DPH, pokud nenastavíš '
       + '`prices_include_vat`.\n\n'
-      + 'Splátkový nebo platební kalendář (§ 31 a § 31a ZDPH) je `invoice_type: "payment_calendar"` '
-      + 's rozpisem plateb v `payment_schedule`; součet rozpisu musí sedět na celkovou částku '
-      + 'dokladu, jinak ho nepůjde vystavit. Rozpis jde doplnit i později přes `set_invoice_payment_schedule`.',
+      + 'Splátkový kalendář k nájmu (§ 31 ZDPH) je `invoice_type: "rent_calendar"`, vyžaduje '
+      + '`calendar_contract_ref` a splátky mají vlastní DUZP (`tax_date` v řádku rozpisu). Platební kalendář '
+      + 'záloh, typicky energie (§ 31a ZDPH), je `invoice_type: "advance_calendar"` a DUZP nemá. Rozpis plateb '
+      + 'je v `payment_schedule`; součty základu, DPH i celkové částky musí sedět na doklad, jinak ho nepůjde '
+      + 'vystavit. Rozpis jde doplnit i později přes `set_invoice_payment_schedule`. Kalendář v cizí měně '
+      + 'vystavit nejde. Při vystavení vznikne ke každé splátce interní doklad, na kterém běží úhrady.',
     inputSchema: schema({
       client_id: int('ID odběratele.'),
       items: {
@@ -1424,13 +1427,14 @@ export const TOOLS = [
         }, ['description']),
       },
       invoice_type: str('Typ dokladu, výchozí "invoice".', {
-        enum: ['invoice', 'proforma', 'credit_note', 'cancellation', 'payment_calendar'],
+        enum: ['invoice', 'proforma', 'credit_note', 'cancellation', 'rent_calendar', 'advance_calendar'],
       }),
       payment_schedule: PAYMENT_SCHEDULE_INPUT,
+      calendar_contract_ref: str('Jen `rent_calendar`: nájemní smlouva, ke které splátkový kalendář patří (§ 31 ZDPH). Bez ní ho nepůjde vystavit.', { maxLength: 190 }),
       project_id: int('Zakázka; musí patřit odběrateli.'),
       issue_date: date('Datum vystavení (výchozí dnes).'),
       due_date: date('Datum splatnosti (výchozí podle nastavení odběratele).'),
-      tax_date: date('Datum zdanitelného plnění. U proformy se ignoruje.'),
+      tax_date: date('Datum zdanitelného plnění. U proformy a kalendáře se ignoruje.'),
       currency: str('Kód měny, např. CZK. Výchozí je měna odběratele.'),
       language: str('Jazyk dokladu.', { enum: ['cs', 'en'] }),
       prices_include_vat: bool('Ceny položek jsou včetně DPH (DPH se dopočítá shora).'),
@@ -1495,8 +1499,9 @@ export const TOOLS = [
       supplier_order_number: str('Číslo objednávky odběratele.'),
       revenue_category_id: int('Kategorie tržby. 0 kategorii z dokladu odebere.', { minimum: 0 }),
       invoice_type: str('Typ konceptu. Rozpis plateb kalendáře nastaví `set_invoice_payment_schedule`.', {
-        enum: ['invoice', 'proforma', 'credit_note', 'payment_calendar'],
+        enum: ['invoice', 'proforma', 'credit_note', 'rent_calendar', 'advance_calendar'],
       }),
+      calendar_contract_ref: str('Jen `rent_calendar`: nájemní smlouva, ke které splátkový kalendář patří (§ 31 ZDPH).', { maxLength: 190 }),
     }),
     write: true,
     run: async (c, a, tool) => {
@@ -1507,7 +1512,7 @@ export const TOOLS = [
         'issue_date', 'due_date', 'tax_date', 'currency', 'exchange_rate', 'language',
         'payment_method', 'note_above_items', 'project_id', 'discount_percent',
         'prices_include_vat', 'reverse_charge', 'varsymbol', 'payment_variable_symbol',
-        'supplier_order_number', 'invoice_type', 'revenue_category_id',
+        'supplier_order_number', 'invoice_type', 'revenue_category_id', 'calendar_contract_ref',
       ]);
       if (a.note !== undefined) changes.note_below_items = a.note;
       if (changes.project_id === 0) changes.project_id = null;

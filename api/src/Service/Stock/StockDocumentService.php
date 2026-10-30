@@ -840,6 +840,12 @@ final class StockDocumentService
                 $inactive[] = ['stock_item_id' => $itemId, 'sku' => $meta[$itemId]['sku'], 'name' => $meta[$itemId]['name']];
                 continue;
             }
+            if ($meta[$itemId]['item_type'] === 'service') {
+                throw new StockException('service_item_no_stock', 'Služba nevede zásobu, na skladový doklad nepatří.', 422, [[
+                    'stock_item_id' => $itemId,
+                    'sku'           => $meta[$itemId]['sku'],
+                ]]);
+            }
 
             $qtyT = StockValuation::qtyToT((string) ($rl['qty'] ?? '0'));
             if ($qtyT <= 0) {

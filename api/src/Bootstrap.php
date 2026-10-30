@@ -1330,7 +1330,12 @@ final class Bootstrap
             \MyInvoice\Service\System\ManagedModeGuard::KEY_APP_DEBUG,
             (bool) $config->get('app.debug', false),
         );
-        $app->addErrorMiddleware($displayErrors, true, true, $container->get(LoggerInterface::class));
+        $errors = $app->addErrorMiddleware($displayErrors, true, true, $container->get(LoggerInterface::class));
+        $errors->setErrorHandler(
+            \PDOException::class,
+            new \MyInvoice\Http\ForeignKeyConflictHandler($app->getResponseFactory(), $errors->getDefaultErrorHandler()),
+            true,
+        );
 
         return $app;
     }

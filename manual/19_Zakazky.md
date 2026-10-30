@@ -149,8 +149,10 @@ nový.
   z detailu zakázky se nabízí jen u aktivní zakázky.
 - **Uzavřené:** zakázka se schová z výchozího filtru. Faktury zůstávají, obrat
   se počítá. Lze obnovit zpět na **Aktivní**.
-- **Smazat** (v nabídce **Další akce** na detailu zakázky) lze jen zakázku bez
-  faktur. Jinak v téže nabídce zvolte **Archivovat** a potvrďte „Archivovat zakázku?“.
+- **Smazat** (v nabídce **Další akce** na detailu zakázky) zakázku odstraní, faktury
+  a výkazy práce zůstanou bez zakázky. Smazání odmítne jen faktura v uzavřeném nebo
+  uzavíraném období či za uzamčeným datem. Chcete-li vazbu zachovat, zvolte v téže
+  nabídce **Archivovat** a potvrďte „Archivovat zakázku?“.
 
 **Jak poznáte, že je hotovo:** v seznamu `Prodej → Zakázky` má zakázka nový stav
 ve sloupci stavu. Uzavřená zakázka z výchozího seznamu zmizí, archivovaná nebo
@@ -168,7 +170,7 @@ Stávající koncepty si zachovají původní sazbu, dokud je ručně neupravít
 | Hláška „Zakázka má N nezaúčtovaných dokladů“ | Nezaúčtovaný doklad se do ekonomiky nezapočítá | Doklady zaúčtujte, pak se součet doplní |
 | Fakturu s výkazem nejde vystavit | Zakázka vyžaduje schválení výkazu zákazníkem | Počkejte na schválení, nebo požadavek na zakázce vypněte |
 | Schvalovací e-mail nedostal klient | Zakázka má fakturační e-maily a ty mají přednost | Viz tabulka v [§ 19.9.6](#1996-prijemci-schvalovaciho-e-mailu) |
-| Smazání zakázky se nepodařilo | Na zakázce jsou faktury | Zakázku archivujte nebo uzavřete |
+| Smazání zakázky se nepodařilo | Zakázka má fakturu v uzavřeném období nebo za uzamčeným datem | Zakázku archivujte nebo uzavřete |
 | Zákazník na sledovacím odkazu nemůže dál | Kód nepřišel nebo e-mail není mezi povolenými | Zkontrolujte e-maily klienta a zakázky, odkaz můžete zneplatnit a poslat nový |
 | Faktura s „Pozastaveno“ v editoru | Zakázka má stav **Pozastavené** | Použijte jinou zakázku nebo stav změňte |
 

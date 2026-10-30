@@ -86,11 +86,14 @@ uhrazené doklady se hromadně nemažou, otevřete je jednotlivě.
 3. Přetáhněte soubory (Pohoda XML, ISDOC, ISDOCX, PDF/A-3 s vloženým ISDOC,
    ZIP) nebo je vyberte kliknutím. Lze vybrat více souborů najednou.
 4. Zaškrtněte **Založit jako koncept** jen u dávky, kterou chcete nejdřív
-   projít. Bez zaškrtnutí vzniknou doklady rovnou jako přijaté.
+   projít. Bez zaškrtnutí vzniknou doklady rovnou jako přijaté a máte-li zapnuté
+   automatické zaúčtování přijatých dokladů, rovnou se i zaúčtují. Před importem
+   historických dokladů, které už v deníku jsou, automatiku vypněte nebo použijte
+   koncepty, jinak by se zaúčtovaly podruhé.
 5. Klikněte na **Importovat** a sledujte průběh stejně jako v
    [§ 21.3](#213-krok-za-krokem-import-vydanych-faktur-ze-souboru).
-6. Projděte report (**Vytvořeno / Přeskočeno / Chyba**) a před zaúčtováním
-   otevřete každý doklad. Zkontrolujte dodavatele, období, DUZP, částky, DPH
+6. Projděte report (**Vytvořeno / Přeskočeno / Chyba**) a otevřete doklady, které
+   zůstaly nezaúčtované. Zkontrolujte dodavatele, období, DUZP, částky, DPH
    klasifikaci a nárok na odpočet.
 
 **Jak poznáte, že je hotovo:** Doklady jsou v `Nákup → Přijaté faktury`
@@ -264,7 +267,7 @@ zkoušku.
 | Pokus o druhý import se stejnými parametry skončí odkazem na běžící úlohu | Stejný import nelze spustit dvakrát souběžně | Počkejte na dokončení nebo běžící úlohu zrušte |
 | Faktury z iDokladu nebo Fakturoidu nemají DPH klasifikaci | Zdrojový systém ji u položek nevyplnil | Aplikace dosadí výchozí podle sazby, nulovou sazbu vystaveného řádku musíte zařadit sami (viz [§ 21.9.13](#21913-importy-z-api-prubeh-a-pravidla-klasifikace-dph)) |
 | Kontakty nemají e-mail | Zdrojový systém je nemá vyplněné | Doplňte v `Prodej → Klienti`, jinak nepůjdou upomínky |
-| Doklady se nezobrazují v účetním deníku | Import neúčtuje | `Účetnictví → Doúčtovat doklady` (viz [§ 21.9.2](#2192-naimportovane-doklady-nejsou-zauctovane)) |
+| Doklady se nezobrazují v účetním deníku | Vydané faktury import neúčtuje, přijaté jen se zapnutou automatikou | `Účetnictví → Doúčtovat doklady` (viz [§ 21.9.2](#2192-naimportovane-doklady-nejsou-zauctovane)) |
 | Stereo NX: "Chybí databázová migrace Stereo NX" | Správce nespustil migrace | Správce spustí `php api/bin/migrate.php`, pak zkoušku zopakujte |
 | Stereo NX: "IČO se neshoduje" nebo "Tento převod vyžaduje plátce DPH" | Zdrojová a cílová firma si neodpovídají | Zvolte správnou firmu v záloze i v MyÚčtu |
 | Stereo NX: převod zastaven pro cizoměnové doklady, odpočty záloh nebo nepodporované druhy dokladů | Nepodporovaný rozsah převodu | Řiďte se vysvětlením v protokolu, majetek, mzdy a sklad vyžadují samostatný převod |
@@ -301,12 +304,17 @@ Stránku můžete zavřít, import doběhne i bez ní. Report se zobrazí po dok
 
 ### 21.9.2 Naimportované doklady nejsou zaúčtované
 
-**Import do deníku neúčtuje.** Doklady vznikají nezaúčtované, a to i když máte
-zapnutou plnou automatiku účtování: automatika je háček na **vznik** dokladu
+**Vydané faktury import do deníku neúčtuje.** Vznikají nezaúčtované, a to i když
+máte zapnutou plnou automatiku účtování: automatika je háček na **vznik** dokladu
 (vystavení faktury, přijetí přijaté faktury, opakovaná fakturace), ne zametač
 dokladů, které už v systému leží.
 
-Do deníku je dostanete v `Účetnictví → Doúčtovat doklady`. Úloha projde všechny
+**Přijaté faktury založené jako přijaté** projdou stejnými kroky jako při ručním
+přijetí, takže se při zapnuté automatice zaúčtují. Doklad, který zaúčtovat nejde
+(například v uzavřeném období), zůstane přijatý a nezaúčtovaný. Koncepty a doklady,
+které už existovaly, se neúčtují.
+
+Nezaúčtované doklady dostanete do deníku v `Účetnictví → Doúčtovat doklady`. Úloha projde všechny
 nezaúčtované faktury najednou, běží na pozadí a jde zastavit; každý doklad se
 účtuje samostatně, takže jeden vadný dávku nezastaví. Hromadné zaúčtování
 z výběru v seznamu faktur zůstává pro menší zásahy, má strop 500 dokladů na

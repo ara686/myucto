@@ -304,6 +304,182 @@ final class PohodaImportTest extends TestCase
         self::assertSame(1, $this->rows('tax_advance_schedules', $supplierId));
     }
 
+    /**
+     * Zůstatek ostatní položky sedí na POHODU: úhrada bez pohybu v roce agendy jde do
+     * `settled_outside_amount`, výdejový pokladní doklad se přiřadí jako alokace.
+     * Opakovaný převod částky nenásobí.
+     */
+    public function testOtherItemBalanceFollowsPohodaIncludingCashAndEarlierPayments(): void
+    {
+        $supplierId = $this->supplier();
+        $dir = SyntheticPohodaExport::write($this->tmp);
+        SyntheticPohodaExport::withOtherItems($dir, true);
+        SyntheticPohodaExport::withOtherItemSettlements($dir);
+        $export = PohodaExport::open($dir);
+        $pdo = $this->db->pdo();
+        $balance = static fn (string $number): array => array_map('strval', $pdo->query(
+            "SELECT oi.settled_outside_amount, COALESCE((SELECT SUM(a.amount) FROM other_item_allocations a WHERE a.other_item_id = oi.id AND a.reversed_on IS NULL), 0.00)
+               FROM other_items oi WHERE oi.supplier_id = {$supplierId} AND oi.document_no = '{$number}'")->fetch(\PDO::FETCH_NUM));
+
+        foreach ([1, 2] as $run) {
+            $protocol = $this->importer->run($supplierId, $this->userId, $export, false);
+            self::assertFalse($protocol->hasErrors(), $this->explain($protocol));
+            self::assertStringNotContainsString('other_item_payment', $this->explain($protocol));
+            self::assertSame(['700.00', '0.00'], $balance(SyntheticPohodaExport::OTHER_ITEM_PAID_EARLIER), "běh {$run}");
+            self::assertSame(['0.00', '250.00'], $balance(SyntheticPohodaExport::OTHER_ITEM_PAID_BY_CASH), "běh {$run}");
+            // Úhrady z banky se do mimobankovní části nepočítají, neuhrazený zbytek zůstává otevřený.
+            self::assertSame(['0.00', '300.00'], $balance('26OZ0002'), "běh {$run}");
+            self::assertSame(['0.00', '400.00'], $balance('26OZB0001'), "běh {$run}");
+            self::assertSame(['0.00', '0.00'], $balance('26OZ0001'), "běh {$run}");
+        }
+    }
+
+    /**
+     * Stejné číslo bankovního dokladu po roce (nebo déle než půl roku od zápisu): zápis deníku
+     * patří jen pohybu blízkému datem, druhý pohyb zůstává nezaúčtovaný a rekonciliace sedí.
+     */
+    public function testRepeatedBankNumberDoesNotTakeOverOlderJournalEntry(): void
+    {
+        $supplierId = $this->supplier();
+        $dir = SyntheticPohodaExport::write($this->tmp);
+        SyntheticPohodaExport::withOtherItems($dir, true);
+        SyntheticPohodaExport::withRepeatedBankNumber($dir);
+        $protocol = $this->importer->run($supplierId, $this->userId, PohodaExport::open($dir), false);
+        self::assertFalse($protocol->hasErrors(), $this->explain($protocol));
+
+        $linked = $this->db->pdo()->query("SELECT t.amount FROM bank_transactions t
+            JOIN bank_statements s ON s.id = t.statement_id
+            JOIN journal_entry_document_links k ON k.doc_id = t.id AND k.doc_type = 'bank' AND k.supplier_id = s.supplier_id
+           WHERE s.supplier_id = {$supplierId} AND t.bank_ref = 'BAN0010020'")->fetchAll(\PDO::FETCH_COLUMN);
+        self::assertSame(['-100.00'], array_map('strval', $linked));
+    }
+
+    /**
+     * Agenda neziskové organizace jde jen do firmy s rámcem 504: do firmy v rámci 500 ji převod
+     * odmítne (účty 9xx a výkazy by tam nesedly), ve firmě 504 se deník převede a rozvaha
+     * se ověří. Běžná agenda do firmy 504 dál nesmí.
+     */
+    public function testNonprofitAgendaRequiresFramework504(): void
+    {
+        $dir = SyntheticPohodaExport::write($this->tmp);
+        SyntheticPohodaExport::withNonprofitChart($dir);
+        $export = PohodaExport::open($dir);
+        self::assertTrue($export->hasNonprofitChart());
+
+        $framework500 = $this->supplier();
+        $refused = $this->importer->run($framework500, $this->userId, $export, false);
+        self::assertContains('nonprofit_agenda_needs_504', $this->messageCodes($refused), $this->explain($refused));
+        self::assertSame(0, $this->rows('journal_entries', $framework500));
+
+        $framework504 = $this->supplier();
+        $this->adopt504($framework504);
+        $imported = $this->importer->run($framework504, $this->userId, $export, false);
+        self::assertFalse($imported->hasErrors(), $this->explain($imported));
+        self::assertGreaterThan(0, $this->rows('journal_entries', $framework504));
+        self::assertSame('cz_504', $this->db->pdo()->query("SELECT accounting_framework FROM supplier_accounting_frameworks WHERE supplier_id = {$framework504}")->fetchColumn());
+        self::assertSame(1, $this->rows('chart_of_accounts', $framework504, "account_code = '901' AND account_type = 'equity'"));
+
+        $ordinaryDir = $this->tmp . DIRECTORY_SEPARATOR . 'ordinary';
+        mkdir($ordinaryDir);
+        $ordinary = PohodaExport::open(SyntheticPohodaExport::write($ordinaryDir));
+        self::assertFalse($ordinary->hasNonprofitChart());
+        $mismatch = $this->supplier();
+        $this->adopt504($mismatch);
+        $wrong = $this->importer->run($mismatch, $this->userId, $ordinary, false);
+        self::assertContains('accounting_framework_import_unsupported', $this->messageCodes($wrong), $this->explain($wrong));
+    }
+
+    private function adopt504(int $supplierId): void
+    {
+        $this->db->pdo()->exec("UPDATE supplier SET legal_form = '706' WHERE id = {$supplierId}");
+        $service = new \MyInvoice\Service\Accounting\AccountingFrameworkService($this->db, new \MyInvoice\Repository\AccountingFrameworkRepository($this->db));
+        self::assertTrue($service->adoptCz504BaselineForNewSupplier($supplierId, $this->userId));
+    }
+
+    /**
+     * Přijatá faktura uhrazená zčásti v minulém roce: zůstatek sedí na POHODU, opakovaný
+     * převod částku nenásobí a faktura zůstává otevřená.
+     */
+    public function testPurchasePaidInEarlierYearKeepsPohodaBalance(): void
+    {
+        $supplierId = $this->supplier();
+        $dir = SyntheticPohodaExport::write($this->tmp);
+        SyntheticPohodaExport::withPurchasePaidEarlier($dir);
+        $export = PohodaExport::open($dir);
+        $pdo = $this->db->pdo();
+        $id = null;
+        foreach ([1, 2] as $run) {
+            $protocol = $this->importer->run($supplierId, $this->userId, $export, false);
+            self::assertFalse($protocol->hasErrors(), $this->explain($protocol));
+            $id ??= $this->documentId('purchase_invoices', $supplierId, SyntheticPohodaExport::PURCHASE_PAID_EARLIER);
+            $row = $pdo->query('SELECT pi.status, pi.settled_outside_amount, ' . \MyInvoice\Support\Sql\PurchaseSettledExpr::remaining('pi') . " AS remaining
+                FROM purchase_invoices pi WHERE pi.id = {$id}")->fetch(\PDO::FETCH_ASSOC);
+            self::assertSame('600.00', (string) $row['settled_outside_amount'], "běh {$run}");
+            self::assertEqualsWithDelta(400.0, (float) $row['remaining'], 0.001, "běh {$run}");
+            self::assertNotSame('paid', $row['status'], "běh {$run}");
+        }
+    }
+
+    /**
+     * Středisko z deníku je na řádcích jako dimenze Středisko a opakovaný převod ho nezdvojí.
+     * Export bez středisek dimenze nezapíná.
+     */
+    public function testCostCentreFromJournalBecomesDimension(): void
+    {
+        $plainDir = $this->tmp . DIRECTORY_SEPARATOR . 'plain';
+        mkdir($plainDir);
+        $plain = $this->supplier();
+        $this->importer->run($plain, $this->userId, PohodaExport::open(SyntheticPohodaExport::write($plainDir)), false);
+        self::assertSame(0, $this->rows('cost_centers', $plain));
+        self::assertSame(0, $this->rows('journal_entry_line_dimensions', $plain));
+        self::assertSame('0', (string) $this->db->pdo()->query("SELECT dimensions_enabled FROM supplier WHERE id = {$plain}")->fetchColumn());
+
+        $supplierId = $this->supplier();
+        $dir = SyntheticPohodaExport::write($this->tmp);
+        SyntheticPohodaExport::withCostCentre($dir);
+        $export = PohodaExport::open($dir);
+        foreach ([1, 2] as $run) {
+            $protocol = $this->importer->run($supplierId, $this->userId, $export, false);
+            self::assertFalse($protocol->hasErrors(), $this->explain($protocol));
+            $rows = $this->db->pdo()->query("SELECT l.cost_center, v.code, v.name, t.code AS type_code
+                  FROM journal_entry_lines l
+                  JOIN journal_entries e ON e.id = l.entry_id
+                  JOIN journal_entry_line_dimensions d ON d.line_id = l.id
+                  JOIN dimension_values v ON v.id = d.dimension_value_id
+                  JOIN dimension_types t ON t.id = d.dimension_type_id
+                 WHERE e.supplier_id = {$supplierId} AND e.document_no = '" . SyntheticPohodaExport::CENTRE_DOCUMENT . "'")->fetchAll(\PDO::FETCH_NUM);
+            self::assertSame(array_fill(0, 2, ['VYUKA', 'VYUKA', 'Výuka hry na nástroj', 'stredisko']), $rows, "běh {$run}");
+        }
+        self::assertSame(1, $this->rows('cost_centers', $supplierId));
+    }
+
+    /**
+     * Oprava odpočtu § 74b z interního dokladu POHODY se dostane do evidence § 74b, a tím
+     * do přiznání a KH: vrácení v měsíci opravy, opětovné uplatnění v měsíci úhrady.
+     */
+    public function testDebtorDeductionCorrectionGoesToSection74bLedger(): void
+    {
+        $supplierId = $this->supplier();
+        $dir = SyntheticPohodaExport::write($this->tmp);
+        $target = '26PF0001';
+        SyntheticPohodaExport::withDebtorDeductionCorrection($dir, $target, [100.0, 21.0]);
+        $export = PohodaExport::open($dir);
+        $protocol = $this->importer->run($supplierId, $this->userId, $export, false);
+        self::assertFalse($protocol->hasErrors(), $this->explain($protocol));
+        self::assertSame(2, self::stepCounts($protocol, 'internal_tax_documents')['s74b_corrections'] ?? 0, $this->explain($protocol));
+
+        $invoice = $this->documentId('purchase_invoices', $supplierId, $target);
+        $movements = $this->db->pdo()->query("SELECT purchase_invoice_id, period_year, period_month, movement, vat_amount, state
+            FROM vat_s74b_corrections WHERE supplier_id = {$supplierId} ORDER BY period_month")->fetchAll(\PDO::FETCH_NUM);
+        self::assertSame([
+            [(string) $invoice, '2026', '5', 'reduction', '21.00', 'corrected'],
+            [(string) $invoice, '2026', '6', 'restoration', '21.00', 'restored'],
+        ], array_map(static fn (array $row): array => array_map('strval', $row), $movements));
+
+        $this->importer->run($supplierId, $this->userId, $export, false);
+        self::assertSame(2, $this->rows('vat_s74b_corrections', $supplierId));
+    }
+
     /** @return array<string,int|float> */
     private static function stepCounts(ImportProtocol $protocol, string $key): array
     {
