@@ -1122,7 +1122,8 @@
         "2218_accrual_period_indexes.sql",
         "2219_payment_order_item_invoice_fk.sql",
         "2220_stock_item_type_service.sql",
-        "2221_invoice_calendar_types.sql"
+        "2221_invoice_calendar_types.sql",
+        "2222_vat_classification_travel_service_line26.sql"
     ],
     "tables": {
         "abra_flexi_connections": {

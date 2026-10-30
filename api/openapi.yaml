@@ -3575,7 +3575,8 @@ paths:
         K platbě **zálohové faktury** vystaví koncept daňového dokladu k přijaté
         platbě (`invoice_type = tax_document`, § 28 odst. 2 ZDPH): DUZP = datum
         platby, DPH shora koeficientem (§ 37), částka rozdělená mezi sazby DPH
-        proformy poměrně. Jen plátce DPH a ne-reverse-charge plnění. Idempotentní —
+        proformy poměrně. Řádek přebírá klasifikaci DPH z proformy; nulová sazba jen
+        ve zvláštním režimu (`26c`). Jen plátce DPH a ne-reverse-charge plnění. Idempotentní —
         existující nestornovaný doklad k platbě vrátí beze změny.
       responses:
         '200':

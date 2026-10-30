@@ -191,8 +191,8 @@ final class AdvancePartialDrawdown
         $insert = $pdo->prepare(
             "INSERT INTO invoice_items
                (invoice_id, description, quantity, unit, unit_price_without_vat, vat_rate_id, vat_rate_snapshot,
-                total_without_vat, total_vat, total_with_vat, order_index, item_kind)
-             VALUES (?, ?, 1, '', ?, ?, ?, 0, 0, 0, ?, 'standard')"
+                total_without_vat, total_vat, total_with_vat, order_index, item_kind, vat_classification_code)
+             VALUES (?, ?, 1, '', ?, ?, ?, 0, 0, 0, ?, 'standard', ?)"
         );
         foreach ($lines as $line) {
             $insert->execute([
@@ -204,6 +204,7 @@ final class AdvancePartialDrawdown
                 $line['vat_rate_id'],
                 $line['rate'],
                 ++$maxOrder,
+                $line['code'],
             ]);
         }
         $pdo->prepare('UPDATE invoices SET parent_invoice_id = ? WHERE id = ? AND supplier_id = ?')
@@ -222,13 +223,16 @@ final class AdvancePartialDrawdown
      * Řádky živých DDKP proformy po sazbách. Definice „živého" DDKP je stejná jako
      * ve FinalFromProformaCreator a PostingService::advanceDeduction.
      *
-     * @return array<int, array{base:float, gross:float, rate:float, label:string}>
+     * Odpočet nese klasifikaci řádku DDKP, který ruší. Čerpání se dělí po sazbách, proto
+     * dva různé kódy v jedné sazbě nejde rozdělit jednoznačně a odmítají se, stejně jako OSS.
+     *
+     * @return array<int, array{base:float, gross:float, rate:float, code:?string, label:string}>
      */
     private function taxDocumentGroups(int $supplierId, int $proformaId): array
     {
         $stmt = $this->db->pdo()->prepare(
             "SELECT td.varsymbol, ii.vat_rate_id, ii.vat_rate_snapshot, COALESCE(ii.oss_applicable, 0) AS oss,
-                    ii.total_without_vat, ii.total_with_vat
+                    ii.vat_classification_code, ii.total_without_vat, ii.total_with_vat
                FROM invoices td
                JOIN invoice_items ii ON ii.invoice_id = td.id
               WHERE td.supplier_id = ? AND td.invoice_type = 'tax_document'
@@ -246,7 +250,14 @@ final class AdvancePartialDrawdown
                 throw new \DomainException('Daňový doklad k záloze obsahuje řádky OSS. Částečné čerpání takové zálohy není podporované.');
             }
             $rateId = (int) $row['vat_rate_id'];
-            $groups[$rateId] ??= ['base' => 0.0, 'gross' => 0.0, 'rate' => (float) $row['vat_rate_snapshot']];
+            $groups[$rateId] ??= ['base' => 0.0, 'gross' => 0.0, 'rate' => (float) $row['vat_rate_snapshot'], 'code' => null];
+            $code = $row['vat_classification_code'] !== null ? (string) $row['vat_classification_code'] : null;
+            if ($code !== null) {
+                if ($groups[$rateId]['code'] !== null && $groups[$rateId]['code'] !== $code) {
+                    throw new \DomainException('Daňový doklad k záloze má v jedné sazbě různé klasifikace DPH. Částečné čerpání takové zálohy není podporované.');
+                }
+                $groups[$rateId]['code'] = $code;
+            }
             $groups[$rateId]['base'] += (float) $row['total_without_vat'];
             $groups[$rateId]['gross'] += (float) $row['total_with_vat'];
             $labels[(string) ($row['varsymbol'] ?? '')] = true;
