@@ -3795,13 +3795,14 @@ paths:
       tags: [Projects]
       summary: Smazání zakázky
       description: |
-        Smaže zakázku, pokud nemá vystavené doklady. Pro zakázky s historií
-        použij `POST /api/v1/projects/{id}/archive`.
+        Smaže zakázku. Faktury a výkazy práce zůstanou bez zakázky. Odmítne jen zakázku
+        s fakturou v uzavřeném nebo uzavíraném období či za uzamčeným datem, tu lze
+        archivovat přes `POST /api/v1/projects/{id}/archive`.
       responses:
         '200':
           description: OK
         '409':
-          description: Zakázka má vystavené doklady — použij archivaci
+          description: Zakázka má fakturu v uzamčeném období (`has_locked_invoices`) — použij archivaci
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -8799,7 +8800,7 @@ paths:
       responses:
         '200': { description: OK }
         '403': { description: 'Force-delete přes API token (`token_write_forbidden`) nebo uzamčený doklad' }
-        '409': { description: 'Lze smazat jen draft (`not_deletable`), doklad změněný přeúčtováním historie nelze smazat vůbec (`reclassification_applied`)' }
+        '409': { description: Lze smazat jen draft }
 
   /api/v1/purchase-invoices/{id}/preview:
     get:
@@ -13416,8 +13417,8 @@ paths:
         přerušení zachová. Odpisy lze mazat pouze odzadu a u nevyřazeného majetku.
         Ostatní pohledávku nebo závazek vrátí do konceptu a pozastaví související opakování;
         dokumenty a splátkový kalendář zachová. Vyžaduje navíc zápisová oprávnění
-        other_items a accounting.journal.post. Spárované úhrady vrátí 409 has_payments.
-        Zápis z provedeného přeúčtování historie vrátí 409 reclassification_applied.
+        other_items a accounting.journal.post. Spárované úhrady vrátí 409 has_payments, jiná
+        navazující data (například mzdová platba) 409 entry_delete_conflict.
         Vždy jen pro otevřené období, mimo uzamčené datum a u zápisu bez storna.
       parameters:
         - $ref: '#/components/parameters/SupplierIdHeader'
@@ -13778,8 +13779,7 @@ paths:
         jen přestane být v deníku vidět. Lze zadat ID kterékoli ze stran.
 
         Odmítne se, když je některá strana v neotevřeném období nebo v uzamčené části
-        účetnictví, když na dvojici navazuje další storno, když je zápis výsledkem provedeného
-        přeúčtování historie (`reclassification_applied`), nebo když se zdroj zápisu ruší
+        účetnictví, když na dvojici navazuje další storno, nebo když se zdroj zápisu ruší
         vlastním workflow (mzdy, odpisy, reklasifikace).
       parameters:
         - $ref: '#/components/parameters/SupplierIdHeader'

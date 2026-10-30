@@ -22,9 +22,9 @@ use Slim\Psr7\Factory\ServerRequestFactory;
 use Slim\Psr7\Response as Psr7Response;
 
 /**
- * Přijatá faktura a její zápis v přeúčtování historie. Záznam z kontroly (dry-run) mazání
- * dokladu ani zápisu nebrání, dříve skončilo cizím klíčem a chybou 500. Provedené přeúčtování
- * je auditní stopa: mazání odmítne 409 a doklad i zápis zůstanou. Vše v transakci s rollbackem.
+ * Přijatá faktura a její zápis v přeúčtování historie. Záznam kontroly ani provedeného
+ * přeúčtování mazání dokladu ani zápisu nebrání, dříve skončilo cizím klíčem a chybou 500.
+ * Vše v transakci s rollbackem.
  */
 #[Group('integration')]
 final class DeletePurchaseInvoiceReclassificationTest extends TestCase
@@ -114,23 +114,16 @@ final class DeletePurchaseInvoiceReclassificationTest extends TestCase
         self::assertFalse($this->exists('accounting_reclassification_items', 'purchase_invoice_id', $id));
     }
 
-    public function testAppliedReclassificationRefusesDeleteAndKeepsEverything(): void
+    public function testAppliedReclassificationDoesNotBlockDelete(): void
     {
         $id = $this->postedPurchase();
         $this->reclassItem($id, 'applied');
-        $journal = $this->container->get(JournalEntryRepository::class);
-        $entryBefore = $journal->findBySource($this->supplierId, 'purchase_invoice', $id);
-        self::assertNotNull($entryBefore);
 
         $res = $this->delete($id);
 
-        self::assertSame(409, $res['status'], json_encode($res['body'], JSON_UNESCAPED_UNICODE));
-        self::assertSame('reclassification_applied', $res['body']['error']['code'] ?? $res['body']['error'] ?? null);
-        self::assertTrue($this->exists('purchase_invoices', 'id', $id));
-        self::assertTrue($this->exists('accounting_reclassification_items', 'purchase_invoice_id', $id));
-        $entryAfter = $journal->findBySource($this->supplierId, 'purchase_invoice', $id);
-        self::assertSame((int) $entryBefore['id'], (int) ($entryAfter['id'] ?? 0), 'Zápis se nesmí stornovat.');
-        self::assertTrue($this->db->pdo()->inTransaction(), 'Odmítnutí nesmí shodit transakci volajícího.');
+        self::assertSame(200, $res['status'], json_encode($res['body'], JSON_UNESCAPED_UNICODE));
+        self::assertFalse($this->exists('purchase_invoices', 'id', $id));
+        self::assertFalse($this->exists('accounting_reclassification_items', 'purchase_invoice_id', $id));
     }
 
     public function testDryRunItemDoesNotBlockJournalEntryDelete(): void
@@ -161,7 +154,7 @@ final class DeletePurchaseInvoiceReclassificationTest extends TestCase
         self::assertFalse($this->exists('journal_entries', 'id', $reversalId));
     }
 
-    public function testAppliedReclassificationRefusesJournalDelete(): void
+    public function testAppliedReclassificationDoesNotBlockJournalDelete(): void
     {
         $id = $this->postedPurchase();
         $entryId = $this->entryId($id);
@@ -169,13 +162,12 @@ final class DeletePurchaseInvoiceReclassificationTest extends TestCase
 
         $res = $this->callJournal('delete', $entryId);
 
-        self::assertSame(409, $res['status'], json_encode($res['body'], JSON_UNESCAPED_UNICODE));
-        self::assertSame('reclassification_applied', $res['body']['error']['code'] ?? $res['body']['error'] ?? null);
-        self::assertTrue($this->exists('journal_entries', 'id', $entryId));
-        self::assertTrue($this->exists('accounting_reclassification_items', 'correction_entry_id', $entryId));
+        self::assertSame(200, $res['status'], json_encode($res['body'], JSON_UNESCAPED_UNICODE));
+        self::assertFalse($this->exists('journal_entries', 'id', $entryId));
+        self::assertTrue($this->exists('accounting_reclassification_items', 'purchase_invoice_id', $id), 'Podklad přeúčtování zůstává.');
     }
 
-    public function testAppliedReclassificationRefusesReversalPairDelete(): void
+    public function testAppliedReclassificationDoesNotBlockReversalPairDelete(): void
     {
         $id = $this->postedPurchase();
         $entryId = $this->entryId($id);
@@ -184,29 +176,23 @@ final class DeletePurchaseInvoiceReclassificationTest extends TestCase
 
         $res = $this->callJournal('deleteReversalPair', $entryId);
 
-        self::assertSame(409, $res['status'], json_encode($res['body'], JSON_UNESCAPED_UNICODE));
-        self::assertSame('reclassification_applied', $res['body']['error']['code'] ?? $res['body']['error'] ?? null);
-        self::assertTrue($this->exists('journal_entries', 'id', $entryId));
-        self::assertTrue($this->exists('journal_entries', 'id', $reversalId));
+        self::assertSame(200, $res['status'], json_encode($res['body'], JSON_UNESCAPED_UNICODE));
+        self::assertFalse($this->exists('journal_entries', 'id', $entryId));
+        self::assertFalse($this->exists('journal_entries', 'id', $reversalId));
     }
 
-    public function testJournalPurgeDetachesDryRunAndRefusesApplied(): void
+    public function testJournalPurgeDetachesReclassificationItems(): void
     {
         $purge = $this->container->get(DocumentJournalPurge::class);
 
-        $preview = $this->postedPurchase();
-        $previewEntry = $this->entryId($preview);
-        $this->reclassItem($preview, 'would_change', $previewEntry);
-        $result = $purge->purge($this->supplierId, 'purchase_invoice', [$preview], ['user_id' => $this->userId], 'test');
-        self::assertNull($result['blocked']);
-        self::assertFalse($this->exists('journal_entries', 'id', $previewEntry));
-
-        $applied = $this->postedPurchase();
-        $appliedEntry = $this->entryId($applied);
-        $this->reclassItem($applied, 'applied', $appliedEntry);
-        $result = $purge->purge($this->supplierId, 'purchase_invoice', [$applied], ['user_id' => $this->userId], 'test');
-        self::assertSame('reclassification_applied', $result['blocked']['code'] ?? null);
-        self::assertTrue($this->exists('journal_entries', 'id', $appliedEntry));
+        foreach (['would_change', 'applied'] as $status) {
+            $id = $this->postedPurchase();
+            $entryId = $this->entryId($id);
+            $this->reclassItem($id, $status, $entryId);
+            $result = $purge->purge($this->supplierId, 'purchase_invoice', [$id], ['user_id' => $this->userId], 'test');
+            self::assertNull($result['blocked'], $status);
+            self::assertFalse($this->exists('journal_entries', 'id', $entryId), $status);
+        }
     }
 
     private function entryId(int $purchaseId): int

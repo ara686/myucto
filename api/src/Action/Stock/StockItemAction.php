@@ -421,7 +421,38 @@ final class StockItemAction
                 ['suggestion' => 'deactivate'],
             );
         }
-        $this->items->delete($supplierId, $id);
+        // Řádky objednávek si nesou vlastní popis a kartu nepotřebují. Rezervace, expedice,
+        // inventury, sestavy a varianty bez karty smysl nemají a mazání zastaví cizí klíč.
+        $pdo = $this->db->pdo();
+        $ownTx = !$pdo->inTransaction();
+        if ($ownTx) {
+            $pdo->beginTransaction();
+        }
+        try {
+            $this->items->delete($supplierId, $id);
+            if ($ownTx) {
+                $pdo->commit();
+            }
+        } catch (\PDOException $e) {
+            if ($ownTx && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            if (($e->errorInfo[0] ?? null) !== '23000') {
+                throw $e;
+            }
+            return Json::error(
+                $response,
+                'item_in_use',
+                'Skladovou kartu nelze smazat — používají ji rezervace, expedice, inventura, sestava nebo varianta. Deaktivujte ji místo mazání.',
+                409,
+                ['suggestion' => 'deactivate'],
+            );
+        } catch (\Throwable $e) {
+            if ($ownTx && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
+        }
         $this->log($request, 'stock.item_deleted', $id, []);
         return Json::ok($response, ['deleted' => true]);
     }

@@ -24094,7 +24094,7 @@
     "note": "Note",
     "edit_title": "Edit project",
     "new_title": "New project",
-    "delete_warning": "Delete project \"{name}\"? This cannot be undone.\n\nOnly works if the project has no invoices — otherwise use Archive.",
+    "delete_warning": "Delete project \"{name}\"? This cannot be undone.\n\nInvoices and work reports will stay without a project. To keep the link, use Archive.",
     "status_paused": "Paused",
     "status_closed": "Closed",
     "stats_title": "Project statistics",

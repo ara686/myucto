@@ -24094,7 +24094,7 @@
     "note": "Poznámka",
     "edit_title": "Upravit zakázku",
     "new_title": "Nová zakázka",
-    "delete_warning": "Smazat zakázku \"{name}\"? Akce je nevratná.\n\nFunguje jen pokud na zakázce nejsou žádné faktury - jinak ji použijte Archivovat.",
+    "delete_warning": "Smazat zakázku \"{name}\"? Akce je nevratná.\n\nFaktury a výkazy práce zůstanou bez zakázky. Chcete-li vazbu zachovat, použijte Archivovat.",
     "status_paused": "Pozastavené",
     "status_closed": "Uzavřené",
     "stats_title": "Statistiky zakázek",

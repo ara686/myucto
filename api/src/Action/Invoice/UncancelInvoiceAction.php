@@ -188,6 +188,11 @@ final class UncancelInvoiceAction
                 $e->httpStatus,
                 ['items' => $e->details],
             );
+        } catch (\MyInvoice\Service\Accounting\PostingException $e) {
+            if ($ownTx && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            return Json::error($response, $e->errorCode, $e->getMessage(), $e->httpStatus, $e->context);
         } catch (\Throwable $e) {
             if ($ownTx && $pdo->inTransaction()) {
                 $pdo->rollBack();

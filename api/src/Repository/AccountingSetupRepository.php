@@ -377,54 +377,24 @@ final class AccountingSetupRepository
     }
 
     /**
-     * Provedené přeúčtování je auditní stopa a podklad pro návrat změn, doklad s ním nejde smazat.
+     * Záznamy přeúčtování mazání dokladu nebrání. Ostrý běh pak smazaný doklad nečeká a návrat
+     * změn ho přeskočí. Stopu o smazání nese auditní log dokladu.
      */
-    public function hasAppliedReclassification(int $supplierId, int $invoiceId): bool
-    {
-        $stmt = $this->db->pdo()->prepare(
-            "SELECT 1 FROM accounting_reclassification_items
-              WHERE supplier_id = ? AND purchase_invoice_id = ? AND status = 'applied' LIMIT 1"
-        );
-        $stmt->execute([$supplierId, $invoiceId]);
-        return $stmt->fetchColumn() !== false;
-    }
-
-    /**
-     * Záznamy kontroly bez provedené změny (dry-run, přeskočené) mazání dokladu nebrání. Bez nich
-     * ostrý běh nečeká doklad, který už neexistuje, a neskončí na result_changed_after_dry_run.
-     */
-    public function deleteUnappliedReclassificationItems(int $supplierId, int $invoiceId): void
+    public function deleteReclassificationItems(int $supplierId, int $invoiceId): void
     {
         $this->db->pdo()->prepare(
-            "DELETE FROM accounting_reclassification_items
-              WHERE supplier_id = ? AND purchase_invoice_id = ? AND status <> 'applied'"
+            'DELETE FROM accounting_reclassification_items
+              WHERE supplier_id = ? AND purchase_invoice_id = ?'
         )->execute([$supplierId, $invoiceId]);
     }
 
     /**
-     * @param list<int> $entryIds
-     */
-    public function hasAppliedReclassificationOfEntries(int $supplierId, array $entryIds): bool
-    {
-        if ($entryIds === []) {
-            return false;
-        }
-        $marks = implode(',', array_fill(0, count($entryIds), '?'));
-        $stmt = $this->db->pdo()->prepare(
-            "SELECT 1 FROM accounting_reclassification_items
-              WHERE supplier_id = ? AND correction_entry_id IN ($marks) AND status = 'applied' LIMIT 1"
-        );
-        $stmt->execute([$supplierId, ...$entryIds]);
-        return $stmt->fetchColumn() !== false;
-    }
-
-    /**
-     * Záznam kontroly si zápis jen pamatuje a mazání nesmí blokovat. Otisk v before_json zůstává,
-     * takže ostrý běh doklad bez původního zápisu přeskočí a nezmění.
+     * Záznam přeúčtování si zápis jen pamatuje a jeho smazání nebrání. Ostrý běh doklad bez
+     * původního zápisu přeskočí podle otisku v before_json, návrat změn ho vykáže jako změněný.
      *
      * @param list<int> $entryIds
      */
-    public function detachUnappliedReclassificationItemsFromEntries(int $supplierId, array $entryIds): void
+    public function detachReclassificationItemsFromEntries(int $supplierId, array $entryIds): void
     {
         if ($entryIds === []) {
             return;
@@ -432,7 +402,7 @@ final class AccountingSetupRepository
         $marks = implode(',', array_fill(0, count($entryIds), '?'));
         $this->db->pdo()->prepare(
             "UPDATE accounting_reclassification_items SET correction_entry_id = NULL
-              WHERE supplier_id = ? AND correction_entry_id IN ($marks) AND status <> 'applied'"
+              WHERE supplier_id = ? AND correction_entry_id IN ($marks)"
         )->execute([$supplierId, ...$entryIds]);
     }
 

@@ -858,9 +858,16 @@ final class StockItemRepository
         return $stmt->rowCount() > 0;
     }
 
-    /** Hard delete — volající MUSÍ nejdřív ověřit hasMovements() === false. */
+    /**
+     * Hard delete — volající MUSÍ nejdřív ověřit hasMovements() === false a volat v transakci.
+     * Odkaz na řádcích objednávek se uvolní, ostatní vazby zastaví cizí klíč.
+     */
     public function delete(int $supplierId, int $id): bool
     {
+        foreach (['purchase_order_lines', 'sales_order_lines'] as $table) {
+            $this->db->pdo()->prepare("UPDATE {$table} SET stock_item_id = NULL WHERE supplier_id = ? AND stock_item_id = ?")
+                ->execute([$supplierId, $id]);
+        }
         $stmt = $this->db->pdo()->prepare(
             'DELETE FROM stock_items WHERE id = ? AND supplier_id = ?'
         );
