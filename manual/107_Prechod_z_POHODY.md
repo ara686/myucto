@@ -37,9 +37,10 @@ z POHODY Mzdy nebo PAMICA převádí samostatný průvodce, viz
 
 Agendu neziskové organizace (osnova podle vyhlášky 504/2002 Sb. s účty skupiny 9)
 převod přijme jen do firmy, která účtuje podle vyhlášky 504; agendu podnikatele
-do takové firmy odmítne. Převod přebírá deník a doklady a ověřuje rovnováhu rozvahy.
-Hlavní a hospodářskou činnost, fondy, dotace ani členské příspěvky z POHODY zvlášť
-nepřebírá a výkazy s POHODOU neporovnává, proto je zkontrolujte. Průvodce na to
+do takové firmy odmítne. Převod přebírá deník, doklady a střediska (dimenze Středisko)
+a ověřuje rovnováhu rozvahy. Činnost z POHODY nečte, všem řádkům nákladů a výnosů
+nastaví hlavní činnost, kterou účetní přeřadí. Fondy, dotace ani členské příspěvky
+zvlášť nepřebírá a výkazy s POHODOU neporovnává, proto je zkontrolujte. Průvodce na to
 upozorní (podrobnosti v kapitole [Přechod z Money S3](106_Prechod_z_Money_S3.md),
 oddíl 106.2).
 
