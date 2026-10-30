@@ -13417,6 +13417,7 @@ paths:
         Ostatní pohledávku nebo závazek vrátí do konceptu a pozastaví související opakování;
         dokumenty a splátkový kalendář zachová. Vyžaduje navíc zápisová oprávnění
         other_items a accounting.journal.post. Spárované úhrady vrátí 409 has_payments.
+        Zápis z provedeného přeúčtování historie vrátí 409 reclassification_applied.
         Vždy jen pro otevřené období, mimo uzamčené datum a u zápisu bez storna.
       parameters:
         - $ref: '#/components/parameters/SupplierIdHeader'
@@ -13777,7 +13778,8 @@ paths:
         jen přestane být v deníku vidět. Lze zadat ID kterékoli ze stran.
 
         Odmítne se, když je některá strana v neotevřeném období nebo v uzamčené části
-        účetnictví, když na dvojici navazuje další storno, nebo když se zdroj zápisu ruší
+        účetnictví, když na dvojici navazuje další storno, když je zápis výsledkem provedeného
+        přeúčtování historie (`reclassification_applied`), nebo když se zdroj zápisu ruší
         vlastním workflow (mzdy, odpisy, reklasifikace).
       parameters:
         - $ref: '#/components/parameters/SupplierIdHeader'

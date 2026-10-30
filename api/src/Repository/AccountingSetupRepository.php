@@ -401,6 +401,41 @@ final class AccountingSetupRepository
         )->execute([$supplierId, $invoiceId]);
     }
 
+    /**
+     * @param list<int> $entryIds
+     */
+    public function hasAppliedReclassificationOfEntries(int $supplierId, array $entryIds): bool
+    {
+        if ($entryIds === []) {
+            return false;
+        }
+        $marks = implode(',', array_fill(0, count($entryIds), '?'));
+        $stmt = $this->db->pdo()->prepare(
+            "SELECT 1 FROM accounting_reclassification_items
+              WHERE supplier_id = ? AND correction_entry_id IN ($marks) AND status = 'applied' LIMIT 1"
+        );
+        $stmt->execute([$supplierId, ...$entryIds]);
+        return $stmt->fetchColumn() !== false;
+    }
+
+    /**
+     * Záznam kontroly si zápis jen pamatuje a mazání nesmí blokovat. Otisk v before_json zůstává,
+     * takže ostrý běh doklad bez původního zápisu přeskočí a nezmění.
+     *
+     * @param list<int> $entryIds
+     */
+    public function detachUnappliedReclassificationItemsFromEntries(int $supplierId, array $entryIds): void
+    {
+        if ($entryIds === []) {
+            return;
+        }
+        $marks = implode(',', array_fill(0, count($entryIds), '?'));
+        $this->db->pdo()->prepare(
+            "UPDATE accounting_reclassification_items SET correction_entry_id = NULL
+              WHERE supplier_id = ? AND correction_entry_id IN ($marks) AND status <> 'applied'"
+        )->execute([$supplierId, ...$entryIds]);
+    }
+
     public function hasRollbackSnapshot(int $supplierId, int $jobId): bool
     {
         $stmt = $this->db->pdo()->prepare(

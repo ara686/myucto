@@ -136,6 +136,17 @@ final class DocumentJournalPurge
         (new \MyInvoice\Service\Property\Charges\Issuance\IssuanceUseGuard($this->db))->assertPostingEntriesMutable($supplierId, $entryIds);
         (new \MyInvoice\Service\Accounting\Allocation\JointAllocationUseGuard($this->db))->assertEntriesMutable($supplierId, $entryIds);
         (new \MyInvoice\Service\Property\Payments\Workflow\PaymentMutationContext($this->db))->assertEntriesMutable($supplierId, $entryIds);
+        $setup = new \MyInvoice\Repository\AccountingSetupRepository($this->db);
+        foreach ($groups as $group) {
+            $groupIds = array_map(static fn (array $row): int => (int) $row['id'], $group['entries']);
+            if ($setup->hasAppliedReclassificationOfEntries($supplierId, $groupIds)) {
+                return self::blocked($group['source_id'], $groupIds[0], [
+                    'code' => 'reclassification_applied',
+                    'message' => 'Zápis nelze smazat, protože ho vytvořilo přeúčtování historie v Asistentu nastavení účtování.',
+                ]);
+            }
+        }
+        $setup->detachUnappliedReclassificationItemsFromEntries($supplierId, $entryIds);
         $deleted = [];
         $attachmentRows = [];
         $delete = $pdo->prepare('DELETE FROM journal_entries WHERE id = ? AND supplier_id = ?');
