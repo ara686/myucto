@@ -7,8 +7,10 @@ namespace MyInvoice\Tests\Integration\Migration;
 use MyInvoice\Bootstrap;
 use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Repository\PohodaImportRepository;
+use MyInvoice\Repository\SaldoRepository;
 use MyInvoice\Service\Accounting\Activation\PendingBackfillCounter;
 use MyInvoice\Service\Accounting\Assets\AssetService;
+use MyInvoice\Service\Accounting\Reports\SaldoService;
 use MyInvoice\Service\Migration\MoneyS3\ImportProtocol;
 use MyInvoice\Service\Migration\Pohoda\PohodaExport;
 use MyInvoice\Service\Migration\Pohoda\PohodaImporter;
@@ -1275,6 +1277,109 @@ final class PohodaImportTest extends TestCase
     }
 
     /**
+     * Rozdíl saldokonta proti hlavní knize je upozornění: přeplatek bez dokladu drží na 311
+     * částku, ke které není otevřená položka. Hlásí se i při zkoušce nanečisto, stav převodu
+     * ani kontroly rekonciliace nemění. Kontrola běží k poslednímu zápisu v deníku, ne ke konci roku.
+     */
+    public function testSaldoDifferenceIsWarningThatDoesNotFailTheConversion(): void
+    {
+        $supplierId = $this->supplier();
+        $dir = SyntheticPohodaExport::write($this->tmp);
+        SyntheticPohodaExport::withOverpaymentWithoutDocument($dir, 5000.0);
+        $export = PohodaExport::open($dir);
+
+        $dry = $this->importer->run($supplierId, $this->userId, $export, true);
+        $live = $this->importer->run($supplierId, $this->userId, $export, false);
+        $asOf = $this->lastJournalDate($supplierId);
+        self::assertLessThan(SyntheticPohodaExport::YEAR . '-12-31', $asOf);
+
+        foreach ([$dry, $live] as $protocol) {
+            self::assertFalse($protocol->hasErrors(), $this->explain($protocol));
+            self::assertSame('completed_with_warnings', $protocol->status(), $this->explain($protocol));
+            $reconciliation = $protocol->get('reconciliation')[0];
+            self::assertTrue($reconciliation['ok'], json_encode($reconciliation, JSON_UNESCAPED_UNICODE));
+
+            self::assertCount(1, $reconciliation['saldo']);
+            $saldo = $reconciliation['saldo'][0];
+            self::assertSame(SyntheticPohodaExport::YEAR, $saldo['year']);
+            self::assertSame($reconciliation['period_id'], $saldo['period_id']);
+            self::assertSame($asOf, $saldo['as_of']);
+            self::assertSame('differences', $saldo['status']);
+            self::assertSame(['311'], array_column($saldo['differences'], 'account'));
+            self::assertSame(-5000.0, $saldo['differences'][0]['gl_balance']);
+            self::assertSame(0.0, $saldo['differences'][0]['open_items_total']);
+            self::assertSame(-5000.0, $saldo['differences'][0]['difference']);
+
+            $warnings = $this->messages($protocol, 'saldo_difference');
+            self::assertCount(1, $warnings, $this->explain($protocol));
+            self::assertSame('warning', $warnings[0]['level']);
+            self::assertSame('311', $warnings[0]['context']['account']);
+            self::assertStringContainsString('účet 311', $warnings[0]['text']);
+            self::assertStringContainsString('zůstatek hlavní knihy -5 000,00 Kč, součet položek 0,00 Kč, rozdíl -5 000,00 Kč', $warnings[0]['text']);
+        }
+    }
+
+    /** Saldokonto, které na hlavní knihu sedí, protokol neplní a rekonciliace ho vykáže jako v pořádku. */
+    public function testMatchingSaldoIsNotReported(): void
+    {
+        $supplierId = $this->supplier();
+        $protocol = $this->importer->run($supplierId, $this->userId, PohodaExport::open(SyntheticPohodaExport::write($this->tmp)), false);
+
+        self::assertFalse($protocol->hasErrors(), $this->explain($protocol));
+        self::assertSame([], $this->messages($protocol, 'saldo_difference'), $this->explain($protocol));
+        $saldo = $protocol->get('reconciliation')[0]['saldo'];
+        self::assertCount(1, $saldo);
+        self::assertSame('ok', $saldo[0]['status']);
+        self::assertSame([], $saldo[0]['differences']);
+    }
+
+    /** Tolerance je koruna na účet včetně; o haléř víc už je rozdíl. */
+    public function testSaldoDifferenceToleranceIsOneCrownPerAccount(): void
+    {
+        $supplierId = $this->supplier();
+        foreach ([[1.0, 0], [1.01, 1]] as $i => [$amount, $warnings]) {
+            $dir = SyntheticPohodaExport::write($this->tmp . '/' . $i);
+            SyntheticPohodaExport::withOverpaymentWithoutDocument($dir, $amount);
+            $protocol = $this->importer->run($supplierId, $this->userId, PohodaExport::open($dir), true);
+            self::assertCount($warnings, $this->messages($protocol, 'saldo_difference'), $this->explain($protocol));
+        }
+    }
+
+    /**
+     * Sestava přes strop otevřených položek převod neshodí a skončí jako informace. Sestava
+     * běží jednou za každé období převodu, i nanečisto: skutečný {@see SaldoService} se tu
+     * zastaví na prvním účtu, takže počet dotazů na účet je počet sestav.
+     */
+    public function testUnavailableSaldoIsOnlyInformationAndRunsOncePerPeriod(): void
+    {
+        $repository = $this->createMock(SaldoRepository::class);
+        $repository->expects(self::exactly(2))->method('resolveAccount')
+            ->willReturn(['id' => 1, 'code' => '311', 'name' => 'Odběratelé', 'normal_side' => 'debit', 'account_type' => 'asset']);
+        $repository->method('openItems')->willReturn(array_fill(0, SaldoService::MAX_OPEN_ITEMS + 1, [
+            'partner_id' => 1, 'partner_name' => 'Odběratel', 'booked_signed' => 100.0, 'foreign_signed' => 0.0, 'paid_ratio' => 0.0,
+            'doc_type' => 'invoice', 'doc_id' => 1, 'doc_no' => '26FV0001', 'issue_date' => '2026-01-01', 'due_date' => '2026-01-15', 'currency_code' => 'CZK',
+        ]));
+        $container = Bootstrap::buildContainer();
+        $container->set(Connection::class, $this->db);
+        $container->set(SaldoRepository::class, $repository);
+        $importer = $container->get(PohodaImporter::class);
+
+        $supplierId = $this->supplier();
+        $export = PohodaExport::open(SyntheticPohodaExport::write($this->tmp, unbooked: true));
+        $protocol = $importer->run($supplierId, $this->userId, $export, true);
+
+        self::assertFalse($protocol->hasErrors(), $this->explain($protocol));
+        self::assertNotContains('saldo_difference', $this->messageCodes($protocol));
+        $messages = $this->messages($protocol, 'saldo_unavailable');
+        self::assertCount(2, $messages, $this->explain($protocol));
+        self::assertSame(['info', 'info'], array_column($messages, 'level'));
+        self::assertStringContainsString('otevřených položek', $messages[0]['text']);
+        $years = $protocol->get('reconciliation')[0]['saldo'];
+        self::assertSame([SyntheticPohodaExport::YEAR, SyntheticPohodaExport::NEXT_YEAR], array_column($years, 'year'));
+        self::assertSame(['unavailable', 'unavailable'], array_column($years, 'status'));
+    }
+
+    /**
      * Doklad převzatý v cizí měně nese částky v EUR a kurz. Všechno, co převod kontroluje
      * nebo páruje v Kč (doklady proti deníku 311/321, změna dokladu v POHODĚ, doplnění
      * úhrady, párování nezaúčtované platby podle částky), ho musí přepočítat kurzem
@@ -1422,6 +1527,29 @@ final class PohodaImportTest extends TestCase
              VALUES (?, ?, ?, ?, ?, ?, 2, 1, 0)"
         )->execute([$supplierId, $code, $code, $code, $code, $code]);
         return (int) $pdo->lastInsertId();
+    }
+
+    /** @return list<array{level:string,code:string,text:string,context:array<string,mixed>}> */
+    private function messages(ImportProtocol $protocol, string $code): array
+    {
+        $out = [];
+        foreach ($protocol->toArray()['steps'] as $step) {
+            foreach ($step['messages'] ?? [] as $m) {
+                if ($m['code'] === $code) {
+                    $out[] = $m;
+                }
+            }
+        }
+
+        return $out;
+    }
+
+    private function lastJournalDate(int $supplierId): string
+    {
+        $stmt = $this->db->pdo()->prepare('SELECT MAX(entry_date) FROM journal_entries WHERE supplier_id = ?');
+        $stmt->execute([$supplierId]);
+
+        return substr((string) $stmt->fetchColumn(), 0, 10);
     }
 
     /** @return list<string> */

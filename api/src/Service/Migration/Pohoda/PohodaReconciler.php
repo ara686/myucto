@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace MyInvoice\Service\Migration\Pohoda;
 
 use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Infrastructure\Database\TransactionFailure;
 use MyInvoice\Service\Accounting\Reports\FinancialStatementService;
 use MyInvoice\Service\Accounting\Reports\ReportException;
+use MyInvoice\Service\Accounting\Reports\SaldoService;
 use MyInvoice\Service\Accounting\Reports\TrialBalanceService;
 use MyInvoice\Service\Migration\Shared\ForeignCurrencyTakeover;
 use MyInvoice\Service\Migration\Shared\ReconciliationTolerance;
@@ -21,7 +23,9 @@ use MyInvoice\Service\Migration\Shared\TrialBalanceReconciliation;
  *   3. doklady proti deníku: přijaté faktury × 321, vydané × 311, pokladna × 211,
  *      banka × 221 - jen převedené doklady a zápisy, na které jsou navázané; rozdíl, který
  *      je už v deníku POHODY, se vypíše po dokladech a převod neshodí;
- *   4. vyrovnaná rozvaha bez účtů, které mapa výkazů nezná.
+ *   4. vyrovnaná rozvaha bez účtů, které mapa výkazů nezná;
+ *   5. saldokonto proti hlavní knize po obdobích převodu - jen upozornění mimo `checks`, rozdíl
+ *      může být oprávněný (přeplatek bez dokladu) a stav převodu nemění.
  */
 final class PohodaReconciler
 {
@@ -50,6 +54,7 @@ final class PohodaReconciler
         private readonly Connection $db,
         private readonly TrialBalanceService $trialBalance,
         private readonly FinancialStatementService $statements,
+        private readonly SaldoService $saldo,
     ) {}
 
     public function run(PohodaContext $ctx): void
@@ -118,12 +123,101 @@ final class PohodaReconciler
             'documents' => $documents,
             'unmapped_accounts' => $unmapped,
             'negative_net_rows' => $balanceSheet['negative_net_rows'],
+            'saldo' => $this->saldoAgainstLedger($ctx),
         ])]);
         $warning = TrialBalanceReconciliation::negativeNetWarning($year, $balanceSheet['negative_net_rows']);
         if ($warning !== null) {
             $p->warn(self::STEP, 'negative_net_rows', $warning, ['year' => $year, 'rows' => $balanceSheet['negative_net_rows']]);
         }
         $p->finish(self::STEP);
+    }
+
+    /**
+     * Saldokonto proti hlavní knize za každé období převodu, k jeho konci, nejvýš však k poslednímu
+     * zápisu v deníku období. Období bez zápisu se nekontroluje. Sestava jede jednou za období
+     * (u velké firmy trvá sekundy) a bez cache: čte data ještě neuložené transakce. Její selhání
+     * převod neshodí, jen se vypíše; rozdíl do koruny na účtu je zaokrouhlení.
+     *
+     * @return list<array{year:int,period_id:int,as_of:string,status:string,differences:list<array{account:string,name:string,gl_balance:float,open_items_total:float,difference:float}>,error?:string}>
+     */
+    private function saldoAgainstLedger(PohodaContext $ctx): array
+    {
+        $periods = array_filter($ctx->periods) ?: [$ctx->year() => $ctx->period];
+        ksort($periods);
+        $ids = implode(',', array_map(static fn (array $period): int => (int) $period['id'], $periods));
+        $stmt = $this->db->pdo()->prepare(
+            "SELECT period_id, MAX(entry_date) FROM journal_entries
+              WHERE supplier_id = ? AND period_id IN ({$ids}) AND posted_at IS NOT NULL
+              GROUP BY period_id"
+        );
+        $stmt->execute([$ctx->supplierId]);
+        $lastEntry = $stmt->fetchAll(\PDO::FETCH_KEY_PAIR);
+
+        $out = [];
+        foreach ($periods as $year => $period) {
+            $periodId = (int) $period['id'];
+            if (!isset($lastEntry[$periodId])) {
+                continue;
+            }
+            $asOf = min((string) $period['ends_on'], substr((string) $lastEntry[$periodId], 0, 10));
+            $row = ['year' => (int) $year, 'period_id' => $periodId, 'as_of' => $asOf, 'status' => 'ok', 'differences' => []];
+            try {
+                foreach ($this->saldo->build($ctx->supplierId, $periodId, $asOf)['accounts'] as $block) {
+                    if (ReconciliationTolerance::isRounding((float) $block['difference'])) {
+                        continue;
+                    }
+                    $difference = [
+                        'account' => (string) $block['account']['code'],
+                        'name' => (string) $block['account']['name'],
+                        'gl_balance' => round((float) $block['gl_balance'], 2),
+                        'open_items_total' => round((float) $block['open_items_total'], 2),
+                        'difference' => round((float) $block['difference'], 2),
+                    ];
+                    $row['status'] = 'differences';
+                    $row['differences'][] = $difference;
+                    $ctx->protocol->warn(self::STEP, 'saldo_difference', self::saldoDifferenceText($row['year'], $asOf, $difference), ['year' => $row['year'], 'as_of' => $asOf] + $difference);
+                }
+            } catch (ReportException $e) {
+                $row = self::saldoUnavailable($ctx, $row, $e->getMessage());
+            } catch (\Throwable $e) {
+                // Odvolanou transakci řeší vlastník kroku, ten po ní ve zbytku kroku nepokračuje.
+                if (TransactionFailure::aborted($e)) {
+                    throw $e;
+                }
+                error_log(sprintf('POHODA: kontrola saldokonta firmy %d k %s selhala: %s', $ctx->supplierId, $asOf, (string) $e));
+                $row = self::saldoUnavailable($ctx, $row, 'Sestava skončila neočekávanou chybou, podrobnosti jsou v logu serveru.');
+            }
+            $out[] = $row;
+        }
+        return $out;
+    }
+
+    /**
+     * @param array{year:int,period_id:int,as_of:string,status:string,differences:list<array<string,mixed>>} $row
+     * @return array{year:int,period_id:int,as_of:string,status:string,differences:list<array<string,mixed>>,error:string}
+     */
+    private static function saldoUnavailable(PohodaContext $ctx, array $row, string $reason): array
+    {
+        $ctx->protocol->info(self::STEP, 'saldo_unavailable', sprintf(
+            'Rok %d: saldokonto k %s nešlo proti hlavní knize porovnat, zkontrolujte ho v Účetnictví → Saldokonto. %s',
+            $row['year'], self::saldoDay($row['as_of']), $reason,
+        ), ['year' => $row['year'], 'as_of' => $row['as_of']]);
+        return ['status' => 'unavailable', 'differences' => [], 'error' => $reason] + $row;
+    }
+
+    /** @param array{account:string,name:string,gl_balance:float,open_items_total:float,difference:float} $d */
+    private static function saldoDifferenceText(int $year, string $asOf, array $d): string
+    {
+        $money = static fn (float $v): string => number_format($v, 2, ',', ' ');
+        return sprintf(
+            'Rok %d, saldokonto k %s, účet %s %s: zůstatek hlavní knihy %s Kč, součet položek %s Kč, rozdíl %s Kč. Může být oprávněný (například přeplatek bez dokladu), zkontrolujte ho.',
+            $year, self::saldoDay($asOf), $d['account'], $d['name'], $money($d['gl_balance']), $money($d['open_items_total']), $money($d['difference']),
+        );
+    }
+
+    private static function saldoDay(string $date): string
+    {
+        return (new \DateTimeImmutable($date))->format('j. n. Y');
     }
 
     /**

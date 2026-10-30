@@ -742,7 +742,13 @@ s počty, upozornění a chyby a rekonciliaci převáděného roku:
   obojí beze změny. Typicky jde o odpočet nedaňové zálohy, který POHODA
   zaúčtovala kladně na stranu MD účtu 311 (například 311/602). Faktura je
   uhrazená, účet 311 ale v deníku drží navíc částku zálohy. Saldo takových
-  dokladů zkontrolujte a případně opravte interním dokladem.
+  dokladů zkontrolujte a případně opravte interním dokladem,
+- saldokonto proti hlavní knize za každé období převodu, ke konci období, nejvýš
+  k poslednímu zápisu v deníku. Rozdíl nad 1 Kč na účtu protokol uvede jako
+  upozornění s účtem, zůstatkem hlavní knihy, součtem položek a rozdílem. Převod
+  kvůli němu neselže, protože rozdíl může být oprávněný (například přeplatek bez
+  dokladu). Porovnejte ho v `Účetnictví → Saldokonto`. Když sestavu nejde
+  postavit (příliš mnoho otevřených položek), protokol to uvede jako informaci.
 
 Doklad, ke kterému v deníku POHODY není zápis se stejným číslem, protokol
 vypíše jako doklad bez zápisu. Takový doklad není zaúčtovaný. Zaúčtujte ho
