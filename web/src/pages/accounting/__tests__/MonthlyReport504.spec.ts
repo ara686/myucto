@@ -6,6 +6,8 @@ vi.mock('@/composables/useToast', () => ({ useToast: () => ({ error: vi.fn() }) 
 vi.mock('vue-router', () => ({ RouterLink: { template: '<a><slot /></a>' } }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
 vi.mock('@/composables/useFormat', () => ({ formatMoney: (value: number) => String(value), formatDate: (value: string) => value }))
+vi.mock('@/composables/useTablePrefs', () => ({ useTablePrefs: () => ({ flag: () => false, setFlag: vi.fn() }) }))
+vi.mock('@/composables/useUserPrefs', () => ({ ensurePrefsLoaded: () => Promise.resolve() }))
 vi.mock('@/api/monthlyReport', () => ({ monthlyReportApi: {
   history: async () => [],
   preview: async () => {
@@ -32,4 +34,5 @@ it('shows three monthly activity columns and pending 931 without the 500 amount 
   expect(w.text()).toContain('accounting.statement504.main')
   expect(w.text()).toContain('Synthetic pending result')
   expect(w.text()).toContain('-1000')
+  expect(w.find('[data-test="accrual-spread-toggle"]').exists()).toBe(false)
 })

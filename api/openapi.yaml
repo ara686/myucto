@@ -15398,6 +15398,7 @@ paths:
         description: Volitelný komentář účetní (zobrazí se i v PDF/e-mailu)
         schema:
           type: string
+      - $ref: '#/components/parameters/AccrualSpread'
       responses:
         '200':
           description: OK
@@ -15419,6 +15420,7 @@ paths:
         - { in: query, name: year, required: true, schema: { type: integer } }
         - { in: query, name: month, required: true, schema: { type: integer, minimum: 1, maximum: 12 } }
         - { in: query, name: comment, schema: { type: string } }
+        - $ref: '#/components/parameters/AccrualSpread'
       responses:
         '200': { description: Soubor PDF, content: { application/pdf: { schema: { type: string, format: binary } } } }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -15444,6 +15446,7 @@ paths:
                 cc: { type: array, items: { type: string, format: email } }
                 comment: { type: string }
                 subject_override: { type: string }
+                accrual_spread: { type: integer, enum: [0, 1], default: 0, description: "`1` = průběžné časové rozlišení mimo deník, stejně jako v náhledu." }
       responses:
         '200': { description: "OK {sent_to, cc, document_id, sent_at}", content: { application/json: { schema: { type: object } } } }
         '400': { description: Chybí příjemci / neplatný e-mail, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }

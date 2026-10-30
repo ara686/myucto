@@ -8,14 +8,14 @@ use MyInvoice\Tests\Support\SourceCorpus;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Průběžné časové rozlišení mimo deník je jen pohled výkazu v Účetnictví → Výkazy.
- * Podání (EPO/XML závěrky, DPPO), uzávěrka, balíček závěrky, příloha, kontroly ani převody
- * ho používat nesmí: počítají s deníkem tak, jak je.
+ * Průběžné časové rozlišení mimo deník je jen pohled výkazu v Účetnictví → Výkazy
+ * a manažerského Měsíčního přehledu. Podání (EPO/XML závěrky, DPPO), uzávěrka, balíček
+ * závěrky, příloha, kontroly ani převody ho používat nesmí: počítají s deníkem tak, jak je.
  *
  * Brána hledá v `api/src` volání `->balanceSheet()`, `->incomeStatement()`
  * a `->incomeStatementByFunction()` s víc než pěti argumenty (šestý je volba
- * `accrualSpread`) nebo s pojmenovaným argumentem `accrualSpread:`. Výjimku má jediná
- * metoda, která volbu převádí z dotazu HTTP. Skenují se tokeny, ne text.
+ * `accrualSpread`) nebo s pojmenovaným argumentem `accrualSpread:`. Výjimku mají jen
+ * metody uvedené v ALLOWED. Skenují se tokeny, ne text.
  */
 final class AccrualSpreadStatementOnlyGuardTest extends TestCase
 {
@@ -25,6 +25,8 @@ final class AccrualSpreadStatementOnlyGuardTest extends TestCase
     private const ALLOWED = [
         // Převádí parametr `accrual_spread` z dotazu výkazu (obrazovka, PDF, XLSX).
         'Action/Accounting/Reports/FinancialStatementAction.php' => 'buildStatement',
+        // Manažerský přehled klientovi, volbu dostává z dotazu nebo těla MonthlyReportAction.
+        'Service/Report/MonthlyReportService.php' => 'build',
     ];
 
     public function testOnlyStatementActionPassesAccrualSpread(): void
@@ -39,7 +41,7 @@ final class AccrualSpreadStatementOnlyGuardTest extends TestCase
                 $violations[] = $relative . ':' . $line . ' (' . $method . ')';
             }
         }
-        self::assertSame([], $violations, 'Průběžné časové rozlišení smí do výkazu předat jen FinancialStatementAction::buildStatement().');
+        self::assertSame([], $violations, 'Průběžné časové rozlišení smí do výkazu předat jen metody z ALLOWED.');
     }
 
     public function testGuardDetectsPositionalAndNamedArgument(): void
