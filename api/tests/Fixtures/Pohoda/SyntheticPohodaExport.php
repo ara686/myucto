@@ -387,6 +387,15 @@ final class SyntheticPohodaExport
         ));
     }
 
+    /** Přeplatek odběratele bez dokladu: zápis 221/311 v deníku, ke kterému saldokonto nemá položku. */
+    public const OVERPAYMENT_DOCUMENT = '26IN0098';
+
+    public static function withOverpaymentWithoutDocument(string $dir, float $amount): void
+    {
+        self::append($dir . '/01_ucetni_denik.xml', '</lst:accountancy>',
+            self::entry('Interní doklady', self::OVERPAYMENT_DOCUMENT, 'Přeplatek', $amount, '221001', '311001', '2026-03-06'));
+    }
+
     /** Oprava odpočtu § 74b a její pozdější vrácení ({@see withDebtorDeductionCorrection()}). */
     public const S74B_REDUCTION = '26DD0074';
     public const S74B_RESTORATION = '26DD0075';
