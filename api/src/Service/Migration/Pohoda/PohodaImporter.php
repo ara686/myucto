@@ -56,6 +56,7 @@ final class PohodaImporter
         private readonly UnbookedBankPayments $unbooked,
         private readonly VatCoefficientSeeder $coefficients,
         private readonly StockImporter $stock,
+        private readonly CostCenterImporter $costCenters,
     ) {}
 
     /** @return list<string> */
@@ -201,6 +202,7 @@ final class PohodaImporter
      * Výkazy vyhlášky 504 potřebují u každého řádku nákladů a výnosů činnost (hlavní,
      * hospodářská) a bez ní se nesestaví. Činnost převod z POHODY nečte, proto řádky bez
      * ní dostanou hlavní činnost, kterou účetní přeřadí; opakovaný převod jejich změnu nepřepíše.
+     * Které středisko je hospodářská činnost, POHODA nikde neuvádí, z dat to odvodit nejde.
      */
     private function stampNonprofitActivity(PohodaContext $ctx): void
     {
@@ -432,6 +434,7 @@ final class PohodaImporter
                 $ctx->protocol,
             ),
             PohodaReconciler::STEP => function () use ($ctx): void {
+                $this->costCenters->run($ctx);
                 $this->stampNonprofitActivity($ctx);
                 $this->reconciler->run($ctx);
             },

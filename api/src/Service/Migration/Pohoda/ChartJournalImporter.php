@@ -211,8 +211,12 @@ final class ChartJournalImporter
                     ));
                 }
                 $amount = number_format($effect['amount'], 2, '.', '');
-                $lines[] = ['account_id' => $debitId, 'side' => 'debit', 'amount' => $amount, 'line_no' => ++$lineNo];
-                $lines[] = ['account_id' => $creditId, 'side' => 'credit', 'amount' => $amount, 'line_no' => ++$lineNo];
+                $centre = mb_substr(PohodaXml::text($item, 'centre/ids'), 0, 50);
+                if ($centre !== '') {
+                    $ctx->costCenters[$centre] = PohodaXml::text($item, 'centre/name');
+                }
+                $lines[] = ['account_id' => $debitId, 'side' => 'debit', 'amount' => $amount, 'line_no' => ++$lineNo, 'cost_center' => $centre !== '' ? $centre : null];
+                $lines[] = ['account_id' => $creditId, 'side' => 'credit', 'amount' => $amount, 'line_no' => ++$lineNo, 'cost_center' => $centre !== '' ? $centre : null];
             }
             if ($lines === []) {
                 continue;

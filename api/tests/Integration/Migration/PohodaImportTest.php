@@ -421,6 +421,39 @@ final class PohodaImportTest extends TestCase
     }
 
     /**
+     * Středisko z deníku je na řádcích jako dimenze Středisko a opakovaný převod ho nezdvojí.
+     * Export bez středisek dimenze nezapíná.
+     */
+    public function testCostCentreFromJournalBecomesDimension(): void
+    {
+        $plainDir = $this->tmp . DIRECTORY_SEPARATOR . 'plain';
+        mkdir($plainDir);
+        $plain = $this->supplier();
+        $this->importer->run($plain, $this->userId, PohodaExport::open(SyntheticPohodaExport::write($plainDir)), false);
+        self::assertSame(0, $this->rows('cost_centers', $plain));
+        self::assertSame(0, $this->rows('journal_entry_line_dimensions', $plain));
+        self::assertSame('0', (string) $this->db->pdo()->query("SELECT dimensions_enabled FROM supplier WHERE id = {$plain}")->fetchColumn());
+
+        $supplierId = $this->supplier();
+        $dir = SyntheticPohodaExport::write($this->tmp);
+        SyntheticPohodaExport::withCostCentre($dir);
+        $export = PohodaExport::open($dir);
+        foreach ([1, 2] as $run) {
+            $protocol = $this->importer->run($supplierId, $this->userId, $export, false);
+            self::assertFalse($protocol->hasErrors(), $this->explain($protocol));
+            $rows = $this->db->pdo()->query("SELECT l.cost_center, v.code, v.name, t.code AS type_code
+                  FROM journal_entry_lines l
+                  JOIN journal_entries e ON e.id = l.entry_id
+                  JOIN journal_entry_line_dimensions d ON d.line_id = l.id
+                  JOIN dimension_values v ON v.id = d.dimension_value_id
+                  JOIN dimension_types t ON t.id = d.dimension_type_id
+                 WHERE e.supplier_id = {$supplierId} AND e.document_no = '" . SyntheticPohodaExport::CENTRE_DOCUMENT . "'")->fetchAll(\PDO::FETCH_NUM);
+            self::assertSame(array_fill(0, 2, ['VYUKA', 'VYUKA', 'Výuka hry na nástroj', 'stredisko']), $rows, "běh {$run}");
+        }
+        self::assertSame(1, $this->rows('cost_centers', $supplierId));
+    }
+
+    /**
      * Oprava odpočtu § 74b z interního dokladu POHODY se dostane do evidence § 74b, a tím
      * do přiznání a KH: vrácení v měsíci opravy, opětovné uplatnění v měsíci úhrady.
      */

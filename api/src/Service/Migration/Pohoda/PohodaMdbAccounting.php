@@ -255,6 +255,7 @@ final class PohodaMdbAccounting
                 'text' => $r['SText'] ?? '',
                 'homeCurrency' => ['priceSum' => $r['Kc'] ?? '0'],
                 'accounting' => ['credit' => $r['UMD'] ?? '', 'debit' => $r['UD'] ?? ''],
+                'centre' => $this->centre($r['RefStr'] ?? ''),
             ];
         } elseif ($key === 'chart') {
             return ['@code' => $r['Ucet'] ?? '', '@name' => $r['Nazev'] ?? ''];
@@ -506,6 +507,16 @@ final class PohodaMdbAccounting
             $out['accountingType'] = 'withoutAccounting';
         }
         return $out;
+    }
+
+    /** Středisko řádku deníku. Starší export středisko nenese a číselník v něm být nemusí. */
+    private function centre(string $id): array
+    {
+        if ($id === '' || $id === '0' || !$this->tables->has('sSTR')) {
+            return [];
+        }
+        $r = $this->lookup('sSTR', $id);
+        return ['ids' => $r['IDS'] ?? '', 'name' => $r['SText'] ?? ''];
     }
 
     private function reference(string $table, string $id): array

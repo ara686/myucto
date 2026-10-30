@@ -375,6 +375,18 @@ final class SyntheticPohodaExport
             . '<typ:sourceDocument><typ:number>BAN9990001</typ:number></typ:sourceDocument><typ:amount>600</typ:amount></typ:liquidation></inv:liquidations></lst:invoice>');
     }
 
+    /** Zápis deníku se střediskem VYUKA, 500 Kč na 518000 / 321001. */
+    public const CENTRE_DOCUMENT = '26IN0099';
+
+    public static function withCostCentre(string $dir): void
+    {
+        self::append($dir . '/01_ucetni_denik.xml', '</lst:accountancy>', str_replace(
+            '</act:accountingItem>',
+            '<act:centre><typ:ids>VYUKA</typ:ids><typ:name>Výuka hry na nástroj</typ:name></act:centre></act:accountingItem>',
+            self::entry('Interní doklady', self::CENTRE_DOCUMENT, 'Učebny', 500, '518000', '321001', '2026-03-05'),
+        ));
+    }
+
     /** Oprava odpočtu § 74b a její pozdější vrácení ({@see withDebtorDeductionCorrection()}). */
     public const S74B_REDUCTION = '26DD0074';
     public const S74B_RESTORATION = '26DD0075';

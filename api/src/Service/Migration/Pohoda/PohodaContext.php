@@ -39,6 +39,9 @@ final class PohodaContext
     /** @var array<string,float> „typ|id“ dokladu => zbývá uhradit podle Pohody (Kč) */
     public array $remaining = [];
 
+    /** @var array<string,string> kód střediska z nově převedených řádků deníku => název */
+    public array $costCenters = [];
+
     /** @var array<int,float> other_items.id => uhrazeno podle Pohody (Kč) bez úhrad v nepřevedených rocích */
     public array $otherItemPaid = [];
 
