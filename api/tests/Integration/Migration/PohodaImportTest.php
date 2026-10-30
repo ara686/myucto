@@ -9,6 +9,7 @@ use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Repository\PohodaImportRepository;
 use MyInvoice\Service\Accounting\Activation\PendingBackfillCounter;
 use MyInvoice\Service\Accounting\Assets\AssetService;
+use MyInvoice\Service\Accounting\Reports\SaldoService;
 use MyInvoice\Service\Migration\MoneyS3\ImportProtocol;
 use MyInvoice\Service\Migration\Pohoda\PohodaExport;
 use MyInvoice\Service\Migration\Pohoda\PohodaImporter;
@@ -29,6 +30,7 @@ final class PohodaImportTest extends TestCase
     private Connection $db;
     private PohodaImporter $importer;
     private OssLedgerService $ossLedger;
+    private SaldoService $saldo;
     private string $tmp = '';
     private int $userId = 0;
     private int $anyCurrencyId = 0;
@@ -46,6 +48,7 @@ final class PohodaImportTest extends TestCase
             $this->db = $container->get(Connection::class);
             $this->importer = $container->get(PohodaImporter::class);
             $this->ossLedger = $container->get(OssLedgerService::class);
+            $this->saldo = $container->get(SaldoService::class);
         } catch (\Throwable $e) {
             $this->markTestSkipped('DI nedostupné: ' . $e->getMessage());
         }
@@ -332,6 +335,120 @@ final class PohodaImportTest extends TestCase
             self::assertSame(['0.00', '400.00'], $balance('26OZB0001'), "běh {$run}");
             self::assertSame(['0.00', '0.00'], $balance('26OZ0001'), "běh {$run}");
         }
+    }
+
+    /**
+     * Přeplatky zaúčtované z banky a pokladny přímo na 315.999 a 325.999: zůstatek dostane
+     * ostatní položku nad svým řádkem, deník se nemění, saldokonto sedí na hlavní knihu
+     * a opakovaný převod nic nezdvojí. Platba a vrácení téhož partnera položku nezakládají.
+     */
+    public function testBalanceWithoutDocumentBecomesOtherItemOverItsJournalLine(): void
+    {
+        $supplierId = $this->supplier();
+        $dir = SyntheticPohodaExport::write($this->tmp);
+        SyntheticPohodaExport::withOverpayments($dir);
+        $export = PohodaExport::open($dir);
+
+        foreach ([1, 2] as $run) {
+            $protocol = $this->importer->run($supplierId, $this->userId, $export, false);
+            self::assertFalse($protocol->hasErrors(), $this->explain($protocol));
+            self::assertSame(5, $this->rows('other_items', $supplierId), "běh {$run}");
+            self::assertSame(5, $this->rows('pohoda_import_map', $supplierId, "kind = 'balance_item'"), "běh {$run}");
+            self::assertSame(5, $this->rows('journal_settlement_allocations', $supplierId, "kind = 'origin' AND doc_type = 'other_item'"), "běh {$run}");
+            self::assertSame(13, $this->rows('journal_entries', $supplierId), "běh {$run}");
+            self::assertSame(['difference' => 0.0, 'gl' => -1600.0, 'open' => -1600.0], $this->saldoOf($supplierId, '315'), "běh {$run}");
+            self::assertSame(['difference' => 0.0, 'gl' => -250.0, 'open' => -250.0], $this->saldoOf($supplierId, '325'), "běh {$run}");
+        }
+
+        $items = $this->db->pdo()->query(
+            "SELECT oi.side, oi.status, oi.account_code, oi.amount, oi.variable_symbol, oi.journal_entry_id, oi.partner_id IS NOT NULL AS has_partner, oi.partner_name, e.document_no
+               FROM other_items oi
+               JOIN journal_settlement_allocations ja ON ja.doc_id = oi.id AND ja.doc_type = 'other_item' AND ja.supplier_id = oi.supplier_id
+               JOIN journal_entries e ON e.id = ja.entry_id
+              WHERE oi.supplier_id = {$supplierId} ORDER BY e.document_no"
+        )->fetchAll(\PDO::FETCH_ASSOC);
+        $summary = array_map(static fn (array $i): array => [$i['document_no'], $i['side'], $i['account_code'], (string) $i['amount'], $i['variable_symbol'], $i['partner_name']], $items);
+        self::assertSame([
+            ['26PP0001', 'payable', '325.999', '350.00', null, 'Hotovost Test s.r.o.'],
+            ['BAN0010001', 'payable', '315.999', '100.00', '260001', 'Odběratel Test s.r.o.'],
+            [SyntheticPohodaExport::OVERPAYMENT_BANK, 'payable', '315.999', '1500.00', '2026101', 'Odběratel Přeplatek s.r.o.'],
+            ['BAN0020004', 'receivable', '325.999', '900.00', '2026102', 'Dodavatel Přeplatek s.r.o.'],
+            ['BAN0020005', 'payable', '325.999', '300.00', null, 'Vratka Test s.r.o.'],
+        ], $summary);
+        foreach ($items as $item) {
+            self::assertSame(['confirmed', null, 1], [$item['status'], $item['journal_entry_id'], (int) $item['has_partner']]);
+        }
+    }
+
+    /** Položku, kterou účetní stornovala, převod znovu nezaloží. Nové vrácení dostane vlastní položku a saldokonto dál sedí. */
+    public function testBalanceItemRerunRespectsStornoAndLaterRefund(): void
+    {
+        $supplierId = $this->supplier();
+        $dir = SyntheticPohodaExport::write($this->tmp);
+        SyntheticPohodaExport::withOverpayments($dir);
+        $first = $this->importer->run($supplierId, $this->userId, PohodaExport::open($dir), false);
+        self::assertFalse($first->hasErrors(), $this->explain($first));
+
+        SyntheticPohodaExport::withOverpaymentRefund($dir);
+        $refund = $this->importer->run($supplierId, $this->userId, PohodaExport::open($dir), false);
+        self::assertFalse($refund->hasErrors(), $this->explain($refund));
+        self::assertSame(6, $this->rows('other_items', $supplierId));
+        self::assertSame(['difference' => 0.0, 'gl' => -100.0, 'open' => -100.0], $this->saldoOf($supplierId, '315'));
+
+        $this->db->pdo()->exec("UPDATE journal_settlement_allocations SET released_on = '2026-06-30'
+            WHERE supplier_id = {$supplierId} AND amount = 900.00");
+        $again = $this->importer->run($supplierId, $this->userId, PohodaExport::open($dir), false);
+        self::assertFalse($again->hasErrors(), $this->explain($again));
+        self::assertSame(6, $this->rows('other_items', $supplierId));
+    }
+
+    public function testBalanceItemsLeaveNothingBehindInDryRun(): void
+    {
+        $supplierId = $this->supplier();
+        $dir = SyntheticPohodaExport::write($this->tmp);
+        SyntheticPohodaExport::withOverpayments($dir);
+        $protocol = $this->importer->run($supplierId, $this->userId, PohodaExport::open($dir), true);
+        self::assertFalse($protocol->hasErrors(), $this->explain($protocol));
+        self::assertSame(5, self::stepCounts($protocol, 'payments')['balance_items'] ?? 0);
+        self::assertSame(0, $this->rows('other_items', $supplierId));
+        self::assertSame(0, $this->rows('journal_settlement_allocations', $supplierId));
+    }
+
+    /** Pohyb bez partnera i symbolu se nezakládá a je v protokolu; rozdíl zůstává vidět. */
+    public function testBalanceWithoutPartnerAndSymbolIsOnlyWarned(): void
+    {
+        $supplierId = $this->supplier();
+        $dir = SyntheticPohodaExport::write($this->tmp);
+        SyntheticPohodaExport::withUnclearOverpayment($dir);
+        $protocol = $this->importer->run($supplierId, $this->userId, PohodaExport::open($dir), false);
+        self::assertFalse($protocol->hasErrors(), $this->explain($protocol));
+        self::assertSame(0, $this->rows('other_items', $supplierId));
+        self::assertContains('balance_item_unclear', $this->messageCodes($protocol));
+        self::assertSame(['difference' => -250.0, 'gl' => -250.0, 'open' => 0.0], $this->saldoOf($supplierId, '315'));
+    }
+
+    /**
+     * Vrácení přeplatku z počátečního stavu: účet má nulový zůstatek, položka by rozdíl
+     * saldokonta z nuly otevřela. Nezaloží se a řádek skončí v protokolu.
+     */
+    public function testBalanceItemNeverOpensDifferenceAgainstOpeningBalance(): void
+    {
+        $supplierId = $this->supplier();
+        $dir = SyntheticPohodaExport::write($this->tmp);
+        SyntheticPohodaExport::withOpeningOverpaymentRefund($dir);
+        $protocol = $this->importer->run($supplierId, $this->userId, PohodaExport::open($dir), false);
+        self::assertFalse($protocol->hasErrors(), $this->explain($protocol));
+        self::assertSame(0, $this->rows('other_items', $supplierId));
+        self::assertContains('balance_item_no_effect', $this->messageCodes($protocol));
+        self::assertSame(0.0, $this->saldoOf($supplierId, '315')['difference']);
+    }
+
+    /** @return array{difference:float,gl:float,open:float} */
+    private function saldoOf(int $supplierId, string $account): array
+    {
+        $period = (int) $this->db->pdo()->query("SELECT id FROM accounting_periods WHERE supplier_id = {$supplierId} AND fiscal_year = " . SyntheticPohodaExport::YEAR)->fetchColumn();
+        $block = $this->saldo->build($supplierId, $period, SyntheticPohodaExport::YEAR . '-12-31', $account)['accounts'][0];
+        return ['difference' => (float) $block['difference'], 'gl' => (float) $block['gl_balance'], 'open' => (float) $block['open_items_total']];
     }
 
     /**
