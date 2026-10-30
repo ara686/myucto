@@ -376,6 +376,31 @@ final class AccountingSetupRepository
         return array_map(fn (array $row): array => $this->decode($row) ?? [], $stmt->fetchAll(PDO::FETCH_ASSOC));
     }
 
+    /**
+     * Provedené přeúčtování je auditní stopa a podklad pro návrat změn, doklad s ním nejde smazat.
+     */
+    public function hasAppliedReclassification(int $supplierId, int $invoiceId): bool
+    {
+        $stmt = $this->db->pdo()->prepare(
+            "SELECT 1 FROM accounting_reclassification_items
+              WHERE supplier_id = ? AND purchase_invoice_id = ? AND status = 'applied' LIMIT 1"
+        );
+        $stmt->execute([$supplierId, $invoiceId]);
+        return $stmt->fetchColumn() !== false;
+    }
+
+    /**
+     * Záznamy kontroly bez provedené změny (dry-run, přeskočené) mazání dokladu nebrání. Bez nich
+     * ostrý běh nečeká doklad, který už neexistuje, a neskončí na result_changed_after_dry_run.
+     */
+    public function deleteUnappliedReclassificationItems(int $supplierId, int $invoiceId): void
+    {
+        $this->db->pdo()->prepare(
+            "DELETE FROM accounting_reclassification_items
+              WHERE supplier_id = ? AND purchase_invoice_id = ? AND status <> 'applied'"
+        )->execute([$supplierId, $invoiceId]);
+    }
+
     public function hasRollbackSnapshot(int $supplierId, int $jobId): bool
     {
         $stmt = $this->db->pdo()->prepare(

@@ -8799,7 +8799,7 @@ paths:
       responses:
         '200': { description: OK }
         '403': { description: 'Force-delete přes API token (`token_write_forbidden`) nebo uzamčený doklad' }
-        '409': { description: Lze smazat jen draft }
+        '409': { description: 'Lze smazat jen draft (`not_deletable`), doklad změněný přeúčtováním historie nelze smazat vůbec (`reclassification_applied`)' }
 
   /api/v1/purchase-invoices/{id}/preview:
     get:

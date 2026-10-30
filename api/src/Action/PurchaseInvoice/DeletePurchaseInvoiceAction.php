@@ -11,6 +11,7 @@ use MyInvoice\Http\SupplierGuard;
 use MyInvoice\Infrastructure\Config\Config;
 use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Middleware\AuthMiddleware;
+use MyInvoice\Repository\AccountingSetupRepository;
 use MyInvoice\Repository\PurchaseInvoiceInboxDismissalRepository;
 use MyInvoice\Repository\PurchaseInvoiceRepository;
 use MyInvoice\Repository\PurchaseInvoiceSubmissionRepository;
@@ -49,6 +50,7 @@ final class DeletePurchaseInvoiceAction
         private readonly PurchaseInvoiceSubmissionRepository $submissions,
         private readonly SubmissionOriginalFiler $filer,
         private readonly PurchaseInvoiceInboxDismissalRepository $dismissals,
+        private readonly AccountingSetupRepository $accountingSetup,
     ) {}
 
     public function __invoke(Request $request, Response $response, array $args): Response
@@ -118,6 +120,16 @@ final class DeletePurchaseInvoiceAction
                 if ($ownTx && $pdo->inTransaction()) $pdo->rollBack();
                 return $deny ?? Json::error($response, 'document_changed', 'Doklad byl mezitím změněn. Načtěte jej znovu.', 409);
             }
+            if ($this->accountingSetup->hasAppliedReclassification($supplierId, $id)) {
+                if ($ownTx && $pdo->inTransaction()) $pdo->rollBack();
+                return Json::error(
+                    $response,
+                    'reclassification_applied',
+                    'Přijatou fakturu nelze smazat, protože ji změnilo přeúčtování historie v Asistentu nastavení účtování. Místo smazání ji stornujte.',
+                    409,
+                );
+            }
+            $this->accountingSetup->deleteUnappliedReclassificationItems($supplierId, $id);
             $this->journalSync->onDelete($supplierId, 'purchase_invoice', $id, [
                 'user_id'    => $user['id'] ?? null,
                 'posted_by'  => $user['id'] ?? null,

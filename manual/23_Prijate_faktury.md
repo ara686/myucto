@@ -345,7 +345,7 @@ se znovu posoudí zbývající doplatek. Plně uhrazený doklad přejde rovnou d
 **Uhrazená** s datem poslední úhrady. Do potvrzení zůstává konceptem.
 
 Smazat jde **jen koncept**. Nezaúčtovaný koncept bez platebních a dalších finančních vazeb lze smazat i s datem v uzavřeném období.
-Koncept předaný do správy účetní maže účetní. Pro pozdější stavy použijte **Stornovat**, zachová auditní stopu. Omylem stornovaný doklad
+Koncept předaný do správy účetní maže účetní. Doklad, který změnilo přeúčtování historie v Asistentu nastavení účtování, smazat nejde. Pro pozdější stavy použijte **Stornovat**, zachová auditní stopu. Omylem stornovaný doklad
 obnovíte v detailu akcí **Vrátit ze storna**, doklad se vrátí do stavu **Přijatá** (viz
 [§ 23.11.25](#231125-vratit-ze-storna-a-stejne-cislo-dokladu)).
 
