@@ -380,10 +380,16 @@ final class SyntheticPohodaExport
 
     public static function withCostCentre(string $dir): void
     {
+        self::withCentreEntry($dir, self::CENTRE_DOCUMENT, 'VYUKA', 'Výuka hry na nástroj', 'Učebny', 500, '518000', '321001');
+    }
+
+    /** Interní doklad deníku se střediskem na obou řádcích. */
+    public static function withCentreEntry(string $dir, string $number, string $centre, string $centreName, string $text, float $amount, string $debit, string $credit): void
+    {
         self::append($dir . '/01_ucetni_denik.xml', '</lst:accountancy>', str_replace(
             '</act:accountingItem>',
-            '<act:centre><typ:ids>VYUKA</typ:ids><typ:name>Výuka hry na nástroj</typ:name></act:centre></act:accountingItem>',
-            self::entry('Interní doklady', self::CENTRE_DOCUMENT, 'Učebny', 500, '518000', '321001', '2026-03-05'),
+            '<act:centre><typ:ids>' . $centre . '</typ:ids><typ:name>' . $centreName . '</typ:name></act:centre></act:accountingItem>',
+            self::entry('Interní doklady', $number, $text, $amount, $debit, $credit, '2026-03-05'),
         ));
     }
 

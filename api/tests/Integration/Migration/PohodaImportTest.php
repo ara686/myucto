@@ -12,6 +12,8 @@ use MyInvoice\Service\Accounting\Activation\PendingBackfillCounter;
 use MyInvoice\Service\Accounting\Assets\AssetService;
 use MyInvoice\Service\Accounting\Reports\SaldoService;
 use MyInvoice\Service\Migration\MoneyS3\ImportProtocol;
+use MyInvoice\Service\Migration\Pohoda\NonprofitActivityByCentre;
+use MyInvoice\Service\Migration\Pohoda\PohodaException;
 use MyInvoice\Service\Migration\Pohoda\PohodaExport;
 use MyInvoice\Service\Migration\Pohoda\PohodaImporter;
 use MyInvoice\Service\Oss\OssLedgerService;
@@ -31,6 +33,7 @@ final class PohodaImportTest extends TestCase
     private Connection $db;
     private PohodaImporter $importer;
     private OssLedgerService $ossLedger;
+    private NonprofitActivityByCentre $byCentre;
     private string $tmp = '';
     private int $userId = 0;
     private int $anyCurrencyId = 0;
@@ -48,6 +51,7 @@ final class PohodaImportTest extends TestCase
             $this->db = $container->get(Connection::class);
             $this->importer = $container->get(PohodaImporter::class);
             $this->ossLedger = $container->get(OssLedgerService::class);
+            $this->byCentre = $container->get(NonprofitActivityByCentre::class);
         } catch (\Throwable $e) {
             $this->markTestSkipped('DI nedostupné: ' . $e->getMessage());
         }
@@ -491,6 +495,223 @@ final class PohodaImportTest extends TestCase
             self::assertSame(array_fill(0, 2, ['VYUKA', 'VYUKA', 'Výuka hry na nástroj', 'stredisko']), $rows, "běh {$run}");
         }
         self::assertSame(1, $this->rows('cost_centers', $supplierId));
+    }
+
+    /**
+     * Tabulka středisko => činnost přeřadí řádky nákladů a výnosů. Řádky mimo tabulku a účty
+     * rozvahy zůstávají, zkouška nanečisto nic nezapíše a vrátí totéž co ostrý běh, opakovaný
+     * běh ani opakovaný převod nic nezmění a audit neroste.
+     */
+    public function testActivityByCentreReassignsLinesAndIsIdempotent(): void
+    {
+        [$supplierId, $export] = $this->nonprofitWithCentres();
+        $service = $this->activityByCentre();
+        $map = ['VYUKA' => 'main', 'SVETLO' => 'economic'];
+        $before = $this->activityByDocument($supplierId);
+        self::assertEquals(['26IN0097' => 'main', '26IN0098' => 'main', self::centreDoc() => 'main'], array_intersect_key($before, array_flip(['26IN0097', '26IN0098', self::centreDoc()])));
+        $auditBefore = $this->rows('activity_log', $supplierId);
+
+        $dry = $service->run($supplierId, $map, true);
+        self::assertTrue($dry['dry_run']);
+        self::assertSame($before, $this->activityByDocument($supplierId), 'Zkouška nanečisto nesmí zapsat.');
+        self::assertSame($auditBefore, $this->rows('activity_log', $supplierId), 'Zkouška nanečisto nesmí auditovat.');
+        self::assertSame(1, $dry['changed']);
+        self::assertSame(1, $dry['unchanged']);
+        self::assertSame(0, $dry['skipped']);
+        self::assertSame(1, $dry['outside_map']['JINE'] ?? null);
+        self::assertArrayNotHasKey('SVETLO', $dry['outside_map']);
+        self::assertGreaterThan(0, $dry['no_centre']);
+        self::assertSame([], $dry['unknown_centres']);
+        self::assertContains(['centre' => 'SVETLO', 'activity' => 'economic', 'outcome' => 'changed', 'lines' => 1, 'debit' => '0.00', 'credit' => '1200.00'], self::normalizedRows($dry));
+        self::assertContains(['centre' => 'VYUKA', 'activity' => 'main', 'outcome' => 'unchanged', 'lines' => 1, 'debit' => '500.00', 'credit' => '0.00'], self::normalizedRows($dry));
+
+        $live = $service->run($supplierId, $map, false, $this->userId);
+        self::assertFalse($live['dry_run']);
+        self::assertSame(array_diff_key($dry, ['dry_run' => 1]), array_diff_key($live, ['dry_run' => 1]), 'Zkouška nanečisto odpovídá ostrému běhu.');
+        $after = $this->activityByDocument($supplierId);
+        self::assertSame('economic', $after['26IN0098']);
+        self::assertSame('main', $after['26IN0097'], 'Středisko mimo mapu zůstává.');
+        self::assertSame('main', $after[self::centreDoc()]);
+        foreach (array_diff_key($before, array_flip(['26IN0098'])) as $document => $activity) {
+            self::assertSame($activity, $after[$document], "Doklad {$document} se měnit neměl.");
+        }
+        $balanceSheet = $this->db->pdo()->prepare(
+            "SELECT COUNT(*) FROM journal_entry_lines l
+               JOIN chart_of_accounts a ON a.id = l.account_id
+               JOIN journal_entry_line_dimensions d ON d.line_id = l.id
+               JOIN dimension_types t ON t.id = d.dimension_type_id AND t.system_key = 'activity'
+              WHERE l.supplier_id = ? AND a.account_code NOT REGEXP '^[56]'"
+        );
+        $balanceSheet->execute([$supplierId]);
+        self::assertSame(0, (int) $balanceSheet->fetchColumn(), 'Účty rozvahy činnost nedostávají.');
+        self::assertSame($auditBefore + 2, $this->rows('activity_log', $supplierId), 'Audit zápisu a souhrn běhu.');
+        self::assertSame(1, $this->rows('activity_log', $supplierId, "action = 'dimension.activity_by_centre' AND user_id = {$this->userId}"));
+        self::assertSame(1, $this->rows('activity_log', $supplierId, "action = 'dimension.journal_lines_updated' AND JSON_VALUE(payload, '$.source') = 'pohoda_activity_by_centre'"));
+
+        $auditAfter = $this->rows('activity_log', $supplierId);
+        $again = $service->run($supplierId, $map);
+        self::assertSame(0, $again['changed']);
+        self::assertSame(2, $again['unchanged']);
+        self::assertSame($auditAfter, $this->rows('activity_log', $supplierId), 'Opakovaný běh do auditu nepíše.');
+
+        $reimported = $this->importer->run($supplierId, $this->userId, $export, false);
+        self::assertFalse($reimported->hasErrors(), $this->explain($reimported));
+        self::assertSame('economic', $this->activityByDocument($supplierId)['26IN0098'], 'Opakovaný převod přeřazení nevrátí.');
+    }
+
+    /**
+     * Uzavřené období se nepřepisuje a řádek se počítá jako přeskočený, stejně jako řádek
+     * s rozpadem, storno a řádek se střediskem změněným v MyÚčtu. Kód se porovnává přesně.
+     */
+    public function testActivityByCentreSkipsWhatItMustNotOverwrite(): void
+    {
+        [$supplierId] = $this->nonprofitWithCentres();
+        $pdo = $this->db->pdo();
+        $service = $this->activityByCentre();
+        $map = ['SVETLO' => 'economic', 'ROZPAD' => 'economic', 'STORNO' => 'economic', 'PRESUN' => 'economic'];
+        $typeId = (int) $pdo->query("SELECT id FROM dimension_types WHERE supplier_id = {$supplierId} AND system_key = 'activity'")->fetchColumn();
+        $values = $pdo->query("SELECT semantic_key, id FROM dimension_values WHERE type_id = {$typeId}")->fetchAll(\PDO::FETCH_KEY_PAIR);
+
+        $rozpad = $this->revenueLine($supplierId, '26IN0096');
+        $pdo->exec("DELETE FROM journal_entry_line_dimensions WHERE line_id = {$rozpad} AND dimension_type_id = {$typeId}");
+        $pdo->exec("INSERT INTO journal_entry_line_dimension_splits (line_id, dimension_type_id, dimension_value_id, supplier_id, share)
+            VALUES ({$rozpad}, {$typeId}, {$values['main']}, {$supplierId}, 0.5), ({$rozpad}, {$typeId}, {$values['economic']}, {$supplierId}, 0.5)");
+
+        $original = $this->entryId($supplierId, '26IN0095');
+        $reversal = $this->entryId($supplierId, '26IN0094');
+        $pdo->exec("UPDATE journal_entries SET reversed_by = {$reversal} WHERE id = {$original}");
+
+        $presun = $this->revenueLine($supplierId, '26IN0093');
+        $other = $pdo->query("SELECT v.id, v.type_id FROM dimension_values v JOIN dimension_types t ON t.id = v.type_id
+            WHERE t.supplier_id = {$supplierId} AND t.kind = 'cost_center' AND v.code = 'JINE'")->fetch(\PDO::FETCH_ASSOC);
+        $pdo->exec("UPDATE journal_entry_line_dimensions SET dimension_value_id = {$other['id']} WHERE line_id = {$presun} AND dimension_type_id = {$other['type_id']}");
+
+        $open = $service->run($supplierId, $map + ['svetlo' => 'main'], true);
+        $outcomes = array_column(self::normalizedRows($open), 'outcome', 'centre');
+        self::assertSame('changed', $outcomes['SVETLO']);
+        self::assertSame('split', $outcomes['ROZPAD']);
+        self::assertSame('reversed', $outcomes['STORNO']);
+        self::assertSame('centre_changed', $outcomes['PRESUN']);
+        self::assertSame(['svetlo'], $open['unknown_centres'], 'Kód střediska se porovnává přesně.');
+        $otherCase = $service->run($supplierId, ['svetlo' => 'economic'], true);
+        self::assertSame(['svetlo'], $otherCase['unknown_centres']);
+        self::assertSame(1, $otherCase['outside_map']['SVETLO'] ?? null, 'Jiná velikost písmen není totéž středisko.');
+        self::assertSame(0, $otherCase['changed']);
+        self::assertSame(1, $open['changed']);
+        self::assertSame(4, $open['skipped'], 'Rozpad, obě strany storna a změněné středisko.');
+
+        $periodId = (int) $pdo->query("SELECT period_id FROM journal_entries WHERE id = {$original}")->fetchColumn();
+        $pdo->exec("UPDATE accounting_periods SET status = 'closed' WHERE id = {$periodId}");
+        $before = $this->activityByDocument($supplierId);
+        foreach ([true, false] as $dryRun) {
+            $closed = $service->run($supplierId, $map, $dryRun);
+            self::assertSame(0, $closed['changed'], $dryRun ? 'nanečisto' : 'ostře');
+            self::assertSame(5, $closed['skipped'], $dryRun ? 'nanečisto' : 'ostře');
+            self::assertContains(['centre' => 'SVETLO', 'activity' => 'economic', 'outcome' => 'period_not_open', 'lines' => 1, 'debit' => '0.00', 'credit' => '1200.00'], self::normalizedRows($closed));
+            self::assertSame($before, $this->activityByDocument($supplierId), 'Uzavřené období se nepřepisuje.');
+        }
+        $split = $pdo->query("SELECT COUNT(*) FROM journal_entry_line_dimension_splits WHERE line_id = {$rozpad}")->fetchColumn();
+        self::assertSame(2, (int) $split, 'Rozpad zůstává.');
+    }
+
+    public function testActivityByCentreRefusesBadInput(): void
+    {
+        self::assertSame(['VÝUKA' => 'main', 'Zvuk=Světlo' => 'economic'], NonprofitActivityByCentre::parseMap(' VÝUKA = main ,Zvuk=Světlo=economic'));
+        foreach (['', 'VYUKA', 'VYUKA=hlavni', '=main', 'VYUKA=main,VYUKA=economic'] as $bad) {
+            try {
+                NonprofitActivityByCentre::parseMap($bad);
+                self::fail("Mapa „{$bad}\" neměla projít.");
+            } catch (PohodaException $e) {
+                self::assertSame('invalid_centre_map', $e->errorCode);
+            }
+        }
+        try {
+            $this->activityByCentre()->run($this->supplier(), ['VYUKA' => 'main'], true);
+            self::fail('Firma bez dimenze Činnost neměla projít.');
+        } catch (PohodaException $e) {
+            self::assertSame('activity_dimension_missing', $e->errorCode);
+        }
+    }
+
+    private function activityByCentre(): NonprofitActivityByCentre
+    {
+        return $this->byCentre;
+    }
+
+    private static function centreDoc(): string
+    {
+        return SyntheticPohodaExport::CENTRE_DOCUMENT;
+    }
+
+    /** @return array{0:int,1:PohodaExport} převedená firma 504 se středisky na nákladech a výnosech */
+    private function nonprofitWithCentres(): array
+    {
+        $dir = SyntheticPohodaExport::write($this->tmp);
+        SyntheticPohodaExport::withCostCentre($dir);
+        foreach ([
+            ['26IN0098', 'SVETLO', 'Zvuk a světlo', 1200.0, '311001', '602000'],
+            ['26IN0097', 'JINE', 'Jiné', 300.0, '518000', '321001'],
+            ['26IN0096', 'ROZPAD', 'Rozdělené', 100.0, '311001', '602000'],
+            ['26IN0095', 'STORNO', 'Stornované', 70.0, '311001', '602000'],
+            ['26IN0094', 'STORNO', 'Stornované', 70.0, '311001', '602000'],
+            ['26IN0093', 'PRESUN', 'Přesunuté', 40.0, '311001', '602000'],
+        ] as [$number, $centre, $name, $amount, $debit, $credit]) {
+            SyntheticPohodaExport::withCentreEntry($dir, $number, $centre, $name, 'Pohyb střediska', $amount, $debit, $credit);
+        }
+        SyntheticPohodaExport::withNonprofitChart($dir);
+        $export = PohodaExport::open($dir);
+        $supplierId = $this->supplier();
+        $this->adopt504($supplierId);
+        $protocol = $this->importer->run($supplierId, $this->userId, $export, false);
+        self::assertFalse($protocol->hasErrors(), $this->explain($protocol));
+        return [$supplierId, $export];
+    }
+
+    /** @return array<string,string> číslo dokladu => činnost řádku nákladů nebo výnosů */
+    private function activityByDocument(int $supplierId): array
+    {
+        $stmt = $this->db->pdo()->prepare(
+            "SELECT COALESCE(e.document_no, CONCAT('#', l.id)), v.semantic_key
+               FROM journal_entry_lines l
+               JOIN journal_entries e ON e.id = l.entry_id
+               JOIN chart_of_accounts a ON a.id = l.account_id
+               JOIN journal_entry_line_dimensions d ON d.line_id = l.id
+               JOIN dimension_types t ON t.id = d.dimension_type_id AND t.system_key = 'activity'
+               JOIN dimension_values v ON v.id = d.dimension_value_id
+              WHERE l.supplier_id = ? AND a.account_code REGEXP '^[56]'
+              ORDER BY l.id"
+        );
+        $stmt->execute([$supplierId]);
+        return $stmt->fetchAll(\PDO::FETCH_KEY_PAIR);
+    }
+
+    private function entryId(int $supplierId, string $documentNo): int
+    {
+        $stmt = $this->db->pdo()->prepare('SELECT id FROM journal_entries WHERE supplier_id = ? AND document_no = ?');
+        $stmt->execute([$supplierId, $documentNo]);
+        return (int) $stmt->fetchColumn();
+    }
+
+    private function revenueLine(int $supplierId, string $documentNo): int
+    {
+        $stmt = $this->db->pdo()->prepare(
+            "SELECT l.id FROM journal_entry_lines l JOIN chart_of_accounts a ON a.id = l.account_id
+              WHERE l.supplier_id = ? AND l.entry_id = ? AND a.account_code REGEXP '^[56]'"
+        );
+        $stmt->execute([$supplierId, $this->entryId($supplierId, $documentNo)]);
+        return (int) $stmt->fetchColumn();
+    }
+
+    /**
+     * @param array{rows:list<array<string,mixed>>} $result
+     * @return list<array<string,mixed>>
+     */
+    private static function normalizedRows(array $result): array
+    {
+        return array_map(static fn (array $row): array => [
+            'centre' => $row['centre'], 'activity' => $row['activity'], 'outcome' => $row['outcome'],
+            'lines' => $row['lines'], 'debit' => $row['debit'], 'credit' => $row['credit'],
+        ], $result['rows']);
     }
 
     public function testInternalDocumentGetsHeaderOverItsJournalEntry(): void

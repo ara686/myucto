@@ -44,6 +44,18 @@ zvlášť nepřebírá a výkazy s POHODOU neporovnává, proto je zkontrolujte.
 upozorní (podrobnosti v kapitole [Přechod z Money S3](106_Prechod_z_Money_S3.md),
 oddíl 106.2).
 
+Když firma místo činností vede střediska, přeřadí účetní řádky najednou podle tabulky
+středisko a činnost. Správce instalace spustí na serveru
+`php api/bin/pohoda-activity-by-centre.php --supplier=ID --map="VÝUKA=main,ZvukSvětlo=economic"`,
+kde `main` je hlavní a `economic` hospodářská činnost. S volbou `--dry-run` nástroj nic
+nezapíše a jen vypíše počty řádků a částky MD a D po středisku a činnosti. Mění řádky účtů
+tříd 5 a 6 převedených zápisů a kód střediska porovnává přesně. Řádky bez střediska
+a se střediskem mimo tabulku nechá. Přeskočí a v souhrnu vypíše řádky v uzavřeném období,
+řádky rozdělené mezi více hodnot dimenze, stornované zápisy i jejich storna a řádky,
+kterým jste v MyÚčtu změnili dimenzi Středisko. Spuštění je opakovatelné, a opakovaný
+převod přeřazení nevrátí. Ručně nastavenou činnost na řádku se střediskem z tabulky
+nástroj přepíše. Jednotlivé změny i souhrn běhu zapisuje do protokolu aktivit.
+
 1. **Firma v MyÚčtu.** Musí existovat a mít vyplněné stejné IČO jako v POHODĚ.
    Převádí se do firmy, ve které právě pracujete; novou firmu nejdřív založte
    (kapitola [Multi supplier](95_Multi_supplier.md)). Firma, která zatím vede
