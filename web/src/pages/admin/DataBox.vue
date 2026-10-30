@@ -1743,7 +1743,7 @@ async function refreshLists() {
   await loadNotices()
 }
 
-useWindowRefresh('*', refreshLists, () => !loading.value && !saving.value && !inboxLoading.value
+useWindowRefresh(refreshLists, () => !loading.value && !saving.value && !inboxLoading.value
   && !receiptsBusy.value && !assignBusy.value && busyId.value === null && sendOpenFor.value === null)
 </script>
 

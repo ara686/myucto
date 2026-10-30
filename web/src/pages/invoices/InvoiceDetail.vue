@@ -2087,7 +2087,7 @@ useWindowTitle(
   () => invoice.value ? [typeLabel(invoice.value.invoice_type), invoice.value.varsymbol].filter(Boolean).join(' ') : null,
   () => invoice.value?.client_company_name ?? null,
 )
-useWindowRefresh(['invoices', 'clients', 'bank', 'bank-transactions', 'cash', 'accounting', 'stock'], async () => {
+useWindowRefresh(async () => {
   const generation = loadGeneration
   const invoiceId = Number(route.params.id)
   const [updated, events] = await Promise.all([invoicesApi.get(invoiceId), invoicesApi.activity(invoiceId)])

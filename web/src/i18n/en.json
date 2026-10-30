@@ -22410,6 +22410,9 @@
     }
   },
   "common": {
+    "window_data_changed": "The data has changed in the meantime.",
+    "window_data_changed_reload": "Reload",
+    "window_data_changed_confirm": "Reload the page? Unsaved changes in this window will be lost.",
     "tableHorizontalScroll": "Scroll table horizontally",
     "show": "Show",
     "reset_sort": "Restore default order",

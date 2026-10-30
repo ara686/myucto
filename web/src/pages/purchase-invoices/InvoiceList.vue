@@ -687,6 +687,22 @@ async function fetchPage(reset: boolean) {
   }
 }
 
+// Obnova po změně dat jinde: skeleton a návrat na první stránku by uživateli vzaly
+// pozici v seznamu, rozbalené řádky i dočtené stránky. Bez mazání se přepíše obsah.
+const REFRESH_PAGE_LIMIT = 5
+async function refreshLoadedPages() {
+  const seq = loadSeq
+  const count = Math.min(Math.max(page.value, 1), REFRESH_PAGE_LIMIT)
+  const params = listParams()
+  const results = await Promise.all(Array.from({ length: count }, (_, index) => purchaseInvoicesApi.listGrouped({ ...params, page: index + 1 })))
+  if (seq !== loadSeq) return
+  groups.value = results.slice(1).reduce((merged, result) => mergeGroups(merged, result.data), results[0]!.data)
+  page.value = count
+  total.value = results[0]!.meta.total
+  pages.value = results[0]!.meta.pages ?? 1
+  flashedIds.value = consumeFlashedRows('purchase_invoice')
+}
+
 // Parametry dotazu seznamu bez čísla stránky. Stejné parametry použije detail
 // při listování za hranici načtených řádků (useListNavigation).
 type PurchaseListParams = NonNullable<Parameters<typeof purchaseInvoicesApi.listGrouped>[0]>
@@ -1038,8 +1054,8 @@ async function bulkSetKind() {
   markRowsTouched('purchase_invoice', done)
   await load()
 }
-useWindowRefresh(['purchase-invoices', 'clients', 'bank', 'bank-transactions', 'cash', 'accounting'], () => load(),
-  () => !bulkBusy.value && selectedIds.value.length === 0)
+useWindowRefresh(refreshLoadedPages,
+  () => !loading.value && !loadingMore.value && !bulkBusy.value && selectedIds.value.length === 0)
 </script>
 
 <template>

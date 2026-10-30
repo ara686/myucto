@@ -22410,6 +22410,9 @@
     }
   },
   "common": {
+    "window_data_changed": "Data se mezitím změnila.",
+    "window_data_changed_reload": "Obnovit",
+    "window_data_changed_confirm": "Znovu načíst stránku? Neuložené změny v tomto okně se ztratí.",
     "tableHorizontalScroll": "Vodorovné posouvání tabulky",
     "show": "Zobrazit",
     "reset_sort": "Obnovit výchozí řazení",

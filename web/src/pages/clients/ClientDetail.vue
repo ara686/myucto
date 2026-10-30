@@ -437,7 +437,7 @@ useWindowTitle(
   () => client.value?.company_name ?? null,
   () => client.value ? [client.value.is_customer ? t('client.is_customer_label') : null, client.value.is_vendor ? t('client.is_vendor_label') : null].filter(Boolean).join(', ') : null,
 )
-useWindowRefresh(['clients', 'invoices', 'purchase-invoices', 'recurring', 'bank', 'bank-transactions', 'cash'], async () => {
+useWindowRefresh(async () => {
   const id = Number(route.params.id)
   const [updated, grouped, rec, purchased] = await Promise.all([
     clientsApi.get(id),

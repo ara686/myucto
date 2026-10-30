@@ -664,7 +664,7 @@ async function onFileSelected(e: Event) {
   uploading.value = false
   if (input) input.value = ''
 }
-useWindowRefresh(['bank', 'bank-statements', 'bank-transactions', 'bank-match-suggestions', 'accounting', 'invoices', 'purchase-invoices', 'clients'], () => load(),
+useWindowRefresh(() => load(),
   () => !uploading.value && !scanning.value && !ambiguityModal.value && !reconciliationModal.value)
 </script>
 
