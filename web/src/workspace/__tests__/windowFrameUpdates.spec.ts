@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   router: undefined as Router | undefined,
   context: undefined as WindowContext | undefined,
   refresh: vi.fn().mockResolvedValue(undefined),
+  mounts: 0,
   setSessionCsrfToken: vi.fn(),
   registerActions: vi.fn(),
   ensureLocaleLoaded: vi.fn().mockResolvedValue(undefined),
@@ -25,12 +26,13 @@ vi.mock('@/router/createPaneRouter', async () => {
   const Report = defineComponent({
     setup() {
       mocks.context = inject(windowContextKey)
+      mocks.mounts++
       return () => h('section', [h('h1', 'Report'), h('div', { 'data-content': '' })])
     },
   })
   return { createPaneRouter: () => {
     mocks.router = createRouter({ history: createMemoryHistory(), routes: [
-      { path: '/report', component: Report }, { path: '/other', component: Report },
+      { path: '/report', component: Report }, { path: '/other', component: Report }, { path: '/accounting/journal', component: Report },
     ] })
     return mocks.router
   } }
@@ -96,6 +98,29 @@ afterEach(async () => {
 })
 
 describe('window frame updates', () => {
+  it('rebuilds a data view that became stale and offers a reload on a route that may hold work', async () => {
+    await boot()
+    message('myucto-window-state', { paneId: 'primary' })
+    await flushPromises()
+    expect(document.querySelector('[role="status"]')).toBeNull()
+
+    message('myucto-window-state', { invalidation: { supplierId: 1, resource: 'invoices' } })
+    await flushPromises()
+    expect(document.querySelector('[role="status"]')).not.toBeNull()
+
+    await mocks.router!.push('/accounting/journal')
+    await flushPromises()
+    expect(document.querySelector('[role="status"]')).toBeNull()
+    const mounted = mocks.mounts
+    message('myucto-window-state', { invalidation: { supplierId: 2, resource: 'invoices' } })
+    await flushPromises()
+    expect(mocks.mounts).toBe(mounted)
+    message('myucto-window-state', { invalidation: { supplierId: 1, resource: 'invoices' } })
+    await flushPromises()
+    expect(mocks.mounts).toBe(mounted + 1)
+    expect(document.querySelector('[role="status"]')).toBeNull()
+  })
+
   it('ignores unrelated DOM mutations but still reports heading, custom title, subtitle and route changes', async () => {
     const post = await boot()
     const routes = () => post.mock.calls.map(([data]) => data).filter(data => data.type === 'myucto-window-route')

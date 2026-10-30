@@ -12,6 +12,7 @@ import { createFrameSurface, type FrameAppearance, type FrameKeyboardEvent } fro
 import { paneForBeside, paneForCtrlClick, rightPanePlan } from './panelLinks'
 import { getWindowManager, setWindowManager } from './windowRegistry'
 import { manualSwitchDestination } from '@/composables/useSupplierSwitch'
+import { changedAreas, isWindowAffected } from './dataDependencies'
 export { getWindowManager } from './windowRegistry'
 
 interface WindowRuntime {
@@ -27,6 +28,8 @@ interface WindowRuntime {
   focus: HTMLElement | null
   surface: ReturnType<typeof createFrameSurface> | null
   customTitle: string | null
+  /** Změna dat čekající na doručení. Skryté okno ji dostane až při zobrazení. */
+  staleChange: { resource: string, self: boolean } | null
 }
 
 interface WindowManagerOptions {
@@ -42,6 +45,9 @@ interface WindowManagerOptions {
   globalNavigate?: (to: RouteLocationRaw, mode?: 'assign' | 'replace') => void
   frameContainer?: () => HTMLElement | null
 }
+
+/** Uložení často posílá víc požadavků za sebou, viditelné okno se má načíst jednou. */
+const VISIBLE_REFRESH_DEBOUNCE_MS = 250
 
 export interface WorkspaceWindowManager {
   open: (to: RouteLocationRaw, paneId: PaneId, options?: { fresh?: boolean }) => Promise<void>
@@ -82,6 +88,7 @@ export function createWindowManager(options: WindowManagerOptions): WorkspaceWin
   let visits: string[] = []
   let visitIndex = -1
   let displaying = false
+  let staleTimer: ReturnType<typeof setTimeout> | undefined
   const surfaceObserver = options.frames ? new ResizeObserver(() => positionSurfaces()) : null
 
   function positionSurfaces(): void {
@@ -296,7 +303,7 @@ export function createWindowManager(options: WindowManagerOptions): WorkspaceWin
     const runtime: WindowRuntime = {
       state: storedState, router: resolver, app: null, root, portal,
       observer: null, removeAfterEach: () => {}, scrollTop: 0, scrollLeft: 0, focus: null,
-      surface: null, customTitle: null,
+      surface: null, customTitle: null, staleChange: null,
     }
     root.addEventListener('focusin', event => {
       if (event.target instanceof HTMLElement) runtime.focus = event.target
@@ -373,11 +380,7 @@ export function createWindowManager(options: WindowManagerOptions): WorkspaceWin
         },
         globalNavigate: (to, mode) => options.globalNavigate?.(to, mode),
         switchCompany: (id, to) => { void manager.switchCompany(id, to) },
-        mutation: resource => {
-          for (const candidate of runtimes.values()) {
-            if (candidate !== runtime && candidate.state.supplierId === runtime.state.supplierId) candidate.surface?.invalidate(supplier.id, resource)
-          }
-        },
+        mutation: ({ resource, path }) => dataChanged(runtime.state.supplierId ?? 0, resource, path, runtime),
         error: error => { options.onError(error) },
         accessRevoked: () => {
           const paneId = runtime.state.paneId
@@ -485,18 +488,40 @@ export function createWindowManager(options: WindowManagerOptions): WorkspaceWin
     }
     const active = windowFor(workspace.activePaneId)
     if (active && !displaying) recordVisit(active.state.id)
+    deliverStaleChanges()
   }, { flush: 'sync' })
+
+  function dataChanged(supplierId: number, resource: string, path: string, origin: WindowRuntime | null): void {
+    const areas = changedAreas(path)
+    let visibleChange = false
+    for (const runtime of runtimes.values()) {
+      if (!runtime.surface || runtime.state.supplierId !== supplierId || !isWindowAffected(runtime.state.fullPath, areas)) continue
+      runtime.staleChange = { resource, self: runtime === origin && (runtime.staleChange?.self ?? true) }
+      if (runtime.state.paneId !== null) visibleChange = true
+    }
+    if (!visibleChange) return
+    clearTimeout(staleTimer)
+    staleTimer = setTimeout(deliverStaleChanges, VISIBLE_REFRESH_DEBOUNCE_MS)
+  }
+
+  function deliverStaleChanges(): void {
+    if (workspace.companySwitching) return
+    for (const runtime of runtimes.values()) {
+      const change = runtime.staleChange
+      if (!change || runtime.state.paneId === null) continue
+      runtime.staleChange = null
+      runtime.surface?.invalidate(runtime.state.supplierId ?? 0, change.resource, change.self)
+    }
+  }
 
   // Zápis z hlavního dokumentu (např. nastavení firmy mimo okna) se rozešle
   // oknům aktuální firmy stejně jako zápis z jiného okna.
   function shellMutation(event: Event): void {
     const detail = (event as CustomEvent<unknown>).detail
-    const name = detail && typeof detail === 'object' ? (detail as Record<string, unknown>).resource : undefined
+    const { resource, path } = (detail && typeof detail === 'object' ? detail : {}) as Record<string, unknown>
     const supplierId = options.currentSupplier?.().id ?? 0
-    if (typeof name !== 'string' || !/^[a-z0-9-]+$/.test(name) || supplierId <= 0) return
-    for (const runtime of runtimes.values()) {
-      if (runtime.state.supplierId === supplierId) runtime.surface?.invalidate(supplierId, name)
-    }
+    if (typeof resource !== 'string' || !/^[a-z0-9-]+$/.test(resource) || supplierId <= 0) return
+    dataChanged(supplierId, resource, typeof path === 'string' ? path : `/${resource}`, null)
   }
   window.addEventListener('myucto:data-mutation', shellMutation)
 
@@ -607,6 +632,7 @@ export function createWindowManager(options: WindowManagerOptions): WorkspaceWin
     updateFrames: () => { for (const runtime of runtimes.values()) runtime.surface?.update(); positionSurfaces() },
     destroy: () => {
       destroyed = true
+      clearTimeout(staleTimer)
       stopActivity()
       window.removeEventListener('myucto:data-mutation', shellMutation)
       surfaceObserver?.disconnect()

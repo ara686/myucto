@@ -541,7 +541,7 @@ const statementActions = computed<ActionItem[]>(() => {
     },
   ]
 })
-useWindowRefresh(['bank', 'bank-statements', 'bank-transactions', 'bank-match-suggestions', 'accounting', 'invoices', 'purchase-invoices', 'clients'], refreshTransactions)
+useWindowRefresh(refreshTransactions)
 </script>
 
 <template>
