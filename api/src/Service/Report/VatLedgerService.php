@@ -463,7 +463,7 @@ final class VatLedgerService
         }
 
         return [
-            'LEFT JOIN invoices cal ON cal.id = i.calendar_id',
+            'LEFT JOIN invoices cal ON cal.id = i.calendar_id AND cal.supplier_id = i.supplier_id',
             'COALESCE(cal.varsymbol, i.varsymbol)',
             'COALESCE(cal.total_with_vat, i.total_with_vat)',
         ];
