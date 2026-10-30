@@ -379,6 +379,15 @@ final class PohodaImportTest extends TestCase
         self::assertSame('cz_504', $this->db->pdo()->query("SELECT accounting_framework FROM supplier_accounting_frameworks WHERE supplier_id = {$framework504}")->fetchColumn());
         self::assertSame(1, $this->rows('chart_of_accounts', $framework504, "account_code = '901' AND account_type = 'equity'"));
 
+        $entries = $this->rows('journal_entries', $framework504);
+        $newerDir = $this->tmp . DIRECTORY_SEPARATOR . 'newer';
+        mkdir($newerDir);
+        $newer = SyntheticPohodaExport::write($newerDir, true);
+        SyntheticPohodaExport::withNonprofitChart($newer);
+        $again = $this->importer->run($framework504, $this->userId, PohodaExport::open($newer), false);
+        self::assertNotContains('unexpected', $this->messageCodes($again), 'Deník firmy 504 s už založenou činností: ' . $this->explain($again));
+        self::assertGreaterThan($entries, $this->rows('journal_entries', $framework504));
+
         $ordinaryDir = $this->tmp . DIRECTORY_SEPARATOR . 'ordinary';
         mkdir($ordinaryDir);
         $ordinary = PohodaExport::open(SyntheticPohodaExport::write($ordinaryDir));
@@ -451,6 +460,30 @@ final class PohodaImportTest extends TestCase
             self::assertSame(array_fill(0, 2, ['VYUKA', 'VYUKA', 'Výuka hry na nástroj', 'stredisko']), $rows, "běh {$run}");
         }
         self::assertSame(1, $this->rows('cost_centers', $supplierId));
+    }
+
+    public function testInternalDocumentGetsHeaderOverItsJournalEntry(): void
+    {
+        $supplierId = $this->supplier();
+        $dir = SyntheticPohodaExport::write($this->tmp);
+        SyntheticPohodaExport::withCostCentre($dir);
+        $export = PohodaExport::open($dir);
+        $pdo = $this->db->pdo();
+        $number = SyntheticPohodaExport::CENTRE_DOCUMENT;
+
+        foreach ([1, 2] as $run) {
+            $protocol = $this->importer->run($supplierId, $this->userId, $export, false);
+            self::assertFalse($protocol->hasErrors(), $this->explain($protocol));
+            $row = $pdo->query("SELECT d.title, d.amount, d.status, d.origin, d.journal_entry_id = e.id AS same_entry, d.entry_date = e.entry_date AS same_date
+                  FROM internal_documents d
+                  JOIN journal_entries e ON e.supplier_id = d.supplier_id AND e.document_no = d.document_no
+                 WHERE d.supplier_id = {$supplierId} AND d.document_no = '{$number}'")->fetch(\PDO::FETCH_ASSOC);
+            self::assertSame(['title' => 'Učebny', 'amount' => '500.00', 'status' => 'posted', 'origin' => 'journal', 'same_entry' => 1, 'same_date' => 1], $row, "běh {$run}");
+            self::assertSame(1, $this->rows('internal_documents', $supplierId, "document_no = '{$number}'"), "běh {$run}");
+            self::assertSame(2, $this->rows('internal_document_lines', $supplierId), "běh {$run}");
+        }
+        self::assertSame(1, self::stepCounts($protocol, 'payments')['internal_documents_existing'] ?? 0, $this->explain($protocol));
+        self::assertArrayNotHasKey('internal_documents', self::stepCounts($protocol, 'payments'));
     }
 
     /**

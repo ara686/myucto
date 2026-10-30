@@ -10,6 +10,7 @@ use MyInvoice\Repository\ChartOfAccountsRepository;
 use MyInvoice\Repository\JournalEntryRepository;
 use MyInvoice\Repository\PohodaImportRepository;
 use MyInvoice\Service\Accounting\ChartOfAccountsSeeder;
+use MyInvoice\Service\Accounting\Dimension\SystemDimensionCatalog;
 use MyInvoice\Service\Accounting\JournalDescriptionBuilder;
 use MyInvoice\Service\Accounting\PostingService;
 use MyInvoice\Service\Migration\MoneyS3\AccountCode;
@@ -149,6 +150,24 @@ final class ChartJournalImporter
                 ['agenda' => $agenda, 'rows' => $rows]);
         }
 
+        // Firma 504, které činnost založil dřívější převod: od té doby ji deník u nákladů
+        // a výnosů vyžaduje hned při zápisu, razítko v závěru převodu by přišlo pozdě.
+        $activity = null;
+        if ($ctx->export->hasNonprofitChart()) {
+            $known = $this->db->pdo()->prepare("SELECT 1 FROM dimension_types WHERE supplier_id = ? AND system_key = 'activity'");
+            $known->execute([$ctx->supplierId]);
+            if ($known->fetchColumn() !== false) {
+                $activity = (new SystemDimensionCatalog($this->db))->ensureForFramework($ctx->supplierId, $period['starts_on'], $ctx->userOrNull())['activity'] ?? null;
+            }
+        }
+        $activityFor = static function (string $code) use ($activity, $ctx): array {
+            if ($activity === null || preg_match('/^[56]/', $code) !== 1) {
+                return [];
+            }
+            $ctx->nonprofitLines++;
+            return ['dimensions' => [(int) $activity['id'] => (int) $activity['values']['main']]];
+        };
+
         $existing = $this->map->all($ctx->supplierId, PohodaImportRepository::KIND_JOURNAL_ENTRY);
         $stats = ['year' => $year, 'entries' => 0, 'existing' => 0, 'lines' => 0, 'debit' => 0.0, 'credit' => 0.0, 'skipped_rows' => 0, 'swapped_rows' => 0, 'relocated' => 0, 'later_year_skipped' => 0];
         $moved = [];
@@ -215,8 +234,8 @@ final class ChartJournalImporter
                 if ($centre !== '') {
                     $ctx->costCenters[$centre] = PohodaXml::text($item, 'centre/name');
                 }
-                $lines[] = ['account_id' => $debitId, 'side' => 'debit', 'amount' => $amount, 'line_no' => ++$lineNo, 'cost_center' => $centre !== '' ? $centre : null];
-                $lines[] = ['account_id' => $creditId, 'side' => 'credit', 'amount' => $amount, 'line_no' => ++$lineNo, 'cost_center' => $centre !== '' ? $centre : null];
+                $lines[] = ['account_id' => $debitId, 'side' => 'debit', 'amount' => $amount, 'line_no' => ++$lineNo, 'cost_center' => $centre !== '' ? $centre : null] + $activityFor((string) $effect['debit']);
+                $lines[] = ['account_id' => $creditId, 'side' => 'credit', 'amount' => $amount, 'line_no' => ++$lineNo, 'cost_center' => $centre !== '' ? $centre : null] + $activityFor((string) $effect['credit']);
             }
             if ($lines === []) {
                 continue;

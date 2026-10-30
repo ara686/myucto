@@ -635,6 +635,14 @@ async function onFileSelected(e: Event) {
         skipped: skippedWarning.skipped ?? lastNonDuplicate.skipped_duplicates ?? 0,
       }))
     }
+    const rebased = lastNonDuplicate.warnings?.find(w => w.code === 'imported_balances_rebased')
+    if (rebased) {
+      toast.warning(t('bank.warning.imported_balances_rebased', {
+        statements: rebased.statements ?? 0,
+        shift: formatMoney(rebased.shift ?? 0, 'CZK'),
+        opening: formatMoney(rebased.opening ?? 0, 'CZK'),
+      }))
+    }
     router.push(`/bank/${lastNonDuplicate.statement_id}`)
   } else {
     // Batch mode: souhrnný report — počet přeskočených duplicit se do jednořádkového

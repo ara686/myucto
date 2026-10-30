@@ -11,6 +11,7 @@ import PaneRoot from '@/components/workspace/PaneRoot.vue'
 import { createFrameSurface, type FrameAppearance, type FrameKeyboardEvent } from './frameSurface'
 import { paneForBeside, paneForCtrlClick, rightPanePlan } from './panelLinks'
 import { getWindowManager, setWindowManager } from './windowRegistry'
+import { manualSwitchDestination } from '@/composables/useSupplierSwitch'
 export { getWindowManager } from './windowRegistry'
 
 interface WindowRuntime {
@@ -123,6 +124,12 @@ export function createWindowManager(options: WindowManagerOptions): WorkspaceWin
     if (!await ensureSupplier(runtime.state.supplierId ?? 0)) return false
     return await options.authorize(runtime.router, runtime.state)
       && !destroyed && currentGeneration === generation && runtimes.get(runtime.state.id) === runtime
+  }
+
+  function stayOnPage(runtime: WindowRuntime): string {
+    const fullPath = runtime.state.fullPath
+    const route = runtime.router.resolve(fullPath)
+    return manualSwitchDestination({ name: route.name ?? undefined, path: route.path, fullPath }) ?? fullPath
   }
 
   async function ensureSupplier(id: number): Promise<boolean> {
@@ -586,10 +593,15 @@ export function createWindowManager(options: WindowManagerOptions): WorkspaceWin
       }
     }),
     switchCompany: (id, to) => enqueue(async () => {
+      // Ruční přepnutí zůstává na téže stránce, detail záznamu jde na svůj seznam.
+      const current = to === undefined ? windowFor(workspace.activePaneId) : undefined
+      const target = to ?? (current ? stayOnPage(current) : '/')
       if (!await ensureSupplier(id)) return
-      const existing = to === undefined ? workspace.windows.find(window => window.supplierId === id) : undefined
-      if (existing) await select(existing.id)
-      else await open(to ?? '/', workspace.activePaneId)
+      await open(target, workspace.activePaneId)
+      // Stránku nová firma nemá (jiný režim účetnictví, chybějící oprávnění): panel nezůstane prázdný.
+      if (to === undefined && !workspace.panes.find(pane => pane.id === workspace.activePaneId)?.fullPath) {
+        await open('/', workspace.activePaneId)
+      }
     }),
     focusPane: id => windowFor(id)?.surface?.focus(),
     updateFrames: () => { for (const runtime of runtimes.values()) runtime.surface?.update(); positionSurfaces() },

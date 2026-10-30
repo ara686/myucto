@@ -90,6 +90,8 @@ function testRouter(slowGate?: { entered: Deferred<void>, release: Deferred<bool
     routes: [
       { path: '/editor/:id', name: 'editor', component: TestEditor },
       { path: '/slow/:id', name: 'slow-editor', component: TestEditor },
+      { path: '/list', name: 'list', component: TestEditor },
+      { path: '/', name: 'home', component: TestEditor },
     ],
   })
   if (slowGate) {
@@ -269,6 +271,28 @@ describe('workspace window manager', () => {
     expect(primary.target.contains(firstEditor)).toBe(true)
     expect(input.value).toBe('Doklad firmy A')
     expect(switchSupplier.mock.calls.map(([id]) => id)).toEqual([2, 1])
+  })
+
+  it('ruční přepnutí firmy zůstane na téže stránce včetně filtru', async () => {
+    const supplier = { id: 1, name: 'Syntetická firma A' }
+    const harness = createHarness({ supplier, switchSupplier: async (id: number) => { supplier.id = id; return true } })
+    harness.attachPane('primary')
+    await harness.manager.open('/list?status=open', 'primary')
+    await harness.manager.switchCompany(2)
+
+    expect(supplier.id).toBe(2)
+    expect(harness.store.panes[0]?.fullPath).toBe('/list?status=open')
+    expect(harness.store.windows.find(window => window.supplierId === 2)?.fullPath).toBe('/list?status=open')
+  })
+
+  it('když nadřazená stránka detailu neexistuje, jde po ručním přepnutí firmy na přehled', async () => {
+    const supplier = { id: 1, name: 'Syntetická firma A' }
+    const harness = createHarness({ supplier, switchSupplier: async (id: number) => { supplier.id = id; return true } })
+    harness.attachPane('primary')
+    await harness.manager.open('/editor/42', 'primary')
+    await harness.manager.switchCompany(2)
+
+    expect(harness.store.panes[0]?.fullPath).toBe('/')
   })
 
   it('při odmítnutém přepnutí firmy zachová původní okno i firmu', async () => {

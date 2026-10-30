@@ -38,6 +38,8 @@ final class PohodaImportRepository extends AbstractMigrationImportRepository
     public const KIND_DERIVED_MATCH = 'derived_match';
     /** Zápis odvozené úhrady a jeho storno: `entry|pohyb|zápis`, `reversal|pohyb|zápis` => journal_entries.id. */
     public const KIND_DERIVED_ENTRY = 'derived_entry';
+    /** Hlavička interního dokladu nad převzatým zápisem: journal_entries.id => internal_documents.id. */
+    public const KIND_INTERNAL_DOCUMENT = 'internal_document';
     public const KIND_ASSET = 'asset';
     public const KIND_SMALL_ASSET = 'small_asset';
     /** Sklad podle kódu skladu v POHODĚ => warehouses.id. */

@@ -479,8 +479,9 @@ Soubory `90_majetek.xml`, `91_mzdy.xml` a `92_sklad.xml` jsou stejné jako u dat
 | ostatní pohledávky a závazky bez DPH | otevřené položky s jednoznačným již převedeným účetním zápisem na 315 nebo 325 |
 | vydané doklady v režimu OSS (členění mimo přiznání, daň, stát MOSS) | plnění v režimu OSS včetně země spotřeby, typu sazby a typu plnění |
 | interní daňové doklady | daňové doklady k platbě a samovyměření DPH u přijatých faktur |
+| interní doklady | záznam v agendě Účetnictví → Interní doklady nad zápisem v deníku, s číslem z POHODY a druhem Ostatní |
 | pokladny a pokladní doklady | pokladny a zaúčtované pokladní doklady |
-| bankovní účty a bankovní doklady | výpisy podle čísla výpisu v POHODĚ, bankovní pohyby |
+| bankovní účty a bankovní doklady | výpisy podle čísla výpisu v POHODĚ, bankovní pohyby; zůstatky jsou dopočtené z počátečního stavu v deníku a dorovná je první nahraný výpis banky se stavem |
 | likvidace faktur | spárování faktury s bankovním pohybem nebo pokladním dokladem |
 | karty dlouhodobého majetku (`90_majetek.xml`) | karty zařazené do užívání s počátečními stavy daňových a účetních odpisů |
 | drobný majetek (`90_majetek.xml`) | karty evidence drobného majetku navázané na zdrojový doklad |
@@ -615,7 +616,9 @@ Otevřené ostatní pohledávky a závazky bez DPH vzniknou jako samostatné pol
 jen když se shodují s jediným již převedeným zápisem v deníku na účtu 315 nebo
 325. Účetní zápis se použije znovu a nevzniká druhý náklad ani výnos. Doklady
 s likvidací, zálohou, cizí měnou nebo nejednoznačnou kontací zůstanou k ruční
-kontrole. Interní doklady mimo přiznání k DPH zůstávají v deníku.
+kontrole. Interní doklady mimo přiznání k DPH mají zápis v deníku a záznam v agendě
+Interní doklady. Zápis takového dokladu nejde smazat v deníku, opravuje se stornem
+v detailu dokladu.
 
 **Samovyměření jen na interních dokladech.** Někdy účetní vede přijatou fakturu
 v členění mimo přiznání (například `PN`) a výstup i odpočet zachytí až dvojicí
@@ -623,7 +626,7 @@ interních dokladů navázaných na fakturu (vyměření `DD…`, odpočet `PD�
 takovou fakturu převezme se samovyměřením ze základu interního dokladu. U smíšené
 faktury zůstane tuzemská část s daní dodavatele v odpočtu ř. 40/41. Když k faktuře
 chybí interní doklad s odpočtem, převezme se samovyměření bez nároku na odpočet,
-stejně jako ho podala POHODA. Interní doklady samotné zůstanou jen v deníku.
+stejně jako ho podala POHODA.
 
 **Platební brána.** Úhradu přes bránu vede POHODA jako několik bankovních dokladů
 se stejným číslem: příjem, poplatek a odvod netto. Zápis v deníku pod tímto číslem

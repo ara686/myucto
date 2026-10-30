@@ -57,6 +57,7 @@ final class PohodaImporter
         private readonly VatCoefficientSeeder $coefficients,
         private readonly StockImporter $stock,
         private readonly CostCenterImporter $costCenters,
+        private readonly InternalDocumentImporter $internalDocuments,
     ) {}
 
     /** @return list<string> */
@@ -223,11 +224,12 @@ final class PohodaImporter
              WHERE l.supplier_id = ? AND e.posted_at IS NOT NULL AND a.account_code REGEXP '^[56]'
                AND NOT EXISTS (SELECT 1 FROM journal_entry_line_dimension_splits sp WHERE sp.line_id = l.id AND sp.dimension_type_id = ?)");
         $stmt->execute([$activity['id'], $activity['values']['main'], $ctx->supplierId, $activity['id']]);
-        if ($stmt->rowCount() > 0) {
+        $lines = $stmt->rowCount() + $ctx->nonprofitLines;
+        if ($lines > 0) {
             $ctx->protocol->warn(PohodaReconciler::STEP, 'nonprofit_activity_default', sprintf(
                 '%d řádkům nákladů a výnosů převod nastavil hlavní činnost, činnost z POHODY nepřebírá. Účetní přeřadí hospodářskou činnost podle skutečnosti, ovlivňuje to výkazy i daň z příjmů.',
-                $stmt->rowCount(),
-            ), ['lines' => $stmt->rowCount()]);
+                $lines,
+            ), ['lines' => $lines]);
         }
     }
 
@@ -422,6 +424,7 @@ final class PohodaImporter
                 if (!$ctx->relinkOnly) {
                     $this->unbooked->settle($ctx);
                 }
+                $this->internalDocuments->run($ctx);
             },
             AssetImporter::STEP => fn () => $this->assets->import($ctx),
             SmallAssetImporter::STEP => fn () => $this->smallAssets->import($ctx),
