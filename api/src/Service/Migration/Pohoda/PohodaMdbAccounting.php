@@ -256,6 +256,10 @@ final class PohodaMdbAccounting
                 'homeCurrency' => ['priceSum' => $r['Kc'] ?? '0'],
                 'accounting' => ['credit' => $r['UMD'] ?? '', 'debit' => $r['UD'] ?? ''],
                 'centre' => $this->centre($r['RefStr'] ?? ''),
+                // Partner řádku v tvaru `act:address` z XML. Vazbu na adresář XML nenese, starší
+                // převodník tyto sloupce neexportoval.
+                'address' => ['company' => $r['Firma'] ?? '', 'name' => $r['Jmeno'] ?? '', 'ico' => $r['ParICO'] ?? ''],
+                'addressbookId' => ($r['RefAD'] ?? '') === '0' ? '' : ($r['RefAD'] ?? ''),
             ];
         } elseif ($key === 'chart') {
             return ['@code' => $r['Ucet'] ?? '', '@name' => $r['Nazev'] ?? ''];

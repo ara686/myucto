@@ -104,19 +104,12 @@ final class PartnerImporter
      */
     public function resolvePartner(PohodaContext $ctx, array $s): int
     {
-        if ($s['pohoda_id'] !== '' && isset($ctx->clientsByPohodaId[$s['pohoda_id']])) {
-            return $ctx->clientsByPohodaId[$s['pohoda_id']];
-        }
-        if ($s['ico'] !== '' && isset($ctx->clientsByIco[$s['ico']])) {
-            return $ctx->clientsByIco[$s['ico']];
-        }
         $name = $s['name'] !== '' ? $s['name'] : 'Neznámý partner z Pohody';
-        $key = PartnerIdentityMatcher::documentKey($s['ico'], $name);
-        $mapped = $this->map->get($ctx->supplierId, PohodaImportRepository::KIND_CLIENT, $key)
-            ?? $this->map->get($ctx->supplierId, PohodaImportRepository::KIND_CLIENT_MATCH, $key);
+        $mapped = $this->mappedPartner($ctx, $s, $name);
         if ($mapped !== null) {
             return $mapped;
         }
+        $key = PartnerIdentityMatcher::documentKey($s['ico'], $name);
         if ($s['ico'] === '') {
             $found = $this->identity->clientByName($ctx->supplierId, mb_substr($name, 0, 190));
             if ($found !== null) {
@@ -131,6 +124,35 @@ final class PartnerImporter
         }
         $ctx->protocol->count(self::STEP_PARTNERS, 'created_from_documents');
         return $clientId;
+    }
+
+    /**
+     * Partner, kterého už firma má, stejnými pravidly jako {@see resolvePartner()}, ale bez
+     * založení karty a bez zápisu do mapy. `null` = partner v MyÚčtu není.
+     *
+     * @param array{pohoda_id:string,name:string,ico:string,dic:string,street:string,city:string,zip:string,country:string} $s
+     */
+    public function knownPartner(PohodaContext $ctx, array $s): ?int
+    {
+        $mapped = $this->mappedPartner($ctx, $s, $s['name']);
+        if ($mapped !== null || $s['ico'] !== '' || $s['name'] === '') {
+            return $mapped;
+        }
+        return $this->identity->clientByName($ctx->supplierId, mb_substr($s['name'], 0, 190));
+    }
+
+    /** @param array{pohoda_id:string,ico:string} $s */
+    private function mappedPartner(PohodaContext $ctx, array $s, string $name): ?int
+    {
+        if ($s['pohoda_id'] !== '' && isset($ctx->clientsByPohodaId[$s['pohoda_id']])) {
+            return $ctx->clientsByPohodaId[$s['pohoda_id']];
+        }
+        if ($s['ico'] !== '' && isset($ctx->clientsByIco[$s['ico']])) {
+            return $ctx->clientsByIco[$s['ico']];
+        }
+        $key = PartnerIdentityMatcher::documentKey($s['ico'], $name);
+        return $this->map->get($ctx->supplierId, PohodaImportRepository::KIND_CLIENT, $key)
+            ?? $this->map->get($ctx->supplierId, PohodaImportRepository::KIND_CLIENT_MATCH, $key);
     }
 
     public function importPostingRules(PohodaContext $ctx): void
