@@ -40,6 +40,12 @@ final class PohodaImportRepository extends AbstractMigrationImportRepository
     public const KIND_DERIVED_MATCH = 'derived_match';
     /** Zápis odvozené úhrady a jeho storno: `entry|pohyb|zápis`, `reversal|pohyb|zápis` => journal_entries.id. */
     public const KIND_DERIVED_ENTRY = 'derived_entry';
+    /**
+     * Návrhové pravidlo, které převod odvodil z kontací pohybů téhož protiúčtu nebo partnera
+     * ({@see \MyInvoice\Service\Migration\Pohoda\UnbookedBankProposals}):
+     * `směr|account|účet|banka` nebo `směr|name|jméno` => bank_posting_rules.id.
+     */
+    public const KIND_BANK_PROPOSAL_RULE = 'bank_proposal_rule';
     /** Hlavička interního dokladu nad převzatým zápisem: journal_entries.id => internal_documents.id. */
     public const KIND_INTERNAL_DOCUMENT = 'internal_document';
     public const KIND_ASSET = 'asset';

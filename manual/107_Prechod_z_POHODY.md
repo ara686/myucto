@@ -822,6 +822,27 @@ exportu odvozený zápis stornuje a pohyb nese zápis z deníku POHODY; úhrada
 v deníku není dvakrát. Rekonciliace se zápisy odvozených úhrad počítá
 a protokol uvede jejich počet.
 
+U ostatních pohybů bez zápisu převod připraví návrh zaúčtování, když ho
+podloží zaúčtované pohyby téže firmy. Hledá pohyby stejného směru se stejným
+účtem protistrany, a nemá-li účet aspoň tři takové pohyby, se stejným jménem
+partnera. Kontace se musí shodovat aspoň u tří pohybů a aspoň u 90 % z nich.
+Složený zápis se počítá jako neshoda a kontace přes saldokonto (311, 321, 314,
+324, 325) návrh nedá. Pohyb, který chytá jiné aktivní pravidlo firmy nebo čeká
+na nejistou shodu s fakturou, návrh nedostane.
+
+Návrh najdete v Bance na záložce K zaúčtování a u pohybu ve výpisu, tlačítky
+ho schválíte, upravíte kontaci nebo odmítnete. Převod přitom nic nezaúčtuje.
+Ke každému protiúčtu nebo partnerovi založí návrhové pravidlo s názvem
+začínajícím „POHODA:", které nabídne stejnou kontaci i pohybům z příštích
+výpisů. Samo účtovat nezačne ani po obnovení automatiky, na automatiku ho
+můžete přepnout jen ručně. Protokol kroku uvede počet návrhů, pravidel a částku.
+
+Opakovaný převod pravidla nezdvojí a neobnoví pravidlo, které jste smazali
+nebo vypnuli, ani návrh, který jste odmítli. Zaúčtuje-li POHODA pohyb mezitím
+sama, čekající návrh zanikne. Zápis ze schváleného návrhu je zápis vzniklý
+v MyÚčtu, takže další úplný převod téhož období zastaví stejně jako jiné
+zápisy mimo převod.
+
 Protokoly všech běhů zůstávají v přehledu pod průvodcem. Protokol zkoušky
 nanečisto z přehledu smažete, protokol ostrého převodu zůstává.
 

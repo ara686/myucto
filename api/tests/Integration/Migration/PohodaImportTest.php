@@ -11,6 +11,8 @@ use MyInvoice\Repository\SaldoRepository;
 use MyInvoice\Service\Accounting\Activation\PendingBackfillCounter;
 use MyInvoice\Service\Accounting\Assets\AssetService;
 use MyInvoice\Service\Accounting\Reports\SaldoService;
+use MyInvoice\Service\Accounting\Bank\BankPostingService;
+use MyInvoice\Service\Accounting\OperationType;
 use MyInvoice\Service\Migration\MoneyS3\ImportProtocol;
 use MyInvoice\Service\Migration\Pohoda\NonprofitActivityByCentre;
 use MyInvoice\Service\Migration\Pohoda\PohodaException;
@@ -35,6 +37,7 @@ final class PohodaImportTest extends TestCase
     private OssLedgerService $ossLedger;
     private NonprofitActivityByCentre $byCentre;
     private SaldoService $saldo;
+    private BankPostingService $bankPosting;
     private string $tmp = '';
     private int $userId = 0;
     private int $anyCurrencyId = 0;
@@ -54,6 +57,7 @@ final class PohodaImportTest extends TestCase
             $this->ossLedger = $container->get(OssLedgerService::class);
             $this->byCentre = $container->get(NonprofitActivityByCentre::class);
             $this->saldo = $container->get(SaldoService::class);
+            $this->bankPosting = $container->get(BankPostingService::class);
         } catch (\Throwable $e) {
             $this->markTestSkipped('DI nedostupné: ' . $e->getMessage());
         }
@@ -2212,6 +2216,90 @@ final class PohodaImportTest extends TestCase
     }
 
     /**
+     * Pohyb bez zápisu dostane návrh zaúčtování jen tam, kde ho podloží aspoň 3 shodné pohyby
+     * téhož protiúčtu a směru a aspoň 90 % shoda (9 z 10 ano, 3 ze 4 ne). Nic se nezaúčtuje,
+     * ani po obnovení automatiky a ani u pravidla s pěknou historií. Zkouška nanečisto po sobě
+     * nic nenechá, opakovaný převod pravidla ani návrhy nezdvojí a odmítnutý návrh nevrátí.
+     * Schválení návrhu zaúčtuje pohyb na kontaci z historie a analytiku účtu výpisu.
+     */
+    public function testUnbookedPaymentsGetPostingProposalsOnlyWithConsistentHistory(): void
+    {
+        $supplierId = $this->supplier();
+        $dir = SyntheticPohodaExport::write($this->tmp);
+        SyntheticPohodaExport::withBookedBankHistory($dir);
+        $export = PohodaExport::open($dir);
+
+        $dry = $this->importer->run($supplierId, $this->userId, $export, true);
+        self::assertFalse($dry->hasErrors(), $this->explain($dry));
+        self::assertSame(3, self::stepCounts($dry, 'payments')['unbooked_proposed'] ?? 0, $this->explain($dry));
+        self::assertSame([0, 0], [$this->rows('bank_posting_rules', $supplierId), $this->rows('bank_posting_suggestions', $supplierId)]);
+
+        $protocol = $this->importer->run($supplierId, $this->userId, $export, false);
+        self::assertFalse($protocol->hasErrors(), $this->explain($protocol));
+        $payments = self::stepCounts($protocol, 'payments');
+        self::assertSame([3, 3, 2, 1, 1], [
+            $payments['unbooked_proposed'] ?? 0, $payments['unbooked_proposal_rules'] ?? 0, $payments['unbooked_proposal_no_history'] ?? 0,
+            $payments['unbooked_proposal_inconsistent'] ?? 0, $payments['unbooked_proposal_saldo'] ?? 0,
+        ], $this->explain($protocol));
+        self::assertContains('unbooked_proposals', $this->messageCodes($protocol));
+
+        self::assertSame(['518.000', '221', 'suggest'], $this->postingProposal($supplierId, SyntheticPohodaExport::PROPOSAL_BY_ACCOUNT));
+        self::assertSame(['568.000', '221', 'suggest'], $this->postingProposal($supplierId, SyntheticPohodaExport::PROPOSAL_BY_NAME));
+        self::assertSame(['518.000', '221', 'suggest'], $this->postingProposal($supplierId, SyntheticPohodaExport::PROPOSAL_AT_THRESHOLD));
+        foreach ([SyntheticPohodaExport::NO_PROPOSAL_INCONSISTENT, SyntheticPohodaExport::NO_PROPOSAL_TOO_FEW,
+            SyntheticPohodaExport::NO_PROPOSAL_SALDO, SyntheticPohodaExport::NO_PROPOSAL_OTHER_DIRECTION] as $ref) {
+            self::assertNull($this->postingProposal($supplierId, $ref), $ref);
+        }
+        self::assertSame(1, $this->rows('bank_posting_rules', $supplierId,
+            sprintf("counterparty_account = '%s' AND message_contains IS NULL AND amount_min IS NULL AND direction = 'outgoing'", SyntheticPohodaExport::PROPOSAL_ACCOUNT)));
+        self::assertSame(1, $this->rows('bank_posting_rules', $supplierId, "counterparty_account IS NULL AND message_contains = 'postovne test'"));
+        self::assertSame(3, (new PohodaImportRepository($this->db))->counts($supplierId)[PohodaImportRepository::KIND_BANK_PROPOSAL_RULE] ?? 0);
+
+        // Nic se nezaúčtovalo a ani po obnovení plné automatiky se nezaúčtuje: pravidlo zůstává
+        // návrhem, i kdyby už mělo historii použití a rozsah částky.
+        foreach ([SyntheticPohodaExport::PROPOSAL_BY_ACCOUNT, SyntheticPohodaExport::PROPOSAL_BY_NAME, SyntheticPohodaExport::PROPOSAL_AT_THRESHOLD] as $ref) {
+            self::assertSame(['unmatched', null, 0], $this->txState($supplierId, $ref), $ref);
+        }
+        $level = $this->db->pdo()->prepare('SELECT level FROM auto_posting_policy WHERE supplier_id = ? AND operation_type = ?');
+        $level->execute([$supplierId, OperationType::BANK_RULE_CUSTOM]);
+        self::assertSame('auto', $level->fetchColumn());
+        $this->db->pdo()->prepare('UPDATE bank_posting_rules SET hit_count = 10, amount_min = 1, amount_max = 100000 WHERE supplier_id = ?')->execute([$supplierId]);
+        $suggestions = $this->rows('bank_posting_suggestions', $supplierId);
+        $res = $this->bankPosting->handleTransaction($this->bankTxId($supplierId, SyntheticPohodaExport::PROPOSAL_BY_ACCOUNT), $this->userId);
+        self::assertSame('suggested', $res['action'], (string) json_encode($res));
+        self::assertSame(['unmatched', null, 0], $this->txState($supplierId, SyntheticPohodaExport::PROPOSAL_BY_ACCOUNT));
+        self::assertSame($suggestions, $this->rows('bank_posting_suggestions', $supplierId));
+        $this->db->pdo()->prepare('UPDATE bank_posting_rules SET hit_count = 0, amount_min = NULL, amount_max = NULL WHERE supplier_id = ?')->execute([$supplierId]);
+
+        // Opakovaný převod nezdvojí pravidla ani návrhy.
+        $state = fn (): array => $this->snapshot($supplierId) + [
+            'rules' => $this->rows('bank_posting_rules', $supplierId),
+            'suggestions' => $this->rows('bank_posting_suggestions', $supplierId),
+        ];
+        $before = $state();
+        $again = $this->importer->run($supplierId, $this->userId, $export, false);
+        self::assertFalse($again->hasErrors(), $this->explain($again));
+        self::assertSame($before, $state());
+        self::assertSame(0, self::stepCounts($again, 'payments')['unbooked_proposed'] ?? 0, $this->explain($again));
+        self::assertContains('unbooked_proposals', $this->messageCodes($again));
+
+        // Odmítnutý návrh se znovu nenabízí, smazané pravidlo se nevrací.
+        $this->bankPosting->rejectSuggestion($supplierId, $this->pendingSuggestionId($supplierId, SyntheticPohodaExport::PROPOSAL_BY_NAME), ['user_id' => $this->userId]);
+        $this->db->pdo()->prepare('DELETE FROM bank_posting_suggestions WHERE supplier_id = ? AND rule_id IN (SELECT id FROM bank_posting_rules WHERE supplier_id = ? AND counterparty_account = ?)')
+            ->execute([$supplierId, $supplierId, '7000000010']);
+        $this->db->pdo()->prepare('DELETE FROM bank_posting_rules WHERE supplier_id = ? AND counterparty_account = ?')->execute([$supplierId, '7000000010']);
+        $third = $this->importer->run($supplierId, $this->userId, $export, false);
+        self::assertFalse($third->hasErrors(), $this->explain($third));
+        self::assertNull($this->postingProposal($supplierId, SyntheticPohodaExport::PROPOSAL_BY_NAME));
+        self::assertNull($this->postingProposal($supplierId, SyntheticPohodaExport::PROPOSAL_AT_THRESHOLD));
+        self::assertSame(1, self::stepCounts($third, 'payments')['unbooked_proposal_rule_changed'] ?? 0, $this->explain($third));
+
+        // Schválení účtuje stejnou cestou jako tlačítko v UI: kontace z historie, analytika účtu výpisu.
+        $this->bankPosting->approveSuggestion($supplierId, $this->pendingSuggestionId($supplierId, SyntheticPohodaExport::PROPOSAL_BY_ACCOUNT), ['user_id' => $this->userId]);
+        self::assertSame([['debit', '518.000', '1500.00'], ['credit', '221.001', '1500.00']], $this->bankEntryLines($supplierId, SyntheticPohodaExport::PROPOSAL_BY_ACCOUNT));
+    }
+
+    /**
      * Agenda vede i doklady následujícího roku. Jejich zápisy jdou do účetního období podle
      * skutečného data (období se založí otevřené), rok agendy zůstává neuzavřený. Zápis, který
      * dřívější převod posunul k 31. 12., opakovaný převod přesune do jeho období. Cizí zápis
@@ -2345,6 +2433,33 @@ final class PohodaImportTest extends TestCase
         $rows = $stmt->fetchAll(\PDO::FETCH_NUM);
         self::assertCount(1, $rows);
         return [(string) $rows[0][0], $rows[0][1] === null ? null : (string) $rows[0][1], (int) $rows[0][2]];
+    }
+
+    private function bankTxId(int $supplierId, string $bankRef): int
+    {
+        $stmt = $this->db->pdo()->prepare('SELECT t.id FROM bank_transactions t JOIN bank_statements s ON s.id = t.statement_id WHERE s.supplier_id = ? AND t.bank_ref = ?');
+        $stmt->execute([$supplierId, $bankRef]);
+        return (int) $stmt->fetchColumn();
+    }
+
+    private function pendingSuggestionId(int $supplierId, string $bankRef): int
+    {
+        $stmt = $this->db->pdo()->prepare("SELECT id FROM bank_posting_suggestions WHERE supplier_id = ? AND bank_transaction_id = ? AND status = 'pending'");
+        $stmt->execute([$supplierId, $this->bankTxId($supplierId, $bankRef)]);
+        return (int) $stmt->fetchColumn();
+    }
+
+    /** @return array{0:string,1:string,2:string}|null MD, D a režim pravidla čekajícího návrhu pohybu */
+    private function postingProposal(int $supplierId, string $bankRef): ?array
+    {
+        $stmt = $this->db->pdo()->prepare(
+            "SELECT s.debit_account_code, s.credit_account_code, r.mode FROM bank_posting_suggestions s
+               JOIN bank_posting_rules r ON r.id = s.rule_id AND r.supplier_id = s.supplier_id
+              WHERE s.supplier_id = ? AND s.bank_transaction_id = ? AND s.status = 'pending' AND s.source = 'rule'"
+        );
+        $stmt->execute([$supplierId, $this->bankTxId($supplierId, $bankRef)]);
+        $row = $stmt->fetch(\PDO::FETCH_NUM);
+        return $row === false ? null : array_map('strval', $row);
     }
 
     private function bankEntryId(int $supplierId, string $bankRef): int

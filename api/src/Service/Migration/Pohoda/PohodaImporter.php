@@ -59,6 +59,7 @@ final class PohodaImporter
         private readonly CostCenterImporter $costCenters,
         private readonly InternalDocumentImporter $internalDocuments,
         private readonly BalanceItemImporter $balanceItems,
+        private readonly UnbookedBankProposals $proposals,
     ) {}
 
     /** @return list<string> */
@@ -434,6 +435,7 @@ final class PohodaImporter
                 $this->linker->matchPayments($ctx);
                 if (!$ctx->relinkOnly) {
                     $this->unbooked->settle($ctx);
+                    $this->proposals->propose($ctx);
                 }
                 $this->internalDocuments->run($ctx);
                 // Až po všech úhradách: co některá z nich vysvětluje, není zůstatek bez dokladu.

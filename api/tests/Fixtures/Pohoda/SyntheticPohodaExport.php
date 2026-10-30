@@ -1107,6 +1107,54 @@ final class SyntheticPohodaExport
             . self::entry('Počáteční stavy účtů', 'ZAV', 'Počáteční stav účtu', $opening314, '701000', '411000', '2026-01-01'));
     }
 
+    /** Pohyby bez zápisu v deníku z {@see withBookedBankHistory()}, které návrh dostanou nebo nedostanou. */
+    public const PROPOSAL_BY_ACCOUNT = 'BAN0020001';
+    public const PROPOSAL_BY_NAME = 'BAN0020002';
+    public const PROPOSAL_AT_THRESHOLD = 'BAN0020003';
+    public const NO_PROPOSAL_INCONSISTENT = 'BAN0020004';
+    public const NO_PROPOSAL_TOO_FEW = 'BAN0020005';
+    public const NO_PROPOSAL_SALDO = 'BAN0020006';
+    public const NO_PROPOSAL_OTHER_DIRECTION = 'BAN0020007';
+    public const PROPOSAL_ACCOUNT = '3000000020';
+
+    /**
+     * Zaúčtované pohyby bez dokladu a k nim pohyb bez zápisu (předkontace „Nevím"): shoda podle
+     * účtu, podle jména u platby bez účtu, přesně 9 z 10 shod, 3 ze 4 shod, jen dvě shody,
+     * úhrady přes saldokonto a platba opačným směrem.
+     */
+    public static function withBookedBankHistory(string $dir): void
+    {
+        $bank = '';
+        $journal = '';
+        $number = 100;
+        $booked = static function (int $times, string $md, string $d, string $partner, string $account, string $type = 'expense') use (&$bank, &$journal, &$number): void {
+            for ($i = 0; $i < $times; $i++) {
+                $doc = 'BAN0020' . ++$number;
+                $date = sprintf('2026-%02d-%02d', 2 + $i % 9, 5 + $number % 20);
+                $bank .= self::bank($doc, $type, $date, 100.0 + $i, '', $partner, $account);
+                $journal .= self::entry('Banka', $doc, 'Platba', 100.0 + $i, $md, $d, $date);
+            }
+        };
+        $booked(3, '518000', '221001', 'Nájem Test s.r.o.', self::PROPOSAL_ACCOUNT);
+        $booked(3, '568000', '221001', 'Poštovné Test', '');
+        $booked(9, '518000', '221001', 'Hranice Test s.r.o.', '7000000010');
+        $booked(1, '568000', '221001', 'Hranice Test s.r.o.', '7000000010');
+        $booked(3, '518000', '221001', 'Rozpor Test s.r.o.', '4000000009');
+        $booked(1, '568000', '221001', 'Rozpor Test s.r.o.', '4000000009');
+        $booked(2, '518000', '221001', 'Málo Test s.r.o.', '5000000011');
+        $booked(3, '321001', '221001', 'Saldo Test s.r.o.', '6000000040');
+
+        $bank .= self::bank(self::PROPOSAL_BY_ACCOUNT, 'expense', '2026-11-02', 1500, '', 'Nájem Test s.r.o.', self::PROPOSAL_ACCOUNT)
+            . self::bank(self::PROPOSAL_BY_NAME, 'expense', '2026-11-03', 90, '', 'Poštovné Test')
+            . self::bank(self::PROPOSAL_AT_THRESHOLD, 'expense', '2026-11-04', 110, '', 'Hranice Test s.r.o.', '7000000010')
+            . self::bank(self::NO_PROPOSAL_INCONSISTENT, 'expense', '2026-11-05', 120, '', 'Rozpor Test s.r.o.', '4000000009')
+            . self::bank(self::NO_PROPOSAL_TOO_FEW, 'expense', '2026-11-06', 130, '', 'Málo Test s.r.o.', '5000000011')
+            . self::bank(self::NO_PROPOSAL_SALDO, 'expense', '2026-11-07', 140, '', 'Saldo Test s.r.o.', '6000000040')
+            . self::bank(self::NO_PROPOSAL_OTHER_DIRECTION, 'receipt', '2026-11-08', 150, '', 'Nájem Test s.r.o.', self::PROPOSAL_ACCOUNT);
+        self::append($dir . '/29_banka.xml', '</lst:listBank>', $bank);
+        self::append($dir . '/01_ucetni_denik.xml', '</lst:accountancy>', $journal);
+    }
+
     private static function append(string $file, string $closing, string $xml): void
     {
         $content = (string) file_get_contents($file);
