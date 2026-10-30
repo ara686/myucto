@@ -517,6 +517,84 @@ final class PohodaImportTest extends TestCase
         self::assertArrayNotHasKey('internal_documents', self::stepCounts($protocol, 'payments'));
     }
 
+    /** @return array<string,array{kind:string,partner_id:?string,partner_name:?string}> */
+    private function internalDocuments(int $supplierId): array
+    {
+        $rows = $this->db->pdo()->query("SELECT document_no, kind, partner_id, partner_name FROM internal_documents WHERE supplier_id = {$supplierId}")->fetchAll(\PDO::FETCH_ASSOC);
+        $out = [];
+        foreach ($rows as $row) {
+            $out[(string) $row['document_no']] = ['kind' => (string) $row['kind'], 'partner_id' => $row['partner_id'] === null ? null : (string) $row['partner_id'], 'partner_name' => $row['partner_name']];
+        }
+        return $out;
+    }
+
+    /**
+     * Hlavička interního dokladu nese druh z kontace a jednoznačného partnera z řádků deníku.
+     * Opakovaný převod ani opravný převod vazeb nepřepíší, co na dokladu změnil uživatel.
+     */
+    public function testInternalDocumentGetsKindAndSolePartnerAndKeepsThemOnRepeatedRun(): void
+    {
+        $supplierId = $this->supplier();
+        $dir = SyntheticPohodaExport::write($this->tmp);
+        SyntheticPohodaExport::withInternalDocumentKinds($dir);
+        $export = PohodaExport::open($dir);
+
+        $dry = $this->importer->run($supplierId, $this->userId, $export, true);
+        self::assertFalse($dry->hasErrors(), $this->explain($dry));
+        self::assertSame(0, $this->rows('internal_documents', $supplierId), 'zkouška nanečisto nic nezanechá');
+
+        $protocol = $this->importer->run($supplierId, $this->userId, $export, false);
+        self::assertFalse($protocol->hasErrors(), $this->explain($protocol));
+        $vendor = (string) $this->db->pdo()->query("SELECT id FROM clients WHERE supplier_id = {$supplierId} AND ic = '" . SyntheticPohodaExport::VENDOR_ICO . "'")->fetchColumn();
+        self::assertNotSame('', $vendor);
+        $documents = $this->internalDocuments($supplierId);
+        self::assertSame(['kind' => 'other', 'partner_id' => $vendor, 'partner_name' => 'Dodavatel Test'], $documents[SyntheticPohodaExport::INT_KNOWN_PARTNER]);
+        self::assertSame(['kind' => 'other', 'partner_id' => null, 'partner_name' => null], $documents[SyntheticPohodaExport::INT_TWO_PARTNERS]);
+        self::assertSame(['kind' => 'other', 'partner_id' => null, 'partner_name' => SyntheticPohodaExport::INT_UNKNOWN_NAME], $documents[SyntheticPohodaExport::INT_UNKNOWN_PARTNER]);
+        self::assertSame(['kind' => 'other', 'partner_id' => null, 'partner_name' => null], $documents[SyntheticPohodaExport::INT_OWN_PARTNER]);
+        self::assertSame('fx_difference', $documents[SyntheticPohodaExport::INT_FX]['kind']);
+        self::assertSame('accrual', $documents[SyntheticPohodaExport::INT_ACCRUAL]['kind']);
+        self::assertSame('offset', $documents[SyntheticPohodaExport::INT_OFFSET]['kind']);
+        self::assertSame('other', $documents[SyntheticPohodaExport::INT_PAYROLL]['kind']);
+        self::assertSame(0, $this->rows('clients', $supplierId, "company_name = '" . SyntheticPohodaExport::INT_UNKNOWN_NAME . "'"), 'převod interního dokladu kartu nezakládá');
+
+        $this->db->pdo()->exec("UPDATE internal_documents SET kind = 'correction', partner_id = NULL, partner_name = 'Upraveno ručně'
+             WHERE supplier_id = {$supplierId} AND document_no = '" . SyntheticPohodaExport::INT_KNOWN_PARTNER . "'");
+        $edited = $this->internalDocuments($supplierId);
+        foreach ([false, true] as $relinkOnly) {
+            $again = $this->importer->run($supplierId, $this->userId, $export, false, relinkOnly: $relinkOnly);
+            self::assertFalse($again->hasErrors(), $this->explain($again));
+            self::assertSame($edited, $this->internalDocuments($supplierId));
+        }
+    }
+
+    /** Zápočet se pozná z úhrad dokladů, i když to z textu dokladu není vidět. */
+    public function testInternalDocumentSettlingInvoicesIsOffset(): void
+    {
+        $supplierId = $this->supplier();
+        $dir = SyntheticPohodaExport::write($this->tmp);
+        SyntheticPohodaExport::withAdvancesAndSettlements($dir);
+        SyntheticPohodaExport::withOffsetTextHidden($dir);
+
+        $this->importer->run($supplierId, $this->userId, PohodaExport::open($dir), false, acceptDifferences: true);
+
+        self::assertSame('offset', $this->internalDocuments($supplierId)[SyntheticPohodaExport::OFFSET_DOCUMENT]['kind'] ?? null);
+    }
+
+    /** Karta z mapy převodu, která mezitím zmizela, nesmí doklad připravit o hlavičku. */
+    public function testInternalDocumentFallsBackToNameWhenMappedClientIsGone(): void
+    {
+        $supplierId = $this->supplier();
+        $dir = SyntheticPohodaExport::write($this->tmp);
+        SyntheticPohodaExport::withInternalDocumentKinds($dir);
+        (new PohodaImportRepository($this->db))->put($supplierId, PohodaImportRepository::KIND_CLIENT, 'name:' . mb_strtolower(SyntheticPohodaExport::INT_UNKNOWN_NAME), 2147483000, null);
+
+        $protocol = $this->importer->run($supplierId, $this->userId, PohodaExport::open($dir), false);
+
+        self::assertFalse($protocol->hasErrors(), $this->explain($protocol));
+        self::assertSame(['kind' => 'other', 'partner_id' => null, 'partner_name' => SyntheticPohodaExport::INT_UNKNOWN_NAME], $this->internalDocuments($supplierId)[SyntheticPohodaExport::INT_UNKNOWN_PARTNER]);
+    }
+
     /**
      * Oprava odpočtu § 74b z interního dokladu POHODY se dostane do evidence § 74b, a tím
      * do přiznání a KH: vrácení v měsíci opravy, opětovné uplatnění v měsíci úhrady.

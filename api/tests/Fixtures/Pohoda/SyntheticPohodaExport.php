@@ -396,6 +396,48 @@ final class SyntheticPohodaExport
             self::entry('Interní doklady', self::OVERPAYMENT_DOCUMENT, 'Přeplatek', $amount, '221001', '311001', '2026-03-06'));
     }
 
+    /** Interní doklady s partnerem a druhem ({@see withInternalDocumentKinds()}). */
+    public const INT_KNOWN_PARTNER = '26IN0201';
+    public const INT_TWO_PARTNERS = '26IN0202';
+    public const INT_UNKNOWN_PARTNER = '26IN0203';
+    public const INT_FX = '26IN0204';
+    public const INT_ACCRUAL = '26IN0205';
+    public const INT_OFFSET = '26IN0206';
+    public const INT_PAYROLL = '26IN0207';
+    public const INT_OWN_PARTNER = '26IN0208';
+    public const INT_UNKNOWN_NAME = 'Neznámý Partner Test s.r.o.';
+
+    public static function withInternalDocumentKinds(string $dir): void
+    {
+        $entry = static function (string $number, string $text, float $amount, string $md, string $d, string $company = '', string $ico = ''): string {
+            $address = $company === '' && $ico === '' ? '' : '<act:address>'
+                . ($company !== '' ? '<typ:company>' . $company . '</typ:company>' : '')
+                . ($ico !== '' ? '<typ:ico>' . $ico . '</typ:ico>' : '')
+                . '</act:address>';
+            return str_replace('</act:accountingItem>', $address . '</act:accountingItem>', self::entry('Interní doklady', $number, $text, $amount, $md, $d, '2026-03-10'));
+        };
+        self::append($dir . '/01_ucetni_denik.xml', '</lst:accountancy>',
+            $entry(self::INT_KNOWN_PARTNER, 'Přeúčtování nákladů', 300, '518000', '321001', 'Dodavatel Test', self::VENDOR_ICO)
+            . $entry(self::INT_KNOWN_PARTNER, 'Přeúčtování nákladů', 200, '518000', '321001')
+            . $entry(self::INT_KNOWN_PARTNER, 'Přeúčtování nákladů', 100, '518000', '321001', 'Dodavatel Test', self::VENDOR_ICO)
+            . $entry(self::INT_TWO_PARTNERS, 'Přeúčtování mezi partnery', 400, '311001', '321001', 'Dodavatel Test', self::VENDOR_ICO)
+            . $entry(self::INT_TWO_PARTNERS, 'Přeúčtování mezi partnery', 100, '311001', '321001', 'Odběratel Test', self::CUSTOMER_ICO)
+            . $entry(self::INT_UNKNOWN_PARTNER, 'Vratka', 150, '518000', '321001', self::INT_UNKNOWN_NAME)
+            . $entry(self::INT_FX, 'Kurzový rozdíl', 12, '563000', '321001')
+            . $entry(self::INT_ACCRUAL, 'Dohad energií', 800, '518000', '389000')
+            . $entry(self::INT_OFFSET, 'Zápočet pohledávek', 250, '321001', '311001')
+            . $entry(self::INT_PAYROLL, 'Mzdy 2026/03', 900, '521000', '389000')
+            . $entry(self::INT_OWN_PARTNER, 'Vlastní doklad', 50, '518000', '321001', self::NAME, self::ICO));
+    }
+
+    /** Zápočet {@see OFFSET_DOCUMENT} s textem, který zápočet neprozradí: pozná se jen z úhrad dokladů. */
+    public static function withOffsetTextHidden(string $agendaDir): void
+    {
+        $file = $agendaDir . '/01_ucetni_denik.xml';
+        $from = array_map(static fn (string $text): string => (string) iconv('UTF-8', 'Windows-1250', $text), ['Zápočet faktury', 'Zápočet dobropisu']);
+        file_put_contents($file, str_replace($from, 'Vyrovnani', (string) file_get_contents($file)));
+    }
+
     /** Oprava odpočtu § 74b a její pozdější vrácení ({@see withDebtorDeductionCorrection()}). */
     public const S74B_REDUCTION = '26DD0074';
     public const S74B_RESTORATION = '26DD0075';

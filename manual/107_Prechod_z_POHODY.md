@@ -479,7 +479,7 @@ Soubory `90_majetek.xml`, `91_mzdy.xml` a `92_sklad.xml` jsou stejné jako u dat
 | ostatní pohledávky a závazky bez DPH | otevřené položky s jednoznačným již převedeným účetním zápisem na 315 nebo 325 |
 | vydané doklady v režimu OSS (členění mimo přiznání, daň, stát MOSS) | plnění v režimu OSS včetně země spotřeby, typu sazby a typu plnění |
 | interní daňové doklady | daňové doklady k platbě a samovyměření DPH u přijatých faktur |
-| interní doklady | záznam v agendě Účetnictví → Interní doklady nad zápisem v deníku, s číslem z POHODY a druhem Ostatní |
+| interní doklady | záznam v agendě Účetnictví → Interní doklady nad zápisem v deníku, s číslem z POHODY. Druh se odvodí: Zápočet (doklad hradí jiné doklady nebo text začíná na zápočet), Kurzový rozdíl (jen 563/663 proti pohledávce nebo závazku), Dohadná položka (časové rozlišení a dohady na účtech 381, 383, 384, 385, 388, 389), jinak Ostatní. Partner se převezme z řádků zápisu v deníku, jen když je jediný: známý se naváže na kartu, neznámý zůstane jménem na dokladu, karta se nezakládá. Export převodníkem musí být vytvořený aktuální verzí nástroje, starší export partnera v deníku nenese |
 | pokladny a pokladní doklady | pokladny a zaúčtované pokladní doklady |
 | bankovní účty a bankovní doklady | výpisy podle čísla výpisu v POHODĚ, bankovní pohyby; zůstatky jsou dopočtené z počátečního stavu v deníku a dorovná je první nahraný výpis banky se stavem |
 | likvidace faktur | spárování faktury s bankovním pohybem nebo pokladním dokladem |
