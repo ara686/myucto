@@ -325,6 +325,91 @@ final class SyntheticPohodaExport
             . '</vch:homeCurrency></vch:voucherSummary></lst:voucher></lst:listVoucher>');
     }
 
+    /** Přeplatek odběratele s protiúčtem a symbolem na 315.999 ({@see withOverpayments()}). */
+    public const OVERPAYMENT_BANK = 'BAN0020001';
+
+    /**
+     * Pohyby zaúčtované přímo na analytiky přeplatků 315.999 a 325.999, bez dokladu v agendě
+     * ostatních pohledávek a závazků:
+     *   - 315.999: přeplatek 1 500 s protiúčtem a symbolem; platba a vrácení 700 téhož protiúčtu;
+     *     přeplatek 100 zaúčtovaný vedle úhrady faktury na 311 (`BAN0010001`),
+     *   - 325.999: naše chybná platba 900 jen s názvem a symbolem; příjem 400 a vrácení 100
+     *     téhož názvu; pokladní příjem 350.
+     */
+    public static function withOverpayments(string $dir): void
+    {
+        self::overpaymentAccounts($dir);
+        self::append($dir . '/01_ucetni_denik.xml', '</lst:accountancy>',
+            self::entry('Banka', self::OVERPAYMENT_BANK, 'Přeplatek', 1500, '221001', '315999', '2026-03-02')
+            . self::entry('Banka', 'BAN0020002', 'Chybná platba', 700, '221001', '315999', '2026-03-05')
+            . self::entry('Banka', 'BAN0020003', 'Vrácení chybné platby', 700, '315999', '221001', '2026-03-09')
+            . self::entry('Banka', 'BAN0010001', 'Přeplatek k faktuře', 100, '221001', '315999', '2026-01-15')
+            . self::entry('Banka', 'BAN0020004', 'Chybná platba dodavateli', 900, '325999', '221001', '2026-03-12')
+            . self::entry('Banka', 'BAN0020005', 'Příjem bez dokladu', 400, '221001', '325999', '2026-03-15')
+            . self::entry('Banka', 'BAN0020006', 'Částečné vrácení', 100, '325999', '221001', '2026-03-20')
+            . self::entry('Pokladna', '26PP0001', 'Přeplatek v hotovosti', 350, '211000', '325999', '2026-03-22'));
+        self::append($dir . '/29_banka.xml', '</lst:listBank>',
+            self::bank(self::OVERPAYMENT_BANK, 'receipt', '2026-03-02', 1500, '2026101', 'Odběratel Přeplatek s.r.o.', self::PARTNER_ACCOUNT)
+            . self::bank('BAN0020002', 'receipt', '2026-03-05', 700, '', 'Omyl Test s.r.o.', self::OTHER_ACCOUNT)
+            . self::bank('BAN0020003', 'expense', '2026-03-09', 700, '', 'Omyl Test s.r.o.', self::OTHER_ACCOUNT)
+            . self::bank('BAN0020004', 'expense', '2026-03-12', 900, '2026102', 'Dodavatel Přeplatek s.r.o.')
+            . self::bank('BAN0020005', 'receipt', '2026-03-15', 400, '', 'Vratka Test s.r.o.')
+            . self::bank('BAN0020006', 'expense', '2026-03-20', 100, '', 'Vratka Test s.r.o.'));
+        $bank = (string) file_get_contents($dir . '/29_banka.xml');
+        file_put_contents($dir . '/29_banka.xml', preg_replace('~(<bnk:number>BAN0010001</bnk:number>.*?<typ:priceNone>)1210~s', '${1}1310', $bank, 1));
+        self::file($dir . '/28_pokladna.xml', '<lst:listVoucher version="2.0" state="ok"><lst:voucher version="2.0"><vch:voucherHeader>'
+            . '<vch:voucherType>receipt</vch:voucherType><vch:cashAccount><typ:ids>HP</typ:ids></vch:cashAccount>'
+            . '<vch:number><typ:numberRequested>26PP0001</typ:numberRequested></vch:number>'
+            . '<vch:date>2026-03-22</vch:date><vch:datePayment>2026-03-22</vch:datePayment><vch:text>Přeplatek v hotovosti</vch:text>'
+            . '<vch:classificationVAT><typ:ids>UN</typ:ids></vch:classificationVAT>'
+            . '<vch:partnerIdentity><typ:address><typ:company>Hotovost Test s.r.o.</typ:company></typ:address></vch:partnerIdentity>'
+            . '</vch:voucherHeader><vch:voucherSummary><vch:homeCurrency><typ:priceNone>350</typ:priceNone>'
+            . '<typ:priceLow>0</typ:priceLow><typ:priceLowVAT>0</typ:priceLowVAT><typ:priceHigh>0</typ:priceHigh><typ:priceHighVAT>0</typ:priceHighVAT>'
+            . '</vch:homeCurrency></vch:voucherSummary></lst:voucher></lst:listVoucher>');
+    }
+
+    /** Pozdější vrácení přeplatku {@see OVERPAYMENT_BANK} (doplní se do novějšího exportu). */
+    public static function withOverpaymentRefund(string $dir): void
+    {
+        self::append($dir . '/01_ucetni_denik.xml', '</lst:accountancy>',
+            self::entry('Banka', 'BAN0020009', 'Vrácení přeplatku', 1500, '315999', '221001', '2026-06-01'));
+        self::append($dir . '/29_banka.xml', '</lst:listBank>',
+            self::bank('BAN0020009', 'expense', '2026-06-01', 1500, '', 'Odběratel Přeplatek s.r.o.', self::PARTNER_ACCOUNT));
+    }
+
+    /** Příjem 250 na 315.999 bez partnera, symbolu i protiúčtu. */
+    public static function withUnclearOverpayment(string $dir): void
+    {
+        self::overpaymentAccounts($dir);
+        self::append($dir . '/01_ucetni_denik.xml', '</lst:accountancy>',
+            self::entry('Banka', 'BAN0020007', 'Neznámá platba', 250, '221001', '315999', '2026-03-25'));
+        self::append($dir . '/29_banka.xml', '</lst:listBank>',
+            self::bank('BAN0020007', 'receipt', '2026-03-25', 250, '', ''));
+    }
+
+    /**
+     * Vrácení přeplatku z počátečního stavu: 1 000 na straně Dal 315.999 přinesl počáteční
+     * stav, v roce je jen pohyb, který ho vrací. Účet má nulový zůstatek.
+     */
+    public static function withOpeningOverpaymentRefund(string $dir): void
+    {
+        self::overpaymentAccounts($dir);
+        self::append($dir . '/01_ucetni_denik.xml', '</lst:accountancy>',
+            self::entry('Počáteční stavy účtů', 'ZAV', 'Počáteční stav účtu', 1000, '701000', '315999', '2026-01-01')
+            . self::entry('Počáteční stavy účtů', 'ZAV', 'Počáteční stav účtu', 1000, '411000', '701000', '2026-01-01')
+            . self::entry('Banka', 'BAN0020008', 'Vrácení přeplatku z minulého roku', 1000, '315999', '221001', '2026-02-20'));
+        self::append($dir . '/29_banka.xml', '</lst:listBank>',
+            self::bank('BAN0020008', 'expense', '2026-02-20', 1000, '', 'Starý Přeplatek s.r.o.', self::PARTNER_ACCOUNT));
+    }
+
+    private static function overpaymentAccounts(string $dir): void
+    {
+        self::append($dir . '/02_uctova_osnova.xml', '</lst:listAccount>',
+            '<lst:itemAccount id="211000" code="211000" name="Pokladna"/>'
+            . '<lst:itemAccount id="315999" code="315999" name="Přeplatky odběratelů"/>'
+            . '<lst:itemAccount id="325999" code="325999" name="Přeplatky dodavatelům"/>');
+    }
+
     /**
      * Nezaúčtovaný pohyb v prosinci se stejným číslem jako zaúčtovaná úhrada z února: číselná
      * řada banky se opakuje, agenda vede oba. Vyžaduje {@see withOtherItems()} (`$settled = true`).

@@ -501,6 +501,22 @@ Soubory `90_majetek.xml`, `91_mzdy.xml` a `92_sklad.xml` jsou stejné jako u dat
 | ceníky (`92_sklad.xml`) | cenové hladiny s cenou bez DPH u každé karty |
 | členění skladu, alternativní jednotky, dodavatel karty (`92_sklad.xml`) | kategorie skladu, balení karty, dodavatel karty s nákupní cenou |
 
+**Přeplatky a pohyby bez dokladu.** Bankovní nebo pokladní pohyb, který POHODA
+zaúčtovala přímo na účet 315 nebo 325 (typicky přeplatek na analytice 315.999
+nebo 325.999), doklad v agendě nemá. Převod spočítá nevyrovnaný zůstatek po účtu
+a partnerovi a založí z něj ostatní pohledávku nebo závazek nad řádkem pohybu.
+Nový účetní zápis nevzniká a zůstatek účtu se nemění, saldokonto tak sedí na
+hlavní knihu.
+
+- Partnera určí protiúčet, u pohybu bez něj název a nakonec variabilní symbol.
+- Platba a vrácení téhož partnera a částky se vyruší a položku nezakládají.
+  Částečné vrácení položku zmenší.
+- Pohyb bez partnera i symbolu převod nezakládá a uvede ho v protokolu, stejně
+  jako pohyb, jehož položka by rozdíl saldokonta zvětšila (protiváha je třeba
+  v počátečním stavu), nebo pohyb v uzavřeném období.
+- Opakovaný převod položky nezdvojí a položku, kterou jste stornovali, znovu
+  nezaloží.
+
 **Sklad.** Převádí se jen z nejnovější agendy v exportu a jen když ho
 v náhledu necháte zaškrtnutý. Firma musí mít zapnutý sklad. Převede se stav,
 ne historie: každá karta dostane ve svém skladu počáteční stav k datu exportu

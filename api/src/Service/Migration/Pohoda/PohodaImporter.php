@@ -58,6 +58,7 @@ final class PohodaImporter
         private readonly StockImporter $stock,
         private readonly CostCenterImporter $costCenters,
         private readonly InternalDocumentImporter $internalDocuments,
+        private readonly BalanceItemImporter $balanceItems,
     ) {}
 
     /** @return list<string> */
@@ -435,6 +436,10 @@ final class PohodaImporter
                     $this->unbooked->settle($ctx);
                 }
                 $this->internalDocuments->run($ctx);
+                // Až po všech úhradách: co některá z nich vysvětluje, není zůstatek bez dokladu.
+                if (!$ctx->relinkOnly) {
+                    $this->balanceItems->run($ctx);
+                }
             },
             AssetImporter::STEP => fn () => $this->assets->import($ctx),
             SmallAssetImporter::STEP => fn () => $this->smallAssets->import($ctx),

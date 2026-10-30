@@ -29,6 +29,8 @@ final class PohodaImportRepository extends AbstractMigrationImportRepository
     public const KIND_PAYMENT = 'payment';
     public const KIND_OTHER_ITEM = 'other_item';
     public const KIND_TAX_ADVANCE = 'tax_advance';
+    /** Ostatní položka ze zůstatku pohybu bez dokladu ({@see \MyInvoice\Service\Migration\Pohoda\BalanceItemImporter}): `zápis|řádek` => other_items.id. */
+    public const KIND_BALANCE_ITEM = 'balance_item';
     /** Oprava odpočtu dlužníka podle § 74b z interního dokladu POHODY (`vat_s74b_corrections.id`). */
     public const KIND_S74B_CORRECTION = 's74b_correction';
     /**
