@@ -20969,6 +20969,7 @@ paths:
                   - material
                   - goods
                   - product
+                  - service
                   default: goods
                 eet_item_kind:
                   $ref: '#/components/schemas/StockItemEetKind'
@@ -21061,7 +21062,7 @@ paths:
               properties:
                 sku: { type: string, maxLength: 50 }
                 name: { type: string, maxLength: 255 }
-                item_type: { type: string, enum: [material, goods, product] }
+                item_type: { type: string, enum: [material, goods, product, service] }
                 eet_item_kind: { $ref: '#/components/schemas/StockItemEetKind' }
                 unit: { type: string }
                 tracking_mode: { type: string, enum: [none, lot, serial] }
@@ -21426,7 +21427,7 @@ paths:
           schema: { type: integer }
         - in: query
           name: item_type
-          schema: { type: string, enum: [material, goods, product] }
+          schema: { type: string, enum: [material, goods, product, service] }
         - in: query
           name: below_min
           schema: { type: boolean }
@@ -23285,7 +23286,7 @@ paths:
           schema: { type: integer }
         - in: query
           name: item_type
-          schema: { type: string, enum: [material, goods, product] }
+          schema: { type: string, enum: [material, goods, product, service] }
         - in: query
           name: below_min
           schema: { type: boolean }
@@ -27581,7 +27582,7 @@ paths:
         schema: { type: boolean }
       - in: query
         name: type
-        schema: { type: string, enum: [material, goods, product] }
+        schema: { type: string, enum: [material, goods, product, service] }
       - in: query
         name: tag_ids
         schema: { type: string, description: ID oddělená čárkou }

@@ -1120,7 +1120,8 @@
         "2216_revenue_classification_rules.sql",
         "2217_voucher_liability_rule.sql",
         "2218_accrual_period_indexes.sql",
-        "2219_payment_order_item_invoice_fk.sql"
+        "2219_payment_order_item_invoice_fk.sql",
+        "2220_stock_item_type_service.sql"
     ],
     "tables": {
         "abra_flexi_connections": {
@@ -24855,7 +24856,7 @@
                 "intrastat_supplementary_unit_coefficient": "decimal(18,6) NULL DEFAULT NULL",
                 "is_active": "tinyint(1) NOT NULL DEFAULT 1",
                 "is_stocked": "tinyint(1) NOT NULL DEFAULT 1",
-                "item_type": "enum('material','goods','product') NOT NULL DEFAULT 'goods'",
+                "item_type": "enum('material','goods','product','service') NOT NULL DEFAULT 'goods'",
                 "lifecycle_status": "enum('draft','ready','retired') NOT NULL DEFAULT 'ready'",
                 "manufacturer_id": "bigint(20) unsigned NULL DEFAULT NULL",
                 "min_qty": "decimal(14,3) NULL DEFAULT NULL",

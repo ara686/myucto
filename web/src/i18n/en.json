@@ -14622,7 +14622,8 @@
     "item_type": {
       "material": "Material",
       "goods": "Goods",
-      "product": "Product"
+      "product": "Product",
+      "service": "Service"
     },
     "doc_type": {
       "receipt": "Goods receipt",
@@ -14903,6 +14904,7 @@
       "empty": "No stock item yet.",
       "field_sku": "SKU",
       "field_sku_hint": "Leave empty to auto-generate from the name.",
+      "field_type_service_hint": "A service keeps no stock: an invoice issues nothing from it and on a purchase order it stays a line without a card.",
       "field_name": "Name",
       "field_type": "Type",
       "field_unit": "Unit",

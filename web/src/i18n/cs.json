@@ -14622,7 +14622,8 @@
     "item_type": {
       "material": "Materiál",
       "goods": "Zboží",
-      "product": "Výrobek"
+      "product": "Výrobek",
+      "service": "Služba"
     },
     "doc_type": {
       "receipt": "Příjemka",
@@ -14903,6 +14904,7 @@
       "empty": "Zatím žádná skladová karta.",
       "field_sku": "SKU",
       "field_sku_hint": "Nechte prázdné pro automatické vygenerování z názvu.",
+      "field_type_service_hint": "Služba nevede zásobu: faktura z ní nic nevydá a na objednávce zůstane řádkem bez karty.",
       "field_name": "Název",
       "field_type": "Typ",
       "field_unit": "Měrná jednotka",

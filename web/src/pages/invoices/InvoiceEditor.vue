@@ -476,6 +476,11 @@ function rememberPackaging(si: { id: number; unit: string; units?: StockItemPack
   stockFeaturesById[si.id] = usesStockPricingFeatures(si)
 }
 
+/** Karta typu služba zásobu nevede: řádek nemá sklad ani dostupnost a nic se z něj nevydá. */
+function rowIsService(item: InvoiceItem): boolean {
+  return item.stock_item_id != null && stockItemsCache.get(item.stock_item_id)?.item_type === 'service'
+}
+
 /** Řádek karty s balením / individuálními cenami při zapnutém skladu. */
 function rowHasStockFeatures(item: InvoiceItem): boolean {
   return stockEnabled.value && item.stock_item_id != null && stockFeaturesById[item.stock_item_id] === true
@@ -889,7 +894,7 @@ function stockRowPriceBadge(item: InvoiceItem): { label: string; cls: string } |
 
 /** Dostupné množství (string, DECIMAL) pro řádek — undefined = žádný stav (bez karty na skladě). */
 function rowAvailability(item: InvoiceItem): string | null {
-  if (!item.stock_item_id) return null
+  if (!item.stock_item_id || rowIsService(item)) return null
   return availabilityMap.value[invoiceStockAvailabilityKey(item.stock_item_id, rowWarehouseId(item))] ?? null
 }
 function rowAvailabilityInsufficient(item: InvoiceItem): boolean {
@@ -920,7 +925,7 @@ async function hydrateStockSelections() {
         effective_price: si.effective_price, promo_price: si.promo_price,
         promo_label: si.promo_label, promo_qty_available: si.promo_qty_available,
         units: pack?.units, default_sale_unit: pack?.default_sale_unit ?? si.default_sale_unit ?? null,
-        has_customer_prices: si.has_customer_prices, tracking_mode: si.tracking_mode,
+        has_customer_prices: si.has_customer_prices, tracking_mode: si.tracking_mode, item_type: si.item_type,
       })
       rememberTrackingMode(si.id, si.tracking_mode)
       rememberSelection(it)
@@ -3292,7 +3297,7 @@ useWindowTitle(
                   :options="stockRowOptions[i] ?? []"
                   :loading="stockRowLoading[i]"
                   :selected-option="stockSelectedFor(item)"
-                  :availability-text="item.stock_item_id ? t('stock.availability.in_stock', { qty: rowAvailability(item), unit: rowAvailabilityUnit(item) }) : null"
+                  :availability-text="item.stock_item_id && !rowIsService(item) ? t('stock.availability.in_stock', { qty: rowAvailability(item), unit: rowAvailabilityUnit(item) }) : null"
                   :availability-insufficient="rowAvailabilityInsufficient(item)"
                   :placeholder="t('invoice.items_table.description')"
                   multiline
@@ -3308,7 +3313,7 @@ useWindowTitle(
                   :open="docDims.isItemOpen(item)" :filled="docDims.itemHasDims(item)" :disabled="!docDims.canEdit.value"
                   @toggle="docDims.toggleItem(item)" />
                 </div>
-                <label v-if="stockEnabled && item.stock_item_id && stockWarehouses.length > 0"
+                <label v-if="stockEnabled && item.stock_item_id && !rowIsService(item) && stockWarehouses.length > 0"
                   class="mt-1.5 flex items-center gap-2 text-xs text-neutral-500">
                   <span class="whitespace-nowrap">{{ t('stock.receipt.field_warehouse') }}</span>
                   <select v-model.number="item.warehouse_id" @change="onRowWarehouseChange(item)"
@@ -3556,7 +3561,7 @@ useWindowTitle(
                 :options="stockRowOptions[i] ?? []"
                 :loading="stockRowLoading[i]"
                 :selected-option="stockSelectedFor(item)"
-                :availability-text="item.stock_item_id ? t('stock.availability.in_stock', { qty: rowAvailability(item), unit: rowAvailabilityUnit(item) }) : null"
+                :availability-text="item.stock_item_id && !rowIsService(item) ? t('stock.availability.in_stock', { qty: rowAvailability(item), unit: rowAvailabilityUnit(item) }) : null"
                 :availability-insufficient="rowAvailabilityInsufficient(item)"
                 :placeholder="t('invoice.items_table.description')"
                 multiline
@@ -3568,7 +3573,7 @@ useWindowTitle(
                 @search="(q: string) => onStockSearch(i, q)"
                 @select="(v: number | null) => onStockSelect(i, v)"
               />
-              <label v-if="stockEnabled && item.stock_item_id && stockWarehouses.length > 0"
+              <label v-if="stockEnabled && item.stock_item_id && !rowIsService(item) && stockWarehouses.length > 0"
                 class="mt-1.5 block text-xs font-medium text-neutral-600">
                 <span class="mb-1 block">{{ t('stock.receipt.field_warehouse') }}</span>
                 <select v-model.number="item.warehouse_id" @change="onRowWarehouseChange(item)"

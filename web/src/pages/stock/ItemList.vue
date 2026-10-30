@@ -444,6 +444,7 @@ const TYPE_BADGE: Record<StockItemType, string> = {
   material: 'bg-neutral-100 text-neutral-600',
   goods: 'bg-primary-50 text-primary-700',
   product: 'bg-success-50 text-success-600',
+  service: 'bg-warning-50 text-warning-700',
 }
 
 function openDetail(i: StockItem, e?: MouseEvent) {
@@ -605,6 +606,7 @@ onBeforeUnmount(() => {
         <option value="material">{{ t('stock.item_type.material') }}</option>
         <option value="goods">{{ t('stock.item_type.goods') }}</option>
         <option value="product">{{ t('stock.item_type.product') }}</option>
+        <option value="service">{{ t('stock.item_type.service') }}</option>
       </select>
       <select v-model="filters.warehouse_id" @change="applyFilters" class="h-9 px-3 border border-neutral-300 rounded-md text-sm bg-surface"
         :title="t('stock.documents.filter_warehouse')">
