@@ -2420,32 +2420,9 @@ final class BankPostingService
         }
 
         $tx = $this->lockTransaction($supplierId, $txId);
-        if ($tx === null || (int) ($tx['statement_supplier_id'] ?? 0) !== $supplierId) {
-            return ['action' => 'skipped', 'reason' => 'transaction_not_found'];
-        }
-        if (BankTransactionPostingScope::requiresMigrationReview($tx)) {
-            return ['action' => 'skipped', 'reason' => BankTransactionPostingScope::MIGRATION_REVIEW_REASON];
-        }
-        if ($this->skipPayrollPayment($supplierId, $txId)) {
-            return ['action' => 'skipped', 'reason' => 'payroll_payment'];
-        }
-        $amount = (float) $tx['amount'];
-        $direction = $amount > 0 ? 'incoming' : 'outgoing';
-        if ($amount === 0.0 || $direction !== (string) $rule['direction']) {
-            return ['action' => 'skipped', 'reason' => 'rule_not_matched'];
-        }
-        if (strtoupper((string) ($rule['applies_currency'] ?? 'CZK')) !== strtoupper($this->effectiveCurrency($tx))) {
-            return ['action' => 'skipped', 'reason' => 'rule_not_matched'];
-        }
-        $entry = $this->journal->findBySource($supplierId, 'bank', $txId);
-        if ($entry !== null && ($entry['reversed_by'] ?? null) === null) {
-            return ['action' => 'skipped', 'reason' => 'already_posted'];
-        }
-        if ($this->suggestions->hasRejected($supplierId, $txId, $ruleId)) {
-            return ['action' => 'skipped', 'reason' => 'rule_rejected'];
-        }
-        if (!$this->ruleMatcher->matching($rule, $this->matchTxArray($tx))) {
-            return ['action' => 'skipped', 'reason' => 'rule_not_matched'];
+        $skip = $this->ruleBackfillSkipReason($supplierId, $txId, $tx, $rule);
+        if ($skip !== null) {
+            return ['action' => 'skipped', 'reason' => $skip];
         }
         if ($this->transfers !== null && $this->transfers->detectUnlessOverridden($supplierId, $txId, $rule) !== null) {
             return $this->transfers->handle($supplierId, $tx, $userId, true)
@@ -2462,6 +2439,75 @@ final class BankPostingService
         }
 
         return $this->applySingleRule($supplierId, $tx, $rule, $userId, true);
+    }
+
+    /**
+     * Proč se zadané pravidlo na pohyb nesmí uplatnit. Společné pro backfill i převod.
+     *
+     * @param array<string,mixed>|null $tx
+     * @param array<string,mixed> $rule
+     */
+    private function ruleBackfillSkipReason(int $supplierId, int $txId, ?array $tx, array $rule): ?string
+    {
+        if ($tx === null || (int) ($tx['statement_supplier_id'] ?? 0) !== $supplierId) {
+            return 'transaction_not_found';
+        }
+        if (BankTransactionPostingScope::requiresMigrationReview($tx)) {
+            return BankTransactionPostingScope::MIGRATION_REVIEW_REASON;
+        }
+        if ($this->skipPayrollPayment($supplierId, $txId)) {
+            return 'payroll_payment';
+        }
+        $amount = (float) $tx['amount'];
+        if ($amount === 0.0 || ($amount > 0 ? 'incoming' : 'outgoing') !== (string) $rule['direction']) {
+            return 'rule_not_matched';
+        }
+        if (strtoupper((string) ($rule['applies_currency'] ?? 'CZK')) !== strtoupper($this->effectiveCurrency($tx))) {
+            return 'rule_not_matched';
+        }
+        $entry = $this->journal->findBySource($supplierId, 'bank', $txId);
+        if ($entry !== null && ($entry['reversed_by'] ?? null) === null) {
+            return 'already_posted';
+        }
+        if ($this->suggestions->hasRejected($supplierId, $txId, (int) $rule['id'])) {
+            return 'rule_rejected';
+        }
+        return $this->ruleMatcher->matching($rule, $this->matchTxArray($tx)) ? null : 'rule_not_matched';
+    }
+
+    /**
+     * Návrh zaúčtování podle návrhového pravidla během převodu z jiného programu.
+     *
+     * Automatika je během převodu vypnutá ({@see \MyInvoice\Service\Migration\MoneyS3\AccountingUnitSwitch}),
+     * takže politika v {@see applySingleRule()} by návrh zahodila jako `policy_off`. Tady se
+     * proto politika nevolá: výsledkem je vždy jen čekající návrh, nikdy zápis, a jen u pravidla
+     * v režimu `suggest`. Čekající návrh jiného původu zůstává, spárovaná úhrada, platba přes
+     * mezičlen karty ani vlastní převod návrh nedostanou.
+     *
+     * @return array{action:string, reason?:?string, suggestion_id?:int, created?:bool}
+     */
+    public function proposeRuleForMigration(int $supplierId, int $txId, int $ruleId): array
+    {
+        return (new DimensionPeriodGuard($this->db))->transaction(function () use ($supplierId, $txId, $ruleId): array {
+            $rule = $this->rules->find($supplierId, $ruleId);
+            if ($rule === null || !(bool) $rule['is_active'] || (string) $rule['mode'] !== 'suggest') {
+                return ['action' => 'skipped', 'reason' => 'rule_not_suggest'];
+            }
+            $tx = $this->lockTransaction($supplierId, $txId);
+            $skip = $this->ruleBackfillSkipReason($supplierId, $txId, $tx, $rule);
+            if ($skip !== null) {
+                return ['action' => 'skipped', 'reason' => $skip];
+            }
+            if ((string) $tx['match_status'] !== 'unmatched'
+                || !empty($tx['has_explicit_allocation'])
+                || $this->cardClearingFor($supplierId, $tx, false) !== null) {
+                return ['action' => 'skipped', 'reason' => 'payment_matched'];
+            }
+            if ($this->transfers !== null && $this->transfers->detectUnlessOverridden($supplierId, $txId, $rule) !== null) {
+                return ['action' => 'skipped', 'reason' => 'own_transfer'];
+            }
+            return $this->ruleSuggestion($supplierId, $tx, $rule, null, 'pending', round(abs((float) $tx['amount']), 2));
+        });
     }
 
     /**
@@ -3998,7 +4044,7 @@ final class BankPostingService
      *
      * @return array{0:string, 1:string}
      */
-    private static function genericBankLeg(string $debit, string $credit): array
+    public static function genericBankLeg(string $debit, string $credit): array
     {
         $debitBank  = str_starts_with($debit, '221');
         $creditBank = str_starts_with($credit, '221');
@@ -4006,6 +4052,21 @@ final class BankPostingService
             return [$debit, $credit];
         }
         return $debitBank ? ['221', $credit] : [$debit, '221'];
+    }
+
+    /**
+     * Smí se kontace z historie nabídnout jako návrh k pohybu daného směru? Táž pravidla, která
+     * {@see assertSaldoBlacklist()} vynutí při schválení: saldokonto se páruje, ne účtuje
+     * pravidlem, a bankovní strana musí sedět na směr pohybu.
+     */
+    public static function isProposableKontace(bool $incoming, string $debit, string $credit): bool
+    {
+        foreach (self::SALDO_BLACKLIST as $prefix) {
+            if (str_starts_with($debit, $prefix) || str_starts_with($credit, $prefix)) {
+                return false;
+            }
+        }
+        return str_starts_with($incoming ? $debit : $credit, '221');
     }
 
     /**
