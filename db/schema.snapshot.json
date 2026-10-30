@@ -1123,7 +1123,10 @@
         "2219_payment_order_item_invoice_fk.sql",
         "2220_stock_item_type_service.sql",
         "2221_invoice_calendar_types.sql",
-        "2222_vat_classification_travel_service_line26.sql"
+        "2222_vat_classification_travel_service_line26.sql",
+        "2223_statement_map_349_358.sql",
+        "2224_journal_period_source_index.sql",
+        "2225_purchase_settled_outside.sql"
     ],
     "tables": {
         "abra_flexi_connections": {
@@ -7750,6 +7753,7 @@
                 "fk_je_reversed_by": "BTREE (reversed_by)",
                 "idx_je_supplier_entry_date": "BTREE (supplier_id, entry_date, id)",
                 "idx_je_supplier_period": "BTREE (supplier_id, period_id)",
+                "idx_je_supplier_period_source": "BTREE (supplier_id, period_id, source_type)",
                 "idx_je_supplier_reversed_by": "BTREE (supplier_id, reversed_by)",
                 "idx_je_supplier_source": "BTREE (supplier_id, source_type, source_id)",
                 "uq_je_supplier_active_source": "UNIQUE BTREE (supplier_id, source_type, active_source_id)",
@@ -22620,6 +22624,7 @@
                 "received_at_source": "enum('manual','import') NOT NULL DEFAULT 'import'",
                 "reverse_charge": "tinyint(1) NOT NULL DEFAULT 0",
                 "rounding": "decimal(6,2) NOT NULL DEFAULT 0.00",
+                "settled_outside_amount": "decimal(15,2) NOT NULL DEFAULT 0.00",
                 "source_format": "enum('isdoc','isdocx','pdf','pohoda_xml','idoklad_json','fakturoid_json') NULL DEFAULT NULL",
                 "source_hash": "char(64) NULL DEFAULT NULL",
                 "source_original_name": "varchar(255) NULL DEFAULT NULL",
@@ -22696,6 +22701,7 @@
             },
             "checks": {
                 "chk_pi_card_last4": "`card_last4` is null or `card_last4` regexp '^[0-9]{4}$'",
+                "chk_purchase_settled_outside": "`settled_outside_amount` >= 0",
                 "extraction_review": "json_valid(`extraction_review`)",
                 "own_snapshot": "json_valid(`own_snapshot`)",
                 "vat_overrides": "json_valid(`vat_overrides`)",
