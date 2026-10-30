@@ -25,8 +25,9 @@ use PDO;
  * nevzniká nový zápis a zůstatek účtu se nemění.
  *
  * Partnera určí protiúčet, u pohybu bez něj název, nakonec variabilní symbol. Řádek bez všech
- * tří zůstává jen v protokolu. Položka nesmí rozdíl saldokonta zvětšit: vrácení přeplatku
- * z počátečního stavu (ten pohyb nemá, není s čím párovat) by ho jinak z nuly otevřelo.
+ * tří zůstává jen v protokolu. Položka nesmí rozdíl saldokonta zvětšit ani překročit, měřeno
+ * na syntetice i na analytice: vrácení přeplatku z počátečního stavu (ten pohyb nemá, není
+ * s čím párovat) by ho jinak z nuly otevřelo.
  *
  * Opakovaný převod: řádek s položkou z mapy se počítá jen zbytkem částky, takže se nic
  * nezdvojí a nové vrácení dostane vlastní položku opačné strany. Položku, kterou mezitím
@@ -35,6 +36,8 @@ use PDO;
 final class BalanceItemImporter
 {
     private const STEP = DocumentLinker::STEP_PAYMENTS;
+    /** Do kolika dnů se opačný řádek stejné částky bere jako vrácená platba. */
+    private const RETURN_DAYS = 60;
 
     public function __construct(
         private readonly Connection $db,
@@ -88,6 +91,11 @@ final class BalanceItemImporter
                 $p->count(self::STEP, 'balance_paired', $paired);
             }
             array_push($candidates, ...$rest);
+        }
+        $before = count($candidates);
+        $candidates = self::withoutReturns($candidates);
+        if ($before > count($candidates)) {
+            $p->count(self::STEP, 'balance_paired', (int) (($before - count($candidates)) / 2));
         }
         $candidates = $this->withoutClosedPeriods($ctx, $candidates);
         $accepted = $this->reducingDifference($ctx, $candidates, (int) $ctx->period['id'], $asOf);
@@ -159,6 +167,53 @@ final class BalanceItemImporter
             }
         }
         return $out;
+    }
+
+    /**
+     * Vrácená platba: banka ji vrací s jiným názvem a často bez protiúčtu („Neexistující účet",
+     * „Vracena platba"), po partnerovi se tedy s platbou nesejde. Řádky opačné strany téhož
+     * účtu a stejné částky do {@see RETURN_DAYS} dnů se vyruší bez ohledu na partnera,
+     * nejbližší s nejbližším.
+     *
+     * @param list<array<string,mixed>> $lines s klíči `account_code`, `side`, `cents`, `entry_date`
+     * @return list<array<string,mixed>>
+     */
+    public static function withoutReturns(array $lines): array
+    {
+        $lines = array_values($lines);
+        $used = [];
+        foreach ($lines as $i => $a) {
+            if (isset($used[$i]) || $a['side'] !== 'debit') {
+                continue;
+            }
+            $best = null;
+            $bestDays = self::RETURN_DAYS + 1;
+            foreach ($lines as $j => $b) {
+                if (isset($used[$j]) || $b['side'] !== 'credit' || $b['cents'] !== $a['cents'] || $b['account_code'] !== $a['account_code']) {
+                    continue;
+                }
+                $days = abs((int) ((strtotime((string) $a['entry_date']) - strtotime((string) $b['entry_date'])) / 86400));
+                if ($days < $bestDays) {
+                    $best = $j;
+                    $bestDays = $days;
+                }
+            }
+            if ($best !== null) {
+                $used[$i] = true;
+                $used[$best] = true;
+            }
+        }
+        return array_values(array_diff_key($lines, $used));
+    }
+
+    /**
+     * Změna rozdílu saldokonta je přijatelná, když ho zmenší a nepřekročí: položka větší než
+     * rozdíl by jen přesunula nesoulad na opačnou stranu.
+     */
+    public static function narrows(int $difference, int $change): bool
+    {
+        $after = $difference - $change;
+        return abs($after) < abs($difference) && ($after === 0 || ($after > 0) === ($difference > 0));
     }
 
     /**
@@ -276,27 +331,64 @@ final class BalanceItemImporter
                 continue;
             }
             $debitNormal = $block['account']['normal_side'] === 'debit';
-            $difference = self::cents($block['difference']);
             $signed = static fn (array $l): int => ($l['side'] === 'debit') === $debitNormal ? $l['cents'] : -$l['cents'];
-            if (abs($difference - array_sum(array_map($signed, $rows))) <= abs($difference)) {
-                array_push($accepted, ...$rows);
-                continue;
-            }
-            usort($rows, static fn (array $a, array $b): int => $b['cents'] <=> $a['cents']);
+            // Rozdíl se měří i na analytice: nevysvětlený zůstatek 315.900 nedává důvod
+            // k položce na 315.999, jejíž zůstatek je nula.
+            $syntheticDifference = self::cents($block['difference']);
+            $byAnalytic = [];
             foreach ($rows as $line) {
-                if (abs($difference - $signed($line)) < abs($difference)) {
-                    $difference -= $signed($line);
-                    $accepted[] = $line;
+                $byAnalytic[$line['account_code']][] = $line;
+            }
+            foreach ($byAnalytic as $account => $group) {
+                $difference = $this->analyticDifference($ctx->supplierId, (string) $account, $debitNormal, $asOf);
+                $total = array_sum(array_map($signed, $group));
+                if (self::narrows($difference, $total) && self::narrows($syntheticDifference, $total)) {
+                    array_push($accepted, ...$group);
+                    $syntheticDifference -= $total;
                     continue;
                 }
-                $ctx->protocol->count(self::STEP, 'balance_not_created');
-                $ctx->protocol->warn(self::STEP, 'balance_item_no_effect', sprintf(
-                    'Pohyb %s na účtu %s (%s Kč): položka by rozdíl saldokonta zvětšila, protiváha je nejspíš v počátečním stavu nebo jiném zápisu. Zkontrolujte ho ručně.',
-                    $line['document_no'] ?? '#' . $line['entry_id'], $line['account_code'], self::money($line['cents']),
-                ), ['document_no' => $line['document_no']]);
+                usort($group, static fn (array $a, array $b): int => $b['cents'] <=> $a['cents']);
+                foreach ($group as $line) {
+                    if (self::narrows($difference, $signed($line)) && self::narrows($syntheticDifference, $signed($line))) {
+                        $difference -= $signed($line);
+                        $syntheticDifference -= $signed($line);
+                        $accepted[] = $line;
+                        continue;
+                    }
+                    $ctx->protocol->count(self::STEP, 'balance_not_created');
+                    $ctx->protocol->warn(self::STEP, 'balance_item_no_effect', sprintf(
+                        'Pohyb %s na účtu %s (%s Kč): položka by rozdíl saldokonta zvětšila nebo překročila, protiváha je nejspíš v počátečním stavu nebo jiném zápisu. Zkontrolujte ho ručně.',
+                        $line['document_no'] ?? '#' . $line['entry_id'], $line['account_code'], self::money($line['cents']),
+                    ), ['document_no' => $line['document_no']]);
+                }
             }
         }
         return $accepted;
+    }
+
+    /** Zůstatek analytiky k datu na normální straně účtu mínus otevřené ostatní položky na ní, v haléřích. */
+    private function analyticDifference(int $supplierId, string $account, bool $debitNormal, string $asOf): int
+    {
+        $pdo = $this->db->pdo();
+        $balance = $pdo->prepare(
+            "SELECT COALESCE(SUM(CASE WHEN l.side = 'debit' THEN l.signed_amount ELSE -l.signed_amount END), 0)
+               FROM journal_entry_lines l
+               JOIN journal_entries e ON e.id = l.entry_id AND e.supplier_id = l.supplier_id
+               JOIN chart_of_accounts a ON a.id = l.account_id AND a.supplier_id = l.supplier_id
+              WHERE l.supplier_id = ? AND a.account_code = ? AND e.posted_at IS NOT NULL AND e.reversed_by IS NULL AND e.entry_date <= ?
+                AND NOT EXISTS (SELECT 1 FROM journal_entries o WHERE o.supplier_id = e.supplier_id AND o.reversed_by = e.id)"
+        );
+        $balance->execute([$supplierId, $account, $asOf]);
+        $items = $pdo->prepare(
+            "SELECT COALESCE(SUM((CASE WHEN oi.side = 'receivable' THEN 1 ELSE -1 END)
+                        * (oi.amount - oi.settled_outside_amount
+                           - COALESCE((SELECT SUM(x.amount) FROM other_item_allocations x WHERE x.other_item_id = oi.id AND x.reversed_on IS NULL), 0))), 0)
+               FROM other_items oi
+              WHERE oi.supplier_id = ? AND oi.account_code = ? AND oi.deleted_at IS NULL AND oi.status <> 'draft'"
+        );
+        $items->execute([$supplierId, $account]);
+        $difference = self::cents((float) $balance->fetchColumn() - (float) $items->fetchColumn());
+        return $debitNormal ? $difference : -$difference;
     }
 
     /**
@@ -352,7 +444,7 @@ final class BalanceItemImporter
     {
         $stmt = $this->db->pdo()->prepare(
             "SELECT l.id AS line_id, l.entry_id, l.line_no, l.side, l.amount, a.account_code, LEFT(a.account_code, 3) AS synthetic,
-                    e.document_no, e.source_type, e.source_id, ap.status AS period_status,
+                    e.document_no, e.entry_date, e.source_type, e.source_id, ap.status AS period_status,
                     t.counterparty_account, t.counterparty_bank,
                     t.variable_symbol,
                     COALESCE(t.counterparty_name, c.partner_name) AS partner_name
