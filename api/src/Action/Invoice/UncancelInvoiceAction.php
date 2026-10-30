@@ -79,6 +79,9 @@ final class UncancelInvoiceAction
         ) {
             return Json::error($response, 'invalid_state', 'Zrušit storno lze jen u stornované faktury nebo zálohy.', 409);
         }
+        if (!empty($invoice['calendar_id'])) {
+            return Json::error($response, 'calendar_instalment_locked', 'Splátka patří ke stornovanému kalendáři. Vystavte nový kalendář.', 409);
+        }
 
         $supplierId = (int) $invoice['supplier_id'];
         $pdo = $this->db->pdo();

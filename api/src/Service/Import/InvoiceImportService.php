@@ -127,7 +127,9 @@ final class InvoiceImportService
         'tax_document'     => 'daňový doklad k přijaté platbě',
         'cancellation'     => 'storno',
         'penalty'          => 'penalizační faktura',
-        'payment_calendar' => 'splátkový kalendář',
+        'payment_calendar' => 'kalendář',
+        'rent_calendar' => 'splátkový kalendář',
+        'advance_calendar' => 'platební kalendář',
     ];
 
     /**

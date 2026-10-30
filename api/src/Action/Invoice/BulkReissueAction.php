@@ -124,6 +124,9 @@ final class BulkReissueAction
         if ($source === null) {
             throw new \RuntimeException("Faktura #$sourceId nenalezena");
         }
+        if (!empty($source['calendar_id']) || \MyInvoice\Service\Invoice\InvoiceCalendar::hasSchedule($source['invoice_type'])) {
+            throw new \RuntimeException('Kalendář ani jeho splátku nejde vystavit znovu jako novou fakturu.');
+        }
 
         $type = $source['invoice_type'] === 'proforma' ? 'proforma' : 'invoice';
 

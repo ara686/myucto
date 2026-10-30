@@ -130,7 +130,7 @@ final class TransitionReportService
              LEFT JOIN clients cl    ON cl.id = i.client_id
                  WHERE i.supplier_id = ?
                    AND i.status IN ('issued', 'sent', 'reminded', 'paid')
-                   AND i.invoice_type <> 'proforma'
+                   AND i.invoice_type NOT IN ('proforma','rent_calendar','advance_calendar')
                    AND i.issue_date <= ?
               ) t
              WHERE t.invoice_type NOT IN ('invoice', 'proforma', 'tax_document')

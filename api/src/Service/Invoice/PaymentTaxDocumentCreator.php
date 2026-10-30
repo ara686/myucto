@@ -339,6 +339,19 @@ final class PaymentTaxDocumentCreator
                 $this->repo->setExchangeRate($taxDocId, null, null);
             }
 
+            // Platební kalendář je sám daňovým dokladem (§ 31a), odběratel jiný nedostane.
+            // Doklad k úhradě splátky proto nečeká na vystavení a číslo z řady nespotřebuje.
+            if (!empty($proforma['calendar_id'])) {
+                $pdo->prepare(
+                    "UPDATE invoices td
+                       JOIN invoices pf ON pf.id = ?
+                        SET td.status = 'paid', td.paid_at = ?, td.varsymbol = ?, td.calendar_id = pf.calendar_id,
+                            td.client_snapshot = pf.client_snapshot, td.supplier_snapshot = pf.supplier_snapshot,
+                            td.bank_snapshot = pf.bank_snapshot
+                      WHERE td.id = ?"
+                )->execute([(int) $proforma['id'], (string) $payment['paid_on'], 'KP-' . $paymentId, $taxDocId]);
+            }
+
             if ($ownsTransaction) {
                 $pdo->commit();
             } elseif ($savepoint !== null) {

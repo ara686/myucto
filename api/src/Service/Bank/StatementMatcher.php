@@ -293,6 +293,12 @@ final class StatementMatcher
         if ($exact === [] && count($partial) === 1) {
             return $partial;
         }
+        // Stejně vysoké splátky téhož kalendáře: trvalý příkaz hradí nejstarší nezaplacenou.
+        $calendars = array_unique(array_map(static fn (array $m): int => (int) ($m['calendar_id'] ?? 0), $exact));
+        if (count($exact) > 1 && count($calendars) === 1 && $calendars[array_key_first($calendars)] > 0) {
+            usort($exact, static fn (array $a, array $b): int => [$a['due_date'], $a['id']] <=> [$b['due_date'], $b['id']]);
+            return [$exact[0]];
+        }
         return $matches;
     }
 
@@ -796,7 +802,7 @@ final class StatementMatcher
         $vsKey = VariableSymbolNormalizer::matchKey((string) $vs);
         $paymentVsMatch = $this->vsKeyMatches('invoices', 'i', 'payment_variable_symbol');
         [$candidateSql, $candidateParams] = $this->vsCandidates('invoices', 'i', (string) $vs, $supplierId, ['varsymbol'], ['varsymbol', 'payment_variable_symbol']);
-        $sql = "SELECT i.id, i.varsymbol, i.amount_to_pay, i.paid_total, i.exchange_rate, i.status, i.invoice_type, i.parent_invoice_id, cur.code AS currency,
+        $sql = "SELECT i.id, i.varsymbol, i.amount_to_pay, i.paid_total, i.exchange_rate, i.status, i.invoice_type, i.parent_invoice_id, i.calendar_id, i.due_date, cur.code AS currency,
                        CASE WHEN i.varsymbol = ? OR i.payment_variable_symbol = ? THEN 2 ELSE 1 END AS vs_match_rank,
                        {$paymentVsMatch} AS payment_vs_match
                   FROM invoices i

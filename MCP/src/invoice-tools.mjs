@@ -43,6 +43,8 @@ const TYPE_LABEL = {
   tax_document: 'Daňový doklad k platbě',
   penalty: 'Penalizační faktura',
   payment_calendar: 'Platební kalendář',
+  rent_calendar: 'Splátkový kalendář',
+  advance_calendar: 'Platební kalendář',
 };
 
 const money = (amount, currency) => `${Number(amount ?? 0).toFixed(2)} ${currency ?? ''}`.trim();
@@ -81,11 +83,15 @@ export const PAYMENT_SCHEDULE_INPUT = {
   type: 'array',
   description:
     'Rozpis plateb platebního nebo splátkového kalendáře, jeden řádek = jedna splátka '
-    + 'v měně dokladu. Součet `total_amount` musí sedět na celkovou částku dokladu s DPH.',
+    + 'v měně dokladu. Součet `base_amount`, `vat_amount` i `total_amount` musí sedět na doklad.',
   minItems: 1,
   maxItems: 120,
   items: schema({
     due_on: date('Datum splatnosti splátky (RRRR-MM-DD).'),
+    tax_date: date(
+      'Jen `rent_calendar`: DUZP splátky podle smlouvy (RRRR-MM-DD), bez zadání den splatnosti. '
+      + 'Platební kalendář (`advance_calendar`) DUZP nemá.',
+    ),
     total_amount: num('Splátka celkem včetně DPH. Když chybí, dopočte se jako `base_amount` + `vat_amount`.'),
     base_amount: num('Základ daně splátky.'),
     vat_amount: num('DPH ze splátky.'),
@@ -114,7 +120,7 @@ function optionalAmount(value, row, key) {
  * částku uloží jako nulu, takže chyba v podkladu by se jinak projevila až rozdílem
  * v součtu, bez stopy, který řádek ho způsobil.
  */
-export function normalizeSchedule(rows) {
+export function normalizeSchedule(rows, invoiceType) {
   if (!Array.isArray(rows) || rows.length === 0) {
     throw new Error('Rozpis plateb musí mít aspoň jednu splátku.');
   }
@@ -132,7 +138,8 @@ export function normalizeSchedule(rows) {
         throw new Error(`Splátka ${row}: chybí \`total_amount\` (nebo \`base_amount\` i \`vat_amount\`, ze kterých se dopočte).`);
       }
       total = fromCents(toCents(base) + toCents(vat));
-    } else if (base !== null && vat !== null && toCents(base) + toCents(vat) !== toCents(total)) {
+    } else if (base !== null && vat !== null && Math.abs(toCents(base) + toCents(vat) - toCents(total)) >= 100) {
+      // Rozdíl pod korunu je zaokrouhlení dokladu, to server nechá v poslední splátce.
       throw new Error(
         `Splátka ${row}: základ ${base} + DPH ${vat} nedává celkem ${total}. Oprav částky splátky.`,
       );
@@ -140,6 +147,16 @@ export function normalizeSchedule(rows) {
     if (toCents(total) === 0) throw new Error(`Splátka ${row}: částka splátky je nulová.`);
 
     const out = { due_on: dueOn, total_amount: fromCents(toCents(total)) };
+    const taxDate = String(raw.tax_date ?? '').trim();
+    if (taxDate !== '') {
+      if (invoiceType === 'advance_calendar') {
+        throw new Error(`Splátka ${row}: platební kalendář DUZP nemá, daň vzniká přijetím platby. Pole \`tax_date\` vynech.`);
+      }
+      if (!isIsoDate(taxDate)) {
+        throw new Error(`Splátka ${row}: DUZP „${taxDate}" není platné datum ve tvaru RRRR-MM-DD.`);
+      }
+      out.tax_date = taxDate;
+    }
     if (base !== null) out.base_amount = fromCents(toCents(base));
     if (vat !== null) out.vat_amount = fromCents(toCents(vat));
     const note = String(raw.note ?? '').trim();
@@ -148,32 +165,55 @@ export function normalizeSchedule(rows) {
   });
 }
 
-const scheduleCents = (rows) => rows.reduce((sum, row) => sum + toCents(row.total_amount), 0);
+const scheduleCents = (rows, column = 'total_amount') => rows.reduce((sum, row) => sum + toCents(row[column] ?? 0), 0);
+
+/** Typy, které jdou vystavit; `payment_calendar` zůstává jen u už vystavených dokladů. */
+const CALENDAR_TYPES = ['rent_calendar', 'advance_calendar'];
+
+/** Sloupce rozpisu, které musí sedět na doklad, zrcadlo serverového `payment_schedule_mismatch`. */
+const SCHEDULE_CHECKS = [
+  ['total_amount', 'total_with_vat', 'celková částka'],
+  ['base_amount', 'total_without_vat', 'základ'],
+  ['vat_amount', 'total_vat', 'DPH'],
+];
 
 /** Tělo `create_invoice` se zkontrolovaným rozpisem; bez rozpisu beze změny. */
 export function withPaymentSchedule(a) {
   if (a.payment_schedule === undefined) return a;
-  if (a.invoice_type !== 'payment_calendar') {
-    throw new Error('Rozpis plateb (`payment_schedule`) patří jen dokladu typu `payment_calendar`.');
+  if (!CALENDAR_TYPES.includes(a.invoice_type)) {
+    throw new Error('Rozpis plateb (`payment_schedule`) patří jen dokladu typu `rent_calendar` nebo `advance_calendar`.');
   }
-  return { ...a, payment_schedule: normalizeSchedule(a.payment_schedule) };
+  return { ...a, payment_schedule: normalizeSchedule(a.payment_schedule, a.invoice_type) };
 }
 
 /**
- * Po založení kalendáře porovná rozpis se součtem, který spočítal server. Celkovou
- * částku před založením neznáme (DPH, zaokrouhlení i sleva se počítají na serveru),
- * proto upozornění až teď. Koncept vznikne tak jako tak, oprava je levná.
+ * První sloupec rozpisu, který nesedí na doklad, nebo null. Částky dokladu, které server
+ * nevrátil, se neporovnávají.
+ */
+function scheduleMismatch(rows, doc) {
+  for (const [column, header, label] of SCHEDULE_CHECKS) {
+    if (doc?.[header] === undefined) continue;
+    const sum = scheduleCents(rows, column);
+    const expected = toCents(doc[header]);
+    if (sum !== expected) return { label, sum, expected };
+  }
+  return null;
+}
+
+/**
+ * Po založení kalendáře porovná rozpis se součty, které spočítal server. Částky před
+ * založením neznáme (DPH, zaokrouhlení i sleva se počítají na serveru), proto upozornění
+ * až teď. Koncept vznikne tak jako tak, oprava je levná.
  */
 export function checkCreatedSchedule(body, saved) {
-  if (!Array.isArray(body.payment_schedule) || saved?.total_with_vat === undefined) return saved;
-  const sum = scheduleCents(body.payment_schedule);
-  const total = toCents(saved.total_with_vat);
-  if (sum === total) return saved;
+  if (!Array.isArray(body.payment_schedule)) return saved;
+  const mismatch = scheduleMismatch(body.payment_schedule, saved);
+  if (mismatch === null) return saved;
   return {
     ...saved,
     payment_schedule_warning:
-      `Součet rozpisu plateb (${money(fromCents(sum), saved.currency)}) nesedí na celkovou částku `
-      + `dokladu (${money(saved.total_with_vat, saved.currency)}). Kalendář takhle nepůjde vystavit; `
+      `Součet rozpisu plateb, ${mismatch.label} (${money(fromCents(mismatch.sum), saved.currency)}), nesedí `
+      + `na doklad (${money(fromCents(mismatch.expected), saved.currency)}). Kalendář takhle nepůjde vystavit; `
       + 'oprav rozpis přes `set_invoice_payment_schedule`, nebo položky dokladu.',
   };
 }
@@ -628,40 +668,42 @@ export const INVOICE_TOOLS = [
   // ── Platební kalendář ────────────────────────────────────────────────────
   {
     name: 'set_invoice_payment_schedule',
-    title: 'Rozpis plateb platebního kalendáře',
+    title: 'Rozpis plateb kalendáře',
     description:
-      'Nastaví rozpis plateb KONCEPTU platebního nebo splátkového kalendáře (§ 31 a § 31a ZDPH, '
-      + 'typ `payment_calendar`; typ konceptu změní `update_invoice`). Rozpis se nahrazuje CELÝ: '
+      'Nastaví rozpis plateb KONCEPTU kalendáře: `rent_calendar` je splátkový kalendář k nájmu '
+      + '(§ 31 ZDPH, každá splátka má vlastní DUZP), `advance_calendar` platební kalendář záloh '
+      + '(§ 31a ZDPH, bez DUZP); typ konceptu změní `update_invoice`. Rozpis se nahrazuje CELÝ: '
       + 'pošli všechny splátky. Hlavička a položky dokladu zůstanou beze změny.\n\n'
-      + 'Řádek: `due_on` (datum splatnosti), `total_amount` (splátka s DPH), volitelně `base_amount` '
-      + 'a `vat_amount` (základ a DPH splátky) a `note`. Částky jsou v měně dokladu. Součet '
-      + '`total_amount` musí přesně sedět na celkovou částku dokladu s DPH, jinak nástroj nic '
-      + 'neuloží a vrátí rozdíl; kalendář s nesouhlasným součtem by nešel vystavit.\n\n'
+      + 'Řádek: `due_on` (datum splatnosti), `base_amount` a `vat_amount` (základ a DPH splátky), '
+      + '`total_amount` (splátka s DPH; když chybí, dopočte se), u nájmu `tax_date` (DUZP, bez zadání '
+      + 'den splatnosti) a `note`. Částky jsou v měně dokladu. Součty základu, DPH i celkové částky '
+      + 'musí přesně sedět na doklad, jinak nástroj nic neuloží a vrátí rozdíl; kalendář s nesouhlasným '
+      + 'součtem by nešel vystavit.\n\n'
       + 'Rozpis můžeš sestavit i z podkladu od uživatele (smlouva, tabulka splátek, PDF): přečti ho, '
       + 'splátky převeď na řádky a před uložením je uživateli ukaž ke kontrole.',
     inputSchema: schema({
-      invoice_id: id('ID konceptu platebního kalendáře.'),
+      invoice_id: id('ID konceptu splátkového nebo platebního kalendáře.'),
       payment_schedule: PAYMENT_SCHEDULE_INPUT,
     }, ['invoice_id', 'payment_schedule']),
     write: true,
     run: async (c, a, tool) => {
       const invoiceId = Number(a.invoice_id);
       const invoice = await loadDraftInvoice(c, invoiceId, tool);
-      if (invoice.invoice_type !== 'payment_calendar') {
+      if (!CALENDAR_TYPES.includes(invoice.invoice_type)) {
         throw new Error(
-          `${invoiceLabel(invoice, invoiceId)}: rozpis plateb patří jen platebnímu kalendáři. `
-          + 'Typ konceptu změní `update_invoice` s `invoice_type: "payment_calendar"` (jen na výslovný pokyn).',
+          `${invoiceLabel(invoice, invoiceId)}: rozpis plateb patří jen splátkovému nebo platebnímu kalendáři. `
+          + 'Typ konceptu změní `update_invoice` s `invoice_type: "rent_calendar"` nebo `"advance_calendar"` '
+          + '(jen na výslovný pokyn).',
         );
       }
-      const rows = normalizeSchedule(a.payment_schedule);
-      const sum = scheduleCents(rows);
-      const total = toCents(invoice.total_with_vat);
-      if (sum !== total) {
+      const rows = normalizeSchedule(a.payment_schedule, invoice.invoice_type);
+      const mismatch = scheduleMismatch(rows, invoice);
+      if (mismatch !== null) {
         throw new Error(
-          `NEULOŽENO: součet rozpisu plateb ${money(fromCents(sum), invoice.currency)} nesedí na celkovou `
-          + `částku dokladu ${money(invoice.total_with_vat, invoice.currency)} `
-          + `(rozdíl ${money(fromCents(sum - total), invoice.currency)}). Oprav splátky, nebo nejdřív `
-          + 'položky dokladu, a zavolej nástroj znovu.',
+          `NEULOŽENO: součet rozpisu plateb, ${mismatch.label} ${money(fromCents(mismatch.sum), invoice.currency)}, `
+          + `nesedí na doklad ${money(fromCents(mismatch.expected), invoice.currency)} `
+          + `(rozdíl ${money(fromCents(mismatch.sum - mismatch.expected), invoice.currency)}). Oprav splátky, `
+          + 'nebo nejdřív položky dokladu, a zavolej nástroj znovu.',
         );
       }
 

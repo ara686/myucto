@@ -1363,7 +1363,7 @@ final class ClosingRepository
                FROM invoices i
               WHERE i.supplier_id = ?
                 AND i.status NOT IN ('draft','cancelled')
-                AND i.invoice_type NOT IN ('proforma','cancellation')
+                AND i.invoice_type NOT IN ('proforma','cancellation','rent_calendar','advance_calendar')
                 AND i.effective_tax_date BETWEEN ? AND ?
                 AND " . OpeningBalanceDocuments::notInOpeningSql('invoice', 'i') . "
                 AND NOT " . DocumentPostingGroup::activePostingExistsSql("'invoice'", 'i.id', 'i.supplier_id') . "
