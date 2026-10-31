@@ -4618,6 +4618,11 @@ final class BankStatementAction
             if (RequestAuthorization::isClientType($request) && $tx['match_status'] === 'unmatched') {
                 $this->clientAccess->assertAvailable($request, $txId);
             }
+            $allocated = $pdo->prepare('SELECT 1 FROM other_item_allocations WHERE bank_transaction_id = ? AND reversed_on IS NULL LIMIT 1');
+            $allocated->execute([$txId]);
+            if ($allocated->fetchColumn() !== false) {
+                throw new \DomainException('Pohyb je přiřazený ostatní položce. Nejprve zrušte přiřazení.', 409);
+            }
             $note = array_key_exists('note', $body) ? ($note !== null ? trim($note) : null) : $tx['ignore_note'];
             $note = $note === '' ? null : $note;
             $this->bankPosting->onIgnore(SupplierGuard::currentId($request), $txId);

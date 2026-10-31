@@ -85,6 +85,20 @@ describe('ostatní pohledávky a závazky v dialogu Spárovat', () => {
     expect(actions.candidatesFallback.value).toBe(true)
   })
 
+  it('pohyb přiřazený položce nejde ignorovat a volnou část nabídne jen dalším položkám', async () => {
+    const partial = { ...tx, matched_other_items: [{ other_item_id: 9, document_no: 'OP-2099-1', side: 'receivable', partner_name: null, amount: 200 }] } as BankTransaction
+    const actions = useBankTransactionActions({ reload: mocks.reload })
+    expect(actions.canRunDetailAction(partial, 'ignore')).toBe(false)
+    expect(actions.canRunDetailAction(partial, 'match')).toBe(true)
+    actions.startMatch(partial)
+    await flushPromises()
+    expect(mocks.bank.matchCandidates).not.toHaveBeenCalled()
+    expect(actions.matchCandidates.value).toEqual([other])
+
+    const full = { ...partial, matched_other_items: [{ ...partial.matched_other_items![0], amount: 1200 }] } as BankTransaction
+    expect(actions.canRunDetailAction(full, 'match')).toBe(false)
+  })
+
   it('klientské roli je nenabízí', async () => {
     mocks.client = true
     const actions = useBankTransactionActions({ reload: mocks.reload })

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MyInvoice\Service\Accounting;
 
 use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Infrastructure\Database\TransactionFailure;
 use MyInvoice\Service\Accounting\Bank\BankPostingService;
 use PDO;
 
@@ -45,10 +46,10 @@ final class OtherItemBankMatchService
         $remaining = 'oi.amount - oi.settled_outside_amount - COALESCE(p.paid_amount, 0)';
         $params = [$supplierId, $supplierId, (float) $tx['amount'] > 0 ? 'receivable' : 'payable'];
         $where = '';
-        if ($tx['locked_item_id'] !== null) {
-            // Po stornu přiřazení smí platba zpět jen k původní položce (pravidlo allocate()).
-            $where .= ' AND oi.id = ?';
-            $params[] = (int) $tx['locked_item_id'];
+        if ($tx['locked_item_ids'] !== []) {
+            // Po stornu přiřazení smí platba zpět jen k původním položkám (pravidlo allocate()).
+            $where .= ' AND oi.id IN (' . implode(',', array_fill(0, count($tx['locked_item_ids']), '?')) . ')';
+            array_push($params, ...$tx['locked_item_ids']);
         }
         $search = trim($search);
         if ($search !== '') {
@@ -61,7 +62,7 @@ final class OtherItemBankMatchService
         }
         $stmt = $this->db->pdo()->prepare(
             "SELECT oi.id, oi.document_no, oi.title, oi.partner_name, oi.issued_on, oi.due_on, oi.side,
-                    {$remaining} AS remaining_amount
+                    oi.journal_entry_id, oi.account_code, {$remaining} AS remaining_amount
                FROM other_items oi
           LEFT JOIN (SELECT other_item_id, SUM(amount) paid_amount FROM other_item_allocations
                       WHERE supplier_id = ? AND reversed_on IS NULL GROUP BY other_item_id) p
@@ -75,8 +76,11 @@ final class OtherItemBankMatchService
         // Shoda částky první — stejný VS mívá u jednoho partnera víc položek.
         array_push($params, $free, self::AMOUNT_TOLERANCE);
         $stmt->execute($params);
+        $posted = $this->hasLiveEntry($supplierId, $txId);
         $rows = [];
         foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            // Pohyb zaúčtovaný jinam by potvrzení odmítlo, stejně filtruje výběr z detailu položky.
+            if ($posted && !$this->postedOnItemAccount($supplierId, $txId, $row)) continue;
             $rows[] = [
                 'type' => 'other_item',
                 'id' => (int) $row['id'],
@@ -107,17 +111,24 @@ final class OtherItemBankMatchService
     public function match(int $supplierId, int $txId, int $itemId, ?int $userId, array $meta, bool $mayPost): array
     {
         $pdo = $this->db->pdo();
+        return TransactionFailure::retrying($pdo,
+            fn (): array => $this->matchOnce($pdo, $supplierId, $txId, $itemId, $userId, $meta, $mayPost));
+    }
+
+    private function matchOnce(PDO $pdo, int $supplierId, int $txId, int $itemId, ?int $userId, array $meta, bool $mayPost): array
+    {
         $ownTx = !$pdo->inTransaction();
         if ($ownTx) $pdo->beginTransaction();
         try {
+            // Pořadí zámků položka, pohyb sdílí s allocate(); zbytek se čte až pod zámkem položky.
+            $item = $this->items->lockForAllocation($supplierId, $itemId);
             $tx = $this->freeTransaction($supplierId, $txId, true)
                 ?? throw new OtherItemException('payment_unavailable',
                     'Platbu nelze přiřadit: je už spárovaná, vyčerpaná nebo není v CZK.', 409);
-            if ($tx['locked_item_id'] !== null && (int) $tx['locked_item_id'] !== $itemId) {
+            if ($tx['locked_item_ids'] !== [] && !in_array($itemId, $tx['locked_item_ids'], true)) {
                 throw new OtherItemException('payment_reallocation_conflict',
                     'Po stornu lze platbu znovu přiřadit jen k původní položce.', 409);
             }
-            $item = $this->items->get($supplierId, $itemId);
             $side = (float) $tx['amount'] > 0 ? 'receivable' : 'payable';
             if ($item['side'] !== $side) {
                 throw new OtherItemException('payment_direction', $side === 'receivable'
@@ -129,14 +140,13 @@ final class OtherItemBankMatchService
             if ($amount <= 0) {
                 throw new OtherItemException('overpayment', 'Položka už nemá co uhradit.', 409);
             }
-            if (abs((float) $tx['amount']) - (float) $tx['used_amount'] - $amount > self::AMOUNT_TOLERANCE
-                && !$this->hasLiveEntry($supplierId, $txId)) {
-                // Zaúčtovat celý pohyb proti účtu položky by vytvořilo přeplatek na saldokontu.
-                throw new OtherItemException('payment_exceeds_item',
-                    'Platba je vyšší než zbývající dluh. Zaúčtujte ji rozúčtováním a položce ji přiřaďte z jejího detailu.', 409);
-            }
             $account = $this->items->settlementAccountCode($supplierId, $item);
             if ($account !== null && !$this->hasLiveEntry($supplierId, $txId)) {
+                if (abs((float) $tx['amount']) - (float) $tx['used_amount'] - $amount > 0.005) {
+                    // Zaúčtovat celý pohyb proti účtu položky by vytvořilo přeplatek na saldokontu.
+                    throw new OtherItemException('payment_exceeds_item',
+                        'Platba je vyšší než zbývající dluh. Zaúčtujte ji rozúčtováním a položce ji přiřaďte z jejího detailu.', 409);
+                }
                 if (!$mayPost) {
                     throw new OtherItemException('posting_forbidden',
                         'Platbu je potřeba zaúčtovat a k tomu chybí oprávnění k účetnictví.', 403);
@@ -145,6 +155,8 @@ final class OtherItemBankMatchService
                     ? ['debit_account_code' => '221', 'credit_account_code' => $account]
                     : ['debit_account_code' => $account, 'credit_account_code' => '221'], $meta);
             }
+            // Položka ze zůstatku nemá vlastní zápis a allocate() její zaúčtování nekontroluje.
+            $this->items->assertBankPaymentPosted($supplierId, $txId, $item, $amount);
             $result = $this->items->allocate($supplierId, $itemId,
                 ['bank_transaction_id' => $txId, 'amount' => $amount], $userId);
             if ($ownTx) $pdo->commit();
@@ -157,18 +169,18 @@ final class OtherItemBankMatchService
 
     /**
      * Pohyb firmy volný k přiřazení ({@see OtherItemService::freeBankPaymentSql}) s jeho
-     * již přiřazenou částkou; `locked_item_id` je položka, ke které se smí vrátit po stornu.
+     * již přiřazenou částkou; `locked_item_ids` jsou položky, ke kterým se smí vrátit po stornu.
      *
-     * @return array{id:int,amount:float,variable_symbol:?string,used_amount:float,locked_item_id:?int}|null
+     * @return array{id:int,amount:float,variable_symbol:?string,used_amount:float,locked_item_ids:list<int>}|null
      */
     private function freeTransaction(int $supplierId, int $txId, bool $lock): ?array
     {
         if ($lock && $this->bankPosting->lockTransaction($supplierId, $txId) === null) return null;
         $stmt = $this->db->pdo()->prepare(
             'SELECT bt.id, bt.amount, bt.variable_symbol, COALESCE(a.used_amount, 0) used_amount,
-                    (SELECT MIN(previous.other_item_id) FROM other_item_allocations previous
+                    (SELECT GROUP_CONCAT(DISTINCT previous.other_item_id) FROM other_item_allocations previous
                       WHERE previous.supplier_id = bs.supplier_id AND previous.bank_transaction_id = bt.id
-                        AND previous.reversed_on IS NOT NULL) locked_item_id
+                        AND previous.reversed_on IS NOT NULL) locked_item_ids
                FROM bank_transactions bt
                JOIN bank_statements bs ON bs.id = bt.statement_id AND bs.supplier_id = ?
           LEFT JOIN (SELECT bank_transaction_id, SUM(amount) used_amount FROM other_item_allocations
@@ -186,8 +198,20 @@ final class OtherItemBankMatchService
             'amount' => (float) $row['amount'],
             'variable_symbol' => $row['variable_symbol'] !== null ? (string) $row['variable_symbol'] : null,
             'used_amount' => (float) $row['used_amount'],
-            'locked_item_id' => $row['locked_item_id'] !== null ? (int) $row['locked_item_id'] : null,
+            'locked_item_ids' => $row['locked_item_ids'] !== null
+                ? array_map('intval', explode(',', (string) $row['locked_item_ids'])) : [],
         ];
+    }
+
+    /** @param array<string,mixed> $item */
+    private function postedOnItemAccount(int $supplierId, int $txId, array $item): bool
+    {
+        try {
+            $this->items->assertBankPaymentPosted($supplierId, $txId, $item, 0.01);
+            return true;
+        } catch (OtherItemException) {
+            return false;
+        }
     }
 
     private function hasLiveEntry(int $supplierId, int $txId): bool

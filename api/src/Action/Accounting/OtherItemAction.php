@@ -242,7 +242,10 @@ final class OtherItemAction
                 // Stejná práva jako ruční zaúčtování pohybu (POST /bank-transactions/{id}/post).
                 RequestAuthorization::allows($request, 'bank.post', AccessLevel::WRITE)
                     && RequestAuthorization::allows($request, 'accounting', AccessLevel::WRITE));
-            $this->log($request, 'other_item.payment_allocated', $id);
+            $this->logger->log('other_item.payment_allocated', $this->userId($request), 'other_item', $id,
+                ['bank_transaction_id' => $txId],
+                $this->ipMatcher->clientIpFromRequest($request->getServerParams()),
+                $request->getHeaderLine('User-Agent'), $this->currentSupplierId($request));
             return $item;
         });
     }

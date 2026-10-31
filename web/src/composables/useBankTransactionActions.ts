@@ -94,6 +94,9 @@ export function useBankTransactionActions(opts: { reload: () => Promise<void> | 
 
   function canRunDetailAction(tx: BankTransaction, action: BankDetailAction): boolean {
     if (tx.resolution === 'payroll' || tx.posting?.payroll_matched) return false
+    // Pohyb přiřazený ostatní položce jde jen doplnit do další položky z jeho volné části.
+    const allocated = tx.matched_other_items?.reduce((sum, item) => sum + item.amount, 0) ?? 0
+    if (allocated > 0 && (action !== 'match' || allocated >= Math.abs(tx.amount) - 0.005)) return false
     const auth = useAuthStore()
     const status = tx.match_status
     if (action === 'create') return !auth.isClientRole && auth.canWrite('purchase_invoices.create') && tx.amount < 0 && status === 'unmatched'
@@ -265,8 +268,12 @@ export function useBankTransactionActions(opts: { reload: () => Promise<void> | 
     loadingCandidates.value = true
     try {
       const search = matchSearch.value.trim()
+      const allocated = !!matchCtx.value?.matched_other_items?.length
       const [result, otherItems] = await Promise.all([
-        search ? bankApi.matchCandidates(txId, search) : bankApi.matchCandidates(txId),
+        // Pohyb přiřazený ostatní položce server k faktuře nepustí, proto se faktury nenabízejí.
+        allocated
+          ? Promise.resolve({ candidates: [] as MatchCandidate[], fallback: false })
+          : search ? bankApi.matchCandidates(txId, search) : bankApi.matchCandidates(txId),
         // Chyba u ostatních položek nesmí schovat kandidáty faktur.
         canSeeOtherItemCandidates()
           ? otherItemsApi.bankCandidates(txId, search).catch(() => [] as MatchCandidate[])

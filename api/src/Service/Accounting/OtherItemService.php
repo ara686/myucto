@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MyInvoice\Service\Accounting;
 
 use MyInvoice\Infrastructure\Database\Connection;
+use MyInvoice\Infrastructure\Database\TransactionFailure;
 use MyInvoice\Repository\ChartOfAccountsRepository;
 use MyInvoice\Repository\OtherItemRepository;
 use MyInvoice\Service\Accounting\Closing\DocumentSeriesService;
@@ -495,6 +496,34 @@ final class OtherItemService
 
     public function allocate(int $supplierId, int $id, array $input, ?int $userId): array
     {
+        return TransactionFailure::retrying($this->db->pdo(),
+            fn (): array => $this->allocateOnce($supplierId, $id, $input, $userId));
+    }
+
+    /**
+     * Položka zamčená pro přiřazení úhrady. Zbytek počítá zamykacím čtením přiřazení až po
+     * zámku položky: čtení ze snímku transakce by po čekání na zámek neviděl úhradu, kterou
+     * mezitím potvrdil souběžný požadavek, a položka by se přeplatila.
+     *
+     * @return array<string,mixed>
+     */
+    public function lockForAllocation(int $supplierId, int $id): array
+    {
+        $item = $this->items->find($supplierId, $id, true)
+            ?? throw new OtherItemException('not_found', 'Doklad nebyl nalezen.', 404);
+        $stmt = $this->db->pdo()->prepare(
+            'SELECT COALESCE(SUM(amount), 0) FROM other_item_allocations
+              WHERE supplier_id = ? AND other_item_id = ? AND reversed_on IS NULL FOR UPDATE'
+        );
+        $stmt->execute([$supplierId, $id]);
+        $allocated = (float) $stmt->fetchColumn();
+        $item['paid_amount'] = round($allocated + (float) $item['settled_outside_amount'], 2);
+        $item['remaining_amount'] = round((float) $item['amount'] - (float) $item['paid_amount'], 2);
+        return $item;
+    }
+
+    private function allocateOnce(int $supplierId, int $id, array $input, ?int $userId): array
+    {
         $bankId = isset($input['bank_transaction_id']) ? (int) $input['bank_transaction_id'] : 0;
         $cashId = isset($input['cash_document_id']) ? (int) $input['cash_document_id'] : 0;
         if (($bankId > 0) === ($cashId > 0)) {
@@ -510,8 +539,7 @@ final class OtherItemService
         $ownTx = !$pdo->inTransaction();
         if ($ownTx) $pdo->beginTransaction();
         try {
-            $item = $this->items->find($supplierId, $id, true)
-                ?? throw new OtherItemException('not_found', 'Doklad nebyl nalezen.', 404);
+            $item = $this->lockForAllocation($supplierId, $id);
             if (!in_array($item['status'], ['posted', 'confirmed'], true)) {
                 throw new OtherItemException('not_posted', 'Úhradu lze přiřadit jen potvrzenému dokladu.', 409);
             }
@@ -692,12 +720,28 @@ final class OtherItemService
                                      WHERE tas.matched_transaction_id = bt.id AND tas.supplier_id = bs.supplier_id)';
     }
 
-    /** Kód účtu pohledávky/závazku ze zápisu položky; null, když položka zápis nemá. */
+    /**
+     * Kód účtu pohledávky/závazku položky; null, když položka v účetnictví účet nemá.
+     * Položka ze zůstatku zápisu vlastní zápis nemá: předpis je řádek cizího zápisu a jeho
+     * účet nese sama položka ({@see createFromJournalLine}).
+     */
     public function settlementAccountCode(int $supplierId, array $item): ?string
     {
-        if ($item['journal_entry_id'] === null) return null;
+        if ($item['journal_entry_id'] === null) {
+            return $this->hasJournalOrigin($supplierId, (int) $item['id']) ? (string) $item['account_code'] : null;
+        }
         $account = $this->accounts->findById($supplierId, $this->settlementAccountId($supplierId, $item));
         return $account === null ? null : (string) $account['account_code'];
+    }
+
+    /** Zaúčtování pohybu pokrývá částku na účtu položky; položka bez účtu se nekontroluje. */
+    public function assertBankPaymentPosted(int $supplierId, int $txId, array $item, float $amount): void
+    {
+        $code = $this->settlementAccountCode($supplierId, $item);
+        if ($code === null) return;
+        $account = $this->accounts->findByCode($supplierId, $code)
+            ?? throw new OtherItemException('payment_not_posted', 'Účet položky není v účtové osnově.', 409);
+        $this->assertPaymentPosting($supplierId, 'bank', $txId, (int) $account['id'], (string) $item['side'], $amount);
     }
 
     private function settlementAccountId(int $supplierId, array $item): int

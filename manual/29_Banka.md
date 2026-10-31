@@ -398,11 +398,11 @@ Párování z detailu faktury (**Spárovat s bankou**): seznam lze hledat podle 
 Ostatní pohledávky a závazky v okně **Spárovat**:
 
 - Bez hledání okno nabídne potvrzené nebo zaúčtované položky v CZK se shodnou zbývající částkou nebo shodným variabilním symbolem. Pole **Vyhledat jiný doklad** hledá podle čísla dokladu, VS, partnera nebo názvu položky bez ohledu na částku.
-- Příchozí platba se nabízí jen pohledávkám, odchozí jen závazkům. Platba v cizí měně ani pohyb už přiřazený faktuře, mzdám, daním nebo jiné položce se nenabídne.
-- Přiřadí se volná část pohybu, nejvýše zbývající dluh. Pohyb, který ještě není zaúčtovaný, MyÚčto zaúčtuje ručním zápisem proti účtu položky; k tomu potřebujete právo zaúčtovat bankovní pohyby a zapisovat do účetnictví. Bez něj se platba nepřiřadí a aplikace to oznámí.
-- Nezaúčtovaná platba vyšší než zbývající dluh se z okna nepřiřadí, protože by na saldokontu vznikl přeplatek. Zaúčtujte ji rozúčtováním a položce ji přiřaďte z jejího detailu akcí **Připojit úhradu**.
-- Přiřazený pohyb má ve výpisu stav **Ostatní položka** a ve sloupci dokladu odkaz na položku.
-- Přiřazení zrušíte v detailu položky; po stornu lze pohyb znovu přiřadit jen původní položce.
+- Příchozí platba se nabízí jen pohledávkám, odchozí jen závazkům. Platba v cizí měně ani pohyb už přiřazený faktuře, mzdám nebo daním se nenabídne. Pohyb přiřazený jiné položce se nabídne jen s volnou částí a pohyb zaúčtovaný na jiný účet se položce nenabídne.
+- Přiřadí se volná část pohybu, nejvýše zbývající dluh. Pohyb, který ještě není zaúčtovaný, MyÚčto zaúčtuje ručním zápisem proti účtu položky, u položky založené ze zůstatku zápisu proti účtu tohoto zápisu; k tomu potřebujete právo zaúčtovat bankovní pohyby a zapisovat do účetnictví. Bez něj se platba nepřiřadí a aplikace to oznámí.
+- Nezaúčtovaná platba vyšší než zbývající dluh se z okna nepřiřadí, protože by na saldokontu vznikl přeplatek. Zaúčtujte ji rozúčtováním a položce ji přiřaďte z jejího detailu akcí **Připojit úhradu**. V daňové evidenci se nic neúčtuje, přiřadí se jen část do výše dluhu.
+- Přiřazený pohyb má ve výpisu stav **Ostatní položka** a ve sloupci dokladu odkaz na položku. Pohyb s přiřazením nejde ignorovat.
+- Přiřazení zrušíte v detailu položky. Zaúčtování pohybu tím zůstává na účtu položky a pohyb lze přiřadit i jiné položce se stejným účtem. Po stornu zaúčtování lze pohyb znovu přiřadit jen původní položce.
 
 U CZK platby cizoměnové faktury, která odpovídá celému zbytku v devizové toleranci, se faktura vyrovná celým zbytkem v její měně; přesný CZK pohyb zůstane na bankovní transakci. Výrazně nižší částka je částečná úhrada.
 
