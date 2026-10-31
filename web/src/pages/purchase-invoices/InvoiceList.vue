@@ -1334,26 +1334,32 @@ useWindowRefresh(refreshLoadedPages,
           <option value="1">{{ t('purchase_invoice.filters.payment_ordered_yes') }}</option>
           <option value="0">{{ t('purchase_invoice.filters.payment_ordered_no') }}</option>
         </select>
-        <label class="flex flex-wrap items-center gap-1.5 text-sm text-neutral-700"
-          :title="t('purchase_invoice.filters.has_visual_document_hint')">
-          {{ t('purchase_invoice.filters.has_visual_document') }}
-          <select v-model="visualDocumentFilter" data-test="has_visual_document-filter"
-            class="h-9 px-3 border border-neutral-300 rounded-md bg-surface text-sm">
-            <option value="">{{ t('purchase_invoice.filters.document_all') }}</option>
-            <option value="1">{{ t('purchase_invoice.filters.document_present') }}</option>
-            <option value="0">{{ t('purchase_invoice.filters.document_missing') }}</option>
-          </select>
-        </label>
-        <label class="flex flex-wrap items-center gap-1.5 text-sm text-neutral-700"
-          :title="t('purchase_invoice.filters.has_structured_source_hint')">
-          {{ t('purchase_invoice.filters.has_structured_source') }}
-          <select v-model="structuredSourceFilter" data-test="has_structured_source-filter"
-            class="h-9 px-3 border border-neutral-300 rounded-md bg-surface text-sm">
-            <option value="">{{ t('purchase_invoice.filters.document_all') }}</option>
-            <option value="1">{{ t('purchase_invoice.filters.document_present') }}</option>
-            <option value="0">{{ t('purchase_invoice.filters.document_missing') }}</option>
-          </select>
-        </label>
+        <fieldset data-test="document-sources-filters"
+          class="min-w-0 max-w-full rounded-md border border-neutral-200 px-3 pb-2">
+          <legend class="px-1 text-xs font-medium text-neutral-500">{{ t('purchase_invoice.filters.document_sources') }}</legend>
+          <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <label class="flex flex-wrap items-center gap-1.5 text-sm text-neutral-700"
+              :title="t('purchase_invoice.filters.has_visual_document_hint')">
+              {{ t('purchase_invoice.filters.has_visual_document') }}
+              <select v-model="visualDocumentFilter" data-test="has_visual_document-filter"
+                class="h-9 px-3 border border-neutral-300 rounded-md bg-surface text-sm">
+                <option value="">{{ t('purchase_invoice.filters.document_all') }}</option>
+                <option value="1">{{ t('purchase_invoice.filters.document_present') }}</option>
+                <option value="0">{{ t('purchase_invoice.filters.document_missing') }}</option>
+              </select>
+            </label>
+            <label class="flex flex-wrap items-center gap-1.5 text-sm text-neutral-700"
+              :title="t('purchase_invoice.filters.has_structured_source_hint')">
+              {{ t('purchase_invoice.filters.has_structured_source') }}
+              <select v-model="structuredSourceFilter" data-test="has_structured_source-filter"
+                class="h-9 px-3 border border-neutral-300 rounded-md bg-surface text-sm">
+                <option value="">{{ t('purchase_invoice.filters.document_all') }}</option>
+                <option value="1">{{ t('purchase_invoice.filters.document_present') }}</option>
+                <option value="0">{{ t('purchase_invoice.filters.document_missing') }}</option>
+              </select>
+            </label>
+          </div>
+        </fieldset>
         <select v-if="isDoubleEntry" v-model="bookedFilter"
           class="h-9 px-3 border border-neutral-300 rounded-md bg-surface text-sm"
           :title="t('common.booked_filter_all')">

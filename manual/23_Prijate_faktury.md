@@ -38,16 +38,16 @@ Oproti vystaveným fakturám se liší takto:
 
 ### Filtry podkladů
 
-V **Filtrech** seznamu přijatých faktur jsou dva nezávislé výběry:
+V **Filtrech** seznamu přijatých faktur jsou ve společné skupině **Podklady dokladu** dva nezávislé výběry:
 
 | Filtr | Co kontroluje |
 |---|---|
 | **PDF / sken dokladu** | Uložené PDF či nahranou fotku, včetně dostupných PDF a obrázků v připojených Dokumentech. |
-| **Strukturovaný zdroj** | Archivovaný zdroj importu: ISDOC, ISDOCX, Pohoda XML nebo iDoklad/Fakturoid JSON. |
+| **ISDOC / XML dokladu** | Archivovaný zdroj importu: ISDOC, ISDOCX, Pohoda XML nebo iDoklad/Fakturoid JSON. |
 
 Oba nabízejí **Vše**, **Přiložen** a **Chybí**. Lze je kombinovat s rokem,
 dodavatelem a dalšími filtry a uložit do pohledu. Například **PDF / sken: Chybí**
-a **Strukturovaný zdroj: Přiložen** vyhledá importované faktury bez vizuálního podkladu.
+a **ISDOC / XML dokladu: Přiložen** vyhledá importované faktury bez vizuálního podkladu.
 
 Filtry kontrolují přítomnost podkladu v aplikaci, nikoli jeho obsah nebo pravost;
 připojeným PDF může být i smlouva či dodací list. Neověřují fyzickou dostupnost
