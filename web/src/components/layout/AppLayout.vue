@@ -468,9 +468,18 @@ const navSections = computed<NavSection[]>(() => {
       title: t('nav.section_sales'),
       accent: 'primary',
       items: [
+        // 1) Doklady a jejich pořízení.
         { to: '/invoices',         label: t('nav.invoices'),   icon: ICONS.invoices,  newTo: '/invoices/new' },
+        // AI import vydané faktury — prodejní zrcadlo Nákup → AI import. Nahrát PDF/ISDOC →
+        // draft vydané faktury. Permission invoices.create zrcadlí BE AiExtractPdfIssuedAction.
+        { to: '/invoices/ai-import', label: t('nav.ai_import'),  icon: ICONS.ai, permission: 'invoices.create' },
+        { to: '/invoices/import', label: t('nav.import'), icon: ICONS.imports, permission: 'utilities.import' as PermissionKey, access: 'write' },
         ...(isStockEnabled ? [{ to: '/stock/sales-orders', label: t('nav.stock_sales_orders'), icon: ICONS.stock_documents, newTo: '/stock/sales-orders/new', newPermission: 'stock.orders.write' as PermissionKey }] : []),
         { to: '/recurring',        label: t('nav.recurring'),  icon: ICONS.recurring, newTo: '/recurring/new' },
+        { to: '/admin/approvals', label: t('nav.approvals'), icon: ICONS.approvals, permission: 'invoices.approval' as PermissionKey },
+        // 2) Obchodní data. Předěl nese položka bez zvláštního oprávnění, aby se nikomu neztratil.
+        { to: '/clients',          label: t('nav.clients'),    icon: ICONS.clients,   newTo: '/clients/new', dividerBefore: true },
+        { to: '/projects',         label: t('nav.projects'),   icon: ICONS.projects },
         ...(!isStockEnabled ? [{
           to: '/admin/price-list',
           label: t('nav.price_list'),
@@ -478,15 +487,8 @@ const navSections = computed<NavSection[]>(() => {
           permission: 'price_list' as PermissionKey,
           access: 'read' as const,
         }] : []),
-        { to: '/clients',          label: t('nav.clients'),    icon: ICONS.clients,   newTo: '/clients/new' },
-        { to: '/projects',         label: t('nav.projects'),   icon: ICONS.projects },
-        // AI import vydané faktury — prodejní zrcadlo Nákup → AI import. Nahrát PDF/ISDOC →
-        // draft vydané faktury. Permission invoices.create zrcadlí BE AiExtractPdfIssuedAction.
-        { to: '/invoices/ai-import', label: t('nav.ai_import'),  icon: ICONS.ai, permission: 'invoices.create' },
-        // Export/Import vydaných (reorg UX 2026-07, vytažené z Nástrojů).
-        { to: '/invoices/export',  label: t('nav.export'),     icon: ICONS.exports },
-        { to: '/invoices/import', label: t('nav.import'), icon: ICONS.imports, permission: 'utilities.import' as PermissionKey, access: 'write' },
-        { to: '/admin/approvals', label: t('nav.approvals'), icon: ICONS.approvals, permission: 'invoices.approval' as PermissionKey },
+        // 3) Export vydaných (reorg UX 2026-07, vytažené z Nástrojů).
+        { to: '/invoices/export',  label: t('nav.export'),     icon: ICONS.exports, dividerBefore: true },
       ],
     },
     {
@@ -494,24 +496,26 @@ const navSections = computed<NavSection[]>(() => {
       title: t('nav.section_purchase'),
       accent: 'warning',
       items: [
+        // 1) Doklady a jejich pořízení.
         { to: '/purchase-invoices',          label: t('nav.purchase_invoices'),  icon: ICONS.purchase, newTo: '/purchase-invoices/new' },
         { to: '/purchase-invoices/incoming', label: t('nav.incoming_documents'), icon: ICONS.documents, permission: 'documents.inbox' as PermissionKey },
-        // Schvalování dokladů manažerem střediska (F6); badge = čeká na moje rozhodnutí.
-        ...(dimensionsEnabled ? [{ to: '/purchase-approvals', label: t('nav.purchase_approvals'), icon: ICONS.approvals, badge: approvalCount.pending.value, permission: 'purchase_invoices.approve' as PermissionKey }] : []),
         // AI import přijaté faktury (§12b) — denní operativa účetní (nahrát PDF → draft PF);
         // nastavení AI brány (klíče, DPA) zůstává v adminu (Firma → AI nastavení).
         // Samostatné oprávnění extrakce zrcadlí backend; readonly ji nevidí.
         { to: '/purchase-invoices/ai-import', label: t('nav.ai_import'),         icon: ICONS.ai, permission: 'purchase_invoices.extract', access: 'write' },
-        { to: '/clients?role=vendors',       label: t('nav.vendors'),            icon: ICONS.suppliers, newTo: '/clients/new?role=vendor' },
+        { to: '/purchase-invoices/import', label: t('nav.import'), icon: ICONS.imports, permission: 'utilities.import' as PermissionKey, access: 'write' },
+        // Schvalování dokladů manažerem střediska (F6); badge = čeká na moje rozhodnutí.
+        ...(dimensionsEnabled ? [{ to: '/purchase-approvals', label: t('nav.purchase_approvals'), icon: ICONS.approvals, badge: approvalCount.pending.value, permission: 'purchase_invoices.approve' as PermissionKey }] : []),
+        // 2) Dodavatelé a platby. Předěl nese položka bez zvláštního oprávnění, aby se nikomu neztratil.
+        { to: '/clients?role=vendors',       label: t('nav.vendors'),            icon: ICONS.suppliers, newTo: '/clients/new?role=vendor', dividerBefore: true },
         { to: '/purchase-invoices/payment-orders', label: t('nav.payment_orders'), icon: ICONS.payment_orders },
-        // Přečíslování podle data — jen účetní (klient interní čísla nespravuje).
-        ...(!auth.isClientRole ? [{ to: '/purchase-invoices/renumber', label: t('nav.purchase_renumber'), icon: ICONS.renumber, access: 'write' as const }] : []),
         // Pravidla zaúčtování nákladů se přesunula pod Šablony (záložka „Pravidla nákladů" na
         // /templates?section=expense) — patří k šablonám, ne do fronty přijatých faktur.
-        // Export/Import přijatých (reorg UX 2026-07, vytažené z Nástrojů).
-        { to: '/purchase-invoices/export',   label: t('nav.export'),             icon: ICONS.exports },
-        { to: '/purchase-invoices/import', label: t('nav.import'), icon: ICONS.imports, permission: 'utilities.import' as PermissionKey, access: 'write' },
-        // Majetek patří logicky k nákupu — pořizuje se přijatou fakturou. Zůstává
+        // 3) Export přijatých (reorg UX 2026-07, vytažené z Nástrojů) a přečíslování podle
+        // data — to jen účetní (klient interní čísla nespravuje).
+        { to: '/purchase-invoices/export',   label: t('nav.export'),             icon: ICONS.exports, dividerBefore: true },
+        ...(!auth.isClientRole ? [{ to: '/purchase-invoices/renumber', label: t('nav.purchase_renumber'), icon: ICONS.renumber, access: 'write' as const }] : []),
+        // 4) Majetek patří logicky k nákupu — pořizuje se přijatou fakturou. Zůstává
         // ale účetní funkcí (odpisy, 042/02x), takže se ukazuje jen firmám s aktivním
         // účetnictvím; stejná podmínka jako u sekce Účetnictví níž.
         // Drobný majetek stojí před Majetkem — je to jeho levnější varianta pod
@@ -519,14 +523,14 @@ const navSections = computed<NavSection[]>(() => {
         // Explicitní `permission`: navPermission() by z prefixu /accounting/ vrátil
         // totéž, jenže spoléhat na odvození z cesty je křehké.
         ...(auth.hasCommercialFeatures && isDoubleEntry ? [
-          { to: '/accounting/small-assets', label: t('nav.small_assets'),      icon: ICONS.tag,        permission: 'accounting' as PermissionKey },
+          { to: '/accounting/small-assets', label: t('nav.small_assets'),      icon: ICONS.tag,        permission: 'accounting' as PermissionKey, dividerBefore: true },
           { to: '/accounting/assets',       label: t('nav.accounting_assets'), icon: ICONS.accounting, newTo: '/accounting/assets/new' },
         ] : []),
         // Daňová evidence vede hmotný majetek a daňové odpisy (§ 7b, § 26–33 ZDP) bez
         // účtů. Drobný majetek tam povinný není (§ 28/5 ZoÚ je účetní předpis), evidence
         // ale pomáhá doložit výdaj a inventuru, takže ji nabízíme také.
         ...(auth.hasCommercialFeatures && isTaxEvidence ? [
-          { to: '/accounting/small-assets', label: t('nav.small_assets'),      icon: ICONS.tag,        permission: 'accounting' as PermissionKey },
+          { to: '/accounting/small-assets', label: t('nav.small_assets'),      icon: ICONS.tag,        permission: 'accounting' as PermissionKey, dividerBefore: true },
           { to: '/accounting/assets',       label: t('nav.accounting_assets'), icon: ICONS.accounting, newTo: '/accounting/assets/new' },
         ] : []),
       ],
