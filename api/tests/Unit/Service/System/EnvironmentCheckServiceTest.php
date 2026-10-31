@@ -15,6 +15,21 @@ use PHPUnit\Framework\TestCase;
  */
 final class EnvironmentCheckServiceTest extends TestCase
 {
+    public function testDiskSpaceShowsFreeAndTotalAndOnlyFreeDecidesStatus(): void
+    {
+        $gb = 1024 ** 3;
+        $check = EnvironmentCheckService::diskSpaceCheck(40 * $gb, 100 * $gb);
+        self::assertSame('ok', $check['status']);
+        self::assertSame(EnvironmentCheckService::humanBytes(40 * $gb), $check['actual']);
+        self::assertSame(EnvironmentCheckService::humanBytes(100 * $gb), $check['info']);
+
+        self::assertSame('warn', EnvironmentCheckService::diskSpaceCheck($gb, 100 * $gb)['status']);
+        self::assertSame('fail', EnvironmentCheckService::diskSpaceCheck(1024 ** 2, 100 * $gb)['status']);
+
+        $unknown = EnvironmentCheckService::diskSpaceCheck(null, null);
+        self::assertSame(['skip', '?', ''], [$unknown['status'], $unknown['actual'], $unknown['info']]);
+    }
+
     #[DataProvider('iniValueProvider')]
     public function testIniBytesParsesPhpNotation(string $input, int $expected): void
     {

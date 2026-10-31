@@ -810,20 +810,7 @@ final class EnvironmentCheckService
         );
 
         // --- Úložiště ---
-        $free = $store['free_bytes'] ?? null;
-        $freeStatus = self::STATUS_SKIP;
-        if (is_int($free)) {
-            $freeStatus = $free < self::CRIT_FREE_BYTES
-                ? self::STATUS_FAIL
-                : ($free < self::MIN_FREE_BYTES ? self::STATUS_WARN : self::STATUS_OK);
-        }
-        $checks[] = $this->check(
-            'disk_space',
-            $freeStatus,
-            is_int($free) ? self::humanBytes($free) : '?',
-            '>= ' . self::humanBytes(self::MIN_FREE_BYTES),
-            '999_Reseni_problemu'
-        );
+        $checks[] = self::diskSpaceCheck($store['free_bytes'] ?? null, $store['total_bytes'] ?? null);
 
         $logBytes = $store['log_bytes'] ?? null;
         $checks[] = $this->check(
@@ -1005,6 +992,30 @@ final class EnvironmentCheckService
             $check['variant'] = $variant;
         }
         return $check;
+    }
+
+    /**
+     * Stav určuje jen volné místo, celková velikost svazku je informace.
+     *
+     * @return array<string,mixed>
+     */
+    public static function diskSpaceCheck(mixed $free, mixed $total): array
+    {
+        $status = self::STATUS_SKIP;
+        if (is_int($free)) {
+            $status = $free < self::CRIT_FREE_BYTES
+                ? self::STATUS_FAIL
+                : ($free < self::MIN_FREE_BYTES ? self::STATUS_WARN : self::STATUS_OK);
+        }
+        return self::check(
+            'disk_space',
+            $status,
+            is_int($free) ? self::humanBytes($free) : '?',
+            '>= ' . self::humanBytes(self::MIN_FREE_BYTES),
+            '999_Reseni_problemu',
+            [],
+            is_int($total) ? self::humanBytes($total) : '',
+        );
     }
 
     /**
