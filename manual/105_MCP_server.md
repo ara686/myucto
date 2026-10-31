@@ -127,6 +127,10 @@ Výchozí klientské role toto oprávnění nemají.
    a rozsah. Při zapnutém MFA ověřte passkey nebo nový kód ověřovací aplikace.
 4. V asistentovi ověřte připojení a dostupnou firmu.
 
+Stránka **Firma → MCP server** obsahuje návod pro přidání konektoru v ChatGPT a Claude, přihlášení a ověření připojení. Do asistenta zadávejte adresu serveru končící `/mcp`; stránka `/portal/mcp` slouží ke správě připojení. Pro klientské připojení použijte aktivní HTTPS doménu firmy. Cloudový asistent potřebuje veřejně dostupnou doménu s důvěryhodným certifikátem; na `127.0.0.1` ani `localhost` vašeho počítače se nepřipojí.
+
+Blok **MCP server této instalace** zobrazuje adresu vrácenou serverem a tlačítko **Kopírovat adresu**. Adresu lze zkopírovat i při vypnutém MCP; samotné připojení vyžaduje jeho zapnutí. Na hlavní doméně se zobrazuje adresa hlavní instalace s upozorněním, že pro přístup omezený na jednu firmu je potřeba otevřít její klientskou doménu.
+
 Toto připojení platí pouze pro firmu a doménu uvedenou v souhlasu. Ani pozdější
 přidělení další firmy jeho rozsah nerozšíří. Seznam nástrojů je klientský výběr
 fakturace, kontaktů, zakázek, přijatých dokladů, pravidelné fakturace, knihy jízd,
