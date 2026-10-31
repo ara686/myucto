@@ -40756,7 +40756,8 @@
   "instance_admin": {
     "title": "Instance administration",
     "overview": "Overview",
-    "back_to_app": "Back to application",
+    "menu_theme": "Appearance",
+    "menu_language": "Language",
     "subtitle": "Technical administration without access to business or accounting data.",
     "runtime": "Operational status",
     "app_version": "Application version",
