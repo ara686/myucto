@@ -24369,6 +24369,7 @@
       "ignored": "Ignorováno",
       "unmatched": "Nespárováno",
       "outside_saldo": "Bez dokladu",
+      "other_item": "Ostatní položka",
       "superseded": "Nahrazeno výpisem"
     },
     "outside_saldo_hint": "Zaúčtováno mimo saldokontní účty (daň, odvod, poplatek, splátka) - pohyb doklad nemá.",
@@ -24476,6 +24477,10 @@
     "match_by_vs": "Nebo spárovat ručně dle VS",
     "candidate_issued": "Vydaná",
     "candidate_purchase": "Přijatá",
+    "candidate_other_receivable": "Ostatní pohledávka",
+    "candidate_other_payable": "Ostatní závazek",
+    "other_item_matched": "Platba přiřazena k {ref}",
+    "other_item_matched_hint": "Platba je přiřazena ostatní pohledávce nebo závazku. Přiřazení zrušíte v detailu položky.",
     "candidate_paid": "Zaplaceno",
     "candidates_fallback_hint": "V okně ±14 dní nic nesedělo - toto jsou širší návrhy (±90 dní), včetně shody bez převodu měny. Ověřte ručně před spárováním.",
     "candidate_currency_mismatch": "Jiná měna",

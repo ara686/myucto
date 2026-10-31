@@ -1839,6 +1839,7 @@ final class BankStatementAction
         // zobrazení, kdo všechno byl touto platbou uhrazen.
         $matchedByTx = [];
         $matchedPurchasesByTx = [];
+        $matchedOtherItemsByTx = [];
         $txIds = array_map(static fn ($t) => (int) $t['id'], $transactions);
         if ($txIds !== []) {
             $ph = implode(',', array_fill(0, count($txIds), '?'));
@@ -1863,6 +1864,7 @@ final class BankStatementAction
             }
 
             $matchedPurchasesByTx = PurchasePaymentMatchReader::byTransactions($this->db->pdo(), $sid, $txIds);
+            $matchedOtherItemsByTx = \MyInvoice\Service\Bank\OtherItemPaymentMatchReader::byTransactions($this->db->pdo(), $sid, $txIds);
         }
 
         // Automatizace: stav zaúčtování per transakce (jen double_entry, §3.7 #6).
@@ -1886,6 +1888,7 @@ final class BankStatementAction
             $t['matched_vendor_name'] = isset($t['matched_vendor_name']) && $t['matched_vendor_name'] !== null ? (string) $t['matched_vendor_name'] : null;
             $t['matched_invoices'] = $matchedByTx[$t['id']] ?? [];
             $t['matched_purchase_invoices'] = $matchedPurchasesByTx[$t['id']] ?? [];
+            $t['matched_other_items'] = $matchedOtherItemsByTx[$t['id']] ?? [];
             $t['posting'] = $postingByTx[$t['id']] ?? null;
             // Stav zpracování po importu nese výpis (`processing_failed`), ne pohyb.
             unset($t['processing_pending_at'], $t['processing_error']);
@@ -4614,6 +4617,11 @@ final class BankStatementAction
             if (RequestAuthorization::isClientType($request)) $this->assertUnallocated($tx);
             if (RequestAuthorization::isClientType($request) && $tx['match_status'] === 'unmatched') {
                 $this->clientAccess->assertAvailable($request, $txId);
+            }
+            $allocated = $pdo->prepare('SELECT 1 FROM other_item_allocations WHERE bank_transaction_id = ? AND reversed_on IS NULL LIMIT 1');
+            $allocated->execute([$txId]);
+            if ($allocated->fetchColumn() !== false) {
+                throw new \DomainException('Pohyb je přiřazený ostatní položce. Nejprve zrušte přiřazení.', 409);
             }
             $note = array_key_exists('note', $body) ? ($note !== null ? trim($note) : null) : $tx['ignore_note'];
             $note = $note === '' ? null : $note;
