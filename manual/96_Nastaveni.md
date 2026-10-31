@@ -130,9 +130,9 @@ licenční místo, mzdové místo nečerpá. Přihlašuje se běžným účtem, 
 ale obsahuje jen **Přehled** a **Profil** a chybí v ní přepínač firem. Téma, jazyk a odhlášení jsou v uživatelském menu
 vpravo nahoře, na mobilu ve vysouvacím menu.
 
-Superadmin otevírá stejnou správu z menu **Systém → Správa instance** jako běžnou stránku v pracovním panelu. Přímý
-odkaz na technickou plochu ho přesměruje do této integrované správy. Na spravované instalaci se o provoz stará
-provozovatel: Správa instance tam není dostupná a položka v menu se nezobrazí.
+Superadmin otevírá stejnou správu tlačítkem **Správa instance** na stránce **Systém → Diagnostika** jako běžnou stránku
+v pracovním panelu. Přímý odkaz na technickou plochu ho přesměruje do této integrované správy. Na spravované instalaci se
+o provoz stará provozovatel: Správa instance tam není dostupná a tlačítko se nezobrazí.
 
 **Založení a rozsah:**
 
