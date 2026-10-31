@@ -1758,26 +1758,7 @@ final class PostingService
         }
 
         if ($vatDeduction === 'full' || $isRc) {
-            // received_at do okna jen u ruční PF (received_at_source='manual'), kde ho
-            // VatLedgerService zohledňuje v období odpočtu (§ 73/1/a) — jinak by scanner
-            // minul řádek zařazený do pozdějšího roku (přelom roku, audit C6').
-            $receivedAt = ((string) ($pi['received_at_source'] ?? '') === 'manual')
-                ? ($pi['received_at'] !== null ? (string) $pi['received_at'] : null)
-                : null;
-            [$net, $vat, $selfAssessedVat] = $this->ledgerTotals(
-                $supplierId,
-                'purchase',
-                $purchaseInvoiceId,
-                (string) ($pi['tax_date'] ?? $pi['issue_date']),
-                (string) $pi['issue_date'],
-                $receivedAt,
-            );
-            // Kniha DPH tuzemské řádky bez nároku vyřadí a u § 75 je zkrátí, samovyměření
-            // ale nechá celé. Pro zápis je proto doklad z položek a z knihy jen samovyměřená daň.
-            if ($isRc && in_array($vatDeduction, ['none', 'proportional'], true)) {
-                [$net, $itemVat] = $this->purchaseItemTotals($purchaseInvoiceId, $rate);
-                $vat = round($itemVat + $selfAssessedVat, 2);
-            }
+            [$net, $vat, $selfAssessedVat] = $this->purchaseLedgerTotals($supplierId, $purchaseInvoiceId, $pi, $rate, $vatDeduction);
         } else {
             [$net, $vat] = $this->purchaseItemTotals($purchaseInvoiceId, $rate);
             $selfAssessedVat = 0.0;
@@ -1833,15 +1814,7 @@ final class PostingService
             // výši. Odpočet se řídí nárokem — bez nároku nic, poměrný § 75 procentem, krácený
             // § 76 v plné výši (krácení koeficientem jde souhrnně přes přiznání, ř. 43k/52).
             // Neodpočitatelná část daně je nákladem stejně jako u tuzemského dokladu bez nároku.
-            $supplierVat = round($vat - $selfAssessedVat, 2);
-            $deductibleShare = match ($vatDeduction) {
-                'none' => 0.0,
-                'proportional' => $pct,
-                default => 1.0,
-            };
-            $deductibleSelfAssessed = round($selfAssessedVat * $deductibleShare, 2);
-            $deductibleSupplierVat = round($supplierVat * $deductibleShare, 2);
-            $nonDeductibleVat = round($selfAssessedVat - $deductibleSelfAssessed + $supplierVat - $deductibleSupplierVat, 2);
+            [$supplierVat, $deductibleSelfAssessed, $deductibleSupplierVat, $nonDeductibleVat] = self::reverseChargeVatSplit($vat, $selfAssessedVat, $vatDeduction, $pct);
             $this->appendSplit($lines, $weights, $expense, $expenseSide, round($net + $nonDeductibleVat, 2), $cc);
             if ($selfAssessedVat !== 0.0) {
                 // Samovyměření: obě nohy patří na RŮZNÉ analytiky — odpočet na vstup, přiznaná
@@ -2078,12 +2051,7 @@ final class PostingService
 
             $net = round((float) $row['total_without_vat'] * $rate, 2);
             $vat = round((float) $row['total_vat'] * $rate, 2);
-            $w = match (true) {
-                $isRc => $net,
-                $vatDeduction === 'none' => round($net + $vat, 2),
-                $vatDeduction === 'proportional' => round($net + round($vat * (1.0 - $pct), 2), 2),
-                default => $net,
-            };
+            $w = $isRc ? $net : self::purchaseItemCost($net, $vat, $vatDeduction, $pct);
             $itemAccounts[(int) $row['id']] = $account;
             $itemWeights[(int) $row['id']] = $w;
         }
@@ -2419,6 +2387,157 @@ final class PostingService
     }
 
     /**
+     * Účetní náklad položek přijaté faktury v Kč: základ a neodpočitatelná část daně, stejným
+     * pravidlem jako zápis dokladu ({@see buildFromPurchaseInvoice}). Historický status plátce
+     * čte {@see effectivePurchaseVatDeduction}, kurz je kurz dokladu. Daň z účetních alokací
+     * a ze samovyměření se k položkám neváže, proto se rozdělí poměrem: alokace podle daně
+     * položek, samovyměření podle základu jako rozpad nákladu v zápisu dokladu.
+     *
+     * SSOT pro časové rozlišení nákladů (381), které musí odložit tutéž hodnotu, kterou doklad
+     * zaúčtoval. Haléřové dorovnání dokladu se do nákladu položky nepočítá.
+     *
+     * @return array<int,float> id položky => náklad v Kč
+     */
+    public function purchaseItemCostsCzk(int $supplierId, int $purchaseInvoiceId): array
+    {
+        $pi = $this->fetchDocHeader('purchase_invoices', $supplierId, $purchaseInvoiceId);
+        if ($pi === null) {
+            throw new PostingException('entry_not_found', 'Přijatá faktura #' . $purchaseInvoiceId . ' neexistuje.', 404);
+        }
+        $rate = $this->fxRate($pi);
+        $vatDeduction = $this->effectivePurchaseVatDeduction($supplierId, $pi);
+        $pct = max(0.0, min(100.0, (float) ($pi['vat_deduction_percent'] ?? 100))) / 100.0;
+
+        $stmt = $this->db->pdo()->prepare(
+            'SELECT id, total_without_vat, total_vat FROM purchase_invoice_items WHERE purchase_invoice_id = ?'
+        );
+        $stmt->execute([$purchaseInvoiceId]);
+        $nets = [];
+        $vats = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $nets[(int) $row['id']] = round((float) $row['total_without_vat'] * $rate, 2);
+            $vats[(int) $row['id']] = round((float) $row['total_vat'] * $rate, 2);
+        }
+        if ($nets === []) {
+            return [];
+        }
+
+        if ((bool) ($pi['reverse_charge'] ?? false)) {
+            if (!in_array($vatDeduction, ['none', 'proportional'], true)) {
+                return $nets;
+            }
+            [, $vat, $selfAssessedVat] = $this->purchaseLedgerTotals($supplierId, $purchaseInvoiceId, $pi, $rate, $vatDeduction);
+            [, , , $nonDeductibleVat] = self::reverseChargeVatSplit($vat, $selfAssessedVat, $vatDeduction, $pct);
+            return $this->addDistributedVat($nets, $nonDeductibleVat, $nets);
+        }
+
+        // Stejná podmínka jako v zápisu: neplátci jde celá daň do nákladu bez ohledu na alokace.
+        $allocations = $vatDeduction === 'none' && (string) ($pi['vat_deduction'] ?? 'full') !== 'none'
+            ? []
+            : $this->purchaseVatAllocations($supplierId, $purchaseInvoiceId);
+        if ($allocations !== []) {
+            $nonDeductibleVat = 0.0;
+            foreach ($allocations as $allocation) {
+                $vat = round((float) $allocation['vat_amount'] * $rate, 2);
+                $nonDeductibleVat = round($nonDeductibleVat + $vat - self::allocationDeductibleVat($allocation, $vat), 2);
+            }
+            return $this->addDistributedVat($nets, $nonDeductibleVat, abs(array_sum($vats)) < 0.005 ? $nets : $vats);
+        }
+
+        $costs = [];
+        foreach ($nets as $itemId => $net) {
+            $costs[$itemId] = self::purchaseItemCost($net, $vats[$itemId], $vatDeduction, $pct);
+        }
+        return $costs;
+    }
+
+    /**
+     * @param array<int,float> $nets
+     * @param array<int,float> $weights
+     * @return array<int,float>
+     */
+    private function addDistributedVat(array $nets, float $vat, array $weights): array
+    {
+        if (self::cents($vat) === 0) {
+            return $nets;
+        }
+        foreach ($this->distribute($vat, $weights) as $itemId => $part) {
+            $nets[$itemId] = round($nets[$itemId] + $part, 2);
+        }
+        return $nets;
+    }
+
+    /** Náklad položky bez samovyměření a účetních alokací: základ + neodpočitatelná část daně. */
+    private static function purchaseItemCost(float $net, float $vat, string $vatDeduction, float $pct): float
+    {
+        return match ($vatDeduction) {
+            'none' => round($net + $vat, 2),
+            'proportional' => round($net + round($vat * (1.0 - $pct), 2), 2),
+            default => $net,
+        };
+    }
+
+    /**
+     * Základ, daň a samovyměřená daň dokladu pro větev plného nároku a přenesení povinnosti.
+     *
+     * @param array<string,mixed> $pi
+     * @return array{0:float,1:float,2:float}
+     */
+    private function purchaseLedgerTotals(int $supplierId, int $purchaseInvoiceId, array $pi, float $rate, string $vatDeduction): array
+    {
+        // received_at do okna jen u ruční PF (received_at_source='manual'), kde ho
+        // VatLedgerService zohledňuje v období odpočtu (§ 73/1/a) — jinak by scanner
+        // minul řádek zařazený do pozdějšího roku (přelom roku, audit C6').
+        $receivedAt = ((string) ($pi['received_at_source'] ?? '') === 'manual')
+            ? ($pi['received_at'] !== null ? (string) $pi['received_at'] : null)
+            : null;
+        [$net, $vat, $selfAssessedVat] = $this->ledgerTotals(
+            $supplierId,
+            'purchase',
+            $purchaseInvoiceId,
+            (string) ($pi['tax_date'] ?? $pi['issue_date']),
+            (string) $pi['issue_date'],
+            $receivedAt,
+        );
+        // Kniha DPH tuzemské řádky bez nároku vyřadí a u § 75 je zkrátí, samovyměření
+        // ale nechá celé. Pro zápis je proto doklad z položek a z knihy jen samovyměřená daň.
+        if ((bool) $pi['reverse_charge'] && in_array($vatDeduction, ['none', 'proportional'], true)) {
+            [$net, $itemVat] = $this->purchaseItemTotals($purchaseInvoiceId, $rate);
+            $vat = round($itemVat + $selfAssessedVat, 2);
+        }
+        return [$net, $vat, $selfAssessedVat];
+    }
+
+    /**
+     * Rozdělení daně dokladu s přenesením povinnosti podle nároku.
+     *
+     * @return array{0:float,1:float,2:float,3:float} daň dodavatele, odpočet ze samovyměření, odpočet z daně dodavatele, neodpočitatelná daň
+     */
+    private static function reverseChargeVatSplit(float $vat, float $selfAssessedVat, string $vatDeduction, float $pct): array
+    {
+        $supplierVat = round($vat - $selfAssessedVat, 2);
+        $deductibleShare = match ($vatDeduction) {
+            'none' => 0.0,
+            'proportional' => $pct,
+            default => 1.0,
+        };
+        $deductibleSelfAssessed = round($selfAssessedVat * $deductibleShare, 2);
+        $deductibleSupplierVat = round($supplierVat * $deductibleShare, 2);
+        $nonDeductibleVat = round($selfAssessedVat - $deductibleSelfAssessed + $supplierVat - $deductibleSupplierVat, 2);
+        return [$supplierVat, $deductibleSelfAssessed, $deductibleSupplierVat, $nonDeductibleVat];
+    }
+
+    /** @param array<string,mixed> $allocation */
+    private static function allocationDeductibleVat(array $allocation, float $vat): float
+    {
+        return match ((string) $allocation['vat_deduction']) {
+            'none' => 0.0,
+            'proportional' => round($vat * max(0.0, min(100.0, (float) $allocation['vat_deduction_percent'])) / 100, 2),
+            default => $vat,
+        };
+    }
+
+    /**
      * Druhová strana dokladu (náklad u přijaté, výnos u vydané): buď jedna noha (dosud),
      * nebo rozpad dle vah z klasifikace položek.
      *
@@ -2585,12 +2704,7 @@ final class PostingService
         foreach ($allocations as $allocation) {
             $base = round((float) $allocation['base_amount'] * $rate, 2);
             $vat = round((float) $allocation['vat_amount'] * $rate, 2);
-            $deduction = (string) $allocation['vat_deduction'];
-            $deductibleVat = match ($deduction) {
-                'none' => 0.0,
-                'proportional' => round($vat * max(0.0, min(100.0, (float) $allocation['vat_deduction_percent'])) / 100, 2),
-                default => $vat,
-            };
+            $deductibleVat = self::allocationDeductibleVat($allocation, $vat);
             $accountAmount = round($base + ($vat - $deductibleVat), 2);
             if ($accountAmount !== 0.0) {
                 $accountCode = (string) $allocation['account_code'];

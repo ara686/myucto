@@ -583,7 +583,7 @@ async function load(silent = false) {
 watch([environmentModel, period], () => { void load() })
 onMounted(() => { void load() })
 // Podání odeslané nebo doručenka stažená v jiném okně mění stav položek měsíce.
-useWindowRefresh('*', () => load(true), () => !loading.value && !flowBusy.value && preparing.value === '' && receiptsBusy.value === ''
+useWindowRefresh(() => load(true), () => !loading.value && !flowBusy.value && preparing.value === '' && receiptsBusy.value === ''
   && databoxOutboxIds.value.length === 0)
 </script>
 

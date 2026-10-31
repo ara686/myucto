@@ -22410,6 +22410,9 @@
     }
   },
   "common": {
+    "window_data_changed": "The data has changed in the meantime.",
+    "window_data_changed_reload": "Reload",
+    "window_data_changed_confirm": "Reload the page? Unsaved changes in this window will be lost.",
     "tableHorizontalScroll": "Scroll table horizontally",
     "show": "Show",
     "reset_sort": "Restore default order",
@@ -24225,6 +24228,7 @@
     "upload_batch_attached": "{n} PDF attached to an existing statement.",
     "pdf_attached_to_existing": "The statement was already imported from GPC — the PDF was attached to it.",
     "warning": {
+      "imported_balances_rebased": "Balances of {statements} imported statements of this account were shifted by {shift} to match the bank statement. The account opening balance comes to {opening}; the journal does not change, please check the opening balance in accounting.",
       "transactions_skipped_as_duplicate": "The statement had {parsed} transactions, {inserted} were imported. {skipped} matched transactions already on record (overlapping statement) and were not imported — please verify these are genuine duplicates.",
       "transactions_skipped_as_duplicate_batch": "{count} transactions from the uploaded statements were skipped as duplicates of already recorded ones — please verify these are genuine duplicates.",
       "processing_failed": "The statement was saved, but matching and posting of its transactions could not be completed. Open the statement and use “Re-match statement”.",

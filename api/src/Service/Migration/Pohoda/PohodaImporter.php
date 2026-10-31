@@ -57,6 +57,9 @@ final class PohodaImporter
         private readonly VatCoefficientSeeder $coefficients,
         private readonly StockImporter $stock,
         private readonly CostCenterImporter $costCenters,
+        private readonly InternalDocumentImporter $internalDocuments,
+        private readonly BalanceItemImporter $balanceItems,
+        private readonly UnbookedBankProposals $proposals,
     ) {}
 
     /** @return list<string> */
@@ -102,7 +105,7 @@ final class PohodaImporter
      * @param list<int>|null $laterYears
      * @return list<array{level:string,code:string,message:string,context:array<string,mixed>}>
      */
-    public function preflight(int $supplierId, PohodaExport $export, array $skipYears = [], ?array $laterYears = null, ?PohodaAgendaYear $agendaYear = null, bool $relinkOnly = false): array
+    public function preflight(int $supplierId, PohodaExport $export, array $skipYears = [], ?array $laterYears = null, ?PohodaAgendaYear $agendaYear = null, bool $relinkOnly = false, bool $keepOwnJournal = false): array
     {
         $out = $export->sourceWarnings();
         $add = static function (string $level, string $code, string $message, array $context = []) use (&$out): void {
@@ -170,6 +173,8 @@ final class PohodaImporter
             $foreign = $this->journal->foreignEntryCount($supplierId, (int) $period['id']);
             if ($foreign > 0 && $relinkOnly) {
                 $add('info', 'relink_keeps_own_journal', "Účetní období {$year} obsahuje {$foreign} zápisů zadaných v MyÚčtu. Opravný převod je nechá beze změny a nové doklady z Pohody nepřidá.", ['entries' => $foreign, 'year' => $year]);
+            } elseif ($foreign > 0 && $keepOwnJournal) {
+                $add('info', 'keeps_own_journal', "Účetní období {$year} obsahuje {$foreign} zápisů zadaných v MyÚčtu. Dorovnání je nechá beze změny a převezme z POHODY jen záznamy starší než první z nich.", ['entries' => $foreign, 'year' => $year]);
             } elseif ($foreign > 0) {
                 $add('error', 'journal_not_empty', "Účetní období {$year} už obsahuje {$foreign} zápisů, které nevznikly převodem z Pohody. Deník z Pohody se do rozjetého účetnictví nepřimíchává.", ['entries' => $foreign, 'year' => $year]);
             }
@@ -223,11 +228,12 @@ final class PohodaImporter
              WHERE l.supplier_id = ? AND e.posted_at IS NOT NULL AND a.account_code REGEXP '^[56]'
                AND NOT EXISTS (SELECT 1 FROM journal_entry_line_dimension_splits sp WHERE sp.line_id = l.id AND sp.dimension_type_id = ?)");
         $stmt->execute([$activity['id'], $activity['values']['main'], $ctx->supplierId, $activity['id']]);
-        if ($stmt->rowCount() > 0) {
+        $lines = $stmt->rowCount() + $ctx->nonprofitLines;
+        if ($lines > 0) {
             $ctx->protocol->warn(PohodaReconciler::STEP, 'nonprofit_activity_default', sprintf(
                 '%d řádkům nákladů a výnosů převod nastavil hlavní činnost, činnost z POHODY nepřebírá. Účetní přeřadí hospodářskou činnost podle skutečnosti, ovlivňuje to výkazy i daň z příjmů.',
-                $stmt->rowCount(),
-            ), ['lines' => $stmt->rowCount()]);
+                $lines,
+            ), ['lines' => $lines]);
         }
     }
 
@@ -251,8 +257,10 @@ final class PohodaImporter
      * @param array{warehouses:array<string,string>}|null $stock převod skladu zvolený v průvodci ({@see PohodaContext::$stock})
      * @param bool $relinkOnly opravný převod vazeb už převedené firmy ({@see PohodaContext::$relinkOnly})
      */
-    public function run(int $supplierId, int $userId, PohodaExport $export, bool $dryRun, ?int $runId = null, ?callable $progress = null, ?callable $shouldCancel = null, array $skipYears = [], bool $acceptDifferences = false, ?array $stock = null, bool $relinkOnly = false): ImportProtocol
+    public function run(int $supplierId, int $userId, PohodaExport $export, bool $dryRun, ?int $runId = null, ?callable $progress = null, ?callable $shouldCancel = null, array $skipYears = [], bool $acceptDifferences = false, ?array $stock = null, bool $relinkOnly = false, bool $keepOwnJournal = false): ImportProtocol
     {
+        // Dorovnání: deník nese i vlastní zápisy, rozdíl proti POHODĚ je očekávaný a hlásí se.
+        $acceptDifferences = $acceptDifferences || $keepOwnJournal;
         // Tvar roku firmy se určí před prvním zápisem: převod podle něj zakládá období.
         $agendaYear = PohodaAgendaYear::of($export, $this->periods->fiscalCalendar($supplierId));
         if ($skipYears !== []) {
@@ -268,7 +276,7 @@ final class PohodaImporter
             'skipped_years' => $skipYears,
             'relink_only' => $relinkOnly,
         ]);
-        $preflight = $this->preflight($supplierId, $export, $skipYears, null, $agendaYear, $relinkOnly);
+        $preflight = $this->preflight($supplierId, $export, $skipYears, null, $agendaYear, $relinkOnly, $keepOwnJournal);
         $protocol->set('preflight', $preflight);
         $protocol->begin(self::STEP_PREFLIGHT);
         foreach ($preflight as $m) {
@@ -292,6 +300,12 @@ final class PohodaImporter
         $ctx->skippedYears = array_fill_keys($skipYears, true);
         $ctx->stock = $stock;
         $ctx->relinkOnly = $relinkOnly;
+        if ($keepOwnJournal) {
+            $ctx->ownJournalFrom = $this->journal->firstForeignEntryDate($supplierId);
+            if ($ctx->ownJournalFrom !== null) {
+                $protocol->info(self::STEP_PREFLIGHT, 'own_journal_cutoff', "Záznamy POHODY od {$ctx->ownJournalFrom} se nepřebírají, od tohoto dne se účtuje v MyÚčtu. Rekonciliace proto může hlásit rozdíl.", ['from' => $ctx->ownJournalFrom]);
+            }
+        }
 
         $frameworkGuard = new AccountingFrameworkImportGuard($this->db, $export->hasNonprofitChart());
         $frameworkPeriods = $frameworkGuard->periodsForYears($supplierId, [$agendaYear->label, ...array_values(array_diff($agendaYear->laterYears(), $skipYears))]);
@@ -421,6 +435,12 @@ final class PohodaImporter
                 $this->linker->matchPayments($ctx);
                 if (!$ctx->relinkOnly) {
                     $this->unbooked->settle($ctx);
+                    $this->proposals->propose($ctx);
+                }
+                $this->internalDocuments->run($ctx);
+                // Až po všech úhradách: co některá z nich vysvětluje, není zůstatek bez dokladu.
+                if (!$ctx->relinkOnly) {
+                    $this->balanceItems->run($ctx);
                 }
             },
             AssetImporter::STEP => fn () => $this->assets->import($ctx),

@@ -301,7 +301,11 @@ final class InstanceAdminTechnicalTest extends TestCase
         $managedConfig = new Config($data);
         $managed = new InstanceAdminAction($this->db, $managedConfig, $this->access, $this->repository($managedConfig),
             $this->sender, new ActivityLogger($this->db), new ManagedModeGuard($managedConfig), new NullLogger());
-        self::assertSame(409, $managed->resetSmtpOverride($admin, new Response())->getStatusCode());
+        self::assertSame(404, $managed->resetSmtpOverride($admin, new Response())->getStatusCode());
+        self::assertSame(404, $managed->status($admin, new Response())->getStatusCode());
+        self::assertSame(404, $managed->smtp($admin, new Response())->getStatusCode());
+        self::assertSame(404, $managed->suppliers($admin, new Response())->getStatusCode());
+        self::assertSame(404, $managed->audit($admin, new Response())->getStatusCode());
         self::assertSame($target['id'], $this->smtp->runtime()['id']);
         $old = getenv('MYINVOICE_SMTP_HOST');
         putenv('MYINVOICE_SMTP_HOST=environment.example.test');

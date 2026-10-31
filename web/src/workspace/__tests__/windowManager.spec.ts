@@ -90,6 +90,8 @@ function testRouter(slowGate?: { entered: Deferred<void>, release: Deferred<bool
     routes: [
       { path: '/editor/:id', name: 'editor', component: TestEditor },
       { path: '/slow/:id', name: 'slow-editor', component: TestEditor },
+      { path: '/list', name: 'list', component: TestEditor },
+      { path: '/', name: 'home', component: TestEditor },
     ],
   })
   if (slowGate) {
@@ -269,6 +271,28 @@ describe('workspace window manager', () => {
     expect(primary.target.contains(firstEditor)).toBe(true)
     expect(input.value).toBe('Doklad firmy A')
     expect(switchSupplier.mock.calls.map(([id]) => id)).toEqual([2, 1])
+  })
+
+  it('ruční přepnutí firmy zůstane na téže stránce včetně filtru', async () => {
+    const supplier = { id: 1, name: 'Syntetická firma A' }
+    const harness = createHarness({ supplier, switchSupplier: async (id: number) => { supplier.id = id; return true } })
+    harness.attachPane('primary')
+    await harness.manager.open('/list?status=open', 'primary')
+    await harness.manager.switchCompany(2)
+
+    expect(supplier.id).toBe(2)
+    expect(harness.store.panes[0]?.fullPath).toBe('/list?status=open')
+    expect(harness.store.windows.find(window => window.supplierId === 2)?.fullPath).toBe('/list?status=open')
+  })
+
+  it('když nadřazená stránka detailu neexistuje, jde po ručním přepnutí firmy na přehled', async () => {
+    const supplier = { id: 1, name: 'Syntetická firma A' }
+    const harness = createHarness({ supplier, switchSupplier: async (id: number) => { supplier.id = id; return true } })
+    harness.attachPane('primary')
+    await harness.manager.open('/editor/42', 'primary')
+    await harness.manager.switchCompany(2)
+
+    expect(harness.store.panes[0]?.fullPath).toBe('/')
   })
 
   it('při odmítnutém přepnutí firmy zachová původní okno i firmu', async () => {
@@ -802,34 +826,142 @@ describe('workspace window manager', () => {
     expect(harness.errors).toEqual([])
   })
 
-  it('rozešle zápis z hlavního dokumentu všem oknům aktuální firmy, i zaparkovaným', async () => {
-    vi.spyOn(HTMLIFrameElement.prototype, 'src', 'set').mockImplementation(() => undefined)
-    const harness = createHarness({ frames: true, supplier: { id: 1, name: 'Firma A' } })
-    harness.attachPane('primary')
-    await harness.manager.open('/editor/1', 'primary')
-    await harness.manager.open('/editor/2', 'primary')
-    const frames = [...document.querySelectorAll<HTMLIFrameElement>('iframe')]
-    expect(frames).toHaveLength(2)
-    const posts = frames.map((frame, index) => {
-      const post = vi.spyOn(frame.contentWindow!, 'postMessage').mockImplementation(() => undefined)
-      window.dispatchEvent(new MessageEvent('message', { origin: window.location.origin, source: frame.contentWindow,
-        data: { type: 'myucto-window-ready', id: harness.store.windows[1 - index]!.id } }))
-      return post
-    })
-    for (const post of posts) post.mockClear()
+  describe('obnova oken po změně dat', () => {
+    const anyPath = () => createRouter({ history: createMemoryHistory(), routes: [{ path: '/:path(.*)*', component: TestEditor }] })
 
-    window.dispatchEvent(new CustomEvent('myucto:data-mutation', { detail: { resource: '../settings' } }))
-    for (const post of posts) expect(post).not.toHaveBeenCalled()
-
-    window.dispatchEvent(new CustomEvent('myucto:data-mutation', { detail: { resource: 'settings' } }))
-    for (const post of posts) {
-      expect(post).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ invalidation: { supplierId: 1, resource: 'settings' } }), window.location.origin)
+    async function openFrames(harness: Harness, paths: string[], paneId: PaneId = 'primary') {
+      vi.spyOn(HTMLIFrameElement.prototype, 'src', 'set').mockImplementation(() => undefined)
+      const known = document.querySelectorAll('iframe').length
+      for (const path of paths) await harness.manager.open(path, paneId)
+      const frames = [...document.querySelectorAll<HTMLIFrameElement>('iframe')].slice(known)
+      return Object.fromEntries(frames.map((frame, index) => {
+        const id = harness.store.windows[paths.length - 1 - index]!.id
+        const post = vi.spyOn(frame.contentWindow!, 'postMessage').mockImplementation(() => undefined)
+        const emit = (type: string, extra: Record<string, unknown> = {}) => window.dispatchEvent(new MessageEvent('message', {
+          origin: window.location.origin, source: frame.contentWindow, data: { type, id, ...extra } }))
+        emit('myucto-window-ready')
+        post.mockClear()
+        return [paths[index]!, { post, id, mutate: (path: string) => emit('myucto-window-mutation', { resource: path.split('/')[1], path }) }]
+      }))
     }
 
-    harness.destroy()
-    activeHarness = null
-    for (const post of posts) post.mockClear()
-    window.dispatchEvent(new CustomEvent('myucto:data-mutation', { detail: { resource: 'settings' } }))
-    for (const post of posts) expect(post).not.toHaveBeenCalled()
+    function invalidations(post: { mock: { calls: unknown[][] } }) {
+      return post.mock.calls.map(call => (call[0] as { invalidation?: unknown }).invalidation).filter(Boolean)
+    }
+
+    afterEach(() => { vi.useRealTimers() })
+
+    it('viditelné dotčené okno obnoví s debounce a sloučí víc zápisů do jednoho', async () => {
+      const harness = createHarness({ panes: 2, frames: true, supplier: { id: 1, name: 'Firma A' }, routerFactory: anyPath })
+      harness.attachPane('primary')
+      harness.attachPane('secondary-2')
+      const { '/invoices': list } = await openFrames(harness, ['/invoices'], 'primary')
+      const { '/invoices/5/edit': editor } = await openFrames(harness, ['/invoices/5/edit'], 'secondary-2')
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+
+      editor!.mutate('/invoices/5')
+      vi.advanceTimersByTime(100)
+      editor!.mutate('/invoices/5/items')
+      vi.advanceTimersByTime(249)
+      expect(invalidations(list!.post)).toEqual([])
+      vi.advanceTimersByTime(1)
+      expect(invalidations(list!.post)).toEqual([{ supplierId: 1, resource: 'invoices' }])
+    })
+
+    it('skryté okno neobnoví hned, změnu dostane jednou až při zobrazení', async () => {
+      const harness = createHarness({ frames: true, supplier: { id: 1, name: 'Firma A' }, routerFactory: anyPath })
+      harness.attachPane('primary')
+      const windows = await openFrames(harness, ['/invoices', '/invoices/5/edit'])
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+
+      windows['/invoices/5/edit']!.mutate('/invoices/5')
+      windows['/invoices/5/edit']!.mutate('/invoices/5/items')
+      vi.advanceTimersByTime(1000)
+      expect(invalidations(windows['/invoices']!.post)).toEqual([])
+
+      vi.useRealTimers()
+      await harness.manager.select(windows['/invoices']!.id)
+      expect(invalidations(windows['/invoices']!.post)).toEqual([{ supplierId: 1, resource: 'invoices' }])
+      await harness.manager.select(windows['/invoices/5/edit']!.id)
+      await harness.manager.select(windows['/invoices']!.id)
+      expect(invalidations(windows['/invoices']!.post)).toHaveLength(1)
+    })
+
+    it('okno, které uložilo v popupu, dostane změnu označenou jako vlastní', async () => {
+      const harness = createHarness({ frames: true, supplier: { id: 1, name: 'Firma A' }, routerFactory: anyPath })
+      harness.attachPane('primary')
+      const { '/invoices/5': detail } = await openFrames(harness, ['/invoices/5'])
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+
+      detail!.mutate('/accounting/journal/9/reverse')
+      vi.advanceTimersByTime(250)
+      expect(invalidations(detail!.post)).toEqual([{ supplierId: 1, resource: 'accounting', self: true }])
+    })
+
+    it('nedotčené okno a zápis, který nic nemění, obnovu nespustí', async () => {
+      const harness = createHarness({ panes: 2, frames: true, supplier: { id: 1, name: 'Firma A' }, routerFactory: anyPath })
+      harness.attachPane('primary')
+      harness.attachPane('secondary-2')
+      const { '/payroll/people': payroll } = await openFrames(harness, ['/payroll/people'], 'primary')
+      const { '/invoices': list } = await openFrames(harness, ['/invoices'], 'secondary-2')
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+
+      list!.mutate('/invoices/5')
+      list!.mutate('/invoices/bulk-oss/preview')
+      list!.mutate('/user/preferences')
+      vi.advanceTimersByTime(1000)
+      expect(invalidations(payroll!.post)).toEqual([])
+    })
+
+    it('zápis zaúčtování dosáhne na seznam faktur i deník, zápis faktury na deník', async () => {
+      const harness = createHarness({ panes: 2, frames: true, supplier: { id: 1, name: 'Firma A' }, routerFactory: anyPath })
+      harness.attachPane('primary')
+      harness.attachPane('secondary-2')
+      const { '/accounting/journal': journal } = await openFrames(harness, ['/accounting/journal'], 'primary')
+      const { '/invoices': list } = await openFrames(harness, ['/invoices'], 'secondary-2')
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+
+      journal!.mutate('/accounting/journal/9/reverse')
+      list!.mutate('/invoices/5')
+      vi.advanceTimersByTime(250)
+      expect(invalidations(list!.post)).toHaveLength(1)
+      expect(invalidations(journal!.post)).toHaveLength(1)
+    })
+
+    it('okno jiné firmy se neobnoví ani při zobrazení', async () => {
+      const supplier = { id: 1, name: 'Firma A' }
+      const harness = createHarness({ frames: true, supplier, routerFactory: anyPath, switchSupplier: async (id) => { supplier.id = id; return true } })
+      harness.attachPane('primary')
+      const { '/invoices': first } = await openFrames(harness, ['/invoices'])
+      supplier.id = 2
+      const { '/invoices/5': other } = await openFrames(harness, ['/invoices/5'])
+
+      other!.mutate('/invoices/5')
+      await harness.manager.select(first!.id)
+      expect(invalidations(first!.post)).toEqual([])
+    })
+
+    it('zápis z hlavního dokumentu dorazí viditelnému oknu aktuální firmy, po zničení už ne', async () => {
+      const harness = createHarness({ frames: true, supplier: { id: 1, name: 'Firma A' } })
+      harness.attachPane('primary')
+      const windows = await openFrames(harness, ['/editor/1', '/editor/2'])
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+
+      window.dispatchEvent(new CustomEvent('myucto:data-mutation', { detail: { resource: '../settings' } }))
+      vi.advanceTimersByTime(1000)
+      expect(invalidations(windows['/editor/2']!.post)).toEqual([])
+
+      window.dispatchEvent(new CustomEvent('myucto:data-mutation', { detail: { resource: 'settings', path: '/settings/supplier' } }))
+      vi.advanceTimersByTime(250)
+      expect(invalidations(windows['/editor/2']!.post)).toEqual([{ supplierId: 1, resource: 'settings' }])
+      expect(invalidations(windows['/editor/1']!.post)).toEqual([])
+
+      harness.destroy()
+      activeHarness = null
+      windows['/editor/2']!.post.mockClear()
+      window.dispatchEvent(new CustomEvent('myucto:data-mutation', { detail: { resource: 'settings' } }))
+      vi.advanceTimersByTime(1000)
+      expect(windows['/editor/2']!.post).not.toHaveBeenCalled()
+    })
   })
 })

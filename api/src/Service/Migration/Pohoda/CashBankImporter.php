@@ -292,6 +292,17 @@ final class CashBankImporter
             } else {
                 $p->warn(self::STEP_BANK, 'account_without_analytic', "Bankovní účet {$code} nemá v Pohodě analytiku 221, výpisy jsou bez počátečního stavu.");
             }
+            // Stavy převzatých výpisů mohl dorovnat výpis banky ({@see \MyInvoice\Service\Bank\ImportedStatementRebase}):
+            // nové výpisy navazují na první už převzatý, ne na deník.
+            $firstExisting = $existingStatements['stmt|' . $code . '|' . $ctx->year() . '|' . array_key_first($statements)] ?? null;
+            if ($firstExisting !== null) {
+                $opening = $this->db->pdo()->prepare('SELECT prev_balance FROM bank_statements WHERE id = ? AND supplier_id = ?');
+                $opening->execute([$firstExisting, $ctx->supplierId]);
+                $prev = $opening->fetchColumn();
+                if ($prev !== false && $prev !== null) {
+                    $running = StatementBalanceService::cents((string) $prev);
+                }
+            }
 
             foreach ($statements as $statementNo => $rows) {
                 $dates = [];

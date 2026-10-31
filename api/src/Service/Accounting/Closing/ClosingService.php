@@ -1613,8 +1613,9 @@ final class ClosingService
      * patří (pojistné, parkovné, předplatné). Systém spočítá pro-rata dle DNŮ, jaká část nákladu
      * PŘESAHUJE konec uzavíraného období → odloží se na 381 (náklady příštích období).
      *
-     * Formule: total_without_vat × (dny od max(accrual_from, 1. den N+1) do accrual_to
-     *          / celkový počet dnů rozlišení). EUR/cizí měna se přepočte kurzem dokladu na CZK.
+     * Formule: účetní náklad řádku (základ + neodpočitatelná daň) × (dny od max(accrual_from,
+     *          1. den N+1) do accrual_to / celkový počet dnů rozlišení). EUR/cizí měna se
+     *          přepočte kurzem dokladu na CZK.
      *
      * Bere jen řádky faktur zaúčtovaných DO tohoto období (effective_cost_date v období, status
      * != draft/cancelled) — jinak by se odložil náklad, který v VH tohoto roku vůbec není.
@@ -1638,6 +1639,7 @@ final class ClosingService
         $byAccount = [];
         $total = 0.0;
         $accountsByInvoice = [];
+        $costsByInvoice = [];
         foreach ($this->accruals->prepaidExpenseRows($supplierId, $endsOn, $startsOn, $endsOn) as $row) {
             $from = substr((string) $row['accrual_from'], 0, 10);
             $to = substr((string) $row['accrual_to'], 0, 10);
@@ -1649,7 +1651,7 @@ final class ClosingService
             $deferDays = self::daysInclusive($deferFrom, $to);
             $fraction = min(1.0, $deferDays / $totalDays);
 
-            $netCzk = $this->accruals->prepaidExpenseNetCzk($row);
+            $netCzk = $this->accruals->prepaidExpenseCostCzk($supplierId, $row, $costsByInvoice);
             // EP-15: odloží se net − kumulativně uznaný náklad do konce období (kotva pro
             // přesné víceleté rozpouštění; pro jednoleté rozlišení = původní chování).
             $deferred = AccrualDeferralService::deferredAmount($netCzk, $from, $to, $endsOn);
@@ -1787,6 +1789,7 @@ final class ClosingService
                 'document_no' => $docNo,
                 'total' => $total,
                 'by_account' => $preview['by_account'],
+                'item_costs' => array_column($preview['items'], 'total_czk', 'item_id'),
                 'ran_at' => date('Y-m-d H:i:s'),
             ];
             $this->closing->upsertStep($supplierId, $periodId, 'deferrals', $stepStatus, $payload, $step['note'], $meta['user_id'] ?? null);
@@ -1814,7 +1817,7 @@ final class ClosingService
         foreach ($this->accruals->prepaidExpenseReleaseRows($supplierId, $originEndsOn, $targetEnd) as $row) {
             $from = substr((string) $row['accrual_from'], 0, 10);
             $to = substr((string) $row['accrual_to'], 0, 10);
-            $netCzk = $this->accruals->prepaidExpenseNetCzk($row);
+            $netCzk = $this->accruals->prepaidExpenseReleaseBasisCzk($row);
             // Tranše cílového období = kumul. uznáno k min(to, targetEnd) − kumul. uznáno
             // k originEndsOn (= den před targetStart). Dolní hranici kotvíme na originEndsOn,
             // aby první rozpouštěné období navazovalo přesně na odloženou částku.

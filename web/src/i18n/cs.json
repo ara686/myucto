@@ -22410,6 +22410,9 @@
     }
   },
   "common": {
+    "window_data_changed": "Data se mezitím změnila.",
+    "window_data_changed_reload": "Obnovit",
+    "window_data_changed_confirm": "Znovu načíst stránku? Neuložené změny v tomto okně se ztratí.",
     "tableHorizontalScroll": "Vodorovné posouvání tabulky",
     "show": "Zobrazit",
     "reset_sort": "Obnovit výchozí řazení",
@@ -24225,6 +24228,7 @@
     "upload_batch_attached": "{n}× PDF přiloženo k existujícímu výpisu.",
     "pdf_attached_to_existing": "Výpis už byl v systému z GPC - PDF se k němu přiložilo.",
     "warning": {
+      "imported_balances_rebased": "Stavy {statements} převzatých výpisů účtu se podle výpisu banky posunuly o {shift}. Počáteční stav účtu vychází {opening}, deník se nemění: zkontrolujte počáteční stav účtu v účetnictví.",
       "transactions_skipped_as_duplicate": "Ve výpisu bylo {parsed} pohybů, založeno {inserted}. {skipped} pohybů se shoduje s už evidovanými (překrývající se výpis) a nebylo založeno - zkontrolujte prosím, že jde skutečně o duplicity.",
       "transactions_skipped_as_duplicate_batch": "Z nahraných výpisů bylo přeskočeno {count} pohybů jako duplicity s už evidovanými - zkontrolujte prosím, že jde skutečně o duplicity.",
       "processing_failed": "Výpis je uložený, ale párování a zaúčtování jeho pohybů se nepodařilo dokončit. Otevřete výpis a použijte „Přepárovat výpis“.",

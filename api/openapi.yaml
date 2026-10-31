@@ -54068,6 +54068,7 @@ components:
           type: number
         total_czk:
           type: number
+          description: Účetní náklad položky v Kč (základ a neodpočitatelná část DPH), ze kterého se počítá odklad.
         credit_account:
           type: string
         accrual_from:

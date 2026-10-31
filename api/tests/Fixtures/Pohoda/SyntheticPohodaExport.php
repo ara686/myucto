@@ -325,6 +325,91 @@ final class SyntheticPohodaExport
             . '</vch:homeCurrency></vch:voucherSummary></lst:voucher></lst:listVoucher>');
     }
 
+    /** Přeplatek odběratele s protiúčtem a symbolem na 315.999 ({@see withOverpayments()}). */
+    public const OVERPAYMENT_BANK = 'BAN0020001';
+
+    /**
+     * Pohyby zaúčtované přímo na analytiky přeplatků 315.999 a 325.999, bez dokladu v agendě
+     * ostatních pohledávek a závazků:
+     *   - 315.999: přeplatek 1 500 s protiúčtem a symbolem; platba a vrácení 700 téhož protiúčtu;
+     *     přeplatek 100 zaúčtovaný vedle úhrady faktury na 311 (`BAN0010001`),
+     *   - 325.999: naše chybná platba 900 jen s názvem a symbolem; příjem 400 a vrácení 100
+     *     téhož názvu; pokladní příjem 350.
+     */
+    public static function withOverpayments(string $dir): void
+    {
+        self::overpaymentAccounts($dir);
+        self::append($dir . '/01_ucetni_denik.xml', '</lst:accountancy>',
+            self::entry('Banka', self::OVERPAYMENT_BANK, 'Přeplatek', 1500, '221001', '315999', '2026-03-02')
+            . self::entry('Banka', 'BAN0020002', 'Chybná platba', 700, '221001', '315999', '2026-03-05')
+            . self::entry('Banka', 'BAN0020003', 'Vrácení chybné platby', 700, '315999', '221001', '2026-03-09')
+            . self::entry('Banka', 'BAN0010001', 'Přeplatek k faktuře', 100, '221001', '315999', '2026-01-15')
+            . self::entry('Banka', 'BAN0020004', 'Chybná platba dodavateli', 900, '325999', '221001', '2026-03-12')
+            . self::entry('Banka', 'BAN0020005', 'Příjem bez dokladu', 400, '221001', '325999', '2026-03-15')
+            . self::entry('Banka', 'BAN0020006', 'Částečné vrácení', 100, '325999', '221001', '2026-03-20')
+            . self::entry('Pokladna', '26PP0001', 'Přeplatek v hotovosti', 350, '211000', '325999', '2026-03-22'));
+        self::append($dir . '/29_banka.xml', '</lst:listBank>',
+            self::bank(self::OVERPAYMENT_BANK, 'receipt', '2026-03-02', 1500, '2026101', 'Odběratel Přeplatek s.r.o.', self::PARTNER_ACCOUNT)
+            . self::bank('BAN0020002', 'receipt', '2026-03-05', 700, '', 'Omyl Test s.r.o.', self::OTHER_ACCOUNT)
+            . self::bank('BAN0020003', 'expense', '2026-03-09', 700, '', 'Omyl Test s.r.o.', self::OTHER_ACCOUNT)
+            . self::bank('BAN0020004', 'expense', '2026-03-12', 900, '2026102', 'Dodavatel Přeplatek s.r.o.')
+            . self::bank('BAN0020005', 'receipt', '2026-03-15', 400, '', 'Vratka Test s.r.o.')
+            . self::bank('BAN0020006', 'expense', '2026-03-20', 100, '', 'Vratka Test s.r.o.'));
+        $bank = (string) file_get_contents($dir . '/29_banka.xml');
+        file_put_contents($dir . '/29_banka.xml', preg_replace('~(<bnk:number>BAN0010001</bnk:number>.*?<typ:priceNone>)1210~s', '${1}1310', $bank, 1));
+        self::file($dir . '/28_pokladna.xml', '<lst:listVoucher version="2.0" state="ok"><lst:voucher version="2.0"><vch:voucherHeader>'
+            . '<vch:voucherType>receipt</vch:voucherType><vch:cashAccount><typ:ids>HP</typ:ids></vch:cashAccount>'
+            . '<vch:number><typ:numberRequested>26PP0001</typ:numberRequested></vch:number>'
+            . '<vch:date>2026-03-22</vch:date><vch:datePayment>2026-03-22</vch:datePayment><vch:text>Přeplatek v hotovosti</vch:text>'
+            . '<vch:classificationVAT><typ:ids>UN</typ:ids></vch:classificationVAT>'
+            . '<vch:partnerIdentity><typ:address><typ:company>Hotovost Test s.r.o.</typ:company></typ:address></vch:partnerIdentity>'
+            . '</vch:voucherHeader><vch:voucherSummary><vch:homeCurrency><typ:priceNone>350</typ:priceNone>'
+            . '<typ:priceLow>0</typ:priceLow><typ:priceLowVAT>0</typ:priceLowVAT><typ:priceHigh>0</typ:priceHigh><typ:priceHighVAT>0</typ:priceHighVAT>'
+            . '</vch:homeCurrency></vch:voucherSummary></lst:voucher></lst:listVoucher>');
+    }
+
+    /** Pozdější vrácení přeplatku {@see OVERPAYMENT_BANK} (doplní se do novějšího exportu). */
+    public static function withOverpaymentRefund(string $dir): void
+    {
+        self::append($dir . '/01_ucetni_denik.xml', '</lst:accountancy>',
+            self::entry('Banka', 'BAN0020009', 'Vrácení přeplatku', 1500, '315999', '221001', '2026-06-01'));
+        self::append($dir . '/29_banka.xml', '</lst:listBank>',
+            self::bank('BAN0020009', 'expense', '2026-06-01', 1500, '', 'Odběratel Přeplatek s.r.o.', self::PARTNER_ACCOUNT));
+    }
+
+    /** Příjem 250 na 315.999 bez partnera, symbolu i protiúčtu. */
+    public static function withUnclearOverpayment(string $dir): void
+    {
+        self::overpaymentAccounts($dir);
+        self::append($dir . '/01_ucetni_denik.xml', '</lst:accountancy>',
+            self::entry('Banka', 'BAN0020007', 'Neznámá platba', 250, '221001', '315999', '2026-03-25'));
+        self::append($dir . '/29_banka.xml', '</lst:listBank>',
+            self::bank('BAN0020007', 'receipt', '2026-03-25', 250, '', ''));
+    }
+
+    /**
+     * Vrácení přeplatku z počátečního stavu: 1 000 na straně Dal 315.999 přinesl počáteční
+     * stav, v roce je jen pohyb, který ho vrací. Účet má nulový zůstatek.
+     */
+    public static function withOpeningOverpaymentRefund(string $dir): void
+    {
+        self::overpaymentAccounts($dir);
+        self::append($dir . '/01_ucetni_denik.xml', '</lst:accountancy>',
+            self::entry('Počáteční stavy účtů', 'ZAV', 'Počáteční stav účtu', 1000, '701000', '315999', '2026-01-01')
+            . self::entry('Počáteční stavy účtů', 'ZAV', 'Počáteční stav účtu', 1000, '411000', '701000', '2026-01-01')
+            . self::entry('Banka', 'BAN0020008', 'Vrácení přeplatku z minulého roku', 1000, '315999', '221001', '2026-02-20'));
+        self::append($dir . '/29_banka.xml', '</lst:listBank>',
+            self::bank('BAN0020008', 'expense', '2026-02-20', 1000, '', 'Starý Přeplatek s.r.o.', self::PARTNER_ACCOUNT));
+    }
+
+    private static function overpaymentAccounts(string $dir): void
+    {
+        self::append($dir . '/02_uctova_osnova.xml', '</lst:listAccount>',
+            '<lst:itemAccount id="211000" code="211000" name="Pokladna"/>'
+            . '<lst:itemAccount id="315999" code="315999" name="Přeplatky odběratelů"/>'
+            . '<lst:itemAccount id="325999" code="325999" name="Přeplatky dodavatelům"/>');
+    }
+
     /**
      * Nezaúčtovaný pohyb v prosinci se stejným číslem jako zaúčtovaná úhrada z února: číselná
      * řada banky se opakuje, agenda vede oba. Vyžaduje {@see withOtherItems()} (`$settled = true`).
@@ -380,11 +465,68 @@ final class SyntheticPohodaExport
 
     public static function withCostCentre(string $dir): void
     {
+        self::withCentreEntry($dir, self::CENTRE_DOCUMENT, 'VYUKA', 'Výuka hry na nástroj', 'Učebny', 500, '518000', '321001');
+    }
+
+    /** Interní doklad deníku se střediskem na obou řádcích. */
+    public static function withCentreEntry(string $dir, string $number, string $centre, string $centreName, string $text, float $amount, string $debit, string $credit): void
+    {
         self::append($dir . '/01_ucetni_denik.xml', '</lst:accountancy>', str_replace(
             '</act:accountingItem>',
-            '<act:centre><typ:ids>VYUKA</typ:ids><typ:name>Výuka hry na nástroj</typ:name></act:centre></act:accountingItem>',
-            self::entry('Interní doklady', self::CENTRE_DOCUMENT, 'Učebny', 500, '518000', '321001', '2026-03-05'),
+            '<act:centre><typ:ids>' . $centre . '</typ:ids><typ:name>' . $centreName . '</typ:name></act:centre></act:accountingItem>',
+            self::entry('Interní doklady', $number, $text, $amount, $debit, $credit, '2026-03-05'),
         ));
+    }
+
+    /** Přeplatek odběratele bez dokladu: zápis 221/311 v deníku, ke kterému saldokonto nemá položku. */
+    public const OVERPAYMENT_DOCUMENT = '26IN0098';
+
+    public static function withOverpaymentWithoutDocument(string $dir, float $amount): void
+    {
+        self::append($dir . '/01_ucetni_denik.xml', '</lst:accountancy>',
+            self::entry('Interní doklady', self::OVERPAYMENT_DOCUMENT, 'Přeplatek', $amount, '221001', '311001', '2026-03-06'));
+    }
+
+    /** Interní doklady s partnerem a druhem ({@see withInternalDocumentKinds()}). */
+    public const INT_KNOWN_PARTNER = '26IN0201';
+    public const INT_TWO_PARTNERS = '26IN0202';
+    public const INT_UNKNOWN_PARTNER = '26IN0203';
+    public const INT_FX = '26IN0204';
+    public const INT_ACCRUAL = '26IN0205';
+    public const INT_OFFSET = '26IN0206';
+    public const INT_PAYROLL = '26IN0207';
+    public const INT_OWN_PARTNER = '26IN0208';
+    public const INT_UNKNOWN_NAME = 'Neznámý Partner Test s.r.o.';
+
+    public static function withInternalDocumentKinds(string $dir): void
+    {
+        $entry = static function (string $number, string $text, float $amount, string $md, string $d, string $company = '', string $ico = ''): string {
+            $address = $company === '' && $ico === '' ? '' : '<act:address>'
+                . ($company !== '' ? '<typ:company>' . $company . '</typ:company>' : '')
+                . ($ico !== '' ? '<typ:ico>' . $ico . '</typ:ico>' : '')
+                . '</act:address>';
+            return str_replace('</act:accountingItem>', $address . '</act:accountingItem>', self::entry('Interní doklady', $number, $text, $amount, $md, $d, '2026-03-10'));
+        };
+        self::append($dir . '/01_ucetni_denik.xml', '</lst:accountancy>',
+            $entry(self::INT_KNOWN_PARTNER, 'Přeúčtování nákladů', 300, '518000', '321001', 'Dodavatel Test', self::VENDOR_ICO)
+            . $entry(self::INT_KNOWN_PARTNER, 'Přeúčtování nákladů', 200, '518000', '321001')
+            . $entry(self::INT_KNOWN_PARTNER, 'Přeúčtování nákladů', 100, '518000', '321001', 'Dodavatel Test', self::VENDOR_ICO)
+            . $entry(self::INT_TWO_PARTNERS, 'Přeúčtování mezi partnery', 400, '311001', '321001', 'Dodavatel Test', self::VENDOR_ICO)
+            . $entry(self::INT_TWO_PARTNERS, 'Přeúčtování mezi partnery', 100, '311001', '321001', 'Odběratel Test', self::CUSTOMER_ICO)
+            . $entry(self::INT_UNKNOWN_PARTNER, 'Vratka', 150, '518000', '321001', self::INT_UNKNOWN_NAME)
+            . $entry(self::INT_FX, 'Kurzový rozdíl', 12, '563000', '321001')
+            . $entry(self::INT_ACCRUAL, 'Dohad energií', 800, '518000', '389000')
+            . $entry(self::INT_OFFSET, 'Zápočet pohledávek', 250, '321001', '311001')
+            . $entry(self::INT_PAYROLL, 'Mzdy 2026/03', 900, '521000', '389000')
+            . $entry(self::INT_OWN_PARTNER, 'Vlastní doklad', 50, '518000', '321001', self::NAME, self::ICO));
+    }
+
+    /** Zápočet {@see OFFSET_DOCUMENT} s textem, který zápočet neprozradí: pozná se jen z úhrad dokladů. */
+    public static function withOffsetTextHidden(string $agendaDir): void
+    {
+        $file = $agendaDir . '/01_ucetni_denik.xml';
+        $from = array_map(static fn (string $text): string => (string) iconv('UTF-8', 'Windows-1250', $text), ['Zápočet faktury', 'Zápočet dobropisu']);
+        file_put_contents($file, str_replace($from, 'Vyrovnani', (string) file_get_contents($file)));
     }
 
     /** Oprava odpočtu § 74b a její pozdější vrácení ({@see withDebtorDeductionCorrection()}). */
@@ -963,6 +1105,54 @@ final class SyntheticPohodaExport
         self::append($agendaDir . '/01_ucetni_denik.xml', '</lst:accountancy>',
             self::entry('Počáteční stavy účtů', 'ZAV', 'Počáteční stav účtu', $opening314, '314001', '701000', '2026-01-01')
             . self::entry('Počáteční stavy účtů', 'ZAV', 'Počáteční stav účtu', $opening314, '701000', '411000', '2026-01-01'));
+    }
+
+    /** Pohyby bez zápisu v deníku z {@see withBookedBankHistory()}, které návrh dostanou nebo nedostanou. */
+    public const PROPOSAL_BY_ACCOUNT = 'BAN0020001';
+    public const PROPOSAL_BY_NAME = 'BAN0020002';
+    public const PROPOSAL_AT_THRESHOLD = 'BAN0020003';
+    public const NO_PROPOSAL_INCONSISTENT = 'BAN0020004';
+    public const NO_PROPOSAL_TOO_FEW = 'BAN0020005';
+    public const NO_PROPOSAL_SALDO = 'BAN0020006';
+    public const NO_PROPOSAL_OTHER_DIRECTION = 'BAN0020007';
+    public const PROPOSAL_ACCOUNT = '3000000020';
+
+    /**
+     * Zaúčtované pohyby bez dokladu a k nim pohyb bez zápisu (předkontace „Nevím"): shoda podle
+     * účtu, podle jména u platby bez účtu, přesně 9 z 10 shod, 3 ze 4 shod, jen dvě shody,
+     * úhrady přes saldokonto a platba opačným směrem.
+     */
+    public static function withBookedBankHistory(string $dir): void
+    {
+        $bank = '';
+        $journal = '';
+        $number = 100;
+        $booked = static function (int $times, string $md, string $d, string $partner, string $account, string $type = 'expense') use (&$bank, &$journal, &$number): void {
+            for ($i = 0; $i < $times; $i++) {
+                $doc = 'BAN0020' . ++$number;
+                $date = sprintf('2026-%02d-%02d', 2 + $i % 9, 5 + $number % 20);
+                $bank .= self::bank($doc, $type, $date, 100.0 + $i, '', $partner, $account);
+                $journal .= self::entry('Banka', $doc, 'Platba', 100.0 + $i, $md, $d, $date);
+            }
+        };
+        $booked(3, '518000', '221001', 'Nájem Test s.r.o.', self::PROPOSAL_ACCOUNT);
+        $booked(3, '568000', '221001', 'Poštovné Test', '');
+        $booked(9, '518000', '221001', 'Hranice Test s.r.o.', '7000000010');
+        $booked(1, '568000', '221001', 'Hranice Test s.r.o.', '7000000010');
+        $booked(3, '518000', '221001', 'Rozpor Test s.r.o.', '4000000009');
+        $booked(1, '568000', '221001', 'Rozpor Test s.r.o.', '4000000009');
+        $booked(2, '518000', '221001', 'Málo Test s.r.o.', '5000000011');
+        $booked(3, '321001', '221001', 'Saldo Test s.r.o.', '6000000040');
+
+        $bank .= self::bank(self::PROPOSAL_BY_ACCOUNT, 'expense', '2026-11-02', 1500, '', 'Nájem Test s.r.o.', self::PROPOSAL_ACCOUNT)
+            . self::bank(self::PROPOSAL_BY_NAME, 'expense', '2026-11-03', 90, '', 'Poštovné Test')
+            . self::bank(self::PROPOSAL_AT_THRESHOLD, 'expense', '2026-11-04', 110, '', 'Hranice Test s.r.o.', '7000000010')
+            . self::bank(self::NO_PROPOSAL_INCONSISTENT, 'expense', '2026-11-05', 120, '', 'Rozpor Test s.r.o.', '4000000009')
+            . self::bank(self::NO_PROPOSAL_TOO_FEW, 'expense', '2026-11-06', 130, '', 'Málo Test s.r.o.', '5000000011')
+            . self::bank(self::NO_PROPOSAL_SALDO, 'expense', '2026-11-07', 140, '', 'Saldo Test s.r.o.', '6000000040')
+            . self::bank(self::NO_PROPOSAL_OTHER_DIRECTION, 'receipt', '2026-11-08', 150, '', 'Nájem Test s.r.o.', self::PROPOSAL_ACCOUNT);
+        self::append($dir . '/29_banka.xml', '</lst:listBank>', $bank);
+        self::append($dir . '/01_ucetni_denik.xml', '</lst:accountancy>', $journal);
     }
 
     private static function append(string $file, string $closing, string $xml): void

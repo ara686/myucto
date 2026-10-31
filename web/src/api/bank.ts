@@ -334,15 +334,20 @@ export interface BankTransactionsParams {
  *   jsou přesná čísla ze StatementImporter.
  * - `processing_failed`: výpis je uložený, ale párování a zaúčtování pohybů selhalo
  *   (`error` = text chyby). Dokončí ho „Znovu spárovat".
+ * - `imported_balances_rebased`: první výpis banky na účtu dorovnal stavy výpisů převzatých
+ *   z jiného programu (`shift`, `statements`, `opening` = vypočtený počáteční stav).
  * FE si hlášku skládá z i18n — `message` je jen český text pro activity_log.
  */
 export interface ImportWarning {
-  code: 'transactions_skipped_as_duplicate' | 'processing_failed'
+  code: 'transactions_skipped_as_duplicate' | 'processing_failed' | 'imported_balances_rebased'
   message?: string
   error?: string
   parsed?: number
   inserted?: number
   skipped?: number
+  shift?: number
+  statements?: number
+  opening?: number
 }
 
 export interface IgnoreNoticeCandidate {
