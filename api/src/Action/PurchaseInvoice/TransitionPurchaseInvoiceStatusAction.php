@@ -74,6 +74,7 @@ final class TransitionPurchaseInvoiceStatusAction
         private readonly PurchaseInvoiceReceiver $receiver,
         private readonly PurchaseInvoiceApprovalService $approvals,
         private readonly \MyInvoice\Service\Invoice\CreditNoteOffsetService $creditNoteOffsets,
+        private readonly ?\MyInvoice\Service\Bank\PurchaseBankMatching $bankMatching = null,
     ) {}
 
     public function __invoke(Request $request, Response $response, array $args): Response
@@ -346,6 +347,8 @@ final class TransitionPurchaseInvoiceStatusAction
         if ($currentStatus === 'draft' && $target === 'cancelled') {
             $this->approvals->onInvoiceLeftDraft($supplierId, $id, $userId, 'cancelled');
         }
+
+        if (in_array($target, ['paid','booked'], true)) $this->bankMatching?->afterReady($supplierId, $id, $userId);
 
         $invoice = $this->repo->find($id, $supplierId);
         if ($invoice !== null && $settlement !== null && $settlement['status'] !== CashSettlementService::NOOP) {

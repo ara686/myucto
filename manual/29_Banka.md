@@ -100,6 +100,27 @@ Párování můžete zahájit i z detailu vydané či přijaté faktury akcí **
 
 Pravidla skóre a hledání jsou v [§ 29.13.8](#29138-rucni-parovani-pravidla-a-nesparovane-platby). Částečné platby a cizí měny viz [§ 29.13.7](#29137-castecne-platby-a-cizi-mena).
 
+### Platba přišla před přijetím dokladu
+
+Po přijetí faktury, účtenky nebo zálohové faktury aplikace ihned dohledá už načtené
+volné odchozí pohyby stejné firmy. Koncept hledání nespouští. Není potřeba čekat
+na další synchronizaci banky. Stejné hledání proběhne u importu, který vytvoří
+rovnou přijatý či evidenčně zaplacený doklad.
+
+V detailu dokladu je sekce **Párování s bankou**. Jednoznačná shoda se propojí
+podle stávajících pravidel; samotná částka a blízké datum vytvoří návrh k potvrzení.
+Návrh obsahuje popis, datum a částku platby. Lze jej potvrdit nebo odmítnout;
+odmítnutý návrh se při opakování automaticky neobnoví. Stav „zaplaceno“ bez
+skutečné úhrady propojení nebrání. Existující banka, pokladna, zápočet a jiné
+vypořádání se při kontrole zůstatku započítají.
+
+**Znovu vyhledat** opakuje hledání. U slabších shod se prohledává 90 dní před
+vystavením či splatností a 90 dní po nich; shodný platební symbol se hledá i mimo
+toto okno. Při více než 200 vhodných pohybech se automatické spojení neprovede
+a aplikace nabídne ruční vyhledání. Chyba hledání neruší přijetí dokladu.
+Párování respektuje oprávnění a uzamčená období. Běžné párování nevyžaduje
+placené podvojné účetnictví.
+
 ## 29.5 Krok za krokem: jedna platba na víc faktur
 
 Zaplatil-li klient **víc vydaných faktur jednou platbou**, nebo vy zaplatili víc přijatých faktur jednou platbou, použijte sloučenou úhradu.

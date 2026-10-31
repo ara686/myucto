@@ -131,6 +131,8 @@ final class RoutePermissionMap
         ['GET', '#^/api/invoices(/|$)#', 'invoices', AccessLevel::READ],
         ['*', '#^/api/invoices(/|$)#', 'invoices', AccessLevel::WRITE],
 
+        ['GET', '#^/api/purchase-invoices/[0-9]+/bank-matching$#', 'bank', AccessLevel::READ],
+        ['POST', '#^/api/purchase-invoices/[0-9]+/bank-matching/retry$#', 'bank.match', AccessLevel::WRITE],
         ['GET', '#^/api/purchase-invoices/payment-orders(/|$)#', 'purchase_invoices.payment_orders', AccessLevel::READ],
         ['*', '#^/api/purchase-invoices/payment-orders(/|$)#', 'purchase_invoices.payment_orders', AccessLevel::WRITE],
         ['POST', '#^/api/purchase-invoices/scan-inbox$#', 'purchase_invoices.scan', AccessLevel::WRITE],

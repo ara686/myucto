@@ -15,10 +15,12 @@ final class ClientBankRoutePolicy
         if ($method === 'HEAD') $method = 'GET';
         $patterns = match ($method) {
             'GET' => [
+                '#^/api/purchase-invoices/[0-9]+/bank-matching$#D',
                 '#^/api/bank-statements(?:/account-balances|/[0-9]+(?:/(?:download|pdf|export-gpc|match-suggestions))?)?$#D',
                 '#^/api/bank-transactions(?:/[0-9]+/(?:match-candidates|split-suggestions))?$#D',
             ],
             'POST' => [
+                '#^/api/purchase-invoices/[0-9]+/bank-matching/retry$#D',
                 '#^/api/bank-statements/(?:upload|upload-pdf)$#D',
                 '#^/api/bank-transactions/[0-9]+/(?:match|unmatch|ignore|unignore)$#D',
                 '#^/api/bank-match-suggestions/[0-9]+/(?:accept|reject)$#D',

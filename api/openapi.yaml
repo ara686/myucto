@@ -8133,6 +8133,51 @@ paths:
         '404': { description: "Příkaz nenalezen" }
         '422': { description: "Export selhal" }
 
+  /api/v1/purchase-invoices/{id}/bank-matching:
+    parameters:
+      - $ref: '#/components/parameters/SupplierIdHeader'
+      - in: path
+        name: id
+        required: true
+        schema: { type: integer, format: int64 }
+    get:
+      tags: [Purchase invoices]
+      summary: Bankovní úhrady a návrhy přijatého dokladu
+      description: Čtení bez vedlejších zápisů. Vyžaduje čtení banky i přijatých dokladů stejné firmy.
+      responses:
+        '200':
+          description: Navázané pohyby, dostupné návrhy a výsledek posledního dohledání.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PurchaseBankMatching' }
+        '403': { description: Chybí oprávnění číst banku nebo doklad. }
+        '404': { description: Doklad nebyl nalezen ve vybrané firmě. }
+
+  /api/v1/purchase-invoices/{id}/bank-matching/retry:
+    parameters:
+      - $ref: '#/components/parameters/SupplierIdHeader'
+      - in: path
+        name: id
+        required: true
+        schema: { type: integer, format: int64 }
+    post:
+      tags: [Purchase invoices]
+      summary: Opakovat dohledání bankovní platby přijatého dokladu
+      description: |
+        Interní operace přihlášené relace; bearer token nesmí zapisovat.
+        Vyžaduje bank.match (zápis), čtení banky a přijatých dokladů; klient navíc
+        purchase_invoices.transition (zápis). Nevytváří nové bankovní pohyby.
+        Výběr nad 200 kandidátů ani uzamčené období se automaticky nepárují.
+        Selhání hledání zachová přijatý doklad; výsledek je v last_attempt.outcome.
+      responses:
+        '200':
+          description: Výsledek hledání včetně navázaných pohybů a návrhů.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PurchaseBankMatching' }
+        '403': { description: Chybí oprávnění nebo token_write_forbidden. }
+        '404': { description: Doklad nebyl nalezen ve vybrané firmě. }
+
   /api/v1/purchase-invoices/{id}/payment-qr:
     parameters:
       - $ref: '#/components/parameters/SupplierIdHeader'
@@ -49489,6 +49534,45 @@ components:
                       type_id: { type: integer }
                       type_name: { type: string }
                       account_codes: { type: array, items: { type: string } }
+
+    PurchaseBankMatching:
+      type: object
+      required: [matches, suggestions, last_attempt]
+      properties:
+        matches:
+          type: array
+          items:
+            $ref: '#/components/schemas/PurchaseBankMatchedPayment'
+        suggestions:
+          type: array
+          items:
+            allOf:
+              - $ref: '#/components/schemas/PurchaseBankMatchedPayment'
+              - type: object
+                required: [bank_transaction_id, candidate_index, candidate]
+                properties:
+                  id: { type: integer, description: ID návrhu pro stávající operace accept/reject. }
+                  bank_transaction_id: { type: integer }
+                  candidate_index: { type: integer, minimum: 0 }
+                  reason: { type: string }
+                  candidate: { type: object, description: Kandidát stávajícího bankovního návrhu vztahující se pouze k tomuto dokladu. }
+        last_attempt:
+          type: object
+          nullable: true
+          properties:
+            outcome: { type: string, enum: [searched, ineligible, limited, failed, locked] }
+            matched_count: { type: integer, minimum: 0 }
+            checked_at: { type: string, format: date-time }
+    PurchaseBankMatchedPayment:
+      type: object
+      required: [id, statement_id, posted_at, amount, currency, description]
+      properties:
+        id: { type: integer }
+        statement_id: { type: integer }
+        posted_at: { type: string, format: date }
+        amount: { type: number }
+        currency: { type: string, nullable: true }
+        description: { type: string, nullable: true }
 
     PurchaseInvoice:
       type: object

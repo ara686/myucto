@@ -75,6 +75,7 @@ final class FakturoidImportService
         private readonly OssItemPlanner $planner,
         private readonly StatsRecomputer $stats,
         private readonly ImportedSubjectLinker $subjectLinker,
+        private readonly ?\MyInvoice\Service\Bank\PurchaseBankMatching $bankMatching = null,
     ) {}
 
     /**
@@ -665,13 +666,15 @@ final class FakturoidImportService
      * Guard na status='draft' — createExpense může přes dedup guard vrátit
      * existující (už zpracovaný) doklad, ten nepřepisujeme.
      */
-    private function applyPurchasePaymentState(int $purchaseId, int $supplierId, ?array $state, string $fallbackPaidAt): void
+    private function applyPurchasePaymentState(int $purchaseId, int $supplierId, ?array $state, string $fallbackPaidAt, ?int $userId = null): void
     {
         if ($state === null || $state['status'] !== 'paid') return;
-        $this->db->pdo()->prepare(
+        $update = $this->db->pdo()->prepare(
             "UPDATE purchase_invoices SET status = 'paid', paid_at = ?
               WHERE id = ? AND supplier_id = ? AND status = 'draft'"
-        )->execute([$state['paid_at'] ?? $fallbackPaidAt, $purchaseId, $supplierId]);
+        );
+        $update->execute([$state['paid_at'] ?? $fallbackPaidAt, $purchaseId, $supplierId]);
+        if ($update->rowCount() > 0) $this->bankMatching?->afterReady($supplierId, $purchaseId, $userId);
     }
 
     private function importExpenses(int $jobId, int $supplierId, int $userId, bool $dryRun, ?string $bookmarkSince, bool $downloadAttachments = false): void
@@ -943,6 +946,7 @@ final class FakturoidImportService
             $supplierId,
             ImportedPaymentStateMapper::fromFakturoid($e),
             $taxDate ?: $issueDate,
+            $userId > 0 ? $userId : null,
         );
         return $id;
     }

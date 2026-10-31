@@ -12,6 +12,9 @@
 # dostal jako CRLF a testy by padaly na koncích řádků, ne na obsahu.
 *.sql text eol=lf
 
+# GPC má pevnou šířku polí a konce řádků CRLF; mezery jsou součástí výpisu.
+api/tests/Fixtures/PurchaseBankRematching/*.gpc -text whitespace=-blank-at-eol,cr-at-eol
+
 # Vendorovaná XSD schémata se pinují bajt po bajtu přes api/xsd/jmhz/SHA256SUMS.
 # Git je nesmí nijak konvertovat, jinak manifest sedí jen na jedné platformě.
 *.xsd -text

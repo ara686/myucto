@@ -308,6 +308,45 @@ final class StatementMatcher
     }
 
     /**
+     * Opačné pořadí importu: rozhoduje stejný VS/kartový matcher nad VŠEMI doklady,
+     * ale smí zapsat jen předaný cíl. Slabší signály vždy vyžadují potvrzení.
+     * Volající drží zámek kontextu banky a dokladu po celou dávku kandidátů.
+     */
+    public function matchForPurchase(int $supplierId, int $purchaseId, array $tx, bool $allowAuto): array
+    {
+        $transactionId = (int) $tx['id'];
+        $result = ['status' => 'unmatched', 'reason' => 'amount_date_requires_review'];
+        // Dohledání faktury nesmí spotřebovat převod mezi vlastními účty.
+        if ($this->ownTransfers?->detectTransaction($supplierId, $transactionId) !== null) {
+            return ['status' => 'unmatched', 'reason' => 'own_transfer'];
+        }
+        $rejected = $this->db->pdo()->prepare("SELECT 1 FROM bank_match_suggestions WHERE supplier_id = ? AND bank_transaction_id = ? AND status = 'rejected'");
+        $rejected->execute([$supplierId, $transactionId]);
+        if ($rejected->fetchColumn() !== false) return $result;
+        $currency = (string) ($tx['currency'] ?: ($tx['statement_currency'] ?? 'CZK'));
+        if ($allowAuto && !empty($tx['variable_symbol'])) {
+            $result = $this->matchPurchase($this->db->pdo(), $supplierId, (string) $tx['variable_symbol'],
+                abs((float) $tx['amount']), (string) $tx['posted_at'], $transactionId, $currency, $purchaseId);
+        }
+        if ($allowAuto && ($result['status'] ?? 'unmatched') === 'unmatched'
+            && \MyInvoice\Service\Bank\Card\CardNumberMask::isValidLast4((string) ($tx['card_last4'] ?? ''))) {
+            $result = $this->matchPurchaseByCard($this->db->pdo(), $supplierId, (string) $tx['card_last4'],
+                abs((float) $tx['amount']), (string) $tx['posted_at'], $transactionId, $currency,
+                \MyInvoice\Service\Bank\Card\CardPaymentCandidates::merchantNames($tx['counterparty_name'] ?? null, $tx['description'] ?? null),
+                self::originalAmount($tx),
+                \MyInvoice\Service\Bank\Card\CardMerchantMap::key($tx['counterparty_name'] ?? null, $tx['description'] ?? null), $purchaseId);
+        }
+        if (($result['status'] ?? 'unmatched') === 'unmatched') {
+            $this->matchV2?->proposeForPurchase($supplierId, $purchaseId, $tx);
+        } else {
+            $this->syncAdvanceCoveredStatus($transactionId);
+            $this->db->pdo()->prepare("UPDATE bank_match_suggestions SET status = 'superseded', updated_at = NOW()
+                WHERE supplier_id = ? AND bank_transaction_id = ? AND status = 'pending'")->execute([$supplierId,$transactionId]);
+        }
+        return $this->rememberReason($transactionId, $result);
+    }
+
+    /**
      * Spáruje dávku ve dvou průchodech. Nejdřív proběhnou u všech pohybů silné
      * deterministické shody a skórované návrhy, teprve potom přesná shoda
      * částka+datum u dosud volných odchozích plateb bez VS.
@@ -1228,7 +1267,7 @@ final class StatementMatcher
         return true;
     }
 
-    private function matchPurchase(\PDO $pdo, int $supplierId, string $vs, float $absAmount, string $postedAt, int $transactionId, ?string $txCurrency = null): array
+    private function matchPurchase(\PDO $pdo, int $supplierId, string $vs, float $absAmount, string $postedAt, int $transactionId, ?string $txCurrency = null, ?int $targetPurchaseId = null): array
     {
         // 'paid' v setu: dovolíme navázat transakci i na ručně zaplacenou přijatou fakturu
         // (ať ve výpisu nevisí). Status/paid_at v tom případě nepřepisujeme.
@@ -1265,7 +1304,7 @@ final class StatementMatcher
             return ['status' => 'unmatched', 'reason' => 'ambiguous_vs_purchase', 'tx_currency' => $txCurrency];
         }
         $pi = $matches[0] ?? null;
-        if ($pi === null) {
+        if ($pi === null || ($targetPurchaseId !== null && (int) $pi['id'] !== $targetPurchaseId)) {
             return ['status' => 'unmatched', 'reason' => 'no_purchase_with_vs', 'tx_currency' => $txCurrency];
         }
         // VS míří na konečnou fakturu, ale platba je záloha: nepárovat na fakturu, návrh
@@ -1534,7 +1573,7 @@ final class StatementMatcher
      * @param list<string> $merchantNames
      * @param array{amount: float, currency: string, tx_amount: float}|null $original
      */
-    private function matchPurchaseByCard(\PDO $pdo, int $supplierId, string $last4, float $absAmount, string $postedAt, int $transactionId, ?string $txCurrency, array $merchantNames = [], ?array $original = null, ?string $merchantKey = null): array
+    private function matchPurchaseByCard(\PDO $pdo, int $supplierId, string $last4, float $absAmount, string $postedAt, int $transactionId, ?string $txCurrency, array $merchantNames = [], ?array $original = null, ?string $merchantKey = null, ?int $targetPurchaseId = null): array
     {
         $cards = $this->cardCandidates();
         $strong = [];
@@ -1575,7 +1614,7 @@ final class StatementMatcher
                     'card_last4' => $last4,
                 ];
             }
-            return $this->pairCardDocument($pdo, $supplierId, $transactionId, $pi, $absAmount, $postedAt, $last4, 90);
+            return $this->pairCardDocument($pdo, $supplierId, $transactionId, $pi, $absAmount, $postedAt, $last4, 90, false, $targetPurchaseId);
         }
         if (count($weak) === 1
             && $cards->competingTransactions($supplierId, $transactionId, $last4, $absAmount, $postedAt, false) === 0
@@ -1584,7 +1623,7 @@ final class StatementMatcher
             // částku nesoupeří žádný jiný volný pohyb kartou: není co hádat, páruje se.
             // Doklad si zároveň zapamatuje koncovku, příště jde silnou větví.
             if ($weak[0]['exact_amount']) {
-                return $this->pairCardDocument($pdo, $supplierId, $transactionId, $weak[0], $absAmount, $postedAt, $last4, 70, true);
+                return $this->pairCardDocument($pdo, $supplierId, $transactionId, $weak[0], $absAmount, $postedAt, $last4, 70, true, $targetPurchaseId);
             }
             return [
                 'status' => 'unmatched',
@@ -1595,7 +1634,7 @@ final class StatementMatcher
             ];
         }
         if ($weak === []) {
-            $named = $this->matchPurchaseByCardMerchant($pdo, $supplierId, $last4, $absAmount, $postedAt, $transactionId, $txCurrency, $merchantNames, $original, $merchantKey);
+            $named = $this->matchPurchaseByCardMerchant($pdo, $supplierId, $last4, $absAmount, $postedAt, $transactionId, $txCurrency, $merchantNames, $original, $merchantKey, $targetPurchaseId);
             if ($named !== null) {
                 return $named;
             }
@@ -1621,7 +1660,7 @@ final class StatementMatcher
      * @param array{amount: float, currency: string, tx_amount: float}|null $original
      * @return array<string,mixed>|null null = žádný jednoznačný doklad
      */
-    private function matchPurchaseByCardMerchant(\PDO $pdo, int $supplierId, string $last4, float $absAmount, string $postedAt, int $transactionId, ?string $txCurrency, array $merchantNames, ?array $original = null, ?string $merchantKey = null): ?array
+    private function matchPurchaseByCardMerchant(\PDO $pdo, int $supplierId, string $last4, float $absAmount, string $postedAt, int $transactionId, ?string $txCurrency, array $merchantNames, ?array $original = null, ?string $merchantKey = null, ?int $targetPurchaseId = null): ?array
     {
         if ($merchantNames === []) {
             return null;
@@ -1654,7 +1693,7 @@ final class StatementMatcher
             || $cards->competingTransactions($supplierId, $transactionId, $last4, $absAmount, $postedAt, false) > 0) {
             return null;
         }
-        return $this->pairCardDocument($pdo, $supplierId, $transactionId, $named[0], $absAmount, $postedAt, $last4, 80);
+        return $this->pairCardDocument($pdo, $supplierId, $transactionId, $named[0], $absAmount, $postedAt, $last4, 80, false, $targetPurchaseId);
     }
 
     /**
@@ -1664,8 +1703,11 @@ final class StatementMatcher
      * @param array<string,mixed> $pi
      * @return array<string,mixed>
      */
-    private function pairCardDocument(\PDO $pdo, int $supplierId, int $transactionId, array $pi, float $absAmount, string $postedAt, string $last4, int $confidence, bool $learnCard = false): array
+    private function pairCardDocument(\PDO $pdo, int $supplierId, int $transactionId, array $pi, float $absAmount, string $postedAt, string $last4, int $confidence, bool $learnCard = false, ?int $targetPurchaseId = null): array
     {
+        if ($targetPurchaseId !== null && (int) $pi['id'] !== $targetPurchaseId) {
+            return ['status' => 'unmatched', 'reason' => 'no_card_match'];
+        }
         $this->begin($pdo);
         try {
             if (!$this->claimTransaction($pdo, $transactionId, ['unmatched'])) {

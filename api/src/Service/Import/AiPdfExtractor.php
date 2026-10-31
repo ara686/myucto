@@ -72,6 +72,7 @@ final class AiPdfExtractor
         // ne až při zaúčtování. Nullable jen kvůli unit testům čistých helperů.
         private readonly ?\MyInvoice\Service\Accounting\Expense\ExpenseAutoClassifier $expenseAutoClassifier,
         ?LoggerInterface $logger = null,
+        private readonly ?\MyInvoice\Service\Bank\PurchaseBankMatching $bankMatching = null,
     ) {
         $this->logger = $logger ?? new NullLogger();
     }
@@ -372,6 +373,7 @@ final class AiPdfExtractor
             // Klient nejprve provede stejnou kontrolu a přijetí jako při ručním zadání.
             if (!$requireReview) {
                 $this->cardAutomation?->afterPurchaseReady($supplierId, $invoiceId, $userId > 0 ? $userId : null);
+                $this->bankMatching?->afterReady($supplierId, $invoiceId, $userId > 0 ? $userId : null);
             }
             $this->extractionRecorder?->record(
                 $supplierId,

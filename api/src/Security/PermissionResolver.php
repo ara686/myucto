@@ -62,6 +62,20 @@ final class PermissionResolver
         return $resolved;
     }
 
+    /** Stejná oprávnění pro kroky po commitu, kde už není k dispozici HTTP request. */
+    public function forSupplierUser(int $userId, int $supplierId): EffectiveRole
+    {
+        $stmt = $this->db->pdo()->prepare('SELECT id, role_id, is_active FROM users WHERE id = ?');
+        $stmt->execute([$userId]);
+        $user = $stmt->fetch(\PDO::FETCH_ASSOC);
+        if (!$user || !(bool) $user['is_active']) return EffectiveRole::denied();
+        $user = (new UserRoleProfile($this->db))->enrich($user);
+        $request = (new \Slim\Psr7\Factory\ServerRequestFactory())->createServerRequest('GET', '/')
+            ->withHeader('X-Supplier-Id', (string) $supplierId)
+            ->withAttribute(AuthMiddleware::ATTR_USER, $user);
+        return $this->resolve($request);
+    }
+
     public function resolveDefault(Request $request): EffectiveRole
     {
         $user = (array) $request->getAttribute(AuthMiddleware::ATTR_USER, []);

@@ -681,6 +681,16 @@ final class Bootstrap
                 $c->get(Connection::class),
                 self::bankEmailNoticeParsers($c, $config),
             ),
+            \MyInvoice\Action\PurchaseInvoice\TransitionPurchaseInvoiceStatusAction::class => \DI\autowire()
+                ->constructorParameter('bankMatching', \DI\get(\MyInvoice\Service\Bank\PurchaseBankMatching::class)),
+            \MyInvoice\Service\PurchaseInvoice\PurchaseInvoiceReceiver::class => \DI\autowire()
+                ->constructorParameter('bankMatching', \DI\get(\MyInvoice\Service\Bank\PurchaseBankMatching::class)),
+            \MyInvoice\Service\Import\AiPdfExtractor::class => \DI\autowire()
+                ->constructorParameter('bankMatching', \DI\get(\MyInvoice\Service\Bank\PurchaseBankMatching::class)),
+            \MyInvoice\Service\Import\FakturoidImportService::class => \DI\autowire()
+                ->constructorParameter('bankMatching', \DI\get(\MyInvoice\Service\Bank\PurchaseBankMatching::class)),
+            \MyInvoice\Service\Import\IdokladImportService::class => \DI\autowire()
+                ->constructorParameter('bankMatching', \DI\get(\MyInvoice\Service\Bank\PurchaseBankMatching::class)),
             \MyInvoice\Service\Bank\StatementMatcher::class => fn (ContainerInterface $c) => new \MyInvoice\Service\Bank\StatementMatcher(
                 $c->get(Connection::class),
                 $c->get(\MyInvoice\Service\Invoice\FinalFromProformaCreator::class),

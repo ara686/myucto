@@ -1,0 +1,121 @@
+<?xml version='1.0' encoding='utf-8'?>
+<Invoice xmlns="http://isdoc.cz/namespace/2013" version="6.0.2">
+  <DocumentType>1</DocumentType>
+  <ID>910000002</ID>
+  <UUID>e8a747c9-8f62-41b0-a42e-000000000002</UUID>
+  <IssueDate>2026-10-30</IssueDate>
+  <TaxPointDate>2026-10-30</TaxPointDate>
+  <VATApplicable>false</VATApplicable>
+  <ElectronicPossibilityAgreementReference />
+  <LocalCurrencyCode>CZK</LocalCurrencyCode>
+  <CurrRate>1</CurrRate>
+  <RefCurrRate>1</RefCurrRate>
+  <AccountingSupplierParty>
+    <Party>
+      <PartyIdentification>
+        <ID>12345679</ID>
+      </PartyIdentification>
+      <PartyName>
+        <Name>Synteticky dodavatel Beta</Name>
+      </PartyName>
+      <PostalAddress>
+        <StreetName>Skladová</StreetName>
+        <BuildingNumber>3</BuildingNumber>
+        <CityName>Praha</CityName>
+        <PostalZone>11000</PostalZone>
+        <Country>
+          <IdentificationCode>CZ</IdentificationCode>
+          <Name>Česká republika</Name>
+        </Country>
+      </PostalAddress>
+      <PartyTaxScheme>
+        <CompanyID>CZ12345679</CompanyID>
+        <TaxScheme>VAT</TaxScheme>
+      </PartyTaxScheme>
+    </Party>
+  </AccountingSupplierParty>
+  <AccountingCustomerParty>
+    <Party>
+      <PartyIdentification>
+        <ID />
+      </PartyIdentification>
+      <PartyName>
+        <Name>Jana Testovací</Name>
+      </PartyName>
+      <PostalAddress>
+        <StreetName>Testovací</StreetName>
+        <BuildingNumber>1</BuildingNumber>
+        <CityName>Praha</CityName>
+        <PostalZone>11000</PostalZone>
+        <Country>
+          <IdentificationCode>CZ</IdentificationCode>
+          <Name>Česká republika</Name>
+        </Country>
+      </PostalAddress>
+      <Contact>
+        <ElectronicMail>jana.testovaci@example.test</ElectronicMail>
+      </Contact>
+    </Party>
+  </AccountingCustomerParty>
+  <InvoiceLines>
+    <InvoiceLine>
+      <ID>1</ID>
+      <InvoicedQuantity unitCode="ks">1</InvoicedQuantity>
+      <LineExtensionAmount>913.45</LineExtensionAmount>
+      <LineExtensionAmountTaxInclusive>913.45</LineExtensionAmountTaxInclusive>
+      <LineExtensionTaxAmount>0.00</LineExtensionTaxAmount>
+      <UnitPrice>913.45</UnitPrice>
+      <UnitPriceTaxInclusive>913.45</UnitPriceTaxInclusive>
+      <ClassifiedTaxCategory>
+        <Percent>0</Percent>
+        <VATCalculationMethod>0</VATCalculationMethod>
+      </ClassifiedTaxCategory>
+      <Item>
+        <Description>Synteticka testovaci sluzba</Description>
+      </Item>
+    </InvoiceLine>
+  </InvoiceLines>
+  <TaxTotal>
+    <TaxSubTotal>
+      <TaxableAmount>913.45</TaxableAmount>
+      <TaxAmount>0.00</TaxAmount>
+      <TaxInclusiveAmount>913.45</TaxInclusiveAmount>
+      <AlreadyClaimedTaxableAmount>0.00</AlreadyClaimedTaxableAmount>
+      <AlreadyClaimedTaxAmount>0.00</AlreadyClaimedTaxAmount>
+      <AlreadyClaimedTaxInclusiveAmount>0.00</AlreadyClaimedTaxInclusiveAmount>
+      <DifferenceTaxableAmount>913.45</DifferenceTaxableAmount>
+      <DifferenceTaxAmount>0.00</DifferenceTaxAmount>
+      <DifferenceTaxInclusiveAmount>913.45</DifferenceTaxInclusiveAmount>
+      <TaxCategory>
+        <Percent>0</Percent>
+      </TaxCategory>
+    </TaxSubTotal>
+    <TaxAmount>0.00</TaxAmount>
+  </TaxTotal>
+  <LegalMonetaryTotal>
+    <TaxExclusiveAmount>913.45</TaxExclusiveAmount>
+    <TaxInclusiveAmount>913.45</TaxInclusiveAmount>
+    <AlreadyClaimedTaxExclusiveAmount>0.00</AlreadyClaimedTaxExclusiveAmount>
+    <AlreadyClaimedTaxInclusiveAmount>0.00</AlreadyClaimedTaxInclusiveAmount>
+    <DifferenceTaxExclusiveAmount>913.45</DifferenceTaxExclusiveAmount>
+    <DifferenceTaxInclusiveAmount>913.45</DifferenceTaxInclusiveAmount>
+    <PayableRoundingAmount>0.00</PayableRoundingAmount>
+    <PaidDepositsAmount>0.00</PaidDepositsAmount>
+    <PayableAmount>913.45</PayableAmount>
+  </LegalMonetaryTotal>
+  <PaymentMeans>
+    <Payment>
+      <PaidAmount>913.45</PaidAmount>
+      <PaymentMeansCode>42</PaymentMeansCode>
+      <Details>
+        <PaymentDueDate>2026-10-30</PaymentDueDate>
+        <ID>19-1000000005</ID>
+        <BankCode>0100</BankCode>
+        <Name>TEST Bank</Name>
+        <IBAN />
+        <BIC />
+        <VariableSymbol>910000002</VariableSymbol>
+      </Details>
+    </Payment>
+  </PaymentMeans>
+</Invoice>

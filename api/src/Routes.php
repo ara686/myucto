@@ -806,6 +806,8 @@ final class Routes
         $app->post   ('/api/purchase-invoices/{id:[0-9]+}/attachment-check/acknowledge', [\MyInvoice\Action\Document\AttachmentCheckAction::class, 'acknowledgePurchaseInvoice']);
         // Propojení se zálohovou fakturou (advance) — proti dvojímu započtení nákladu
         $app->get    ('/api/purchase-invoices/{id:[0-9]+}/advance-candidates', AdvanceCandidatesAction::class);
+        $app->get('/api/purchase-invoices/{id:[0-9]+}/bank-matching', \MyInvoice\Action\PurchaseInvoice\PurchaseBankMatchingAction::class);
+        $app->post('/api/purchase-invoices/{id:[0-9]+}/bank-matching/retry', \MyInvoice\Action\PurchaseInvoice\PurchaseBankMatchingAction::class);
         $app->get    ('/api/purchase-invoices/{id:[0-9]+}/settlement-candidates', SettlementCandidatesAction::class);
         $app->post   ('/api/purchase-invoices/{id:[0-9]+}/link-advance',     LinkAdvancePurchaseInvoiceAction::class);
         $app->delete ('/api/purchase-invoices/{id:[0-9]+}/link-advance',     UnlinkAdvancePurchaseInvoiceAction::class);

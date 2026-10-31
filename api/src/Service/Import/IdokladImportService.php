@@ -62,6 +62,7 @@ final class IdokladImportService
         private readonly OssItemPlanner $planner,
         private readonly StatsRecomputer $stats,
         private readonly ImportedSubjectLinker $subjectLinker,
+        private readonly ?\MyInvoice\Service\Bank\PurchaseBankMatching $bankMatching = null,
     ) {}
 
     /**
@@ -591,13 +592,15 @@ final class IdokladImportService
      * Guard na status='draft' — createReceivedFromIdoklad může přes dedup guard
      * vrátit existující (už zpracovaný) doklad, ten nepřepisujeme.
      */
-    private function applyPurchasePaymentState(int $purchaseId, int $supplierId, ?array $state, string $fallbackPaidAt): void
+    private function applyPurchasePaymentState(int $purchaseId, int $supplierId, ?array $state, string $fallbackPaidAt, ?int $userId = null): void
     {
         if ($state === null || $state['status'] !== 'paid') return;
-        $this->db->pdo()->prepare(
+        $update = $this->db->pdo()->prepare(
             "UPDATE purchase_invoices SET status = 'paid', paid_at = ?
               WHERE id = ? AND supplier_id = ? AND status = 'draft'"
-        )->execute([$state['paid_at'] ?? $fallbackPaidAt, $purchaseId, $supplierId]);
+        );
+        $update->execute([$state['paid_at'] ?? $fallbackPaidAt, $purchaseId, $supplierId]);
+        if ($update->rowCount() > 0) $this->bankMatching?->afterReady($supplierId, $purchaseId, $userId);
     }
 
     /**
@@ -818,6 +821,7 @@ final class IdokladImportService
             $supplierId,
             ImportedPaymentStateMapper::fromIdoklad($i),
             $taxDate ?: $issueDate,
+            $userId > 0 ? $userId : null,
         );
 
         return $id;
@@ -1034,7 +1038,7 @@ final class IdokladImportService
         // takže fromIdoklad() vrátí null; přesto když by iDoklad stav úhrady vrátil, respektuj ho.
         $paymentState = ImportedPaymentStateMapper::fromIdoklad($i)
             ?? ['status' => 'paid', 'paid_at' => $issueDate];
-        $this->applyPurchasePaymentState($id, $supplierId, $paymentState, $issueDate);
+        $this->applyPurchasePaymentState($id, $supplierId, $paymentState, $issueDate, $userId > 0 ? $userId : null);
 
         return $id;
     }

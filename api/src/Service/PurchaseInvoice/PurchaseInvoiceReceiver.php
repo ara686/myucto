@@ -32,6 +32,7 @@ final class PurchaseInvoiceReceiver
         private readonly CardPaymentAutomation $cardAutomation,
         private readonly \MyInvoice\Service\Invoice\CreditNoteOffsetService $creditNoteOffsets,
         private readonly \MyInvoice\Service\TaxEvidence\TaxEvidenceExpenseRules $taxEvidenceRules,
+        private readonly ?\MyInvoice\Service\Bank\PurchaseBankMatching $bankMatching = null,
     ) {}
 
     /**
@@ -118,6 +119,7 @@ final class PurchaseInvoiceReceiver
                 'purchase_invoice', $id, ['error' => $e->getMessage()], $ip, $userAgent);
         }
 
+        $this->bankMatching?->afterReady($supplierId, $id, $userId);
         return $settlement;
     }
 }

@@ -147,6 +147,34 @@ final class MatchSuggestionService
         return $matchResult + ['match_suggestion_id' => $suggestionId];
     }
 
+    /** Návrh vyvolaný přijetím dokladu nikdy sám neprovádí úhradu. */
+    public function proposeForPurchase(int $supplierId, int $purchaseId, array $tx): void
+    {
+        $candidates = array_values(array_filter($this->provider->candidatesFor($supplierId, $tx, $purchaseId),
+            static fn (array $c): bool => (int) ($c['purchase_invoice_id'] ?? 0) === $purchaseId
+                && isset($c['signals']['amount_remaining'])
+                && (float) $c['score'] >= MatchScorer::SUGGEST_SCORE));
+        if ($candidates === []) return;
+        foreach ($candidates as &$candidate) $candidate['origin'] = 'purchase_ready';
+        unset($candidate);
+        // Neztratit jiné kandidáty již existujícího návrhu a neoživit zamítnutí.
+        $stmt = $this->db->pdo()->prepare('SELECT candidates_json, status FROM bank_match_suggestions WHERE supplier_id = ? AND bank_transaction_id = ? FOR UPDATE');
+        $stmt->execute([$supplierId, (int) $tx['id']]);
+        $existing = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($existing && $existing['status'] !== 'pending') return;
+        $previous = $existing ? json_decode($existing['candidates_json'], true, 512, JSON_THROW_ON_ERROR) : [];
+        // Potvrzení používá index z otevřeného detailu. Nový doklad proto nesmí
+        // přerovnat již nabídnuté kandidáty a pod stejným indexem podsunout jiný cíl.
+        foreach ($previous as &$candidate) {
+            if ((int) ($candidate['purchase_invoice_id'] ?? 0) === $purchaseId && $candidates !== []) {
+                $candidate = array_shift($candidates);
+            }
+        }
+        unset($candidate);
+        $candidates = array_merge($previous, $candidates);
+        $this->upsertPending($supplierId, (int) $tx['id'], 'single', 'amount_date_requires_review', $candidates, null);
+    }
+
     /** @return list<array<string,mixed>> */
     public function listForStatement(int $statementId, int $supplierId): array
     {
@@ -211,6 +239,28 @@ final class MatchSuggestionService
                 throw new MatchSuggestionException('already_reviewed', 'Bankovní pohyb už použila mzdová platba.', 409);
             }
             $candidate = $candidates[$candidateIndex];
+            if (($candidate['origin'] ?? null) === 'purchase_ready') {
+                // Návrh není rezervace: pokladna, zápočet i změna částky ho mohou mezitím zneplatnit.
+                $free = $pdo->prepare('SELECT 1 FROM bank_transactions bt WHERE bt.id = ? AND '
+                    . \MyInvoice\Service\Bank\BankPaymentCandidateScope::sql($supplierId));
+                $free->execute([$transactionId]);
+                $fresh = $this->provider->candidatesFor($supplierId, $tx, (int) $candidate['purchase_invoice_id']);
+                $current = array_values(array_filter($fresh, static fn (array $c): bool =>
+                    (int) ($c['purchase_invoice_id'] ?? 0) === (int) $candidate['purchase_invoice_id']
+                    && isset($c['signals']['amount_remaining'])
+                    && abs((float) $c['display']['amount'] - (float) $candidate['display']['amount']) < 0.005
+                    && $c['display']['currency'] === $candidate['display']['currency']));
+                $doc = $pdo->prepare('SELECT issue_date, effective_cost_date FROM purchase_invoices WHERE supplier_id = ? AND id = ? FOR UPDATE');
+                $doc->execute([$supplierId, (int) $candidate['purchase_invoice_id']]);
+                $dates = $doc->fetch(PDO::FETCH_ASSOC);
+                if ($dates && (new \MyInvoice\Service\Bank\PurchaseBankMatchingPeriodGuard($this->db))->datesLocked($supplierId,
+                    [$dates['issue_date'], $dates['effective_cost_date'] ?? $dates['issue_date'], substr((string) $tx['posted_at'], 0, 10)])) {
+                    throw new MatchSuggestionException('period_locked', 'Období dokladu nebo platby je uzamčené.', 409);
+                }
+                if ($free->fetchColumn() === false || $current === []) {
+                    throw new MatchSuggestionException('candidate_stale', 'Úhrada nebo doklad se změnily; vyhledejte nové návrhy.', 409);
+                }
+            }
             if ($authorizeCandidate !== null) $authorizeCandidate($candidate, $tx);
             $result = $this->applyCandidate($supplierId, $tx, $candidate, $userId, true);
             $pdo->prepare(

@@ -28,7 +28,7 @@ final class MatchCandidateProvider
     ) {}
 
     /** @param array<string,mixed> $tx @return list<array<string,mixed>> */
-    public function candidatesFor(int $supplierId, array $tx): array
+    public function candidatesFor(int $supplierId, array $tx, ?int $purchaseId = null): array
     {
         if ($supplierId <= 0 || (int) ($tx['id'] ?? 0) <= 0) return [];
         if (\MyInvoice\Service\Bank\BankNoticeLifecycle::isSuperseded($this->db->pdo(), (int) $tx['id'])) return [];
@@ -46,7 +46,7 @@ final class MatchCandidateProvider
         );
         $rows = $incoming
             ? $this->issuedPool($supplierId, $posted)
-            : $this->purchasePool($supplierId, $posted);
+            : $this->purchasePool($supplierId, $posted, $purchaseId);
         $txCard = isset($tx['card_last4']) && \MyInvoice\Service\Bank\Card\CardNumberMask::isValidLast4((string) $tx['card_last4'])
             ? (string) $tx['card_last4']
             : null;
@@ -206,12 +206,15 @@ final class MatchCandidateProvider
      *
      * @return list<array<string,mixed>>
      */
-    private function purchasePool(int $supplierId, string $posted): array
+    private function purchasePool(int $supplierId, string $posted, ?int $purchaseId = null): array
     {
+        // Omezení na doklad používá pouze návrh po přijetí, nikdy automatické rozhodnutí.
+        // Jinak by 300 novějších faktur dokázalo právě přijímaný doklad vytlačit z návrhů.
+        $target = $purchaseId !== null ? ' AND p.id = ' . (int) $purchaseId : '';
         $branch = static fn (string $statusCondition): string =>
             "SELECT 'purchase_invoice' AS candidate_type, p.id, p.vendor_id AS client_id,
                     COALESCE(NULLIF(p.vendor_invoice_number,''), p.varsymbol) AS ref,
-                    p.amount_to_pay,
+                    p.amount_to_pay + COALESCE(p.rounding, 0) AS amount_to_pay, p.payment_variable_symbol AS payment_vs,
                     (" . PurchaseSettledExpr::settled('p') . ") AS paid_total,
                     p.document_kind AS invoice_type, p.status, p.exchange_rate,
                     p.issue_date, p.due_date, cur.code AS currency, c.company_name AS party, p.card_last4,
@@ -229,18 +232,21 @@ final class MatchCandidateProvider
                              AND f.status <> 'cancelled'
                            GROUP BY f.advance_purchase_invoice_id) fin ON fin.advance_id = p.id
               WHERE p.supplier_id = ?
-                AND {$statusCondition}
-                AND p.document_kind IN ('invoice','advance')
-                AND (ABS(DATEDIFF(p.due_date, ?)) <= ? OR ABS(DATEDIFF(p.issue_date, ?)) <= ?)";
+                AND {$statusCondition} {$target}
+                AND p.document_kind IN ('invoice','advance','receipt') AND p.cash_register_id IS NULL
+                AND (p.due_date BETWEEN ? AND ? OR p.issue_date BETWEEN ? AND ?)";
         $stmt = $this->db->pdo()->prepare(
             'SELECT * FROM (' . $branch("p.status IN ('received','booked')") . ' UNION ALL '
-            // Záloha uhrazená jen evidenčně (stav paid bez jakékoli úhrady), kterou
-            // vyúčtovává konečná faktura: platba k ní pořád patří.
-            . $branch("p.document_kind = 'advance' AND p.status = 'paid' AND fin.advance_id IS NOT NULL
+            // Evidenční stav paid není skutečná úhrada. Účtenka i faktura bez
+            // banky, pokladny či zápočtu stále mohou čekat na bankovní pohyb.
+            . $branch("p.status = 'paid'
                        AND ABS(" . PurchaseSettledExpr::settled('p') . ') < 0.005')
             . ') pool ORDER BY ABS(DATEDIFF(due_date, ?)), id DESC LIMIT 300'
         );
-        $window = [$posted, self::FALLBACK_DAY_WINDOW, $posted, self::FALLBACK_DAY_WINDOW];
+        $day = new \DateTimeImmutable(substr($posted, 0, 10));
+        $from = $day->modify('-90 days')->format('Y-m-d');
+        $to = $day->modify('+90 days')->format('Y-m-d');
+        $window = [$from, $to, $from, $to];
         $stmt->execute([$supplierId, $supplierId, ...$window, $supplierId, $supplierId, ...$window, $posted]);
         return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
@@ -287,6 +293,7 @@ final class MatchCandidateProvider
             $signals['name_fuzzy'] = MatchScorer::W_NAME_FUZZY;
         }
         $dateDistance = $this->dayDistance($posted, (string) ($row['due_date'] ?? $row['issue_date'] ?? $posted));
+        if (!$incoming) $dateDistance = min($dateDistance, $this->dayDistance($posted, (string) $row['issue_date']));
         if ($dateDistance <= 5) $signals['due_proximity'] = MatchScorer::W_DUE_PROXIMITY;
         $overpayment = $amount - $converted;
         if ($overpayment > $tol && ($vsExact || $promoted)) $flags[] = 'overpayment';

@@ -1126,7 +1126,8 @@
         "2222_vat_classification_travel_service_line26.sql",
         "2223_statement_map_349_358.sql",
         "2224_journal_period_source_index.sql",
-        "2225_purchase_settled_outside.sql"
+        "2225_purchase_settled_outside.sql",
+        "2226_purchase_bank_matching.sql"
     ],
     "tables": {
         "abra_flexi_connections": {
@@ -3625,6 +3626,8 @@
                 "idx_bt_card_last4": "BTREE (card_last4, posted_at)",
                 "idx_bt_match": "BTREE (matched_invoice_id)",
                 "idx_bt_statement": "BTREE (statement_id)",
+                "idx_bt_statement_status_date": "BTREE (statement_id, match_status, posted_at)",
+                "idx_bt_statement_status_vs": "BTREE (statement_id, match_status, variable_symbol)",
                 "idx_bt_status": "BTREE (match_status, posted_at)",
                 "idx_bt_vs": "BTREE (variable_symbol)",
                 "uq_bank_transaction_statement_id": "UNIQUE BTREE (statement_id, id)",
@@ -22565,6 +22568,7 @@
                 "advance_purchase_invoice_id": "bigint(20) unsigned NULL DEFAULT NULL",
                 "amount_to_pay": "decimal(12,2) NULL DEFAULT NULL STORED GENERATED AS (`total_with_vat` - `advance_paid_amount`)",
                 "approval_status": "enum('none','pending','approved','rejected') NOT NULL DEFAULT 'none'",
+                "bank_matching_result": "longtext NULL DEFAULT NULL COLLATE utf8mb4_bin",
                 "booked_at": "timestamp NULL DEFAULT NULL",
                 "booked_by": "bigint(20) unsigned NULL DEFAULT NULL",
                 "cancelled_at": "timestamp NULL DEFAULT NULL",
@@ -22700,6 +22704,7 @@
                 "fk_pi_vendor": "(vendor_id) -> clients (id) ON UPDATE RESTRICT ON DELETE RESTRICT"
             },
             "checks": {
+                "bank_matching_result": "json_valid(`bank_matching_result`)",
                 "chk_pi_card_last4": "`card_last4` is null or `card_last4` regexp '^[0-9]{4}$'",
                 "chk_purchase_settled_outside": "`settled_outside_amount` >= 0",
                 "extraction_review": "json_valid(`extraction_review`)",

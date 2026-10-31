@@ -52,6 +52,7 @@ const PurchaseForceModeDialog = defineAsyncComponent(() => import('@/components/
 const PaymentMethodModal = defineAsyncComponent(() => import('@/components/invoices/PaymentMethodModal.vue'))
 const ExpenseRuleTemplateModal = defineAsyncComponent(() => import('@/components/accounting/ExpenseRuleTemplateModal.vue'))
 const RuleFormModal = defineAsyncComponent(() => import('@/components/bank/RuleFormModal.vue'))
+const PurchaseBankMatchingPanel = defineAsyncComponent(() => import('@/components/bank/PurchaseBankMatchingPanel.vue'))
 const InvoiceBankMatchModal = defineAsyncComponent(() => import('@/components/bank/InvoiceBankMatchModal.vue'))
 const StockReceiptModal = defineAsyncComponent(() => import('@/components/stock/StockReceiptModal.vue'))
 
@@ -1990,6 +1991,10 @@ useWindowRefresh(async () => {
         <PdfDropzone v-if="auth.canWrite('purchase_invoices') && !lockedForMe" :uploading="pdfUploading" @file-dropped="onPdfDropped" @error="onPdfError" />
         <p v-else class="text-sm text-neutral-500">{{ t('purchase_invoice.pdf.no_pdf') }}</p>
       </div>
+
+      <PurchaseBankMatchingPanel v-if="auth.canRead('bank') && ['received', 'booked', 'paid'].includes(invoice.status) && ['invoice', 'receipt', 'advance'].includes(invoice.document_kind)"
+        :invoice-id="invoice.id" :revision="`${invoice.status}:${invoice.updated_at}`" :can-review="!lockedForMe && auth.canWrite('bank.match') && (!auth.isClientRole || auth.canWrite('purchase_invoices.transition'))" :can-manual="canMatchBankPayment"
+        @changed="load" @manual="openBankMatch" />
 
       <!-- ═══ Poznámky (jen pokud existují) ═══ -->
       <div v-if="invoice.note_above_items || invoice.note_below_items" class="bg-surface border border-neutral-200 rounded-lg p-5 shadow-sm">
