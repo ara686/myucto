@@ -21045,8 +21045,8 @@
     "vendor_detail": "Detail dodavatele",
     "show_invoices_for_vendor": "Zobrazit faktury dodavatele",
     "filters": {
-      "has_visual_document": "PDF / sken dokladu",
-      "has_structured_source": "ISDOC / XML dokladu",
+      "has_visual_document": "PDF / sken",
+      "has_structured_source": "ISDOC / XML",
       "document_sources": "Podklady dokladu",
       "document_all": "Vše",
       "document_present": "Přiložen",

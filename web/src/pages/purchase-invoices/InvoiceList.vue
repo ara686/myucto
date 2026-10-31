@@ -1335,14 +1335,17 @@ useWindowRefresh(refreshLoadedPages,
           <option value="0">{{ t('purchase_invoice.filters.payment_ordered_no') }}</option>
         </select>
         <fieldset data-test="document-sources-filters"
-          class="min-w-0 max-w-full rounded-md border border-neutral-200 px-3 pb-2">
-          <legend class="px-1 text-xs font-medium text-neutral-500">{{ t('purchase_invoice.filters.document_sources') }}</legend>
+          class="relative min-w-0 max-w-full rounded-md border border-neutral-200 px-2 py-0">
+          <legend class="sr-only">{{ t('purchase_invoice.filters.document_sources') }}</legend>
+          <span aria-hidden="true" class="pointer-events-none absolute -top-2 left-2 bg-surface px-1 text-xs leading-4 font-medium text-neutral-500">
+            {{ t('purchase_invoice.filters.document_sources') }}
+          </span>
           <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
             <label class="flex flex-wrap items-center gap-1.5 text-sm text-neutral-700"
               :title="t('purchase_invoice.filters.has_visual_document_hint')">
               {{ t('purchase_invoice.filters.has_visual_document') }}
               <select v-model="visualDocumentFilter" data-test="has_visual_document-filter"
-                class="h-9 px-3 border border-neutral-300 rounded-md bg-surface text-sm">
+                class="h-[calc(2.25rem-2px)] px-3 border border-neutral-300 rounded-md bg-surface text-sm">
                 <option value="">{{ t('purchase_invoice.filters.document_all') }}</option>
                 <option value="1">{{ t('purchase_invoice.filters.document_present') }}</option>
                 <option value="0">{{ t('purchase_invoice.filters.document_missing') }}</option>
@@ -1352,7 +1355,7 @@ useWindowRefresh(refreshLoadedPages,
               :title="t('purchase_invoice.filters.has_structured_source_hint')">
               {{ t('purchase_invoice.filters.has_structured_source') }}
               <select v-model="structuredSourceFilter" data-test="has_structured_source-filter"
-                class="h-9 px-3 border border-neutral-300 rounded-md bg-surface text-sm">
+                class="h-[calc(2.25rem-2px)] px-3 border border-neutral-300 rounded-md bg-surface text-sm">
                 <option value="">{{ t('purchase_invoice.filters.document_all') }}</option>
                 <option value="1">{{ t('purchase_invoice.filters.document_present') }}</option>
                 <option value="0">{{ t('purchase_invoice.filters.document_missing') }}</option>

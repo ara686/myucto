@@ -21045,8 +21045,8 @@
     "vendor_detail": "Vendor detail",
     "show_invoices_for_vendor": "Show vendor invoices",
     "filters": {
-      "has_visual_document": "Document PDF / scan",
-      "has_structured_source": "Document ISDOC / XML",
+      "has_visual_document": "PDF / scan",
+      "has_structured_source": "ISDOC / XML",
       "document_sources": "Document attachments",
       "document_all": "All",
       "document_present": "Attached",
