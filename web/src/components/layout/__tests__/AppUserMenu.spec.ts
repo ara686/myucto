@@ -14,7 +14,7 @@ function signIn(type: string) {
   useAuthStore().user = {
     id: 1, email: 'user@example.test', name: 'Jana Testová',
     role: { id: 1, name: type, type, system_key: type },
-    is_superadmin: type === 'superadmin', is_instance_admin: type === 'instance_admin',
+    is_superadmin: false, is_instance_admin: type === 'instance_admin',
   } as never
 }
 
