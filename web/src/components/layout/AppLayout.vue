@@ -557,7 +557,7 @@ const navSections = computed<NavSection[]>(() => {
         ...(auth.isSuperadmin ? [{ to: '/portal/purchase-invoice-submissions', label: t('nav.submit_documents'), icon: ICONS.documents, permission: 'documents.submit' as PermissionKey }] : []),
         { to: '/documents/scan-attach', label: t('scan_attach.nav'), icon: ICONS.documents, permission: 'documents.upload' },
         { to: '/logbook', label: t('nav.logbook'), icon: ICONS.logbook, newTo: '/logbook?tab=trips&new=trip' },
-        ...(svjScope ? [
+        ...(svjScope && auth.hasCommercialFeatures ? [
           { to: '/property/registry', label: t('nav.property_registry'), icon: ICONS.property, permission: 'property' as PermissionKey, dividerBefore: true },
           { to: '/property/charges', label: t('nav.property_charges'), icon: ICONS.property, permission: 'property' as PermissionKey },
           { to: '/property/charges/issues', label: t('nav.property_issuance'), icon: ICONS.property, permission: 'property' as PermissionKey },
@@ -861,7 +861,6 @@ const navSections = computed<NavSection[]>(() => {
           { to: '/admin/tax-constants', label: t('codebooks.tab_tax_constants'), icon: ICONS.tax_optimizer },
         ] : []),
         ...((isAdmin || isAdminPlus) ? [{ to: '/admin/suppliers', label: t('nav.suppliers'), icon: ICONS.suppliers }] : []),
-        ...(isAdmin && !auth.isManagedInstallation ? [{ to: '/admin/instance', label: t('instance_admin.title'), icon: ICONS.cron }] : []),
         ...(isAdmin ? [
           { to: '/admin/users',        label: t('nav.users'),      icon: ICONS.users },
           { to: '/admin/roles',        label: t('nav.roles'),      icon: ICONS.approvals },

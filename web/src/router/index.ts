@@ -284,7 +284,7 @@ export function applyAuthorizationMeta(records: RouteRecordRaw[], inheritedRequi
     if (superadminRouteNames.has(name)) record.meta = { ...record.meta, superadminOnly: true }
     if (adminPlusRouteNames.has(name)) record.meta = { ...record.meta, adminPlusOnly: true }
     if (companyAdminRouteNames.has(name)) record.meta = { ...record.meta, companyAdminOnly: true }
-    if (record.meta?.requiresDoubleEntry || record.meta?.requiresStock || commercialOnlyRouteNames.has(name)) {
+    if (record.meta?.requiresDoubleEntry || record.meta?.requiresStock || record.meta?.frameworkScope === 'svj' || commercialOnlyRouteNames.has(name)) {
       record.meta = { ...record.meta, commercialOnly: true }
     }
     if (name === 'admin-branding') record.meta = { ...record.meta, staffOnly: true }
