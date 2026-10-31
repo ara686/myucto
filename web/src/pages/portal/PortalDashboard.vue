@@ -41,7 +41,7 @@ async function load(quiet = false) {
 onMounted(load)
 // Multi-firma: přepnutí ve switcheru přenačte portál.
 watch(() => supplierStore.currentSupplierId, () => { void load() })
-useWindowRefresh(['settings', 'suppliers'], () => load(true), () => !loading.value)
+useWindowRefresh(() => load(true), () => !loading.value)
 
 const KPI_PERIODS: PortalKpiPeriod[] = ['current_month', 'last_month', 'ytd', 'prev_year_ytd', 'last_12m']
 
