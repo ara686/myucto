@@ -18079,6 +18079,27 @@ paths:
       responses:
         '200': { description: Kandidáti, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: '#/components/schemas/OtherItemPaymentCandidate' } } } } } } }
 
+  /api/v1/accounting/other-items/bank-candidates:
+    get:
+      tags: [Accounting]
+      summary: Ostatní pohledávky a závazky k přiřazení bankovního pohybu
+      description: >-
+        Protějšek `payment-candidates` z pohledu bankovního pohybu. Příchozí pohyb nabídne
+        pohledávky, odchozí závazky; jen potvrzené či zaúčtované položky v CZK se zbývající
+        částkou. Bez `q` vrací shodu zbývající částky (±0,01) nebo variabilního symbolu, shoda
+        částky je první. S `q` hledá podle čísla dokladu, VS, partnera nebo názvu bez ohledu
+        na částku. Pohyb už přiřazený faktuře, mzdám, dani nebo vyčerpaný vrací prázdný seznam.
+        Klientské role dostanou 403.
+      parameters:
+        - { $ref: '#/components/parameters/SupplierIdHeader' }
+        - { in: query, name: bank_transaction_id, required: true, schema: { type: integer, format: int64 } }
+        - { in: query, name: q, schema: { type: string } }
+        - { in: query, name: limit, schema: { type: integer, minimum: 1, maximum: 50, default: 25 } }
+      responses:
+        '200': { description: Kandidáti, content: { application/json: { schema: { type: object, properties: { candidates: { type: array, items: { $ref: '#/components/schemas/OtherItemBankCandidate' } } } } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
   /api/v1/accounting/other-items/schedules:
     get:
       tags: [Accounting]
@@ -40602,6 +40623,24 @@ components:
         amount: { type: number }
         payment_on: { type: string, format: date }
         reversed_on: { type: [string, 'null'], format: date }
+    OtherItemBankCandidate:
+      type: object
+      description: Ostatní položka nabídnutá k bankovnímu pohybu; tvar odpovídá kandidátům faktur v párování pohybu.
+      required: [type, id, amount, currency, issue_date, side]
+      properties:
+        type: { type: string, enum: [other_item] }
+        id: { type: integer, format: int64 }
+        ref: { type: [string, "null"], description: Číslo dokladu položky. }
+        amount: { type: number, description: Zbývající částka k úhradě v CZK. }
+        currency: { type: string, enum: [CZK] }
+        converted_amount: { type: "null" }
+        converted_currency: { type: "null" }
+        issue_date: { type: string, format: date }
+        due_date: { type: [string, "null"], format: date }
+        party: { type: [string, "null"], description: Partner, případně název položky. }
+        paid: { type: boolean }
+        currency_mismatch: { type: boolean }
+        side: { type: string, enum: [receivable, payable] }
     OtherItemPaymentCandidate:
       type: object
       properties:
@@ -48152,6 +48191,21 @@ components:
               vendor_name: { type: [string, "null"] }
               amount: { type: number, format: float, description: Částka alokace v měně bankovní transakce. }
               currency: { type: string, description: Měna bankovní transakce. }
+        matched_other_items:
+          type: array
+          description: >-
+            Ostatní pohledávky a závazky, kterým je pohyb přiřazen (nestornovaná přiřazení).
+            `match_status` zůstává `unmatched`, protože popisuje jen párování s fakturou.
+            Klientské role dostanou prázdné pole.
+          items:
+            type: object
+            required: [other_item_id, side, amount]
+            properties:
+              other_item_id: { type: integer, format: int64 }
+              document_no: { type: [string, "null"] }
+              side: { type: string, enum: [receivable, payable] }
+              partner_name: { type: [string, "null"], description: Partner, případně název položky. }
+              amount: { type: number, format: float, description: Přiřazená částka v CZK. }
         matched_varsymbol: { type: [string, "null"] }
         matched_invoice_amount: { type: [number, "null"], format: float }
         client_id: { type: [integer, "null"] }

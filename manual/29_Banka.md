@@ -89,7 +89,9 @@ Většina plateb se spáruje sama (podle variabilního symbolu, částky a čís
 6. Do pole **Vyhledat jiný doklad** zadejte číslo dokladu, platební VS, dodavatele či odběratele nebo přesnou částku (můžete psát `1 234,50`).
 7. Doklad vyberte a potvrďte.
 
-Párování můžete zahájit i z detailu vydané či přijaté faktury akcí **Spárovat s bankou**: vyberte volný pohyb správného směru a potvrďte přiřazení. U ostatních pohledávek a závazků použijte **Připojit úhradu**.
+Okno nabízí vedle vydaných a přijatých faktur i **ostatní pohledávky a závazky** (štítek **Ostatní pohledávka** nebo **Ostatní závazek**): příchozí platbu pohledávkám, odchozí závazkům. Nezaúčtovaný pohyb se při potvrzení zaúčtuje proti účtu položky (například 221 / 315 nebo 325 / 221), podrobnosti v [§ 29.13.8](#29138-rucni-parovani-pravidla-a-nesparovane-platby).
+
+Párování můžete zahájit i z detailu vydané či přijaté faktury akcí **Spárovat s bankou**: vyberte volný pohyb správného směru a potvrďte přiřazení. U ostatních pohledávek a závazků můžete platbu přiřadit i z jejich detailu akcí **Připojit úhradu**.
 
 **Jak poznáte, že je hotovo:** Transakce má stav **Ručně** (automaticky spárovaná **Auto OK**, částečná úhrada **Částečně**), ve sloupci **Faktura** je klikatelné číslo faktury a faktura je zaplacená, nebo částečně uhrazená (a zůstatek se sníží).
 
@@ -392,6 +394,15 @@ ruční párování přidělí nejvýše tento zbytek. Přijatý dobropis se pá
 platbou. Částečná vratka sama doklad neoznačí jako plně vypořádaný.
 
 Párování z detailu faktury (**Spárovat s bankou**): seznam lze hledat podle protistrany, VS, popisu nebo přesné částky. Pohyb přidělený jinému dokladu, mzdám, daním nebo vlastnímu převodu se nenabídne; dostupnost se znovu kontroluje při potvrzení. U ostatních pohledávek a závazků použijte **Připojit úhradu**.
+
+Ostatní pohledávky a závazky v okně **Spárovat**:
+
+- Bez hledání okno nabídne potvrzené nebo zaúčtované položky v CZK se shodnou zbývající částkou nebo shodným variabilním symbolem. Pole **Vyhledat jiný doklad** hledá podle čísla dokladu, VS, partnera nebo názvu položky bez ohledu na částku.
+- Příchozí platba se nabízí jen pohledávkám, odchozí jen závazkům. Platba v cizí měně ani pohyb už přiřazený faktuře, mzdám nebo daním se nenabídne. Pohyb přiřazený jiné položce se nabídne jen s volnou částí a pohyb zaúčtovaný na jiný účet se položce nenabídne.
+- Přiřadí se volná část pohybu, nejvýše zbývající dluh. Pohyb, který ještě není zaúčtovaný, MyÚčto zaúčtuje ručním zápisem proti účtu položky, u položky založené ze zůstatku zápisu proti účtu tohoto zápisu; k tomu potřebujete právo zaúčtovat bankovní pohyby a zapisovat do účetnictví. Bez něj se platba nepřiřadí a aplikace to oznámí.
+- Nezaúčtovaná platba vyšší než zbývající dluh se z okna nepřiřadí, protože by na saldokontu vznikl přeplatek. Zaúčtujte ji rozúčtováním a položce ji přiřaďte z jejího detailu akcí **Připojit úhradu**. V daňové evidenci se nic neúčtuje, přiřadí se jen část do výše dluhu.
+- Přiřazený pohyb má ve výpisu stav **Ostatní položka** a ve sloupci dokladu odkaz na položku. Pohyb s přiřazením nejde ignorovat.
+- Přiřazení zrušíte v detailu položky. Zaúčtování pohybu tím zůstává na účtu položky a pohyb lze přiřadit i jiné položce se stejným účtem. Po stornu zaúčtování lze pohyb znovu přiřadit jen původní položce.
 
 U CZK platby cizoměnové faktury, která odpovídá celému zbytku v devizové toleranci, se faktura vyrovná celým zbytkem v její měně; přesný CZK pohyb zůstane na bankovní transakci. Výrazně nižší částka je částečná úhrada.
 
