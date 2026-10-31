@@ -520,6 +520,8 @@ export async function authorizationGuard(
     return { name: to.name === 'instance-admin-profile' ? 'profile-password' : 'admin-instance', query: to.query, hash: to.hash }
   }
   if (instanceAdminOnly && !auth.isInstanceAdmin) return denyFallback(to.name, auth)
+  // Na spravované instalaci se o provoz stará provozovatel, API správy tam vrací 404.
+  if (to.name === 'admin-instance' && auth.isManagedInstallation) return denyFallback(to.name, auth)
   if (requiresAuth && auth.lockedSession) {
     useSessionSecurityStore().apply(auth.lockedSession)
     return true

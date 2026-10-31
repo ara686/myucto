@@ -84,4 +84,28 @@ describe('Správce instance — oddělený router', () => {
     auth.setupStatus = { needs_setup: false, managed: true } as never
     expect(await authorizationGuard(resolve('/instance-admin'))).toEqual({ name: 'home' })
   })
+
+  it.each([
+    '/instance-admin',
+    '/instance-admin?tab=smtp#targets',
+    '/instance-admin/profile',
+    '/admin/instance',
+  ])('na spravované instalaci superadmina z %s vrátí na přehled bez přesměrování do správy', async path => {
+    const auth = signIn('superadmin')
+    auth.setupStatus = { needs_setup: false, managed: true } as never
+    expect(await authorizationGuard(resolve(path))).toEqual({ name: 'home' })
+  })
+
+  it('zamčená relace na spravované instalaci správu instance také neotevře', async () => {
+    const auth = signIn('superadmin')
+    auth.setupStatus = { needs_setup: false, managed: true } as never
+    auth.lockedSession = { session_state: 'locked' } as never
+    expect(await authorizationGuard(resolve('/admin/instance'))).toEqual({ name: 'home' })
+  })
+
+  it('technický účet na spravované instalaci do hlavní aplikace nepustí ani přes integrovanou správu', async () => {
+    const auth = signIn()
+    auth.setupStatus = { needs_setup: false, managed: true } as never
+    expect(await authorizationGuard(resolve('/admin/instance'))).toEqual({ name: 'instance-admin' })
+  })
 })
