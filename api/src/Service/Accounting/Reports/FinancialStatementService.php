@@ -60,6 +60,7 @@ final class FinancialStatementService
         private readonly StatementFrameworkResolver $frameworkResolver,
         private readonly Statement504Service $statements504,
         private readonly NetTurnoverProjection $turnover,
+        private readonly InterimAccrualAdjustment $interimAccruals,
     ) {}
 
     /**
@@ -74,17 +75,21 @@ final class FinancialStatementService
     }
 
     /**
+     * `$accrualSpread` = průběžné časové rozlišení mimo deník ({@see InterimAccrualAdjustment}).
+     * Je to jen pohled pro průběžné výkazy: zapíná ho výhradně volba v Účetnictví → Výkazy,
+     * podání, závěrka, DPPO ani kontroly ho nepředávají a počítají s deníkem tak, jak je.
+     *
      * @param 'full'|'small'|'micro'|'auto' $scope
      * @return array<string,mixed> struktura dle spec §2.7
      */
-    public function balanceSheet(int $supplierId, int $periodId, ?string $asOf, string $scope, ?DimensionFilter $dimension = null): array
+    public function balanceSheet(int $supplierId, int $periodId, ?string $asOf, string $scope, ?DimensionFilter $dimension = null, bool $accrualSpread = false): array
     {
         $context = $this->frameworkResolver->context($supplierId, $periodId, $asOf);
         if ($context['framework'] === 'cz_504') {
             return $this->statements504->build('balance_sheet', $supplierId, $context, $this->scope504($supplierId, $periodId, $scope), $dimension)
                 + ['entity' => $this->loadEntity($supplierId)];
         }
-        $ctx = $this->buildStatement('balance_sheet', $supplierId, $periodId, $asOf, $scope, $dimension);
+        $ctx = $this->buildStatement('balance_sheet', $supplierId, $periodId, $asOf, $scope, $dimension, $accrualSpread);
 
         // D1 (audit 2026-07, H8): §3a odst. 2 písm. b) vyhl. 500/2002 Sb. — zkrácená
         // rozvaha malé ÚJ obsahuje položky písmen a římských číslic (level ≤ 2) A NAVÍC
@@ -162,7 +167,7 @@ final class FinancialStatementService
                 // null = firma souhrnné vykázání daní vůči FÚ nepoužívá; jinak započtená částka.
                 'tax_authority_offset' => $ctx['tax_offset'],
             ],
-        ];
+        ] + self::accrualSpreadOut($ctx);
     }
 
     /**
@@ -236,9 +241,9 @@ final class FinancialStatementService
      * @param 'full'|'small'|'micro'|'auto' $scope
      * @return array<string,mixed>
      */
-    public function incomeStatementByFunction(int $supplierId, int $periodId, ?string $asOf, string $scope, ?DimensionFilter $dimension = null): array
+    public function incomeStatementByFunction(int $supplierId, int $periodId, ?string $asOf, string $scope, ?DimensionFilter $dimension = null, bool $accrualSpread = false): array
     {
-        $out = $this->incomeStatementFor(self::TYPE_PURPOSE, $supplierId, $periodId, $asOf, $scope, $dimension);
+        $out = $this->incomeStatementFor(self::TYPE_PURPOSE, $supplierId, $periodId, $asOf, $scope, $dimension, $accrualSpread);
 
         $unmapped = $out['checks']['unmapped_accounts'];
         if ($unmapped !== []) {
@@ -256,12 +261,14 @@ final class FinancialStatementService
     }
 
     /**
+     * `$accrualSpread` viz {@see balanceSheet()}.
+     *
      * @param 'full'|'small'|'micro'|'auto' $scope
      * @return array<string,mixed> struktura dle spec §2.7
      */
-    public function incomeStatement(int $supplierId, int $periodId, ?string $asOf, string $scope, ?DimensionFilter $dimension = null): array
+    public function incomeStatement(int $supplierId, int $periodId, ?string $asOf, string $scope, ?DimensionFilter $dimension = null, bool $accrualSpread = false): array
     {
-        return $this->incomeStatementFor('income_statement', $supplierId, $periodId, $asOf, $scope, $dimension);
+        return $this->incomeStatementFor('income_statement', $supplierId, $periodId, $asOf, $scope, $dimension, $accrualSpread);
     }
 
     /**
@@ -272,14 +279,14 @@ final class FinancialStatementService
      * @param 'full'|'small'|'micro'|'auto' $scope
      * @return array<string,mixed>
      */
-    private function incomeStatementFor(string $type, int $supplierId, int $periodId, ?string $asOf, string $scope, ?DimensionFilter $dimension = null): array
+    private function incomeStatementFor(string $type, int $supplierId, int $periodId, ?string $asOf, string $scope, ?DimensionFilter $dimension = null, bool $accrualSpread = false): array
     {
         $context = $this->frameworkResolver->context($supplierId, $periodId, $asOf);
         if ($context['framework'] === 'cz_504') {
             return $this->statements504->build($type, $supplierId, $context, $this->scope504($supplierId, $periodId, $scope), $dimension)
                 + ['entity' => $this->loadEntity($supplierId)];
         }
-        $ctx = $this->buildStatement($type, $supplierId, $periodId, $asOf, $scope, $dimension);
+        $ctx = $this->buildStatement($type, $supplierId, $periodId, $asOf, $scope, $dimension, $accrualSpread);
 
         $rows = [];
         foreach ($ctx['rows'] as $r) {
@@ -320,7 +327,19 @@ final class FinancialStatementService
                 'profit_matches' => self::cents($profitCurrent) === self::cents($profitFromBalances),
                 'unmapped_accounts' => $ctx['unmapped'],
             ],
-        ];
+        ] + self::accrualSpreadOut($ctx);
+    }
+
+    /**
+     * Souhrn průběžného časového rozlišení pro výstup výkazu. Klíč `accrual_spread` je ve
+     * výstupu jen při zapnuté volbě, výkaz bez ní má beze změny tvar i čísla.
+     *
+     * @param array<string,mixed> $ctx
+     * @return array<string,mixed>
+     */
+    private static function accrualSpreadOut(array $ctx): array
+    {
+        return $ctx['accrual_spread'] === null ? [] : ['accrual_spread' => $ctx['accrual_spread']];
     }
 
     /**
@@ -576,7 +595,7 @@ final class FinancialStatementService
      * @param 'balance_sheet'|'income_statement'|'income_statement_purpose' $type
      * @return array<string,mixed>
      */
-    private function buildStatement(string $type, int $supplierId, int $periodId, ?string $asOf, string $scope, ?DimensionFilter $dimension = null): array
+    private function buildStatement(string $type, int $supplierId, int $periodId, ?string $asOf, string $scope, ?DimensionFilter $dimension = null, bool $accrualSpread = false): array
     {
         $period = $this->periods->findById($supplierId, $periodId);
         if ($period === null) {
@@ -607,6 +626,11 @@ final class FinancialStatementService
         $splitCodes = $this->mapper->noCompensationPrefixes($map);
         $analyticPrefixes = $this->mapper->analyticPrefixes($map);
 
+        // Průběžné časové rozlišení mimo deník (volba výkazu). Výkaz za hodnotu dimenze ho
+        // nepoužije: úprava se počítá za celé doklady, ne za díl řádků s hodnotou dimenze.
+        $spreadOn = $accrualSpread && $dimension === null;
+        $spread = $spreadOn ? $this->interimAccruals->compute($supplierId, (string) $period['starts_on'], $asOf) : null;
+
         $balances = $this->ledger->syntheticBalances(
             $supplierId,
             $asOf,
@@ -614,6 +638,8 @@ final class FinancialStatementService
             $splitCodes,
             $analyticPrefixes,
             $dimension,
+            null,
+            $spread['deltas'] ?? [],
         );
         $mapped   = $this->mapper->map($rows, $map, $balances);
         // § 58 odst. 2 vyhl.: souhrnné vykázání daňových pohledávek a závazků vůči FÚ, jen na
@@ -642,6 +668,7 @@ final class FinancialStatementService
         // ho má s výjimkami platnými v minulém roce.
         $prevPeriod = $this->ledger->previousPeriod($supplierId, $startsOn);
         $valuesPrev = [];
+        $spreadPrev = null;
         if ($prevPeriod !== null) {
             $prevMap = $baseMap;
             $prevSplitCodes = $splitCodes;
@@ -649,6 +676,11 @@ final class FinancialStatementService
                 $prevMap = $this->maps->accountMap($version, $supplierId, (int) $prevPeriod['fiscal_year']);
                 $prevSplitCodes = $this->mapper->noCompensationPrefixes($prevMap);
             }
+            // Sloupec minulého období stejným pravidlem k jeho konci. Rok, jehož uzávěrka
+            // časové rozlišení zaúčtovala, se tím nezmění: odložené doklady služba vyřadí.
+            $spreadPrev = $spreadOn
+                ? $this->interimAccruals->compute($supplierId, (string) $prevPeriod['starts_on'], (string) $prevPeriod['ends_on'])
+                : null;
             $balancesPrev = $this->ledger->syntheticBalances(
                 $supplierId,
                 (string) $prevPeriod['ends_on'],
@@ -656,6 +688,8 @@ final class FinancialStatementService
                 $prevSplitCodes,
                 $this->mapper->analyticPrefixes($prevMap),
                 $dimension,
+                null,
+                $spreadPrev['deltas'] ?? [],
             );
             $mappedPrev = $this->mapper->map($rows, $prevMap, $balancesPrev);
             if ($comparativeFromPriorYear ? $offsetIn((int) $prevPeriod['fiscal_year']) : $taxOffsetOn) {
@@ -718,6 +752,19 @@ final class FinancialStatementService
             'values'      => $values,
             'values_prev' => $valuesPrev,
             'tax_offset'  => $taxOffsetOn ? $taxOffset : null,
+            'accrual_spread' => !$accrualSpread ? null : [
+                'applied' => $spreadOn,
+                // Důvod, proč se volba neuplatnila (výkaz za hodnotu dimenze).
+                'skipped_reason' => $spreadOn ? null : 'dimension',
+                'prepaid_expense' => $spread['prepaid_expense'] ?? 0.0,
+                'deferred_revenue' => $spread['deferred_revenue'] ?? 0.0,
+                'documents' => $spread['documents'] ?? 0,
+                'prev' => $spreadPrev === null ? null : [
+                    'prepaid_expense' => $spreadPrev['prepaid_expense'],
+                    'deferred_revenue' => $spreadPrev['deferred_revenue'],
+                    'documents' => $spreadPrev['documents'],
+                ],
+            ],
         ];
     }
 

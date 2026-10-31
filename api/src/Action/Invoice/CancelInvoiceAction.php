@@ -21,6 +21,7 @@ use MyInvoice\Service\Accounting\DocumentLockService;
 use MyInvoice\Service\Accounting\PostingException;
 use MyInvoice\Service\ActivityLogger;
 use MyInvoice\Service\Invoice\AdvanceCycleLock;
+use MyInvoice\Service\Invoice\InvoiceCalendar;
 use MyInvoice\Service\Invoice\InvoiceIssuer;
 use MyInvoice\Service\Invoice\InvoiceCalculator;
 use MyInvoice\Service\Invoice\LineDiscount;
@@ -143,6 +144,14 @@ final class CancelInvoiceAction
             return Json::error($response, 'invalid_mode', 'Dobropis lze stornovat pouze interně.', 409);
         }
 
+        if (InvoiceCalendar::isCalendar($invoice['invoice_type'])) {
+            return $this->cancelCalendar($request, $response, $invoice, $mode, $reason);
+        }
+        // Interní storno splátky by rozpis na vytištěném kalendáři popřelo.
+        if (!empty($invoice['calendar_id']) && $invoice['invoice_type'] !== 'tax_document' && $mode === 'internal') {
+            return Json::error($response, 'calendar_instalment_cancel', 'Splátku opravte dobropisem, nebo stornujte celý kalendář.', 409);
+        }
+
         if ($mode === 'internal') {
             return $this->internalCancel($request, $response, $invoice, $reason);
         }
@@ -151,6 +160,50 @@ final class CancelInvoiceAction
         }
 
         return Json::error($response, 'invalid_mode', 'mode musí být "internal" nebo "credit_note".', 400);
+    }
+
+    /**
+     * Storno kalendáře zruší i jeho splátky. Zaplacenou nebo dobropisovanou splátku nejde
+     * vrátit zpět jedním krokem: úhrada a dobropis mají vlastní daňový a účetní dopad.
+     *
+     * @param array<string,mixed> $calendar
+     */
+    private function cancelCalendar(Request $request, Response $response, array $calendar, string $mode, string $reason): Response
+    {
+        if ($mode !== 'internal') {
+            return Json::error($response, 'invalid_mode', 'Kalendář lze stornovat jen interně. Jednotlivou splátku opravte dobropisem.', 409);
+        }
+        $pdo = $this->db->pdo();
+        $stmt = $pdo->prepare(
+            "SELECT i.id, i.paid_total,
+                    (SELECT COUNT(*) FROM invoices cn
+                      WHERE cn.parent_invoice_id = i.id AND cn.invoice_type = 'credit_note' AND cn.status <> 'cancelled') AS credit_notes
+               FROM invoices i
+              WHERE i.supplier_id = ? AND i.calendar_id = ?
+                AND i.invoice_type IN ('invoice', 'proforma') AND i.status <> 'cancelled'
+           ORDER BY i.id"
+        );
+        $stmt->execute([(int) $calendar['supplier_id'], (int) $calendar['id']]);
+        $instalments = $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+        $loaded = [];
+        foreach ($instalments as $row) {
+            if ((float) $row['paid_total'] > 0 || (int) $row['credit_notes'] > 0) {
+                return Json::error($response, 'calendar_instalment_settled', 'Kalendář má uhrazené nebo dobropisované splátky. Nejdřív odeberte úhrady a stornujte dobropisy.', 409);
+            }
+            $instalment = $this->repo->find((int) $row['id']);
+            if ($deny = $this->denyIfLocked($request, $response, $this->locks->forInvoice($instalment), 'invoice', (int) $row['id'])) {
+                return $deny;
+            }
+            $loaded[] = $instalment;
+        }
+        foreach ($loaded as $instalment) {
+            $result = $this->internalCancel($request, $response->withBody((new \Slim\Psr7\Factory\StreamFactory())->createStream()), $instalment, $reason);
+            if ($result->getStatusCode() >= 300) {
+                return $result;
+            }
+        }
+
+        return $this->internalCancel($request, $response, $calendar, $reason);
     }
 
     private function internalCancel(Request $request, Response $response, array $invoice, string $reason): Response
@@ -421,11 +474,17 @@ final class CancelInvoiceAction
                 (int) $invoice['supplier_id'],
                 array_map(static fn (array $it): int => (int) ($it['stock_item_id'] ?? 0), $invoice['items']),
             );
+            $voucherCards = \MyInvoice\Service\Invoice\MultiPurposeVoucher::stockItemIds(
+                $pdo,
+                (int) $invoice['supplier_id'],
+                array_map(static fn (array $it): int => (int) ($it['stock_item_id'] ?? 0), $invoice['items']),
+            );
             foreach ($invoice['items'] as $item) {
                 // Textový řádek jde na dobropis jako textový, bez částky a bez klasifikace.
-                // Ostatní řádky (i slevový) jdou jako běžné, jako dřív.
+                // Ostatní řádky (i slevový) jdou jako běžné, jako dřív. Vrácený víceúčelový
+                // poukaz klasifikaci nenese stejně jako jeho prodej (MultiPurposeVoucher).
                 $isText = \MyInvoice\Service\Invoice\InvoiceItemKind::isText($item);
-                $code = $isText ? null : $item['vat_classification_code']
+                $code = $isText || isset($voucherCards[(int) ($item['stock_item_id'] ?? 0)]) ? null : $item['vat_classification_code']
                     ?? \MyInvoice\Repository\InvoiceRepository::defaultSaleClassificationCode(
                         (float) $item['vat_rate_snapshot'],
                         (bool) ($invoice['reverse_charge'] ?? false),

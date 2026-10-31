@@ -94,6 +94,7 @@
     "invoice_default_note",
     "kb_plus",
     "linked_documents",
+    "list_nav",
     "lock",
     "logbook",
     "logbook_fuel",
@@ -341,6 +342,7 @@
       "dimensions",
       "documents",
       "linked_documents",
+      "list_nav",
       "lock",
       "payment_method",
       "payment_order",
@@ -509,6 +511,7 @@
       "dimensions",
       "documents",
       "linked_documents",
+      "list_nav",
       "lock",
       "payment_method",
       "purchase_invoice",
@@ -690,6 +693,7 @@
       "internal_documents"
     ],
     "accounting-ai-assistant": [
+      "internal_documents",
       "other_items"
     ],
     "accounting-setup-assistant": [
@@ -1170,6 +1174,7 @@
       "activation",
       "automation",
       "bank",
+      "bank_template_admin",
       "dimensions",
       "purchase_invoice",
       "template_tools",

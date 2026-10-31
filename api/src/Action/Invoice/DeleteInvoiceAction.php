@@ -94,6 +94,10 @@ final class DeleteInvoiceAction
         if (!RequestAuthorization::allows($request, 'invoices.delete', AccessLevel::WRITE)) {
             return Json::error($response, 'forbidden', 'Read-only role nemůže mazat.', 403);
         }
+        if ($status !== 'draft'
+            && (!empty($existing['calendar_id']) || \MyInvoice\Service\Invoice\InvoiceCalendar::isCalendar($existing['invoice_type']))) {
+            return Json::error($response, 'calendar_not_deletable', 'Vystavený kalendář a jeho splátky nejde smazat. Kalendář stornujte.', 409);
+        }
 
         $documentLock = $this->locks->forInvoice($existing);
         $supplierId = (int) ($existing['supplier_id'] ?? 0);

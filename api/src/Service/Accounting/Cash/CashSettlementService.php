@@ -79,7 +79,7 @@ final class CashSettlementService
      *
      * @var list<string>
      */
-    private const NON_SETTLEABLE_INVOICE_TYPES = ['proforma', 'cancellation', 'payment_calendar'];
+    private const NON_SETTLEABLE_INVOICE_TYPES = ['proforma', 'cancellation', 'payment_calendar', 'rent_calendar', 'advance_calendar'];
 
     public function __construct(
         private readonly Connection $db,

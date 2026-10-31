@@ -239,6 +239,7 @@ final class CrossCheckSuite
           LEFT JOIN invoice_items ii ON ii.invoice_id = i.id
               WHERE i.supplier_id = ?
                 AND i.status <> 'draft'
+                AND i.invoice_type NOT IN ('rent_calendar','advance_calendar')
                 AND COALESCE(i.tax_date, i.issue_date) BETWEEN ? AND ?
                 AND (ii.vat_classification_code IN ('1m', '2m')
                      OR i.vat_classification_code IN ('1m', '2m'))"

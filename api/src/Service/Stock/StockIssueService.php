@@ -437,6 +437,7 @@ final class StockIssueService
                JOIN invoices i ON i.id = ii.invoice_id AND i.supplier_id = ?
           LEFT JOIN stock_items si ON si.id = ii.stock_item_id AND si.supplier_id = i.supplier_id
               WHERE ii.invoice_id = ? AND ii.stock_item_id IS NOT NULL
+                AND (si.item_type IS NULL OR si.item_type <> \'service\')
               ORDER BY ii.order_index, ii.id'
         );
         $stmt->execute([$supplierId, $invoiceId]);

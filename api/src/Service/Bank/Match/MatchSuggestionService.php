@@ -539,6 +539,7 @@ final class MatchSuggestionService
             $client = $this->clientForPurchase($supplierId, (int) $targets['purchase_invoice_id']);
             if ($client > 0) $this->counterpartyMap->record($supplierId, (string) ($tx['counterparty_account'] ?? ''),
                 (string) ($tx['counterparty_bank'] ?? ''), 'outgoing', $client, $manual, $feePct, (int) $tx['id']);
+            if ($client > 0 && $manual) (new \MyInvoice\Service\Bank\Card\CardMerchantMap($this->db))->recordManual($supplierId, $tx, $client);
         }
     }
 

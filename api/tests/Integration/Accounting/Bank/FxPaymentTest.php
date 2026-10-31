@@ -321,6 +321,87 @@ final class FxPaymentTest extends BankPostingTestCase
         self::assertSame(0, $this->entryCountForTx($second));
     }
 
+    /**
+     * Karta z korunového účtu za cizoměnovou službu: karetní schéma přidá k ČNB kurzu přirážku
+     * přes 4 %. Pohyb kartou se vypořádá celý a rozdíl jde na 563, převod mimo kartu zůstane
+     * k ručnímu ověření.
+     */
+    public function testOutgoingCzkCardPaymentWithSchemeMarkupSettlesForeignPurchase(): void
+    {
+        $pf = $this->fxPurchaseInvoice('PF-EUR-CARD-MARKUP', $this->client('Karetní služba EUR'), 100.00, 25.00);
+        $card = $this->transaction($this->statement(), -2610.00, ['match_status' => 'manual', 'currency' => 'CZK']);
+        $this->db->pdo()->prepare("UPDATE bank_transactions SET card_last4 = '6801' WHERE id = ?")->execute([$card]);
+        $this->paymentMatch($card, $pf, 2610.00);
+
+        $res = $this->service->handleTransaction($card, $this->userId);
+
+        self::assertSame('posted', $res['action'], json_encode($res));
+        $entryId = $this->entryIdForBankTx($card);
+        $byAcc = $this->linesByAccountCode($entryId);
+        self::assertEqualsWithDelta(2500.00, $byAcc['321']['debit'], 0.001);
+        self::assertEqualsWithDelta(2610.00, $byAcc['221']['credit'], 0.001);
+        self::assertEqualsWithDelta(110.00, $byAcc['563']['debit'], 0.001);
+        $this->assertBalanced($entryId);
+
+        $pfTransfer = $this->fxPurchaseInvoice('PF-EUR-TRANSFER-MARKUP', $this->client('Převod EUR'), 100.00, 25.00);
+        $transfer = $this->transaction($this->statement(), -2610.00, ['match_status' => 'manual', 'currency' => 'CZK']);
+        $this->paymentMatch($transfer, $pfTransfer, 2610.00);
+
+        $res = $this->service->handleTransaction($transfer, $this->userId);
+
+        self::assertSame('suggested', $res['action'], json_encode($res));
+        self::assertSame('cross_currency', $res['reason'] ?? '');
+    }
+
+    /**
+     * Doklad v jedné cizí měně zaplacený kartou z účtu v jiné cizí měně: banka uvádí původní
+     * částku nákupu v měně dokladu. Závazek se odúčtuje v nominálu kurzem předpisu, banka
+     * kurzem dne úhrady a rozdíl je kurzový.
+     */
+    public function testOutgoingPaymentFromOtherForeignCurrencyBooksExchangeDifference(): void
+    {
+        $pf = $this->fxPurchaseInvoice('PF-EUR-FROM-USD', $this->client('Služba v EUR'), 100.00, 25.00);
+        $this->seedRate('USD', self::YEAR . '-06-15', 23.00);
+        $tx = $this->transaction($this->statement(), -110.00, ['match_status' => 'manual', 'currency' => 'USD']);
+        $this->db->pdo()->prepare("UPDATE bank_transactions SET card_last4 = '8783', original_amount = -100.00, original_currency = 'EUR' WHERE id = ?")
+            ->execute([$tx]);
+        $this->paymentMatch($tx, $pf, 110.00);
+
+        $res = $this->service->handleTransaction($tx, $this->userId);
+
+        self::assertSame('posted', $res['action'], json_encode($res));
+        $entryId = $this->entryIdForBankTx($tx);
+        $byAcc = $this->linesByAccountCode($entryId);
+        self::assertEqualsWithDelta(2500.00, $byAcc['321']['debit'], 0.001, 'Závazek v nominálu kurzem předpisu.');
+        self::assertEqualsWithDelta(2530.00, $byAcc['221']['credit'], 0.001, 'Banka = 110 USD kurzem dne úhrady.');
+        self::assertEqualsWithDelta(30.00, $byAcc['563']['debit'], 0.001);
+        $this->assertBalanced($entryId);
+
+        $saldo = $this->lineForAccount($entryId, '321');
+        self::assertSame('EUR', $saldo['currency_code']);
+        self::assertEqualsWithDelta(100.00, (float) $saldo['amount_foreign'], 0.001);
+        $bank = $this->lineForAccount($entryId, '221');
+        self::assertSame('USD', $bank['currency_code']);
+        self::assertEqualsWithDelta(110.00, (float) $bank['amount_foreign'], 0.001);
+    }
+
+    /** Původní částka nákupu menší než zbytek dokladu = částečná úhrada, ne vypořádání celého závazku. */
+    public function testOutgoingPartialPaymentFromOtherForeignCurrencyRoutesToReview(): void
+    {
+        $pf = $this->fxPurchaseInvoice('PF-EUR-FROM-USD-PART', $this->client('Služba v EUR částečně'), 100.00, 25.00);
+        $this->seedRate('USD', self::YEAR . '-06-15', 23.00);
+        $tx = $this->transaction($this->statement(), -66.00, ['match_status' => 'manual', 'currency' => 'USD']);
+        $this->db->pdo()->prepare("UPDATE bank_transactions SET card_last4 = '8783', original_amount = -60.00, original_currency = 'EUR' WHERE id = ?")
+            ->execute([$tx]);
+        $this->paymentMatch($tx, $pf, 66.00);
+
+        $res = $this->service->handleTransaction($tx, $this->userId);
+
+        self::assertSame('suggested', $res['action'], json_encode($res));
+        self::assertSame('cross_currency', $res['reason'] ?? '');
+        self::assertSame(0, $this->entryCountForTx($tx));
+    }
+
     private function analytic(string $code): void
     {
         $map = $this->accounts->codeToIdMap($this->supplierId);

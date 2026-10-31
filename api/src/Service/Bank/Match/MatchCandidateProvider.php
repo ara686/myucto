@@ -256,7 +256,7 @@ final class MatchCandidateProvider
         $converted = round($converted, 2);
         $fx = $invoiceCurrency !== $txCurrency;
         $tol = $fx
-            ? FxPaymentSettlement::matchTolerance($converted, self::AMOUNT_TOLERANCE)
+            ? FxPaymentSettlement::matchTolerance($converted, self::AMOUNT_TOLERANCE, ($tx['card_last4'] ?? null) !== null)
             : self::AMOUNT_TOLERANCE;
         $signals = [];
         $flags = $fx ? ['currency_mismatch'] : [];

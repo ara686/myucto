@@ -210,6 +210,10 @@ Detail ukazuje:
   (náhled a stažení). Je oddělené od vygenerovaného PDF, viz [21. Importy](21_Importy.md).
 - **Activity log** - kdo a kdy fakturu vytvořil, vystavil, odeslal a označil jako zaplacenou.
 
+Otevřete-li detail ze seznamu faktur, vlevo od odkazu **Zpět na seznam** jsou šipky
+předchozí a další faktury (zkratky `[` a `]`), které listují v pořadí a s filtry
+seznamu, ze kterého jste přišli; detail otevřený přímým odkazem šipky nemá.
+
 Akční tlačítka vpravo nahoře závisí na stavu faktury:
 
 | Stav | Dostupné akce |
@@ -275,6 +279,13 @@ je blokované) - ochrana proti dvojímu zdanění. Daňový doklad k platbě ani
 finálu s odpočtovými řádky § 37a nelze samostatně stornovat nebo rozpojit;
 chybný cyklus se opravuje nejdřív stornem finální faktury. U cizoměnové platby
 se pro DPH použije kurz k datu přijetí platby, ne kurz původní proformy.
+
+Má-li firma v nastavení po úhradě zálohy vystavovat **vyúčtovací fakturu**,
+vznikne po doplacení zálohy koncept faktury. Pokud plnění ještě nenastalo
+(záloha na zakázku), otevřete koncept a v menu **…** zvolte **Změnit na daňový
+doklad k platbě**. Koncept faktury se odstraní a místo něj vznikne koncept
+daňového dokladu ke každé platbě zálohy, která ho ještě nemá. Vystavenou fakturu
+takto změnit nejde, tu je potřeba stornovat.
 
 ### 16.10.3 Zaúčtování do deníku
 

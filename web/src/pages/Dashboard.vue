@@ -76,7 +76,7 @@ const wrModalOpen = ref(false)
 
 // Souhrn (tržby, neuhrazené, koncepty) se po zápisu v jiném okně přepíše
 // na místě, bez hlášky o načítání.
-useWindowRefresh('*', async () => {
+useWindowRefresh(async () => {
   error.value = ''
   await loadSummary()
   if (error.value) throw new Error(error.value)

@@ -6,6 +6,7 @@ namespace MyInvoice\Service\Payroll\TaxStatement;
 
 use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Repository\Payroll\PayrollTaxStatementRepository;
+use MyInvoice\Service\Payroll\Deadline\PayrollTaxStatementDeadlinePolicy;
 use MyInvoice\Service\Payroll\Migration\PayrollTakeoverCoverage;
 use MyInvoice\Service\Payroll\Submission\Jmhz\JmhzExternalCodebookCatalog;
 use MyInvoice\Service\Report\EpoSupplierBlockBuilder;
@@ -99,6 +100,14 @@ final class TaxStatementService
         if ($year < 2010 || $year > 2199) {
             throw new \InvalidArgumentException(
                 'Vyúčtování lze sestavit za zdaňovací období 2010 až 2199.',
+            );
+        }
+        if (!PayrollTaxStatementDeadlinePolicy::statementRequiredForYear($year)) {
+            throw new \DomainException(
+                "Za zdaňovací období {$year} se vyúčtování daně ze závislé činnosti ani"
+                . ' srážkové daně ze mzdy nepodává: § 38j odst. 4 až 9 ZDP zrušil od'
+                . ' 1. 1. 2027 zákon č. 360/2025 Sb. a zálohy se vykazují v jednotném'
+                . ' měsíčním hlášení zaměstnavatele.',
             );
         }
 

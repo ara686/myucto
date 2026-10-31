@@ -2,8 +2,11 @@ import { onBeforeUnmount, onMounted, ref, type Ref } from 'vue'
 
 export const SIDE_PREVIEW_MEDIA_QUERY = '(min-width: 1536px)'
 
-/** Sdílená detekce šířky pro detail i editor dokladu. */
-export function useSidePreviewWide(): Ref<boolean> {
+/**
+ * Sdílená detekce šířky pro detail i editor dokladu. Modál kontroly vytěžení má celou
+ * šířku okna bez bočního menu, a proto si předává nižší práh.
+ */
+export function useSidePreviewWide(query: string = SIDE_PREVIEW_MEDIA_QUERY): Ref<boolean> {
   const wide = ref(false)
   let mql: MediaQueryList | null = null
 
@@ -13,7 +16,7 @@ export function useSidePreviewWide(): Ref<boolean> {
 
   onMounted(() => {
     if (typeof window.matchMedia !== 'function') return
-    mql = window.matchMedia(SIDE_PREVIEW_MEDIA_QUERY)
+    mql = window.matchMedia(query)
     wide.value = mql.matches
     mql.addEventListener('change', onMediaChange)
   })

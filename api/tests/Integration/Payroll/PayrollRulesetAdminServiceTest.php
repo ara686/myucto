@@ -32,7 +32,7 @@ use PHPUnit\Framework\TestCase;
 #[Group('integration')]
 final class PayrollRulesetAdminServiceTest extends TestCase
 {
-    private const CALC_ID = 'test.mz02w07.income-tax.2027';
+    private const CALC_ID = 'test.mz02w07.income-tax.2028';
     private const GAP_ID = 'test.mz02w07.codebooks.2029';
     private const OVERLAP_ID = 'test.mz02w07.income-tax.overlap';
 
@@ -341,11 +341,11 @@ final class PayrollRulesetAdminServiceTest extends TestCase
 
     public function testAdminEditAloneUnblocksProductionCalculation(): void
     {
-        $this->createCustomRuleset(self::CALC_ID, 'income_tax', '2027-01-01', '2027-12-31');
+        $this->createCustomRuleset(self::CALC_ID, 'income_tax', '2028-01-01', '2028-12-31');
 
         $this->registry->forget();
         try {
-            $this->registry->provider()->forCalculation(PayrollRulesetDomain::IncomeTax, '2027-06-15');
+            $this->registry->provider()->forCalculation(PayrollRulesetDomain::IncomeTax, '2028-06-15');
             self::fail('Nová verze nesmí být použitelná dřív, než ji admin aktivuje.');
         } catch (PayrollRulesetException $e) {
             self::assertStringContainsString('not active', $e->getMessage());
@@ -360,7 +360,7 @@ final class PayrollRulesetAdminServiceTest extends TestCase
 
         $this->registry->forget();
         $version = $this->registry->provider()
-            ->forCalculation(PayrollRulesetDomain::IncomeTax, '2027-06-15');
+            ->forCalculation(PayrollRulesetDomain::IncomeTax, '2028-06-15');
 
         self::assertSame(self::CALC_ID, $version->id);
         self::assertSame('0.14', $version->parameter('advance.low_rate')->value);
@@ -368,7 +368,7 @@ final class PayrollRulesetAdminServiceTest extends TestCase
 
     public function testGapInEffectivityBlocksApprovalAndActivation(): void
     {
-        // Vestavěná sada končí 2026-12-31, tahle verze začíná až 2029 → díra.
+        // Vestavěná sada číselníků končí 2026-12-31, tahle verze začíná až 2029 → díra.
         $this->createCustomRuleset(self::GAP_ID, 'codebooks', '2029-01-01', '2029-12-31');
         $entry = $this->apply(self::GAP_ID, 'review', 'Technická kontrola.', self::EDITOR);
 
@@ -391,16 +391,16 @@ final class PayrollRulesetAdminServiceTest extends TestCase
 
     public function testOverlappingEffectivityIsRejectedOnSaveAndBlocksActivation(): void
     {
-        $this->createCustomRuleset(self::CALC_ID, 'income_tax', '2027-01-01', '2027-12-31');
+        $this->createCustomRuleset(self::CALC_ID, 'income_tax', '2028-01-01', '2028-12-31');
 
         try {
             $this->service->save(
                 self::OVERLAP_ID,
                 [
                     'domain' => 'income_tax',
-                    'version' => '2027.9.9',
-                    'effective_from' => '2027-06-01',
-                    'effective_to' => '2028-05-31',
+                    'version' => '2028.9.9',
+                    'effective_from' => '2028-06-01',
+                    'effective_to' => '2029-05-31',
                     'parameters' => ['advance.low_rate' => ['type' => 'decimal_rate', 'value' => '0.13']],
                     'sources' => [self::source()],
                 ],
@@ -414,7 +414,7 @@ final class PayrollRulesetAdminServiceTest extends TestCase
         }
 
         // Kdyby se překryv do DB dostal mimo aplikaci, musí ho zastavit aktivace.
-        $this->insertRaw(self::OVERLAP_ID, 'income_tax', '2027-06-01', '2028-05-31', 'approved');
+        $this->insertRaw(self::OVERLAP_ID, 'income_tax', '2028-06-01', '2029-05-31', 'approved');
         $this->registry->forget();
 
         $blockers = $this->service->blockers(
@@ -426,7 +426,7 @@ final class PayrollRulesetAdminServiceTest extends TestCase
 
     public function testTamperedOverrideFailsChecksumAndBlocksActivation(): void
     {
-        $this->createCustomRuleset(self::CALC_ID, 'income_tax', '2027-01-01', '2027-12-31');
+        $this->createCustomRuleset(self::CALC_ID, 'income_tax', '2028-01-01', '2028-12-31');
         $entry = $this->apply(self::CALC_ID, 'review', 'Technická kontrola.', self::EDITOR);
         self::assertTrue($entry['checksum_valid']);
 
@@ -468,7 +468,7 @@ final class PayrollRulesetAdminServiceTest extends TestCase
 
     public function testRepeatedCommandIsIdempotentAndWritesNoSecondAuditRow(): void
     {
-        $this->createCustomRuleset(self::CALC_ID, 'income_tax', '2027-01-01', '2027-12-31');
+        $this->createCustomRuleset(self::CALC_ID, 'income_tax', '2028-01-01', '2028-12-31');
         $entry = $this->apply(self::CALC_ID, 'review', 'Technická kontrola.', self::EDITOR);
 
         // Audit je append-only, takže po starších bězích v tabulce záznamy zůstávají —
@@ -499,7 +499,7 @@ final class PayrollRulesetAdminServiceTest extends TestCase
 
     public function testFourEyesIsAWarningNotABlocker(): void
     {
-        $this->createCustomRuleset(self::CALC_ID, 'income_tax', '2027-01-01', '2027-12-31');
+        $this->createCustomRuleset(self::CALC_ID, 'income_tax', '2028-01-01', '2028-12-31');
         $entry = $this->apply(self::CALC_ID, 'review', 'Technická kontrola.', self::EDITOR);
         // Schvaluje týž člověk, který verzi založil — smí to, ale musí to být vidět.
         $entry = $this->apply(self::CALC_ID, 'approve', 'Schvaluji sám.', self::EDITOR, $entry);
@@ -609,7 +609,7 @@ final class PayrollRulesetAdminServiceTest extends TestCase
 
     public function testAuditTrailRecordsWhoChangedWhatAndWhy(): void
     {
-        $this->createCustomRuleset(self::CALC_ID, 'income_tax', '2027-01-01', '2027-12-31');
+        $this->createCustomRuleset(self::CALC_ID, 'income_tax', '2028-01-01', '2028-12-31');
         $this->apply(self::CALC_ID, 'review', 'Technická kontrola sazeb.', self::EDITOR);
 
         $trail = $this->repository->auditTrail(self::CALC_ID);
@@ -625,7 +625,7 @@ final class PayrollRulesetAdminServiceTest extends TestCase
 
     public function testAuditTrailIsAppendOnly(): void
     {
-        $this->createCustomRuleset(self::CALC_ID, 'income_tax', '2027-01-01', '2027-12-31');
+        $this->createCustomRuleset(self::CALC_ID, 'income_tax', '2028-01-01', '2028-12-31');
         $trail = $this->repository->auditTrail(self::CALC_ID);
         self::assertNotSame([], $trail);
 
@@ -667,7 +667,7 @@ final class PayrollRulesetAdminServiceTest extends TestCase
             $rulesetId,
             [
                 'domain' => $domain,
-                'version' => '2027.1.0',
+                'version' => '2028.1.0',
                 'effective_from' => $from,
                 'effective_to' => $to,
                 'capability' => 'supported',
@@ -693,7 +693,7 @@ final class PayrollRulesetAdminServiceTest extends TestCase
     ): void {
         $row = [
             'ruleset_id' => $rulesetId,
-            'version' => '2027.9.9',
+            'version' => '2028.9.9',
             'effective_from' => $from,
             'effective_to' => $to,
             'lifecycle' => $lifecycle,

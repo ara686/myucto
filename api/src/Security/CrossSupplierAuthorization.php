@@ -178,6 +178,19 @@ final class CrossSupplierAuthorization
             ->withAttribute(AuthMiddleware::ATTR_USER, $user);
     }
 
+    /**
+     * Firmy, do kterých uživatel může patřit, ještě BEZ rozhodnutí o roli a zámku
+     * domény. Slouží jen k levnému předvýběru (např. hledání napříč firmami
+     * nejdřív zjistí, kde vůbec něco je); každá firma, ze které se pak něco
+     * vrací, musí projít {@see self::allowsIn()}.
+     *
+     * @return list<int>
+     */
+    public function candidateSupplierIds(Request $request): array
+    {
+        return $this->candidateIds($request);
+    }
+
     /** @return list<int> */
     private function candidateIds(Request $request): array
     {

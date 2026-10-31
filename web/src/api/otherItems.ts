@@ -25,6 +25,7 @@ export interface OtherItem {
   amount_czk?: number | null
   amount: number
   paid_amount: number
+  settled_outside_amount?: number
   remaining_amount: number
   status: OtherItemStatus | string
   certainty: 'confirmed' | 'scheduled' | 'estimate'

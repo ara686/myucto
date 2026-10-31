@@ -42,6 +42,8 @@ import { purchaseApprovalsApi, approvalErrorMessage } from '@/api/purchaseApprov
 import { announceApprovalRequested } from '@/utils/purchaseApproval'
 import { useDimensions } from '@/composables/useDimensions'
 import WorkspaceTeleport from '@/components/workspace/WorkspaceTeleport.vue'
+import ListNavArrows from '@/components/ui/ListNavArrows.vue'
+import { useListNavigation } from '@/composables/useListNavigation'
 
 const ExtractionReviewModal = defineAsyncComponent(() => import('@/components/purchase/ExtractionReviewModal.vue'))
 const PaymentCalendarModal = defineAsyncComponent(() => import('@/components/purchase/PaymentCalendarModal.vue'))
@@ -59,6 +61,16 @@ const router = useRouter()
 const toast = useToast()
 const auth = useAuthStore()
 const supplierStore = useSupplierStore()
+const listNav = useListNavigation({
+  kind: 'purchase-invoices',
+  currentId: () => Number(route.params.id) || 0,
+  detailRoute: id => ({ name: 'purchase-invoice-detail', params: { id } }),
+  fetchPage: async (params, page) => {
+    const result = await purchaseInvoicesApi.listGrouped({ ...(params as Parameters<typeof purchaseInvoicesApi.listGrouped>[0]), page })
+    return { ids: result.data.flatMap(g => g.invoices.map(inv => inv.id)), pages: result.meta.pages ?? 1 }
+  },
+  scope: () => supplierStore.currentSupplierId,
+})
 
 // Chrome/Edge: dialog Uložit jako ve složce, kam se naposledy ukládalo PDF této firmy
 // (#104). Jinde odkaz stáhne PDF jako dřív.
@@ -586,6 +598,8 @@ const allowedTransitions = computed<PurchaseInvoiceStatus[]>(() => {
     case 'cancelled': targets = ['received']; break                  // un-cancel
     default:          targets = []
   }
+  // DDKP (§ 28 ZDPH) se neplatí, úhrada patří na zálohu (BE 409 tax_document_not_payable).
+  if (invoice.value.document_kind === 'tax_document') targets = targets.filter(s => s !== 'paid')
   // Client (F6): whitelist cílů received ⇄ paid — booked/cancelled jsou pro klienta
   // VŽDY 403 forbidden_transition; na zamčeném dokladu žádné přechody.
   if (auth.isClientRole) {
@@ -956,14 +970,15 @@ const purchaseActions = computed<ActionItem[]>(() => {
   items.push({ key: 'exp-pohoda', label: t('purchase_invoice.export.pohoda'), icon: 'doc', tier: 'overflow', variant: 'warning',
     href: purchaseInvoicesApi.pohodaUrl(inv.id) })
 
+  items.push({ key: 'force-edit', label: t('purchase_invoice.force_edit'), icon: 'edit', tier: 'overflow', variant: 'warning',
+    show: canForceEdit.value, title: t('purchase_invoice.force_edit_hint') as string, run: confirmForceEdit })
+
   items.push({ key: 'delete', label: t('common.delete'), icon: 'trash', tier: 'overflow', variant: 'danger',
     show: canDelete.value && canDeletePermission && !(auth.isClientRole && draftDeletionLockedForClient(inv.locked,
       !!inv.bank_payments?.length || !!inv.cash_payments?.length || !!inv.settlement_payments?.length,
       Array.isArray(inv.bank_payments) && Array.isArray(inv.cash_payments) && Array.isArray(inv.settlement_payments))), disabled: acting.value, run: remove })
 
-  // admin „force" akce (pod „Pokročilé")
-  items.push({ key: 'force-edit', label: t('purchase_invoice.force_edit'), icon: 'edit', tier: 'advanced', variant: 'warning',
-    show: canForceEdit.value, title: t('purchase_invoice.force_edit_hint') as string, run: confirmForceEdit })
+  // admin „force" smazání (pod „Pokročilé")
   items.push({ key: 'force-delete', label: t('purchase_invoice.force_delete'), icon: 'trash', tier: 'advanced', variant: 'danger',
     show: canForceDelete.value, title: t('purchase_invoice.confirm.force_delete_warning') as string, run: forceDelete })
 
@@ -973,7 +988,7 @@ useWindowTitle(
   () => invoice.value ? [t(`purchase_invoice.document_kind.${invoice.value.document_kind}`), invoice.value.varsymbol || invoice.value.vendor_invoice_number].filter(Boolean).join(' ') : null,
   () => invoice.value?.vendor_company_name ?? null,
 )
-useWindowRefresh(['purchase-invoices', 'clients', 'bank', 'bank-transactions', 'cash', 'accounting', 'stock'], async () => {
+useWindowRefresh(async () => {
   const generation = loadGeneration
   const invoiceId = id.value
   const [updated, events] = await Promise.all([purchaseInvoicesApi.get(invoiceId), purchaseInvoicesApi.activity(invoiceId)])
@@ -997,9 +1012,13 @@ useWindowRefresh(['purchase-invoices', 'clients', 'bank', 'bank-transactions', '
        celou šířku - proto je vnější div v ostatních případech jen průhledný obal. -->
   <div v-else-if="invoice" :class="pdfSideBySide ? 'flex items-start gap-4' : ''">
     <div class="max-w-5xl space-y-4 min-w-0" :class="pdfSideBySide ? 'flex-1' : ''">
-      <RouterLink to="/purchase-invoices" class="text-sm text-neutral-600 hover:text-neutral-900">
-        {{ t('purchase_invoice.back_to_list') }}
-      </RouterLink>
+      <div class="flex items-center gap-2">
+        <ListNavArrows v-if="listNav.active.value" :has-previous="listNav.hasPrevious.value" :has-next="listNav.hasNext.value"
+          :busy="listNav.busy.value" @previous="listNav.previous" @next="listNav.next" />
+        <RouterLink :to="listNav.listPath.value ?? '/purchase-invoices'" class="text-sm text-neutral-600 hover:text-neutral-900">
+          {{ t('purchase_invoice.back_to_list') }}
+        </RouterLink>
+      </div>
 
       <!-- AI extraction warning — uživatel by měl řádky ověřit proti PDF před zaúčtováním. -->
       <div v-if="invoice.extraction_warning" class="p-3 bg-warning-50 border border-warning-500/40 rounded-md flex gap-3 items-start">

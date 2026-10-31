@@ -79,6 +79,8 @@ final class InvoicePaymentService
         private readonly PaymentTaxDocumentCreator $taxDocCreator,
         private readonly GoPayPendingService $goPayPending,
         private readonly PaymentEventReconciliation $eetReconciliation,
+        // DocumentAutoPoster se bere až při použití: přes BankPostingService závisí na téhle službě.
+        private readonly \Psr\Container\ContainerInterface $container,
     ) {}
 
     /**
@@ -250,6 +252,21 @@ final class InvoicePaymentService
         }
 
         $this->afterTransition($invoiceId, $transition);
+
+        // Daňový doklad k úhradě splátky kalendáře rovnou platí, nečeká na vystavení, které
+        // jinak spouští automatické zaúčtování. Chybu auto-post jen zaloguje.
+        if (!empty($documents['tax_document_id'])) {
+            $calendar = $pdo->prepare('SELECT calendar_id FROM invoices WHERE id = ?');
+            $calendar->execute([(int) $documents['tax_document_id']]);
+            if (!empty($calendar->fetchColumn())) {
+                $this->container->get(\MyInvoice\Service\Accounting\DocumentAutoPoster::class)->maybeAutoPost(
+                    (int) $invoice['supplier_id'],
+                    'invoice',
+                    (int) $documents['tax_document_id'],
+                    isset($opts['created_by']) && (int) $opts['created_by'] > 0 ? (int) $opts['created_by'] : null,
+                );
+            }
+        }
 
         return [
             'payment_id'  => $paymentId,
@@ -737,6 +754,7 @@ final class InvoicePaymentService
             )->execute([$invoiceId]);
             $becameUnpaid = true;
         }
+        CalendarInstalmentService::syncCalendarStatus($pdo, $invoiceId);
 
         return [
             'became_paid'   => $becamePaid,

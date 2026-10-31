@@ -730,7 +730,7 @@ final class CashDocumentService
                     -- `invoice_type` a musí uživatele upozornit, že úhrada spustí kaskádu
                     -- finálního dokladu / DDKP. Platební kalendář platebním cílem není
                     -- (zrcadlo CashSettlementService::NON_SETTLEABLE_INVOICE_TYPES).
-                    AND i.invoice_type <> 'payment_calendar'
+                    AND i.invoice_type NOT IN ('payment_calendar','rent_calendar','advance_calendar')
                     AND cur.code = 'CZK'
                     AND (i.amount_to_pay - i.paid_total) > 0.005
                     AND (i.varsymbol LIKE ? OR c.company_name LIKE ?)

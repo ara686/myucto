@@ -97,14 +97,15 @@ function onTxPosted(payload: { result: PostResult; debit: string; credit: string
     hintTx.value = tx
     hintData.value = { count: payload.result.similar.count, debit: payload.debit, credit: payload.credit }
   }
-  load()
+  // Šetrné obnovení: zachová načtené stránky i pozici rolování (#272).
+  void refreshTransactions()
 }
 function closeHint() { hintTx.value = null; hintData.value = null }
 
 // Sdílená akční logika nad transakcí (match/ignore/unmatch/create/request-doc/…) —
 // extrahováno do BankTransactionRow.vue + useBankTransactionActions, ať ji sdílí
 // i „Všechny pohyby" (UnpostedTransactions.vue), #52.
-const bankActions = useBankTransactionActions({ reload: () => load(), refresh: () => refreshTransactions() })
+const bankActions = useBankTransactionActions({ reload: () => refreshTransactions(), refresh: () => refreshTransactions() })
 
 // E-mailová avíza jsou měsíční agregát (statement_date = 1. den měsíce) → název měsíce.
 function monthLabel(dateStr: string): string {
@@ -540,7 +541,7 @@ const statementActions = computed<ActionItem[]>(() => {
     },
   ]
 })
-useWindowRefresh(['bank', 'bank-statements', 'bank-transactions', 'bank-match-suggestions', 'accounting', 'invoices', 'purchase-invoices', 'clients'], refreshTransactions)
+useWindowRefresh(refreshTransactions)
 </script>
 
 <template>
@@ -714,7 +715,7 @@ useWindowRefresh(['bank', 'bank-statements', 'bank-transactions', 'bank-match-su
           <BankTransactionRow v-for="tx in filteredTransactions" :key="tx.id"
             layout="desktop" :tx="tx" :is-double-entry="isDoubleEntry"
             :fallback-currency="statement.currency" :colspan="isDoubleEntry ? 8 : 7" :show-counter-account="isDoubleEntry" :actions="bankActions"
-            @posted="onTxPosted" @changed="load" />
+            @posted="onTxPosted" @changed="refreshTransactions" />
         </tbody>
       </table>
       </div>
@@ -724,7 +725,7 @@ useWindowRefresh(['bank', 'bank-statements', 'bank-transactions', 'bank-match-su
         <BankTransactionRow v-for="tx in filteredTransactions" :key="`m-${tx.id}`"
           layout="mobile" :tx="tx" :is-double-entry="isDoubleEntry"
           :fallback-currency="statement.currency" :show-counter-account="isDoubleEntry" :actions="bankActions"
-          @posted="onTxPosted" @changed="load" />
+          @posted="onTxPosted" @changed="refreshTransactions" />
       </div>
 
       <div v-if="txPage < txPages" ref="loadMoreTarget" class="text-center border-t border-neutral-200 pointer-fine-hidden">

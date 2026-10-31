@@ -21,7 +21,9 @@ use MyInvoice\Service\Bank\FxPaymentSettlement;
  *     ({@see \MyInvoice\Service\Accounting\InvoiceSettlementService}, 321 MD / zvolený účet D),
  *   - **zápočet dobropisu** — `credit_note_offsets` na opravované faktuře
  *     ({@see \MyInvoice\Service\Invoice\CreditNoteOffsetService}, bez účetního zápisu:
- *     dobropis sám už 321 snížil).
+ *     dobropis sám už 321 snížil),
+ *   - **mimo evidenci** — `settled_outside_amount` u dokladu převzatého z jiného programu
+ *     (úhrada v nepřevedeném roce, nenavázaný zápočet; v deníku už je).
  *
  * Všechno se sčítá v MĚNĚ DOKLADU, stejně jako `amount_to_pay`, proti kterému se zbytek
  * počítá. Zápočty se v ní evidují přímo. Banka a pokladna ne: `payment_matches.amount`
@@ -79,7 +81,8 @@ final class PurchaseSettledExpr
                          AND s.doc_id = %1$sid AND s.status = %2$s AND s.id <> %5$d%11$s), 0)
            + COALESCE((SELECT SUM(cno.amount) FROM credit_note_offsets cno
                        WHERE cno.supplier_id = %1$ssupplier_id AND cno.doc_type = %3$s
-                         AND cno.invoice_id = %1$sid%11$s), 0)',
+                         AND cno.invoice_id = %1$sid%11$s), 0)
+           + %1$ssettled_outside_amount',
             $a,
             "'confirmed'",
             "'purchase_invoice'",
@@ -99,7 +102,8 @@ final class PurchaseSettledExpr
      *
      *   - Stejná měna transakce a dokladu → částka párování, jak je.
      *   - Korunový pohyb k cizoměnovému dokladu → úhrada CELÉHO nominálu, pokud se pohyb
-     *     vejde do kurzové tolerance ({@see FxPaymentSettlement::matchTolerance()}). Přesně
+     *     vejde do kurzové tolerance ({@see FxPaymentSettlement::matchTolerance()}, u platby
+     *     kartou širší). Přesně
      *     tak ho zaúčtuje banka: 321 jde ven v nominálu kurzem předpisu a rozdíl je kurzový
      *     (`BankPostingService::buildOutgoingCzkCardFx`). Mimo toleranci se přepočte kurzem
      *     dokladu — pak jde o skutečnou částečnou úhradu.
@@ -146,7 +150,8 @@ final class PurchaseSettledExpr
             $d,
             $nominalLocal,
             self::sqlNumber(FxPaymentSettlement::AMOUNT_TOLERANCE),
-            self::sqlNumber(FxPaymentSettlement::MATCH_TOLERANCE_PCT),
+            "(CASE WHEN {$bt}.card_last4 IS NOT NULL THEN " . self::sqlNumber(FxPaymentSettlement::CARD_MATCH_TOLERANCE_PCT)
+                . ' ELSE ' . self::sqlNumber(FxPaymentSettlement::MATCH_TOLERANCE_PCT) . ' END)',
             $bt,
             "(CASE WHEN {$bt}.amount > 0 THEN -1 ELSE 1 END)",
         );

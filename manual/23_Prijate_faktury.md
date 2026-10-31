@@ -125,7 +125,7 @@ upravit bez administrátorského zásahu.
 ## 23.5 Krok za krokem: zpracovat příchozí doklady
 
 1. Otevřete `Nákup → Příchozí doklady`.
-2. Doklady do fronty dostanete z klientského portálu, e-mailem nebo je nahrajete sami tlačítkem **Nahrát do fronty**. Na telefonu a tabletu je vedle něj tlačítko **Vyfotit**: vyfotí doklad fotoaparátem, v prohlížeči ho zmenší (delší strana nejvýš 1 200 px, zhruba do 150 kB), ukáže náhled a po potvrzení ho nahraje stejně jako ostatní soubory. Stejné tlačítko je u nahrání přílohy v editoru nové přijaté faktury.
+2. Doklady do fronty dostanete z klientského portálu, e-mailem nebo je nahrajete sami tlačítkem **Nahrát do fronty**. Na telefonu a tabletu je vedle něj tlačítko **Vyfotit**: vyfotí doklad fotoaparátem, na fotce ho najde a navrhne ořez (rohy jdou v náhledu posunout, ořez jde vypnout a nahrát celou fotku), doklad narovná a zmenší (zhruba do 150 kB) a po potvrzení ho nahraje stejně jako ostatní soubory. Ořez i zmenšení proběhnou v telefonu, fotka nikam jinam neodchází. Nejlépe se doklad najde na tmavém podkladu. Stejné tlačítko je u nahrání přílohy v editoru nové přijaté faktury.
 3. U dokladu zvolte, jak ho zpracovat: vytěžit přes ISDOC nebo AI, přepsat ručně, odmítnout, nebo klienta požádat o náhradu.
 4. Patří-li doklad jiné vaší firmě, klikněte na **Přesunout do …** u navržené firmy, nebo na **Přesunout do jiné firmy** a firmu vyberte.
 5. Pro více dokladů najednou je zaškrtněte a použijte hromadnou akci, například **Vytěžit označené**.
@@ -227,7 +227,6 @@ Tento postup je pro správce. Dodavatelé vám posílají PDF e-mailem nebo mát
 | **Upravit (force)** nabídne volbu režimu | Doklad je zaúčtovaný v uzavřeném účetním období | Zvolte **Opravit a přeúčtovat do běžného období**, nebo **Jen poznámky** |
 | Upozornění **Doklad nese DPH, ale nemá klasifikaci** | Sazba, kterou český číselník nezná (například německých 19 %), nebo dodavatel s neurčenou zemí | Zkontrolujte sazby na řádcích a vyberte klasifikaci DPH ručně |
 | Po uložení varování, že se kurz nepřenačetl | Kurz zadal člověk, přišel z importu, nebo je ČNB nedostupná | Zkontrolujte kurz a případně ho znovu načtěte tlačítkem **Načíst z ČNB** |
-| Upozornění na kombinaci reverse charge a omezeného nároku při zaúčtování | Taková kombinace se automaticky nezaúčtuje | Zaúčtujte doklad ručním zápisem v deníku |
 | Tlačítko **Upravit** nebo **Smazat** chybí | Jde o doklad mimo stav Koncept | Smazat lze jen koncept, ostatní doklady stornujte |
 | Chybí tlačítko **Zaplatit pomocí QR** | Faktura je zaplacená, nebo je částka k úhradě nulová | QR je jen pro nezaplacené faktury s kladnou částkou |
 | Zaplacená faktura má štítek **uhrazeno s rozdílem** | Evidované úhrady nepokrývají celou částku o víc než 1 Kč | V detailu použijte **Vyrovnat zbytek** |
@@ -325,6 +324,10 @@ samo nezmění fakturu ani její zaúčtování.
 Položka **Vytvořit pravidlo účtování** otevře původní formulář bankovního pravidla s názvem dodavatele, směrem, měnou
 a variabilním symbolem. Obsahuje rozsah částky od/do, prioritu, strop automatiky, účty MD/Dal a test na historii.
 Neobsahuje pevnou výchozí částku. Pravidlo samo nemění fakturu. Úhrady faktur se nadále párují, nikoli účtují tímto pravidlem.
+
+Otevřete-li detail ze seznamu přijatých faktur, vlevo od odkazu **Zpět na seznam** jsou šipky předchozí a další
+faktury (zkratky `[` a `]`), které listují v pořadí a s filtry seznamu, ze kterého jste přišli; detail otevřený
+přímým odkazem šipky nemá.
 
 ### 23.11.2 Stavy přijaté faktury
 
@@ -622,8 +625,13 @@ Oba příznaky jsou vidět i v **detailu** přijaté faktury (box Měna/DPH).
 nákladový účet, žádné 343) a **Krácený (§75)** (na účet 343 jde jen poměrná uplatněná část DPH, zbytek DPH jde spolu se
 základem do nákladu). U **Krácený (§76)** se do deníku zaúčtuje **celá** DPH na účet 343, stejně jako u plného nároku,
 protože krácení koeficientem se jednotlivého zápisu netýká, řeší se souhrnně až v přiznání DPH (ř. 52 a 53, viz
-[Výkazy DPH](41_Vykazy_DPH.md#41138-kraceny-odpocet-76-koeficient)). Kombinace **reverse charge** se **současně** omezeným nárokem
-(Bez nároku, Krácený §75, Krácený §76) se automaticky nezaúčtuje, takový doklad je nutné zaúčtovat ručním zápisem v deníku.
+[Výkazy DPH](41_Vykazy_DPH.md#41138-kraceny-odpocet-76-koeficient)).
+
+**Reverse charge s omezeným nárokem.** Povinnost přiznat daň při samovyměření na nároku nezávisí, takže samovyměřená
+daň jde na výstup (účet 343.200, v přiznání například ř. 12) vždy v plné výši. Odpočet se řídí nárokem: u **Bez nároku**
+žádný (ř. 43 zůstane prázdný) a celá samovyměřená daň je nákladem spolu se základem, u **Krácený (§75)** jde na 343.100
+jen poměrná část a zbytek do nákladu, u **Krácený (§76)** jde na 343.100 celá daň a krácí se až v přiznání. Typicky jde
+o službu ze třetí země přijatou identifikovanou osobou, která daň přiznává, ale nárok na odpočet nemá.
 
 **Interní číslo se řídí daňovým typem.** Prefix automaticky generovaného interního čísla (viz
 [§ 23.11.5](#23115-povinna-pole)) odpovídá těmto dvěma příznakům: **PF/PN** plný nárok (uznatelný/ne), **KU/KN** krácený

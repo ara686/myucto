@@ -11,7 +11,8 @@ use MyInvoice\Service\Accounting\Dimension\DimensionPeriodGuard;
 
 final class AccountingFrameworkImportGuard
 {
-    public function __construct(private readonly Connection $db) {}
+    /** @param bool $allow504 převod umí i rámec 504 (zatím jen POHODA s osnovou pro neziskové organizace) */
+    public function __construct(private readonly Connection $db, private readonly bool $allow504 = false) {}
 
     public function assertCz500Periods(int $supplierId, array $periods, bool $currentRead = false): void
     {
@@ -26,7 +27,8 @@ final class AccountingFrameworkImportGuard
                 $period = $stmt->fetch(\PDO::FETCH_ASSOC) ?: $period;
             }
             foreach ($frameworks->forInterval($supplierId, $period['starts_on'], $period['ends_on'], $currentRead) as $framework) {
-                if ($framework !== AccountingFrameworkService::CZ_500) {
+                if ($framework !== AccountingFrameworkService::CZ_500
+                    && !($this->allow504 && $framework === AccountingFrameworkService::CZ_504)) {
                     $this->unsupported();
                 }
             }

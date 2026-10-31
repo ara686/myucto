@@ -219,7 +219,17 @@ export interface EetPaymentPreview {
   credit_topup_amount?: EetMoney | null
   /** Část tržby v Kč pro cerp_zuct (úhrada poukazem / kreditem). */
   credit_draw_amount?: EetMoney | null
+  /** Upozornění, která platbu neblokují (např. úhrada poukazem nad zůstatek prodaných poukazů). */
+  warnings?: EetPaymentWarning[]
   invoice?: { id: number; currency: string; remaining: EetMoney } | null
+}
+
+/** Upozornění k platbě; `code` je klíč překladu, `message` český text ze serveru. */
+export interface EetPaymentWarning {
+  code: string
+  message: string
+  balance?: number
+  amount?: number
 }
 
 export interface EetRecordWarning {
@@ -280,6 +290,7 @@ export interface EetPaymentEvent {
   eet: EetRecordState | null
   idempotent_replay?: boolean
   poll_after_seconds?: number
+  warnings?: EetPaymentWarning[]
 }
 
 export interface EetPaymentIntentRequest {

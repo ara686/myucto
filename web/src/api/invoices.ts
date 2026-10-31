@@ -4,7 +4,7 @@ import type { DocumentLock } from './locks'
 import type { EetCreditNoteRefundResult } from './eet'
 import { appIsoDate } from '@/utils/date'
 
-export type InvoiceType = 'invoice' | 'proforma' | 'credit_note' | 'cancellation' | 'tax_document' | 'penalty' | 'payment_calendar'
+export type InvoiceType = 'invoice' | 'proforma' | 'credit_note' | 'cancellation' | 'tax_document' | 'penalty' | 'payment_calendar' | 'rent_calendar' | 'advance_calendar'
 
 /** Jeden segment výpočtu úroku z prodlení (rozpad jen kvůli hranici kalendářního roku — sazba je napříč segmenty stejná). */
 export interface PenaltyInterestSegment {
@@ -85,6 +85,19 @@ export interface RelatedBankTransaction {
 }
 
 /** Nespárovaná zálohová faktura (proforma) nabídnutá k propojení s daňovým dokladem. */
+export interface AdvanceDrawdownCandidate {
+  id: number
+  varsymbol: string | null
+  issue_date: string | null
+  total_with_vat: number
+  available: number
+}
+
+export interface AdvanceDrawdownResult {
+  drawdown: { proforma_id: number; amount: number; available: number; remaining: number }
+  invoice: Invoice
+}
+
 export interface AdvanceCandidate {
   id: number
   varsymbol: string | null
@@ -152,6 +165,8 @@ export interface InvoiceItem {
   accrual_to?: string | null
   /** Výnosový účet položky (6xx); null = produkt > kategorie > předkontace dokladu. Round-trip jako ostatní pole položky. */
   revenue_account_code?: string | null
+  /** Kód položky prodávajícího z importu (ISDOC SellersItemIdentification), páruje podle něj pravidla výnosů. */
+  seller_item_code?: string | null
   /** Název karty z JOINu (read-only) — našeptávač jím zobrazí vybranou položku bez dalšího dotazu. */
   small_asset_name?: string | null
   asset_name?: string | null
@@ -239,6 +254,10 @@ export interface InvoiceCashDocument {
 export interface PaymentScheduleRow {
   id?: number
   due_on: string
+  /** DUZP splátky splátkového kalendáře (§ 21 odst. 7 ZDPH); prázdné = den splatnosti. Platební kalendář DUZP nemá. */
+  tax_date?: string | null
+  /** Interní doklad splátky, vzniká při vystavení kalendáře. */
+  instalment_invoice_id?: number | null
   base_amount: number
   vat_amount: number
   total_amount: number
@@ -254,6 +273,10 @@ export interface Invoice {
   payment_varsymbol?: string
   invoice_type: InvoiceType
   parent_invoice_id: number | null
+  /** Kalendář, ke kterému patří interní doklad splátky nebo daňový doklad k její úhradě. */
+  calendar_id?: number | null
+  /** Nájemní smlouva splátkového kalendáře (§ 31 ZDPH). */
+  calendar_contract_ref?: string | null
   client_id: number
   project_id: number | null
   branding_profile_id: number | null
@@ -472,6 +495,8 @@ export interface InvoiceListItem {
   supplier_order_number?: string | null
   invoice_type: InvoiceType
   parent_invoice_id: number | null
+  /** Kalendář, ke kterému patří interní doklad splátky nebo daňový doklad k její úhradě. */
+  calendar_id?: number | null
   recurring_template_id?: number | null
   client_id: number
   project_id: number | null
@@ -559,6 +584,8 @@ export interface InvoicePayload {
   price_level_id?: number | null
   /** § 31/31a ZDPH; chybějící klíč rozpis NEMĚNÍ, prázdné pole ho smaže. */
   payment_schedule?: PaymentScheduleRow[]
+  /** Nájemní smlouva splátkového kalendáře; chybějící klíč hodnotu NEMĚNÍ. */
+  calendar_contract_ref?: string | null
   prices_include_vat?: boolean
   income_tax_exempt?: boolean
   income_tax_exempt_reason?: string | null
@@ -604,6 +631,7 @@ export interface InvoicePayload {
     accrual_from?: string | null
     accrual_to?: string | null
     revenue_account_code?: string | null
+    seller_item_code?: string | null
     oss_applicable?: boolean
     oss_consumer_country?: string | null
     oss_rate_type?: string | null
@@ -854,7 +882,7 @@ export const invoicesApi = {
    * Používá se v editoru jako placeholder „automaticky: JD2026-01".
    */
   previewVarsymbol: (
-    type: 'invoice' | 'proforma' | 'credit_note' | 'payment_calendar',
+    type: 'invoice' | 'proforma' | 'credit_note' | 'payment_calendar' | 'rent_calendar' | 'advance_calendar',
     issueDate: string,
     clientId?: number,
     revenueCategoryId?: number,
@@ -936,6 +964,11 @@ export const invoicesApi = {
     api.post<{ tax_document_id: number; payments: InvoicePayment[] }>(
       `/invoices/${id}/payments/${paymentId}/tax-document`,
     ).then(r => r.data),
+  // Koncept vyúčtovací faktury k záloze → daňový doklad k přijaté platbě (koncept se odstraní)
+  convertToTaxDocument: (id: number) =>
+    api.post<{ proforma_id: number; tax_document_ids: number[] }>(
+      `/invoices/${id}/convert-to-tax-document`,
+    ).then(r => r.data),
   cancel: (id: number, mode: 'internal' | 'credit_note', reason: string = '') =>
     api.post<{ cancellation_id?: number; credit_note_id?: number; edit_url?: string; invoice?: Invoice }>(
       `/invoices/${id}/cancel`,
@@ -959,6 +992,13 @@ export const invoicesApi = {
     api.post<Invoice>(`/invoices/${id}/link-advance`, { advance_id: advanceId }).then(r => r.data),
   unlinkAdvance: (id: number) =>
     api.delete<Invoice>(`/invoices/${id}/link-advance`).then(r => r.data),
+  // Postupné čerpání zálohy (koncept faktury odečte část daňového dokladu k záloze)
+  advanceDrawdownCandidates: (id: number) =>
+    api.get<AdvanceDrawdownCandidate[]>(`/invoices/${id}/advance-drawdown`).then(r => r.data),
+  applyAdvanceDrawdown: (id: number, body: { proforma_id: number; amount: number }) =>
+    api.post<AdvanceDrawdownResult>(`/invoices/${id}/advance-drawdown`, body).then(r => r.data),
+  removeAdvanceDrawdown: (id: number) =>
+    api.delete<Invoice>(`/invoices/${id}/advance-drawdown`).then(r => r.data),
   clone: (id: number, opts?: { increment_month_in_descriptions?: boolean; issue_date?: string }) =>
     api.post<{ draft_id: number }>(`/invoices/${id}/clone`, opts || {}).then(r => r.data),
   bulkReissue: (invoiceIds: number[], opts?: { increment_month_in_descriptions?: boolean; issue_date?: string }) =>

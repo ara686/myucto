@@ -692,7 +692,7 @@ lze šablonu vytvořit, upravit její název, popis i jednotlivé řádky (úče
 výchozí částku, pojmenování a středisko), smazat ji nebo z ní rovnou založit nový
 ruční zápis.
 
-Stránka **Nástroje → Šablony bank. pravidel** spravuje firemní katalog pravidel
+Záložka **Nástroje → Šablony účtování → Šablony pravidel** spravuje firemní katalog pravidel
 nabízených přes **Nástroje → Šablony účtování → Pravidla účtování → Ze šablony**.
 U šablony lze nastavit český a anglický název, směr, kritéria shody, typ operace,
 kontaci, prioritu, pořadí a aktivní stav. Úprava se projeví jen při
@@ -1627,6 +1627,15 @@ Přílohy (dohodu o zápočtu, podklad k odpisu) připojíte v detailu dokladu v
 Seznam a detail vidí uživatel s přístupem k účetnictví. Koncept zakládá a upravuje,
 kdo smí zapisovat ruční zápisy. Zaúčtování, storno a vytvoření dokladu nad ručním
 zápisem vyžadují oprávnění zaúčtovat v deníku.
+
+#### 52.14.15.6 Návrh od AI asistenta
+
+Interní doklad vám může připravit `Účetnictví → AI asistent`. Popište operaci vlastními
+slovy, například „přeúčtuj 5 000 z 518 na 501". Asistent vrátí náhled dokladu s řádky MD
+a D a součty, server ho zkontroluje stejnými pravidly jako zaúčtování ručního dokladu.
+Po potvrzení vznikne koncept, nebo rovnou zaúčtovaný doklad, stejnou cestou jako z formuláře
+**Nový interní doklad**. Podrobnosti v
+[AI extrakci, § 25.3](25_AI_extrakce.md#253-krok-za-krokem-nastavit-poskytovatele-ai).
 
 ## 52.15 Související kapitoly
 

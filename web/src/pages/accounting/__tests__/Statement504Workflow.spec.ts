@@ -12,6 +12,9 @@ vi.mock('@/api/accounting', () => ({
 vi.mock('vue-router', () => ({ RouterLink: { template: '<a><slot /></a>' }, useRoute: () => ({ query: { period_id: '1', to: '2099-06-30' } }), useRouter: () => ({ replace: vi.fn() }) }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key, locale: ref('cs') }) }))
 vi.mock('@/composables/useToast', () => ({ useToast: () => ({ error: vi.fn() }) }))
+vi.mock('@/composables/useAccrualSpread', () => ({
+  useAccrualSpread: () => ({ enabled: ref(false), restore: () => Promise.resolve(), set: vi.fn(), param: () => ({}) }),
+}))
 vi.mock('@/composables/useFormat', () => ({ formatMoney: (value: number | null) => value === null ? '' : String(value), formatDate: (value: string) => value }))
 
 import BalanceSheet from '../BalanceSheet.vue'

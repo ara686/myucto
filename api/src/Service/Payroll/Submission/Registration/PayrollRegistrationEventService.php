@@ -17,6 +17,7 @@ use MyInvoice\Service\Payroll\CzechBirthNumber;
 use MyInvoice\Service\Payroll\Ruleset\CanonicalJson;
 use MyInvoice\Service\Payroll\Security\PayrollSensitiveData;
 use MyInvoice\Service\Payroll\Submission\CsszEmployerVariableSymbol;
+use MyInvoice\Service\Payroll\Submission\Jmhz\JmhzSpecVersion;
 use MyInvoice\Service\Payroll\Submission\PayrollSubmissionCalendar;
 use MyInvoice\Service\Payroll\Submission\PayrollSubmissionService;
 use MyInvoice\Service\Payroll\Submission\Registration\Change\PayrollRegistrationChangeDeltaPlanner;
@@ -1103,6 +1104,7 @@ final readonly class PayrollRegistrationEventService
             $endedByDeath,
             $context,
             $this->earlyTerminationApplies($supplierId, $employmentId, $effectiveOn),
+            $effectiveOn,
         );
         $this->assertMatchesTerminationRecord(
             $supplierId,
@@ -1286,6 +1288,7 @@ final readonly class PayrollRegistrationEventService
         ?bool $endedByDeath,
         array $context,
         bool $earlyTerminationApplies = false,
+        string $endOn = '',
     ): ?array {
         $early = null;
         if (is_array($value) && !array_is_list($value)
@@ -1331,6 +1334,7 @@ final readonly class PayrollRegistrationEventService
             $activityCode,
             $endedByDeath,
             $context,
+            $endOn,
         );
         if ($early === null) {
             return $result;
@@ -1346,6 +1350,7 @@ final readonly class PayrollRegistrationEventService
         string $activityCode,
         ?bool $endedByDeath,
         array $context,
+        string $endOn = '',
     ): ?array {
         if ($scenario === '10' || $endedByDeath === true) {
             if ($value !== null) {
@@ -1433,11 +1438,21 @@ final readonly class PayrollRegistrationEventService
             1,
             3,
         );
-        if (!in_array($type, ['1', '2'], true)) {
+        // EDV 1.5 (JMHZ-3394), ID 10525: skončení od 1. 1. 2027 (REGZEC27)
+        // zná i služební poměr podle zákona č. 361/2003 Sb. (3) a č. 221/1999
+        // Sb. (4). REGZEC25 je nezná.
+        $nextVintage = $endOn >= JmhzSpecVersion::FIRST_2027_EVENT_DATE;
+        $types = $nextVintage ? ['1', '2', '3', '4'] : ['1', '2'];
+        if (!in_array($type, $types, true)) {
             throw new \InvalidArgumentException($this->say(
                 'unemployment.employment_type',
-                "musí být 1 (pracovní vztah), nebo 2 (služební poměr),"
-                    . " teď je „{$type}“.",
+                $nextVintage
+                    ? 'musí být 1 (pracovní vztah), 2 (služební poměr podle'
+                        . ' zákona č. 234/2014 Sb.), 3 (podle zákona č. 361/2003'
+                        . ' Sb.) nebo 4 (podle zákona č. 221/1999 Sb.),'
+                        . " teď je „{$type}“."
+                    : "musí být 1 (pracovní vztah), nebo 2 (služební poměr),"
+                        . " teď je „{$type}“.",
             ));
         }
         $result['employment_type'] = $type;
@@ -1465,6 +1480,7 @@ final readonly class PayrollRegistrationEventService
             ], 'unemployment.', 'u podkladů za služební poměr');
             $reason = $this->serviceTerminationReason(
                 $input['service_termination_reason'] ?? null,
+                $nextVintage ? $type : null,
             );
             $result['service_termination_reason'] = $reason;
             $this->settlement(
@@ -3396,7 +3412,7 @@ final readonly class PayrollRegistrationEventService
         return $code;
     }
 
-    private function serviceTerminationReason(mixed $value): string
+    private function serviceTerminationReason(mixed $value, ?string $serviceTypeSinceNextVintage = null): string
     {
         $code = $this->requiredDigits(
             $value,
@@ -3404,7 +3420,21 @@ final readonly class PayrollRegistrationEventService
             1,
             3,
         );
-        $this->jmhzEvidence->requireServiceTerminationReason($code);
+        if ($serviceTypeSinceNextVintage === null) {
+            $this->jmhzEvidence->requireServiceTerminationReason($code);
+
+            return $code;
+        }
+        // EDV 1.5 (JMHZ-3394), ID 10381: číselník C_DUVUKSLUZPOM rozšířený
+        // o 7 až 23, povolené důvody podle druhu služebního poměru.
+        $allowed = PayrollRegistrationSpecVersionRules::SERVICE_TERMINATION_BY_TYPE[$serviceTypeSinceNextVintage] ?? [];
+        if (!in_array($code, $allowed, true)) {
+            throw new \InvalidArgumentException($this->say(
+                'unemployment.service_termination_reason',
+                "u druhu zaměstnání {$serviceTypeSinceNextVintage} smí být jen "
+                    . implode(', ', $allowed) . ", teď je „{$code}“.",
+            ));
+        }
 
         return $code;
     }

@@ -8,6 +8,7 @@ use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Service\Accounting\PostingService;
 use MyInvoice\Service\Bank\VariableSymbolNormalizer;
 use MyInvoice\Service\Invoice\CzkRecap;
+use MyInvoice\Service\Invoice\InvoiceCalendar;
 use MyInvoice\Service\Invoice\InvoiceRounding;
 use MyInvoice\Service\Invoice\InvoiceCalculator;
 use MyInvoice\Service\Invoice\InvoiceHeaderDiscount;
@@ -706,6 +707,7 @@ final class InvoiceRepository
                     ii.order_index, ii.item_kind, ii.linked_work_report_id,
                     ii.vat_classification_code, ii.stock_item_id, ii.warehouse_id,
                     ii.small_asset_id, ii.asset_id, ii.accrual_from, ii.accrual_to, ii.revenue_account_code,
+                    ii.seller_item_code,
                     sa.name AS small_asset_name, a.name AS asset_name' . $ossSelect . ',
                     vr.code AS vat_code, vr.label_cs AS vat_label_cs, vr.label_en AS vat_label_en
                FROM invoice_items ii
@@ -947,7 +949,7 @@ final class InvoiceRepository
             // (záloha pokryla celek) — není nezaplacený, jen status zůstal 'issued'.
             // Dobropisy (záporný total) ponecháváme. Částečné úhrady (#89): dlužná
             // částka = amount_to_pay - paid_total.
-            $where[] = "(i.invoice_type NOT IN ('invoice','proforma','tax_document') OR i.amount_to_pay - i.paid_total > 0)";
+            $where[] = "(i.invoice_type NOT IN ('rent_calendar','advance_calendar') AND (i.invoice_type NOT IN ('invoice','proforma','tax_document') OR i.amount_to_pay - i.paid_total > 0))";
         }
         if (!empty($filters['overdue'])) {
             $operator = $this->overduePolicy->comparisonOperator();
@@ -955,7 +957,7 @@ final class InvoiceRepository
             // Stejná pohledávková sémantika jako unpaid (vč. nespárovaných proforem).
             $where[] = "(i.invoice_type != 'proforma'"
                 . ' OR NOT ' . AdvanceSettledSql::proforma('i') . ')';
-            $where[] = "(i.invoice_type NOT IN ('invoice','proforma','tax_document') OR i.amount_to_pay - i.paid_total > 0)";
+            $where[] = "(i.invoice_type NOT IN ('rent_calendar','advance_calendar') AND (i.invoice_type NOT IN ('invoice','proforma','tax_document') OR i.amount_to_pay - i.paid_total > 0))";
         }
         // Neuhrazené K DATU X (task #4, účetní sestava „saldo bez saldokonta") — na rozdíl
         // od `unpaid_only`/`overdue` výše NEJDE o dnešní status/amount_to_pay, ale o stav,
@@ -978,6 +980,7 @@ final class InvoiceRepository
             $params[] = $asOf;
             // Stejná pohledávková sémantika jako unpaid_only/overdue: spárovaná proforma dluh
             // nenese, dluh nese ostrý doklad.
+            $where[] = "i.invoice_type NOT IN ('rent_calendar','advance_calendar')";
             $where[] = "(i.invoice_type != 'proforma'"
                 . ' OR NOT ' . AdvanceSettledSql::proforma('i') . ')';
             // Guard „amount_to_pay > 0" (viz AGENTS.md) je tu implicitní: je-li amount_to_pay
@@ -1119,7 +1122,7 @@ final class InvoiceRepository
 
         $sql = "SELECT $ossReviewSelect
                        i.id, i.varsymbol, i.payment_variable_symbol, i.supplier_order_number,
-                       i.invoice_type, i.parent_invoice_id, i.recurring_template_id,
+                       i.invoice_type, i.parent_invoice_id, i.calendar_id, i.recurring_template_id,
                        i.client_id, i.project_id, i.supplier_id,
                        i.issue_date, i.tax_date, i.due_date,
                        i.currency_id, cur.code AS currency, cur.symbol AS currency_symbol, cur.decimals AS currency_decimals,
@@ -1333,7 +1336,7 @@ final class InvoiceRepository
             $supplierId,
             $brandingProfileId,
             (string) $data['issue_date'],
-            ($data['invoice_type'] ?? 'invoice') === 'proforma' ? null : (string) ($data['tax_date'] ?? $data['issue_date']),
+            in_array($data['invoice_type'] ?? 'invoice', ['proforma', ...InvoiceCalendar::TYPES], true) ? null : (string) ($data['tax_date'] ?? $data['issue_date']),
             (string) $data['due_date'],
             (int) $data['currency_id'],
             !empty($data['reverse_charge']) ? 1 : 0,
@@ -1417,7 +1420,7 @@ final class InvoiceRepository
         // Typ dokladu lze měnit jen u draftu (faktura/proforma/dobropis) — viz UpdateInvoiceAction,
         // který u vystavené faktury posílá nezměněný typ. Storno/cancellation se přes update nenastaví.
         $hasType = array_key_exists('invoice_type', $data)
-            && in_array((string) $data['invoice_type'], ['invoice', 'proforma', 'credit_note', 'payment_calendar'], true);
+            && in_array((string) $data['invoice_type'], ['invoice', 'proforma', 'credit_note', 'payment_calendar', 'rent_calendar', 'advance_calendar'], true);
 
         $hasExempt = $this->supportsIncomeTaxExempt();
         $hasReminders = $this->supportsAutoSendReminders();
@@ -1542,6 +1545,13 @@ final class InvoiceRepository
      * Příchozí položky s item_kind='discount' se ignorují (sleva je vždy generovaná
      * z header pole, nikdy se neukládá z UI jako uživatelský řádek → žádné zdvojení).
      */
+    /** Kód položky prodávajícího (ISDOC SellersItemIdentification) oříznutý na šířku sloupce. */
+    public static function sellerItemCode(mixed $value): ?string
+    {
+        $code = is_scalar($value) ? trim((string) $value) : '';
+        return $code === '' ? null : mb_substr($code, 0, 64);
+    }
+
     /** Kladné id z payloadu, jinak NULL (0, '', null i nesmysly padnou na NULL). */
     private static function positiveIdOrNull(mixed $value): ?int
     {
@@ -1729,7 +1739,7 @@ final class InvoiceRepository
         if ($bad !== []) {
             throw new \InvalidArgumentException(\MyInvoice\Http\TenantReferenceGuard::message($bad));
         }
-        // Výnosový účet položky (F1, migrace 1948): v rozvrhu firmy, aktivní, třída 6.
+        // Účet položky (F1, migrace 1948): v rozvrhu firmy, aktivní, mimo saldokonto.
         // Ověří se PŘED smazáním starých řádků, chyba nechá fakturu netknutou.
         $revenueAccounts = [];
         $productDefaults = new \MyInvoice\Service\Accounting\Product\ProductPostingDefaults($this->db);
@@ -1738,13 +1748,27 @@ final class InvoiceRepository
                 continue;   // slevový řádek se generuje níž, účet dědí; textový žádný nemá
             }
             try {
-                $revenueAccounts[$i] = $productDefaults->validateAccount(
+                $revenueAccounts[$i] = $productDefaults->validateIssuedItemAccount(
                     $ownerId,
                     $item['revenue_account_code'] ?? null,
-                    \MyInvoice\Service\Accounting\Product\ProductPostingDefaults::KIND_REVENUE,
                 );
             } catch (\InvalidArgumentException $e) {
                 throw new \InvalidArgumentException('Položka ' . ($i + 1) . ': ' . $e->getMessage(), 0, $e);
+            }
+        }
+        // Víceúčelový poukaz (§ 37c ZDPH) se při prodeji nedaní: nenulová sazba je chyba
+        // vstupu, nic se tiše nepřepočítává. Ověří se PŘED smazáním starých řádků.
+        $standardItems = array_filter($items, static fn (array $item): bool => InvoiceItemKind::of($item) === InvoiceItemKind::STANDARD);
+        $voucherCards = \MyInvoice\Service\Invoice\MultiPurposeVoucher::stockItemIds(
+            $pdo,
+            $ownerId,
+            array_map(static fn (array $item): int => (int) ($item['stock_item_id'] ?? 0), $standardItems),
+        );
+        $vatRates = $this->loadVatRates();
+        foreach ($standardItems as $i => $item) {
+            if (isset($voucherCards[(int) ($item['stock_item_id'] ?? 0)])
+                && (int) round(abs((float) ($vatRates[(int) ($item['vat_rate_id'] ?? 0)] ?? 0)) * 100) !== 0) {
+                throw new \InvalidArgumentException('Položka ' . ($i + 1) . ': ' . \MyInvoice\Service\Invoice\MultiPurposeVoucher::TAXED_LINE_MESSAGE);
             }
         }
 
@@ -1787,14 +1811,13 @@ final class InvoiceRepository
                 (invoice_id, description, quantity, duration_minutes, unit, unit_price_without_vat,
                  vat_rate_id, vat_rate_snapshot,
                  total_without_vat, total_vat, total_with_vat, order_index, item_kind, vat_classification_code,
-                 stock_item_id, warehouse_id, small_asset_id, asset_id, accrual_from, accrual_to, revenue_account_code'
+                 stock_item_id, warehouse_id, small_asset_id, asset_id, accrual_from, accrual_to, revenue_account_code, seller_item_code'
             . ($ossColumns !== [] ? ', ' . implode(', ', $ossColumns) : '')
-            . ') VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?'
+            . ') VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?'
             . str_repeat(', ?', count($ossColumns))
             . ')'
         );
 
-        $vatRates = $this->loadVatRates();
         $textRateId = InvoiceItemKind::textRowRateId($items, $pdo, $vatRates);
 
         // Reverse charge + země klienta + jazyk + sleva — z hlavičky.
@@ -1839,7 +1862,7 @@ final class InvoiceRepository
                 $params = [
                     $invoiceId, (string) $item['description'], 0.0, null, '', 0.0,
                     $vatRateId, $vatRates[$vatRateId] ?? 0.0, $orderIndex, InvoiceItemKind::TEXT,
-                    null, null, null, null, null, null, null, null,
+                    null, null, null, null, null, null, null, null, null,
                 ];
                 if ($supportsOss) {
                     $params = array_merge($params, self::ossItemParams($item, $supportsManualReview));
@@ -1865,8 +1888,13 @@ final class InvoiceRepository
             // `VatLedgerService` držet a s dosazenou '1' by cizí daň dopadla na ř. 1.
             // Shodně s importem ({@see \MyInvoice\Service\Import\InvoiceImportService}),
             // který tuhle větev řeší stejně; ručně zadaný kód má přednost i tady.
+            //
+            // Víceúčelový poukaz klasifikaci nenese NIKDY, ani ručně zadanou: jeho převod
+            // není plněním (§ 37c ZDPH) a do přiznání ani KH nepatří (MultiPurposeVoucher).
+            $isVoucher = isset($voucherCards[(int) ($item['stock_item_id'] ?? 0)]);
             $explicitCode = ($item['vat_classification_code'] ?? null) !== null;
             $code = match (true) {
+                $isVoucher                      => null,
                 $explicitCode                   => $item['vat_classification_code'],
                 !empty($item['oss_applicable']) => null,
                 default                         => self::defaultSaleClassificationCode(
@@ -1908,6 +1936,7 @@ final class InvoiceRepository
                 $assetId,
                 ...self::accrualPeriod($item),
                 $revenueAccounts[$i] ?? null,
+                self::sellerItemCode($item['seller_item_code'] ?? null),
             ];
             $accrualPeriods[implode('|', self::accrualPeriod($item))] = self::accrualPeriod($item);
             if ($supportsOss) {
@@ -2068,6 +2097,7 @@ final class InvoiceRepository
                 ...$accrualPeriod,
                 // Výnosový účet (F1): sleva vlastní účet nemá, zaúčtování ji rozpustí do účtů
                 // zlevněných položek (IssuedDiscountAllocation).
+                null,
                 null,
             ];
             if ($supportsOss && isset($g['oss']) && is_array($g['oss'])) {

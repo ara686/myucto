@@ -14,6 +14,7 @@ use MyInvoice\Repository\DocumentViewerContext;
 use MyInvoice\Service\Accounting\ChartOfAccountsSeeder;
 use MyInvoice\Service\Ai\AccountingAssistantException;
 use MyInvoice\Service\Ai\AccountingAssistantService;
+use MyInvoice\Service\Ai\AiInternalDocumentValidator;
 use MyInvoice\Service\Document\DocumentStorage;
 use MyInvoice\Service\Document\DocumentTextExtractor;
 use MyInvoice\Service\Vat\VatStatusService;
@@ -89,6 +90,7 @@ final class AccountingAssistantServiceTest extends TestCase
             new DocumentTextExtractor(),
             $c->get(ChartOfAccountsRepository::class),
             $c->get(VatStatusService::class),
+            $c->get(AiInternalDocumentValidator::class),
         );
     }
 

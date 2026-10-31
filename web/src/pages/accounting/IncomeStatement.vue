@@ -25,11 +25,21 @@ import EmptyState from '@/components/ui/EmptyState.vue'
 import { findAccountingPeriod } from '@/utils/accountingPeriod'
 import DateInput from '@/components/ui/DateInput.vue'
 import DimensionReportFilter from '@/components/dimensions/DimensionReportFilter.vue'
+import AccrualSpreadToggle from '@/components/accounting/AccrualSpreadToggle.vue'
+import AccrualSpreadNote from '@/components/accounting/AccrualSpreadNote.vue'
+import { useAccrualSpread } from '@/composables/useAccrualSpread'
 
 const { t, locale } = useI18n()
 const toast = useToast()
 const route = useRoute()
 const router = useRouter()
+const accrualSpread = useAccrualSpread()
+const accrualSpreadOn = accrualSpread.enabled
+
+function onAccrualSpread(value: boolean) {
+  accrualSpread.set(value)
+  void load()
+}
 
 // Klientský přepínač Kč / tis. Kč (F4 R17) — jen formátování při renderu, data beze změny.
 const unit = ref<'czk' | 'thousands'>('czk')
@@ -70,6 +80,7 @@ function queryParams() {
     ...(filters.dimension_value_id
       ? { dimension_value_id: filters.dimension_value_id, dimension_descendants: (filters.dimension_descendants ? 1 : 0) as 0 | 1 }
       : {}),
+    ...accrualSpread.param(),
   }
 }
 
@@ -180,6 +191,7 @@ function downloadBlob(blob: Blob, filename: string) {
 }
 
 onMounted(async () => {
+  await accrualSpread.restore()
   try { periods.value = await accountingApi.listPeriods() } catch { periods.value = [] }
   const open = periods.value.filter(p => p.status === 'open')
   const def = open.length
@@ -268,6 +280,9 @@ onMounted(async () => {
             {{ t(`accounting.income_statement.category_${category.category}`) }}
           </span>
         </div>
+        <div v-if="view === 'statement' && !report504" class="flex items-end pb-2">
+          <AccrualSpreadToggle :model-value="accrualSpreadOn" @update:model-value="onAccrualSpread" />
+        </div>
       </div>
       <DimensionReportFilter class="mt-3"
         :value-id="filters.dimension_value_id" :descendants="filters.dimension_descendants"
@@ -276,6 +291,7 @@ onMounted(async () => {
     <p v-if="report?.dimension" class="mb-3 rounded-md border border-primary-200 bg-primary-50 px-3 py-2 text-xs text-primary-800">
       {{ t('dimensions.filter_active_note') }}
     </p>
+    <AccrualSpreadNote v-if="view === 'statement' && report?.accrual_spread" :spread="report.accrual_spread" :format="fm" />
 
     <div v-if="loading" class="text-center text-neutral-500 py-12 text-sm">{{ t('common.loading') }}</div>
 

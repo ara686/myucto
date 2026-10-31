@@ -95,6 +95,8 @@ final class JmhzCodeCatalogCoverageTest extends TestCase
         'jmhz_submission' => 'enum',
         'jmhz_submission_correction' => 'enum',
         'jmhz_takeover_detail' => 'other',
+        // Zařazení dohody o srážce do atributu JMHZ 10350 až 10353 (sloupec dohody).
+        'jmhz_target' => 'table',
         'jmhz_temporary_assignment_status' => 'field',
         'jmhz_transport' => 'key',
         'jmhz_treatment' => 'field',
@@ -106,6 +108,12 @@ final class JmhzCodeCatalogCoverageTest extends TestCase
         'jmhz_work_summary_status' => 'field',
         'jmhz_workplace_country_code' => 'field',
         'jmhz_workplace_municipality_code' => 'field',
+        // Adresa místa výkonu práce v hlášení 2027 (10550 až 10554, kontrakt Jmhz2027DocumentContract).
+        'jmhz_workplace_address_point_code' => 'field',
+        'jmhz_workplace_house_number' => 'field',
+        'jmhz_workplace_orientation_number' => 'field',
+        'jmhz_workplace_postal_code' => 'field',
+        'jmhz_workplace_street' => 'field',
         'jmhz_xml' => 'enum',
         // Sloupce podmínek vztahu pro rizikovou práci a dočasné přidělení.
         'jmhz_assignment_user_country_code' => 'field',
@@ -114,6 +122,8 @@ final class JmhzCodeCatalogCoverageTest extends TestCase
         'jmhz_assignment_user_kind' => 'field',
         'jmhz_assignment_user_name' => 'field',
         'jmhz_risk_categorization_code' => 'field',
+        // Příznak státního zástupce v podmínkách vztahu (JMHZ 2027, 10587).
+        'jmhz_state_prosecutor' => 'field',
         // Počty a upozornění v protokolu převodu PAMICA (PohodaPayrollJmhzWriter),
         // ne kódy blokací podání.
         'jmhz_attributes_unknown' => 'other',

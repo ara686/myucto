@@ -37,7 +37,7 @@ final class PayrollComponentJmhzCreationDefaultsTest extends TestCase
     use IsolatedSupplierTrait;
 
     private const PERIOD = '2026-06-01';
-    private const MIGRATION = '1903_payroll_component_jmhz_catalog_1_4_2_10_package.sql';
+    private const MIGRATION = '2210_payroll_component_jmhz_catalog_1_4_2_11_package.sql';
 
     private ContainerInterface $container;
     private Connection $db;

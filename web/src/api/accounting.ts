@@ -1311,6 +1311,19 @@ export interface StatementParams {
   /** Filtr výsledovky i rozvahy na hodnotu dimenze (řádek s rozpadem jen svým dílem). */
   dimension_value_id?: number
   dimension_descendants?: 0 | 1
+  /** Průběžné časové rozlišení mimo deník (381/384 k rozvahovému dni), jen pohled výkazu. */
+  accrual_spread?: 0 | 1
+}
+
+/** Souhrn průběžného časového rozlišení; ve výkazu jen při `accrual_spread=1`. */
+export interface StatementAccrualSpread {
+  /** false = volba se neuplatnila (výkaz za hodnotu dimenze). */
+  applied: boolean
+  skipped_reason: 'dimension' | null
+  prepaid_expense: number
+  deferred_revenue: number
+  documents: number
+  prev: { prepaid_expense: number; deferred_revenue: number; documents: number } | null
 }
 
 export interface StatementRowAccount {
@@ -1413,6 +1426,7 @@ export interface BalanceSheetReport {
   prev_period: ReportPeriod | null
   assets: BalanceSheetAssetRow[]
   liabilities: StatementRow[]
+  accrual_spread?: StatementAccrualSpread
   checks: {
     assets_net: number
     liabilities_total: number
@@ -1602,6 +1616,7 @@ export interface IncomeStatementReport {
   period: ReportPeriod
   prev_period: ReportPeriod | null
   rows: StatementRow[]
+  accrual_spread?: StatementAccrualSpread
   checks: {
     profit_current: number
     net_turnover: number

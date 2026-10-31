@@ -253,7 +253,7 @@ final class GlobalSeedTables
         'accounting_periods', 'entity_category_history',
         'accounting_account_definition_history', 'chart_of_accounts', 'accounting_supplier_settings', 'accounting_document_series',
         'accounting_fixed_exchange_rates',
-        'auto_posting_policy', 'expense_classification_rules', 'posting_rules',
+        'auto_posting_policy', 'expense_classification_rules', 'revenue_classification_rules', 'posting_rules',
         'journal_entry_templates', 'journal_entry_template_lines',
         'bank_posting_rules', 'bank_rule_templates', 'tax_evidence_bank_rules',
         'statement_account_overrides', 'statement_function_map',
@@ -361,7 +361,7 @@ final class GlobalSeedTables
         'attachment_checks',
         'automation_recommendation_coverage', 'automation_recommendation_items',
         'automation_recommendation_snapshots',
-        'bank_api_evidence_months', 'bank_api_months', 'bank_connector_cooldowns', 'bank_counterparty_map',
+        'bank_api_evidence_months', 'bank_api_months', 'bank_card_merchant_map', 'bank_connector_cooldowns', 'bank_counterparty_map',
         'bank_counterparty_observations', 'bank_email_attachment_ingests', 'bank_email_processed_messages',
         'bank_match_audit', 'bank_match_suggestions', 'bank_payment_order_submissions', 'bank_payment_submission_items',
         'bank_posting_suggestions', 'bank_statements', 'bank_transaction_imports', 'bank_transactions',
@@ -431,8 +431,10 @@ final class GlobalSeedTables
         'payroll_absences', 'payroll_annual_document_batch_attempts', 'payroll_annual_document_batch_items',
         'payroll_annual_document_batches', 'payroll_annual_document_revisions',
         'payroll_annual_document_sources', 'payroll_annual_settlement_certificates',
-        'payroll_annual_settlement_other_caregivers', 'payroll_annual_settlement_outcomes',
-        'payroll_annual_settlement_requests', 'payroll_attendance_import_rows', 'payroll_attendance_imports',
+        'payroll_annual_settlement_deductions', 'payroll_annual_settlement_other_caregivers',
+        'payroll_annual_settlement_outcomes', 'payroll_annual_settlement_preschool_claims',
+        'payroll_annual_settlement_requests',
+        'payroll_annual_settlement_spouse_claims','payroll_attendance_import_rows', 'payroll_attendance_imports',
         'payroll_average_earning_snapshots', 'payroll_benefit_accumulators',
         'payroll_business_trip_free_meals', 'payroll_business_trip_items', 'payroll_business_trips',
         'payroll_calendar_days', 'payroll_deduction_agreement_versions', 'payroll_deduction_agreements',
@@ -457,7 +459,8 @@ final class GlobalSeedTables
         'payroll_enforcement_xmlzam_dispatches', 'payroll_enforcement_xmlzam_requests',
         'payroll_enforcement_xmlzam_responses', 'payroll_erasure_proposal_items',
         'payroll_erasure_proposals', 'payroll_external_jmhz_submission_forms',
-        'payroll_external_jmhz_submissions', 'payroll_generated_document_hidden',
+        'payroll_external_jmhz_submissions', 'payroll_food_service_tip_allocations',
+        'payroll_food_service_tip_months', 'payroll_generated_document_hidden',
         'payroll_generated_documents', 'payroll_identity_resolution_tasks', 'payroll_import_links',
         'payroll_imported_jmhz_protocols', 'payroll_input_import_rows', 'payroll_input_imports',
         'payroll_inputs', 'payroll_insolvency_payment_instructions', 'payroll_jmhz_deferral_submissions',
@@ -574,6 +577,7 @@ final class GlobalSeedTables
      */
     public const SAMPLE_MARKERS = [
         'payroll_attendance_sample_seeded_at' => 'payroll_import_profiles',
+        'payroll_attendance_myucto_sample_seeded_at' => 'payroll_import_profiles',
         'integration_sample_seeded_at'        => 'integration_connections',
     ];
 

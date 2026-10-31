@@ -24,6 +24,7 @@ import AttendanceSummaryStep from './AttendanceSummaryStep.vue'
 import AttendanceBatchHistory from './AttendanceBatchHistory.vue'
 import AttendanceRecognitionStrip from './AttendanceRecognitionStrip.vue'
 import AttendanceTimeApprovalResult from './AttendanceTimeApprovalResult.vue'
+import AttendanceTemplateDownload from './AttendanceTemplateDownload.vue'
 import { useAttendanceWorkspace } from './attendanceWorkspace'
 import {
   autoCreatablePersons,
@@ -426,6 +427,11 @@ async function approveTimeMonths() {
           </select>
           <span class="mt-1 block text-[11px] text-neutral-500">{{ t('payroll_imports.attendance.profile_hint') }}</span>
         </label>
+      </div>
+
+      <div v-if="canWrite" class="mb-4 flex flex-wrap items-center gap-3" data-testid="attendance-template">
+        <AttendanceTemplateDownload :disabled="busy !== null" />
+        <p class="min-w-0 max-w-2xl flex-1 text-xs text-neutral-500">{{ t('payroll_imports.template.hint') }}</p>
       </div>
 
       <ImportFilesDropzone
