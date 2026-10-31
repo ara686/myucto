@@ -200,9 +200,10 @@ final class JmhzEldpEvidenceSnapshotServiceTest extends TestCase
 
     /**
      * Poživatel předčasného starobního důchodu před dosažením důchodového věku:
-     * kód D, ale odečtené doby nemá (předčasný důchod je důchod).
+     * kód D nemá (D jen po splnění podmínky nároku podle § 29 odst. 1 nebo 3,
+     * Zadání ELDP12 v1.04) a odečtené doby také ne.
      */
-    public function testEarlyPensionerFromStatutoryEvidenceGivesCodeDWithoutDeductedDays(): void
+    public function testEarlyPensionerFromStatutoryEvidenceHasNoCodeDBeforePensionAge(): void
     {
         $employeeId = $this->employeeId();
         $this->insertPensionAge($employeeId, '2027-05-01');
@@ -216,7 +217,7 @@ final class JmhzEldpEvidenceSnapshotServiceTest extends TestCase
         $snapshot = $this->preparedSnapshot('synthetic-preparation-early-pension');
 
         $section = $snapshot['payload']['eldp_sections'][0];
-        self::assertSame('1D+', $section['code']);
+        self::assertSame('1++', $section['code']);
         self::assertNull($section['deducted_days_total']);
         self::assertSame('2026-02-01', $snapshot['payload']['source_evidence']['pension_status']['early_pension_from']);
     }

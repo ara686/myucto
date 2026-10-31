@@ -515,7 +515,7 @@ export async function authorizationGuard(
     return { name: 'instance-admin' }
   }
   const instanceAdminOnly = to.matched.some(r => r.meta.instanceAdminOnly)
-  if (instanceAdminOnly && !auth.isInstanceAdmin && !auth.isSuperadmin) return denyFallback(to.name, auth)
+  if (instanceAdminOnly && !auth.isInstanceAdmin && (!auth.isSuperadmin || auth.isManagedInstallation)) return denyFallback(to.name, auth)
   if (requiresAuth && auth.lockedSession) {
     useSessionSecurityStore().apply(auth.lockedSession)
     return true

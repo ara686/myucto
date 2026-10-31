@@ -60,6 +60,7 @@ final class MonthlyReportPdfRenderer
         if ($this->twig === null) {
             $loader = new FilesystemLoader([
                 Bootstrap::rootDir() . '/api/templates/monthly-report',
+                Bootstrap::rootDir() . '/api/templates/report',
             ]);
             $this->twig = new Environment($loader, [
                 'autoescape'       => 'html',

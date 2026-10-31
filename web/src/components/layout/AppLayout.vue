@@ -685,7 +685,9 @@ const navSections = computed<NavSection[]>(() => {
         { to: '/templates', label: t('nav.section_templates'), icon: ICONS.documents, permission: 'accounting.templates' },
         { to: '/accounting/setup-assistant', label: t('nav.accounting_setup_assistant'), icon: ICONS.ai, permission: 'accounting' },
         ...(dimensionsEnabled && nonprofitScope ? [{ to: '/accounting/joint-allocations', label: t('jointAllocations.title'), icon: ICONS.reports, permission: 'accounting' as PermissionKey }] : []),
-        { to: '/admin/bank-rule-templates', label: t('nav.bank_rule_templates'), icon: ICONS.bank, permission: 'bank.rules' as PermissionKey },
+        // Katalog šablon bankovních pravidel je záložkou Šablon účtování; samostatná položka
+        // jen pro toho, kdo má správu bankovních pravidel, ale Šablony účtování nevidí.
+        ...(auth.canRead('accounting.templates') ? [] : [{ to: '/admin/bank-rule-templates', label: t('nav.bank_rule_templates'), icon: ICONS.bank, permission: 'bank.rules' as PermissionKey }]),
         { to: '/accounting/accounts',       label: t('nav.accounting_accounts'), icon: ICONS.codebooks },
         { to: '/accounting/offsets',          label: t('nav.accounting_offsets'),          icon: ICONS.coin },
         { to: '/admin/accounting-activation', label: t('nav.accounting_activation'), icon: ICONS.updates, permission: 'accounting.periods.manage' as PermissionKey, access: 'write' },
@@ -852,8 +854,8 @@ const navSections = computed<NavSection[]>(() => {
           { to: '/admin/tax-constants', label: t('codebooks.tab_tax_constants'), icon: ICONS.tax_optimizer },
         ] : []),
         ...((isAdmin || isAdminPlus) ? [{ to: '/admin/suppliers', label: t('nav.suppliers'), icon: ICONS.suppliers }] : []),
+        ...(isAdmin && !auth.isManagedInstallation ? [{ to: '/instance-admin', label: t('instance_admin.title'), icon: ICONS.cron }] : []),
         ...(isAdmin ? [
-          { to: '/instance-admin', label: t('instance_admin.title'), icon: ICONS.cron },
           { to: '/admin/users',        label: t('nav.users'),      icon: ICONS.users },
           { to: '/admin/roles',        label: t('nav.roles'),      icon: ICONS.approvals },
           { to: '/admin/emails',       label: t('nav.emails'),     icon: ICONS.email },

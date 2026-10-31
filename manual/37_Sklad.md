@@ -103,8 +103,8 @@ hodnota** zásob. Výchozí sklad se předvyplňuje do nových skladových dokla
 
 1. Otevřete `Sklad → Skladové karty` a klikněte na **Nová skladová karta**.
 2. Vyplňte **Název** (povinný). **SKU** můžete nechat prázdné, doplní se z názvu.
-3. Zvolte **Typ karty**: **Materiál**, **Zboží**, nebo **Výrobek**. Typ určuje,
-   na které účty se v uzávěrce zaúčtuje stav zásob.
+3. Zvolte **Typ karty**: **Materiál**, **Zboží**, **Výrobek** nebo **Služba**. Typ
+   určuje, na které účty se v uzávěrce zaúčtuje stav zásob. **Služba** zásobu nevede.
 4. Vyplňte měrnou jednotku, EAN, sazbu DPH, prodejní cenu bez DPH a **minimální
    zásobu** (pod ní se karta zvýrazní a navrhuje se k doobjednání).
 5. Chcete-li kartu prodávat v e-shopu, zapněte **Exportovat do e-shopu**.
@@ -645,6 +645,10 @@ Pole editoru nové karty:
   v rámci firmy jedinečné, jinak se uložení odmítne („Skladová karta s tímto SKU
   už existuje“). Totéž hlídá i databáze, takže ke kolizi nedojde ani při souběžném
   zakládání.
+- **Služba** je karta bez zásoby: vyberete ji na faktuře, má ceny, jednotky a výnosový
+  účet a vidíte ji v přehledu prodejů. Faktura z ní nic nevydá, příjemka ani inventura
+  ji neberou a na objednávce zůstane řádkem bez karty. Kartu se skladovými pohyby na
+  službu změnit nejde.
 - **Typ karty**: **Materiál** (spotřebovává se do nákladu 501), **Zboží** (do nákladu
   504) nebo **Výrobek** (uzávěrková kontace 123/583). Typ určuje, na jaké účty se
   v uzávěrce zaúčtuje konečný a počáteční stav a inventurní rozdíly. Řídí to

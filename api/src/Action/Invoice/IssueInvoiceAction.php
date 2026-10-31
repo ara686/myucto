@@ -19,6 +19,8 @@ use MyInvoice\Service\Accounting\DocumentAutoPoster;
 use MyInvoice\Service\Accounting\DocumentLockService;
 use MyInvoice\Service\ActivityLogger;
 use MyInvoice\Service\Invoice\AdvanceCycleLock;
+use MyInvoice\Service\Invoice\CalendarInstalmentService;
+use MyInvoice\Service\Invoice\InvoiceCalendar;
 use MyInvoice\Service\Invoice\InvoiceIssuer;
 use MyInvoice\Service\Invoice\InvoiceItemKind;
 use MyInvoice\Service\Invoice\SnapshotBuilder;
@@ -57,6 +59,7 @@ final class IssueInvoiceAction
         private readonly WorkReportRepository $workReports,
         // § 31/31a — rozpis plateb kalendáře; bez něj kalendář není daňovým dokladem.
         private readonly \MyInvoice\Repository\PaymentScheduleRepository $paymentSchedule,
+        private readonly CalendarInstalmentService $calendarInstalments,
         private readonly InvoicePdfRenderer $pdfRenderer,
         private readonly DocumentLockService $locks,
         private readonly StockIssueService $stockIssue,
@@ -167,30 +170,17 @@ final class IssueInvoiceAction
         //
         // Součet rozpisu musí sedět na celkovou částku: rozejde-li se, není z čeho určit,
         // kolik vlastně bylo sjednáno.
-        if (($invoice['invoice_type'] ?? '') === 'payment_calendar') {
-            $scheduleTotal = $this->paymentSchedule->totalForInvoice((int) $invoice['supplier_id'], $id);
-            if ($this->paymentSchedule->forInvoice((int) $invoice['supplier_id'], $id) === []) {
-                return Json::error(
-                    $response,
-                    'payment_schedule_missing',
-                    'Splátkový ani platební kalendář nelze vystavit bez rozpisu plateb '
-                        . '(§ 31 a § 31a ZDPH) — bez něj nejde o daňový doklad.',
-                    422,
-                );
-            }
-            $invoiceTotal = round((float) ($invoice['total_with_vat'] ?? 0), 2);
-            if ((int) round($scheduleTotal * 100) !== (int) round($invoiceTotal * 100)) {
-                return Json::error(
-                    $response,
-                    'payment_schedule_mismatch',
-                    sprintf(
-                        'Součet rozpisu plateb (%s Kč) nesedí na celkovou částku dokladu (%s Kč).',
-                        number_format($scheduleTotal, 2, ',', ' '),
-                        number_format($invoiceTotal, 2, ',', ' '),
-                    ),
-                    422,
-                );
-            }
+        if (($invoice['invoice_type'] ?? '') === InvoiceCalendar::LEGACY) {
+            return Json::error(
+                $response,
+                'calendar_type_required',
+                'Vyberte typ dokladu: splátkový kalendář (§ 31 ZDPH, nájem), nebo platební kalendář (§ 31a ZDPH, zálohy).',
+                422,
+            );
+        }
+        if (InvoiceCalendar::isCalendar($invoice['invoice_type'] ?? null)
+            && ($rejected = $this->calendarInstalments->issueRejection($invoice)) !== null) {
+            return Json::error($response, $rejected['code'], $rejected['message'], 422);
         }
 
         // Koncový zákazník bez údajů smí být odběratelem jen zjednodušeného dokladu (§ 30).
@@ -389,6 +379,10 @@ final class IssueInvoiceAction
             // Koncept může mít úhrady už před potvrzením. Výstupy obnoví běžná větev po commitu.
             if (!$autoPaid) $this->payments->recompute($id, refreshOutputs: false);
             InvoiceIssuer::record($pdo, $id, isset($user['id']) ? (int) $user['id'] : null);
+            if (InvoiceCalendar::isCalendar($invoice['invoice_type'] ?? null)) {
+                $this->calendarInstalments->createInstalments($invoice, (string) $varsymbol);
+                $calendarInstalmentIds = array_column($this->paymentSchedule->forInvoice($supplierId, $id), 'instalment_invoice_id');
+            }
             if ($stockEnabled) $this->stockIssue->issueForInvoice(
                 $supplierId,
                 array_merge($invoice, ['varsymbol' => $varsymbol]),
@@ -451,14 +445,17 @@ final class IssueInvoiceAction
         // vystavení — DocumentAutoPoster ji jen zaloguje (faktura zůstane vystavená
         // nezaúčtovaná, uživatel ji dožene ručně). Storno/proforma DocumentAutoPoster
         // odmítne (document_not_postable) — taky jen warning.
-        $this->autoPoster->maybeAutoPost(
-            $supplierId,
-            'invoice',
-            $id,
-            isset($user['id']) ? (int) $user['id'] : null,
-            $ip,
-            $request->getHeaderLine('User-Agent'),
-        );
+        // Kalendář se neúčtuje, předpis nesou doklady splátek.
+        foreach ($calendarInstalmentIds ?? [$id] as $postedId) {
+            $this->autoPoster->maybeAutoPost(
+                $supplierId,
+                'invoice',
+                (int) $postedId,
+                isset($user['id']) ? (int) $user['id'] : null,
+                $ip,
+                $request->getHeaderLine('User-Agent'),
+            );
+        }
 
         // Prodej majetku (1177): řádky navázané na kartu ji uzavřou — drobný majetek přejde na
         // 'sold', dlouhodobý se vyřadí (541/08x + 08x/02x). Až PO auto-postu, aby v deníku

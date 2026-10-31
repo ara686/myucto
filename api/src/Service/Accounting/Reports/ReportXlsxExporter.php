@@ -369,6 +369,7 @@ final class ReportXlsxExporter
         $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
         $this->entityHeader($sheet, $data);
         $this->dimensionLine($sheet, 'A5', $data);
+        $this->accrualSpreadLine($sheet, 'A5', $data);
 
         $head = 6;
         $headers = ['Označení', 'Položka', 'Brutto', 'Korekce', 'Netto', 'Minulé obd.'];
@@ -582,6 +583,7 @@ final class ReportXlsxExporter
         $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
         $this->entityHeader($sheet, $data);
         $this->dimensionLine($sheet, 'A5', $data);
+        $this->accrualSpreadLine($sheet, 'A5', $data);
 
         $head = 6;
         $headers = ['Označení', 'Položka', 'Běžné obd.', 'Minulé obd.'];
@@ -1588,6 +1590,26 @@ final class ReportXlsxExporter
             return;
         }
         $sheet->setCellValueExplicit($cell, 'Dimenze: ' . $label . ' (jen řádky s touto hodnotou, rozpad poměrem)', DataType::TYPE_STRING);
+        $sheet->getStyle($cell)->getFont()->setBold(true);
+    }
+
+    /**
+     * Poznámka výkazu s průběžným časovým rozlišením mimo deník. Výkaz za hodnotu dimenze
+     * volbu neuplatní, takže řádek dimenze a tahle poznámka se v buňce nepotkají.
+     *
+     * @param array<string,mixed> $data
+     */
+    private function accrualSpreadLine(Worksheet $sheet, string $cell, array $data): void
+    {
+        $spread = $data['accrual_spread'] ?? null;
+        if (!is_array($spread) || empty($spread['applied'])) {
+            return;
+        }
+        $money = static fn (mixed $v): string => number_format((float) $v, 2, ',', ' ') . ' Kč';
+        $sheet->setCellValueExplicit($cell, 'Průběžné časové rozlišení mimo deník: náklady a výnosy dokladů s obdobím od–do'
+            . ' rozložené poměrně podle dnů do rozvahového dne, zbytek jako náklady příštích období ('
+            . $money($spread['prepaid_expense'] ?? 0) . ') a výnosy příštích období (' . $money($spread['deferred_revenue'] ?? 0)
+            . '). Úprava není zaúčtovaná v deníku, nejde o výkaz účetní závěrky.', DataType::TYPE_STRING);
         $sheet->getStyle($cell)->getFont()->setBold(true);
     }
 

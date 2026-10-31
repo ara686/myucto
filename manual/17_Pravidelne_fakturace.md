@@ -406,6 +406,16 @@ Faktura nese datum konce období, i když fyzicky vznikla o den později.
    hned poté **otevře nový koncept na červenec** (datum vystavení i DUZP 31. 7.), takže
    do něj můžete zase celý měsíc psát.
 
+**Zakázka se schvalováním výkazu zákazníkem:** automatické uzavření konceptu
+schválení výkazu nekontroluje. Cron koncept na konci období vystaví (a podle
+nastavení odešle) i tehdy, když zakázka vyžaduje schválení a výkaz schválen nebyl;
+blokaci „Zakázka vyžaduje schválení výkazu zákazníkem“ hlídá jen ruční tlačítko
+**Vystavit** a ruční vystavení tedy bez schválení neprojde. Chcete-li schválení
+zachovat, nepoužívejte u takové zakázky pravidelnou fakturaci s automatickým
+vystavením; zvolte režim **Až při vystavení** bez volby **Po vygenerování rovnou
+vystavit** a výkaz nechte schválit v běžném postupu (viz
+[§ 19.5](19_Zakazky.md#195-krok-za-krokem-schvalovani-vykazu-zakaznikem)).
+
 Pokud koncept během měsíce vystavíte ručně, cron to pozná a v den vystavení už nic
 nevytvoří, jen posune rozvrh na další měsíc.
 

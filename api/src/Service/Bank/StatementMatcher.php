@@ -141,16 +141,39 @@ final class StatementMatcher
      * Vrací null, když měny nejdou spolehlivě porovnat (cizoměnový účet × jiná měna faktury
      * — bez kurzu transakce neumíme převést; raději nepárovat než špatně).
      *
+     * Platba kartou ($card) má širší kurzovou toleranci (přirážka karetního schématu).
+     * Když banka u pohybu uvádí původní částku nákupu v měně dokladu ($original), porovná
+     * se přímo ta: eurový pohyb za dolarovou fakturu pak sedí na cent bez jakéhokoli kurzu.
+     *
+     * @param array{amount: float, currency: string, tx_amount: float}|null $original
      * @return array{expected: float, exact: float, partial: float}|null
      */
-    private function expectedMatch(float $invoiceAmount, string $invoiceCcy, float $rate, ?string $txCurrency, ?float $exactTolerance = null): ?array
-    {
+    private function expectedMatch(
+        float $invoiceAmount,
+        string $invoiceCcy,
+        float $rate,
+        ?string $txCurrency,
+        ?float $exactTolerance = null,
+        bool $card = false,
+        ?array $original = null,
+    ): ?array {
         $exact = $exactTolerance !== null && $exactTolerance >= 0.0
             ? $exactTolerance
             : self::EXACT_MATCH_TOLERANCE;
         // Neznámá měna transakce (legacy výpisy) nebo shodná měna → přímé porovnání.
         if ($txCurrency === null || strtoupper($txCurrency) === strtoupper($invoiceCcy)) {
             return ['expected' => $invoiceAmount, 'exact' => $exact, 'partial' => max($exact, self::PARTIAL_MATCH_TOLERANCE)];
+        }
+        if ($original !== null
+            && strtoupper($original['currency']) === strtoupper($invoiceCcy)
+            && $original['amount'] > 0.0
+            && $original['tx_amount'] > 0.0) {
+            // Pohyb v měně účtu odpovídá původní částce nákupu; doklad se porovná v ní a
+            // výsledek se vrátí v měně pohybu, aby ho volající srovnal se svou částkou.
+            // Jiná původní částka než zbytek dokladu = jiný nákup, nebo částečná úhrada.
+            return abs($invoiceAmount - $original['amount']) <= $exact
+                ? ['expected' => $original['tx_amount'], 'exact' => $exact, 'partial' => $exact]
+                : null;
         }
         // Tuzemská platba cizoměnové faktury → přepočet kurzem faktury (CZK = částka × kurz).
         // Relativní tolerance kvůli kurzovému driftu; partial tier zde nemá smysl (= exact).
@@ -159,7 +182,7 @@ final class StatementMatcher
             // Bankovní pohyb je na haléře; nezaokrouhlený mezivýsledek nesmí
             // na hraně tolerance rozhodnout jinak než skutečná peněžní částka.
             $czk = FxPaymentSettlement::expectedLocalAmount($invoiceAmount, $r);
-            $tol = FxPaymentSettlement::matchTolerance($czk, $exact);
+            $tol = FxPaymentSettlement::matchTolerance($czk, $exact, $card);
             return ['expected' => $czk, 'exact' => $tol, 'partial' => $tol];
         }
         // Cizoměnový účet × jiná měna faktury (např. EUR výpis × CZK/USD faktura) — skip.
@@ -269,6 +292,12 @@ final class StatementMatcher
         }
         if ($exact === [] && count($partial) === 1) {
             return $partial;
+        }
+        // Stejně vysoké splátky téhož kalendáře: trvalý příkaz hradí nejstarší nezaplacenou.
+        $calendars = array_unique(array_map(static fn (array $m): int => (int) ($m['calendar_id'] ?? 0), $exact));
+        if (count($exact) > 1 && count($calendars) === 1 && $calendars[array_key_first($calendars)] > 0) {
+            usort($exact, static fn (array $a, array $b): int => [$a['due_date'], $a['id']] <=> [$b['due_date'], $b['id']]);
+            return [$exact[0]];
         }
         return $matches;
     }
@@ -684,6 +713,7 @@ final class StatementMatcher
             $cardLast4 = isset($row['card_last4']) && \MyInvoice\Service\Bank\Card\CardNumberMask::isValidLast4((string) $row['card_last4'])
                 ? (string) $row['card_last4']
                 : null;
+            $original = self::originalAmount($row);
             if ($cardLast4 !== null) {
                 $card = $this->matchPurchaseByCard(
                     $pdo,
@@ -694,6 +724,8 @@ final class StatementMatcher
                     $transactionId,
                     $txCurrency,
                     \MyInvoice\Service\Bank\Card\CardPaymentCandidates::merchantNames($row['counterparty_name'] ?? null, $row['description'] ?? null),
+                    $original,
+                    \MyInvoice\Service\Bank\Card\CardMerchantMap::key($row['counterparty_name'] ?? null, $row['description'] ?? null),
                 );
                 if (($card['status'] ?? 'unmatched') !== 'unmatched' || !empty($card['requires_review'])) {
                     return $card;
@@ -701,7 +733,7 @@ final class StatementMatcher
             }
             // 3) karetní platby (bez VS) / VS bez shody → fuzzy dle částky + podobného
             //    názvu protistrany (u karet je název obchodníka odlišný od jména dodavatele).
-            $res = $this->matchPurchaseFuzzy($pdo, $supplierId, abs($amount), (string) ($row['counterparty_name'] ?? ''), (string) $row['posted_at'], $transactionId, $txCurrency, $cardLast4, $row['description'] ?? null);
+            $res = $this->matchPurchaseFuzzy($pdo, $supplierId, abs($amount), (string) ($row['counterparty_name'] ?? ''), (string) $row['posted_at'], $transactionId, $txCurrency, $cardLast4, $row['description'] ?? null, $original);
             $fuzzyReview = !empty($res['requires_review']) ? $res : null;
             if (($res['status'] ?? 'unmatched') !== 'unmatched'
                 || ($fuzzyReview !== null && (!$allowAmountDateFallback || !empty($vs)))) {
@@ -770,7 +802,7 @@ final class StatementMatcher
         $vsKey = VariableSymbolNormalizer::matchKey((string) $vs);
         $paymentVsMatch = $this->vsKeyMatches('invoices', 'i', 'payment_variable_symbol');
         [$candidateSql, $candidateParams] = $this->vsCandidates('invoices', 'i', (string) $vs, $supplierId, ['varsymbol'], ['varsymbol', 'payment_variable_symbol']);
-        $sql = "SELECT i.id, i.varsymbol, i.amount_to_pay, i.paid_total, i.exchange_rate, i.status, i.invoice_type, i.parent_invoice_id, cur.code AS currency,
+        $sql = "SELECT i.id, i.varsymbol, i.amount_to_pay, i.paid_total, i.exchange_rate, i.status, i.invoice_type, i.parent_invoice_id, i.calendar_id, i.due_date, cur.code AS currency,
                        CASE WHEN i.varsymbol = ? OR i.payment_variable_symbol = ? THEN 2 ELSE 1 END AS vs_match_rank,
                        {$paymentVsMatch} AS payment_vs_match
                   FROM invoices i
@@ -1363,7 +1395,8 @@ final class StatementMatcher
      * právě jeden takový — jinak je shoda nejednoznačná a necháme unmatched (radši ručně
      * než špatně). Confidence 60 + auto_partial = příznak ke kontrole.
      */
-    private function matchPurchaseFuzzy(\PDO $pdo, int $supplierId, float $absAmount, string $cpName, string $postedAt, int $transactionId, ?string $txCurrency, ?string $cardLast4 = null, ?string $description = null): array
+    /** @param array{amount: float, currency: string, tx_amount: float}|null $original */
+    private function matchPurchaseFuzzy(\PDO $pdo, int $supplierId, float $absAmount, string $cpName, string $postedAt, int $transactionId, ?string $txCurrency, ?string $cardLast4 = null, ?string $description = null, ?array $original = null): array
     {
         $names = $cardLast4 !== null
             ? \MyInvoice\Service\Bank\Card\CardPaymentCandidates::merchantNames($cpName, $description)
@@ -1392,7 +1425,7 @@ final class StatementMatcher
             if (\MyInvoice\Service\Bank\Card\CardPaymentCandidates::isOtherCard($cardLast4, $r['card_last4'] ?? null)) {
                 continue; // doklad jiné karty — koncovka přebíjí podobnost názvu
             }
-            $m = $this->expectedMatch($remaining, (string) ($r['currency'] ?? self::LOCAL_CURRENCY), (float) ($r['exchange_rate'] ?: 0), $txCurrency);
+            $m = $this->expectedMatch($remaining, (string) ($r['currency'] ?? self::LOCAL_CURRENCY), (float) ($r['exchange_rate'] ?: 0), $txCurrency, null, $cardLast4 !== null, $original);
             if ($m === null || abs($absAmount - $m['expected']) > $m['exact']) {
                 continue; // částka (po přepočtu) musí sedět
             }
@@ -1497,8 +1530,11 @@ final class StatementMatcher
      * pouze tehdy, když si ho nemůže nárokovat pohyb jiné karty se stejnou částkou.
      * Doklad s jinou koncovkou kandidátem není nikdy (viz CardPaymentCandidates).
      */
-    /** @param list<string> $merchantNames */
-    private function matchPurchaseByCard(\PDO $pdo, int $supplierId, string $last4, float $absAmount, string $postedAt, int $transactionId, ?string $txCurrency, array $merchantNames = []): array
+    /**
+     * @param list<string> $merchantNames
+     * @param array{amount: float, currency: string, tx_amount: float}|null $original
+     */
+    private function matchPurchaseByCard(\PDO $pdo, int $supplierId, string $last4, float $absAmount, string $postedAt, int $transactionId, ?string $txCurrency, array $merchantNames = [], ?array $original = null, ?string $merchantKey = null): array
     {
         $cards = $this->cardCandidates();
         $strong = [];
@@ -1508,10 +1544,12 @@ final class StatementMatcher
             if ($remaining <= 0.005) {
                 continue;
             }
-            $m = $this->expectedMatch($remaining, (string) ($r['currency'] ?? self::LOCAL_CURRENCY), (float) ($r['exchange_rate'] ?: 0), $txCurrency);
+            $m = $this->expectedMatch($remaining, (string) ($r['currency'] ?? self::LOCAL_CURRENCY), (float) ($r['exchange_rate'] ?: 0), $txCurrency, null, true, $original);
             if ($m === null || abs($absAmount - $m['expected']) > $m['exact']) {
                 continue;
             }
+            $r['exact_amount'] = abs($absAmount - $m['expected']) < 0.005
+                && ($txCurrency === null || strtoupper($txCurrency) === strtoupper((string) ($r['currency'] ?? self::LOCAL_CURRENCY)));
             if ($this->isAdvancePaymentForFinal($supplierId, (int) $r['id'], $absAmount)) {
                 continue;
             }
@@ -1537,30 +1575,17 @@ final class StatementMatcher
                     'card_last4' => $last4,
                 ];
             }
-            $this->begin($pdo);
-            try {
-                if (!$this->claimTransaction($pdo, $transactionId, ['unmatched'])) {
-                    $this->rollBack($pdo);
-                    return ['status' => 'unmatched', 'reason' => 'transaction_not_free'];
-                }
-                $pdo->prepare("UPDATE purchase_invoices SET status = 'paid', paid_at = ? WHERE id = ? AND supplier_id = ?")
-                    ->execute([$postedAt, $pi['id'], $supplierId]);
-                PurchasePaymentMatchWriter::record($pdo, $supplierId, $transactionId, (int) $pi['id'], $absAmount, 'auto', 90);
-                $pdo->prepare(
-                    "UPDATE bank_transactions SET match_status = 'auto_exact', matched_at = NOW()
-                      WHERE id = ? AND match_status = 'unmatched'"
-                )->execute([$transactionId]);
-                $this->commit($pdo);
-            } catch (\Throwable $e) {
-                $this->rollBackIfOpen($pdo, $e);
-                throw $e;
-            }
-            $this->logPaymentMatch('purchase_invoice', (int) $pi['id'], $supplierId, 'auto_exact', $absAmount, '', $transactionId);
-            return ['status' => 'auto_exact', 'purchase_invoice_id' => (int) $pi['id'], 'card_last4' => $last4];
+            return $this->pairCardDocument($pdo, $supplierId, $transactionId, $pi, $absAmount, $postedAt, $last4, 90);
         }
         if (count($weak) === 1
             && $cards->competingTransactions($supplierId, $transactionId, $last4, $absAmount, $postedAt, false) === 0
             && $cards->competingTransactions($supplierId, $transactionId, $last4, $absAmount, $postedAt, true) === 0) {
+            // Doklad placený kartou bez koncovky, částka sedí na haléř ve stejné měně a o tutéž
+            // částku nesoupeří žádný jiný volný pohyb kartou: není co hádat, páruje se.
+            // Doklad si zároveň zapamatuje koncovku, příště jde silnou větví.
+            if ($weak[0]['exact_amount']) {
+                return $this->pairCardDocument($pdo, $supplierId, $transactionId, $weak[0], $absAmount, $postedAt, $last4, 70, true);
+            }
             return [
                 'status' => 'unmatched',
                 'reason' => 'card_match_requires_review',
@@ -1570,7 +1595,7 @@ final class StatementMatcher
             ];
         }
         if ($weak === []) {
-            $named = $this->matchPurchaseByCardMerchant($pdo, $supplierId, $last4, $absAmount, $postedAt, $transactionId, $txCurrency, $merchantNames);
+            $named = $this->matchPurchaseByCardMerchant($pdo, $supplierId, $last4, $absAmount, $postedAt, $transactionId, $txCurrency, $merchantNames, $original, $merchantKey);
             if ($named !== null) {
                 return $named;
             }
@@ -1587,26 +1612,35 @@ final class StatementMatcher
      * a takový doklad je jediný. Stejnou částku si navíc nesmí nárokovat žádný jiný volný
      * pohyb kartou (téže ani jiné karty), jinak by shoda podle jména párovala křížem.
      *
+     * Obchodník se s dodavatelem shoduje buď významným slovem názvu, nebo naučenou
+     * vazbou z dřívějšího ručního spárování ({@see \MyInvoice\Service\Bank\Card\CardMerchantMap}).
+     * Cizoměnový doklad placený z korunového účtu se porovnává v karetní kurzové toleranci,
+     * z účtu v jiné cizí měně jen přes původní částku nákupu uvedenou bankou.
+     *
      * @param list<string> $merchantNames
+     * @param array{amount: float, currency: string, tx_amount: float}|null $original
      * @return array<string,mixed>|null null = žádný jednoznačný doklad
      */
-    private function matchPurchaseByCardMerchant(\PDO $pdo, int $supplierId, string $last4, float $absAmount, string $postedAt, int $transactionId, ?string $txCurrency, array $merchantNames): ?array
+    private function matchPurchaseByCardMerchant(\PDO $pdo, int $supplierId, string $last4, float $absAmount, string $postedAt, int $transactionId, ?string $txCurrency, array $merchantNames, ?array $original = null, ?string $merchantKey = null): ?array
     {
         if ($merchantNames === []) {
             return null;
         }
         $cards = $this->cardCandidates();
+        $learned = $merchantKey !== null
+            ? (new \MyInvoice\Service\Bank\Card\CardMerchantMap($this->db))->clientsFor($supplierId, $merchantKey)
+            : [];
         $named = [];
         foreach ($cards->merchantDocuments($supplierId, $postedAt) as $r) {
             $remaining = round((float) $r['amount_to_pay'] - (float) ($r['settled_amount'] ?? 0.0), 2);
             if ($remaining <= 0.005) {
                 continue;
             }
-            $m = $this->expectedMatch($remaining, (string) ($r['currency'] ?? self::LOCAL_CURRENCY), (float) ($r['exchange_rate'] ?: 0), $txCurrency);
+            $m = $this->expectedMatch($remaining, (string) ($r['currency'] ?? self::LOCAL_CURRENCY), (float) ($r['exchange_rate'] ?: 0), $txCurrency, null, true, $original);
             if ($m === null || abs($absAmount - $m['expected']) > $m['exact']) {
                 continue;
             }
-            $similar = false;
+            $similar = in_array((int) $r['vendor_id'], $learned, true);
             foreach ($merchantNames as $name) {
                 $similar = $similar || $this->nameSimilarity($name, (string) $r['vendor_name']) > 0.0;
             }
@@ -1620,7 +1654,18 @@ final class StatementMatcher
             || $cards->competingTransactions($supplierId, $transactionId, $last4, $absAmount, $postedAt, false) > 0) {
             return null;
         }
-        $pi = $named[0];
+        return $this->pairCardDocument($pdo, $supplierId, $transactionId, $named[0], $absAmount, $postedAt, $last4, 80);
+    }
+
+    /**
+     * Zapíše automatické spárování pohybu kartou s dokladem (úhrada, payment_matches, stav
+     * pohybu) v jedné transakci. $learnCard doplní koncovku na doklad, který ji neměl.
+     *
+     * @param array<string,mixed> $pi
+     * @return array<string,mixed>
+     */
+    private function pairCardDocument(\PDO $pdo, int $supplierId, int $transactionId, array $pi, float $absAmount, string $postedAt, string $last4, int $confidence, bool $learnCard = false): array
+    {
         $this->begin($pdo);
         try {
             if (!$this->claimTransaction($pdo, $transactionId, ['unmatched'])) {
@@ -1629,7 +1674,11 @@ final class StatementMatcher
             }
             $pdo->prepare("UPDATE purchase_invoices SET status = 'paid', paid_at = ? WHERE id = ? AND supplier_id = ?")
                 ->execute([$postedAt, $pi['id'], $supplierId]);
-            PurchasePaymentMatchWriter::record($pdo, $supplierId, $transactionId, (int) $pi['id'], $absAmount, 'auto', 80);
+            if ($learnCard) {
+                $pdo->prepare('UPDATE purchase_invoices SET card_last4 = ? WHERE id = ? AND supplier_id = ? AND card_last4 IS NULL')
+                    ->execute([$last4, $pi['id'], $supplierId]);
+            }
+            PurchasePaymentMatchWriter::record($pdo, $supplierId, $transactionId, (int) $pi['id'], $absAmount, 'auto', $confidence);
             $pdo->prepare(
                 "UPDATE bank_transactions SET match_status = 'auto_exact', matched_at = NOW()
                   WHERE id = ? AND match_status = 'unmatched'"
@@ -1641,6 +1690,22 @@ final class StatementMatcher
         }
         $this->logPaymentMatch('purchase_invoice', (int) $pi['id'], $supplierId, 'auto_exact', $absAmount, '', $transactionId);
         return ['status' => 'auto_exact', 'purchase_invoice_id' => (int) $pi['id'], 'card_last4' => $last4];
+    }
+
+    /**
+     * Původní částka nákupu kartou v jiné měně, než je měna pohybu ({@see expectedMatch()}).
+     *
+     * @param array<string,mixed> $row
+     * @return array{amount: float, currency: string, tx_amount: float}|null
+     */
+    private static function originalAmount(array $row): ?array
+    {
+        $currency = strtoupper(trim((string) ($row['original_currency'] ?? '')));
+        $amount = abs((float) ($row['original_amount'] ?? 0));
+        if (preg_match('/^[A-Z]{3}$/D', $currency) !== 1 || $amount < 0.005) {
+            return null;
+        }
+        return ['amount' => round($amount, 2), 'currency' => $currency, 'tx_amount' => round(abs((float) ($row['amount'] ?? 0)), 2)];
     }
 
     /**
@@ -2040,7 +2105,9 @@ final class StatementMatcher
 
     /**
      * Podobnost dvou názvů firem (0..1) — Jaccard překryv normalizovaných tokenů.
-     * Sdílený významný token (např. značka) → > 0.
+     * Sdílený významný token (např. značka) → > 0. Obchodník na kartě často píše značku
+     * dohromady („ELEVENLABS.IO" proti „Eleven Labs Inc."), proto se shodou počítá i token
+     * jednoho názvu rovný několika po sobě jdoucím tokenům druhého.
      */
     private function nameSimilarity(string $a, string $b): float
     {
@@ -2049,7 +2116,32 @@ final class StatementMatcher
         if (!$ta || !$tb) return 0.0;
         $inter = array_intersect($ta, $tb);
         $union = array_unique(array_merge($ta, $tb));
+        if ($inter === [] && ($this->joinedTokenMatch($ta, $tb) || $this->joinedTokenMatch($tb, $ta))) {
+            return 0.5;
+        }
         return count($union) > 0 ? count($inter) / count($union) : 0.0;
+    }
+
+    /**
+     * Je některý token z $single (aspoň 6 znaků) roven spojení dvou a více po sobě jdoucích
+     * tokenů z $split?
+     *
+     * @param list<string> $single
+     * @param list<string> $split
+     */
+    private function joinedTokenMatch(array $single, array $split): bool
+    {
+        $count = count($split);
+        for ($i = 0; $i < $count - 1; $i++) {
+            $joined = $split[$i];
+            for ($j = $i + 1; $j < $count; $j++) {
+                $joined .= $split[$j];
+                if (strlen($joined) >= 6 && in_array($joined, $single, true)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**
@@ -2065,7 +2157,7 @@ final class StatementMatcher
         $s = preg_replace('/[^A-Z0-9]+/', ' ', $s) ?? '';
         $stop = ['SRO', 'AS', 'INC', 'LTD', 'LLC', 'GMBH', 'VOS', 'SPOL', 'THE', 'AND',
                  'CZ', 'CZE', 'SK', 'SVK', 'DE', 'DEU', 'NL', 'NLD', 'USA', 'GBR', 'AT', 'AUT',
-                 'PRAHA', 'PRAGUE', 'BRNO', 'PLZEN', 'OSTRAVA'];
+                 'PRAHA', 'PRAGUE', 'BRNO', 'PLZEN', 'OSTRAVA', 'WWW', 'COM', 'NET', 'ORG'];
         $tokens = [];
         foreach (preg_split('/\s+/', trim($s)) as $tok) {
             if (strlen($tok) < 3 || in_array($tok, $stop, true)) continue;

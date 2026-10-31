@@ -13,6 +13,7 @@ use MyInvoice\Security\RequestAuthorization;
 use MyInvoice\Service\ActivityLogger;
 use MyInvoice\Service\IpMatcher;
 use MyInvoice\Service\Payroll\AnnualSettlement\AnnualSettlementAnnualClaims;
+use MyInvoice\Service\Payroll\AnnualSettlement\AnnualSettlementClaimsService;
 use MyInvoice\Service\Payroll\AnnualSettlement\AnnualSettlementFilingObligation;
 use MyInvoice\Service\Payroll\AnnualSettlement\AnnualSettlementPriorEmployers;
 use MyInvoice\Service\Payroll\AnnualSettlement\AnnualSettlementRequest;
@@ -45,6 +46,7 @@ final class PayrollAnnualSettlementAction
         private readonly ActivityLogger $activity,
         private readonly IpMatcher $ipMatcher,
         private readonly PayrollHistoricalPeriodService $historicalPeriods,
+        private readonly AnnualSettlementClaimsService $annualClaims,
     ) {}
 
     /** @param array<string,string> $args */
@@ -148,6 +150,7 @@ final class PayrollAnnualSettlementAction
             'credit_rows' => $preview['credit_rows'],
             'child_rows' => $preview['child_rows'],
             'certificates' => $preview['certificates'],
+            'annual_claims' => $preview['annual_claims'],
             'already_settled' => $preview['already_settled'],
         ]);
     }
@@ -224,6 +227,83 @@ final class PayrollAnnualSettlementAction
             'tax_year' => $year,
             'employee_id' => $employeeId,
             'certificates' => $saved,
+        ]);
+    }
+
+    /**
+     * Zápis ročně uplatňovaných položek (§ 38h odst. 6) — celá sada za rok.
+     *
+     * Pod `payroll.approve` ze stejného důvodu jako potvrzení: částky jdou přímo
+     * do základu daně, ze kterého vychází přeplatek.
+     *
+     * @param array<string,string> $args
+     */
+    public function saveAnnualClaims(
+        Request $request,
+        Response $response,
+        array $args,
+    ): Response {
+        if (!RequestAuthorization::isSessionAuth($request)) {
+            return Json::sessionRequired($response, 'Tento endpoint je dostupný pouze z přihlášené webové session.');
+        }
+        if (!$this->approvalGuard($request, $response, AccessLevel::WRITE, $error)) {
+            return $error;
+        }
+        $year = self::year($args);
+        $employeeId = (int) ($args['employeeId'] ?? 0);
+        $userId = $this->userId($request);
+        if ($year === null || $employeeId <= 0 || $userId === null) {
+            return self::invalid($response);
+        }
+        $body = $request->getParsedBody();
+        $body = is_array($body) ? $body : [];
+        $deductions = $body['deductions'] ?? [];
+        $spouse = $body['spouse'] ?? null;
+        $preschool = $body['preschool'] ?? [];
+        if (!is_array($deductions)
+            || ($spouse !== null && !is_array($spouse))
+            || !is_array($preschool)
+        ) {
+            return self::invalid($response);
+        }
+        $supplierId = $this->currentSupplierId($request);
+
+        try {
+            $saved = $this->annualClaims->save(
+                $supplierId,
+                $employeeId,
+                $year,
+                array_values($deductions),
+                $spouse,
+                $userId,
+                array_values($preschool),
+            );
+        } catch (\DomainException|\InvalidArgumentException $exception) {
+            return Json::error($response, 'validation_failed', $exception->getMessage(), 422);
+        }
+
+        $this->activity->log(
+            'payroll.annual_settlement_claims_saved',
+            $userId,
+            'payroll_employee',
+            $employeeId,
+            [
+                'tax_year' => $year,
+                'deductions' => count($saved['deductions']),
+                'spouse' => $saved['spouse'] !== null,
+                'preschool' => count($saved['preschool']),
+            ],
+            $this->ipMatcher->clientIpFromRequest(self::serverParams($request)),
+            $request->getHeaderLine('User-Agent'),
+            $supplierId,
+        );
+
+        return Json::ok($response, [
+            'tax_year' => $year,
+            'employee_id' => $employeeId,
+            'deductions' => $saved['deductions'],
+            'spouse' => $saved['spouse'],
+            'preschool' => $saved['preschool'],
         ]);
     }
 

@@ -15,6 +15,8 @@ use MyInvoice\Repository\ChartOfAccountsRepository;
 use MyInvoice\Repository\SupplierBankAccountRepository;
 use MyInvoice\Repository\BankStatementOwnershipResolver;
 use MyInvoice\Service\ActivityLogger;
+use MyInvoice\Service\Accounting\OtherItemException;
+use MyInvoice\Service\Accounting\OtherItemService;
 use MyInvoice\Service\Migration\OssMigrationPolicy;
 use MyInvoice\Service\Migration\MoneyS3\AccountingUnitSwitch;
 use MyInvoice\Service\Migration\MoneyS3\ImportProtocol;
@@ -41,8 +43,16 @@ final class AbraAccountingImporter
 {
     private const CANCELLED = '__ABRA_IMPORT_CANCELLED__';
     private const PLAN_CHUNK = 500;
+    /** Cíle, které nemají vazbu zápisu na doklad: ostatní položka si zápis převezme sama. */
+    private const NOT_LINKED_TARGETS = ['other_item', 'other_item_pending', 'not_transferred'];
+    /** Zdrojový doklad zůstal jen v deníku, jeho úhrada se nepáruje. */
+    private const NOT_TRANSFERRED_TARGETS = ['not_transferred', 'other_item_pending'];
     private array $vatRateCache = [];
     private array $historicalVatRateCache = [];
+    /** @var list<array<string,mixed>> ostatní položky čekající na převzatý deník */
+    private array $pendingOtherItems = [];
+    /** @var array<int,float> ostatní položka => uhrazeno podle zdroje */
+    private array $otherItemSourcePaid = [];
 
     public function __construct(
         private readonly Connection $db,
@@ -52,6 +62,7 @@ final class AbraAccountingImporter
         private readonly AbraVatProjectionApplier $vatProjectionApplier,
         private readonly ActivityLogger $logger,
         private readonly AccountingUnitSwitch $accountingUnit,
+        private readonly OtherItemService $otherItems,
     ) {}
 
     /**
@@ -67,7 +78,6 @@ final class AbraAccountingImporter
         $sync = (string) ($meta['mode'] ?? '') === 'sync' || ($meta['delta'] ?? false) === true;
         $unavailable = is_array($meta['unavailable'] ?? null)
             ? array_values(array_filter(array_map('strval', $meta['unavailable']))) : [];
-        $sourceIco = $this->ico($company['ico'] ?? '');
 
         $supplier = $this->db->pdo()->prepare('SELECT s.ic, s.accounting_mode, c.code AS default_currency
             FROM supplier s JOIN currencies c ON c.id = s.default_currency_id AND c.supplier_id = s.id WHERE s.id = ?');
@@ -76,8 +86,7 @@ final class AbraAccountingImporter
         if ($target === false) {
             $blockers[] = 'target_supplier_missing';
         } else {
-            $targetIco = $this->ico($target['ic'] ?? '');
-            if ($sourceIco === '' || $targetIco === '' || !hash_equals($targetIco, $sourceIco)) {
+            if (!AbraSource::sameIco($company['ico'] ?? '', $target['ic'] ?? '')) {
                 $blockers[] = 'source_target_ico_mismatch';
             }
             if ((string) ($target['accounting_mode'] ?? '') !== 'double_entry') {
@@ -279,10 +288,10 @@ final class AbraAccountingImporter
             $accountIds = $this->writeChart($supplierId, $chartRows, $report, $progress, $cancelled);
 
             $linked = AbraSnapshotBuilder::linkedInvoiceKeys($snapshot);
-            $documentTotal = count(AbraSource::rows($snapshot, 'faktura-vydana'))
-                + count(AbraSource::rows($snapshot, 'faktura-prijata'))
-                + count(AbraSource::rows($snapshot, 'prodejka'))
-                + count(AbraSource::rows($snapshot, 'zavazek'));
+            $documentTotal = array_sum(array_map(static fn (string $evidence): int
+                => count(AbraSource::rows($snapshot, $evidence)), AbraSource::DOCUMENT_EVIDENCES));
+            $this->pendingOtherItems = [];
+            $this->otherItemSourcePaid = [];
             $documentDone = 0;
             $documentTargets = [];
             $settlementFloors = [];
@@ -292,7 +301,7 @@ final class AbraAccountingImporter
             $vatProjection = is_array($snapshot['_meta']['vat_projection'] ?? null)
                 ? $snapshot['_meta']['vat_projection'] : [];
             $progress('documents', 0, $documentTotal);
-            foreach (['faktura-vydana', 'faktura-prijata', 'prodejka', 'zavazek'] as $evidence) {
+            foreach (AbraSource::DOCUMENT_EVIDENCES as $evidence) {
                 foreach (array_chunk(AbraSource::rows($snapshot, $evidence), self::PLAN_CHUNK) as $chunk) {
                     $plans = $this->documentPlans([$evidence => $chunk], $years, $preflight['periods'], $report, $linked);
                     $base = $documentDone;
@@ -302,6 +311,10 @@ final class AbraAccountingImporter
                         $chunkProgress, $cancelled, $vatProjection);
                     foreach ($plans as $plan) {
                         $target = $documentTargets[$plan['evidence'] . '|' . $plan['source_key']] ?? null;
+                        // Ostatní pohledávky a závazky stav úhrad nesou alokacemi, ne fakturou.
+                        if ($target !== null && !in_array($target['type'], ['invoice', 'purchase_invoice'], true)) {
+                            continue;
+                        }
                         if ($target !== null && !$plan['source_cancelled'] && $plan['paid_total'] > 0.005) {
                             $settlementFloors[$target['type'] . '|' . $target['id']] = [
                                 'amount' => $plan['paid_total'], 'date' => $plan['paid_at'],
@@ -366,12 +379,14 @@ final class AbraAccountingImporter
                 (string) ($snapshot['_meta']['mode'] ?? 'initial') === 'sync');
             $this->writeJournalDocumentLinks($supplierId, $userId, $journalPlans, $journalTargets,
                 $documentTargets, $movementTargets, $report);
+            $this->writeOtherItems($supplierId, $userId, $journalPlans, $journalTargets, $documentTargets, $report);
 
             $linkRows = AbraSource::rows($snapshot, 'vazba');
             $progress('links', 0, count($linkRows));
             $this->writeLinks($supplierId, $userId, $linkRows, $documentTargets, $movementTargets,
                 $report, $progress, $cancelled);
             $this->restoreSourceSettlements($supplierId, $settlementFloors);
+            $this->restoreOtherItemSettlements($supplierId, $report);
             $this->writeDocumentRelations($supplierId, $userId, $snapshot, $firstYear, $openingDocuments,
                 $purchaseItems, $documentTargets, $settlementFloors, $journalPlans, $journalTargets, $report);
             $this->markUnverifiedBankMovements($supplierId, $report, $cancelled);
@@ -706,7 +721,7 @@ final class AbraAccountingImporter
     {
         $mapper = new AbraDocumentMapper();
         $plans = [];
-        foreach (['faktura-vydana', 'faktura-prijata', 'prodejka', 'zavazek'] as $evidence) {
+        foreach (AbraSource::DOCUMENT_EVIDENCES as $evidence) {
             foreach (AbraSource::rows($snapshot, $evidence) as $row) {
                 $plan = $mapper->map($row, $evidence);
                 $accountingDate = AbraSource::date($row['datUcto'] ?? null) ?? $plan['date'];
@@ -808,6 +823,9 @@ final class AbraAccountingImporter
                 $this->skipped($report, 'documents');
                 continue;
             }
+            if ($this->routeOtherItem($supplierId, $plan, $targets, $report)) {
+                continue;
+            }
             $currencyId = $this->currencyId($supplierId, $plan['currency'], $report);
             if ($currencyId === null) {
                 $this->failed($report, 'documents', ['target_currency_missing:' . $plan['currency']]);
@@ -896,6 +914,150 @@ final class AbraAccountingImporter
             $this->created($report, 'documents');
         }
         return $targets;
+    }
+
+    /**
+     * Ostatní pohledávka či závazek ABRA ({@see AbraOtherItemWriter::route()}). Nový doklad
+     * agendy počká na převzatý deník ({@see self::writeOtherItems()}), předpis mezd a daní
+     * a doklad ke kontrole zůstávají jen v deníku. Závazek s DPH pokračuje jako faktura.
+     *
+     * @param array<string,array{type:string,id:int}> $targets
+     * @return bool doklad je vyřízený, fakturou se nezakládá
+     */
+    private function routeOtherItem(int $supplierId, array $plan, array &$targets, array &$report): bool
+    {
+        $route = AbraOtherItemWriter::route($plan);
+        if ($route === AbraOtherItemWriter::ROUTE_DOCUMENT) {
+            return false;
+        }
+        $target = $plan['evidence'] . '|' . $plan['source_key'];
+        if ($route === AbraOtherItemWriter::ROUTE_OTHER_ITEM) {
+            $mapped = $this->mapped($supplierId, AbraSource::otherItemMapKind($plan['evidence']), $plan['source_key'],
+                $plan['source_hash'], $report);
+            if ($mapped['state'] === 'changed') {
+                return true;
+            }
+            if ($mapped['state'] === 'same') {
+                $targets[$target] = ['type' => (string) $mapped['target_type'], 'id' => (int) $mapped['target_id']];
+                $this->otherItemSourcePaid[(int) $mapped['target_id']] = (float) $plan['paid_total'];
+                $this->skipped($report, 'other_items');
+                return true;
+            }
+            $currencyId = $this->currencyId($supplierId, 'CZK', $report);
+            $partnerId = $currencyId === null ? null : $this->ensurePartner($supplierId, $currencyId, $plan['partner'], $plan['year'], $report);
+            $this->pendingOtherItems[] = $plan + ['partner_id' => $partnerId];
+            $targets[$target] = ['type' => 'other_item_pending', 'id' => 0];
+            return true;
+        }
+        $targets[$target] = ['type' => 'not_transferred', 'id' => 0];
+        if ($route === AbraOtherItemWriter::ROUTE_MODULE) {
+            $this->skipped($report, 'other_items_payroll_or_tax');
+        } else {
+            $report['warnings'][] = 'other_item_requires_review';
+            $this->skipped($report, 'other_items_review');
+        }
+        return true;
+    }
+
+    /**
+     * Založí čekající ostatní položky, když už je převzatý deník: doklad s jedním vlastním
+     * zápisem ho převezme ({@see AbraOtherItemWriter::posting()}), doklad bez rozpoznatelné
+     * kontace zůstane jen v deníku.
+     *
+     * @param array<string,array{type:string,id:int}> $documentTargets
+     */
+    private function writeOtherItems(int $supplierId, int $userId, array $journalPlans, array $journalTargets,
+        array &$documentTargets, array &$report): void
+    {
+        if ($this->pendingOtherItems === []) {
+            return;
+        }
+        $entries = [];
+        foreach ($journalPlans as $plan) {
+            $relation = $plan['document_relation'];
+            if (!is_array($relation) || !isset($journalTargets[$plan['source_key']])) {
+                continue;
+            }
+            $evidence = (string) ($relation['evidence'] ?? '');
+            if ($evidence !== '' && !in_array($evidence, ['zavazek', 'pohledavka'], true)) {
+                continue;
+            }
+            $entry = ['id' => (int) $journalTargets[$plan['source_key']], 'source_type' => (string) $plan['source_type']];
+            foreach ($evidence !== '' ? [$evidence] : ['zavazek', 'pohledavka'] as $candidate) {
+                $entries[$candidate . '|' . $relation['key']][$entry['id']] = $entry;
+            }
+        }
+        $writer = new AbraOtherItemWriter($this->db);
+        foreach ($this->pendingOtherItems as $plan) {
+            $target = $plan['evidence'] . '|' . $plan['source_key'];
+            $posting = $writer->posting($supplierId, $plan, array_values($entries[$target] ?? []));
+            if ($posting === null) {
+                $documentTargets[$target] = ['type' => 'not_transferred', 'id' => 0];
+                $report['warnings'][] = 'other_item_requires_review';
+                $this->skipped($report, 'other_items_review');
+                continue;
+            }
+            $id = $writer->insert($supplierId, $userId > 0 ? $userId : null, $plan, $plan['partner_id'], $posting);
+            $this->imports->remember($supplierId, AbraSource::otherItemMapKind($plan['evidence']), $plan['source_key'],
+                $plan['source_hash'], 'other_item', $id, $plan['year']);
+            $documentTargets[$target] = ['type' => 'other_item', 'id' => $id];
+            $this->otherItemSourcePaid[$id] = (float) $plan['paid_total'];
+            $this->created($report, $posting['status'] === 'posted' ? 'other_items' : 'other_items_unposted');
+        }
+        $this->pendingOtherItems = [];
+    }
+
+    /**
+     * Stav úhrady ostatní položky podle zdroje. Co ABRA vede jako uhrazené a co nepokryla
+     * párovaná úhrada z banky či pokladny (zápočet, interní doklad, platba v nepřeváděném
+     * roce), nese `settled_outside_amount`. Nastavuje se absolutně, opakovaný převod ho
+     * nenásobí; víc alokací než zdroj položku neotevře.
+     */
+    private function restoreOtherItemSettlements(int $supplierId, array &$report): void
+    {
+        $update = $this->db->pdo()->prepare('UPDATE other_items oi
+            SET oi.settled_outside_amount = GREATEST(0, LEAST(oi.amount, ?) - COALESCE((SELECT SUM(a.amount)
+                FROM other_item_allocations a WHERE a.supplier_id = oi.supplier_id AND a.other_item_id = oi.id
+                    AND a.reversed_on IS NULL), 0))
+            WHERE oi.supplier_id = ? AND oi.id = ?');
+        foreach ($this->otherItemSourcePaid as $id => $paid) {
+            $update->execute([number_format(round($paid, 2), 2, '.', ''), $supplierId, $id]);
+            if ($update->rowCount() > 0) {
+                $report['counts']['other_items_settled_outside'] = ($report['counts']['other_items_settled_outside'] ?? 0) + 1;
+            }
+        }
+        $this->otherItemSourcePaid = [];
+    }
+
+    /**
+     * Úhrada ostatní položky přes {@see OtherItemService::allocate()}, který ověří volnou
+     * částku, směr a zaúčtování platby na saldokontní účet položky. Zápis platby převzala
+     * banka či pokladna z deníku ABRA, nic se neúčtuje.
+     */
+    private function allocateOtherItem(int $supplierId, int $userId, array $plan, int $itemId, string $movementKind,
+        int $movementId, array &$report): void
+    {
+        $pdo = $this->db->pdo();
+        $pdo->exec('SAVEPOINT abra_other_item_payment');
+        try {
+            $this->otherItems->allocate($supplierId, $itemId, [
+                ($movementKind === 'bank' ? 'bank_transaction_id' : 'cash_document_id') => $movementId,
+                'amount' => round($plan['amount'], 2),
+            ], $userId > 0 ? $userId : null);
+            $pdo->exec('RELEASE SAVEPOINT abra_other_item_payment');
+        } catch (OtherItemException) {
+            $pdo->exec('ROLLBACK TO SAVEPOINT abra_other_item_payment');
+            $pdo->exec('RELEASE SAVEPOINT abra_other_item_payment');
+            $report['warnings'][] = 'other_item_payment_requires_review';
+            $this->skipped($report, 'payment_links');
+            return;
+        }
+        $column = $movementKind === 'bank' ? 'bank_transaction_id' : 'cash_document_id';
+        $allocation = $pdo->prepare("SELECT id FROM other_item_allocations WHERE supplier_id = ? AND other_item_id = ? AND {$column} = ?");
+        $allocation->execute([$supplierId, $itemId, $movementId]);
+        $this->imports->remember($supplierId, 'vazba', $plan['source_key'], $plan['source_hash'],
+            'other_item_allocation', (int) $allocation->fetchColumn(), null);
+        $this->created($report, 'other_item_payments');
     }
 
     private function applyVatProjection(int $supplierId, int $userId, array $plan, int $targetId,
@@ -1008,6 +1170,12 @@ final class AbraAccountingImporter
             if ($mapped['state'] === 'same') {
                 $targets[$plan['evidence'] . '|' . $plan['source_key']] = ['type' => (string) $mapped['target_type'], 'id' => (int) $mapped['target_id']];
                 $this->skipped($report, 'movements');
+                continue;
+            }
+            if ($plan['loan_account'] ?? false) {
+                // Úvěrový účet: pohyb mění jistinu úvěru, ne peníze firmy. Zůstává v deníku.
+                $targets[$plan['evidence'] . '|' . $plan['source_key']] = ['type' => 'not_transferred', 'id' => 0];
+                $this->skipped($report, 'loan_account_movements');
                 continue;
             }
             if ($plan['kind'] === 'bank') {
@@ -1573,7 +1741,7 @@ final class AbraAccountingImporter
                 continue;
             }
             $ends = [$plan['a']['evidence'], $plan['b']['evidence']];
-            $invoiceEnd = array_intersect($ends, ['faktura-vydana', 'faktura-prijata', 'prodejka', 'zavazek']) !== [];
+            $invoiceEnd = array_intersect($ends, AbraSource::DOCUMENT_EVIDENCES) !== [];
             $paymentEnd = array_intersect($ends, ['banka', 'pokladni-pohyb']) !== [];
             if (!$invoiceEnd || !$paymentEnd) {
                 $report['warnings'][] = 'unsupported_document_link:' . ($plan['link_type'] ?: 'unknown');
@@ -1590,13 +1758,23 @@ final class AbraAccountingImporter
             }
             $a = $this->resolveRelation($supplierId, $plan['a'], $documents, $movements);
             $b = $this->resolveRelation($supplierId, $plan['b'], $documents, $movements);
+            if (in_array($a['type'] ?? '', self::NOT_TRANSFERRED_TARGETS, true)
+                || in_array($b['type'] ?? '', self::NOT_TRANSFERRED_TARGETS, true)) {
+                // Úhrada předpisu, který zůstal jen v deníku (mzdy, DPH, úvěrový účet).
+                $this->skipped($report, 'payment_links_not_transferred');
+                continue;
+            }
             [$document, $movement] = $this->documentAndMovement($a, $b);
             if ($document === null || $movement === null) {
                 $referencesMovement = in_array($plan['a']['evidence'], ['banka', 'pokladni-pohyb'], true)
                     || in_array($plan['b']['evidence'], ['banka', 'pokladni-pohyb'], true)
                     || ($a !== null && in_array($a['type'], ['bank_transaction', 'cash_document'], true))
                     || ($b !== null && in_array($b['type'], ['bank_transaction', 'cash_document'], true));
-                if ($referencesMovement) {
+                // Pohledávku převod dřív nenačítal a úhrady k ní jen přeskakoval; chybějící
+                // pohledávka (mimo vybrané roky, starší snímek) proto převod nezastaví.
+                $missingReceivable = ($a === null && $plan['a']['evidence'] === 'pohledavka')
+                    || ($b === null && $plan['b']['evidence'] === 'pohledavka');
+                if ($referencesMovement && !$missingReceivable) {
                     $this->failed($report, 'payment_links', ['payment_link_target_missing']);
                 } else {
                     $report['warnings'][] = 'unsupported_document_link:' . ($plan['link_type'] ?: 'unknown');
@@ -1604,8 +1782,12 @@ final class AbraAccountingImporter
                 }
                 continue;
             }
-            $docKind = $document['type'] === 'invoice' ? 'issued' : 'purchase';
             $movementKind = $movement['type'] === 'bank_transaction' ? 'bank' : 'cash';
+            if ($document['type'] === 'other_item') {
+                $this->allocateOtherItem($supplierId, $userId, $plan, $document['id'], $movementKind, $movement['id'], $report);
+                continue;
+            }
+            $docKind = $document['type'] === 'invoice' ? 'issued' : 'purchase';
             try {
                 $this->assertPaymentDocumentActive($supplierId, $docKind, $document['id']);
                 if ($movementKind === 'cash') {
@@ -1693,6 +1875,9 @@ final class AbraAccountingImporter
                 continue;
             }
             $target = $this->resolveRelation($supplierId, $relation, $documents, $movements);
+            if (in_array($target['type'] ?? '', self::NOT_LINKED_TARGETS, true)) {
+                continue;
+            }
             $type = match ($target['type'] ?? '') {
                 'invoice' => 'invoice',
                 'purchase_invoice' => 'purchase_invoice',
@@ -2163,10 +2348,13 @@ final class AbraAccountingImporter
             $lookup = $evidence . '|' . $key;
             if (isset($documents[$lookup])) return $documents[$lookup];
             if (isset($movements[$lookup])) return $movements[$lookup];
-            $mapped = $this->imports->lookup($supplierId, $evidence, $key);
+            $mapped = $this->imports->lookup($supplierId, $evidence, $key)
+                ?? (in_array($evidence, ['zavazek', 'pohledavka'], true)
+                    ? $this->imports->lookup($supplierId, AbraSource::otherItemMapKind($evidence), $key) : null);
             return $mapped === null ? null : ['type' => (string) $mapped['target_type'], 'id' => (int) $mapped['target_id']];
         }
-        foreach ([$evidence . '|' . $key, 'faktura-vydana|' . $key, 'faktura-prijata|' . $key, 'prodejka|' . $key, 'zavazek|' . $key] as $lookup) {
+        foreach ([$evidence . '|' . $key, ...array_map(static fn (string $document): string => $document . '|' . $key,
+            AbraSource::DOCUMENT_EVIDENCES)] as $lookup) {
             if (isset($documents[$lookup])) {
                 return $documents[$lookup];
             }
@@ -2176,7 +2364,8 @@ final class AbraAccountingImporter
                 return $movements[$lookup];
             }
         }
-        foreach (array_values(array_unique(array_filter([$evidence, 'faktura-vydana', 'faktura-prijata', 'prodejka', 'zavazek', 'banka', 'pokladni-pohyb']))) as $tryEvidence) {
+        foreach (array_values(array_unique(array_filter([$evidence, ...AbraSource::DOCUMENT_EVIDENCES, 'banka', 'pokladni-pohyb',
+            AbraSource::otherItemMapKind('zavazek'), AbraSource::otherItemMapKind('pohledavka')]))) as $tryEvidence) {
             $mapped = $this->imports->lookup($supplierId, $tryEvidence, $key);
             if ($mapped !== null) {
                 return ['type' => (string) $mapped['target_type'], 'id' => (int) $mapped['target_id']];
@@ -2188,7 +2377,7 @@ final class AbraAccountingImporter
     /** @return array{0:?array,1:?array} */
     private function documentAndMovement(?array $a, ?array $b): array
     {
-        $documents = ['invoice', 'purchase_invoice'];
+        $documents = ['invoice', 'purchase_invoice', 'other_item'];
         $movements = ['bank_transaction', 'cash_document'];
         if ($a !== null && $b !== null && in_array($a['type'], $documents, true) && in_array($b['type'], $movements, true)) {
             return [$a, $b];
@@ -2288,11 +2477,6 @@ final class AbraAccountingImporter
         $out = array_keys($out);
         sort($out, SORT_NUMERIC);
         return $out;
-    }
-
-    private function ico(mixed $value): string
-    {
-        return ltrim(preg_replace('/\D+/', '', (string) $value) ?: '', '0');
     }
 
     private function checkCancelled(callable $cancelled): void

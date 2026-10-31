@@ -32,6 +32,7 @@ final class ChartAccountUsage
         'cash_documents'                   => ['counter_account_code'],
         'assets'                           => ['acquisition_account_code', 'accumulated_account_code', 'asset_account_code'],
         'expense_classification_rules'     => ['target_account_code'],
+        'revenue_classification_rules'     => ['target_account_code'],
         'accounting_opening_balances'      => ['account_code'],
         'accounting_balance_inventory_items' => ['account_code'],
         'accounting_supplier_settings'     => ['fuel_account_code', 'vehicle_repair_account_code'],
@@ -55,6 +56,21 @@ final class ChartAccountUsage
             'employee_receivable_debit_account',
             'non_deductible_benefit_debit_account', 'travel_expense_debit_account',
         ],
+    ];
+
+    /**
+     * Cizí klíče na účet přes id: tabulka => [sloupce, název místa]. Nastavení GoPay se
+     * neuvolňuje samo, tiše by přestalo fungovat zaúčtování plateb.
+     *
+     * @var array<string, array{0:list<string>, 1:string}>
+     */
+    private const ID_COLUMNS = [
+        'gopay_settings' => [
+            ['clearing_account_id', 'destination_bank_account_id', 'fee_account_id', 'gopay_account_id', 'receivable_account_id'],
+            'nastavení GoPay',
+        ],
+        'invoice_settlements' => [['account_id'], 'zápočty faktur'],
+        'nonprofit_membership_charge_operations' => [['receivable_account_id', 'revenue_account_id'], 'členské příspěvky'],
     ];
 
     /**
@@ -107,6 +123,18 @@ final class ChartAccountUsage
             $found[] = 'podřízené analytiky';
         }
 
+        foreach (self::ID_COLUMNS as $table => [$columns, $label]) {
+            if (!$this->tableExists($table)) {
+                continue;
+            }
+            $conditions = implode(' OR ', array_map(static fn (string $c): string => $c . ' = ?', $columns));
+            $stmt = $pdo->prepare("SELECT EXISTS (SELECT 1 FROM {$table} WHERE supplier_id = ? AND ({$conditions}))");
+            $stmt->execute(array_merge([$supplierId], array_fill(0, count($columns), $accountId)));
+            if ((bool) $stmt->fetchColumn()) {
+                $found[] = $label;
+            }
+        }
+
         foreach (self::CODE_COLUMNS as $table => $columns) {
             if (!$this->tableExists($table)) {
                 continue;
@@ -148,6 +176,7 @@ final class ChartAccountUsage
             'cash_registers'               => 'pokladna',
             'assets'                       => 'karty majetku',
             'expense_classification_rules' => 'pravidla klasifikace nákladů',
+            'revenue_classification_rules' => 'pravidla výnosů',
             'accounting_opening_balances'  => 'počáteční stavy',
             'payroll_employer_settings', 'payroll_dimensions', 'payroll_employees',
             'payroll_employee_profiles', 'payroll_posting_allocations' => 'mzdy',

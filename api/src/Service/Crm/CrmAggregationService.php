@@ -604,7 +604,7 @@ final class CrmAggregationService
              WHERE i.supplier_id = ?
                AND i.issue_date >= ?
                AND i.status NOT IN ('draft', 'cancelled')
-               AND i.invoice_type != 'proforma'
+               AND i.invoice_type NOT IN ('proforma','rent_calendar','advance_calendar')
           GROUP BY i.client_id, c.company_name
           ORDER BY revenue_czk DESC
              LIMIT " . (int) $limit;
@@ -790,7 +790,7 @@ final class CrmAggregationService
              WHERE i.supplier_id = ?
                AND i.status IN ('issued', 'sent', 'reminded')
                AND " . $this->receivableDocTypeSql() . "
-               AND (i.invoice_type NOT IN ('invoice','proforma','tax_document') OR i.amount_to_pay - i.paid_total > 0)" . self::relatedPartyExclude('i', 'client_id', $excludeRelated) . "
+               AND (i.invoice_type NOT IN ('rent_calendar','advance_calendar') AND (i.invoice_type NOT IN ('invoice','proforma','tax_document') OR i.amount_to_pay - i.paid_total > 0))" . self::relatedPartyExclude('i', 'client_id', $excludeRelated) . "
           GROUP BY bucket, currency
           ORDER BY currency, FIELD(bucket, 'not_due', 'overdue_30', 'overdue_60', 'overdue_90', 'overdue_90_plus')
         ";
@@ -860,7 +860,7 @@ final class CrmAggregationService
               WHERE i.supplier_id = ?
                 AND i.status IN ('issued', 'sent', 'reminded')
                 AND " . $this->receivableDocTypeSql() . "
-                AND (i.invoice_type NOT IN ('invoice','proforma','tax_document') OR i.amount_to_pay - i.paid_total > 0)
+                AND (i.invoice_type NOT IN ('rent_calendar','advance_calendar') AND (i.invoice_type NOT IN ('invoice','proforma','tax_document') OR i.amount_to_pay - i.paid_total > 0))
                 AND i.due_date < ?
            ORDER BY i.due_date, i.id"
         );
@@ -930,7 +930,7 @@ final class CrmAggregationService
                 AND status = 'paid'
                 AND paid_at IS NOT NULL
                 AND issue_date >= ?
-                AND invoice_type != 'proforma'"
+                AND invoice_type NOT IN ('proforma','rent_calendar','advance_calendar')"
         );
         $stmt->execute([$supplierId, $start]);
         $row = $stmt->fetch(\PDO::FETCH_ASSOC) ?: [];
@@ -957,7 +957,7 @@ final class CrmAggregationService
               AND status = 'paid'
               AND paid_at IS NOT NULL
               AND issue_date >= ?
-              AND invoice_type != 'proforma'"
+              AND invoice_type NOT IN ('proforma','rent_calendar','advance_calendar')"
         );
         $stmt->execute([$supplierId, $start]);
         $row = $stmt->fetch(\PDO::FETCH_ASSOC) ?: [];
@@ -1146,7 +1146,7 @@ final class CrmAggregationService
              WHERE i.supplier_id = ?
                AND i.issue_date >= ?
                AND i.status NOT IN ('draft', 'cancelled')
-               AND i.invoice_type != 'proforma'  -- proformy vynechat (nejsou daňový doklad)
+               AND i.invoice_type NOT IN ('proforma','rent_calendar','advance_calendar')  -- proformy vynechat (nejsou daňový doklad)
           GROUP BY i.revenue_category_id, rc.code, rc.label
           ORDER BY total DESC
         ";
@@ -1186,7 +1186,7 @@ final class CrmAggregationService
                JOIN invoices i ON i.client_id = c.id AND i.status NOT IN ('draft', 'cancelled')
           LEFT JOIN currencies cur ON cur.id = i.currency_id
               WHERE c.supplier_id = ?
-                AND i.invoice_type != 'proforma'
+                AND i.invoice_type NOT IN ('proforma','rent_calendar','advance_calendar')
                 AND c.is_customer = 1
            GROUP BY c.id, c.company_name
              HAVING DATEDIFF(?, MAX(i.issue_date)) > ?
@@ -3164,7 +3164,7 @@ final class CrmAggregationService
                         AND i.due_date {$overdueOperator} CURDATE()
                         AND (i.invoice_type != 'proforma'
                              OR NOT " . AdvanceSettledSql::proforma('i') . ")
-                        AND (i.invoice_type NOT IN ('invoice','proforma','tax_document') OR i.amount_to_pay - i.paid_total > 0)"
+                        AND (i.invoice_type NOT IN ('rent_calendar','advance_calendar') AND (i.invoice_type NOT IN ('invoice','proforma','tax_document') OR i.amount_to_pay - i.paid_total > 0))"
                 );
                 $stmt->execute([$supplierId]);
                 break;
@@ -3331,7 +3331,7 @@ final class CrmAggregationService
           LEFT JOIN currencies c ON c.id = i.currency_id
               WHERE i.supplier_id = ?
                 AND i.status IN ('issued', 'sent', 'reminded')
-                AND i.invoice_type != 'proforma'
+                AND i.invoice_type NOT IN ('proforma','rent_calendar','advance_calendar')
                 AND (i.invoice_type NOT IN ('invoice','tax_document') OR i.amount_to_pay - i.paid_total > 0)
                 AND i.due_date BETWEEN ? AND ?
                 AND COALESCE(c.code, 'CZK') = ?
@@ -3431,7 +3431,7 @@ final class CrmAggregationService
                    AND i.status = 'paid'
                    AND i.paid_at IS NOT NULL
                    AND i.due_date IS NOT NULL
-                   AND i.invoice_type != 'proforma'
+                   AND i.invoice_type NOT IN ('proforma','rent_calendar','advance_calendar')
               )
               SELECT pi.client_id,
                      c.company_name,
@@ -3494,7 +3494,7 @@ final class CrmAggregationService
               WHERE i.supplier_id = ?
                 AND i.status IN ('paid', 'sent', 'reminded')
                 -- tax_document je auto-paid bez upomínek — do statistiky účinnosti nepatří
-                AND i.invoice_type NOT IN ('proforma', 'tax_document')
+                AND i.invoice_type NOT IN ('proforma', 'tax_document','rent_calendar','advance_calendar')
                 AND i.issue_date >= ?"
         );
         $stmt->execute([$supplierId, $start]);
@@ -3546,7 +3546,7 @@ final class CrmAggregationService
               WHERE supplier_id = ?
                 AND status = 'paid'
                 AND paid_at IS NOT NULL
-                AND invoice_type != 'proforma'
+                AND invoice_type NOT IN ('proforma','rent_calendar','advance_calendar')
                 AND issue_date >= ?
                 AND paid_at >= issue_date"
         );

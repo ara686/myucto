@@ -210,6 +210,18 @@ export interface PayrollAgreementAnnualHours {
 export interface PayrollPersonListItem {
   id: number
   full_name: string
+  /** Jméno a příjmení z platné historie identit; starší osoba je mít nemusí. */
+  first_name?: string | null
+  last_name?: string | null
+  birth_date?: string | null
+  /** Nejdřívější nástup a poslední konec vztahů bez archivovaných; `null` konce = trvá. */
+  start_date?: string | null
+  end_date?: string | null
+  /** Pracovní pozice z podmínek hlavního vztahu (CZ-ISCO) a její název z číselníku. */
+  cz_isco_code?: string | null
+  position_label?: string | null
+  /** Jen na žádost (`include_contacts`) a jen uživateli s `payroll.person.read_sensitive`. */
+  contacts?: { email: string | null; phone: string | null }
   is_active: boolean
   profile_status: string
   legacy_taxpayer_type: string
@@ -330,6 +342,14 @@ export interface PayrollEmploymentTerms {
   regular_workplace: string | null
   jmhz_workplace_municipality_code: string | null
   jmhz_workplace_country_code: string | null
+  /** Plná adresa místa výkonu práce pro JMHZ 2027 (10550 až 10554). */
+  jmhz_workplace_address_point_code?: string | null
+  jmhz_workplace_street?: string | null
+  jmhz_workplace_house_number?: string | null
+  jmhz_workplace_orientation_number?: string | null
+  jmhz_workplace_postal_code?: string | null
+  /** Státní zástupce (JMHZ 2027, 10587); `null` = neuvedeno. */
+  jmhz_state_prosecutor?: boolean | null
   jmhz_external_codebook_overlay_key?: string | null
   jmhz_external_codebook_manifest_sha256?: string | null
   jmhz_apz_contribution_status: PayrollVerifiedTriState
@@ -1855,6 +1875,8 @@ export type PayrollBenefitExemptionBasket =
   | 'old_age_savings'
   | 'meal_per_shift'
   | 'temporary_accommodation'
+  | 'recreation'
+  | 'food_service_tips'
 
 /**
  * Čím je nezdanění složky podložené. `not_subject_to_tax` NENÍ osvobození —
@@ -1886,13 +1908,15 @@ export interface PayrollBenefitBasketUsage {
    */
   shift_entitlements: number | null
   entitlement?: PayrollMealShiftEntitlement | null
-  limit_minor: number
+  /** `null` = osvobozeno bez číselného limitu (§ 6 odst. 9 písm. d) bod 2 od 2027). */
+  limit_minor: number | null
   used_before_minor: number
   used_after_minor: number
-  remaining_minor: number
+  remaining_minor: number | null
   exempt_minor: number
   taxable_minor: number
   limit_exceeded: boolean
+  unlimited?: boolean
   allocation?: {
     mode: 'uniform_per_entitlement' | 'no_entitlement'
     entitlement_count: number
@@ -2042,6 +2066,12 @@ export interface PayrollEmploymentJmhzEvidenceOptions {
   foreign_worker_free_access_reason_codes: Array<{ code: string; label: string }>
   foreign_worker_permit_type_codes: Array<{ code: string; label: string }>
   labour_office_codes: Array<{ code: string; label: string }>
+  /** Hodnoty EDV 1.5.0.3, které ČSSZ přijme jen pro události od 1. 1. 2027. */
+  from_2027?: {
+    employment_types: Array<{ code: string; label: string }>
+    free_access_reason_codes: Array<{ code: string; label: string }>
+    service_termination_reasons: Array<{ code: string; label: string; employment_types: string[] }>
+  }
 }
 
 export interface PayrollJmhzMunicipalityOption {
@@ -4277,6 +4307,8 @@ export interface PayrollJmhzOrdinaryEvidenceScope {
     current_xsd?: string
     stored_controls?: string
     current_controls?: string
+    /** Dohody o srážkách bez rozhodnutí o věřiteli (výdělek OZP). */
+    agreement_ids?: number[]
   }
 }
 
@@ -4296,10 +4328,28 @@ export interface PayrollJmhzOrdinaryEvidence {
   schema_reference: 'payroll-jmhz-ordinary-evidence.v1'
   source_manifest_sha256: string
   facts: PayrollJmhzOrdinaryEvidenceFacts
+  /** Výdělek OZP (10347 až 10353), jen u vztahu s IN28. */
+  ozp_wage?: PayrollJmhzOzpWage | null
   source_kind: 'explicit_confirmation' | 'derived_from_frozen_payroll_sources'
   confirmed_at: string
   created_at: string
   created: boolean
+}
+
+/** Údaje výdělku OZP, které zadává účetní (10347, 10348). */
+export interface PayrollJmhzOzpWageInput {
+  payment_date: string
+  cash_paid: boolean
+  /** Dny odvodu sociálního (10570) a zdravotního pojištění (10571), hlášení od 01/2027. */
+  social_insurance_paid_on?: string
+  health_insurance_paid_on?: string
+}
+
+/** Zmrazený výdělek OZP; srážky v haléřích podle atributu 10350 až 10353. */
+export interface PayrollJmhzOzpWage extends PayrollJmhzOzpWageInput {
+  employer_deductions_made: boolean
+  employer_deductions_minor: Partial<Record<'10350' | '10351' | '10352' | '10353', number>> | []
+  employer_deduction_sources: Array<{ agreement_id: number, jmhz_target: string, applied_minor_units: number }>
 }
 
 export interface PayrollJmhzPreparation {
@@ -4396,6 +4446,7 @@ export type PayrollJmhzRemediationKind =
   | 'employer_annual'
   | 'office'
   | 'annual_settlement'
+  | 'deferred_income'
   | 'takeover'
   | 'workplace'
   | 'correction'
@@ -4751,6 +4802,9 @@ export interface PayrollRegistrationA1ForeignWorker {
   permit_identifier: string | null
   permit_from: string | null
   permit_to: string | null
+  /** REGZEC27 (nástup od 1. 1. 2027), ID 10568 a 10569. */
+  stay_valid_from?: string | null
+  stay_valid_to?: string | null
 }
 
 export interface PayrollRegistrationA1Attachment {
@@ -5020,7 +5074,7 @@ export interface PayrollRegistrationEventInput {
     early_termination_reason?: string
     average_net_earnings?: string
     pension_periods?: PayrollRegistrationPensionPeriodInput[]
-    employment_type?: '1' | '2'
+    employment_type?: '1' | '2' | '3' | '4'
     termination_reason?: string
     service_termination_reason?: string
     entitlement?: boolean
@@ -6013,6 +6067,7 @@ export type PayrollAnnualSettlementFilingObligation =
 export type PayrollAnnualSettlementAnnualClaims =
   | 'unknown'
   | 'none'
+  | 'present'
   | 'present_unsupported'
 
 export type PayrollAnnualSettlementCaregiverStatus = 'unknown' | 'none' | 'present'
@@ -6072,6 +6127,10 @@ export type PayrollAnnualSettlementBlocker =
   | 'ruleset_year_not_covered'
   | 'request_date_missing'
   | 'prior_documents_date_missing'
+  | 'annual_claims_inconsistent'
+  | 'annual_claim_evidence_unverified'
+  | 'spouse_credit_conditions_not_met'
+  | 'preschool_credit_conditions_not_met'
 
 export interface PayrollAnnualSettlementRequest {
   id?: number
@@ -6123,6 +6182,147 @@ export interface PayrollAnnualSettlementResult {
   bonus_minimum_income_minor_units?: number
   bonus_minimum_amount_minor_units?: number
   monthly_tax_bonus_minor_units?: number
+  tax_base_before_deductions_minor_units?: number
+  non_taxable_deductions_minor_units?: number
+  enforcement_credit_minor_units?: number
+  trace?: PayrollAnnualSettlementTrace
+}
+
+export interface PayrollAnnualSettlementTrace {
+  non_taxable?: {
+    donation?: {
+      claimed_minor_units: number
+      threshold_met: boolean
+      cap_minor_units: number
+      deducted_minor_units: number
+    }
+    housing_interest?: {
+      claimed_minor_units: number
+      months: number
+      cap_minor_units: number
+      deducted_minor_units: number
+    }
+    retirement_and_care?: {
+      claimed_minor_units: number
+      cap_minor_units: number
+      deducted_minor_units: number
+    }
+  }
+  credits?: {
+    spouse?: {
+      months: number
+      ztp_p_months: number
+      amount_minor_units: number
+    }
+    preschool?: {
+      children: Array<{
+        child_reference: string
+        expenses_minor_units: number
+        cap_minor_units: number
+        amount_minor_units: number
+      }>
+      minimum_wage_minor_units: number
+      amount_minor_units: number
+    }
+  }
+  spouse_credit_failures?: string[]
+  preschool_credit_failures?: Record<string, string[]>
+}
+
+export type PayrollAnnualDeductionKind =
+  | 'donation'
+  | 'blood_donation'
+  | 'organ_donation'
+  | 'stem_cell_donation'
+  | 'housing_interest'
+  | 'pension_savings'
+  | 'life_insurance'
+  | 'long_term_investment'
+  | 'long_term_care_insurance'
+  | 'enforcement_stop'
+
+export interface PayrollAnnualDeduction {
+  id?: number
+  kind: PayrollAnnualDeductionKind
+  amount_minor_units: number | null
+  quantity: number | null
+  months_mask: number | null
+  housing_acquired_before_2021: boolean
+  counterparty_name: string | null
+  evidence_status: 'verified' | 'unverified'
+  evidence_reference: string | null
+  note: string | null
+}
+
+export interface PayrollAnnualSpouseClaim {
+  spouse_dependant_id: number
+  child_dependant_id: number
+  months_mask: number
+  ztp_p_months_mask: number
+  spouse_income_minor_units: number | null
+  evidence_status: 'verified' | 'unverified'
+  evidence_reference: string | null
+  note: string | null
+}
+
+/** § 35bd odst. 6 písm. a) až c) ZDP. */
+export type PayrollAnnualPreschoolFacilityKind =
+  | 'kindergarten'
+  | 'children_group'
+  | 'licensed_care'
+
+export interface PayrollAnnualPreschoolClaim {
+  child_dependant_id: number
+  facility_kind: PayrollAnnualPreschoolFacilityKind
+  facility_name: string | null
+  expenses_minor_units: number
+  households_count: number
+  agreed_cap_minor_units: number | null
+  claimed_by_other_taxpayer: boolean
+  claimed_as_business_expense: boolean
+  grandchild_care_replaces_parents: boolean
+  /** § 38l odst. 2 písm. g) bod 2: totéž dítě vyživuje další poplatník. */
+  other_supporting_taxpayer: boolean
+  other_taxpayer_name: string | null
+  other_taxpayer_claimed_minor_units: number | null
+  other_taxpayer_confirmation_reference: string | null
+  /** § 38l odst. 2 písm. g) bod 3: písemná dohoda poplatníků. */
+  agreement_reference: string | null
+  evidence_status: 'verified' | 'unverified'
+  evidence_reference: string | null
+  note: string | null
+}
+
+export type PayrollAnnualDependantRelation =
+  | 'spouse'
+  | 'child_own'
+  | 'child_adopted'
+  | 'child_in_care'
+  | 'child_of_spouse'
+  | 'grandchild'
+  | 'partner'
+
+export interface PayrollAnnualDependant {
+  id: number
+  relation: PayrollAnnualDependantRelation
+  full_name: string
+  birth_date: string
+  ztp_p: boolean
+}
+
+export interface PayrollAnnualClaimsSet {
+  deductions: PayrollAnnualDeduction[]
+  spouse: PayrollAnnualSpouseClaim | null
+  preschool: PayrollAnnualPreschoolClaim[]
+}
+
+export interface PayrollAnnualClaimsView extends PayrollAnnualClaimsSet {
+  /** Sleva za umístění dítěte existuje od zdaňovacího období 2027. */
+  preschool_available: boolean
+  dependants: PayrollAnnualDependant[]
+  statute: {
+    counted_donation_values: Partial<Record<PayrollAnnualDeductionKind, number>>
+  }
 }
 
 export interface PayrollAnnualSettlementStoredOutcome {
@@ -6265,6 +6465,7 @@ export interface PayrollAnnualSettlementPreview {
   credit_rows: PayrollAnnualSettlementCreditRow[]
   child_rows: PayrollAnnualSettlementChildRow[]
   certificates: PayrollAnnualSettlementCertificate[]
+  annual_claims?: PayrollAnnualClaimsView
   already_settled: PayrollAnnualSettlementStoredOutcome | null
 }
 
@@ -7555,6 +7756,81 @@ export interface PayrollJmhzContentCorrectionCandidates {
   blocked_forms?: PayrollJmhzXmlDryRunBlocker[]
 }
 
+/** Návazné podání, které už formulář opravilo nebo stornovalo. */
+export interface PayrollJmhzFormAmendment {
+  submission_id: number
+  status: string
+  submission_kind: string
+}
+
+/** Formulář řádného hlášení a zda jde jeho měsíc anulovat nulovým opravným hlášením. */
+export interface PayrollJmhzZeroAmendmentForm {
+  form_guid: string
+  person_external_identifier: string
+  employment_external_identifier: string
+  employment_id: number | null
+  employee_id: number | null
+  employee_name: string | null
+  employment_start: string | null
+  employment_end: string | null
+  annullable: boolean
+  blocker: { code: string; message: string } | null
+  amendments: PayrollJmhzFormAmendment[]
+}
+
+export interface PayrollJmhzZeroAmendmentCandidates {
+  environment: PayrollJmhzTransportEnvironment
+  submission_id: number
+  submission_status: string
+  situation: 'amendment_unreportable_month'
+  month: number
+  year: number
+  /** Storno součásti je ještě možné (do lhůty, mimo leden až březen 2026). */
+  cancellation_allowed: boolean
+  forms: PayrollJmhzZeroAmendmentForm[]
+}
+
+export type PayrollJmhzPost20Situation = 'invalid_employment' | 'late_termination' | 'date_change'
+
+export interface PayrollJmhzPost20Month {
+  period: string
+  submission_id: number
+  submission_status: string
+  form_guid: string
+  scope: 'outside' | 'partial' | 'inside'
+  action: 'annul' | 'amended' | 'review' | 'manual' | 'choose_variant'
+  annullable: boolean
+  blocker: { code: string; message: string } | null
+  amendments: PayrollJmhzFormAmendment[]
+  /** Formulář s příjmem nebo pojistným: VAR 1 (plnění vráceno) a VAR 2 (nevráceno). */
+  variants?: PayrollJmhzPost20Variant[]
+}
+
+export interface PayrollJmhzPost20Variant {
+  key: 'returned' | 'not_returned'
+  route: 'content_correction' | 'manual_deferred_income'
+  supported: boolean
+}
+
+export interface PayrollJmhzPost20Guide {
+  environment: PayrollJmhzTransportEnvironment
+  employment_id: number
+  situation: PayrollJmhzPost20Situation
+  employment_start: string | null
+  employment_end: string | null
+  regzec_actions: number[]
+  registration: {
+    events: Array<{ id: number; action_code: number; effective_on: string; submitted: boolean }>
+    prepared: boolean
+    submitted: boolean
+  }
+  months: PayrollJmhzPost20Month[]
+  status: 'open' | 'partially_done' | 'complete'
+  order: 'together' | 'amendments_first'
+  lookback_months: number
+  warnings: string[]
+}
+
 export interface PayrollJmhzTransportHistory {
   environment: PayrollJmhzTransportEnvironment
   attempts: PayrollJmhzTransportAttempt[]
@@ -7911,6 +8187,9 @@ export const payrollApi = {
     offset: number
     filter?: PayrollPeopleFilter
     q?: string
+    sort_key?: string
+    sort_dir?: 'asc' | 'desc'
+    include_contacts?: boolean
   }) =>
     api.get<PayrollPeopleResponse>('/payroll/people', {
       params: {
@@ -7918,6 +8197,9 @@ export const payrollApi = {
         offset: params.offset,
         filter: params.filter,
         q: params.q === '' ? undefined : params.q,
+        sort_key: params.sort_key,
+        sort_dir: params.sort_dir,
+        include_contacts: params.include_contacts ? 1 : undefined,
       },
     }).then(response => response.data),
   /**
@@ -8801,10 +9083,17 @@ export const payrollApi = {
       reason: 'Zobrazení identifikátorů ČSSZ na kartě pracovního vztahu',
     },
   ).then(response => response.data.reveal),
+  /**
+   * `ozpWage` jen u vztahu s podporou zaměstnávání OZP (IN28): datum úhrady
+   * mzdy včetně pojistného (10347) a výplata v hotovosti (10348). Srážky
+   * 10349 až 10353 server odvodí ze zmrazené revize.
+   */
   confirmJmhzOrdinaryEvidence: (
     revisionId: number,
     employmentId: number,
     idempotencyKey: string,
+    ozpWage?: PayrollJmhzOzpWageInput,
+    riskShiftCount?: number,
   ) => api.post<PayrollJmhzOrdinaryEvidence>(
     `/payroll/submissions/jmhz-ordinary-evidence/${revisionId}/${employmentId}`,
     {
@@ -8812,10 +9101,12 @@ export const payrollApi = {
         reportable_wage_deductions_recorded: false,
         employee_social_discount_claimed: false,
         specific_legal_fact_occurred: false,
-        ozp_employment_support_claimed: false,
+        ozp_employment_support_claimed: ozpWage !== undefined,
         deep_mining_work_occurred: false,
       },
       evidence_confirmed: true,
+      ...(ozpWage === undefined ? {} : { ozp_wage: ozpWage }),
+      ...(riskShiftCount === undefined ? {} : { risk_shift_count: riskShiftCount }),
     },
     { headers: { 'Idempotency-Key': idempotencyKey } },
   ).then(response => response.data),
@@ -9505,6 +9796,16 @@ export const payrollApi = {
       `/payroll/annual-settlements/${year}/people/${employeeId}/certificates`,
       { certificates },
     ).then(response => response.data.certificates),
+  /** Uloží celou sadu ročně uplatňovaných položek za rok (nezdanitelné části, sleva na manžela). */
+  saveAnnualSettlementAnnualClaims: (
+    year: number,
+    employeeId: number,
+    payload: PayrollAnnualClaimsSet,
+  ) =>
+    api.put<PayrollAnnualClaimsSet>(
+      `/payroll/annual-settlements/${year}/people/${employeeId}/annual-claims`,
+      payload,
+    ).then(response => response.data),
   /**
    * Provede roční zúčtování. Nesplněné podmínky NEJSOU chyba — vrátí se
    * `performed: false` a seznam překážek, které má obrazovka vypsat.
@@ -10504,6 +10805,35 @@ export const payrollApi = {
       preparation_id: preparationId,
       employment_external_identifiers: employmentExternalIdentifiers,
     },
+  ).then(response => response.data),
+  /** Formuláře přijatého řádného hlášení a zda jde jejich měsíc anulovat. */
+  jmhzZeroAmendmentCandidates: (
+    submissionId: number,
+    environment: PayrollJmhzTransportEnvironment,
+  ) => api.get<PayrollJmhzZeroAmendmentCandidates>(
+    `/payroll/submissions/${submissionId}/jmhz-zero-amendment`,
+    { params: { environment } },
+  ).then(response => response.data),
+  /**
+   * Nulové opravné hlášení, které anuluje měsíc vybraných vztahů. Situaci
+   * server vyžaduje výslovně; z dat ji neodvozuje.
+   */
+  freezeJmhzZeroAmendment: (
+    submissionId: number,
+    environment: PayrollJmhzTransportEnvironment,
+    formGuids: string[],
+  ) => api.post<PayrollJmhzCorrectiveSubmission>(
+    `/payroll/submissions/${submissionId}/jmhz-zero-amendment`,
+    { environment, form_guids: formGuids, situation: 'amendment_unreportable_month' },
+  ).then(response => response.data),
+  /** Průvodce postupem po 20. dni pro jeden pracovní vztah. */
+  jmhzPost20Guide: (
+    employmentId: number,
+    situation: PayrollJmhzPost20Situation,
+    environment: PayrollJmhzTransportEnvironment,
+  ) => api.get<PayrollJmhzPost20Guide>(
+    `/payroll/submissions/jmhz-post20/${employmentId}`,
+    { params: { environment, situation } },
   ).then(response => response.data),
   /** Protokoly načtené ze souboru, od nejnovějšího období. */
   jmhzImportedProtocols: (

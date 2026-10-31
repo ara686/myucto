@@ -97,11 +97,14 @@ final class TrialBalanceReconciliation
      * na uzávěrku převzatého roku nemá vliv.
      *
      * @param array<string,mixed> $balanceSheet výsledek FinancialStatementService::balanceSheet()
+     * @param bool $framework504 převod umí rámec 504 (rovnováha rozvahy se ověřuje stejně, porovnání výkazů s cizím programem ne)
      * @return array{check:array{key:string,ok:bool},unmapped:list<array{account:string,name:string,balance:float}>,negative_net_rows:list<array{row_code:string,column:string,net:float}>}
      */
-    public static function balanceSheet(array $balanceSheet): array
+    public static function balanceSheet(array $balanceSheet, bool $framework504 = false): array
     {
-        self::assertStatementFrameworkSupported($balanceSheet['accounting_framework'] ?? 'cz_500');
+        if (!$framework504) {
+            self::assertStatementFrameworkSupported($balanceSheet['accounting_framework'] ?? 'cz_500');
+        }
         $unmapped = array_map(
             static fn (array $u): array => ['account' => (string) $u['account_code'], 'name' => (string) $u['name'], 'balance' => round((float) $u['balance'], 2)],
             (array) ($balanceSheet['checks']['unmapped_accounts'] ?? [])

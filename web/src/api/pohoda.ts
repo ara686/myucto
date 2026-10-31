@@ -141,6 +141,15 @@ export interface PohodaReconciliationYear {
   journal_diffs: MoneyS3Diff[]
   documents: { key: string; documents: number; journal: number; ok: boolean; other_accounts?: unknown; source_differences?: SourceDifference[] }[]
   unmapped_accounts?: unknown
+  /** Saldokonto proti hlavní knize po obdobích převodu; rozdíl je jen upozornění, `ok` nemění. */
+  saldo?: {
+    year: number
+    period_id: number
+    as_of: string
+    status: 'ok' | 'differences' | 'unavailable'
+    differences: { account: string; name: string; gl_balance: number; open_items_total: number; difference: number }[]
+    error?: string
+  }[]
 }
 
 export interface PohodaProtocolData {

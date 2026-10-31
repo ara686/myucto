@@ -160,7 +160,7 @@ final class SetPurchaseInvoiceExpenseKindsAction
             if ($explicitAccount && $account !== null) {
                 // Stejné omezení jako pravidla; výběr konkrétní analytiky až při účtování zůstává v PostingService.
                 $record = $this->accounts->findByCode($supplierId, $account);
-                if (preg_match('/^(?:311|321|314|324|325|33|34|221|211)/', $account) === 1
+                if (\MyInvoice\Service\Accounting\SettlementAccounts::isSettlement((string) $account)
                     || $record === null || !($record['is_active'] ?? false)) {
                     return Json::error($response, 'invalid_target_account', 'Účet není aktivním nákladovým účtem firmy.', 400);
                 }

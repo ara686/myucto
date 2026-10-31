@@ -22,7 +22,7 @@ final class OtherItemForecastService
     {
         $sql = 'SELECT oi.id, oi.document_no, oi.title, oi.partner_name, oi.issued_on,
                        oi.side, oi.currency, oi.due_on, oi.status,
-                       GREATEST(oi.amount - COALESCE(SUM(a.amount), 0), 0) AS remaining
+                       GREATEST(oi.amount - oi.settled_outside_amount - COALESCE(SUM(a.amount), 0), 0) AS remaining
                   FROM other_items oi
              LEFT JOIN other_item_allocations a ON a.other_item_id = oi.id AND a.supplier_id = oi.supplier_id
                  AND a.reversed_on IS NULL
@@ -47,7 +47,7 @@ final class OtherItemForecastService
             SELECT oi.id, oi.document_no, oi.title, oi.partner_name, oi.issued_on,
                    oi.side, oi.currency, oi.status, i.due_on, i.amount,
                    SUM(i.amount) OVER (PARTITION BY oi.id ORDER BY i.position) cumulative,
-                   COALESCE(a.paid_amount, 0) paid_amount
+                   COALESCE(a.paid_amount, 0) + oi.settled_outside_amount paid_amount
               FROM other_item_installments i
               JOIN other_items oi ON oi.id = i.other_item_id AND oi.supplier_id = i.supplier_id
               LEFT JOIN (SELECT supplier_id, other_item_id, SUM(amount) paid_amount

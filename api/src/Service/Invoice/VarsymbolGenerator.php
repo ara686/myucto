@@ -72,7 +72,7 @@ final class VarsymbolGenerator
      * dřív ji každá metoda dělala po svém a `releaseIfLatest()` s 'penalty' tiše
      * nevracela číslo do řady, ze které ho `next()` vzal.
      */
-    private const INVOICE_SERIES_ALIASES = ['tax_document', 'penalty', 'payment_calendar'];
+    private const INVOICE_SERIES_ALIASES = ['tax_document', 'penalty', 'payment_calendar', 'rent_calendar', 'advance_calendar'];
 
     private static function normalizeType(string $invoiceType): string
     {

@@ -38,11 +38,10 @@ final class EetPaymentEntryPointGuardTest extends TestCase
      * @var array<string,array{0:string,1:string,2?:class-string}>
      */
     private const CALLERS = [
-        'MyInvoice\Service\Eet\EetPaymentCommand::persistAccepted' => [self::CONNECTED,
-            'Společný platební příkaz (accept i rychlá účtenka přes acceptWithinTransaction): událost, úhrada a EET záznam v jedné transakci.',
+        'MyInvoice\Service\Eet\EetPaymentCommand::recordInvoicePayment' => [self::CONNECTED,
+            'Úhrada faktury společného platebního příkazu (accept, rychlá účtenka přes acceptWithinTransaction i tržba '
+                . 'evidovaná externím systémem): událost, úhrada a EET záznam v jedné transakci.',
             InvoicePaymentService::class],
-        'MyInvoice\Service\Eet\EetPaymentCommand::acceptExternal' => [self::CONNECTED,
-            'Tržbu evidoval externí systém (e-shop): událost, úhrada a neodesílaný záznam external v jedné transakci.', InvoicePaymentService::class],
         'MyInvoice\Action\Invoice\CreatePaymentAction::__invoke' => [self::CONNECTED,
             'Ruční úhrada: u aktivní EET rozhoduje EetInvoicePaymentGate; přímý zápis jen bez evidence nebo u platby mimo EET.',
             EetInvoicePaymentGate::class],
@@ -70,6 +69,8 @@ final class EetPaymentEntryPointGuardTest extends TestCase
             'Zápočet dobropisu: snížení pohledávky bez nové platby.'],
         'MyInvoice\Service\Accounting\InvoiceSettlementService::create' => [self::NOT_SUBJECT,
             'Vypořádání proti účtu (zápočet na 311): bez nové platby.'],
+        'MyInvoice\Service\Accounting\InvoiceSettlementService::settleVoucherRedemption' => [self::NOT_SUBJECT,
+            'Uplatnění poukazu v daňové evidenci: vyrovnání faktury bez nové platby, tržbu (čerpání kreditu) eviduje volající EetPaymentCommand.'],
         'MyInvoice\Service\Sample\SampleDataGenerator::seedBankStatements' => [self::NOT_SUBJECT,
             'Vzorová data demo firmy, ne skutečná platba.'],
         'MyInvoice\Service\Sample\SampleWorkflowGenerator::generate' => [self::NOT_SUBJECT,

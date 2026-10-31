@@ -66,7 +66,9 @@ Kapitolu otevřete, když:
 9. Klikněte na **Schválit**.
 
 **Jak poznáte, že je hotovo:** Běh má stav **Schváleno** a hlavní tlačítko
-nabízí **Zaúčtovat**. Každý zaměstnanec má výplatní pásku a v podvojném
+nabízí **Zaúčtovat**. Výplatní pásky zaměstnanců se generují na pozadí
+(viz [§ 83.3](83_Dokumenty_a_vystupy.md#833-krok-za-krokem-mesicni-dokumenty))
+a v podvojném
 účetnictví vznikl mzdový deník.
 
 > [!TIP]
@@ -364,7 +366,8 @@ Oprava nepřepíše původní pohyb: zvýšení přidá jen rozdíl a snížení
 reverzi navázanou na původní sražení. Opakované schválení částku nezapíše
 podruhé.
 
-Schválení zároveň vytvoří výplatní pásku každé zpracované osoby a v podvojném
+Schválení zároveň zařadí generování výplatní pásky každé zpracované osoby
+(vzniknou na pozadí) a v podvojném
 účetnictví rozdílový mzdový deník. Použijí se předkontace zmrazené při
 uzamknutí vstupů, takže pozdější změna nastavení nezmění zkontrolovanou
 revizi. Je-li účetní období uzamčené, datum deníku se posune na první otevřený

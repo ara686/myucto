@@ -21,6 +21,8 @@ final class JournalSettlementRepository
 {
     /** Druhy zápisu, jejichž řádky smí účetní rozepsat na doklady. */
     public const ALLOCATABLE_SOURCES = ['manual'];
+    /** Zápisy pohybu peněz: ostatní položku z nich zakládá převod z jiného programu, ne účetní v saldokontu. */
+    public const PAYMENT_SOURCES = ['bank', 'cash'];
 
     public function __construct(private readonly Connection $db) {}
 

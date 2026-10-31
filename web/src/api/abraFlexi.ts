@@ -13,6 +13,8 @@ export interface AbraFlexiConnection {
   active_job_id: number | null
   warnings: string[]
   source_company: { name: string; ico: string } | null
+  target_company?: { name: string; ico: string }
+  ico_mismatch?: boolean
 }
 
 export interface AbraFlexiCredentials {

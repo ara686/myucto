@@ -36,7 +36,9 @@ const typeLabel = computed(() => {
     case 'credit_note':  return tt('Opravný daňový doklad', 'Credit note')
     case 'tax_document': return tt('Daňový doklad k přijaté platbě', 'Tax document for payment received')
     case 'cancellation': return tt('Storno doklad', 'Cancellation document')
-    default:             return isVatPayer.value ? tt('Faktura — daňový doklad', 'Invoice — tax document') : tt('Faktura', 'Invoice')
+    case 'rent_calendar': return tt('Splátkový kalendář', 'Rent instalment calendar')
+    case 'advance_calendar': return tt('Platební kalendář', 'Payment calendar')
+    default:            return isVatPayer.value ? tt('Faktura — daňový doklad', 'Invoice — tax document') : tt('Faktura', 'Invoice')
   }
 })
 

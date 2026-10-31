@@ -7,6 +7,7 @@ namespace MyInvoice\Service\Migration\Pohoda;
 use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Service\Accounting\AccountingFrameworkException;
 use MyInvoice\Service\Accounting\AccountingFrameworkImportGuard;
+use MyInvoice\Service\Accounting\Dimension\SystemDimensionCatalog;
 use MyInvoice\Infrastructure\Database\TableStatistics;
 use MyInvoice\Infrastructure\Database\TransactionFailure;
 use MyInvoice\Repository\AccountingPeriodRepository;
@@ -55,6 +56,10 @@ final class PohodaImporter
         private readonly UnbookedBankPayments $unbooked,
         private readonly VatCoefficientSeeder $coefficients,
         private readonly StockImporter $stock,
+        private readonly CostCenterImporter $costCenters,
+        private readonly InternalDocumentImporter $internalDocuments,
+        private readonly BalanceItemImporter $balanceItems,
+        private readonly UnbookedBankProposals $proposals,
     ) {}
 
     /** @return list<string> */
@@ -100,7 +105,7 @@ final class PohodaImporter
      * @param list<int>|null $laterYears
      * @return list<array{level:string,code:string,message:string,context:array<string,mixed>}>
      */
-    public function preflight(int $supplierId, PohodaExport $export, array $skipYears = [], ?array $laterYears = null, ?PohodaAgendaYear $agendaYear = null, bool $relinkOnly = false): array
+    public function preflight(int $supplierId, PohodaExport $export, array $skipYears = [], ?array $laterYears = null, ?PohodaAgendaYear $agendaYear = null, bool $relinkOnly = false, bool $keepOwnJournal = false): array
     {
         $out = $export->sourceWarnings();
         $add = static function (string $level, string $code, string $message, array $context = []) use (&$out): void {
@@ -145,10 +150,15 @@ final class PohodaImporter
         $allLaterYears = $laterYears !== null && $agendaYear->calendar->isCalendar() ? array_map('intval', $laterYears) : $agendaYear->laterYears();
         $laterYears = array_values(array_diff($allLaterYears, $skipYears));
         $skipped = array_values(array_intersect($allLaterYears, $skipYears));
+        $nonprofit = $export->hasNonprofitChart();
         try {
-            $guard = new AccountingFrameworkImportGuard($this->db);
+            $guard = new AccountingFrameworkImportGuard($this->db, $nonprofit);
             $guard->assertCz500Periods($supplierId, $guard->periodsForYears($supplierId, [$agendaLabel, ...$laterYears]));
         } catch (AccountingFrameworkException $e) { $add('error', $e->errorCode, $e->getMessage()); }
+        if ($nonprofit && !$this->periodsLeaveFramework500($supplierId, [$agendaLabel, ...$laterYears])) {
+            // Účty 9xx a výkazy neziskovky do firmy v rámci 500 nepatří.
+            $add('error', 'nonprofit_agenda_needs_504', 'Agenda POHODY je vedená v osnově pro neziskové organizace, firma v MyÚčtu ale účtuje podle vyhlášky 500. Nastavte firmě účetní rámec vyhlášky 504 a převod spusťte znovu.');
+        }
 
         $journalMapped = $this->map->hasAny($supplierId, PohodaImportRepository::KIND_JOURNAL_ENTRY);
         if ($relinkOnly && !$journalMapped) {
@@ -163,6 +173,8 @@ final class PohodaImporter
             $foreign = $this->journal->foreignEntryCount($supplierId, (int) $period['id']);
             if ($foreign > 0 && $relinkOnly) {
                 $add('info', 'relink_keeps_own_journal', "Účetní období {$year} obsahuje {$foreign} zápisů zadaných v MyÚčtu. Opravný převod je nechá beze změny a nové doklady z Pohody nepřidá.", ['entries' => $foreign, 'year' => $year]);
+            } elseif ($foreign > 0 && $keepOwnJournal) {
+                $add('info', 'keeps_own_journal', "Účetní období {$year} obsahuje {$foreign} zápisů zadaných v MyÚčtu. Dorovnání je nechá beze změny a převezme z POHODY jen záznamy starší než první z nich.", ['entries' => $foreign, 'year' => $year]);
             } elseif ($foreign > 0) {
                 $add('error', 'journal_not_empty', "Účetní období {$year} už obsahuje {$foreign} zápisů, které nevznikly převodem z Pohody. Deník z Pohody se do rozjetého účetnictví nepřimíchává.", ['entries' => $foreign, 'year' => $year]);
             }
@@ -192,6 +204,52 @@ final class PohodaImporter
     }
 
     /**
+     * Výkazy vyhlášky 504 potřebují u každého řádku nákladů a výnosů činnost (hlavní,
+     * hospodářská) a bez ní se nesestaví. Činnost převod z POHODY nečte, proto řádky bez
+     * ní dostanou hlavní činnost, kterou účetní přeřadí; opakovaný převod jejich změnu nepřepíše.
+     * Které středisko je hospodářská činnost, POHODA nikde neuvádí, z dat to odvodit nejde.
+     */
+    private function stampNonprofitActivity(PohodaContext $ctx): void
+    {
+        if (!$ctx->export->hasNonprofitChart()) {
+            return;
+        }
+        $pdo = $this->db->pdo();
+        $activity = (new SystemDimensionCatalog($this->db))->ensureForFramework($ctx->supplierId, $ctx->periodStart(), $ctx->userOrNull())['activity'] ?? null;
+        if ($activity === null) {
+            return;
+        }
+        $stmt = $pdo->prepare("INSERT IGNORE INTO journal_entry_line_dimensions
+                (line_id, dimension_type_id, supplier_id, dimension_value_id, assignment_origin, assignment_origin_ref)
+            SELECT l.id, ?, l.supplier_id, ?, 'explicit', 'pohoda_import'
+              FROM journal_entry_lines l
+              JOIN journal_entries e ON e.id = l.entry_id AND e.supplier_id = l.supplier_id
+              JOIN chart_of_accounts a ON a.id = l.account_id AND a.supplier_id = l.supplier_id
+             WHERE l.supplier_id = ? AND e.posted_at IS NOT NULL AND a.account_code REGEXP '^[56]'
+               AND NOT EXISTS (SELECT 1 FROM journal_entry_line_dimension_splits sp WHERE sp.line_id = l.id AND sp.dimension_type_id = ?)");
+        $stmt->execute([$activity['id'], $activity['values']['main'], $ctx->supplierId, $activity['id']]);
+        $lines = $stmt->rowCount() + $ctx->nonprofitLines;
+        if ($lines > 0) {
+            $ctx->protocol->warn(PohodaReconciler::STEP, 'nonprofit_activity_default', sprintf(
+                '%d řádkům nákladů a výnosů převod nastavil hlavní činnost, činnost z POHODY nepřebírá. Účetní přeřadí hospodářskou činnost podle skutečnosti, ovlivňuje to výkazy i daň z příjmů.',
+                $lines,
+            ), ['lines' => $lines]);
+        }
+    }
+
+    /** @param list<int> $years */
+    private function periodsLeaveFramework500(int $supplierId, array $years): bool
+    {
+        $strict = new AccountingFrameworkImportGuard($this->db);
+        try {
+            $strict->assertCz500Periods($supplierId, $strict->periodsForYears($supplierId, $years));
+            return false;
+        } catch (AccountingFrameworkException) {
+            return true;
+        }
+    }
+
+    /**
      * @param (callable(string,int,int):void)|null $progress
      * @param (callable():bool)|null $shouldCancel
      * @param list<int> $skipYears roky po roce agendy, které se nepřevádějí
@@ -199,8 +257,10 @@ final class PohodaImporter
      * @param array{warehouses:array<string,string>}|null $stock převod skladu zvolený v průvodci ({@see PohodaContext::$stock})
      * @param bool $relinkOnly opravný převod vazeb už převedené firmy ({@see PohodaContext::$relinkOnly})
      */
-    public function run(int $supplierId, int $userId, PohodaExport $export, bool $dryRun, ?int $runId = null, ?callable $progress = null, ?callable $shouldCancel = null, array $skipYears = [], bool $acceptDifferences = false, ?array $stock = null, bool $relinkOnly = false): ImportProtocol
+    public function run(int $supplierId, int $userId, PohodaExport $export, bool $dryRun, ?int $runId = null, ?callable $progress = null, ?callable $shouldCancel = null, array $skipYears = [], bool $acceptDifferences = false, ?array $stock = null, bool $relinkOnly = false, bool $keepOwnJournal = false): ImportProtocol
     {
+        // Dorovnání: deník nese i vlastní zápisy, rozdíl proti POHODĚ je očekávaný a hlásí se.
+        $acceptDifferences = $acceptDifferences || $keepOwnJournal;
         // Tvar roku firmy se určí před prvním zápisem: převod podle něj zakládá období.
         $agendaYear = PohodaAgendaYear::of($export, $this->periods->fiscalCalendar($supplierId));
         if ($skipYears !== []) {
@@ -216,7 +276,7 @@ final class PohodaImporter
             'skipped_years' => $skipYears,
             'relink_only' => $relinkOnly,
         ]);
-        $preflight = $this->preflight($supplierId, $export, $skipYears, null, $agendaYear, $relinkOnly);
+        $preflight = $this->preflight($supplierId, $export, $skipYears, null, $agendaYear, $relinkOnly, $keepOwnJournal);
         $protocol->set('preflight', $preflight);
         $protocol->begin(self::STEP_PREFLIGHT);
         foreach ($preflight as $m) {
@@ -240,8 +300,14 @@ final class PohodaImporter
         $ctx->skippedYears = array_fill_keys($skipYears, true);
         $ctx->stock = $stock;
         $ctx->relinkOnly = $relinkOnly;
+        if ($keepOwnJournal) {
+            $ctx->ownJournalFrom = $this->journal->firstForeignEntryDate($supplierId);
+            if ($ctx->ownJournalFrom !== null) {
+                $protocol->info(self::STEP_PREFLIGHT, 'own_journal_cutoff', "Záznamy POHODY od {$ctx->ownJournalFrom} se nepřebírají, od tohoto dne se účtuje v MyÚčtu. Rekonciliace proto může hlásit rozdíl.", ['from' => $ctx->ownJournalFrom]);
+            }
+        }
 
-        $frameworkGuard = new AccountingFrameworkImportGuard($this->db);
+        $frameworkGuard = new AccountingFrameworkImportGuard($this->db, $export->hasNonprofitChart());
         $frameworkPeriods = $frameworkGuard->periodsForYears($supplierId, [$agendaYear->label, ...array_values(array_diff($agendaYear->laterYears(), $skipYears))]);
         $pdo = $this->db->pdo();
         // Zkouška nanečisto uvnitř cizí transakce (testy, vnořené volání) jede přes savepoint -
@@ -369,6 +435,12 @@ final class PohodaImporter
                 $this->linker->matchPayments($ctx);
                 if (!$ctx->relinkOnly) {
                     $this->unbooked->settle($ctx);
+                    $this->proposals->propose($ctx);
+                }
+                $this->internalDocuments->run($ctx);
+                // Až po všech úhradách: co některá z nich vysvětluje, není zůstatek bez dokladu.
+                if (!$ctx->relinkOnly) {
+                    $this->balanceItems->run($ctx);
                 }
             },
             AssetImporter::STEP => fn () => $this->assets->import($ctx),
@@ -381,7 +453,11 @@ final class PohodaImporter
                 $ctx->userId,
                 $ctx->protocol,
             ),
-            PohodaReconciler::STEP => fn () => $this->reconciler->run($ctx),
+            PohodaReconciler::STEP => function () use ($ctx): void {
+                $this->costCenters->run($ctx);
+                $this->stampNonprofitActivity($ctx);
+                $this->reconciler->run($ctx);
+            },
         ];
     }
 

@@ -376,6 +376,51 @@ final class PayrollRegistrationTransportServiceTest extends TestCase
         self::assertSame('CSSZ_REGZEC', $result['submission_class']);
     }
 
+    /**
+     * REGZEC27 (události od 1. 1. 2027) patří pod tutéž agendu REGZEC25 a jde
+     * stejnou bránou; ročník `eType` obálky určí transport z jmenného prostoru.
+     * Jiný jmenný prostor (tady PREZEC v agendě REGZEC) brána dál odmítá.
+     */
+    public function testRegzec27SentenceReachesTheTransportUnderTheSameAgenda(): void
+    {
+        $xml = str_replace('REGZEC/2025', 'REGZEC/2027', self::regzecA1Xml());
+        $frozen = $this->createStub(JmhzFrozenPayloadReader::class);
+        $frozen->method('bytes')->willReturn($xml);
+        $dispatch = $this->createMock(JmhzDispatchService::class);
+        $dispatch->expects(self::once())
+            ->method('send')
+            ->with(
+                self::SUPPLIER,
+                'test',
+                self::SUBMISSION,
+                self::identicalTo($xml),
+                '1234567890',
+                'regzec27-a1',
+                7,
+                'CSSZ_REGZEC',
+            )
+            ->willReturn(new JmhzDispatchOutcome(self::attemptRow() + [
+                'request_sha256' => hash('sha256', $xml),
+            ]));
+
+        (new PayrollRegistrationTransportService(
+            $this->repository('REGZEC25'),
+            $this->createStub(PayrollSubmissionTransportAttemptRepository::class),
+            $frozen,
+            $dispatch,
+        ))->send(self::SUPPLIER, 'test', self::SUBMISSION, 'regzec27-a1', 7);
+
+        $wrong = $this->createStub(JmhzFrozenPayloadReader::class);
+        $wrong->method('bytes')->willReturn(str_replace('REGZEC/2025', 'PREZEC/2026', self::regzecA1Xml()));
+        $this->expectException(\DomainException::class);
+        (new PayrollRegistrationTransportService(
+            $this->repository('REGZEC25'),
+            $this->createStub(PayrollSubmissionTransportAttemptRepository::class),
+            $wrong,
+            $this->createStub(JmhzDispatchService::class),
+        ))->send(self::SUPPLIER, 'test', self::SUBMISSION, 'regzec27-wrong', 7);
+    }
+
     /** Druh činnosti, který matice A1 nepřipouští, se pořád neodešle. */
     public function testRegzecA1WithUnknownActivityNeverReachesTheTransport(): void
     {

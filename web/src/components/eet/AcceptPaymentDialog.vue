@@ -12,6 +12,7 @@ import {
   type EetPaymentEvent,
   type EetPaymentPreview,
   type EetPaymentRequest,
+  type EetPaymentWarning,
 } from '@/api/eet'
 import { apiErrorCode, apiErrorMessage } from '@/api/errors'
 import { formatDate, formatDateTime, formatMoney } from '@/composables/useFormat'
@@ -184,6 +185,14 @@ const policyView = computed(() => {
   return { tone: 'off', text: p.eet.message || t('eet.pay.policy.not_subject') }
 })
 
+/** Upozornění serveru (platbu neblokují); text z překladu podle kódu, jinak ze serveru. */
+function warningText(w: EetPaymentWarning): string {
+  const key = `eet.pay.warnings.${w.code}`
+  const text = t(key, { balance: formatMoney(Number(w.balance ?? 0), 'CZK') })
+  return text === key ? w.message : text
+}
+const previewWarnings = computed(() => (preview.value?.warnings ?? []).map(warningText))
+
 // ---- Odeslání ----
 const submitting = ref(false)
 const result = ref<EetPaymentEvent | null>(null)
@@ -250,6 +259,9 @@ const selectedDevice = computed(() => devices.value.find(d => d.id === form.devi
         {{ t('eet.pay.saved') }}
       </div>
       <EetPaymentStates :event="result" />
+      <p v-for="(w, i) in (result.warnings ?? [])" :key="`rw-${i}`" class="rounded-md border border-warning-500/40 bg-warning-50 px-3 py-2 text-sm text-warning-700" data-test="eet-pay-result-warning">
+        {{ warningText(w) }}
+      </p>
       <p v-if="result.amount_czk && result.exchange_rate" class="text-sm text-neutral-700" data-test="eet-pay-result-fx">
         {{ t('eet.pay.fx_to_eet', { amount: formatMoney(Number(result.amount_czk), 'CZK'), rate: result.exchange_rate, currency: result.currency }) }}
       </p>
@@ -346,6 +358,9 @@ const selectedDevice = computed(() => devices.value.find(d => d.id === form.devi
         </div>
         <p v-if="creditView" class="rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-700" data-test="eet-pay-credit">
           {{ creditView }}
+        </p>
+        <p v-for="(w, i) in previewWarnings" :key="`pw-${i}`" class="rounded-md border border-warning-500/40 bg-warning-50 px-3 py-2 text-sm text-warning-700" data-test="eet-pay-warning">
+          {{ w }}
         </p>
         <div v-if="fxView" data-test="eet-pay-fx"
           class="rounded-md border px-3 py-2 text-sm"

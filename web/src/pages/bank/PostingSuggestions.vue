@@ -282,7 +282,7 @@ function resolveLink(it: PostingSuggestion) {
   }
   return null
 }
-useWindowRefresh(['bank', 'bank-statements', 'bank-transactions', 'bank-match-suggestions', 'accounting', 'invoices', 'purchase-invoices', 'clients'], () => Promise.all([load(), loadCounts()]), () => busyId.value === null && selected.size === 0)
+useWindowRefresh(() => Promise.all([load(), loadCounts()]), () => busyId.value === null && selected.size === 0)
 </script>
 
 <template>

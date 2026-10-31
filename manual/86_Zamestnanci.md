@@ -422,6 +422,20 @@ podání** a **DPP u limitu 300 h**. Hledání i stránkování běží na serve
 osobách, takže se stejně pracuje s deseti i pěti sty zaměstnanci. Na telefonu
 se tabulka mění na karty.
 
+Seznam je řazený podle **příjmení a jména** v české abecedě. Kliknutím na
+hlavičku sloupce se řadí podle něj (sestupně, druhým kliknutím vzestupně, třetím
+zpět na výchozí pořadí); křížek vpravo v hlavičce řazení zruší. Řadí server, takže
+pořadí platí pro všechny stránky. Tlačítkem **Sloupce** přidáte další sloupce:
+**Celé jméno** (včetně titulů), **Osobní číslo**, **Nástup**, **Ukončení**,
+**Datum narození** a **Pracovní pozice** (název zaměstnání CZ-ISCO z podmínek
+hlavního pracovního vztahu; řadí se podle kódu, takže příbuzné pozice stojí
+u sebe). Kdo smí zobrazit citlivé údaje osoby, může přidat i **E-mail**
+a **Telefon** v plném znění; každé zobrazení stránky s kontakty se zapíše do
+auditu. Ostatním se tyto sloupce nenabízejí. Pořadí sloupců změníte přetažením
+hlavičky. Volba sloupců
+i řazení se pamatuje k vašemu účtu. Starší karta bez rozděleného jména má ve
+sloupci Příjmení celé jméno.
+
 **Hodiny na DPP.** U osoby s dohodou o provedení práce ukazuje seznam i hlavička
 karty osoby značku **DPP 245 / 300 h**: kolik hodin osoba v aktuálním
 kalendářním roce odpracovala na všech svých DPP u firmy, včetně hodin převzatých
@@ -502,10 +516,10 @@ Sekce **Zákonná evidence osoby** vede:
 - **Prohlášení poplatníka k dani** (viz [§ 86.12.4](#86124-prohlaseni-k-dani-ma-jedine-misto)),
 - **Daňová rezidence**: rezident, nerezident se zemí, nebo neověřeno,
 - **Slevy na dani (§ 35ba)**: na poplatníka, na invaliditu I. a II. stupně, na
-  invaliditu III. stupně a na držitele ZTP/P. Uplatní se jen s podepsaným
-  prohlášením; bez záznamu se sleva neodečte. Každý druh je vlastní řada,
-  takže mohou platit souběžně. Sleva na poplatníka se odvodí z podepsaného
-  prohlášení,
+  invaliditu III. stupně, na držitele ZTP/P a od roku 2027 na studenta. Uplatní
+  se jen s podepsaným prohlášením; bez záznamu se sleva neodečte. Každý druh je
+  vlastní řada, takže mohou platit souběžně. Sleva na poplatníka se odvodí
+  z podepsaného prohlášení,
 - **Příslušnost k sociálnímu pojištění** včetně formuláře A1,
 - **Sleva pracujícího důchodce** (sleva na pojistném),
 - **Příslušnost ke zdravotnímu pojištění** a zdravotní pojišťovna,
@@ -513,6 +527,14 @@ Sekce **Zákonná evidence osoby** vede:
 - **Výjimky z minima zdravotního pojištění**,
 - **Vyměřovací základ u jiného zaměstnavatele**,
 - **Důchodový věk** a **Pobíraný důchod**.
+
+Sleva na studenta (§ 35bc ZDP, 335 Kč měsíčně) má dva druhy: soustavná
+příprava na budoucí povolání do 26 let a prezenční doktorské studium do 28 let.
+Doložte ji potvrzením školy a zadejte i konec nároku. Nárok trvá nejdéle do
+konce posledního měsíce, na jehož počátku zaměstnanec věkovou hranici ještě
+nedovršil; kdo má narozeniny prvního dne měsíce, v tom měsíci už nárok nemá.
+Aplikace to kontroluje podle data narození, bez něj nárok neuloží. Daňový
+nerezident na slevu nárok nemá.
 
 Chybí-li prohlášení, rezidence, sociální nebo zdravotní příslušnost nebo
 zdravotní pojišťovna, mzdový běh zákonný výpočet osoby nespočítá a skončí
@@ -678,9 +700,10 @@ nemění.
   **snížený důchodový věk**. Každý druh je vlastní řada, takže cizí a český
   důchod mohou běžet souběžně; překryv téhož druhu se odmítne.
 
-Předčasný starobní důchod dává kód `D` od dne přiznání. Starobní důchod ukončuje
-odečítané doby od prvního celého měsíce výplaty (přiznaný uprostřed měsíce od
-dalšího měsíce) a od roku 2025 i vedení ročního evidenčního listu. Invalidní
+Kód `D` dává jen dosažení důchodového věku; předčasný starobní důchod ho
+nezakládá a odečítané doby po dosažení věku neruší. Starobní důchod v plné výši ukončuje odečítané doby a od roku
+2025 i vedení ročního evidenčního listu; měsíc, od kterého výplata náleží
+(u důchodu přiznaného uprostřed měsíce měsíc přiznání), se ještě vede. Invalidní
 a cizí důchody kód `D` nezakládají. Import přihlášek REGZEC doplní pobíraný
 důchod do prázdné evidence; vyplněnou nemění a rozdíl jen ohlásí.
 
@@ -701,6 +724,10 @@ vztahu, proto patří k osobě, ne do verze smlouvy.
 | **Nepodepsáno** | vědomě zapsané „nepodepsal", daň se sráží bez slev |
 | **Neověřeno** | zapsané, ale nedoložené; osoba jde do ručního posouzení |
 | Nezadáno | k danému měsíci není žádný záznam |
+
+U podepsaného prohlášení vyplňte i **Den podpisu**. Měsíční hlášení za období
+od ledna 2027 ho uvádí (datum podpisu prohlášení) a bez něj se nesestaví.
+Prohlášení podepsané až po vykazovaném měsíci ten měsíc nedokládá.
 
 **Nezadáno není totéž co Nepodepsáno**, i když se počítá stejně opatrně: bez
 prohlášení se měsíční sleva uplatnit nesmí (§ 38k odst. 4 zákona o daních
@@ -874,6 +901,17 @@ práce**, **JMHZ – vykonávaná pozice**, **Pojištění a daň** a **Výjime�
 situace**; otevře se sama jen u vztahu, kde je něco z ní vyplněné. Postranní
 pruh ukazuje navazující agendy a údaje **Ze zákonné evidence osoby**.
 
+**Adresa místa výkonu práce.** Měsíční hlášení za období od ledna 2027 uvádí
+u pracoviště v ČR i plnou adresu: **Ulice**, **Číslo popisné**, **Číslo
+orientační**, **PSČ** a nepovinně **Kód adresního místa** (RÚIAN). Pole se
+ukážou po výběru obce pracoviště; vyplňte aspoň číslo popisné a PSČ. U
+pracoviště mimo ČR (kód obce 111111) se adresa nevyplňuje. Bez adresy se
+hlášení za rok 2027 nesestaví.
+
+**Státní zástupce.** U druhu činnosti K až S nabídne skupina **Místo výkonu
+práce** volbu **Státní zástupce** (Ano, Ne). Hlášení za období od ledna 2027
+ji u těchto formulářů vyžaduje; **Neuvedeno** hlášení zastaví.
+
 **Dovolená.** Firemní výměra dovolené platí všem vztahům. **Výjimku z výměry
 dovolené** vyplňte jen tam, kde má vztah jiný nárok (nejméně 4 týdny); prázdné
 pole znamená firemní politiku. Změna se ukládá jako nová verze podmínek.
@@ -907,6 +945,23 @@ z příjmů; na kartě se nic nevyplňuje:
 
 Základ srážkové daně i daň se zaokrouhlují na celé koruny dolů. Sražená daň je
 konečná a do ročního zúčtování nevstupuje.
+
+**Od roku 2027 záloha ze samostatného základu.** Pro mzdy za měsíce roku 2027
+a dál zákon srážkovou daň ze závislé činnosti nezná. Tytéž příjmy (DPP pod
+rozhodnou částkou 12 500 Kč, ostatní příjmy pod rozhodnou částkou 5 000 Kč, vždy
+bez podepsaného prohlášení) tvoří samostatný základ **zálohy** 15 %:
+
+- základ i záloha se zaokrouhlují na celé koruny **nahoru**,
+- záloha se odvádí jedním převodem s ostatními zálohami a účtuje se na účet
+  zálohové daně,
+- výplatní páska ji uvádí jako zálohu ze samostatného základu (§ 6 odst. 4),
+- v ročním zúčtování u vás se příjem i sražená záloha započtou; příjmy podle
+  § 6 odst. 4 od jiného zaměstnavatele do zúčtování nevstupují,
+- potvrzení o srážkové dani ani vyúčtování srážkové daně se za rok 2027
+  nevystavuje.
+
+Rozhoduje měsíc, za který se mzda zúčtovává: prosincová mzda 2026 vyplacená
+v lednu 2027 se ještě daní srážkou.
 
 **Souběhy.** Jedna osoba může mít souběžně např. HPP a DPP nebo pracovní poměr
 a odměnu za výkon funkce. V aktivní práci je právě jeden vztah primární. Každý
@@ -1278,10 +1333,28 @@ měsíc je smí poskytnout jen jeden plátce a poplatník je mohl uplatnit u nov
 zaměstnavatele. Nárok si uplatní v ročním zúčtování nebo v přiznání. Bez
 potvrzení běh příjem po skončení odmítne a pošle vás sem.
 
-Ostatní druhy odloženého příjmu (např. doplatek za dřívější měsíce trvajícího
-vztahu) a odložený příjem z dohod podejte opravným hlášením na ePortálu ČSSZ.
+Roční zúčtování po skončení vztahu (roční úhrny za leden, výsledek ročního
+zúčtování za leden až březen) potvrďte jako druh *Roční zúčtování po skončení
+zaměstnání (4)* za měsíc, ve kterém se hlásí. Jde jen o leden, únor nebo březen
+a v měsíci se nezúčtovává žádný příjem. Mzdový běh si skončený vztah vezme
+i bez mzdových vstupů a JMHZ ho vykáže formulářem Odložený příjem typu 4
+s nulovým příjmem, 0 dny pojištění a evidenčním listem bez kódu; údaje
+ročního zúčtování převezme z agendy Roční zúčtování. Vyplácíte-li v témže
+měsíci i doplatek, typ 4 nestačí a hlášení vztah zastaví: potvrďte druh
+*Příjem po skončení s ročním zúčtováním (5)*. Hlášení pak nese evidenční list
+jako u příjmu po skončení (0 dnů, kód s „P" na druhé pozici, vyměřovací
+základ doplatku), pojistné za měsíc zúčtování a k tomu údaje ročního
+zúčtování; pravidla pro dohody a zaměstnání malého rozsahu jsou stejná jako
+u druhu 1. U dohody
+o provedení práce nebo o pracovní činnosti aplikace typ 4 nepotvrdí: měsíc
+bez příjmu po skončení dohody zdravotní pojištění nespočítá, hlášení za ni
+podejte ručně přes ePortál ČSSZ.
+
+Ostatní druhy odloženého příjmu (náhradu mzdy při neplatném skončení,
+doplatek za dřívější měsíce trvajícího vztahu) a odložený příjem z dohod
+podejte opravným hlášením na ePortálu ČSSZ.
 U vztahu, jehož účast stojí na výši příjmu (dohoda, zaměstnání malého rozsahu,
-člen orgánu), běh odložený příjem nepřijme ani po potvrzení: s příjmem
+člen orgánu), běh příjem po skončení (druh 1) nepřijme ani po potvrzení: s příjmem
 posledního měsíce může zpětně založit účast a opravu hlášení kvůli
 nemocenskému pojištění je třeba zaslat vždy. Kontrola běhu proto řekne, že
 hlášení i opravu podáte ručně přes ePortál ČSSZ.

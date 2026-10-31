@@ -342,6 +342,7 @@ onMounted(load)
           <dl class="space-y-3 text-sm">
             <div class="flex justify-between gap-3"><dt class="text-neutral-500">{{ t('other_items.amount') }}</dt><dd class="tabular-nums">{{ formatMoney(item.amount, item.currency) }}</dd></div>
             <div class="flex justify-between gap-3"><dt class="text-neutral-500">{{ t('other_items.paid_amount') }}</dt><dd class="tabular-nums">{{ formatMoney(item.paid_amount, item.currency) }}</dd></div>
+            <div v-if="Number(item.settled_outside_amount || 0) > 0" class="flex justify-between gap-3 pl-3" :title="t('other_items.settled_outside_hint')"><dt class="text-neutral-500">{{ t('other_items.settled_outside') }}</dt><dd class="tabular-nums text-neutral-500">{{ formatMoney(item.settled_outside_amount ?? 0, item.currency) }}</dd></div>
             <div class="flex justify-between gap-3 border-t border-neutral-200 pt-3 font-semibold"><dt>{{ t('other_items.remaining') }}</dt><dd class="tabular-nums">{{ formatMoney(item.remaining_amount, item.currency) }}</dd></div>
           </dl>
         </section>

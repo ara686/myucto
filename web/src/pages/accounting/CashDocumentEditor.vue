@@ -38,6 +38,13 @@ const supplierStore = useSupplierStore()
 const isTaxEvidence = computed(() => supplierStore.currentSupplier?.accounting_mode === 'tax_evidence')
 
 const today = appIsoDate()
+// „Vystavit a další" předává datum posledního zápisu v query; obyčejné otevření
+// nového dokladu query nemá, a tak začíná dnešním datem.
+const queryIssueDate = typeof route.query.issue_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(route.query.issue_date)
+  ? route.query.issue_date
+  : null
+const initialDate = queryIssueDate ?? today
+const formEl = ref<HTMLElement | null>(null)
 
 const registers = ref<CashRegister[]>([])
 const accounts = ref<ChartAccount[]>([])
@@ -59,8 +66,8 @@ const form = reactive({
   register_id: '' as number | '',
   doc_type: (route.query.doc_type === 'out' ? 'out' : 'in') as CashDocType,
   purpose: 'sale' as CashPurpose,
-  issue_date: today,
-  tax_date: today,
+  issue_date: initialDate,
+  tax_date: initialDate,
   partner_name: '',
   partner_ic: '',
   partner_dic: '',
@@ -595,7 +602,7 @@ const blockedReason = computed<string | null>(() => {
  * „uložit a dodělat později" i editace existujícího draftu byly z UI nedosažitelné,
  * přestože je backend umí (POST … {post:false}, PUT {id}, POST {id}/post).
  */
-async function save(post = true) {
+async function save(post = true, next = false) {
   error.value = ''
   if (isEdit.value && !isDraft.value) { error.value = t('cash.error.doc_not_draft'); return }
   if (form.register_id === '') { error.value = t('cash.validation.register'); return }
@@ -664,6 +671,10 @@ async function save(post = true) {
       await docDims.save(res.id)
       toast.success(post ? t('cash.new_document') + ' ' + (res.doc_number ?? '') : t('common.saved'))
       for (const w of res.warnings) toast.warning(cashWarningMessage(w, t))
+      if (next) {
+        await startNextDocument()
+        return
+      }
     }
     router.push('/accounting/cash')
   } catch (e: any) {
@@ -671,6 +682,42 @@ async function save(post = true) {
   } finally {
     saving.value = false
   }
+}
+
+/**
+ * „Vystavit a další": nový prázdný doklad ve stejné pokladně, se stejným typem
+ * a datem posledního zápisu. Routa zůstává stejná (jen jiné query), takže Vue
+ * komponentu znovu nepřipojí a formulář se vyprázdní tady.
+ */
+async function startNextDocument(): Promise<void> {
+  const issueDate = form.issue_date
+  void router.replace({
+    path: '/accounting/cash/new',
+    query: { register_id: String(form.register_id), doc_type: form.doc_type, issue_date: issueDate },
+  })
+  form.tax_date = issueDate
+  form.purpose = purposeOptions.value[0]
+  form.description = ''
+  form.vat_mode = 'none'
+  form.total_amount = null
+  form.fx_rate = null
+  form.invoice_id = null
+  form.purchase_invoice_id = null
+  form.counter_account_code = ''
+  form.rule_key = ''
+  clearPartner()
+  vatLines.value = []
+  vatMatches.value = true
+  selectedUnpaid.value = null
+  unpaidQuery.value = ''
+  unpaidOptions.value = []
+  unpaidTruncated.value = false
+  unpaidError.value = ''
+  docDims.header.value = {}
+  docDims.autoFilled.value = {}
+  error.value = ''
+  await nextTick()
+  formEl.value?.querySelector<HTMLElement>('input:not([type="hidden"]):not([readonly]):not([disabled]), select:not([disabled]), textarea:not([disabled])')?.focus()
 }
 </script>
 
@@ -690,7 +737,7 @@ async function save(post = true) {
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
       <!-- Formulář -->
-      <div :class="isTaxEvidence ? 'lg:col-span-3' : 'lg:col-span-2'" class="bg-surface border border-neutral-200 rounded-lg shadow-sm p-5 space-y-4">
+      <div ref="formEl" :class="isTaxEvidence ? 'lg:col-span-3' : 'lg:col-span-2'" class="bg-surface border border-neutral-200 rounded-lg shadow-sm p-5 space-y-4">
         <!-- Hlavička -->
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
@@ -947,6 +994,11 @@ async function save(post = true) {
               :title="disabledTitle(!canSubmit, blockedReason)">
               <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" :d="ICONS.doc" /></svg>
               {{ t('cash.save_draft') }}
+            </button>
+            <button v-if="!isEdit" @click="save(true, true)" :disabled="!canSubmit" :class="btnOutline('primary')"
+              :title="disabledTitle(!canSubmit, blockedReason)" data-test="cash-post-and-next">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" :d="ICONS.plus" /></svg>
+              {{ t('cash.post_and_next') }}
             </button>
             <button @click="save(true)" :disabled="!canSubmit" :class="btnFilled('primary')"
               :title="disabledTitle(!canSubmit, blockedReason)">

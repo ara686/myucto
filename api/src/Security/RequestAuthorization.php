@@ -316,6 +316,16 @@ final class RequestAuthorization
     }
 
     /**
+     * Založení interního dokladu (koncept). Stejné právo vyžaduje route
+     * `POST /api/accounting/internal-documents` v RoutePermissionMap; AI asistent podle
+     * něj rozhoduje, zda smí interní doklad vůbec navrhnout.
+     */
+    public static function canCreateInternalDocument(Request $request): bool
+    {
+        return self::allows($request, 'accounting.journal.write', AccessLevel::WRITE);
+    }
+
+    /**
      * XML pokusů o odeslání EET (podepsaná zpráva a odpověď FS) vidí jen ten, kdo
      * smí opravovat a opakovat evidenci, a jen z přihlášené relace. Bearer token
      * (mobil, integrace) ho nedostane nikdy.

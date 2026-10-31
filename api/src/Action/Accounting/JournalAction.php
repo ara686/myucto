@@ -1403,6 +1403,8 @@ final class JournalAction
                 );
             }
 
+            (new \MyInvoice\Repository\AccountingSetupRepository($this->db))->detachReclassificationItemsFromEntries($supplierId, [$id]);
+
             $postingOwner = (new DocumentPostingGroup($this->db))->owner($supplierId, $id, true);
             $postingType = $postingOwner['doc_type'] ?? null;
             $postingId = $postingOwner['doc_id'] ?? null;
@@ -1492,11 +1494,26 @@ final class JournalAction
             if ($ownTx) {
                 $pdo->commit();
             }
+        } catch (\PDOException $e) {
+            if ($ownTx && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            if (($e->errorInfo[0] ?? null) !== '23000') {
+                throw $e;
+            }
+            return Json::error(
+                $response,
+                'entry_delete_conflict',
+                'Zápis se nepodařilo smazat, protože na něj navazuje jiný záznam v účetnictví '
+                    . '(například mzdová platba, zápočet nebo vyúčtování). Nic se nesmazalo.',
+                409,
+            );
         } catch (\Throwable $e) {
             if ($ownTx && $pdo->inTransaction()) {
                 $pdo->rollBack();
             }
-            if ($e instanceof PostingException && (str_starts_with($e->errorCode, 'allocation_') || in_array($e->errorCode, ['property_charge_issue_source_immutable', 'property_payment_source_immutable'], true))) {
+            // Odmítnutí kontrolou vazeb je věcná odpověď, ne chyba serveru.
+            if ($e instanceof PostingException) {
                 return $this->mapPostingError($response, $e);
             }
             throw $e;
@@ -1713,6 +1730,8 @@ final class JournalAction
                 );
             }
 
+            (new \MyInvoice\Repository\AccountingSetupRepository($this->db))->detachReclassificationItemsFromEntries($supplierId, [(int) $original['id'], $reversalId]);
+
             // Původní zápis PRVNÍ. `journal_entries.reversed_by` je cizí klíč se SET NULL:
             // smazání protizápisu napřed by původní zápis „oživilo" (reversed_by NULL →
             // active_source_id) a vedle náhradního zápisu téhož dokladu by to narazilo
@@ -1801,7 +1820,7 @@ final class JournalAction
             );
         } catch (\Throwable $e) {
             if ($ownTx && $pdo->inTransaction()) $pdo->rollBack();
-            if ($e instanceof PostingException && (str_starts_with($e->errorCode, 'allocation_') || in_array($e->errorCode, ['property_charge_issue_source_immutable', 'property_payment_source_immutable'], true))) {
+            if ($e instanceof PostingException) {
                 return $this->mapPostingError($response, $e);
             }
             throw $e;

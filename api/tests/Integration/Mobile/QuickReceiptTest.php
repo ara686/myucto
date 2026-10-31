@@ -208,6 +208,22 @@ final class QuickReceiptTest extends TestCase
         self::assertSame(['600.00', '500.00'], [$record['total_amount'], $record['credit_topup_amount']]);
     }
 
+    /** Víceúčelový poukaz se sazbou DPH je chyba vstupu, účtenka nevznikne a nic se nepřepočítá. */
+    public function testTaxedStoredValueItemIsRejected(): void
+    {
+        $this->db->pdo()->prepare(
+            "INSERT INTO stock_items (supplier_id, sku, name, unit, eet_item_kind) VALUES (?, 'VOUCHER-TAX', 'Dárkový poukaz', 'ks', 'stored_value')"
+        )->execute([$this->supplierId]);
+        $stockItemId = (int) $this->db->pdo()->lastInsertId();
+        $body = ['channel' => 'card_terminal', 'items' => [
+            ['stock_item_id' => $stockItemId, 'quantity' => 1, 'unit_price' => '1210', 'vat_rate' => 21],
+        ]];
+        $response = $this->post($body, 'rcpt-voucher-taxed-1');
+        self::assertSame(422, $response->getStatusCode(), (string) $response->getBody());
+        self::assertStringContainsString('jednoúčelový poukaz', (string) json_encode($this->json($response), JSON_UNESCAPED_UNICODE));
+        self::assertSame(0, $this->rows('invoices'));
+    }
+
     public function testCompanyWithoutEetIssuesReceiptWithoutSale(): void
     {
         $this->db->pdo()->prepare('UPDATE eet_settings SET enabled = 0 WHERE supplier_id = ?')->execute([$this->supplierId]);

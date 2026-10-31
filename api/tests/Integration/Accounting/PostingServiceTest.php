@@ -1825,6 +1825,64 @@ final class PostingServiceTest extends TestCase
         self::assertEqualsWithDelta(1605.00, $byAccount['321']['credit'], 0.001);
     }
 
+    /** Náklad položek pro časové rozlišení (#276) musí sedět na nákladovou nohu zápisu i u RC. */
+    public function testItemCostsOfReverseChargeMatchPostedExpense(): void
+    {
+        $none = $this->rcPurchaseWithDeduction('PF-2099-COSTNONE', 'none', 100.00);
+        self::assertSame(
+            $this->postedPurchaseByAccount($none)['518']['debit'],
+            array_sum($this->posting->purchaseItemCostsCzk($this->supplierId, $none)),
+        );
+
+        $proportional = $this->rcPurchaseWithDeduction('PF-2099-COSTPROP', 'proportional', 50.00);
+        self::assertEqualsWithDelta(1105.00, array_sum($this->posting->purchaseItemCostsCzk($this->supplierId, $proportional)), 0.001);
+
+        $full = $this->rcPurchaseWithDeduction('PF-2099-COSTFULL', 'full', 100.00);
+        self::assertEqualsWithDelta(1000.00, array_sum($this->posting->purchaseItemCostsCzk($this->supplierId, $full)), 0.001);
+    }
+
+    /** Smíšený RC bez nároku: daň se na položky rozdělí podle základu jako rozpad nákladu v zápisu. */
+    public function testItemCostsOfMixedReverseChargeSplitVatByBase(): void
+    {
+        $purchaseId = $this->rcPurchaseWithDeduction('PF-2099-COSTMIX', 'none', 100.00);
+        $this->db->pdo()->prepare(
+            'UPDATE purchase_invoices SET total_without_vat = 1500.00, total_vat = 105.00, total_with_vat = 1605.00 WHERE id = ?'
+        )->execute([$purchaseId]);
+        $this->insertItem('purchase_invoice_items', 'purchase_invoice_id', $purchaseId, 500.00, 105.00, 21.00);
+        $this->db->pdo()->prepare(
+            "UPDATE purchase_invoice_items SET vat_classification_code = '40' WHERE purchase_invoice_id = ? AND total_vat > 0"
+        )->execute([$purchaseId]);
+
+        $costs = array_values($this->posting->purchaseItemCostsCzk($this->supplierId, $purchaseId));
+        sort($costs);
+        self::assertEqualsWithDelta(605.00, $costs[0], 0.001);
+        self::assertEqualsWithDelta(1210.00, $costs[1], 0.001);
+        self::assertEqualsWithDelta(1815.00, $this->postedPurchaseByAccount($purchaseId)['518']['debit'], 0.001);
+    }
+
+    /** Účetní alokace: do nákladu položky jde jen daň z alokací bez nároku, jako v zápisu dokladu. */
+    public function testItemCostsOfAllocatedPurchaseMatchPostedExpense(): void
+    {
+        $purchaseId = $this->rcPurchaseWithDeduction('PF-2099-COSTALLOC', 'full', 100.00);
+        $this->db->pdo()->prepare(
+            'UPDATE purchase_invoices SET reverse_charge = 0, vat_classification_code = "40", total_vat = 210.00, total_with_vat = 1210.00 WHERE id = ?'
+        )->execute([$purchaseId]);
+        $this->db->pdo()->prepare(
+            'UPDATE purchase_invoice_items SET total_vat = 210.00, total_with_vat = 1210.00 WHERE purchase_invoice_id = ?'
+        )->execute([$purchaseId]);
+        $allocation = $this->db->pdo()->prepare(
+            'INSERT INTO purchase_invoice_vat_allocations
+                (supplier_id, purchase_invoice_id, description, vat_rate, base_amount, vat_amount, total_amount,
+                 vat_deduction, vat_deduction_percent, account_code, order_index)
+             VALUES (?, ?, ?, 21.00, ?, ?, ?, ?, 100, "518", ?)'
+        );
+        $allocation->execute([$this->supplierId, $purchaseId, 'Bez nároku', 600.00, 126.00, 726.00, 'none', 1]);
+        $allocation->execute([$this->supplierId, $purchaseId, 'S nárokem', 400.00, 84.00, 484.00, 'full', 2]);
+
+        self::assertEqualsWithDelta(1126.00, array_sum($this->posting->purchaseItemCostsCzk($this->supplierId, $purchaseId)), 0.001);
+        self::assertEqualsWithDelta(1126.00, $this->postedPurchaseByAccount($purchaseId)['518']['debit'], 0.001);
+    }
+
     private function rcPurchaseWithDeduction(string $number, string $deduction, float $percent): int
     {
         $vendor = $this->client('Dodavatel RC ' . $deduction, false, true);

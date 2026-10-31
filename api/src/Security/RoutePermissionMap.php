@@ -125,6 +125,7 @@ final class RoutePermissionMap
         ['POST', '#^/api/invoices/bulk-reminder$#', 'invoices.reminder', AccessLevel::WRITE],
         ['POST', '#^/api/invoices/bulk-reissue$#', 'invoices.clone', AccessLevel::WRITE],
         ['DELETE', '#^/api/invoices/[0-9]+$#', 'invoices.delete', AccessLevel::WRITE],
+        ['POST', '#^/api/invoices/[0-9]+/convert-to-tax-document$#', 'invoices.delete', AccessLevel::WRITE],
         ['*', '#^/api/invoices/[0-9]+/(request-approval|request-approval-test|approval-status)$#', 'invoices.approval', AccessLevel::WRITE],
         ['POST', '#^/api/invoices$#', 'invoices.create', AccessLevel::WRITE],
         ['GET', '#^/api/invoices(/|$)#', 'invoices', AccessLevel::READ],
@@ -514,6 +515,9 @@ final class RoutePermissionMap
         ['GET', '#^/api/payroll/submissions/[0-9]+/jmhz-content-correction-preparations$#', 'payroll.submissions', AccessLevel::WRITE],
         ['GET', '#^/api/payroll/submissions/[0-9]+/jmhz-content-correction$#', 'payroll.submissions', AccessLevel::WRITE],
         ['POST', '#^/api/payroll/submissions/[0-9]+/jmhz-content-correction$#', 'payroll.submissions', AccessLevel::WRITE],
+        ['GET', '#^/api/payroll/submissions/jmhz-post20/[0-9]+$#', 'payroll.submissions', AccessLevel::READ],
+        ['GET', '#^/api/payroll/submissions/[0-9]+/jmhz-zero-amendment$#', 'payroll.submissions', AccessLevel::WRITE],
+        ['POST', '#^/api/payroll/submissions/[0-9]+/jmhz-zero-amendment$#', 'payroll.submissions', AccessLevel::WRITE],
         ['POST', '#^/api/payroll/submissions/[0-9]+/jmhz-cancel(?:-components)?$#', 'payroll.submissions', AccessLevel::WRITE],
         ['GET', '#^/api/payroll/submissions/jmhz-protocol-import$#', 'payroll.submissions', AccessLevel::READ],
         ['POST', '#^/api/payroll/submissions/jmhz-protocol-import$#', 'payroll.submissions', AccessLevel::WRITE],
@@ -554,6 +558,9 @@ final class RoutePermissionMap
         // jdou přímo do úhrnu, ze kterého vychází přeplatek, takže kdo je smí
         // zadat, ten rozhoduje o penězích stejně jako ten, kdo zúčtování provede.
         ['PUT', '#^/api/payroll/annual-settlements/[0-9]{4}/people/[0-9]+/certificates$#', 'payroll.approve', AccessLevel::WRITE],
+        // Roční nároky (§ 15, § 35 odst. 4, sleva na manžela) jdou rovnou do
+        // základu a daně, ze kterých vychází přeplatek — stejně citlivé jako potvrzení.
+        ['PUT', '#^/api/payroll/annual-settlements/[0-9]{4}/people/[0-9]+/annual-claims$#', 'payroll.approve', AccessLevel::WRITE],
         ['POST', '#^/api/payroll/annual-settlements/[0-9]{4}/people/[0-9]+/settle$#', 'payroll.approve', AccessLevel::WRITE],
         // Hromadné zúčtování žadatelů přes frontu ročních dokumentů — týž úkon.
         ['POST', '#^/api/payroll/documents/annual-batches/annual-settlement/[0-9]{4}$#', 'payroll.approve', AccessLevel::WRITE],
@@ -585,6 +592,11 @@ final class RoutePermissionMap
         // v catch-all pravidle níž: kdo cestu založil, musí umět svůj překlep uklidit.
         ['POST', '#^/api/payroll/travel/trips/[0-9]+/(approve|materialize|cancel)$#', 'payroll.approve', AccessLevel::WRITE],
         ['*', '#^/api/payroll/travel(?:/.*)?$#', 'payroll.inputs.write', AccessLevel::WRITE],
+        // Evidence tržeb pro osvobozené spropitné (§ 6 odst. 9 písm. g) ZDP).
+        // Strop se zmrazuje do schválených vstupů a mění daň i pojistné, proto
+        // zápis pod `payroll.approve` jako ostatní daňové podklady.
+        ['GET', '#^/api/payroll/food-service-tips/[0-9]{4}-[0-9]{2}$#', 'payroll', AccessLevel::READ],
+        ['PUT', '#^/api/payroll/food-service-tips/[0-9]{4}-[0-9]{2}$#', 'payroll.approve', AccessLevel::WRITE],
         ['GET', '#^/api/payroll/deduction-agreements(?:/|$)#', 'payroll', AccessLevel::READ],
         ['*', '#^/api/payroll/deduction-agreements(?:/|$)#', 'payroll.inputs.write', AccessLevel::WRITE],
         ['GET', '#^/api/payroll/revisions/[0-9]+/net-results/[0-9]+$#', 'payroll', AccessLevel::READ],

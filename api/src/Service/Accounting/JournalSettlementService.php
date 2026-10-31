@@ -295,10 +295,14 @@ final class JournalSettlementService
      * Ostatní pohledávka / závazek ze zůstatku bez dokladu, navázaná na vybraný řádek zápisu.
      * Bez nového zaúčtování: předpis zůstává v původním zápisu.
      *
-     * @param array<string,mixed> $input {line_id, amount, partner_id?, title?, due_on?, note?}
+     * Řádek pohybu peněz (`$fromPayment`) zůstává mimo výběr účetní v saldokontu, kde pohyb
+     * páruje na doklady. Přebírá ho jen převod: přeplatek zaúčtovaný z výpisu přímo na účet
+     * jiný program dokladem nevede, předpisem je tedy řádek toho pohybu.
+     *
+     * @param array<string,mixed> $input {line_id, amount, partner_id?, partner_name?, variable_symbol?, title?, due_on?, note?}
      * @return array{item:array<string,mixed>, allocation_id:int, line:array<string,mixed>}
      */
-    public function createOtherItem(int $supplierId, array $input, ?int $userId): array
+    public function createOtherItem(int $supplierId, array $input, ?int $userId, bool $fromPayment = false): array
     {
         $lineId = (int) ($input['line_id'] ?? 0);
         $amount = self::amount($input['amount'] ?? null);
@@ -310,7 +314,9 @@ final class JournalSettlementService
             $this->repo->lockForAllocation($supplierId, [$lineId], []);
             $line = $this->repo->lines($supplierId, [$lineId])[$lineId]
                 ?? throw new JournalSettlementException('line_not_found', 'Řádek zápisu nenalezen.', 404);
-            $this->assertLine($supplierId, $line, null, SaldoService::DEFAULT_ACCOUNTS);
+            $this->assertLine($supplierId, $line, null, SaldoService::DEFAULT_ACCOUNTS, $fromPayment
+                ? [...JournalSettlementRepository::ALLOCATABLE_SOURCES, ...JournalSettlementRepository::PAYMENT_SOURCES]
+                : JournalSettlementRepository::ALLOCATABLE_SOURCES);
             if ($this->repo->hasCountedLink($supplierId, $line['entry_id'])) {
                 throw new JournalSettlementException('entry_linked', 'Zápis už je navázaný na doklad, zůstatek bez dokladu z něj založit nelze.', 409);
             }
@@ -333,6 +339,7 @@ final class JournalSettlementService
                     'due_on'       => $dueOn !== '' ? $dueOn : $line['entry_date'],
                     'currency'     => 'CZK',
                     'amount'       => $amount,
+                    'variable_symbol' => $input['variable_symbol'] ?? null,
                     'account_code' => $line['account_code'],
                     'note'         => $input['note'] ?? ('Předpis je v zápisu ' . $docRef . ' (řádek ' . $line['line_no'] . ', účet ' . $line['account_code'] . '); položka se znovu neúčtuje.'),
                 ], $userId);
@@ -573,15 +580,16 @@ final class JournalSettlementService
      *
      * @param array<string,mixed> $line
      * @param list<string> $allowedCodes
+     * @param list<string> $sources druhy zápisu, jejichž řádek se smí rozepsat
      * @return array{id:int, code:string, name:string, account_type:string, normal_side:?string}
      */
-    private function assertLine(int $supplierId, array $line, ?string $side, array $allowedCodes): array
+    private function assertLine(int $supplierId, array $line, ?string $side, array $allowedCodes, array $sources = JournalSettlementRepository::ALLOCATABLE_SOURCES): array
     {
         $ref = $line['document_no'] ?? ('#' . $line['entry_id']);
         if (!$line['posted'] || $line['reversed'] || $line['is_reversal']) {
             throw new JournalSettlementException('line_not_live', 'Zápis ' . $ref . ' není zaúčtovaný, nebo je stornovaný.', 409);
         }
-        if (!in_array($line['source_type'], JournalSettlementRepository::ALLOCATABLE_SOURCES, true) || $line['own_posting']) {
+        if (!in_array($line['source_type'], $sources, true) || $line['own_posting']) {
             throw new JournalSettlementException('line_source', 'Rozepsat na doklady lze jen řádek ručního (interního) zápisu, ne zaúčtování dokladu.', 409);
         }
         if ($line['imported_settlement']) {

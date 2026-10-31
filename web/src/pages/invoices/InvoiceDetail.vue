@@ -8,7 +8,8 @@ import DocumentSidePreview from '@/components/documents/DocumentSidePreview.vue'
 import { ref, reactive, computed, onMounted, onBeforeUnmount, watch, defineAsyncComponent } from 'vue'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { invoicesApi, type Invoice, type WorkReport, type ApprovalStatus, type InvoiceAttachment, type AdvanceCandidate, type InvoicePayment, type PenaltyPreview, type RelatedBankTransaction } from '@/api/invoices'
+import { invoicesApi, type Invoice, type WorkReport, type ApprovalStatus, type InvoiceAttachment, type AdvanceCandidate, type AdvanceDrawdownCandidate, type InvoicePayment, type PenaltyPreview, type RelatedBankTransaction } from '@/api/invoices'
+import { hasPaymentSchedule, isCalendarType } from '@/utils/invoiceCalendar'
 import {
   settingsApi,
   type PdfSignatureDocumentEntityType,
@@ -56,6 +57,8 @@ import DateInput from '@/components/ui/DateInput.vue'
 import ItemAccrualFields from '@/components/invoice/ItemAccrualFields.vue'
 import CreditNoteOffsetNotice from '@/components/invoices/CreditNoteOffsetNotice.vue'
 import WorkspaceTeleport from '@/components/workspace/WorkspaceTeleport.vue'
+import ListNavArrows from '@/components/ui/ListNavArrows.vue'
+import { useListNavigation } from '@/composables/useListNavigation'
 
 const PaymentMethodModal = defineAsyncComponent(() => import('@/components/invoices/PaymentMethodModal.vue'))
 const RefundPaymentDialog = defineAsyncComponent(() => import('@/components/invoices/RefundPaymentDialog.vue'))
@@ -85,6 +88,16 @@ function formatRate(rate: number): string {
 
 const route = useRoute()
 const router = useRouter()
+const listNav = useListNavigation({
+  kind: 'invoices',
+  currentId: () => Number(route.params.id) || 0,
+  detailRoute: id => ({ name: 'invoice-detail', params: { id } }),
+  fetchPage: async (params, page) => {
+    const result = await invoicesApi.listGrouped({ ...(params as Parameters<typeof invoicesApi.listGrouped>[0]), page })
+    return { ids: result.data.flatMap(g => g.invoices.map(inv => inv.id)), pages: result.meta.pages ?? 1 }
+  },
+  scope: () => supplierStore.currentSupplierId,
+})
 
 const invoice = ref<Invoice | null>(null)
 
@@ -1068,8 +1081,8 @@ async function uncancelInvoice() {
 }
 
 function openCancelModal() {
-  // Dobropisu nelze vystavit další dobropis — default mode = internal.
-  cancelMode.value = isCreditNoteSource.value ? 'internal' : 'credit_note'
+  // Dobropisu nelze vystavit další dobropis a kalendář se ruší jen interně — default mode = internal.
+  cancelMode.value = isCreditNoteSource.value || isCalendar.value ? 'internal' : 'credit_note'
   cancelOpen.value = true
 }
 
@@ -1148,6 +1161,9 @@ const canPairFinal = computed(() =>
 // Propojeno se zálohou (proforma) → lze odpojit. Rodič storna/dobropisu (non-proforma) ne.
 const linkedProforma = computed(() =>
   invoice.value?.parent_invoice?.invoice_type === 'proforma' ? invoice.value.parent_invoice : null)
+// Odpočtový řádek zálohy § 37a = záporný řádek mimo slevový (stejná definice jako na serveru).
+const hasAdvanceDeduction = computed(() =>
+  (invoice.value?.items ?? []).some(i => Number(i.total_with_vat) < 0 && (i.item_kind ?? 'standard') !== 'discount'))
 
 async function openPairModal(mode: 'advance' | 'final') {
   if (!invoice.value) return
@@ -1211,6 +1227,99 @@ async function unlinkAdvance(targetId?: number) {
     toast.error(apiErrorMessage(e))
   } finally {
     linkingAdvance.value = false
+  }
+}
+
+// ── Postupné čerpání zálohy (koncept faktury odečte část zaplacené zálohy) ──
+const drawdownOpen = ref(false)
+const drawdownCandidates = ref<AdvanceDrawdownCandidate[]>([])
+const drawdownLoading = ref(false)
+const drawdownSaving = ref(false)
+const drawdownProformaId = ref<number | null>(null)
+const drawdownAmount = ref<number | null>(null)
+const drawdownError = ref('')
+
+const selectedDrawdown = computed(() =>
+  drawdownCandidates.value.find(c => c.id === drawdownProformaId.value) ?? null)
+const drawdownAmountValid = computed(() => {
+  const c = selectedDrawdown.value
+  const a = Number(drawdownAmount.value)
+  return !!c && Number.isFinite(a) && a > 0 && a <= Number(c.available) + 0.005
+})
+
+function selectDrawdown(id: number) {
+  drawdownProformaId.value = id
+  const c = drawdownCandidates.value.find(x => x.id === id)
+  drawdownAmount.value = c ? Number(c.available) : null
+}
+
+async function openDrawdownModal() {
+  if (!invoice.value) return
+  drawdownError.value = ''
+  drawdownCandidates.value = []
+  drawdownProformaId.value = null
+  drawdownAmount.value = null
+  drawdownOpen.value = true
+  drawdownLoading.value = true
+  try {
+    drawdownCandidates.value = await invoicesApi.advanceDrawdownCandidates(invoice.value.id)
+    const current = invoice.value.parent_invoice?.id
+    const pre = drawdownCandidates.value.find(c => c.id === current) ?? drawdownCandidates.value[0]
+    if (pre) selectDrawdown(pre.id)
+  } catch (e) {
+    drawdownError.value = apiErrorMessage(e)
+  } finally {
+    drawdownLoading.value = false
+  }
+}
+
+async function confirmDrawdown() {
+  if (!invoice.value || drawdownSaving.value || !drawdownAmountValid.value || drawdownProformaId.value === null) return
+  drawdownSaving.value = true
+  drawdownError.value = ''
+  try {
+    const r = await invoicesApi.applyAdvanceDrawdown(invoice.value.id, {
+      proforma_id: drawdownProformaId.value,
+      amount: Number(drawdownAmount.value),
+    })
+    invoice.value = r.invoice
+    drawdownOpen.value = false
+    toast.success(t('invoice.advance_drawdown.applied'))
+    invoicesApi.activity(r.invoice.id).then(a => { activity.value = a }).catch(() => {})
+  } catch (e) {
+    drawdownError.value = apiErrorMessage(e)
+  } finally {
+    drawdownSaving.value = false
+  }
+}
+
+async function removeDrawdown() {
+  if (!invoice.value || busy.value !== null) return
+  if (!confirm(t('invoice.advance_drawdown.remove_confirm'))) return
+  busy.value = 'drawdown-remove'
+  try {
+    invoice.value = await invoicesApi.removeAdvanceDrawdown(invoice.value.id)
+    toast.success(t('invoice.advance_drawdown.removed'))
+    invoicesApi.activity(invoice.value.id).then(a => { activity.value = a }).catch(() => {})
+  } catch (e) {
+    toast.error(apiErrorMessage(e))
+  } finally {
+    busy.value = null
+  }
+}
+
+async function convertToTaxDocument() {
+  if (!invoice.value || busy.value !== null) return
+  if (!confirm(t('invoice.convert_to_tax_document.confirm'))) return
+  busy.value = 'convert-tax-doc'
+  try {
+    const r = await invoicesApi.convertToTaxDocument(invoice.value.id)
+    toast.success(t('invoice.convert_to_tax_document.done'))
+    router.push(`/invoices/${r.tax_document_ids[0] ?? r.proforma_id}`)
+  } catch (e) {
+    toast.error(apiErrorMessage(e))
+  } finally {
+    busy.value = null
   }
 }
 
@@ -1444,6 +1553,14 @@ async function send() {
 
 const isDraft = computed(() => invoice.value?.status === 'draft')
 const isProforma = computed(() => invoice.value?.invoice_type === 'proforma')
+// Vystavený kalendář nenese pohledávku, úhrady ani zápis v deníku, ty jsou na dokladech splátek.
+const isCalendar = computed(() => isCalendarType(invoice.value?.invoice_type))
+const isRentCalendar = computed(() => invoice.value?.invoice_type === 'rent_calendar')
+// Interní doklad splátky. Daňový doklad k její úhradě má calendar_id taky, ale dá se stornovat běžně.
+const isCalendarInstalment = computed(() =>
+  !!invoice.value?.calendar_id && ['invoice', 'proforma'].includes(invoice.value.invoice_type))
+const calendarScheduleRows = computed(() =>
+  hasPaymentSchedule(invoice.value?.invoice_type) ? invoice.value?.payment_schedule ?? [] : [])
 // Vyúčtovat lze i částečně uhrazenou proformu (#89) — odpočet pokryje přijaté platby.
 const canIssueFinal = computed(() => isProforma.value
   && (invoice.value?.status === 'paid' || Number(invoice.value?.paid_total ?? 0) > 0)
@@ -1821,6 +1938,14 @@ function eetHistoryMessage(e: unknown): string | null {
 // ─── Lišta akcí (sdílená ActionBar) — primary se mění dle lifecyclu dokladu ───
 // Pravidlo „1 primární akce": je-li doklad po splatnosti, primární = Upomínka a Uhradit klesá
 // na sekundární; jinak je primární Uhradit.
+// Vystavený kalendář jde jen poslat, vytisknout a celý stornovat; zbytek se děje na splátkách.
+const ISSUED_CALENDAR_ACTIONS = new Set(['send', 'send-test', 'view-pdf', 'print', 'pdf', 'cancel', 'client'])
+// Doklady splátek odběratel nedostává (PDF je kalendář) a rozpisu na vytištěném kalendáři se
+// nesmí rozejít: žádná úprava, kopie ani odeslání. Úhrady, upomínky a dobropis zůstávají.
+const CALENDAR_DOCUMENT_HIDDEN_ACTIONS = new Set([
+  'send', 'send-test', 'edit', 'edit-admin', 'clone', 'public-link', 'approval', 'approval-test',
+  'recurring-from', 'rebuild-snapshots', 'uncancel', 'delete-cancelled',
+])
 const invoiceActions = computed<ActionItem[]>(() => {
   const inv = invoice.value
   if (!inv) return []
@@ -1836,7 +1961,7 @@ const invoiceActions = computed<ActionItem[]>(() => {
   const b = busy.value !== null
   const approvalPending = requiresApproval.value && approvalStatus.value !== 'approved'
   const markPaidPrimary = !canSendReminder.value
-  return [
+  const actions: ActionItem[] = [
     // ── primary (1 dle stavu) ──
     { key: 'issue', label: t('invoice.issue'), icon: 'check', tier: 'primary', variant: 'primary',
       show: isDraft.value && canIssueDraft.value && canIssue && !lockedForMe.value,
@@ -1878,6 +2003,12 @@ const invoiceActions = computed<ActionItem[]>(() => {
       show: isDoubleEntry.value && auth.canWrite('accounting.offsets') && isIssued.value && inv.invoice_type === 'invoice'
         && (inv.currency ?? 'CZK') === 'CZK' && Number(inv.amount_to_pay ?? 0) - Number(inv.paid_total ?? 0) > 0.005,
       to: offsetRoute(Number(inv.client_id), [{ doc_type: 'invoice', doc_id: inv.id, amount: null }]) },
+    { key: 'advance-drawdown', label: t('invoice.advance_drawdown.action'), icon: 'coin', tier: 'secondary', variant: 'warning',
+      show: isDraft.value && inv.invoice_type === 'invoice' && w && !lockedForMe.value, disabled: b,
+      title: t('invoice.advance_drawdown.tooltip') as string, run: openDrawdownModal },
+    { key: 'advance-drawdown-remove', label: t('invoice.advance_drawdown.remove'), icon: 'uturn', tier: 'overflow', variant: 'neutral',
+      show: isDraft.value && inv.invoice_type === 'invoice' && inv.parent_invoice?.invoice_type === 'proforma' && w && !lockedForMe.value,
+      disabled: b, loading: busy.value === 'drawdown-remove', run: removeDrawdown },
     { key: 'wr', label: t('invoice.wr_btn'), icon: 'chart', tier: 'secondary', variant: 'primary',
       show: isDraft.value && inv.invoice_type !== 'tax_document' && w && !lockedForMe.value,
       title: t('invoice.wr_btn') as string, run: () => { wrModalOpen.value = true } },
@@ -1888,6 +2019,13 @@ const invoiceActions = computed<ActionItem[]>(() => {
     { key: 'journal', label: t('common.view_in_journal'), icon: 'chart', tier: 'secondary', variant: 'neutral',
       show: isDoubleEntry.value && (!!inv.booked_at || !!inv.locked?.journal_entry_id),
       to: { name: 'accounting-journal', query: { source_type: 'invoice', source_id: String(inv.id) } } },
+    // Koncept vyúčtovací faktury po úhradě zálohy → daňový doklad k přijaté platbě
+    // (záloha na plnění, které ještě nenastalo). Route vyžaduje invoices.delete
+    // (koncept zmizí), akce navíc invoices.mark_paid.
+    { key: 'convert-tax-doc', label: t('invoice.convert_to_tax_document.action'), icon: 'swap', tier: 'overflow', variant: 'warning',
+      show: isDraft.value && inv.invoice_type === 'invoice' && inv.parent_invoice?.invoice_type === 'proforma'
+        && supplierIsVatPayer.value && !inv.reverse_charge && canDeletePermission && canMarkPaidPermission && !lockedForMe.value,
+      disabled: b, loading: busy.value === 'convert-tax-doc', run: convertToTaxDocument },
     { key: 'posting-rule', label: t('accounting.template.create_posting_rule'), icon: 'doc', tier: 'overflow', variant: 'neutral',
       show: isDoubleEntry.value && auth.canWrite('bank.rules'), run: () => { postingRuleOpen.value = true } },
     // ── overflow ──
@@ -1929,7 +2067,9 @@ const invoiceActions = computed<ActionItem[]>(() => {
     { key: 'rebuild-snapshots', label: t('invoice.rebuild_snapshots'), icon: 'cycle', tier: 'advanced', variant: 'warning',
       show: isAdmin.value && !isDraft.value && inv.status !== 'cancelled',
       disabled: b, loading: busy.value === 'rebuild-snapshots', run: rebuildSnapshots },
-    { key: 'cancel', label: isCreditNoteSource.value ? t('invoice.cancel_credit_note') : t('invoice.cancel_or_credit'),
+    { key: 'cancel', label: isCalendar.value ? t('invoice.calendar.cancel_action')
+        : isCalendarInstalment.value ? t('invoice.modals.cancel_credit_note')
+        : isCreditNoteSource.value ? t('invoice.cancel_credit_note') : t('invoice.cancel_or_credit'),
       icon: 'trash', tier: 'advanced', variant: 'danger',
       show: canCancel.value && canCancelPermission && !lockedForMe.value, disabled: b, run: openCancelModal },
     { key: 'uncancel', label: t('invoice.uncancel'), icon: 'uturn', tier: 'advanced', variant: 'warning',
@@ -1939,12 +2079,15 @@ const invoiceActions = computed<ActionItem[]>(() => {
       show: isAdmin.value && canDeletePermission && (inv.status === 'cancelled' || (inv.invoice_type === 'cancellation' && !!inv.parent_invoice_id)),
       disabled: b, loading: busy.value === 'delete', run: deleteInvoice },
   ]
+  if (isCalendar.value && !isDraft.value) return actions.filter(a => ISSUED_CALENDAR_ACTIONS.has(a.key))
+  if (inv.calendar_id) return actions.filter(a => !CALENDAR_DOCUMENT_HIDDEN_ACTIONS.has(a.key))
+  return actions
 })
 useWindowTitle(
   () => invoice.value ? [typeLabel(invoice.value.invoice_type), invoice.value.varsymbol].filter(Boolean).join(' ') : null,
   () => invoice.value?.client_company_name ?? null,
 )
-useWindowRefresh(['invoices', 'clients', 'bank', 'bank-transactions', 'cash', 'accounting', 'stock'], async () => {
+useWindowRefresh(async () => {
   const generation = loadGeneration
   const invoiceId = Number(route.params.id)
   const [updated, events] = await Promise.all([invoicesApi.get(invoiceId), invoicesApi.activity(invoiceId)])
@@ -1955,7 +2098,7 @@ useWindowRefresh(['invoices', 'clients', 'bank', 'bank-transactions', 'cash', 'a
   if (stockIntegrationVisible.value) void loadStockDocuments(invoiceId, generation)
 }, () => !loading.value && !busy.value && !accrualEditing.value && !accrualSaving.value
   && !sendOpen.value && !reminderOpen.value && !cancelOpen.value && !partialOpen.value
-  && !markPaidOpen.value && !advanceModalOpen.value && !penaltyOpen.value
+  && !markPaidOpen.value && !advanceModalOpen.value && !drawdownOpen.value && !penaltyOpen.value
   && !approvalStatusOpen.value && !wrModalOpen.value && !refundDialogOpen.value && !bankMatchTarget.value)
 </script>
 
@@ -1970,7 +2113,11 @@ useWindowRefresh(['invoices', 'clients', 'bank', 'bank-transactions', 'cash', 'a
        celou šířku - proto je vnější div v ostatních případech jen průhledný obal. -->
   <div v-else-if="invoice" :class="importedPdfSideBySide ? 'flex items-start gap-4' : ''">
     <div class="max-w-5xl space-y-4 min-w-0" :class="importedPdfSideBySide ? 'flex-1' : ''">
-      <RouterLink to="/invoices" class="text-sm text-neutral-600 hover:text-neutral-900">{{ t('invoice.back_to_list') }}</RouterLink>
+      <div class="flex items-center gap-2">
+        <ListNavArrows v-if="listNav.active.value" :has-previous="listNav.hasPrevious.value" :has-next="listNav.hasNext.value"
+          :busy="listNav.busy.value" @previous="listNav.previous" @next="listNav.next" />
+        <RouterLink :to="listNav.listPath.value ?? '/invoices'" class="text-sm text-neutral-600 hover:text-neutral-900">{{ t('invoice.back_to_list') }}</RouterLink>
+      </div>
       <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-3 md:gap-4">
         <h1 class="text-2xl font-semibold flex items-center gap-3 flex-wrap min-w-0">
           <span v-if="invoice.varsymbol" class="font-mono">{{ invoice.varsymbol }}</span>
@@ -2156,9 +2303,10 @@ useWindowRefresh(['invoices', 'clients', 'bank', 'bank-transactions', 'cash', 'a
       <div v-if="cancelOpen" class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
         <div class="bg-surface rounded-xl shadow-lg max-w-md w-full p-5">
           <h3 class="text-lg font-semibold mb-3">{{ isCreditNoteSource ? t('invoice.modals.cancel_title_cn') : t('invoice.modals.cancel_title') }}</h3>
-          <p class="text-sm text-neutral-600 mb-3">{{ t('invoice.modals.cancel_choose') }}</p>
+          <p v-if="isCalendar" class="text-sm text-neutral-600 mb-3">{{ t('invoice.calendar.cancel_hint') }}</p>
+          <p v-else class="text-sm text-neutral-600 mb-3">{{ t('invoice.modals.cancel_choose') }}</p>
           <div class="space-y-2 mb-4">
-            <label v-if="!isCreditNoteSource" class="flex items-start gap-2 p-3 border rounded-md cursor-pointer"
+            <label v-if="!isCreditNoteSource && !isCalendar" class="flex items-start gap-2 p-3 border rounded-md cursor-pointer"
               :class="cancelMode === 'credit_note' ? 'border-primary-500 bg-primary-50' : 'border-neutral-200'">
               <input type="radio" v-model="cancelMode" value="credit_note" class="mt-1" />
               <div>
@@ -2166,7 +2314,7 @@ useWindowRefresh(['invoices', 'clients', 'bank', 'bank-transactions', 'cash', 'a
                 <div class="text-xs text-neutral-500">{{ t('invoice.modals.cancel_credit_desc') }}</div>
               </div>
             </label>
-            <label class="flex items-start gap-2 p-3 border rounded-md cursor-pointer"
+            <label v-if="!isCalendarInstalment" class="flex items-start gap-2 p-3 border rounded-md cursor-pointer"
               :class="cancelMode === 'internal' ? 'border-primary-500 bg-primary-50' : 'border-neutral-200'">
               <input type="radio" v-model="cancelMode" value="internal" class="mt-1" />
               <div>
@@ -2176,7 +2324,7 @@ useWindowRefresh(['invoices', 'clients', 'bank', 'bank-transactions', 'cash', 'a
             </label>
             <!-- 3. možnost: force-delete účetního dokladu — admin only.
                  Po výběru a potvrzení modalky se otevře window.confirm s plným per-status warningem. -->
-            <label v-if="isAdmin" class="flex items-start gap-2 p-3 border rounded-md cursor-pointer"
+            <label v-if="isAdmin && !isCalendar && !invoice.calendar_id" class="flex items-start gap-2 p-3 border rounded-md cursor-pointer"
               :class="cancelMode === 'delete' ? 'border-danger-500 bg-danger-50' : 'border-neutral-200'">
               <input type="radio" v-model="cancelMode" value="delete" class="mt-1" />
               <div>
@@ -2385,6 +2533,43 @@ useWindowRefresh(['invoices', 'clients', 'bank', 'bank-transactions', 'cash', 'a
           {{ t('invoice.advance_link.pair_final') }}
         </button>
       </div>
+      <!-- Interní doklad splátky a daňový doklad k její úhradě → odkaz na kalendář -->
+      <RouterLink v-if="invoice.calendar_id" :to="`/invoices/${invoice.calendar_id}`"
+        class="flex items-center justify-between gap-3 bg-primary-50 border border-primary-200 rounded-lg px-4 py-2.5 text-sm hover:bg-primary-100 transition mb-4">
+        <span class="text-primary-700 min-w-0">{{ isCalendarInstalment ? t('invoice.calendar.instalment_notice') : t('invoice.calendar.payment_document_notice') }}</span>
+        <span class="font-medium text-primary-700 whitespace-nowrap">{{ t('invoice.calendar.open_calendar') }} →</span>
+      </RouterLink>
+      <!-- Rozpis plateb kalendáře; po vystavení vede každý řádek na doklad splátky -->
+      <div v-if="calendarScheduleRows.length > 0" class="bg-surface border border-neutral-200 rounded-lg shadow-sm overflow-hidden mb-4">
+        <header class="px-5 py-3 border-b border-neutral-200">
+          <h3 class="text-sm font-semibold uppercase tracking-wide text-neutral-500">{{ t('invoice.calendar.instalments') }}</h3>
+        </header>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-left text-xs uppercase tracking-wide text-neutral-500">
+                <th class="px-5 py-2 font-medium">{{ t('invoice.calendar.instalment_document') }}</th>
+                <th v-if="isRentCalendar" class="px-3 py-2 font-medium">{{ t('invoice.tax_date') }}</th>
+                <th class="px-3 py-2 font-medium">{{ t('invoice.payment_schedule_due_on') }}</th>
+                <th class="px-5 py-2 font-medium text-right">{{ t('invoice.totals.total') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(row, i) in calendarScheduleRows" :key="row.id ?? i" class="border-t border-neutral-200">
+                <td class="px-5 py-2">
+                  <RouterLink v-if="row.instalment_invoice_id" :to="`/invoices/${row.instalment_invoice_id}`" class="text-primary-700 font-medium hover:underline whitespace-nowrap">
+                    {{ t('invoice.calendar.instalment_n', { n: i + 1 }) }}
+                  </RouterLink>
+                  <span v-else class="whitespace-nowrap">{{ t('invoice.calendar.instalment_n', { n: i + 1 }) }}</span>
+                </td>
+                <td v-if="isRentCalendar" class="px-3 py-2 whitespace-nowrap">{{ formatDate(row.tax_date ?? row.due_on) }}</td>
+                <td class="px-3 py-2 whitespace-nowrap">{{ formatDate(row.due_on) }}</td>
+                <td class="px-5 py-2 text-right font-mono whitespace-nowrap">{{ formatMoney(row.total_amount, invoice.currency) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
       <!-- Zápočet dobropisu s opravovanou fakturou (issue #140) -->
       <CreditNoteOffsetNotice v-if="!isDraft && hasCreditNoteOffsetContext"
         doc-type="invoice" :doc-id="invoice.id" :is-credit-note="invoice.invoice_type === 'credit_note'"
@@ -2406,8 +2591,15 @@ useWindowRefresh(['invoices', 'clients', 'bank', 'bank-transactions', 'cash', 'a
           </RouterLink>
         </span>
         <!-- Daňový doklad k přijaté platbě (#89) má vazbu strukturální (drží § 37a
-             odpočty finálu i vazbu na platbu) — rozpojit nelze, backend to odmítá. -->
-        <button v-if="auth.canWrite('invoices') && invoice.invoice_type !== 'tax_document' && !lockedForMe" type="button" @click="unlinkAdvance()" :disabled="linkingAdvance"
+             odpočty finálu i vazbu na platbu) — rozpojit nelze, backend to odmítá.
+             Koncept s odpočtem zálohy § 37a rozpojí jen odebrání čerpání (smaže i odpočet);
+             vystavený doklad s odpočtem backend rozpojit nedovolí. -->
+        <button v-if="auth.canWrite('invoices') && invoice.invoice_type !== 'tax_document' && !lockedForMe && hasAdvanceDeduction && isDraft"
+          type="button" @click="removeDrawdown()" :disabled="busy !== null"
+          class="cursor-pointer text-xs px-2 py-1 border border-neutral-300 rounded text-neutral-600 hover:bg-neutral-50 disabled:opacity-50 shrink-0 bg-surface">
+          {{ t('invoice.advance_drawdown.remove') }}
+        </button>
+        <button v-else-if="auth.canWrite('invoices') && invoice.invoice_type !== 'tax_document' && !lockedForMe && !hasAdvanceDeduction" type="button" @click="unlinkAdvance()" :disabled="linkingAdvance"
           class="cursor-pointer text-xs px-2 py-1 border border-neutral-300 rounded text-neutral-600 hover:bg-neutral-50 disabled:opacity-50 shrink-0 bg-surface">
           {{ t('invoice.advance_link.unlink') }}
         </button>
@@ -2445,17 +2637,65 @@ useWindowRefresh(['invoices', 'clients', 'bank', 'bank-transactions', 'cash', 'a
         </div>
       </div>
 
+      <!-- Modal postupného čerpání zálohy -->
+      <div v-if="drawdownOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" @click.self="drawdownOpen = false">
+        <div class="bg-surface rounded-lg shadow-xl max-w-lg w-full max-h-[80vh] overflow-hidden flex flex-col">
+          <div class="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
+            <h3 class="font-medium">{{ t('invoice.advance_drawdown.modal_title') }}</h3>
+            <button type="button" @click="drawdownOpen = false" class="cursor-pointer text-neutral-400 hover:text-neutral-600">✕</button>
+          </div>
+          <div class="p-4 overflow-y-auto space-y-3">
+            <div v-if="drawdownLoading" class="text-sm text-neutral-500">{{ t('common.loading') }}</div>
+            <div v-else-if="drawdownCandidates.length === 0 && !drawdownError" class="text-sm text-neutral-500">{{ t('invoice.advance_drawdown.no_candidates') }}</div>
+            <template v-else-if="drawdownCandidates.length > 0">
+              <ul class="space-y-2">
+                <li v-for="cand in drawdownCandidates" :key="cand.id">
+                  <label class="cursor-pointer flex items-center gap-3 px-3 py-2 border rounded-md"
+                    :class="drawdownProformaId === cand.id ? 'border-primary-500 bg-primary-50' : 'border-neutral-200 hover:border-primary-400'">
+                    <input type="radio" name="drawdown-proforma" :value="cand.id" :checked="drawdownProformaId === cand.id" @change="selectDrawdown(cand.id)" />
+                    <span class="font-mono text-sm">{{ cand.varsymbol || ('#' + cand.id) }}</span>
+                    <span class="text-xs text-neutral-500 ml-auto text-right">
+                      {{ cand.issue_date ? formatDate(cand.issue_date) : '' }} · {{ t('invoice.advance_drawdown.total') }} {{ formatMoney(cand.total_with_vat, invoice.currency) }}
+                      <br />{{ t('invoice.advance_drawdown.available') }} {{ formatMoney(cand.available, invoice.currency) }}
+                    </span>
+                  </label>
+                </li>
+              </ul>
+              <div>
+                <label class="block text-sm text-neutral-600 mb-1" for="drawdown-amount">{{ t('invoice.advance_drawdown.amount') }}</label>
+                <input id="drawdown-amount" v-model.number="drawdownAmount" type="number" step="0.01" min="0.01"
+                  :max="selectedDrawdown?.available" class="w-full border border-neutral-300 rounded-md px-3 py-2 text-sm bg-surface" />
+                <p class="text-xs text-neutral-500 mt-1">{{ t('invoice.advance_drawdown.amount_hint') }}</p>
+              </div>
+            </template>
+            <p v-if="drawdownError" class="text-sm text-danger-600">{{ drawdownError }}</p>
+          </div>
+          <div class="px-5 py-3 border-t border-neutral-100 flex justify-end gap-2">
+            <button type="button" @click="drawdownOpen = false"
+              class="cursor-pointer text-sm px-3 py-1.5 border border-neutral-300 rounded-md hover:bg-neutral-50">{{ t('common.cancel') }}</button>
+            <button type="button" @click="confirmDrawdown" :disabled="!drawdownAmountValid || drawdownSaving"
+              class="cursor-pointer text-sm px-3 py-1.5 rounded-md bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-50">
+              {{ t('invoice.advance_drawdown.confirm') }}
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div class="bg-surface border border-neutral-200 rounded-lg p-5 shadow-sm">
           <h3 class="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-3">
             {{ t('invoice.issue_date') }}
-            <template v-if="!isProforma"> / {{ t('invoice.tax_date') }}</template>
+            <template v-if="!isProforma && !isCalendar"> / {{ t('invoice.tax_date') }}</template>
             / {{ t('invoice.due_date') }}
           </h3>
           <dl class="space-y-1.5 text-sm">
             <div class="flex justify-between"><dt class="text-neutral-500">{{ t('invoice.issue_date') }}</dt><dd>{{ formatDate(invoice.issue_date) }}</dd></div>
             <div v-if="invoice.tax_date && !isProforma" class="flex justify-between"><dt class="text-neutral-500">{{ t('invoice.tax_date') }}</dt><dd>{{ formatDate(invoice.tax_date) }}</dd></div>
             <div class="flex justify-between"><dt class="text-neutral-500">{{ t('invoice.due_date') }}</dt><dd>{{ formatDate(invoice.due_date) }}</dd></div>
+            <div v-if="invoice.calendar_contract_ref" class="flex justify-between gap-3">
+              <dt class="text-neutral-500">{{ t('invoice.calendar_contract_ref') }}</dt>
+              <dd class="text-right">{{ invoice.calendar_contract_ref }}</dd>
+            </div>
             <div v-if="invoice.payment_variable_symbol" class="flex justify-between gap-3">
               <dt class="text-neutral-500">{{ t('invoice.payment_variable_symbol') }}</dt>
               <dd class="font-mono text-right">{{ invoice.payment_variable_symbol }}</dd>

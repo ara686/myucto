@@ -54,6 +54,10 @@ use MyInvoice\Service\Payroll\Submission\Jmhz\JmhzScenario1XmlValidator;
 use MyInvoice\Service\Payroll\Submission\Jmhz\JmhzScenario1XmlSerializer;
 use MyInvoice\Service\Payroll\Submission\Jmhz\JmhzSchemaCatalog;
 use MyInvoice\Service\Payroll\Submission\Jmhz\JmhzFrozenPayloadReader;
+use MyInvoice\Service\Payroll\Submission\Jmhz\JmhzFrozenSubmissionIdentity;
+use MyInvoice\Service\Payroll\Submission\Jmhz\JmhzSpecPackageCatalog;
+use MyInvoice\Service\Payroll\Submission\Jmhz\JmhzSpecVersion;
+use MyInvoice\Service\Payroll\Submission\Jmhz\Transport\JmhzGovTalkRequestShape;
 use MyInvoice\Service\Payroll\Submission\Jmhz\JmhzSubmissionBridgeService;
 use MyInvoice\Service\Payroll\Submission\Jmhz\JmhzSubmissionGuidFactory;
 use MyInvoice\Service\Payroll\Submission\Jmhz\JmhzSubmissionEnvelope;
@@ -907,6 +911,94 @@ final class JmhzSubmissionBridgeServiceTest extends TestCase
         self::assertStringContainsString('<pvpoj:PVPOJ>', $first);
         self::assertStringContainsString('<formularePocetVBaliku>1</formularePocetVBaliku>', $second);
         self::assertStringNotContainsString('<pvpoj:PVPOJ>', $second);
+    }
+
+    /**
+     * Hlášení za 01/2027 se řídí specifikací 2027. Dokud její balík není
+     * připnutý, nezmrazí se nic a nevznikne ani povinnost; účetní dostane
+     * kód blokace, ne chybu serveru.
+     */
+    public function testJanuary2027ReportIsBlockedUntilSpecification2027IsPinned(): void
+    {
+        $resolution = $this->resolutionFor(
+            $this->pvpoj(period: '2027-01'),
+            $this->payloadForPeriod('2027-01-01', '2027-01-31'),
+            periodStart: '2027-01-01',
+            periodEnd: '2027-01-31',
+        );
+
+        try {
+            $this->bridge($resolution, '2027-02-05 10:00:00 Europe/Prague')->bridge(
+                $this->supplierId,
+                self::PREPARATION_ID,
+                null,
+                self::ENVIRONMENT,
+                $this->userId,
+            );
+            self::fail('Hlášení za 01/2027 se nesmí sestavit verzí 2026.');
+        } catch (JmhzXmlException $exception) {
+            self::assertSame(JmhzSpecPackageCatalog::UNAVAILABLE_CODE, $exception->validationCode);
+            self::assertSame('conflict', JmhzSubmissionBridgeService::clientErrorCode($exception));
+        }
+        self::assertSame(0, $this->countRows('payroll_obligations'));
+        self::assertSame(0, $this->countRows('payroll_submissions'));
+    }
+
+    /**
+     * Opravné hlášení za 11/2026 podané v březnu 2027 jde dál verzí 2026:
+     * rozhoduje vykazované období, ne den odeslání.
+     */
+    public function testNovember2026CorrectionFrozenInMarch2027StaysOnVersion2026(): void
+    {
+        $resolution = $this->resolutionFor(
+            $this->pvpoj(period: '2026-11'),
+            $this->payloadForPeriod('2026-11-01', '2026-11-30'),
+            periodStart: '2026-11-01',
+            periodEnd: '2026-11-30',
+        );
+        // Platforma podání běží v březnu 2027; řádné hlášení vzniklo v prosinci.
+        $this->submissions = new PayrollSubmissionService(
+            $this->submissionRepository,
+            new PayrollSubmissionStateMachine(),
+            new SecretEncryption($this->config),
+            new MockClock('2027-03-10 10:00:00 Europe/Prague'),
+        );
+        $original = $this->bridge($resolution, '2026-12-05 10:00:00 Europe/Prague')->bridge(
+            $this->supplierId,
+            self::PREPARATION_ID,
+            null,
+            self::ENVIRONMENT,
+            $this->userId,
+        );
+        $originalXml = $this->submissions->artifactBytes($this->supplierId, $original['artifact_id']);
+        $this->acceptWithFormOutcome($original, $this->firstFormGuid($originalXml), 'accepted');
+
+        $service = $this->contentCorrections($resolution, now: '2027-03-10 10:00:00 Europe/Prague');
+        $candidates = $service->candidates(
+            $this->supplierId,
+            self::ENVIRONMENT,
+            $original['submission_id'],
+            self::PREPARATION_ID,
+        );
+        $correction = $service->freeze(
+            $this->supplierId,
+            self::ENVIRONMENT,
+            $original['submission_id'],
+            self::PREPARATION_ID,
+            [(string) $candidates['forms'][0]['employment_external_identifier']],
+            $this->userId,
+        );
+
+        $xml = $this->submissions->artifactBytes($this->supplierId, $correction['artifact_id']);
+        $identity = JmhzFrozenSubmissionIdentity::read($xml);
+        self::assertSame('O', $identity->submissionType);
+        self::assertSame([2026, 11], [$identity->year, $identity->month]);
+        self::assertSame(JmhzSpecVersion::V2026, $identity->specVersion);
+        self::assertStringContainsString(JmhzSchemaCatalog::NS_PODANI, $xml);
+        self::assertSame(
+            'JMHZ25',
+            JmhzGovTalkRequestShape::forPayload('CSSZ_JMHZ', $xml)->bodyEnvelopeType,
+        );
     }
 
     public function testDecemberCorrectionObligationUsesFollowingJanuaryDueYear(): void
@@ -2345,11 +2437,12 @@ final class JmhzSubmissionBridgeServiceTest extends TestCase
     private function contentCorrections(
         JmhzScenario1Resolution $resolution,
         ?int $packageFormLimit = null,
+        string $now = '2026-08-05 11:30:00 Europe/Prague',
     ): JmhzContentCorrectionSubmissionService {
         $documents = $this->createMock(JmhzScenario1DocumentService::class);
         $documents->expects(self::exactly(2))->method('resolveForCorrection')->willReturn($resolution);
         $frozen = new JmhzFrozenPayloadReader($this->submissionRepository, $this->submissions);
-        $clock = new MockClock('2026-08-05 11:30:00 Europe/Prague');
+        $clock = new MockClock($now);
 
         return new JmhzContentCorrectionSubmissionService(
             $documents,

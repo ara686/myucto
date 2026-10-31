@@ -13,6 +13,7 @@ import RepostModal from '@/components/accounting/RepostModal.vue'
 import WorkspaceTeleport from '@/components/workspace/WorkspaceTeleport.vue'
 import { btnOutlineSm } from '@/components/ui/buttonStyles'
 import { journalEntryLink } from '@/utils/journalSourceLink'
+import { useWindowRefresh } from '@/composables/useWindowRefresh'
 
 /**
  * Sbalená sekce „Zaúčtování" na detailu faktury — kontace dokladu tak, jak ji
@@ -67,6 +68,18 @@ async function load(docId: number): Promise<void> {
 }
 
 watch(() => props.docId, id => { void load(id) }, { immediate: true })
+
+// Zaúčtování se mění mimo detail (deník, jiné okno, akce na dokladu) a sekce si kontaci
+// drží sama, detail ji svou obnovou nezasáhne. Obsah se přepíše až po načtení, ať nebliká.
+useWindowRefresh(async () => {
+  const docId = props.docId
+  if (!(docId > 0)) return
+  const updated = await accountingApi.journalForDocument(props.source, docId)
+  if (docId !== props.docId) return
+  entries.value = updated
+  failed.value = false
+  await originRef.value?.reload()
+}, () => !repostOpen.value, { partial: true })
 
 /** Storno (protizápis) — účetní ho musí poznat na první pohled, ne až podle částek. */
 function isReversal(entry: JournalEntryWithLines): boolean {

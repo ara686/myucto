@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { Statement504Report, Statement504Row } from './accounting'
+import type { Statement504Report, Statement504Row, StatementAccrualSpread } from './accounting'
 
 /** Jeden řádek výsledovky/rozvahy (kanonický tvar z FinancialStatementService). */
 export interface StatementRow {
@@ -48,7 +48,7 @@ export interface MonthlyReport500Data {
   period: { year: number; month: number; as_of: string }
   generated_at: string
   comment: string | null
-  income_statement_ytd: { rows: StatementRow[]; checks: { profit_current: number; net_turnover: number } }
+  income_statement_ytd: { rows: StatementRow[]; accrual_spread?: StatementAccrualSpread; checks: { profit_current: number; net_turnover: number } }
   income_statement_month: StatementRow[]
   balance_sheet: {
     assets: StatementRow[]
@@ -78,6 +78,7 @@ export interface MonthlyReportSendPayload {
   to: string[]
   cc?: string[]
   subject_override?: string
+  accrual_spread?: 1
 }
 
 export interface MonthlyReportSendResult {
@@ -100,14 +101,14 @@ export interface MonthlyReportSendHistoryItem {
 }
 
 export const monthlyReportApi = {
-  preview: (year: number, month: number, comment?: string) =>
+  preview: (year: number, month: number, comment?: string, options: { accrual_spread?: 1 } = {}) =>
     api.get<MonthlyReportData>('/accounting/reports/monthly-report/preview', {
-      params: { year, month, ...(comment ? { comment } : {}) },
+      params: { year, month, ...(comment ? { comment } : {}), ...options },
     }).then(r => r.data),
 
-  exportPdf: (year: number, month: number, comment?: string) =>
+  exportPdf: (year: number, month: number, comment?: string, options: { accrual_spread?: 1 } = {}) =>
     api.get<Blob>('/accounting/reports/monthly-report/download', {
-      params: { year, month, ...(comment ? { comment } : {}) },
+      params: { year, month, ...(comment ? { comment } : {}), ...options },
       responseType: 'blob',
     }),
 

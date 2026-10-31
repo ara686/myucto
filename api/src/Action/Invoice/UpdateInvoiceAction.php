@@ -119,6 +119,11 @@ final class UpdateInvoiceAction
         $isForce = $request->getQueryParams()['force'] ?? null;
         $canEditIssued = RequestAuthorization::canEditIssuedInvoice($request);
 
+        // Splátka sedí na řádek vytištěného kalendáře, opravuje se dobropisem.
+        if (!empty($existing['calendar_id'])) {
+            return Json::error($response, 'calendar_instalment_locked', 'Doklad splátky kalendáře nejde upravit. Opravte ho dobropisem.', 409);
+        }
+
         $body = (array) ($request->getParsedBody() ?? []);
         // effective_tax_date je generovaný sloupec (COALESCE(tax_date, issue_date)) a z těla se
         // neukládá. invoiceRefDate() ho bere přednostně, takže podvržená hodnota by zámek
@@ -236,7 +241,7 @@ final class UpdateInvoiceAction
         $validTypes    = ['invoice', 'proforma', 'credit_note'];
         // Kalendář (§ 31) smí měnit typ jen DRAFT: vlastní číselnou řadu nemá, takže
         // přečíslování vystaveného dokladu na kalendář by spadlo na generátoru varsymbolu.
-        $draftTypes    = [...$validTypes, 'payment_calendar'];
+        $draftTypes    = [...$validTypes, 'payment_calendar', 'rent_calendar', 'advance_calendar'];
         $requestedType = (string) ($body['invoice_type'] ?? '');
         $isIssued      = $existing['status'] !== 'draft';
         $existingType  = (string) $existing['invoice_type'];
@@ -1108,7 +1113,13 @@ final class UpdateInvoiceAction
             && $this->repo->clientIsEuForeign((int) $body['client_id']);
 
         if (!empty($body['items']) && is_array($body['items'])) {
-            foreach ($body['items'] as &$item) {
+            // Víceúčelový poukaz klasifikaci nenese (MultiPurposeVoucher), stejně jako při založení.
+            $annotated = \MyInvoice\Service\Invoice\MultiPurposeVoucher::annotate($this->db->pdo(), $supplierId, $body['items']);
+            foreach ($body['items'] as $key => &$item) {
+                if (is_array($annotated[$key] ?? null) && \MyInvoice\Service\Invoice\MultiPurposeVoucher::isLine($annotated[$key])) {
+                    $item['vat_classification_code'] = null;
+                    continue;
+                }
                 if (!empty($item['vat_classification_code']) || InvoiceItemKind::isText($item)) continue;
                 $rateId = (int) ($item['vat_rate_id'] ?? 0);
                 $rate = (float) ($vatRates[$rateId] ?? 0);
@@ -1120,7 +1131,10 @@ final class UpdateInvoiceAction
             unset($item);
         }
 
-        if (empty($body['vat_classification_code']) && $headerItems !== []) {
+        // O kódu hlavičky rozhodují jen plnění; doklad jen z poukazů zůstane bez kódu.
+        $headerSupplies = \MyInvoice\Service\Invoice\MultiPurposeVoucher::withoutLines($this->db->pdo(), $supplierId, $headerItems);
+        if (empty($body['vat_classification_code']) && $headerItems !== [] && $headerSupplies !== []) {
+            $headerItems = $headerSupplies;
             $itemsWithTotals = array_map(function ($it) use ($vatRates) {
                 $rateId = (int) ($it['vat_rate_id'] ?? 0);
                 $rate = (float) ($vatRates[$rateId] ?? 0);

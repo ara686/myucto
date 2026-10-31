@@ -3097,7 +3097,8 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
         '409':
           description: |
-            Faktura už není draft (vystavená/storno) — nelze editovat (`not_editable`). U vynucené
+            Faktura už není draft (vystavená/storno) — nelze editovat (`not_editable`). Interní doklad
+            splátky kalendáře nejde upravit, opravuje se dobropisem (`calendar_instalment_locked`). U vynucené
             úpravy (`force=1`) faktury, ke které už existuje zaúčtovaná výdejka nebo vratka,
             `stock_items_locked`: `items` mění skladovou kartu, sklad, jednotku nebo množství
             skladového řádku, přidávají nebo odebírají skladový řádek. Opravuje se dobropisem.
@@ -3229,8 +3230,13 @@ paths:
             se nevystavuje (`invalid_type`), chybí DIČ odběratele u přenesené daňové
             povinnosti (`reverse_charge_dic_missing`, § 29/2 ZDPH), zjednodušený doklad
             nesplňuje podmínky (`simplified_document_not_allowed`, § 30 ZDPH), nebo
-            platební kalendář nemá rozpis plateb (`payment_schedule_missing`)
-            či jeho součet nesedí na doklad (`payment_schedule_mismatch`, § 31 ZDPH).
+            kalendář nesplňuje podmínky § 31 a § 31a ZDPH: nemá rozpis plateb
+            (`payment_schedule_missing`), součet základu, DPH nebo celkové částky rozpisu
+            nesedí na doklad (`payment_schedule_mismatch`), splátkovému kalendáři chybí nájemní
+            smlouva (`calendar_contract_required`), je v cizí měně (`calendar_foreign_currency`),
+            DUZP splátky spadá do podaného období (`calendar_filed_period`) nebo sazba DPH
+            v den DUZP splátky neplatí (`calendar_vat_rate_invalid`). Koncept původního typu
+            `payment_calendar` nejde vystavit, je třeba zvolit nový typ (`calendar_type_required`).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -3474,6 +3480,13 @@ paths:
                   remaining: { type: number, format: float }
                   eet: { $ref: '#/components/schemas/InvoicePaymentEetResult' }
                   eet_decision: { $ref: '#/components/schemas/EetDecision' }
+                  warnings:
+                    type: array
+                    description: |
+                      Upozornění, která platbu neblokují (stejná jako `eet.warnings`). Úhrada
+                      poukazem (`channel = stored_value`) nad zůstatek prodaných poukazů
+                      a kreditu vrací `voucher_balance_insufficient`.
+                    items: { $ref: '#/components/schemas/EetPaymentWarning' }
         '400':
           description: |
             Chybí částka (`invalid_amount`) nebo u evidované tržby hlavička
@@ -3562,7 +3575,8 @@ paths:
         K platbě **zálohové faktury** vystaví koncept daňového dokladu k přijaté
         platbě (`invoice_type = tax_document`, § 28 odst. 2 ZDPH): DUZP = datum
         platby, DPH shora koeficientem (§ 37), částka rozdělená mezi sazby DPH
-        proformy poměrně. Jen plátce DPH a ne-reverse-charge plnění. Idempotentní —
+        proformy poměrně. Řádek přebírá klasifikaci DPH z proformy; nulová sazba jen
+        ve zvláštním režimu (`26c`). Jen plátce DPH a ne-reverse-charge plnění. Idempotentní —
         existující nestornovaný doklad k platbě vrátí beze změny.
       responses:
         '200':
@@ -3578,6 +3592,41 @@ paths:
                     items: { $ref: '#/components/schemas/InvoicePayment' }
         '409':
           description: Podmínky nesplněny (neplátce DPH, reverse charge, není proforma)
+
+  /api/v1/invoices/{id}/convert-to-tax-document:
+    parameters:
+      - $ref: '#/components/parameters/SupplierIdHeader'
+      - in: path
+        name: id
+        required: true
+        schema: { type: integer, format: int64 }
+    post:
+      tags: [Invoices]
+      summary: Změní koncept vyúčtovací faktury k záloze na daňový doklad k přijaté platbě
+      description: |
+        Koncept faktury vzniklý ze **zálohové faktury** nahradí koncepty daňových
+        dokladů k přijaté platbě (`invoice_type = tax_document`, § 28 odst. 2 ZDPH)
+        ke všem platbám zálohy, které ho ještě nemají; koncept faktury se odstraní.
+        Vyžaduje právo `invoices.delete` i `invoices.mark_paid`. Vystavenou fakturu
+        změnit nelze.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  proforma_id: { type: integer, format: int64 }
+                  tax_document_ids:
+                    type: array
+                    items: { type: integer, format: int64 }
+        '403':
+          description: Chybí oprávnění
+        '404':
+          description: Faktura nenalezena
+        '409':
+          description: Podmínky nesplněny (není koncept, nevznikl ze zálohy, žádná platba bez dokladu, přílohy, uzavřené období)
 
   /api/v1/invoices/{id}/pdf:
     parameters:
@@ -3753,13 +3802,14 @@ paths:
       tags: [Projects]
       summary: Smazání zakázky
       description: |
-        Smaže zakázku, pokud nemá vystavené doklady. Pro zakázky s historií
-        použij `POST /api/v1/projects/{id}/archive`.
+        Smaže zakázku. Faktury a výkazy práce zůstanou bez zakázky. Odmítne jen zakázku
+        s fakturou v uzavřeném nebo uzavíraném období či za uzamčeným datem, tu lze
+        archivovat přes `POST /api/v1/projects/{id}/archive`.
       responses:
         '200':
           description: OK
         '409':
-          description: Zakázka má vystavené doklady — použij archivaci
+          description: Zakázka má fakturu v uzamčeném období (`has_locked_invoices`) — použij archivaci
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -4481,8 +4531,9 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
         '409':
           description: |
-            Fakturu nelze odeslat — není vystavená (`invalid_state`) nebo jde
-            o interní stornovací doklad (`cannot_send_cancellation`).
+            Fakturu nelze odeslat — není vystavená (`invalid_state`), jde o interní
+            stornovací doklad (`cannot_send_cancellation`), nebo o interní doklad splátky
+            kalendáře, odběrateli se posílá kalendář (`calendar_instalment_not_sendable`).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -4877,6 +4928,10 @@ paths:
         (`cancellation`) stornovat nelze. Storno je účetní akt — na zaúčtovaném
         či uzamčeném dokladu ho blokuje zámek (Epic F6).
 
+        Kalendář (`rent_calendar`, `advance_calendar`) se stornuje jen v režimu `internal`
+        a spolu s ním i jeho neuhrazené splátky. Doklad splátky se opravuje jen dobropisem
+        (`credit_note`), vlastní interní storno nemá.
+
         Úspěšný status se liší podle režimu: `internal` vrací `200`,
         `credit_note` vrací `201` (vznikl nový doklad).
       requestBody:
@@ -4948,7 +5003,9 @@ paths:
           description: |
             Fakturu nelze stornovat — není vystavená/odeslaná/zaplacená (`invalid_state`),
             jde o stornovací doklad (`invalid_type`), je to dobropis a `mode` není
-            `internal` (`invalid_mode`), doklad byl mezitím zaúčtován (`document_locked`),
+            `internal` (`invalid_mode`), kalendář a `mode` není `internal` (`invalid_mode`), kalendář
+            má uhrazenou nebo dobropisovanou splátku (`calendar_instalment_settled`), interní storno
+            dokladu splátky (`calendar_instalment_cancel`), doklad byl mezitím zaúčtován (`document_locked`),
             existuje navazující finální faktura k daňovému dokladu k přijaté platbě
             (`advance_tax_document_settled`), nebo brání pokladní doklad (`cash_*`,
             např. `cash_eet_history_exists`: hotovostní vyrovnání s evidovanou tržbou
@@ -11183,6 +11240,76 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Invoice' }
 
+  /api/v1/invoices/{id}/advance-drawdown:
+    parameters:
+      - $ref: '#/components/parameters/SupplierIdHeader'
+      - in: path
+        name: id
+        required: true
+        schema: { type: integer, format: int64 }
+    get:
+      tags: [InvoiceOps]
+      summary: Zálohy, ze kterých může koncept faktury postupně čerpat
+      description: Zálohové faktury téhož odběratele a měny s vystaveným daňovým dokladem k platbě a dosud nevyčerpanou částkou s DPH.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: integer, format: int64 }
+                    varsymbol: { type: string, nullable: true }
+                    issue_date: { type: string, format: date }
+                    total_with_vat: { type: number }
+                    available: { type: number }
+        '409': { description: Doklad není koncept běžné faktury }
+    post:
+      tags: [InvoiceOps]
+      summary: Odečte na konceptu faktury část zálohy (postupné čerpání)
+      description: Nahradí odpočtové řádky § 37a na konceptu čerpáním `amount` (s DPH) ze zálohy a naváže fakturu na zálohu.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [proforma_id, amount]
+              properties:
+                proforma_id: { type: integer, format: int64 }
+                amount: { type: number }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  drawdown:
+                    type: object
+                    properties:
+                      proforma_id: { type: integer, format: int64 }
+                      amount: { type: number }
+                      available: { type: number }
+                      remaining: { type: number }
+                  invoice: { $ref: '#/components/schemas/Invoice' }
+        '400': { description: Neplatný vstup }
+        '409': { description: Čerpání selhalo }
+    delete:
+      tags: [InvoiceOps]
+      summary: Odebere z konceptu faktury čerpání zálohy
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invoice' }
+        '409': { description: Doklad není koncept běžné faktury }
+
   # ── Přijaté faktury — párování zálohy ────────────────────────────────────
   /api/v1/purchase-invoices/{id}/advance-candidates:
     parameters:
@@ -12952,7 +13079,7 @@ paths:
     get:
       tags: [Accounting]
       summary: Konverzace AI asistenta se zprávami; cizí konverzace vrací 404
-      description: Zpráva asistenta nese v `response` strukturovanou odpověď (other_items, journal_entries, document_suggestions, warnings) a v `applied` značky použitých návrhů {druh -> {index -> id}}.
+      description: Zpráva asistenta nese v `response` strukturovanou odpověď (other_items, internal_documents, journal_entries, document_suggestions, warnings) a v `applied` značky použitých návrhů {druh -> {index -> id}}; druh je journal_entry, other_item, internal_document nebo document.
       parameters:
       - $ref: '#/components/parameters/SupplierIdHeader'
       - { in: path, name: id, required: true, schema: { type: integer } }
@@ -13304,7 +13431,8 @@ paths:
         přerušení zachová. Odpisy lze mazat pouze odzadu a u nevyřazeného majetku.
         Ostatní pohledávku nebo závazek vrátí do konceptu a pozastaví související opakování;
         dokumenty a splátkový kalendář zachová. Vyžaduje navíc zápisová oprávnění
-        other_items a accounting.journal.post. Spárované úhrady vrátí 409 has_payments.
+        other_items a accounting.journal.post. Spárované úhrady vrátí 409 has_payments, jiná
+        navazující data (například mzdová platba) 409 entry_delete_conflict.
         Vždy jen pro otevřené období, mimo uzamčené datum a u zápisu bez storna.
       parameters:
         - $ref: '#/components/parameters/SupplierIdHeader'
@@ -14078,6 +14206,91 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /api/v1/accounting/revenue-rules:
+    get:
+      tags: [Accounting]
+      summary: Pravidla výnosů pro položky vydaných faktur, stránkovaně
+      description: Jen podvojné účetnictví (jinak 403 `wrong_accounting_mode`).
+      parameters:
+        - $ref: '#/components/parameters/SupplierIdHeader'
+        - { in: query, name: active, schema: { type: boolean } }
+        - { in: query, name: page, schema: { type: integer, default: 1 } }
+        - { in: query, name: per_page, schema: { type: integer, default: 50, maximum: 100 } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: '#/components/schemas/RevenueRule' } }, total: { type: integer }, page: { type: integer }, per_page: { type: integer } } } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Accounting]
+      summary: Vytvoří pravidlo výnosů
+      description: |
+        Účetní/admin. Pravidlo určí účet položky vydané faktury, která nemá vlastní účet
+        ani účet produktu: při importu se účet uloží na položku, při zaúčtování a v akci
+        Doúčtovat doklady se doplní položkám bez účtu. Kritéria (`item_code`,
+        `description_contains`, `vat_rate`) platí současně, aspoň jedno je povinné
+        (422 `rule_criteria_missing`). Cílový účet platí jako účet položky: aktivní účet
+        rozvrhu mimo saldokontní, daňové a peněžní účty (422 `invalid_target_account`).
+      parameters:
+        - $ref: '#/components/parameters/SupplierIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [target_account_code]
+              properties:
+                name: { type: [string, "null"], maxLength: 120 }
+                item_code: { type: [string, "null"], maxLength: 64, description: 'Přesná shoda kódu položky (ISDOC SellersItemIdentification), bez ohledu na velikost písmen' }
+                description_contains: { type: [string, "null"], maxLength: 120 }
+                vat_rate: { type: [number, "null"], minimum: 0, maximum: 100 }
+                target_account_code: { type: string, maxLength: 10 }
+                priority: { type: integer, minimum: 0, maximum: 999, default: 100 }
+                is_active: { type: boolean, default: true }
+      responses:
+        '201': { description: OK, content: { application/json: { schema: { type: object, properties: { rule: { $ref: '#/components/schemas/RevenueRule' } } } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
+  /api/v1/accounting/revenue-rules/{id}:
+    get:
+      tags: [Accounting]
+      summary: Detail pravidla výnosů
+      parameters:
+        - $ref: '#/components/parameters/SupplierIdHeader'
+        - { in: path, name: id, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, required: [rule], properties: { rule: { $ref: '#/components/schemas/RevenueRule' } } } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Accounting]
+      summary: Upraví pravidlo výnosů (všechna pole volitelná)
+      description: Účetní/admin. Kritéria se ověřují proti výslednému stavu pravidla.
+      parameters:
+        - $ref: '#/components/parameters/SupplierIdHeader'
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { rule: { $ref: '#/components/schemas/RevenueRule' } } } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    delete:
+      tags: [Accounting]
+      summary: Smaže pravidlo výnosů
+      description: Účetní/admin.
+      parameters:
+        - $ref: '#/components/parameters/SupplierIdHeader'
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { deleted: { type: boolean } } } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /api/v1/accounting/purchase-invoices/{id}/expense-suggestions:
     get:
       tags: [Accounting]
@@ -14458,6 +14671,7 @@ paths:
           default: auto
       - $ref: '#/components/parameters/DimensionValueId'
       - $ref: '#/components/parameters/DimensionDescendants'
+      - $ref: '#/components/parameters/AccrualSpread'
       responses:
         '200':
           description: OK
@@ -14522,6 +14736,7 @@ paths:
           default: czk
       - $ref: '#/components/parameters/DimensionValueId'
       - $ref: '#/components/parameters/DimensionDescendants'
+      - $ref: '#/components/parameters/AccrualSpread'
       responses:
         '200':
           description: Soubor výkazu
@@ -14544,6 +14759,7 @@ paths:
         - $ref: '#/components/parameters/SupplierIdHeader'
         - $ref: '#/components/parameters/DimensionValueId'
         - $ref: '#/components/parameters/DimensionDescendants'
+        - $ref: '#/components/parameters/AccrualSpread'
         - { in: query, name: period_id, required: true, schema: { type: integer } }
         - { in: query, name: as_of, schema: { type: string, format: date } }
         - { in: query, name: scope, schema: { type: string, enum: [auto, full, small, micro], default: auto } }
@@ -14565,6 +14781,7 @@ paths:
       - $ref: '#/components/parameters/SupplierIdHeader'
       - $ref: '#/components/parameters/DimensionValueId'
       - $ref: '#/components/parameters/DimensionDescendants'
+      - $ref: '#/components/parameters/AccrualSpread'
       - in: query
         name: period_id
         required: true
@@ -15197,6 +15414,7 @@ paths:
         description: Volitelný komentář účetní (zobrazí se i v PDF/e-mailu)
         schema:
           type: string
+      - $ref: '#/components/parameters/AccrualSpread'
       responses:
         '200':
           description: OK
@@ -15218,6 +15436,7 @@ paths:
         - { in: query, name: year, required: true, schema: { type: integer } }
         - { in: query, name: month, required: true, schema: { type: integer, minimum: 1, maximum: 12 } }
         - { in: query, name: comment, schema: { type: string } }
+        - $ref: '#/components/parameters/AccrualSpread'
       responses:
         '200': { description: Soubor PDF, content: { application/pdf: { schema: { type: string, format: binary } } } }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -15243,6 +15462,7 @@ paths:
                 cc: { type: array, items: { type: string, format: email } }
                 comment: { type: string }
                 subject_override: { type: string }
+                accrual_spread: { type: integer, enum: [0, 1], default: 0, description: "`1` = průběžné časové rozlišení mimo deník, stejně jako v náhledu." }
       responses:
         '200': { description: "OK {sent_to, cc, document_id, sent_at}", content: { application/json: { schema: { type: object } } } }
         '400': { description: Chybí příjemci / neplatný e-mail, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
@@ -20763,6 +20983,7 @@ paths:
                   - material
                   - goods
                   - product
+                  - service
                   default: goods
                 eet_item_kind:
                   $ref: '#/components/schemas/StockItemEetKind'
@@ -20855,7 +21076,7 @@ paths:
               properties:
                 sku: { type: string, maxLength: 50 }
                 name: { type: string, maxLength: 255 }
-                item_type: { type: string, enum: [material, goods, product] }
+                item_type: { type: string, enum: [material, goods, product, service] }
                 eet_item_kind: { $ref: '#/components/schemas/StockItemEetKind' }
                 unit: { type: string }
                 tracking_mode: { type: string, enum: [none, lot, serial] }
@@ -21220,7 +21441,7 @@ paths:
           schema: { type: integer }
         - in: query
           name: item_type
-          schema: { type: string, enum: [material, goods, product] }
+          schema: { type: string, enum: [material, goods, product, service] }
         - in: query
           name: below_min
           schema: { type: boolean }
@@ -23079,7 +23300,7 @@ paths:
           schema: { type: integer }
         - in: query
           name: item_type
-          schema: { type: string, enum: [material, goods, product] }
+          schema: { type: string, enum: [material, goods, product, service] }
         - in: query
           name: below_min
           schema: { type: boolean }
@@ -27375,7 +27596,7 @@ paths:
         schema: { type: boolean }
       - in: query
         name: type
-        schema: { type: string, enum: [material, goods, product] }
+        schema: { type: string, enum: [material, goods, product, service] }
       - in: query
         name: tag_ids
         schema: { type: string, description: ID oddělená čárkou }
@@ -28724,6 +28945,7 @@ paths:
       - $ref: '#/components/parameters/SupplierIdHeader'
       - $ref: '#/components/parameters/DimensionValueId'
       - $ref: '#/components/parameters/DimensionDescendants'
+      - $ref: '#/components/parameters/AccrualSpread'
       - in: query
         name: period_id
         required: true
@@ -28771,6 +28993,7 @@ paths:
       - $ref: '#/components/parameters/SupplierIdHeader'
       - $ref: '#/components/parameters/DimensionValueId'
       - $ref: '#/components/parameters/DimensionDescendants'
+      - $ref: '#/components/parameters/AccrualSpread'
       - in: query
         name: period_id
         required: true
@@ -34087,6 +34310,18 @@ components:
       description: '`0` = jen hodnota sama, bez podřízených hodnot.'
       schema: { type: integer, enum: [0, 1], default: 1 }
 
+    AccrualSpread:
+      in: query
+      name: accrual_spread
+      required: false
+      description: |
+        `1` = průběžné časové rozlišení mimo deník. Náklady a výnosy řádků dokladů s obdobím
+        od–do se k rozvahovému dni započtou poměrně podle dnů a zbytek se vykáže jako náklady
+        (381) či výnosy (384) příštích období. Do deníku se nic nezapisuje; doklady, jejichž
+        odklad už zaúčtovala uzávěrka, se neupravují. Výkaz za hodnotu dimenze a výkazy
+        podle vyhlášky 504 volbu neuplatní. Výchozí `0` = výkaz z deníku beze změny.
+      schema: { type: integer, enum: [0, 1], default: 0 }
+
   responses:
     Unauthorized:
       description: Neplatný nebo chybějící token
@@ -34341,6 +34576,25 @@ components:
         odeslání, POK) a `idempotent_replay`. `amount` a `currency` jsou částka
         a měna platby, `amount_czk` částka evidovaná v EET (vždy Kč), u cizí měny
         s `exchange_rate` a `exchange_rate_source` (např. `cnb:2026-11-02`).
+        `warnings` (jen při přijetí platby, ne při opakování se stejným klíčem) nese
+        upozornění, která platbu neblokují.
+      properties:
+        warnings:
+          type: array
+          items: { $ref: '#/components/schemas/EetPaymentWarning' }
+    EetPaymentWarning:
+      type: object
+      description: |
+        Upozornění k platbě, které ji neblokuje. `voucher_balance_insufficient`: úhrada
+        poukazem nebo kreditem převyšuje zůstatek prodaných víceúčelových poukazů
+        a kreditu (analytika přijatých záloh „Prodané poukazy a kredit"); může jít
+        o jednoúčelový poukaz, který se při uplatnění neúčtuje.
+      required: [code, message]
+      properties:
+        code: { type: string, enum: [voucher_balance_insufficient] }
+        message: { type: string }
+        balance: { type: number, format: float, description: Zůstatek nevyčerpaných poukazů a kreditu v Kč před platbou }
+        amount: { type: number, format: float, description: Částka úhrady poukazem v Kč }
     CreditNoteRefundEetResult:
       type: object
       description: |
@@ -34443,6 +34697,10 @@ components:
             money: { type: string, description: "payment_order_status platby (settled, operator_confirmed)" }
             document: { type: string, description: "Stav dokladu (paid)" }
             eet: { type: string, description: "Stav záznamu EET (pending, confirmed…), bez záznamu rozhodnutí politiky (inactive, not_subject…)" }
+        warnings:
+          type: array
+          description: Upozornění, která účtenku neblokují (úhrada poukazem nad zůstatek prodaných poukazů a kreditu)
+          items: { $ref: '#/components/schemas/EetPaymentWarning' }
         eet:
           type: object
           properties:
@@ -40223,7 +40481,8 @@ components:
             status: { type: string, enum: [draft, confirmed, posted, reversed, cancelled] }
             document_no: { type: [string, 'null'] }
             amount_czk: { type: number }
-            paid_amount: { type: number }
+            settled_outside_amount: { type: number, description: Část uhrazená mimo banku a pokladnu (zápočet, interní doklad, stav úhrady převzatý z jiného programu). Je součástí paid_amount. }
+            paid_amount: { type: number, description: Alokované úhrady z banky a pokladny včetně settled_outside_amount. }
             remaining_amount: { type: number }
             journal_entry_id: { type: [integer, 'null'], format: int64 }
             reversal_entry_id: { type: [integer, 'null'], format: int64 }
@@ -46217,6 +46476,20 @@ components:
         base: { type: number, format: float }
         vat: { type: number, format: float }
 
+    InvoicePaymentScheduleRow:
+      type: object
+      description: Jedna splátka rozpisu plateb kalendáře.
+      required: [due_on]
+      properties:
+        id: { type: integer, format: int64, readOnly: true }
+        due_on: { type: string, format: date, description: Datum splatnosti splátky. }
+        tax_date: { type: [string, "null"], format: date, description: "DUZP splátky `rent_calendar` podle smlouvy, bez zadání den splatnosti. `advance_calendar` DUZP nemá." }
+        instalment_invoice_id: { type: [integer, "null"], format: int64, readOnly: true, description: Interní doklad splátky založený při vystavení kalendáře. }
+        base_amount: { type: number, format: float, default: 0 }
+        vat_amount: { type: number, format: float, default: 0 }
+        total_amount: { type: number, format: float, default: 0 }
+        note: { type: [string, "null"], maxLength: 255 }
+
     Invoice:
       type: object
       properties:
@@ -46235,19 +46508,31 @@ components:
         project_id: { type: [integer, "null"] }
         project_name: { type: [string, "null"] }
         parent_invoice_id: { type: [integer, "null"], description: "Pro credit_note / cancellation / final-z-proformy odkaz na původní fakturu" }
+        calendar_id: { type: [integer, "null"], description: "Kalendář, ke kterému patří interní doklad splátky (`invoice`, `proforma`) nebo daňový doklad k její úhradě (`tax_document`, číslo `KP-<id platby>`)." }
+        calendar_contract_ref: { type: [string, "null"], maxLength: 190, description: "Nájemní smlouva splátkového kalendáře (§ 31 ZDPH)." }
+        payment_schedule:
+          type: array
+          description: Rozpis plateb kalendáře, jen v detailu dokladu. U ostatních typů je prázdný.
+          items: { $ref: '#/components/schemas/InvoicePaymentScheduleRow' }
         recurring_template_id: { type: [integer, "null"], description: "Pro faktury vygenerované ze šablony pravidelné fakturace — odkaz na šablonu (NULL pokud byla šablona smazána, viz ON DELETE SET NULL)." }
         varsymbol: { type: [string, "null"], description: "Variabilní symbol = číslo faktury. Přiděluje se při issue (u draft je null nebo manuální override)." }
         payment_variable_symbol: { type: [string, "null"], pattern: "^[0-9]{1,10}$", description: "Samostatný platební VS (jen číslice, max 10, nemusí být unikátní). null = platební VS se odvodí z čísla dokladu." }
         payment_varsymbol: { type: string, description: "Efektivní platební VS (payment_variable_symbol, jinak číslice z čísla dokladu, max 10). Ten jde do PDF, QR platby, e-mailů a exportů." }
         invoice_type:
           type: string
-          enum: [invoice, proforma, credit_note, cancellation, tax_document, penalty, payment_calendar]
+          enum: [invoice, proforma, credit_note, cancellation, tax_document, penalty, payment_calendar, rent_calendar, advance_calendar]
           description: |
-            Druh dokladu (doména sloupce `invoices.invoice_type`, migrace 1170).
+            Druh dokladu (doména sloupce `invoices.invoice_type`).
             `tax_document` = daňový doklad k přijaté platbě zálohy (§ 28/2 ZDPH);
             DUZP = datum platby, `parent_invoice_id` = proforma.
-            `penalty` = penalizační faktura, `payment_calendar` = platební kalendář
-            (§ 31 ZDPH). Vytvořit přímo lze jen podmnožinu — viz `InvoiceInput`.
+            `penalty` = penalizační faktura.
+            `rent_calendar` = splátkový kalendář k nájmu (§ 31 ZDPH), každá splátka má vlastní DUZP.
+            `advance_calendar` = platební kalendář záloh (§ 31a ZDPH), bez DUZP, daň vzniká přijetím platby.
+            Vystavením kalendáře vznikne ke každé splátce interní doklad (`calendar_id`, číslo
+            `<kalendář>/NN`): `invoice` u nájmu, `proforma` u záloh. Úhrady, párování s bankou,
+            upomínky a dobropisy běží na nich; stav a `paid_total` kalendáře jsou od nich odvozené.
+            `payment_calendar` = původní společný typ, jen u už vystavených dokladů; koncept
+            tohoto typu vystavit nejde. Vytvořit přímo lze jen podmnožinu — viz `InvoiceInput`.
         status:
           type: string
           enum: [draft, issued, sent, reminded, paid, cancelled]
@@ -46465,16 +46750,21 @@ components:
         parent_invoice_id: { type: [integer, "null"], description: "Jen při create (credit_note / final-z-proformy). Na UPDATE se ignoruje." }
         invoice_type:
           type: string
-          enum: [invoice, proforma, credit_note, payment_calendar]
+          enum: [invoice, proforma, credit_note, payment_calendar, rent_calendar, advance_calendar]
           default: invoice
           description: |
             Druhy, které lze zadat přímo. `cancellation` a `tax_document` sem
             nepatří — vznikají vlastními cestami (`POST /invoices/{id}/cancel`,
             resp. úhradou zálohové faktury), aby s nimi vznikly i navazující vazby.
-            Úprava dokladu (`PUT`) přijímá tutéž čtveřici.
+            Úprava dokladu (`PUT`) přijímá tytéž hodnoty. `payment_calendar` je původní
+            společný typ: `/issue` ho odmítne s `422 calendar_type_required`.
         issue_date: { type: string, format: date, description: "Default = dnes" }
         due_date: { type: string, format: date, description: "Default = issue_date + payment_due_days (z projektu/klienta/supplier)" }
-        tax_date: { type: [string, "null"], format: date, description: "DUZP. U proform se ignoruje (uloží se null)." }
+        tax_date: { type: [string, "null"], format: date, description: "DUZP. U proforem a kalendářů `rent_calendar`, `advance_calendar` se ignoruje (uloží se null)." }
+        calendar_contract_ref:
+          type: [string, "null"]
+          maxLength: 190
+          description: "Nájemní smlouva splátkového kalendáře. Bez ní `/issue` u `rent_calendar` vrátí `422 calendar_contract_required`. Chybějící klíč hodnotu nemění."
         currency_id: { type: integer, description: "FK do /settings/currencies (per-supplier). Default = výchozí měna projektu/klienta/supplier." }
         currency:
           type: string
@@ -46525,22 +46815,14 @@ components:
         payment_schedule:
           type: array
           description: |
-            Rozpis splátek u platebního kalendáře (`invoice_type = payment_calendar`).
+            Rozpis splátek kalendáře (`rent_calendar`, `advance_calendar`).
             Bez něj vystavení skončí `422 payment_schedule_missing`; nesouhlasí-li
-            součet s dokladem, `422 payment_schedule_mismatch`.
+            součet základu, DPH nebo celkové částky s dokladem, `422 payment_schedule_mismatch`.
 
             **Vynechaný klíč rozpis nemění** — jinak by ho cesty, které o kalendáři
             nevědí (import, opakovaná fakturace, hromadné reissue), tiše smazaly.
             Prázdné pole ho smaže záměrně. Řádek bez `due_on` se přeskočí.
-          items:
-            type: object
-            required: [due_on]
-            properties:
-              due_on: { type: string, format: date, description: Datum splatnosti splátky. }
-              base_amount: { type: number, format: float, default: 0 }
-              vat_amount: { type: number, format: float, default: 0 }
-              total_amount: { type: number, format: float, default: 0 }
-              note: { type: [string, "null"], maxLength: 255 }
+          items: { $ref: '#/components/schemas/InvoicePaymentScheduleRow' }
         varsymbol:
           type: [string, "null"]
           maxLength: 20
@@ -48405,7 +48687,8 @@ components:
           description: "FK na kartu dlouhodobého majetku (/accounting/assets). Výnos řádku jde na 641 (asset.sale.revenue) a po vystavení faktury se karta vyřadí (type=sold) včetně doúčtování zůstatkové ceny 541/08x."
         accrual_from: { type: [string, "null"], format: date, description: "Začátek období, do kterého výnos řádku patří (časové rozlišení výnosů 384). NULL = bez rozlišení." }
         accrual_to: { type: [string, "null"], format: date, description: "Konec období výnosu řádku. Část výnosu za koncem účetního období odloží uzávěrka na 384 (MD výnos / D 384) a v dalším roce ji rozpustí." }
-        revenue_account_code: { type: [string, "null"], maxLength: 10, example: "604", description: "Výnosový účet položky (třída 6). NULL = účet produktu (stock_item_id) > jeho kategorie > předkontace dokladu. Prodej majetku (asset_id / small_asset_id) má přednost." }
+        seller_item_code: { type: [string, "null"], maxLength: 64, description: "Kód položky prodávajícího (ISDOC SellersItemIdentification). Import ho přebírá, páruje podle něj pravidla výnosů." }
+        revenue_account_code: { type: [string, "null"], maxLength: 10, example: "604", description: "Účet položky: výnosový, nebo u přefakturace rozvahový či nákladový; saldokontní, daňové a peněžní účty (311, 314, 321, 324, 325, 33x, 34x, 211, 221) nejsou povolené. NULL = účet produktu (stock_item_id) > jeho kategorie > předkontace dokladu. Prodej majetku (asset_id / small_asset_id) má přednost." }
         small_asset_name: { type: [string, "null"], description: "Název navázané karty drobného majetku (read-only, z JOINu)." }
         asset_name: { type: [string, "null"], description: "Název navázané karty dlouhodobého majetku (read-only, z JOINu)." }
         oss_applicable: { type: boolean }
@@ -48476,7 +48759,7 @@ components:
         revenue_account_code:
           type: [string, "null"]
           maxLength: 10
-          description: "Výnosový účet položky (třída 6, aktivní účet rozvrhu firmy), jinak 400 validation_failed. Vynecháno/NULL = účet produktu > kategorie > předkontace dokladu při zaúčtování. Kopie, dobropis, vyúčtování proformy i pravidelná fakturace ho přenášejí. Round-trip: uložení položek je DELETE + INSERT, nepošlete-li ho zpět, zanikne."
+          description: "Účet položky (aktivní účet rozvrhu firmy mimo saldokontní, daňové a peněžní účty 311, 314, 321, 324, 325, 33x, 34x, 211, 221), jinak 400 validation_failed. Kromě výnosu smí být i rozvahový nebo nákladový (přefakturace). Vynecháno/NULL = účet produktu > kategorie > předkontace dokladu při zaúčtování. Kopie, dobropis, vyúčtování proformy i pravidelná fakturace ho přenášejí. Round-trip: uložení položek je DELETE + INSERT, nepošlete-li ho zpět, zanikne."
         oss_applicable: { type: boolean, default: false }
         oss_consumer_country: { type: [string, "null"], minLength: 2, maxLength: 2 }
         oss_rate_type: { type: [string, "null"], enum: [standard, reduced, second_reduced, parking, null] }
@@ -48589,7 +48872,7 @@ components:
               oss_supply_type: { type: [string, "null"], enum: [goods, services, null] }
               stock_item_id: { type: [integer, "null"], description: "Skladová karta položky; generátor ji přenese na fakturu." }
               warehouse_id: { type: [integer, "null"] }
-              revenue_account_code: { type: [string, "null"], maxLength: 10, description: "Výnosový účet položky (třída 6) přenášený na vygenerovanou fakturu. NULL = produkt > kategorie > předkontace." }
+              revenue_account_code: { type: [string, "null"], maxLength: 10, description: "Účet položky (výnosový, u přefakturace i rozvahový) přenášený na vygenerovanou fakturu. NULL = produkt > kategorie > předkontace." }
 
     RecurringTemplateInput:
       type: object
@@ -48688,7 +48971,7 @@ components:
               revenue_account_code:
                 type: [string, "null"]
                 maxLength: 10
-                description: "Výnosový účet položky (třída 6, aktivní účet rozvrhu firmy), jinak 400. Vygenerovaná faktura ho dostane; účet, který mezitím z rozvrhu zmizel, se při generování vynechá. Dimenze šablony se ukládají přes /api/v1/accounting/dimensions/documents/recurring-templates/{id} a generátor je zkopíruje na fakturu."
+                description: "Účet položky (aktivní účet rozvrhu firmy mimo saldokontní, daňové a peněžní účty), jinak 400. Vygenerovaná faktura ho dostane; účet, který mezitím z rozvrhu zmizel, se při generování vynechá. Dimenze šablony se ukládají přes /api/v1/accounting/dimensions/documents/recurring-templates/{id} a generátor je zkopíruje na fakturu."
               oss_applicable:
                 type: boolean
                 default: false
@@ -51829,6 +52112,24 @@ components:
           type: boolean
         is_dotted:
           type: boolean
+    RevenueRule:
+      type: object
+      required: [id, name, item_code, description_contains, vat_rate, target_account_code, priority, is_active, hit_count, last_hit_at, created_at, updated_at]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        item_code: { type: [string, "null"] }
+        description_contains: { type: [string, "null"] }
+        vat_rate: { type: [number, "null"] }
+        target_account_code: { type: string }
+        priority: { type: integer }
+        is_active: { type: boolean }
+        hit_count: { type: integer }
+        last_hit_at: { type: [string, "null"] }
+        created_by: { type: [integer, "null"] }
+        created_by_name: { type: [string, "null"] }
+        created_at: { type: string }
+        updated_at: { type: string }
     ExpenseRule:
       type: object
       required:
@@ -53713,6 +54014,7 @@ components:
           type: number
         total_czk:
           type: number
+          description: Účetní náklad položky v Kč (základ a neodpočitatelná část DPH), ze kterého se počítá odklad.
         credit_account:
           type: string
         accrual_from:
@@ -54436,6 +54738,8 @@ components:
       - rows
       - checks
       properties:
+        accrual_spread:
+          $ref: '#/components/schemas/StatementAccrualSpread'
         dimension:
           anyOf:
           - $ref: '#/components/schemas/ReportDimensionFilter'
@@ -59396,6 +59700,26 @@ components:
           - integer
           - 'null'
 
+    StatementAccrualSpread:
+      type: object
+      description: Jen při `accrual_spread=1`. Souhrn průběžného časového rozlišení mimo deník.
+      required: [applied, skipped_reason, prepaid_expense, deferred_revenue, documents, prev]
+      properties:
+        applied: { type: boolean, description: false = volba se neuplatnila (výkaz za hodnotu dimenze) }
+        skipped_reason: { type: [string, 'null'], enum: [dimension, null] }
+        prepaid_expense: { type: number, description: Částka přesunutá z nákladů na náklady příštích období (381) }
+        deferred_revenue: { type: number, description: Částka přesunutá z výnosů na výnosy příštích období (384) }
+        documents: { type: integer, description: Počet upravených dokladů }
+        prev:
+          description: Táž úprava sloupce minulého období (null = bez minulého období)
+          anyOf:
+          - type: object
+            required: [prepaid_expense, deferred_revenue, documents]
+            properties:
+              prepaid_expense: { type: number }
+              deferred_revenue: { type: number }
+              documents: { type: integer }
+          - type: 'null'
     BalanceSheetReport:
       type: object
       required:
@@ -59411,6 +59735,8 @@ components:
       - liabilities
       - checks
       properties:
+        accrual_spread:
+          $ref: '#/components/schemas/StatementAccrualSpread'
         statement_type:
           type: string
           enum:

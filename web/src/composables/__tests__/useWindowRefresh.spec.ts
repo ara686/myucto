@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { computed, defineComponent, h, KeepAlive, provide, ref } from 'vue'
 import { windowContextKey } from '@/workspace/windowContext'
-import { useWindowRefresh, type WindowRefreshResources } from '../useWindowRefresh'
+import { useWindowRefresh } from '../useWindowRefresh'
 
 vi.mock('@/workspace/supplierContext', () => ({ getWindowSupplierScope: () => ({ supplierId: 123, windowId: 'window-test' }) }))
 
@@ -12,11 +12,7 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
-function open(activeInitially = true) {
-  return openWith(['invoices', 'clients'], activeInitially)
-}
-
-function openWith(resources: WindowRefreshResources, activeInitially = true) {
+function open(activeInitially = true, visible?: { value: boolean }) {
   const active = ref(activeInitially)
   const editing = ref(false)
   const refresh = vi.fn().mockResolvedValue(undefined)
@@ -24,7 +20,7 @@ function openWith(resources: WindowRefreshResources, activeInitially = true) {
   let pending = ref(false)
   const Child = defineComponent({
     setup() {
-      pending = useWindowRefresh(resources, refresh, () => !editing.value).pending
+      pending = useWindowRefresh(refresh, () => !editing.value).pending
       return () => h('input', { value: draft.value, onInput: (event: Event) => { draft.value = (event.target as HTMLInputElement).value } })
     },
   })
@@ -32,6 +28,7 @@ function openWith(resources: WindowRefreshResources, activeInitially = true) {
     setup() {
       provide(windowContextKey, {
         active: computed(() => active.value), paneId: computed(() => 'primary' as const), root: document.body, portal: document.body,
+        ...(visible ? { visible: computed(() => visible.value) } : {}),
       })
       return () => h(Child)
     },
@@ -60,11 +57,10 @@ describe('retained window data refresh', () => {
     expect(wrapper.find('input').element.value).toBe('still editing this draft')
   })
 
-  it('ignores another company, unrelated resources, and malformed messages', async () => {
+  it('ignores another company and malformed messages', async () => {
     const { refresh } = open()
     changed('invoices', 456)
     changed('invoices', '123')
-    changed('purchase-invoices')
     changed(null)
     window.dispatchEvent(new CustomEvent('myucto:window-data-changed', { detail: null }))
     await flushPromises()
@@ -110,18 +106,36 @@ describe('retained window data refresh', () => {
     expect(refresh).toHaveBeenCalledTimes(2)
   })
 
-  it('refreshes a wildcard window after a change in any agenda', async () => {
-    const { active, refresh } = openWith('*', false)
+  it('refreshes a visible window in a pane that is not active', async () => {
+    const visible = ref(true)
+    const { refresh } = open(false, visible)
     changed('payroll')
     await flushPromises()
+    expect(refresh).toHaveBeenCalledTimes(1)
+    visible.value = false
+    changed('payroll')
+    await flushPromises()
+    expect(refresh).toHaveBeenCalledTimes(1)
+    visible.value = true
+    await flushPromises()
+    expect(refresh).toHaveBeenCalledTimes(2)
+  })
+
+  it('waits for a modal without a dialog role, typical for this application', async () => {
+    const { refresh } = open()
+    const modal = document.createElement('div')
+    modal.className = 'fixed inset-0 bg-black/40'
+    document.body.append(modal)
+    changed()
+    await flushPromises()
     expect(refresh).not.toHaveBeenCalled()
-    active.value = true
+    modal.remove()
     await flushPromises()
     expect(refresh).toHaveBeenCalledTimes(1)
   })
 
   it('does not refresh when the window is shown again without any change', async () => {
-    const { active, refresh } = openWith('*', false)
+    const { active, refresh } = open(false)
     active.value = true
     await flushPromises()
     active.value = false
@@ -135,7 +149,7 @@ describe('retained window data refresh', () => {
     const observe = vi.spyOn(MutationObserver.prototype, 'observe')
     const disconnect = vi.spyOn(MutationObserver.prototype, 'disconnect')
     try {
-      const { refresh } = openWith('*')
+      const { refresh } = open()
       await flushPromises()
       expect(observe).not.toHaveBeenCalled()
       const dialog = document.createElement('div')
@@ -159,7 +173,7 @@ describe('retained window data refresh', () => {
     const shown = ref(true)
     const Tab = defineComponent({
       setup() {
-        useWindowRefresh('*', refresh)
+        useWindowRefresh(refresh)
         return () => h('div', 'tab')
       },
     })

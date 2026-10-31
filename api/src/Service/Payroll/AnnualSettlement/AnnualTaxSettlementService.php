@@ -57,6 +57,7 @@ final class AnnualTaxSettlementService implements AnnualSettlementPerformer
         private readonly AnnualSettlementSnapshotBuilder $snapshots,
         private readonly AnnualSettlementPdfRenderer $renderer,
         private readonly PayrollDocumentService $documents,
+        private readonly AnnualSettlementClaimsService $claims,
     ) {}
 
     /**
@@ -66,6 +67,7 @@ final class AnnualTaxSettlementService implements AnnualSettlementPerformer
      *   credit_rows:list<array{label:string,amount_minor_units:int}>,
      *   child_rows:list<array{label:string,months:int,amount_minor_units:int}>,
      *   certificates:list<array<string,mixed>>,
+     *   annual_claims:array<string,mixed>,
      *   already_settled:?array<string,mixed>
      * }
      */
@@ -340,6 +342,7 @@ final class AnnualTaxSettlementService implements AnnualSettlementPerformer
      *   credit_rows:list<array{label:string,amount_minor_units:int}>,
      *   child_rows:list<array{label:string,months:int,amount_minor_units:int}>,
      *   certificates:list<array<string,mixed>>,
+     *   annual_claims:array<string,mixed>,
      *   already_settled:?array<string,mixed>
      * }
      */
@@ -421,6 +424,13 @@ final class AnnualTaxSettlementService implements AnnualSettlementPerformer
             $taxYear,
         );
         $blockers = [...$blockers, ...$credits['blockers'], ...$children['blockers']];
+        // Nárok na slevu, kterou ročník sazeb nezná (sleva na studenta před
+        // rokem 2027), se nespočítá jako nula — zúčtování se zastaví.
+        foreach ($credits['credits'] as $credit) {
+            if ($rates !== null && !$rates->supportsCredit($credit->kind)) {
+                $blockers[] = AnnualSettlementBlocker::CreditEvidenceUnverified;
+            }
+        }
         // Převzaté měsíce: počáteční stav nese uplatněné zvýhodnění, evidence
         // dětí nárok. Nesmí si odporovat, jinak by zúčtování vzalo zpět to, co
         // zaměstnanec u předchozího programu oprávněně dostal.
@@ -466,6 +476,32 @@ final class AnnualTaxSettlementService implements AnnualSettlementPerformer
             $blockers,
         );
 
+        // § 38h odst. 6: žádost a evidence ročních nároků si nesmí odporovat.
+        // Rozpor se nerozhoduje za účetní ani jedním směrem.
+        $annualClaims = $this->claims->load($supplierId, $employeeId, $taxYear);
+        $hasAnnualClaims = $annualClaims['claims'] !== []
+            || $annualClaims['spouse'] !== null
+            || $annualClaims['preschool'] !== [];
+        if (($request->annualClaims === AnnualSettlementAnnualClaims::Present && !$hasAnnualClaims)
+            || ($hasAnnualClaims && in_array($request->annualClaims, [
+                AnnualSettlementAnnualClaims::None,
+                AnnualSettlementAnnualClaims::Unknown,
+            ], true))
+        ) {
+            $blockers[] = AnnualSettlementBlocker::AnnualClaimsInconsistent;
+        }
+        $annualClaimsPayload = [
+            'deductions' => $annualClaims['deductions'],
+            'spouse' => $annualClaims['spouse_row'],
+            'preschool' => $annualClaims['preschool_rows'],
+            // Sleva za umístění dítěte existuje od zdaňovacího období 2027 (§ 35bd).
+            'preschool_available' => AnnualPreschoolCreditStatute::isEffective($taxYear),
+            'dependants' => $this->claims->dependants($supplierId, $employeeId),
+            // Zákonné ocenění odběrů (§ 15 odst. 1) pro formulář — obrazovka si
+            // ho nesmí držet natvrdo, je ročníkové.
+            'statute' => ['counted_donation_values' => self::countedDonationValues()],
+        ];
+
         try {
             $state = $this->accumulators->stateForYear(
                 $supplierId,
@@ -492,6 +528,7 @@ final class AnnualTaxSettlementService implements AnnualSettlementPerformer
                 'credit_rows' => [],
                 'child_rows' => [],
                 'certificates' => self::certificateRows($certificates),
+                'annual_claims' => $annualClaimsPayload,
                 'already_settled' => $settled,
             ];
         }
@@ -510,6 +547,9 @@ final class AnnualTaxSettlementService implements AnnualSettlementPerformer
             $credits['credits'],
             $children['children'],
             $certificates,
+            $annualClaims['claims'],
+            $annualClaims['spouse'],
+            $annualClaims['preschool'],
         );
 
         $result = $this->calculator->calculate($input, $rates, $this->unique($blockers));
@@ -527,8 +567,22 @@ final class AnnualTaxSettlementService implements AnnualSettlementPerformer
             'credit_rows' => $this->creditRows($result),
             'child_rows' => $childRows,
             'certificates' => self::certificateRows($certificates),
+            'annual_claims' => $annualClaimsPayload,
             'already_settled' => $settled,
         ];
+    }
+
+    /** @return array<string,int> ocenění odběru podle druhu (§ 15 odst. 1) */
+    private static function countedDonationValues(): array
+    {
+        $values = [];
+        foreach (AnnualNonTaxableKind::cases() as $kind) {
+            if ($kind->isCountedDonation()) {
+                $values[$kind->value] = AnnualNonTaxableStatute::countedDonationValue($kind);
+            }
+        }
+
+        return $values;
     }
 
     /**
@@ -620,6 +674,28 @@ final class AnnualTaxSettlementService implements AnnualSettlementPerformer
         $rows = [];
         foreach ($credits as $kindValue => $credit) {
             if (!is_array($credit)) {
+                continue;
+            }
+            if ($kindValue === 'spouse') {
+                $ztpPMonths = (int) ($credit['ztp_p_months'] ?? 0);
+                $rows[] = [
+                    'label' => sprintf(
+                        'Sleva na manžela/manželku (%d měs.%s)',
+                        (int) ($credit['months'] ?? 0),
+                        $ztpPMonths > 0 ? sprintf(', z toho ZTP/P %d', $ztpPMonths) : '',
+                    ),
+                    'amount_minor_units' => (int) ($credit['amount_minor_units'] ?? 0),
+                ];
+                continue;
+            }
+            if ($kindValue === 'preschool') {
+                $rows[] = [
+                    'label' => sprintf(
+                        'Sleva za umístění dítěte (počet dětí: %d)',
+                        count(is_array($credit['children'] ?? null) ? $credit['children'] : []),
+                    ),
+                    'amount_minor_units' => (int) ($credit['amount_minor_units'] ?? 0),
+                ];
                 continue;
             }
             $kind = TaxCreditKind::tryFrom((string) $kindValue);
@@ -715,6 +791,9 @@ final class AnnualTaxSettlementService implements AnnualSettlementPerformer
             TaxCreditKind::DisabilityBasic => 'Základní sleva na invaliditu (§ 35ba odst. 1 písm. c)',
             TaxCreditKind::DisabilityExtended => 'Rozšířená sleva na invaliditu (§ 35ba odst. 1 písm. d)',
             TaxCreditKind::ZtpP => 'Sleva na držitele průkazu ZTP/P (§ 35ba odst. 1 písm. e)',
+            TaxCreditKind::Student => 'Sleva na studenta (§ 35ba odst. 1 písm. f)',
+            TaxCreditKind::StudentDoctoral
+                => 'Sleva na studenta, prezenční doktorské studium (§ 35ba odst. 1 písm. f)',
         };
         if ($kind === TaxCreditKind::Taxpayer) {
             return $name;
