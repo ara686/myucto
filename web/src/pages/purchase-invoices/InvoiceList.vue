@@ -1335,7 +1335,7 @@ useWindowRefresh(refreshLoadedPages,
           <option value="0">{{ t('purchase_invoice.filters.payment_ordered_no') }}</option>
         </select>
         <fieldset data-test="document-sources-filters"
-          class="relative min-w-0 max-w-full rounded-md border border-neutral-200 px-2 py-0">
+          class="relative min-w-0 max-w-full rounded-md border border-neutral-200 px-2 pt-2.5 pb-1">
           <legend class="sr-only">{{ t('purchase_invoice.filters.document_sources') }}</legend>
           <span aria-hidden="true" class="pointer-events-none absolute -top-2 left-2 bg-surface px-1 text-xs leading-4 font-medium text-neutral-500">
             {{ t('purchase_invoice.filters.document_sources') }}
