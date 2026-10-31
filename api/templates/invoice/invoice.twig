@@ -149,6 +149,14 @@
     <td class="meta-label">{{ t('DPH', 'VAT') }}</td>
     <td class="meta-value" colspan="3">{{ t('Není plátce DPH', 'Not a VAT payer') }}</td>
   </tr>
+  {% elseif supplier.is_vat_payer and invoice.invoice_type in ['rent_calendar', 'advance_calendar'] %}
+  {# Kalendář nemá společné DUZP: u nájmu ho nese každá splátka (§ 21 odst. 7), u záloh žádné není (§ 31a odst. 2). #}
+  <tr>
+    <td class="meta-label">{{ invoice.calendar_contract_ref ? t('Smlouva', 'Contract') : '' }}</td>
+    <td class="meta-value">{{ invoice.calendar_contract_ref }}</td>
+    <td class="meta-label">{{ t('KS', 'Const. symbol') }}</td>
+    <td class="meta-value mono">0308</td>
+  </tr>
   {% elseif supplier.is_vat_payer and invoice.tax_date and invoice.invoice_type != 'proforma' %}
   <tr>
     <td class="meta-label">{{ t('DUZP', 'Tax point') }}</td>
@@ -627,22 +635,25 @@
    tiskl jako běžná faktura s jediným datem splatnosti — tedy bez toho jediného, kvůli
    čemu vzniká. Kalendář BEZ rozpisu se ani nedá vystavit (validace při vystavení), takže
    prázdná tabulka tady znamená doklad v konceptu; vypíše se proto věta, ne prázdný rám. #}
-{% if invoice.invoice_type == 'payment_calendar' %}
+{% if invoice.invoice_type in ['payment_calendar', 'rent_calendar', 'advance_calendar'] %}
+{% set is_rent_calendar = invoice.invoice_type == 'rent_calendar' %}
+{% set schedule_columns = is_rent_calendar ? 6 : 5 %}
 <table class="schedule-table">
   <tr>
-    <td colspan="5" class="schedule-title">
+    <td colspan="{{ schedule_columns }}" class="schedule-title">
       {{ t('Rozpis plateb', 'Payment schedule') }}
-      <span class="schedule-legal">{{ t('§ 31a zákona o DPH', 'Section 31a of the Czech VAT Act') }}</span>
+      <span class="schedule-legal">{{ is_rent_calendar ? t('§ 31 zákona o DPH', 'Section 31 of the Czech VAT Act') : t('§ 31a zákona o DPH', 'Section 31a of the Czech VAT Act') }}</span>
     </td>
   </tr>
   {% if payment_schedule is empty %}
   <tr>
-    <td colspan="5" class="schedule-empty">
+    <td colspan="{{ schedule_columns }}" class="schedule-empty">
       {{ t('Rozpis plateb zatím není vyplněn.', 'The payment schedule has not been filled in yet.') }}
     </td>
   </tr>
   {% else %}
   <tr class="schedule-head">
+    {% if is_rent_calendar %}<th class="schedule-th">{{ t('DUZP', 'Tax point') }}</th>{% endif %}
     <th class="schedule-th">{{ t('Splatnost', 'Due date') }}</th>
     <th class="schedule-th right">{{ t('Základ', 'Base') }}</th>
     <th class="schedule-th right">{{ t('DPH', 'VAT') }}</th>
@@ -651,6 +662,7 @@
   </tr>
   {% for row in payment_schedule %}
   <tr>
+    {% if is_rent_calendar %}<td class="schedule-td nowrap">{{ (row.tax_date ?: row.due_on)|date(date_format) }}</td>{% endif %}
     <td class="schedule-td nowrap">{{ row.due_on|date(date_format) }}</td>
     <td class="schedule-td right nowrap">{{ row.base_amount|number_format(2, decimal_sep, thousand_sep) }}</td>
     <td class="schedule-td right nowrap">{{ row.vat_amount|number_format(2, decimal_sep, thousand_sep) }}</td>
@@ -659,7 +671,7 @@
   </tr>
   {% endfor %}
   <tr class="schedule-total">
-    <td class="schedule-td">{{ t('Celkem za období', 'Total for the period') }}</td>
+    <td class="schedule-td"{% if is_rent_calendar %} colspan="2"{% endif %}>{{ t('Celkem za období', 'Total for the period') }}</td>
     <td class="schedule-td right nowrap">{{ payment_schedule|reduce((s, r) => s + r.base_amount, 0)|number_format(2, decimal_sep, thousand_sep) }}</td>
     <td class="schedule-td right nowrap">{{ payment_schedule|reduce((s, r) => s + r.vat_amount, 0)|number_format(2, decimal_sep, thousand_sep) }}</td>
     <td class="schedule-td right nowrap">{{ payment_schedule|reduce((s, r) => s + r.total_amount, 0)|number_format(2, decimal_sep, thousand_sep) }} {{ invoice.currency }}</td>
@@ -668,8 +680,16 @@
   {% endif %}
 </table>
 <div class="note schedule-note">
+  {% if is_rent_calendar %}
+  {{ t('Každá splátka je samostatným dílčím plněním. Daň vzniká ke dni uskutečnění uvedenému u splátky, nebo dnem přijetí úplaty, pokud nastane dříve.',
+       'Each instalment is a separate partial supply. VAT arises on the tax point stated for the instalment, or on receipt of payment if earlier.') }}
+  {% elseif invoice.invoice_type == 'advance_calendar' %}
+  {{ t('Daň vzniká dnem přijetí úplaty, pokud plnění nebylo uskutečněno dříve. Nezaplacená záloha povinnost přiznat daň nezakládá.',
+       'VAT arises on the day the payment is received, unless the supply took place earlier. An unpaid advance gives rise to no VAT obligation.') }}
+  {% else %}
   {{ t('Každá platba uvedená v rozpisu je samostatným zdanitelným plněním; daň se uplatní ke dni její splatnosti nebo přijetí úplaty podle toho, který nastane dříve.',
        'Each payment listed in the schedule is a separate taxable supply; VAT applies on its due date or on receipt of payment, whichever occurs first.') }}
+  {% endif %}
 </div>
 {% endif %}
 

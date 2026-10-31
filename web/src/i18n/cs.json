@@ -212,6 +212,8 @@
     "currency": "Měna",
     "exchange_rate": "Kurz vůči CZK",
     "paid_amount": "Uhrazeno",
+    "settled_outside": "z toho mimo banku a pokladnu",
+    "settled_outside_hint": "Úhrada zápočtem, interním dokladem nebo stav úhrady převzatý z jiného programu.",
     "remaining": "Zbývá uhradit",
     "variable_symbol": "Variabilní symbol",
     "accounting": "Účtování",
@@ -799,6 +801,11 @@
     "light": "Světlý",
     "dark": "Tmavý"
   },
+  "list_nav": {
+    "group": "Listování seznamem",
+    "previous": "Předchozí doklad v seznamu ({key})",
+    "next": "Další doklad v seznamu ({key})"
+  },
   "app": {
     "title": "MyÚčto.cz",
     "subtitle": "Fakturační systém"
@@ -865,7 +872,13 @@
     "upload": "Nahrát",
     "upload_original": "Nahrát původní soubor",
     "retake": "Vyfotit znovu",
-    "cancel": "Zrušit"
+    "cancel": "Zrušit",
+    "crop_toggle": "Oříznout podle dokladu",
+    "crop_hint": "Doklad jsme na fotce našli. Rohy můžete posunout.",
+    "crop_manual_hint": "Rohy posuňte na okraje dokladu.",
+    "crop_off_hint": "Nahraje se celá fotka.",
+    "crop_not_found": "Doklad se na fotce nepodařilo najít. Ořez můžete vyznačit ručně.",
+    "corner": "Roh dokladu {n}"
   },
   "documents": {
     "ai": {
@@ -1249,7 +1262,10 @@
     "company_switch": "Přepnout na tuto firmu",
     "group_clients": "Klienti / dodavatelé",
     "group_invoices": "Vydané faktury",
-    "group_purchase": "Přijaté faktury"
+    "group_purchase": "Přijaté faktury",
+    "group_employees": "Zaměstnanci",
+    "employee_code": "Os. č. {code}",
+    "employee_inactive": "neaktivní"
   },
   "command": {
     "title": "Paleta příkazů",
@@ -3282,6 +3298,67 @@
       "apply_failed": "Pojišťovny se nepodařilo uložit.",
       "retry": "Zkusit znovu"
     },
+    "declaration_sign_bulk": {
+      "title": "Podepsaná prohlášení poplatníka hromadně",
+      "intro": "Vybraným osobám zapíše do zákonné evidence prohlášení poplatníka jako Podepsáno, stejně jako karta osoby. Tím se uplatní základní sleva na poplatníka; ostatní slevy a děti zapište na kartě osoby. Podepsané prohlášení se nepřepíše a do měsíců uzavřených schválenou mzdou se nezapisuje.",
+      "warning_one_payer": "Prohlášení může zaměstnanec za stejné období podepsat jen u jednoho plátce. Podepsal-li ho jinde, nezapisujte ho.",
+      "warning_responsibility": "Za pravdivost prohlášení odpovídá zaměstnanec. Aplikace podpis ani údaje v prohlášení neověří, zapisujte jen prohlášení, která máte podepsaná v ruce.",
+      "year": "Zdaňovací rok",
+      "signed_on": "Datum podpisu",
+      "reload": "Načíst náhled",
+      "effective_from": "Platí od {date}",
+      "basis": {
+        "year_start": "od začátku roku, prohlášení je podepsané před rokem nebo v lednu",
+        "signing_month": "od měsíce podpisu, za dřívější měsíce se sleva neuplatní",
+        "after_frozen_period": "až po období uzavřeném schválenou mzdou (do {date})"
+      },
+      "year_frozen": "Celý rok {year} je uzavřený schválenou mzdou (do {date}). Do uzavřeného výpočtu se zpětně nezapisuje.",
+      "recalculate_title": "Rozpracované mzdy k přepočtu",
+      "recalculate_hint": "Tyto mzdy se počítaly bez podpisu. Po zápisu je přepočítejte.",
+      "summary": {
+        "people": "Osob",
+        "ready": "Zapíše se",
+        "already_signed": "Už podepsáno",
+        "skipped": "Nelze zapsat"
+      },
+      "state": {
+        "ready": "Zapíše se",
+        "already_signed": "Na rok už podepsáno, přeskočí se",
+        "period_frozen": "Období uzavřené schválenou mzdou",
+        "timeline_gap": "Předchozí záznam končí dřív, zapište na kartě osoby",
+        "employee_not_found": "Osoba nenalezena"
+      },
+      "change": {
+        "add": "Nový záznam",
+        "close_previous": "Ukončí předchozí ({status})",
+        "replace": "Nahradí ({status})"
+      },
+      "status": {
+        "not-signed": "Nepodepsáno",
+        "unverified": "Neověřeno",
+        "signed": "Podepsáno"
+      },
+      "select_all": "Vybrat vše",
+      "select_none": "Zrušit výběr",
+      "select_person": "Vybrat: {name}",
+      "empty": "V roce {year} nemá nikdo trvající pracovní vztah.",
+      "confirm": "Potvrzuji, že mám podepsaná prohlášení vybraných osob.",
+      "apply": "Zapsat podpis ({count})",
+      "nothing_selected": "Vyberte aspoň jednu osobu, u které se podpis zapíše.",
+      "confirm_required": "Potvrďte, že máte prohlášení podepsaná.",
+      "applied_toast": "Podepsané prohlášení zapsáno u {count} osob.",
+      "result_title": "Výsledek zápisu",
+      "result": {
+        "applied": "Zapsáno",
+        "skipped": "Přeskočeno",
+        "failed": "Chyba"
+      },
+      "applied_item": "od {date}",
+      "person_fallback": "Osoba č. {id}",
+      "load_failed": "Náhled se nepodařilo načíst.",
+      "apply_failed": "Podepsaná prohlášení se nepodařilo zapsat.",
+      "retry": "Zkusit znovu"
+    },
     "statutory_bulk": {
       "title": "Doplnit výchozí zákonné údaje",
       "intro": "Osobám bez cizího prvku doplní chybějící údaje, které plynou z toho, že s cizinou nemají nic společného: daňovou rezidenci v Česku, českou příslušnost k pojištění bez formuláře A1 a u osob mladších 60 let neuplatňování slevy pracujícího důchodce. Existující záznam se nikdy nepřepíše. Zdravotní pojišťovnu hromadně nedoplníme, zná ji jen registrace nebo zaměstnanec.",
@@ -3316,6 +3393,7 @@
       "declaration_label": "Zapsat chybějící prohlášení jako nepodepsané ({count} osob)",
       "declaration_hint": "Zapíše stav „nepodepsal“. Bez podepsaného prohlášení se neuplatní sleva na poplatníka ani další slevy. Zapněte jen tehdy, když víte, že prohlášení opravdu nepodepsali.",
       "declaration_on": "Podpis se tím nevytváří. Až zaměstnanec prohlášení podepíše, zapište to na jeho kartě.",
+      "declaration_signed_link": "Podepsaná prohlášení hromadně",
       "withholding_title": "Riziko srážkové daně ({count})",
       "withholding_hint": "Bez podepsaného prohlášení se v měsíci, kdy úhrn příjmů od vás nedosáhne rozhodné částky, sráží srážková daň. Týká se každého druhu vztahu, i pracovního poměru, nejen dohod. Zkontrolujte je před zápisem.",
       "and_more": "a dalších {count}",
@@ -3396,6 +3474,64 @@
       "failed_title": "Nepovedlo se doplnit ({count})",
       "recalculate_notice": "Mzdový běh, u kterého jste pracoviště doplnili, je nutné znovu přepočítat a schválit novou revizi, aby se nová hodnota promítla do hlášení."
     },
+    "bulk_closure": {
+      "open": "Ukončit skončené dohody",
+      "open_count": "Ukončit skončené dohody ({count})",
+      "title": "Ukončit skončené dohody",
+      "intro": "Náhled vztahů, které už podle sjednaného konce nebo podle mezd neběží. Každý vybraný vztah se ukončí stejně jako tlačítkem na jeho kartě, včetně kontrolního seznamu odchodu (odhláška, výstupní doklady). Nic se nemění, dokud výběr nepotvrdíte.",
+      "inactivity_months": "Bez aktivity (měsíců)",
+      "archive_after_months": "Archivovat po (měsících)",
+      "reload": "Načíst náhled",
+      "retry": "Zkusit znovu",
+      "load_failed": "Náhled ukončení se nepodařilo načíst.",
+      "apply_failed": "Hromadné ukončení se nepodařilo provést.",
+      "empty": "Žádný vztah k ukončení ani k archivaci.",
+      "summary_blocked": "Vyžaduje kontrolu",
+      "groups": {
+        "expired": {
+          "summary": "Uplynul sjednaný konec",
+          "title": "Uplynul sjednaný konec",
+          "hint": "Aktivní vztahy, jejichž sjednaný konec už uplynul. Ukončí se k datu sjednaného konce."
+        },
+        "inactive": {
+          "summary": "Dohody bez aktivity",
+          "title": "Dohody bez aktivity",
+          "hint": "DPP a DPČ bez sjednaného konce, které za posledních {months} měsíců nemají mzdový vstup ani docházku. Ukončí se k poslednímu dni měsíce poslední aktivity."
+        },
+        "archive": {
+          "summary": "K archivaci",
+          "title": "Ukončené vztahy k archivaci",
+          "hint": "Vztahy ukončené před více než {months} měsíci. Archivace je jen úklid seznamu a jde vrátit."
+        }
+      },
+      "detail": {
+        "expired": "Sjednaný konec {date}",
+        "inactive": "Poslední aktivita {period}",
+        "never_active": "Bez mzdového vstupu i docházky",
+        "archive": "Ukončeno {date}"
+      },
+      "blocked": {
+        "activity_after_end": "Po datu konce má mzdový vstup nebo docházku ({period}). Zkontrolujte datum konce.",
+        "settled_after_end": "Po datu konce má zúčtovanou mzdu ({period}). Zkontrolujte datum konce."
+      },
+      "select_all": "Vybrat vše",
+      "end_on": "Ukončit k",
+      "archive_on": "Archivovat k {date}",
+      "nothing_selected": "Vyberte aspoň jeden vztah.",
+      "too_many": "Najednou lze zpracovat nejvýše {max} vztahů.",
+      "date_required": "U každého vybraného vztahu vyplňte datum.",
+      "apply": "Pokračovat ({count})",
+      "confirm_text": "Ukončí se {end} vztahů a archivuje {archive} vztahů. Pokračovat?",
+      "confirm_apply": "Potvrdit",
+      "back": "Zpět k výběru",
+      "applied_toast": "Zpracováno vztahů: {count}.",
+      "result_title": "Výsledek",
+      "result": {
+        "applied": "Provedeno",
+        "failed": "Nepovedlo se"
+      },
+      "failed_title": "Nepovedlo se ({count})"
+    },
     "warning_suppressions": {
       "title": "Skrytá varování",
       "intro": "Varování, která jste u mzdového běhu trvale skryli. Do kontrol běhu ani do jejich počtů se nepočítají, dokud je neobnovíte. Blokující chyby skrýt nejde.",
@@ -3424,6 +3560,7 @@
         "tax_declaration_not_signed_summary": "Nepodepsané prohlášení poplatníka k dani",
         "time_month_missing": "Chybí schválená pracovní doba",
         "employment_without_inputs": "Pracovní vztah bez mzdových vstupů",
+        "dpp_annual_hours_approaching": "Dohoda o provedení práce se blíží limitu 300 hodin",
         "recurring_component_without_input": "Pravidelná mzdová složka bez vstupu"
       }
     },
@@ -3525,7 +3662,7 @@
         "hint": "Zobrazeny jsou jen kontroly, které brání schválení. Dalších {count} varování schválení nezastaví; najdete je pod Všechny kontroly, seskupené podle druhu."
       },
       "missing_previous": {
-        "title": "Před obdobím {period} chybí mzdový běh za {count} měsíců od začátku vedení mezd v MyÚčtu",
+        "title": "Před obdobím {period} chybí mzdové běhy za {count} měsíců od začátku vedení mezd v MyÚčtu | Před obdobím {period} chybí mzdový běh za {count} měsíc od začátku vedení mezd v MyÚčtu | Před obdobím {period} chybí mzdové běhy za {count} měsíce od začátku vedení mezd v MyÚčtu | Před obdobím {period} chybí mzdové běhy za {count} měsíců od začátku vedení mezd v MyÚčtu",
         "hint": "Mzda staví na předchozích měsících (roční úhrny, průměry, zálohová daň). Spočítejte chybějící měsíce dřív. Pokud je zpracoval předchozí program, posuňte v Nastavení mezd začátek vedení mezd za ně a převezměte je jako převzaté měsíce.",
         "settings": "Začátek vedení mezd",
         "hint_takeover": "Tyto měsíce zpracoval předchozí mzdový program (MyÚčto má z převodu jejich mzdy) a MyÚčto za ně vlastní běh nemá. Posuňte začátek vedení mezd a měsíce převezměte v panelu Převzaté měsíce níže tlačítkem Převzít všechny měsíce.",
@@ -3884,9 +4021,13 @@
           "negative-relationship-tax-base": "Pracovní vztah má záporný daňový základ.",
           "nonresident-monthly-credit-not-supported": "Měsíční sleva nerezidenta vyžaduje odborné posouzení.",
           "nonresident-monthly-child-credit-not-supported": "Měsíční zvýhodnění na dítě u nerezidenta vyžaduje odborné posouzení.",
+          "nonresident-student-credit-not-allowed": "Daňový nerezident nemá nárok na slevu na studenta.",
           "other-withholding-eligibility-unverified": "Není ověřeno, zda lze příjem zařadit do srážkové daně.",
           "prior-period-tax-correction-requires-revision": "Oprava daně za starší období vyžaduje samostatnou revizi.",
           "relationship-tax-classification-conflict": "Daňové klasifikace pracovního vztahu jsou ve vzájemném konfliktu.",
+          "student-credit-conflict": "Sleva na studenta je evidována současně jako běžné i doktorské studium.",
+          "student-credit-interval-open": "Nárok na slevu na studenta nemá konec, ačkoli ho věková hranice vždy ukončí.",
+          "student-credit-not-in-ruleset": "Sleva na studenta v tomto roce neexistuje, zákon ji zavádí až od roku 2027.",
           "tax-credit-evidence-unverified": "Nárok na slevu nemá ověřený podklad.",
           "tax-credit-requires-signed-declaration": "Sleva vyžaduje účinné podepsané prohlášení k dani.",
           "tax-declaration-conflict": "Evidence prohlášení k dani je ve vzájemném konfliktu.",
@@ -4451,6 +4592,7 @@
         "empty": "V tomto období nejsou mzdové vstupy",
         "empty_hint": "Přidejte jednorázový vstup, importujte soubor nebo materializujte pravidelné předpisy.",
         "basket_usage": "Koš {basket} podle {statute}: po tomto plnění vyčerpáno {used} z {limit}, zbývá {remaining}.",
+        "basket_usage_unlimited": "Koš {basket} podle {statute} je v tomto roce osvobozený bez limitu, po tomto plnění poskytnuto {used}.",
         "basket_over_limit": "Zákonný limit koše je překročen: osvobozeno {exempt}, zdanitelných {taxable} - nadlimitní část vstupuje do daně i do vyměřovacích základů pojistného.",
         "meal_entitlement_summary": "Nároků celkem {count}: {qualifying} základních a {second} druhých příspěvků.",
         "meal_allocation_uniform": "Auditní rozdělení: {count} nároků × {amount}; na každý nárok limit {limit}, osvobozeno {exempt} a zdanitelné {taxable}.",
@@ -4685,10 +4827,12 @@
       "exemption_basket": {
         "none": "Bez zákonného koše",
         "non_cash_health": "Zdravotní plnění (§ 6 odst. 9 písm. d) bod 1)",
-        "non_cash_leisure": "Rekreace, sport a kultura (§ 6 odst. 9 písm. d) bod 2)",
+        "non_cash_leisure": "Sport, kultura a volný čas, do roku 2026 i rekreace (§ 6 odst. 9 písm. d) bod 2, od 2027 bez limitu)",
         "old_age_savings": "Spoření na stáří a dlouhodobá péče (§ 6 odst. 9 písm. m))",
         "meal_per_shift": "Příspěvek na stravování za směnu (§ 6 odst. 9 písm. b))",
-        "temporary_accommodation": "Přechodné ubytování měsíčně (§ 6 odst. 9 písm. i))"
+        "temporary_accommodation": "Přechodné ubytování měsíčně (§ 6 odst. 9 písm. i))",
+        "recreation": "Rekreace a zájezd od roku 2027 (§ 6 odst. 9 písm. d) bod 3)",
+        "food_service_tips": "Spropitné ze stravovacích služeb od roku 2027 (§ 6 odst. 9 písm. g))"
       },
       "exemption_basis": {
         "none": "Bez uvedeného podkladu",
@@ -4983,7 +5127,7 @@
       "filing_obligation_reason": "Proč přiznání podá",
       "filing_obligation_reason_placeholder": "Například příjmy z podnikání nad 20 000 Kč…",
       "annual_claims": "Uplatňuje položky, které jdou jen ročně",
-      "annual_claims_hint": "Dary, úroky z úvěru na bydlení, penzijní a životní pojištění, sleva na manžela nebo sleva za zastavenou exekuci. Aplikace je zatím neumí spočítat.",
+      "annual_claims_hint": "Dary, úroky z úvěru na bydlení, penzijní a životní pojištění, sleva na manžela nebo sleva za zastavenou exekuci evidujete v sekci níže. Zbylé položky, které aplikace neeviduje, zvolte jako „neeviduje\".",
       "annual_claims_note": "Co konkrétně uplatňuje",
       "annual_claims_note_placeholder": "Například úroky z hypotečního úvěru…",
       "other_caregiver_status": "Uplatňovala dítě v některém měsíci i jiná osoba ve společné domácnosti",
@@ -5098,7 +5242,8 @@
       "annual_claims_options": {
         "unknown": "Nevíme",
         "none": "Ne, žádné",
-        "present_unsupported": "Ano, uplatňuje"
+        "present": "Ano, uplatňuje (evidováno níže)",
+        "present_unsupported": "Ano, uplatňuje něco, co aplikace neeviduje"
       },
       "outcome": {
         "overpayment": "Přeplatek k vrácení",
@@ -5133,7 +5278,138 @@
         "tax_year_not_finished": "Zdaňovací období ještě neskončilo. Roční zúčtování jde provést až od 1. ledna následujícího roku.",
         "taxpayer_credit_evidence_missing": "Zaměstnanec má podepsané prohlášení k dani, ale v evidenci nároků mu chybí sleva na poplatníka. Doplňte ji v kartě zaměstnance - bez ní by zúčtování spočítalo daň bez roční slevy.",
         "request_date_missing": "U podané žádosti chybí datum podání. Bez něj nejde doložit, že žádost přišla do 15. února. Podklady jsou uložené, doplňte datum v poli Datum žádosti.",
-        "prior_documents_date_missing": "U doložených dokladů předchozích zaměstnavatelů chybí datum převzetí. Bez něj nejde doložit lhůtu do 15. února. Podklady jsou uložené, doplňte datum v poli Datum převzetí dokladů."
+        "prior_documents_date_missing": "U doložených dokladů předchozích zaměstnavatelů chybí datum převzetí. Bez něj nejde doložit lhůtu do 15. února. Podklady jsou uložené, doplňte datum v poli Datum převzetí dokladů.",
+        "annual_claims_inconsistent": "Odpověď o ročně uplatňovaných položkách nesedí s evidencí. Buď zvolte „Uplatňuje - evidováno níže\" a položky uložte, nebo evidenci odstraňte.",
+        "annual_claim_evidence_unverified": "U některé ročně uplatňované položky chybí doložení. Do základu daně a slev se smí promítnout jen doložená položka - doplňte doložení v sekci Ročně uplatňované položky.",
+        "spouse_credit_conditions_not_met": "Nejsou splněny podmínky slevy na manžela. Opravte evidenci slevy, nebo ji odeberte.",
+        "preschool_credit_conditions_not_met": "Nejsou splněny podmínky slevy za umístění dítěte. Opravte evidenci slevy, nebo ji odeberte."
+      },
+      "row_base_before_deductions": "Základ daně před odpočty",
+      "row_non_taxable": "Nezdanitelné části základu daně (§ 15)",
+      "row_enforcement_credit": "Sleva za zastavenou exekuci",
+      "trace": {
+        "donation": "Dary: uplatněno {claimed}, strop {cap}",
+        "threshold_not_met": "minimální hranice daru nesplněna",
+        "housing_interest": "Úroky z úvěru na bydlení: uplatněno {claimed}, {months} měs., limit {cap}",
+        "retirement_and_care": "Penzijní, životní pojištění, DIP a dlouhodobá péče: uplatněno {claimed}, limit {cap}"
+      },
+      "spouse_failure": {
+        "spouse_relation": "Vybraná osoba není v evidenci vedená jako manžel nebo manželka.",
+        "child_relation": "Vybrané dítě není v evidenci vedené jako dítě zaměstnance nebo manžela.",
+        "spouse_income_missing": "Chybí vlastní příjem manžela za rok, nelze ověřit limit.",
+        "spouse_income_over_limit": "Vlastní příjem manžela přesáhl limit 68 000 Kč.",
+        "ztp_p_month_outside_claim": "Měsíc se zvýšením ZTP/P není mezi měsíci uplatnění slevy.",
+        "ztp_p_not_in_evidence": "Zvýšení ZTP/P se uplatňuje, ale manžel nemá v evidenci průkaz ZTP/P.",
+        "child_not_under_three": "Dítě v některém uplatněném měsíci nebylo mladší 3 let.",
+        "spouse_not_in_evidence": "Manžel není v evidenci vyživovaných osob zaměstnance."
+      },
+      "preschool_failure": {
+        "statute_not_effective": "Slevu za umístění dítěte lze uplatnit až za rok 2027.",
+        "minimum_wage_unavailable": "Pravidla výpočtu pro tento rok nemají minimální mzdu, ze které se počítá strop slevy.",
+        "child_relation": "Vybraná osoba není vyživované dítě. Vnuk jen v péči nahrazující péči rodičů.",
+        "child_not_in_household": "Dítě v tomto roce se zaměstnancem nežilo ve společné domácnosti.",
+        "claimed_by_other_taxpayer": "Slevu na dítě v téže domácnosti uplatňuje jiný poplatník.",
+        "claimed_as_business_expense": "Výdaje jsou uplatněné jako výdaj na dosažení příjmů.",
+        "agreement_without_shared_care": "Dohoda o stropu slevy se uzavírá jen tehdy, když dítě žije ve více domácnostech.",
+        "agreed_cap_over_minimum_wage": "Strop z dohody je vyšší než minimální mzda.",
+        "agreement_document_missing": "Chybí odkaz na písemnou dohodu rodičů o stropu slevy (§ 38l odst. 2 písm. g) bod 3 ZDP).",
+        "other_taxpayer_confirmation_missing": "Totéž dítě vyživuje další poplatník. Chybí jeho potvrzení se jménem a výší jím uplatněné slevy, i nulové (§ 38l odst. 2 písm. g) bod 2 ZDP).",
+        "combined_credit_over_minimum_wage": "Sleva zaměstnance spolu se slevou potvrzenou jiným poplatníkem překračuje minimální mzdu."
+      },
+      "claims": {
+        "section": "Ročně uplatňované položky",
+        "hint": "Nezdanitelné části základu daně, sleva na manžela a sleva za zastavenou exekuci za tento rok. Ukládá se celá sada najednou a výsledek se přepočte.",
+        "empty": "Zatím žádná evidovaná položka.",
+        "new_kind": "Druh položky",
+        "add": "Přidat položku",
+        "save": "Uložit položky",
+        "saved": "Ročně uplatňované položky byly uloženy.",
+        "save_failed": "Ročně uplatňované položky se nepodařilo uložit.",
+        "amount": "Částka (Kč)",
+        "quantity": "Počet odběrů",
+        "quantity_evaluation": "Ocenění {rate} za odběr, celkem {total}",
+        "months": "Měsíce, za které se úroky platily",
+        "housing_before_2021": "Bytová potřeba obstaraná před 1. 1. 2021 (limit 300 000 Kč)",
+        "evidence_reference": "Čím je doloženo",
+        "note": "Poznámka",
+        "kind": {
+          "donation": "Dar",
+          "blood_donation": "Bezpříspěvkový odběr krve",
+          "organ_donation": "Odběr orgánu",
+          "stem_cell_donation": "Odběr krvetvorných buněk",
+          "housing_interest": "Úroky z úvěru na bydlení",
+          "pension_savings": "Penzijní spoření",
+          "life_insurance": "Soukromé životní pojištění",
+          "long_term_investment": "Dlouhodobý investiční produkt (DIP)",
+          "long_term_care_insurance": "Pojištění dlouhodobé péče",
+          "enforcement_stop": "Zastavená exekuce"
+        },
+        "kind_hint": {
+          "donation": "Dar musí činit aspoň 2 % základu daně nebo 1 000 Kč, odečíst lze nejvýše 15 % základu daně.",
+          "blood_donation": "Oceňuje se 3 000 Kč za každý odběr.",
+          "organ_donation": "Oceňuje se 20 000 Kč za každý odběr.",
+          "stem_cell_donation": "Oceňuje se 20 000 Kč za každý odběr.",
+          "housing_interest": "Limit 150 000 Kč za rok, za každý měsíc se uplatní alikvotní 1/12.",
+          "pension_savings": "Zadejte částku k odpočtu z potvrzení fondu: jen příspěvky zaměstnance nad hranicí nejvyššího státního příspěvku, ne příspěvek zaměstnavatele. Společný limit 48 000 Kč platí pro penzijní, životní pojištění, DIP a dlouhodobou péči.",
+          "life_insurance": "Společný limit 48 000 Kč platí pro penzijní, životní pojištění, DIP a dlouhodobou péči.",
+          "long_term_investment": "Společný limit 48 000 Kč platí pro penzijní, životní pojištění, DIP a dlouhodobou péči.",
+          "long_term_care_insurance": "Společný limit 48 000 Kč platí pro penzijní, životní pojištění, DIP a dlouhodobou péči.",
+          "enforcement_stop": "Sleva za zastavenou exekuci se uplatňuje jako částka."
+        },
+        "counterparty": {
+          "donation": "Příjemce daru",
+          "blood_donation": "Zařízení, kde proběhl odběr",
+          "organ_donation": "Zařízení, kde proběhl odběr",
+          "stem_cell_donation": "Zařízení, kde proběhl odběr",
+          "housing_interest": "Banka",
+          "pension_savings": "Penzijní fond",
+          "life_insurance": "Pojišťovna",
+          "long_term_investment": "Poskytovatel produktu",
+          "long_term_care_insurance": "Pojišťovna",
+          "enforcement_stop": "Exekutor"
+        },
+        "spouse_section": "Sleva na manžela",
+        "spouse_hint": "Sleva na manžela žijícího ve společné domácnosti, který pečuje o dítě do 3 let. Vlastní příjem manžela nesmí přesáhnout 68 000 Kč.",
+        "spouse_missing": "Zaměstnanec nemá v evidenci vyživovaných osob manžela. Doplňte ho v kartě zaměstnance.",
+        "spouse_add": "Uplatnit slevu na manžela",
+        "spouse_remove": "Odebrat slevu na manžela",
+        "spouse_person": "Manžel nebo manželka",
+        "spouse_child": "Dítě do 3 let",
+        "spouse_months": "Měsíce uplatnění slevy",
+        "spouse_ztp_p_months": "Měsíce, kdy má manžel průkaz ZTP/P",
+        "spouse_income": "Vlastní příjem manžela za rok (Kč)",
+        "spouse_income_hint": "Limit 68 000 Kč.",
+        "preschool_section": "Sleva za umístění dítěte (školkovné)",
+        "preschool_hint": "Skutečně zaplacené a doložené výdaje za mateřskou školu, dětskou skupinu nebo srovnatelné zařízení za tento rok, bez stravného. Na dítě nejvýše minimální mzda. V jedné domácnosti uplatňuje slevu jen jeden z rodičů.",
+        "preschool_missing": "Zaměstnanec nemá v evidenci vyživovaných osob dítě. Doplňte ho v kartě zaměstnance.",
+        "preschool_add": "Uplatnit slevu za umístění dítěte",
+        "preschool_remove": "Odebrat slevu za umístění dítěte",
+        "preschool_child": "Dítě",
+        "preschool_facility_kind": "Druh zařízení",
+        "preschool_facility": {
+          "kindergarten": "Mateřská škola",
+          "children_group": "Dětská skupina",
+          "licensed_care": "Péče o dítě na živnostenské oprávnění"
+        },
+        "preschool_facility_name": "Název zařízení",
+        "preschool_expenses": "Výdaje za rok podle potvrzení zařízení (Kč)",
+        "preschool_expenses_hint": "Bez stravného. Sleva se uplatní nejvýše do minimální mzdy.",
+        "preschool_households": "Počet domácností, ve kterých dítě žije",
+        "preschool_households_hint": "Při střídavé péči se strop dělí počtem domácností.",
+        "preschool_agreed_cap": "Strop podle písemné dohody rodičů (Kč)",
+        "preschool_agreed_cap_hint": "Nechte prázdné, pokud dohoda není. Součet stropů obou rodičů musí dát minimální mzdu.",
+        "preschool_other_taxpayer": "Slevu na toto dítě v téže domácnosti uplatňuje jiná osoba",
+        "preschool_business_expense": "Výdaje jsou uplatněné jako výdaj na dosažení příjmů",
+        "preschool_grandchild_care": "Vnuk je v péči nahrazující péči rodičů",
+        "preschool_evidence_placeholder": "Potvrzení zařízení o zaplacených výdajích",
+        "preschool_agreement_reference": "Písemná dohoda rodičů",
+        "preschool_agreement_reference_placeholder": "Odkaz na dohodu o stropu slevy",
+        "preschool_other_supporting": "Totéž dítě v roce vyživuje i další poplatník (druhý rodič, manžel)",
+        "preschool_other_confirmation_hint": "Potvrzení dalšího poplatníka o výši jeho slevy za umístění dítěte. Je-li zaměstnaný a dělá mu roční zúčtování zaměstnavatel, potvrzení vydává zaměstnavatel. Neuplatňuje-li slevu, uveďte 0.",
+        "preschool_other_taxpayer_name": "Jméno dalšího poplatníka",
+        "preschool_other_taxpayer_claimed": "Jím uplatněná sleva (Kč)",
+        "preschool_other_confirmation_reference": "Potvrzení dalšího poplatníka",
+        "preschool_other_confirmation_placeholder": "Odkaz na potvrzení"
       },
       "open_employee_card": "Otevřít kartu zaměstnance",
       "settle_read_only": "Provést zúčtování může jen uživatel s právem schvalovat mzdy.",
@@ -5485,6 +5761,7 @@
       "filter": "Zobrazení",
       "quick_inputs": "Měsíční zadání mezd",
       "statutory_bulk_action": "Doplnit výchozí zákonné údaje",
+      "declaration_sign_bulk_action": "Podepsaná prohlášení hromadně",
       "workplace_bulk_action": "Doplnit místo výkonu práce",
       "no_results_title": "Žádný zaměstnanec neodpovídá filtru",
       "no_results_description": "Upravte hledaný text nebo zvolte jiné zobrazení.",
@@ -5493,7 +5770,15 @@
         "all": "Všichni",
         "needs_setup": "K doplnění",
         "needs_data": "Mám doplnit údaje",
-        "blocking_data": "Brání podání"
+        "blocking_data": "Brání podání",
+        "dpp_hours_limit": "DPP u limitu 300 h"
+      },
+      "dpp_hours": {
+        "label": "DPP {hours} / {limit} h",
+        "title_ok": "Na DPP odpracováno v roce {year} celkem {hours} h z {limit} h. Zbývá {remaining} h.",
+        "title_approaching": "Blíží se limitu: na DPP odpracováno v roce {year} celkem {hours} h z {limit} h. Zbývá {remaining} h.",
+        "title_exceeded": "Limit překročen: na DPP odpracováno v roce {year} celkem {hours} h, víc než {limit} h. Práce nad limit už na DPP nejde.",
+        "takeover": "Z toho {hours} h převzato z předchozího programu."
       },
       "create": {
         "action": "Přidat zaměstnance",
@@ -5528,6 +5813,16 @@
       "empty_description": "Jakmile budou ve mzdové agendě dostupné osoby, zobrazí se zde jejich pracovní vztahy.",
       "columns": {
         "person": "Zaměstnanec",
+        "last_name": "Příjmení",
+        "first_name": "Jméno",
+        "full_name": "Celé jméno",
+        "personal_number": "Osobní číslo",
+        "start_date": "Nástup",
+        "end_date": "Ukončení",
+        "birth_date": "Datum narození",
+        "position": "Pracovní pozice",
+        "email": "E-mail",
+        "phone": "Telefon",
         "status": "Stav",
         "relations": "Pracovní vztahy",
         "count": "Počet vztahů",
@@ -6109,6 +6404,16 @@
         "municipality_name": "Obec pracoviště",
         "municipality_code": "Kód obce (CISOB)",
         "country_code": "Kód státu",
+        "address_hint": "Plnou adresu pracoviště vykazuje měsíční hlášení od ledna 2027. Vyplňte aspoň číslo popisné a PSČ; u pracoviště mimo ČR se nevyplňuje.",
+        "street": "Ulice",
+        "house_number": "Číslo popisné",
+        "orientation_number": "Číslo orientační",
+        "postal_code": "PSČ",
+        "address_point_code": "Kód adresního místa (RÚIAN, volitelné)",
+        "state_prosecutor": "Státní zástupce (hlášení od ledna 2027)",
+        "state_prosecutor_unset": "Neuvedeno",
+        "state_prosecutor_yes": "Ano",
+        "state_prosecutor_no": "Ne",
         "apz_status": "Příspěvek od úřadu práce (aktivní politika zaměstnanosti)",
         "apz_instrument": "Nástroj aktivní politiky zaměstnanosti",
         "functional_benefits": "Funkční požitky podle § 6 odst. 10 zákona o daních z příjmů",
@@ -6159,9 +6464,14 @@
         "period": "Měsíc zúčtování",
         "period_hint": "Měsíc, ve kterém příjem zúčtujete ve mzdovém běhu. Pojistné se platí za tento měsíc.",
         "period_invalid": "Odložený příjem patří až do měsíce po skončení vztahu, nejdřív {first}.",
+        "period_annual_invalid": "Roční zúčtování po skončení se hlásí jen za leden, únor nebo březen.",
         "type_label": "Druh odloženého příjmu",
-        "type_hint": "Aplikace zpracuje příjem po skončení zaměstnání. Ostatní druhy (například doplatek za dřívější měsíce trvajícího vztahu) podejte opravným hlášením na ePortálu ČSSZ.",
+        "type_hint": "Aplikace zpracuje příjem po skončení zaměstnání, roční zúčtování po skončení a jejich spojení. Náhradu mzdy při neplatném skončení podejte opravným hlášením na ePortálu ČSSZ.",
         "type_1": "Příjem po skončení zaměstnání (1)",
+        "type_4": "Roční zúčtování po skončení zaměstnání (4)",
+        "type_5": "Příjem po skončení s ročním zúčtováním (5)",
+        "type_5_hint": "Za leden až březen, kdy za skončený vztah zúčtujete doplatek a zároveň hlásíte roční úhrny nebo výsledek ročního zúčtování. Evidenční list se vykáže jako u příjmu po skončení (kód s P, 0 dnů, vyměřovací základ doplatku). U dohod a zaměstnání malého rozsahu podejte hlášení ručně přes ePortál ČSSZ.",
+        "type_4_hint": "Za leden až březen, kdy se za skončený vztah hlásí roční úhrny nebo výsledek ročního zúčtování a v měsíci se nezúčtovává žádný příjem. Mzdový běh si vztah vezme i bez mzdových vstupů a hlášení bude mít nulový příjem, 0 dnů pojištění a evidenční list bez kódu. U dohod (DPP, DPČ) podejte hlášení ručně přes ePortál ČSSZ.",
         "type_other": "Druh {code}",
         "note": "Poznámka",
         "confirm": "Potvrdit",
@@ -6187,7 +6497,8 @@
         "specific_legal_fact_applies": "Může nastat specifická právní skutečnost vykazovaná v JMHZ",
         "ozp_employment_support_applies": "Zaměstnavatel může čerpat příspěvek na podporu zaměstnávání osob se zdravotním postižením",
         "deep_mining_work_applies": "Práce probíhá v hlubinném hornictví",
-        "monthly_hint": "Označené výjimky automatická příprava JMHZ zatím neumí zpracovat. Pokud se vás některá skutečně týká, kontaktujte podporu; správný údaj nevypínejte kvůli odeslání. Exekuce, insolvence a dohody o srážkách se přebírají z příslušných agend."
+        "monthly_hint": "Označené výjimky automatická příprava JMHZ zatím neumí zpracovat. Pokud se vás některá skutečně týká, kontaktujte podporu; správný údaj nevypínejte kvůli odeslání. Exekuce, insolvence a dohody o srážkách se přebírají z příslušných agend.",
+        "ozp_employment_support_hint": "Jen u zaměstnavatele uznaného na chráněném trhu práce. Měsíční hlášení pak nese výdělek OZP: datum úhrady mzdy včetně pojistného a hotovost potvrdíte v Mzdových podáních, srážky ve prospěch zaměstnavatele se odvodí z dohod o srážkách."
       },
       "cz_isco_code": "Kód CZ-ISCO",
       "cz_isco": {
@@ -6525,6 +6836,7 @@
         },
         "field": {
           "status": "Stav",
+          "signed_on": "Den podpisu",
           "evidence_reference": "Odkaz na podklad (volitelné)",
           "credit_kind": "Druh slevy",
           "evidence_status": "Doloženo",
@@ -6566,7 +6878,9 @@
             "taxpayer": "Na poplatníka",
             "disability-basic": "Na invaliditu I. a II. stupně",
             "disability-extended": "Na invaliditu III. stupně",
-            "ztp-p": "Na držitele ZTP/P"
+            "ztp-p": "Na držitele ZTP/P",
+            "student": "Na studenta (do 26 let)",
+            "student-doctoral": "Na studenta, prezenční doktorské studium (do 28 let)"
           },
           "evidence_status": {
             "verified": "Doloženo",
@@ -6944,6 +7258,59 @@
         "later_income_review": "Pozdější doplatek",
         "eldp_submission": "ELDP",
         "taxable_income_confirmation": "Potvrzení o příjmech"
+      },
+      "post20": {
+        "title": "Náprava po 20. dni (REGZEC a opravná hlášení)",
+        "subtitle": "Po 20. dni už storno součásti nejde. Neplatný vztah, zapomenutou odhlášku nebo změnu data nástupu či skončení napravuje dvojice podání: registrační akce REGZEC a opravná měsíční hlášení za dotčené měsíce.",
+        "situation_label": "Typová situace",
+        "situation_placeholder": "Vyberte situaci",
+        "situations": {
+          "late_termination": "Zapomenutá nebo zpětná odhláška",
+          "date_change": "Změna nebo oprava data nástupu či skončení",
+          "invalid_employment": "Neplatný pracovní vztah (rozhodnutí soudu, chybný druh činnosti nebo VS)"
+        },
+        "situation_hints": {
+          "late_termination": "REGZEC akce 2 (odhláška) a nulová opravná hlášení za měsíce po skončení. Nejdříve zapište skutečné datum skončení a pošlete opravná hlášení, potom odhlášku.",
+          "date_change": "REGZEC akce 3 (změna) nebo 4 (oprava) a opravná hlášení za dotčené měsíce. Nejdříve opravte data u vztahu a pošlete opravná hlášení, potom REGZEC.",
+          "invalid_employment": "REGZEC akce 8 (storno) s přílohou s důvodem a opravná hlášení na nulové hodnoty za všechna období vztahu. Měsíce v období vztahu aplikace sama nenuluje; je to ruční krok."
+        },
+        "environment_label": "Prostředí",
+        "environments": {
+          "production": "Produkce",
+          "test": "Test ČSSZ"
+        },
+        "load": "Zobrazit postup",
+        "load_failed": "Postup po 20. dni se nepodařilo načíst.",
+        "status": {
+          "open": "Čeká na podání",
+          "partially_done": "Částečně podáno",
+          "complete": "Obě části podány"
+        },
+        "order": {
+          "together": "ČSSZ doporučuje poslat REGZEC i opravná hlášení najednou.",
+          "amendments_first": "Metodicky nejdříve opravná hlášení, potom REGZEC; ideálně obojí najednou."
+        },
+        "registration_title": "Registrace REGZEC (akce {actions})",
+        "registration_missing": "Registrační událost s touto akcí u vztahu zatím není. Připravte ji v sekci registrace výše.",
+        "registration_event": "Akce {action} k {date}: {state}",
+        "registration_prepared": "připravena",
+        "registration_submitted": "zařazena do podání",
+        "months_title": "Měsíční hlášení (posledních {months} měsíců)",
+        "months_empty": "Žádné podané měsíční hlášení se tohoto vztahu v dotčených měsících netýká.",
+        "actions": {
+          "annul": "anulovat nulovým opravným hlášením",
+          "amended": "opravné hlášení je podané",
+          "review": "hraniční měsíc: zkontrolujte a případně opravte obsahovou opravou",
+          "manual": "aplikace sama neopraví, postupujte ručně",
+          "choose_variant": "formulář nesl příjem nebo pojistné: zvolte variantu nápravy"
+        },
+        "variants_title": "Formulář nejde anulovat nulovým hlášením, protože nesl příjem nebo pojistné. Podle toho, zda zaměstnanec plnění vrátil, zvolte postup (Pravidla podání JMHZ, tabulka typových situací):",
+        "variants": {
+          "returned": "Plnění vráceno: opravte mzdový běh měsíce a pošlete obsahovou opravu z nové přípravy. Opraví se formulář, souhrnná i pojistná část za všechny zaměstnance měsíce.",
+          "not_returned": "Plnění nevráceno: vynulovaný formulář a původní hodnoty 1:1 ve formuláři Odložený příjem, souhrn a pojistná část se nemění. Aplikace tuto variantu zatím nesestaví, podejte ji ručně na ePortálu."
+        },
+        "variants_note": "V obou variantách podejte i REGZEC. Po lhůtě se podává vždy opravné hlášení, nikdy storno; mezi opravami vyčkejte 48 hodin.",
+        "open_submissions": "Otevřít historii odeslání"
       },
       "termination": {
         "title": "Skončení vztahu",
@@ -7528,6 +7895,7 @@
           },
           "employment": {
             "activity_code": "Druh činnosti",
+            "election_commission_hint": "Člen volební komise s osvobozenou odměnou a bez dalšího příjmu u zaměstnavatele se nepřihlašuje ani nevykazuje. Druh činnosti 13 patří jen členovi komise se zdanitelným příjmem (nadlimitní stravné), vyplní se pouze daňové atributy a přihlašuje se do 8 dnů od složení slibu. U komise pro místní referendum odměna osvobozená není, zakládá se druh činnosti 1.",
             "relationship_detail_code": "Bližší určení PPV",
             "actual_start_on": "Datum nástupu",
             "contract_start_on": "Sjednaný den nástupu",
@@ -7603,7 +7971,9 @@
             "issuing_labour_office_code": "Úřad práce, který vydal",
             "permit_identifier": "Číslo rozhodnutí",
             "permit_from": "Povolení od",
-            "permit_to": "Povolení do"
+            "permit_to": "Povolení do",
+            "stay_valid_from": "Platnost pobytu od (nástup od 1. 1. 2027)",
+            "stay_valid_to": "Platnost pobytu do (nástup od 1. 1. 2027)"
           },
           "health_insurance_select": "Vyberte zdravotní pojišťovnu",
           "health_insurance_no_results": "Žádná pojišťovna neodpovídá",
@@ -7666,6 +8036,11 @@
           "employment_type": "Druh zaměstnání v podkladech",
           "employment_type_1": "Pracovní vztah",
           "employment_type_2": "Služební poměr",
+          "employment_type_3": "Služební poměr podle zákona č. 361/2003 Sb.",
+          "employment_type_4": "Služební poměr podle zákona č. 221/1999 Sb.",
+          "state_employee_hint": "Státní zaměstnanci vykonávají od 1. 11. 2026 práci v pracovním poměru (zákon č. 195/2026 Sb.). U skončení od tohoto dne zvolte Pracovní vztah a důvod ukončení, jinak 15 (Ostatní). Služební poměr zvolte u skončení do 31. 10. 2026 a u poměru končícího 1. 11. 2026 podle § 95 odst. 19 (důvod 5, Ostatní).",
+          "state_employee_warning_service_1_11": "Služební poměr s koncem 1. 11. 2026 se vykazuje jen u skončení podle § 95 odst. 19 zákona č. 195/2026 Sb. s důvodem 5 (Ostatní). Skončil-li pracovní poměr státního zaměstnance, zvolte Pracovní vztah.",
+          "state_employee_warning_service_after": "Podle zákona č. 195/2026 Sb. vykonávají státní zaměstnanci od 1. 11. 2026 práci v pracovním poměru. Jde-li o státního zaměstnance, zvolte Pracovní vztah; Služební poměr ponechte jen u jiných služebních vztahů. Upozornění je jen informativní.",
           "termination_reason": "Číselný důvod ukončení",
           "entitlement": "Vznikl nárok na odstupné",
           "paid_in_full": "Bylo vyplaceno v plné výši",
@@ -8884,7 +9259,13 @@
             "activity_invalid": "Druh činnosti uložený ve mzdové revizi není platnou hodnotou číselníku JMHZ.",
             "detail_missing": "Chybí bližší určení pracovněprávního vztahu, které vybraný druh činnosti vyžaduje.",
             "detail_invalid": "Bližší určení pracovněprávního vztahu není platnou hodnotou číselníku JMHZ.",
-            "detail_not_applicable": "Vyplněné bližší určení pracovněprávního vztahu se nesmí používat s vybraným druhem činnosti."
+            "detail_not_applicable": "Vyplněné bližší určení pracovněprávního vztahu se nesmí používat s vybraným druhem činnosti.",
+            "ozp_wage": "Zaměstnanec má podporu zaměstnávání OZP a chybí datum úhrady mzdy včetně pojistného a údaj o výplatě v hotovosti.",
+            "ozp_payment_date": "Datum úhrady mzdy včetně pojistného není v povoleném rozsahu.",
+            "risk_shifts": "U práce zařazené do kategorie 4 chybí počet směn odpracovaných v měsíci (10580).",
+            "ozp_profile": "Podpora zaměstnávání OZP v potvrzení neodpovídá nastavení pracovního vztahu.",
+            "ozp_deductions": "U dohody o srážce chybí rozhodnutí, zda je věřitelem zaměstnavatel a jak se srážka vykáže v JMHZ.",
+            "ozp_employer": "Zaměstnavatel není v registraci uveden jako uznaný na chráněném trhu práce."
           },
           "steps": {
             "specification": "Otevřete mzdy pro uvedené období. Pro další přípravu nebo skutečně potřebnou opravu vytvořte a schvalte novou opravnou revizi a z ní připravte hlášení. Již přijatá hlášení kvůli tomuto upozornění znovu neodesílejte. Pokud potíž trvá i v nové revizi, kontaktujte podporu.",
@@ -8919,7 +9300,13 @@
             "activity_invalid": "Otevřete uvedený pracovní vztah a jeho účinné podmínky. V základních údajích zkontrolujte pole Druh činnosti a Bližší určení pracovněprávního vztahu a jejich kombinaci podle skutečné smlouvy. Uložte správnou verzi podmínek s účinností pro vykazovaný měsíc, poté mzdu přepočítejte a schvalte novou revizi. Správné údaje neměňte na jiné jen kvůli průchodu kontroly.",
             "detail_missing": "Otevřete uvedený pracovní vztah a jeho účinné podmínky. V základních údajích zkontrolujte pole Druh činnosti a Bližší určení pracovněprávního vztahu a jejich kombinaci podle skutečné smlouvy. Uložte správnou verzi podmínek s účinností pro vykazovaný měsíc, poté mzdu přepočítejte a schvalte novou revizi. Správné údaje neměňte na jiné jen kvůli průchodu kontroly.",
             "detail_invalid": "Otevřete uvedený pracovní vztah a jeho účinné podmínky. V základních údajích zkontrolujte pole Druh činnosti a Bližší určení pracovněprávního vztahu a jejich kombinaci podle skutečné smlouvy. Uložte správnou verzi podmínek s účinností pro vykazovaný měsíc, poté mzdu přepočítejte a schvalte novou revizi. Správné údaje neměňte na jiné jen kvůli průchodu kontroly.",
-            "detail_not_applicable": "Otevřete uvedený pracovní vztah a jeho účinné podmínky. V základních údajích zkontrolujte pole Druh činnosti a Bližší určení pracovněprávního vztahu a jejich kombinaci podle skutečné smlouvy. Uložte správnou verzi podmínek s účinností pro vykazovaný měsíc, poté mzdu přepočítejte a schvalte novou revizi. Správné údaje neměňte na jiné jen kvůli průchodu kontroly."
+            "detail_not_applicable": "Otevřete uvedený pracovní vztah a jeho účinné podmínky. V základních údajích zkontrolujte pole Druh činnosti a Bližší určení pracovněprávního vztahu a jejich kombinaci podle skutečné smlouvy. Uložte správnou verzi podmínek s účinností pro vykazovaný měsíc, poté mzdu přepočítejte a schvalte novou revizi. Správné údaje neměňte na jiné jen kvůli průchodu kontroly.",
+            "ozp_wage": "Níže u vztahu vyplňte den úhrady (nejpozdější z výplaty mzdy, odvodu sociálního a zdravotního pojištění) a zda byla část mzdy vyplacena v hotovosti, a potvrďte.",
+            "ozp_payment_date": "Zadejte den, kdy byla mzda včetně pojistného skutečně uhrazena; nesmí být v budoucnu ani před začátkem měsíce.",
+            "risk_shifts": "Níže u vztahu zadejte počet směn, které zaměstnanec v měsíci odpracoval při rizikové práci, a potvrďte. Mzdy směny neevidují.",
+            "ozp_profile": "Na kartě pracovního vztahu ověřte příznak podpory zaměstnávání OZP a připravte hlášení znovu.",
+            "ozp_deductions": "U dohody vyberte věřitele (zaměstnavatel, nebo třetí osoba) a u srážky ve prospěch zaměstnavatele její zařazení 10350 až 10353; pak připravte hlášení znovu.",
+            "ozp_employer": "V nastavení zaměstnavatele zkontrolujte uznání na chráněném trhu práce, nebo u vztahu podporu zaměstnávání OZP vypněte."
           },
           "actions": {
             "run": "Otevřít mzdy tohoto měsíce",
@@ -8927,7 +9314,8 @@
             "employment": "Zkontrolovat podmínky vztahu",
             "deductions": "Otevřít exekuce a srážky osoby",
             "agreements": "Otevřít dohody o srážkách osoby",
-            "support": "Otevřít podporu"
+            "support": "Otevřít podporu",
+            "employer": "Otevřít nastavení zaměstnavatele"
           },
           "fields": {
             "orchard_discount_eligible": "Sleva na pojistném v ovocnářství nebo při pěstování zeleniny",
@@ -8938,6 +9326,27 @@
           "technical_details": "Technické podrobnosti pro podporu",
           "xsd_versions": "Formát hlášení: uložená verze {old}, aktuální verze {current}.",
           "control_versions": "Kontrolní pravidla: uložená verze {old}, aktuální verze {current}."
+        },
+        "jmhz_ozp_wage": {
+          "hint": "Datum úhrady (10347) je nejpozdější z: den výplaty mzdy, den odvodu sociálního pojištění, den odvodu zdravotního pojištění. Srážky ve prospěch zaměstnavatele (10349 až 10353) se odvodí z mzdového běhu.",
+          "payment_date": "Datum úhrady mzdy včetně pojistného",
+          "cash_paid": "Část mzdy vyplacena v hotovosti",
+          "social_paid_on": "Den odvodu sociálního pojištění (od ledna 2027)",
+          "health_paid_on": "Den odvodu zdravotního pojištění (od ledna 2027)",
+          "dates_hint": "Od ledna 2027 hlášení nese datum úhrady mzdy (10589) a zvlášť dny odvodu sociálního (10570) a zdravotního pojištění (10571); vyplňte oba.",
+          "cash_select": "Vyberte",
+          "cash_yes": "Ano",
+          "cash_no": "Ne",
+          "confirm": "Potvrdit výdělek OZP",
+          "failed": "Výdělek OZP se nepodařilo potvrdit.",
+          "summary": "Výdělek OZP (vztah {employment}): úhrada {date}, hotovost {cash}.",
+          "no_deductions": "Bez srážek ve prospěch zaměstnavatele.",
+          "deduction": "{attribute}: {amount} Kč"
+        },
+        "jmhz_risk_shifts": {
+          "label": "Počet směn při rizikové práci (10580)",
+          "confirm": "Potvrdit počet směn",
+          "failed": "Počet směn se nepodařilo potvrdit."
         }
       },
       "manual_acceptance": {
@@ -9079,9 +9488,9 @@
         "ageReachedOn": "Den dosažení důchodového věku",
         "ageReachedOnHint": "Jen nastal-li do konce vykazovaného roku. Od tohoto dne má činnost kód D (např. 1D+).",
         "earlyPensionFrom": "Poživatel předčasného starobního důchodu od",
-        "earlyPensionFromHint": "Od tohoto dne má činnost také kód D. List se za něj vede dál.",
+        "earlyPensionFromHint": "Předčasný důchod kód D nezakládá, ten platí až od dovršení důchodového věku. List se za poživatele předčasného důchodu vede dál.",
         "fullPensionPaidFrom": "První měsíc výplaty starobního důchodu v plné výši",
-        "fullPensionPaidFromHint": "Od roku 2025 se za poživatele plného starobního důchodu evidenční list nevede; měsíce od tohoto měsíce se z listu vypustí.",
+        "fullPensionPaidFromHint": "Měsíc, od kterého náleží výplata, i když důchod začíná uprostřed měsíce. Od roku 2025 se list vede do tohoto měsíce včetně, následující měsíce se z listu vypustí.",
         "foreignInsurance": "Zaměstnanec je nebo byl účasten důchodového pojištění v cizině (pak se list vede i za poživatele plného důchodu).",
         "confirm": "Potvrzuji důchodové údaje zaměstnance za vykazovaný rok (prázdná pole se převezmou ze zákonné evidence osoby)."
       },
@@ -10225,7 +10634,8 @@
         "employee": "Vyberte zaměstnance, kterému dohoda patří.",
         "title": "Doplňte název dohody - pod ním se srážka objeví na výplatním lístku.",
         "read_only": "Na mzdové vstupy máte jen právo ke čtení, dohodu uložit nemůžete.",
-        "started_on": "U srážky ze zákona vyplňte den zahájení srážek - určuje její pořadí vůči exekucím a dohodám."
+        "started_on": "U srážky ze zákona vyplňte den zahájení srážek - určuje její pořadí vůči exekucím a dohodám.",
+        "jmhz_target": "U srážky ve prospěch zaměstnavatele vyberte, jak se vykáže v JMHZ."
       },
       "legal_basis_label": "Právní titul srážky",
       "legal_basis_hint_agreement": "Dohoda o srážkách ze mzdy se zaměstnancem (§ 146 písm. b) zákoníku práce). Pořadí vůči exekucím určuje den doručení dohody.",
@@ -10282,6 +10692,29 @@
         "reversed": "Storno srážky",
         "paid": "Odesláno příjemci",
         "payment_reversed": "Storno odeslání"
+      },
+      "section_jmhz": "Měsíční hlášení JMHZ (zaměstnanci OZP)",
+      "jmhz_hint": "Vyplňuje se u zaměstnance, u kterého zaměstnavatel uznaný na chráněném trhu práce uplatňuje podporu zaměstnávání OZP. Do hlášení jdou jen srážky ve prospěch zaměstnavatele; exekuce a srážky ze zákona ne.",
+      "jmhz_creditor": "Věřitel srážky",
+      "jmhz_creditor_options": {
+        "undecided": "Nerozhodnuto",
+        "employer": "Zaměstnavatel",
+        "third_party": "Třetí osoba"
+      },
+      "jmhz_target": "Vykázat v JMHZ jako",
+      "jmhz_target_select": "Vyberte zařazení",
+      "jmhz_target_badge": "JMHZ {attribute}",
+      "jmhz_targets": {
+        "10350": "10350 Plnění zaměstnavatele podle OZ",
+        "10351": "10351 Náhrada škody",
+        "10352": "10352 Závodní stravování (§ 236 ZP)",
+        "10353": "10353 Jiný závazek (§ 146 písm. b) ZP)"
+      },
+      "jmhz_target_hints": {
+        "10350": "Dohoda o srážkách podle § 2045 OZ ve prospěch zaměstnavatele, například zaměstnanecká zápůjčka nebo splátky zálohy nad nárok.",
+        "10351": "Srážka k náhradě škody, za kterou zaměstnanec odpovídá (§ 250 a násl. ZP), vždy na základě dohody.",
+        "10352": "Příspěvek zaměstnance na stravování poskytované zaměstnavatelem, ne stravenkový paušál.",
+        "10353": "Jiný závazek zaměstnance vůči zaměstnavateli, například úhrada benefitů nebo splátka půjčky."
       }
     },
     "insolvency": {
@@ -11272,6 +11705,30 @@
         "official_form_own": "Vlastní čitelná sestava"
       }
     },
+    "food_service_tips": {
+      "title": "Spropitné ze stravovacích služeb",
+      "hint": "Spropitné vyplácené zaměstnancům je od roku 2027 osvobozené za měsíc do 7 % měsíčních příjmů ze stravovacích služeb, rovným dílem mezi zaměstnance, kteří spropitné dostali, nebo podle určení zaměstnavatele. Nadlimitní část se zdaní a je vyměřovacím základem pojistného.",
+      "load_failed": "Evidenci spropitného se nepodařilo načíst.",
+      "save_failed": "Evidenci spropitného se nepodařilo uložit.",
+      "saved": "Evidence spropitného byla uložena.",
+      "locked": "Spropitné je v tomto měsíci už schválené (zaměstnanců: {count}) a jeho strop je zmrazený. Evidenci lze změnit až po stornu schválených vstupů spropitného.",
+      "revenue": "Měsíční příjmy ze stravovacích služeb (Kč)",
+      "mode": "Rozdělení osvobozeného spropitného",
+      "mode_per_capita": "Rovným dílem mezi zaměstnance se spropitným",
+      "mode_employer_determined": "Podle určení zaměstnavatele",
+      "recipients": "Počet zaměstnanců, kteří v měsíci spropitné dostali",
+      "recipients_hint": "Strop na zaměstnance je 7 % příjmů dělených tímto počtem.",
+      "allocations": "Strop osvobozeného spropitného podle zaměstnanců",
+      "employee": "Zaměstnanec",
+      "cap": "Strop (Kč)",
+      "add_allocation": "Přidat zaměstnance",
+      "remove_allocation": "Odebrat",
+      "evidence_reference": "Čím jsou příjmy doložené",
+      "note": "Poznámka",
+      "employer_cap": "Úhrnný strop osvobození (7 %)",
+      "per_capita_cap": "Strop na zaměstnance",
+      "save": "Uložit evidenci spropitného"
+    },
     "benefit_baskets": {
       "title": "Koše osvobození benefitů",
       "subtitle_annual": "Kolik má který zaměstnanec za rok vyčerpáno z ročního limitu podle § 6 odst. 9 ZDP a kolik z toho se už zdanilo.",
@@ -11311,17 +11768,20 @@
       },
       "basket": {
         "non_cash_health": "Zdravotní plnění",
-        "non_cash_leisure": "Rekreace, sport a kultura",
+        "non_cash_leisure": "Sport, kultura a volný čas",
         "old_age_savings": "Spoření na stáří a dlouhodobá péče",
         "meal_per_shift": "Příspěvek na stravování",
-        "temporary_accommodation": "Přechodné ubytování"
+        "temporary_accommodation": "Přechodné ubytování",
+        "recreation": "Rekreace a zájezd",
+        "food_service_tips": "Spropitné"
       },
       "status": {
         "ok": "V limitu",
         "approaching": "Blíží se limitu",
         "exceeded": "Nad limitem",
         "incomplete": "Neúplný podklad",
-        "limit_unavailable": "Limit není k dispozici"
+        "limit_unavailable": "Limit není k dispozici",
+        "unlimited": "Bez limitu"
       },
       "limit_basis": {
         "tax_year": "Limit platí za zdaňovací období.",
@@ -11931,6 +12391,7 @@
         "employer_annual": "Doplnit roční údaje zaměstnavatele",
         "office": "Otevřít mzdové účtárny",
         "annual_settlement": "Otevřít roční zúčtování",
+        "deferred_income": "Otevřít odložený příjem",
         "takeover": "Otevřít kontrolu převodu mezd",
         "workplace": "Doplnit pracoviště",
         "correction": "Otevřít stav odeslání",
@@ -11956,6 +12417,7 @@
         "employer_annual": "V Nastavení mezd na záložce Podání doplňte roční údaje zaměstnavatele pro prosincové hlášení.",
         "office": "V Nastavení mezd u mzdové účtárny doplňte nebo opravte registraci u OSSZ a variabilní symbol.",
         "annual_settlement": "V agendě Roční zúčtování evidujte žádost nebo výsledek zúčtování.",
+        "deferred_income": "Na kartě skončeného pracovního vztahu v části Odložený příjem opravte typ potvrzení za měsíc hlášení, běh přepočítejte a hlášení připravte znovu.",
         "takeover": "V Importech na záložce Kontrola převodu doplňte chybějící údaj převzatých mezd.",
         "workplace": "Doplňte obec a stát pracoviště z číselníku a hlášení připravte znovu.",
         "correction": "Otevřete Odesláno a zkontrolujte řádné hlášení, ke kterému se oprava váže.",
@@ -12042,6 +12504,20 @@
         "frozen": "Storno vybraných vztahů je připravené jako podání č. {id}; odešlete ho stejně jako řádné hlášení.",
         "already": "Storno vybraných vztahů už existuje jako podání č. {id}."
       },
+      "zero_amendment": {
+        "mode": "Anulovat měsíc nulovým opravným hlášením",
+        "description": "Pro vztah, který v tomto měsíci už netrval (zapomenutá odhláška, zkrácení vztahu), se pošle opravný formulář s nulovými hodnotami podle Pravidel podání JMHZ. Po 20. dni a za leden až březen 2026 je to jediná cesta, storno součásti už nejde. K anulaci patří i odhláška nebo změna registrace REGZEC; pošlete obojí najednou.",
+        "cancellation_still_allowed": "Lhůta pro storno součásti ještě běží. Storno vybraných vztahů je pro tuto situaci jednodušší cesta.",
+        "employment_period": "Vztah v evidenci: {start} až {end}",
+        "situation": "Potvrzuji, že pracovněprávní vztah v tomto měsíci netrval a měsíc neměl být hlášen. Nejde o vztah, ve kterém se jen nepracovalo.",
+        "impact": "Rozumím, že anulace je nevratné opravné hlášení a ČSSZ podle ní zruší pojistný vztah vybraných zaměstnanců za tento měsíc.",
+        "disabled_reason": "Vyberte alespoň jeden vztah a potvrďte situaci i dopad anulace.",
+        "confirm": "Anulovat měsíc u vybraných vztahů ({count})",
+        "load_failed": "Vztahy řádného hlášení k anulaci se nepodařilo načíst.",
+        "failed": "Nulové opravné hlášení se nepodařilo připravit.",
+        "frozen": "Nulové opravné hlášení je připravené jako podání č. {id}; odešlete ho stejně jako řádné hlášení.",
+        "already": "Nulové opravné hlášení už existuje jako podání č. {id}."
+      },
       "codes": {
         "eldp_correction_reference_invalid": "Opravný evidenční list neodkazuje na zmrazený list, který opravuje. Takový podklad aplikace nesestaví; kontaktujte podporu.",
         "eldp_correction_without_change": "Podklad evidenčního listu se od zmrazeného listu nezměnil, takže opravný list nemá co opravit.",
@@ -12052,7 +12528,7 @@
         "eldp_authority_request_due_on_invalid": "Lhůta uvedená ve výzvě ČSSZ nebo ÚSSZ není platné datum, nebo předchází dni doručení výzvy. Opravte ji ve formuláři evidenčního listu.",
         "eldp_authority_request_due_on_missing": "Za tento rok neurčuje lhůtu pro evidenční list na výzvu zákon, ale výzva sama. Zadejte ve formuláři lhůtu, kterou výzva uvádí.",
         "eldp_not_kept_full_old_age_pension": "Za tento rok se evidenční list nevede: zaměstnanec má nárok na výplatu starobního důchodu v plné výši a není účasten důchodového pojištění v cizině.",
-        "eldp_pension_age_mid_month_unsupported": "Kód ELDP se mění uprostřed měsíce (dovršení důchodového věku nebo předčasný starobní důchod) a vyměřovací základ za část měsíce aplikace nevede. Evidenční list podejte mimo aplikaci.",
+        "eldp_pension_age_mid_month_unsupported": "Kód ELDP se mění uprostřed měsíce (dovršení důchodového věku) a vyměřovací základ za část měsíce aplikace nevede. Evidenční list podejte mimo aplikaci.",
         "eldp_pension_status_conflict": "Zákonná evidence má ověřenou slevu pracujícího důchodce, ale potvrzení evidenčního listu neuvádí žádný starobní důchod. Doplňte důchodové údaje ve formuláři.",
         "eldp_pension_status_evidence_mismatch": "Důchodové údaje v potvrzení evidenčního listu se liší od zákonné evidence osoby. Opravte evidenci na kartě osoby (sekce Důchodový věk a Pobíraný důchod), nebo pole v potvrzení nechte prázdná.",
         "eldp_pension_status_invalid": "Důchodové údaje zaměstnance nemají platný tvar. Opravte je ve formuláři evidenčního listu.",
@@ -12154,6 +12630,7 @@
         "eldp_xml_snapshot_mismatch": "XML evidenčního listu neodpovídá přesnému zdrojovému snapshotu. Připravte evidenční list znovu.",
         "eldp_xml_source_invalid": "Podklad pro sestavení XML evidenčního listu má neplatný nebo neúplný formát; tuto technickou chybu musí posoudit podpora.",
         "eldp_xsd_validation_failed": "Vygenerované XML evidenčního listu neprošlo připnutým XSD schématem; tuto technickou chybu musí posoudit podpora.",
+        "jmhz_2027_source_missing": "Hlášení za období od ledna 2027 vyžaduje nový údaj, pro který mzdy zatím nemají podklad; hlášení se bez něj nesestaví.",
         "jmhz_acknowledgement_class_mismatch": "Potvrzení VREP se týká jiné třídy podání, než jaká byla odeslána.",
         "jmhz_acknowledgement_correlation_missing": "Potvrzení VREP nenese použitelné CorrelationID; podání by se už nedalo dohledat ani uzavřít.",
         "jmhz_acknowledgement_endpoint_untrusted": "Potvrzení VREP odkazuje na dotazovací adresu mimo HTTPS.",
@@ -12167,6 +12644,7 @@
         "jmhz_annual_request_source_missing": "Není doloženo, zda zaměstnanec požádal o roční zúčtování. Otevřete Mzdy → Roční zúčtování a evidujte výslovně požádáno nebo nepožádáno.",
         "jmhz_annual_request_status_unresolved": "Stav žádosti o roční zúčtování není rozhodnutý. Otevřete Mzdy → Roční zúčtování a rozhodněte stav žádosti.",
         "jmhz_annual_settlement_child_details_unsupported": "Roční zúčtování uplatňuje zvýhodnění na děti, ale zmrazený podklad ještě nenese povinné identifikační údaje dětí pro JMHZ.",
+        "jmhz_annual_settlement_spouse_details_unsupported": "Roční zúčtování uplatňuje slevu na manžela, ale zmrazený podklad nenese úplné identifikační údaje manžela a dítěte pro JMHZ.",
         "jmhz_annual_settlement_performance_source_missing": "Není doloženo, zda bylo roční zúčtování provedeno. Obnovte přípravu JMHZ nad uzamčenou evidencí výsledků ročního zúčtování.",
         "jmhz_annual_settlement_request_source_inconsistent": "Provedené roční zúčtování nemá souhlasnou uzamčenou žádost a evidenci ročních nároků.",
         "jmhz_annual_settlement_result_incomplete": "Výsledek ročního zúčtování nelze bezpečně převést do celých korun pro JMHZ.",
@@ -12258,7 +12736,9 @@
         "jmhz_eldp_code_activity_mismatch": "Kód evidenčního listu neodpovídá druhu činnosti pracovního vztahu.",
         "jmhz_eldp_confirmation_note_invalid": "Volitelná poznámka k potvrzení evidenčního listu smí mít nejvýše 500 znaků.",
         "jmhz_eldp_days_mismatch": "Počet dnů evidenčního listu neodpovídá délce vykazovaného pojistného intervalu.",
-        "jmhz_eldp_deducted_days_unsupported": "Zaměstnanec po dosažení důchodového věku, který nepobírá starobní důchod, má v měsíci nemoc, ošetřování, mateřskou, otcovskou, neplacené volno nebo neomluvenou absenci. Ty se vykazují jako odečítané doby (10375), které aplikace do měsíčního hlášení zatím nesestaví. Hlášení za tento vztah podejte ručně přes ePortál ČSSZ, nebo vztah odložte.",
+        "jmhz_eldp_deducted_days_invalid_termination_unsupported": "Zaměstnanec po dosažení důchodového věku, který nepobírá starobní důchod, má v měsíci dobu po neplatném skončení vztahu (§ 16 odst. 4 písm. j) zákona č. 155/1995 Sb.). Odečítané doby pro ni složku nemají a vyloučená doba musí ležet v odečtených, proto aplikace takový měsíc nesestaví. Hlášení za tento vztah podejte ručně přes ePortál ČSSZ.",
+        "jmhz_eldp_deducted_days_split_month_unsupported": "Zaměstnanec v měsíci dovršil důchodový věk a po tomto dni má odečítané doby (nemoc, ošetřování, neplacené volno, neomluvenou absenci). Pro měsíc rozdělený na dvě sekce katalog kontrol výpočet dnů pojištění s odečtenými dobami nestanoví. Hlášení za tento vztah podejte ručně přes ePortál ČSSZ.",
+        "jmhz_eldp_deducted_days_without_component_unsupported": "Zaměstnanec po dosažení důchodového věku, který nepobírá starobní důchod, má v měsíci dny bez účasti na pojištění, které nevysvětluje žádná nepřítomnost se složkou odečítaných dob. Pravidla podání žádají součet složek 10462 až 10469 rovný 10375 a pro takové dny složka není. Hlášení za tento vztah podejte ručně přes ePortál ČSSZ.",
         "jmhz_eldp_employment_not_found": "Pracovní vztah není obsažen ve zdrojové mzdové revizi evidenčního listu.",
         "jmhz_eldp_employment_scope_mismatch": "Pracovní vztah nelze ve zdrojovém snapshotu jednoznačně určit.",
         "jmhz_eldp_environment_invalid": "Prostředí evidenčního listu (produkce nebo test) není platné.",
@@ -12420,6 +12900,7 @@
         "jmhz_projection_form_unbound": "Formulář osoby v XML podání nemá nadřazenou součást podání.",
         "jmhz_projection_path_ambiguous": "Cesta atributu patří ve slovníku JMHZ víc atributům současně.",
         "jmhz_projection_path_unknown": "Element XML měsíčního hlášení nemá ve slovníku JMHZ protějšek.",
+        "jmhz_projection_version_mismatch": "XML měsíčního hlášení patří k jinému ročníku specifikace JMHZ, než podle kterého se kontroluje.",
         "jmhz_projection_xml_unreadable": "XML měsíčního hlášení nelze načíst pro zpracování atributů.",
         "jmhz_protocol_ambiguous": "Odpověď ČSSZ obsahuje protokoly více podání a bez očekávaného identifikátoru CorrelationID nelze určit, který z nich patří tomuto podání.",
         "jmhz_protocol_anchor_unreadable": "Důvěryhodný certifikát ČSSZ (kotva důvěry) se nepodařilo načíst, takže protokol nelze ověřit. Obraťte se na podporu.",
@@ -12574,6 +13055,10 @@
         "jmhz_signing_serial_unreadable": "Sériové číslo podpisového certifikátu nelze přečíst. Nahrajte certifikát znovu nebo vyberte jiný v profilu podpisu.",
         "jmhz_signing_unavailable": "Server nepodporuje podpis CMS/PKCS#7 potřebný pro odeslání JMHZ; jde o technickou chybu, kterou musí posoudit podpora.",
         "jmhz_snapshot_hash_mismatch": "Otisk zmrazené přípravy JMHZ nesouhlasí s uloženými daty. Připravte hlášení znovu.",
+        "jmhz_spec_version_mismatch": "Datová věta hlášení je v jiném ročníku specifikace, než jaký platí pro její vykazované období. Takové podání by ČSSZ odmítla; obraťte se na podporu.",
+        "jmhz_spec_version_period_invalid": "Vykazované období nebo datum události podání není platné datum, takže nejde určit ročník specifikace. Zkontrolujte období a připravte podání znovu.",
+        "jmhz_spec_version_unavailable": "Podání za období od 01/2027 (registrace s událostí od 1. 1. 2027) se řídí specifikací JMHZ 2027, kterou tahle verze aplikace zatím neumí sestavit. Hlášení, opravy i storna za období do 12/2026 připravíte jako dosud.",
+        "jmhz_spec_version_unknown": "Zmrazené podání nese neznámý ročník specifikace JMHZ, proto se nesestaví ani neodešle. Obraťte se na podporu.",
         "jmhz_snapshot_invalid": "Uložená příprava JMHZ má neplatný formát a nelze ji načíst. Připravte hlášení znovu.",
         "jmhz_snapshot_missing": "Chybí uložená příprava JMHZ potřebná pro toto hlášení. Připravte hlášení znovu.",
         "jmhz_social_multiple_offices": "Mzdový běh obsahuje pracovní vztahy z více mzdových účtáren. Pojistná část (PVPOJ) se podává za každou účtárnu zvlášť; zvolte, za kterou se má sestavit.",
@@ -12630,12 +13115,16 @@
         "jmhz_work_month_not_approved": "Pracovní doba za vykazovaný měsíc není schválená.",
         "jmhz_work_summary_v2_missing": "Chybí schválený pracovní souhrn měsíce.",
         "jmhz_workplace_codebooks_unverified": "Chybí ověřené číselníkové údaje pracoviště.",
+        "jmhz_xml_2027_attribute_missing": "Hlášení za období od ledna 2027 potřebuje údaje, které příprava zatím nenese (výčet atributů je ve zprávě). Připravte hlášení znovu; pokud problém přetrvá, obraťte se na podporu.",
+        "jmhz_xml_2027_value_inconsistent": "Údaje mzdy neodpovídají pravidlům hlášení 2027 (například výsledek ročního zúčtování, souběh příjmu pro zálohu a příjmu podle § 6 odst. 4). Zkontrolujte mzdový běh a připravte hlášení znovu.",
         "jmhz_xml_attribute_unresolved": "Zmrazený dokument JMHZ nemá doložený požadovaný atribut a nesmí se doplnit automaticky nulou ani nepravdou. Připravte a zmrazte hlášení znovu; pokud problém přetrvá, obraťte se na podporu.",
         "jmhz_xml_bonus_without_declaration": "Měsíční daňový bonus nelze vykázat bez podepsaného prohlášení poplatníka. Doplňte prohlášení poplatníka u zaměstnance.",
         "jmhz_xml_child_credit_without_children": "Měsíční zvýhodnění na děti nelze vykázat, pokud zaměstnanec nemá evidované vyživované děti. Doplňte vyživované děti u zaměstnance.",
         "jmhz_xml_credit_without_declaration": "Uplatněnou slevu na dani nelze vykázat bez podepsaného prohlášení poplatníka. Doplňte prohlášení poplatníka u zaměstnance.",
         "jmhz_xml_document_version_unsupported": "Serializátor JMHZ umí zpracovat jen aktuální verzi normalizovaného dokumentu scénáře 1. Připravte hlášení znovu.",
         "jmhz_xml_eldp_code_required": "Sekce evidenčního listu důchodového pojištění (ELDP) s nenulovým počtem dnů musí mít kód ELDP. Připravte evidenční list znovu; pokud problém přetrvá, obraťte se na podporu.",
+        "jmhz_xml_eldp_deducted_days_sum_mismatch": "Úhrn odečítaných dob po důchodovém věku (10375) v evidenčním listu neodpovídá součtu jejich složek 10462 až 10469. Zkontrolujte absence v daném období a hlášení připravte znovu.",
+        "jmhz_xml_eldp_deducted_days_without_code": "Odečítané doby po důchodovém věku lze vykázat jen v sekci evidenčního listu s kódem ELDP, který má na druhé pozici D. Zkontrolujte důchodové údaje zaměstnance a hlášení připravte znovu.",
         "jmhz_xml_eldp_excluded_days_sum_mismatch": "Úhrn vyloučených dob v evidenčním listu neodpovídá jejich rozpadu podle druhů (§ 16 odst. 4 zákona č. 155/1995 Sb.). Zkontrolujte absence v daném období.",
         "jmhz_xml_eldp_excluded_days_without_code": "Vyloučené doby nelze v evidenčním listu vykázat bez kódu druhu vyloučené doby. Zkontrolujte absence v daném období.",
         "jmhz_xml_eldp_missing": "Součást podání musí obsahovat alespoň jednu sekci evidenčního listu (ELDP). Připravte hlášení znovu; pokud problém přetrvá, obraťte se na podporu.",
@@ -12653,7 +13142,8 @@
         "jmhz_xml_paid_unworked_hours_below_sickness": "Placené neodpracované hodiny v pracovním souhrnu nezahrnují hodiny nemoci s náhradou mzdy. Zkontrolujte evidenci nemoci a pracovní dobu za daný měsíc.",
         "jmhz_xml_period_invalid": "Vykazované období podání JMHZ je mimo platný rozsah, musí jít o platný kalendářní měsíc odpovídající připnutému schématu. Zkontrolujte rozhodné období hlášení nebo storna.",
         "jmhz_xml_primary_employment_invalid": "Zaměstnanec musí mít právě jeden pracovní vztah označený jako primární, na kterém se vykazují souhrnná data. Zkontrolujte a opravte označení primárního vztahu na kartě zaměstnance.",
-        "jmhz_xml_prisoner_excluded_days_unsupported": "Formulář vězně vede z vyloučených dob jen dočasnou pracovní neschopnost a peněžitou pomoc v mateřství. Ošetřování člena rodiny, otcovskou nebo jinou vyloučenou dobu do něj zapsat nejde; hlášení za tento vztah podejte ručně přes ePortál ČSSZ.",
+        "jmhz_xml_prisoner_deducted_days_unsupported": "Formulář vězně vede z odečítaných dob po důchodovém věku jen dočasnou pracovní neschopnost a peněžitou pomoc v mateřství. Ošetřování, otcovskou, neplacené volno ani neomluvenou absenci do něj zapsat nejde; hlášení za tento vztah podejte ručně přes ePortál ČSSZ.",
+        "jmhz_xml_prisoner_excluded_days_unsupported":"Formulář vězně vede z vyloučených dob jen dočasnou pracovní neschopnost a peněžitou pomoc v mateřství. Ošetřování člena rodiny, otcovskou nebo jinou vyloučenou dobu do něj zapsat nejde; hlášení za tento vztah podejte ručně přes ePortál ČSSZ.",
         "jmhz_xml_pvpoj_missing": "Řádné podání JMHZ musí obsahovat pojistnou část (PVPOJ). Zkontrolujte výpočet sociálního pojištění v mzdovém běhu.",
         "jmhz_xml_resolution_blocked": "Dokument JMHZ má nevyřešené blokující nálezy, proto ho nelze serializovat do podání ani do obsahové opravy. Opravte dřívější nálezy uvedené v kontrole hlášení.",
         "jmhz_xml_scenario_3_profile_unsupported": "Pracovní vztah s druhem činnosti K nebo N až S podporuje jen bližší určení „žádné“; jiná kombinace vyžaduje individuální zpracování a podání přes ePortál ČSSZ.",
@@ -12664,17 +13154,51 @@
         "jmhz_xml_surcharge_total_missing": "Rozpad příplatků nelze vykázat bez celkové částky příplatků (pole 10332). Zkontrolujte mzdové složky příplatků v mzdovém běhu.",
         "jmhz_xml_temporary_assignment_user_invalid": "Uživatel dočasného přidělení není vyplněný správně (IČO musí mít osm číslic). Opravte ho na kartě pracovního vztahu.",
         "jmhz_xml_risk_categorization_invalid": "Kategorizace rizika musí být z číselníku ČSSZ (1, 6 nebo 7). Opravte ji na kartě pracovního vztahu.",
+        "jmhz_xml_risk_shift_count_forbidden": "Počet směn při rizikové práci se uvádí jen u práce kategorie 4 s odpracovanými hodinami rizikové práce. Obraťte se na podporu.",
         "jmhz_xml_deferred_income_type_invalid": "Typ odloženého příjmu musí být z číselníku ČSSZ (1 až 6). Kontaktujte podporu.",
         "jmhz_xml_deferred_income_periods_unsupported": "Odložený příjem typu 1 nese právě jedno období ELDP; jiné rozložení aplikace nesestaví. Hlášení podejte ručně přes ePortál ČSSZ.",
         "jmhz_xml_deferred_income_period_invalid": "Měsíc odloženého příjmu musí být 1 až 12. Kontaktujte podporu.",
-        "jmhz_deferred_income_type_unsupported": "Aplikace zpracuje sama jen odložený příjem typu 1. Jiný typ podejte ručně přes ePortál ČSSZ.",
+        "jmhz_deferred_income_type_unsupported": "Aplikace zpracuje sama jen odložený příjem typu 1, 4 a 5. Náhradu mzdy při neplatném skončení podejte ručně přes ePortál ČSSZ.",
+        "jmhz_deferred_annual_settlement_income_present": "Roční zúčtování po skončení (typ 4) se hlásí bez zúčtovaného příjmu, ale vztah má v měsíci příjem. Příjem zúčtovaný v témže měsíci potvrďte jako odložený příjem typu 5.",
+        "jmhz_deferred_annual_settlement_period_invalid": "Roční zúčtování po skončení (typ 4) se hlásí jen za leden, únor nebo březen. Opravte měsíc potvrzení odloženého příjmu.",
         "jmhz_eldp_deferred_section_invalid": "ELDP odloženého příjmu neodpovídá zmrazenému výsledku běhu. Připravte hlášení znovu.",
         "jmhz_xml_variable_symbol_invalid": "Variabilní symbol zaměstnavatele musí mít přesně deset číslic. Zkontrolujte nastavení variabilního symbolu u mzdové účtárny nebo registrace u OSSZ.",
         "jmhz_xml_wage_breakdown_without_wage": "Rozpad mzdy nelze vykázat, pokud je zúčtovaná mzda nulová. Zkontrolujte mzdové složky v mzdovém běhu.",
         "jmhz_xml_work_summary_missing": "Součást podání nemá zmrazený pracovní souhrn měsíce. Schvalte pracovní dobu za daný měsíc a připravte hlášení znovu.",
+        "jmhz_xml_workplace_address_invalid": "Adresa místa výkonu práce neodpovídá tvaru hlášení 2027 (číslo popisné, PSČ, kód adresního místa), nebo je u místa mimo ČR vyplněná adresa v ČR. Opravte místo výkonu práce v podmínkách vztahu.",
         "jmhz_xsd_validation_failed": "XML měsíčního hlášení JMHZ neprošlo kontrolou proti připnutému XSD schématu; jde o technickou chybu, kterou musí posoudit podpora.",
+        "jmhz_post20_employment_identifier_missing": "Pracovní vztah nemá ID PPV od ČSSZ, takže nejde dohledat jeho podaná měsíční hlášení.",
+        "jmhz_post20_end_date_missing": "Zapomenutá odhláška: nejdříve u vztahu zapište skutečné datum skončení.",
+        "jmhz_post20_situation_unknown": "Vyberte typovou situaci po 20. dni: neplatný pracovní vztah, zapomenutá odhláška, nebo změna data nástupu či skončení.",
+        "jmhz_post20_submission_unreadable": "Některé podané hlášení se nepodařilo přečíst; jde o technickou chybu, kterou musí posoudit podpora.",
+        "jmhz_zero_amendment_annual_summary_unsupported": "Anulovaný formulář nese roční úhrny za předchozí rok, které nulové hlášení neopravuje. Anulaci takového měsíce aplikace nesestaví; postupujte ručně podle Pravidel podání.",
+        "jmhz_zero_amendment_concurrent_employment_unsupported": "Osoba má v hlášení souběžný pracovněprávní vztah, takže by se po anulaci musela přepočítat její souhrnná data. Anulaci takového formuláře aplikace nesestaví.",
+        "jmhz_zero_amendment_controls_failed": "Hlášení po anulaci neprošlo kontrolami katalogu ČSSZ. Zkontrolujte vypsané kontroly.",
+        "jmhz_zero_amendment_employment_active_in_month": "Podle evidence pracovní vztah v anulovaném měsíci trvá. Nejdříve opravte datum skončení nebo nástupu a podejte odhlášku nebo změnu registrace.",
+        "jmhz_zero_amendment_employment_unknown": "Formulář nejde přiřadit k pracovnímu vztahu v evidenci, takže nejde ověřit, že vztah v měsíci netrval. Doplňte ID PPV u vztahu.",
+        "jmhz_zero_amendment_form_already_amended": "K formuláři už existuje opravné nebo stornovací podání. Anulace se staví jen z formuláře, který od řádného podání nikdo neměnil.",
+        "jmhz_zero_amendment_interval_invalid": "První den pojištění v původním formuláři neleží v anulovaném měsíci; jde o technickou chybu, kterou musí posoudit podpora.",
+        "jmhz_zero_amendment_original_incomplete": "Původní formulář nemá povinný údaj, který se v anulaci přebírá; jde o technickou chybu, kterou musí posoudit podpora.",
+        "jmhz_zero_amendment_original_not_zero": "Anulovaný formulář vykazuje příjem nebo pojistné. Jeho anulace by změnila i souhrnnou a pojistnou část hlášení. Vrátil-li zaměstnanec plnění, opravte mzdový běh a použijte obsahovou opravu z nové přípravy; nevrátil-li ho, podejte opravné hlášení s formulářem Odložený příjem ručně.",
+        "jmhz_zero_amendment_root_not_accepted": "Měsíc lze anulovat až po úplném přijetí řádného hlášení ČSSZ.",
+        "jmhz_zero_amendment_scenario_unsupported": "Anulovat nulovým opravným hlášením lze zatím jen formulář bez zvláštního příznaku; pro ostatní datové scénáře Pravidla podání tabulku nulového hlášení neuvádějí.",
+        "jmhz_zero_amendment_situation_required": "Anulaci měsíce je nutné výslovně potvrdit jako měsíc, který neměl být hlášen.",
+        "jmhz_zero_amendment_target_invalid": "Anulovat nulovým opravným hlášením lze jen formulář řádného měsíčního hlášení.",
         "jmhz_zero_report_attribute_unknown": "Požadovaný atribut nulového hlášení JMHZ není v aplikaci definován; jde o technickou chybu, kterou musí posoudit podpora.",
-        "jmhz_zero_report_situation_unknown": "Situace nulového hlášení JMHZ není v pravidlech aplikace popsaná; jde o technickou chybu, kterou musí posoudit podpora."
+        "jmhz_zero_report_situation_unknown": "Situace nulového hlášení JMHZ není v pravidlech aplikace popsaná; jde o technickou chybu, kterou musí posoudit podpora.",
+        "jmhz_ordinary_evidence_ozp_deduction_unclassified": "U dohody o srážce zaměstnance s podporou zaměstnávání OZP chybí rozhodnutí, zda je věřitelem zaměstnavatel a jak se srážka vykáže v JMHZ (10350 až 10353).",
+        "jmhz_ordinary_evidence_ozp_employer_not_protected": "Podpora zaměstnávání OZP se hlásí jen u zaměstnavatele uznaného na chráněném trhu práce; v registraci zaměstnavatele to uvedeno není.",
+        "jmhz_ordinary_evidence_ozp_payment_date_invalid": "Datum úhrady mzdy včetně pojistného (10347) musí ležet mezi začátkem vykazovaného měsíce a dneškem; hlášení se podává až po úhradě.",
+        "jmhz_ordinary_evidence_ozp_profile_mismatch": "Podpora zaměstnávání OZP v potvrzení neodpovídá nastavení pracovního vztahu.",
+        "jmhz_ordinary_evidence_ozp_wage_invalid": "Výdělek OZP musí obsahovat platné datum úhrady mzdy a výslovné Ano nebo Ne u výplaty v hotovosti.",
+        "jmhz_ordinary_evidence_ozp_wage_required": "U zaměstnance s podporou zaměstnávání OZP chybí datum úhrady mzdy včetně pojistného (10347) a údaj o výplatě v hotovosti (10348).",
+        "jmhz_ordinary_evidence_ozp_wage_unexpected": "Výdělek OZP (10347 až 10349) se uvádí jen u vztahu s podporou zaměstnávání OZP.",
+        "jmhz_ordinary_evidence_risk_shifts_invalid": "Počet směn při rizikové práci (10580) musí být celé číslo 0 až 999.",
+        "jmhz_ordinary_evidence_risk_shifts_required": "U práce zařazené do kategorie 4 chybí počet směn odpracovaných v měsíci (10580); mzdy směny neevidují, doplňte ho.",
+        "jmhz_ordinary_evidence_risk_shifts_unexpected": "Počet směn při rizikové práci (10580) se uvádí jen u vztahu s prací zařazenou do kategorie 4.",
+        "jmhz_ozp_wage_primary_mismatch": "Podporu zaměstnávání OZP má jen vedlejší pracovní vztah osoby, výdělek OZP ale nese souhrn hlavního vztahu.",
+        "jmhz_xml_ozp_deductions_inconsistent": "Příznak srážek ve prospěch zaměstnavatele (10349) neodpovídá částkám 10350 až 10353 (kontrola 258).",
+        "jmhz_xml_ozp_wage_form_unsupported": "Výdělek osob OZP a srážky ve prospěch zaměstnavatele (10347 až 10353) formulář tohoto druhu nevede; hlášení zpracujte ručně."
       }
     },
     "server_codes": {
@@ -12874,6 +13398,27 @@
       "registration_tax_residence_address_missing": "Při změně daňové rezidence na jiný stát než ČR musí podání nést i adresu bydliště v tom státě, jinak ho ČSSZ odmítne. Vyplňte ji v profilu registrace A1 a změnu ohlaste z návrhu v bloku Změny k ohlášení.",
       "registration_schema_integrity_failed": "Předlohy formulářů ČSSZ v této instalaci chybí nebo se liší od ověřených verzí. Podání proto nejde zkontrolovat - nejde o chybu ve vašich údajích, obraťte se na podporu.",
       "registration_schema_unavailable": "Tento formulář ČSSZ tato verze aplikace neumí připravit. Podporované jsou přihlášení a oznámení REGZEC25 a částečné přihlášení PREZEC26, ostatní podejte přes portál ČSSZ.",
+      "registration_spec_version_unavailable": "Událost se hlásí formulářem ČSSZ podle specifikace JMHZ 2027, který tato verze aplikace neumí připravit. Podání se nepřipraví.",
+      "registration_spec_version_mismatch": "Registrační podání má jiný ročník formuláře, než odpovídá rozhodnému datu události (hranice 1. 1. 2027). Připravte podání znovu.",
+      "registration_regzec27_not_yet_accepted": "Událost od 1. 1. 2027 se hlásí formulářem REGZEC27, který ostrá ČSSZ přijímá až od 1. 1. 2027. Podání připravte a odešlete nejdřív 1. 1. 2027. Zaměstnance s českým občanstvím můžete v prosinci přihlásit částečně přes PREZEC (nejdřív osm dnů před nástupem). U zahraničního zaměstnance částečné přihlášení nelze: přihlášku podejte 1. 1. 2027 nebo později, vždy před nástupem, při nástupu 1. 1. 2027 téhož dne před začátkem práce.",
+      "registration_regzec25_value_from_2027": "Údaj obsahuje hodnotu číselníku, kterou ČSSZ přijímá až pro události od 1. 1. 2027. Pro dřívější datum vyberte jinou hodnotu.",
+      "registration_regzec27_change_in_future": "Změnu nebo opravu nejde podat s platností do budoucna. Připravte podání nejdřív v den, kdy začne platit.",
+      "registration_regzec27_orientation_number_too_long": "Číslo orientační smí mít od 1. 1. 2027 u všech adres nejvýš čtyři znaky.",
+      "registration_regzec27_ruian_point_invalid": "Kód adresního místa RÚIAN musí mít 1 až 9 číslic.",
+      "registration_regzec27_foreign_legislation_missing": "Přihláška zaměstnance se speciálním druhem činnosti musí od 1. 1. 2027 uvádět příslušnost k cizím právním předpisům.",
+      "registration_regzec27_a3_foreign_legislation_forbidden": "Změnu příslušnosti k cizím právním předpisům nejde od 1. 1. 2027 oznámit změnou údajů (A3). Podejte oznámení A6 nebo A7.",
+      "registration_regzec27_foreign_legislation_cz": "Stát cizích právních předpisů nemůže být Česko.",
+      "registration_regzec27_proof_identity_incomplete": "Doklad totožnosti se v oznámení změny nebo opravy posílá jen celý: typ, číslo, vydávající orgán a stát vydání.",
+      "registration_regzec27_stay_validity_forbidden": "Platnost pobytu se u zaměstnance s českým státním občanstvím neuvádí.",
+      "registration_regzec27_eu_free_access": "Občan státu EU má volný přístup na trh práce s důvodem 1. Opravte údaje cizince.",
+      "registration_regzec27_family_member_citizenship": "Důvod volného přístupu 3 (rodinný příslušník občana EU) nejde použít u občana státu EU.",
+      "registration_regzec27_stay_validity_incomplete": "Platnost pobytu se uvádí celá: od i do.",
+      "registration_regzec27_stay_validity_order": "Platnost pobytu od musí být dřív než platnost pobytu do.",
+      "registration_regzec27_stay_validity_missing": "U občana státu mimo EHP vyžaduje ČSSZ od 1. 1. 2027 platnost pobytu (od a do).",
+      "registration_regzec27_foreign_worker_forbidden": "Údaje o přístupu na trh práce se u zaměstnance s českým státním občanstvím neposílají.",
+      "registration_regzec27_foreign_worker_set_incomplete": "Údaje cizince se v oznámení změny nebo opravy posílají jen jako celá sada se státním občanstvím a volným přístupem nebo pracovním oprávněním.",
+      "registration_regzec27_service_termination_reason": "Důvod skončení služebního poměru nepatří k zvolenému druhu zaměstnání.",
+      "registration_regzec27_replacement_not_employment": "Jednorázová náhrada podle § 271ca zákoníku práce patří jen k pracovnímu vztahu.",
       "registration_serializer_unavailable": "Tento registrační formulář ČSSZ tato verze aplikace neumí vyplnit. Podporované jsou REGZEC25 a PREZEC26, ostatní podejte přes portál ČSSZ.",
       "registration_start_date_missing": "Datum nástupu u pracovního vztahu chybí, takže nejde spočítat lhůtu pro přihlášku ani ji podat. Doplňte ho a registraci připravte znovu.",
       "registration_supplier_missing": "Firma, za kterou se registrace podává, nebyla nalezena. Přepněte se na správnou firmu a registraci připravte znovu.",
@@ -13558,6 +14103,7 @@
     "edit_document": "Úprava pokladního dokladu",
     "save_draft": "Uložit jako koncept",
     "post_document": "Vystavit",
+    "post_and_next": "Vystavit a další",
     "post_confirm": "Vystavit doklad {number}? Přidělí se číslo z řady a doklad se zaúčtuje.",
     "balance": "Zůstatek",
     "balance_as_of": "zůstatek k {date}",
@@ -14076,7 +14622,8 @@
     "item_type": {
       "material": "Materiál",
       "goods": "Zboží",
-      "product": "Výrobek"
+      "product": "Výrobek",
+      "service": "Služba"
     },
     "doc_type": {
       "receipt": "Příjemka",
@@ -14357,6 +14904,7 @@
       "empty": "Zatím žádná skladová karta.",
       "field_sku": "SKU",
       "field_sku_hint": "Nechte prázdné pro automatické vygenerování z názvu.",
+      "field_type_service_hint": "Služba nevede zásobu: faktura z ní nic nevydá a na objednávce zůstane řádkem bez karty.",
       "field_name": "Název",
       "field_type": "Typ",
       "field_unit": "Měrná jednotka",
@@ -14548,7 +15096,7 @@
         "stored_value": "Hodnotový poukaz / dobití kreditu",
         "hint_standard": "Prodej se eviduje jako běžná tržba.",
         "hint_specific_voucher": "Poukaz na předem určené plnění (např. masáž zad) je běžný prodej tohoto plnění. Jeho pozdější uplatnění se už neeviduje.",
-        "hint_stored_value": "Poukaz na blíže neurčené zboží nebo dobití kreditu (peněženka, permanentka s kreditem). Jeho část tržby jde do EET jako „určeno k čerpání\"; uplatnění se pak eviduje jako čerpání kreditu (způsob platby Poukaz / kredit)."
+        "hint_stored_value": "Poukaz na blíže neurčené zboží nebo dobití kreditu (peněženka, permanentka s kreditem). Jeho část tržby jde do EET jako „určeno k čerpání\"; uplatnění se pak eviduje jako čerpání kreditu (způsob platby Poukaz / kredit). Položka se sazbou 0 % se zaúčtuje na přijaté zálohy (324), DPH se odvede až z plnění, za které se poukazem zaplatí."
       }
     },
     "item_detail": {
@@ -16560,7 +17108,7 @@
         "daily_limit": "Denní limit volání AI je vyčerpaný. Zkuste to znovu zítra."
       },
       "intro_title": "Na co se můžete zeptat",
-      "intro_body": "Popište situaci vlastními slovy, případně přiložte soubory z disku nebo dokumenty z Dokumentů. Asistent vysvětlí, jak účtovat, nabídne zápisy do deníku a navrhne, kam soubor v Dokumentech uložit. Nic se nezaúčtuje bez vašeho potvrzení.",
+      "intro_body": "Popište situaci vlastními slovy, případně přiložte soubory z disku nebo dokumenty z Dokumentů. Asistent vysvětlí, jak účtovat, nabídne zápisy do deníku, interní doklady nebo ostatní pohledávky a závazky a navrhne, kam soubor v Dokumentech uložit. Nic se nezaúčtuje bez vašeho potvrzení.",
       "intro_example": "Například: „Přes dokumenty jsem vložila notářský zápis a pokladní doklady, potřebuji vytvořit pohledávky za upsaný základní kapitál.\"",
       "placeholder": "Napište dotaz k účtování…",
       "model": "Model",
@@ -16627,6 +17175,27 @@
         "installments_failed": "Položka je založená, ale splátkový kalendář se nepodařilo uložit.",
         "link_failed": "Položka je založená, ale některý dokument se na ni nepodařilo navázat.",
         "no_permission": "K založení potřebujete právo zapisovat do Ostatních pohledávek a závazků."
+      },
+      "internal_document": {
+        "heading": "Navržené interní doklady",
+        "entry_date": "Datum účetního případu",
+        "document_date": "Datum dokladu",
+        "partner": "Partner",
+        "partner_matched": "nalezen v adresáři",
+        "note": "Poznámka",
+        "save_draft": "Uložit jako koncept",
+        "save_and_post": "Založit a zaúčtovat",
+        "confirm_draft": "Založit navržený interní doklad jako koncept? Nic se tím nezaúčtuje.",
+        "confirm_post": "Založit navržený interní doklad a rovnou ho zaúčtovat do deníku?",
+        "draft_hint": "Koncept zkontrolujete a zaúčtujete v detailu dokladu.",
+        "created": "Koncept interního dokladu je založený.",
+        "posted": "Interní doklad {no} je zaúčtovaný.",
+        "post_failed": "Koncept je založený, ale zaúčtovat ho nešlo: {message}",
+        "created_label": "Založeno jako interní doklad",
+        "open": "Otevřít doklad",
+        "link_failed": "Doklad je založený, ale některý dokument se na něj nepodařilo navázat.",
+        "problems_reason": "Návrh nejde založit, nejdřív opravte nalezené chyby (zeptejte se asistenta znovu nebo doklad založte ručně).",
+        "no_permission": "K založení potřebujete právo zapisovat do účetního deníku."
       },
       "history": {
         "title": "Historie dotazů",
@@ -18128,6 +18697,13 @@
       "account": "Účet",
       "total": "Celkem"
     },
+    "accrual_spread": {
+      "toggle": "Průběžné časové rozlišení",
+      "toggle_hint": "Náklady a výnosy dokladů s obdobím od–do započte k rozvahovému dni jen poměrně podle dnů, zbytek ukáže jako náklady (381) a výnosy (384) příštích období. Do deníku se nic nezapisuje.",
+      "note_title": "Průběžné časové rozlišení mimo deník.",
+      "note": "Náklady a výnosy dokladů s obdobím od–do jsou rozložené poměrně podle dnů do rozvahového dne. Na náklady příštích období (381) jde {prepaid}, na výnosy příštích období (384) {deferred}, upravených dokladů: {documents}. Úprava není zaúčtovaná v deníku; v účetnictví ji zaúčtuje až krok uzávěrky Časové rozlišení.",
+      "skipped_dimension": "Výkaz za hodnotu dimenze průběžné časové rozlišení neuplatní a ukazuje stav deníku."
+    },
     "balance_sheet": {
       "title": "Rozvaha",
       "subtitle": "Rozvaha ve struktuře přílohy 1 vyhlášky č. 500/2002 Sb.",
@@ -18405,6 +18981,27 @@
       "deductible_no": "Nedaňový výdaj",
       "err_target_account_tax_evidence": "V daňové evidenci pravidlo účet nenastavuje, určuje jen druh a daňovou uznatelnost výdaje.",
       "err_recurring_prepaid_tax_evidence": "Časové rozlišení ročního předplatného se v daňové evidenci nevede."
+    },
+    "revenue_rules": {
+      "title": "Pravidla výnosů",
+      "subtitle": "Určí účet položky vydané faktury podle kódu položky, textu nebo sazby DPH. Uplatní se při importu faktur a při zaúčtování položek, které nemají vlastní účet ani účet produktu.",
+      "empty": "Žádné pravidlo výnosů.",
+      "col_target": "Účet",
+      "form_help": "Pravidlo se uplatní, když sedí VŠECHNA vyplněná kritéria. První podle priority vyhrává. Účet zadaný na položce nebo produktu má přednost.",
+      "criteria_group": "Kritéria (aspoň jedno je povinné)",
+      "form_item_code": "Kód položky",
+      "item_code_hint": "Přesná shoda s kódem položky z importu (ISDOC SellersItemIdentification), bez ohledu na velikost písmen.",
+      "form_description_contains": "Text položky obsahuje",
+      "form_vat_rate": "Sazba DPH (%)",
+      "criteria_hint": "Vyplňte aspoň jedno z: kód položky, text položky nebo sazbu DPH.",
+      "form_target_account": "Účet položky",
+      "target_account_hint": "Výnosový účet (601, 602, 604…), u přefakturace i rozvahový. Saldokontní, daňové a peněžní účty nejsou povolené.",
+      "code_label": "kód",
+      "vat_label": "sazba {rate} %",
+      "target_required": "Vyberte účet položky.",
+      "err_criteria_missing": "Vyplňte aspoň jedno kritérium: kód položky, text položky nebo sazbu DPH.",
+      "err_vat_rate": "Sazba DPH musí být číslo v rozsahu 0 až 100.",
+      "err_generic": "Operaci se nepodařilo dokončit."
     },
     "assets": {
       "revision": {
@@ -19198,6 +19795,7 @@
         "vat_343_vs_return": "Saldo účtu 343 vs. DPH přiznání za období",
         "vat_clearing_stale": "Zúčtování DPH neodpovídá obratu období",
         "deposits_314_324_open": "Nevypořádané zálohové účty 314/324 k rozvahovému dni",
+        "voucher_balance_negative": "Záporný zůstatek prodaných poukazů a kreditu (uplatněno víc, než se prodalo)",
         "paid_invoices_open_saldo": "Zaplacené vydané faktury s otevřeným saldem na 311 (úhrada chybí v deníku)",
         "paid_purchases_open_saldo": "Zaplacené přijaté faktury s otevřeným saldem na 321 (úhrada chybí v deníku)",
         "realized_fx_unbooked": "Realizovaný kurzový rozdíl nezaúčtovaný na 563/663 (zaplacený cizoměnový doklad)",
@@ -20070,6 +20668,8 @@
       "vat_state_no_claim_header": "{code}, bez nároku podle hlavičky - do DPH nejde",
       "vat_state_no_claim_header_short": "bez nároku podle hlavičky",
       "vat_state_allocations": "DPH podle rozpisu DPH",
+      "expense_account_allocations": "Účet MD určují účetní alokace v rekapitulaci DPH.",
+      "vat_deduction_allocations": "Nárok na odpočet určují účetní alokace v rekapitulaci DPH (smíšený nárok). Do přiznání a kontrolního hlášení jde rozpis z alokací.",
       "expense_kind_hint": "Řídí nákladový účet: Služba → 518, Materiál (vč. PHM) → 501, Drobný majetek → 501 + karta v evidenci, Dlouhodobý majetek → 042 a odpisy. Neurčeno se chová jako dosud (518).",
       "accrual_show": "Časové rozlišení",
       "accrual_hide": "Skrýt časové rozlišení",
@@ -20163,8 +20763,11 @@
     "vat_allocation": {
       "enable": "Rozdělit odpočet a zaúčtování",
       "disable": "Zrušit účetní alokace",
-      "hint": "Alokace nemění rekapitulaci dodavatele. Určují pouze rozsah odpočtu DPH a účet MD jednotlivých částí dokladu. První podnikatelský řádek se dopočítává jako zbytek.",
-      "add": "Přidat alokaci",
+      "hint": "Alokace nemění rekapitulaci dodavatele. Určují pouze rozsah odpočtu DPH a účet MD jednotlivých částí dokladu. Jeden řádek sazby se dopočítává jako zbytek: bez osobní části první podnikatelský, po přidání osobní části osobní. Podnikatelskou část můžete rozdělit na více řádků s různými účty, tlačítkem „=“ určíte, který řádek se dopočítá.",
+      "add": "Přidat osobní nebo jinou část",
+      "add_business": "Přidat podnikatelskou část",
+      "make_residual": "Dopočítat tento řádek jako zbytek sazby",
+      "residual": "Dopočítává se jako zbytek",
       "business": "Podnikatelská část",
       "personal": "Osobní spotřeba",
       "description": "Popis",
@@ -21807,6 +22410,9 @@
     }
   },
   "common": {
+    "window_data_changed": "Data se mezitím změnila.",
+    "window_data_changed_reload": "Obnovit",
+    "window_data_changed_confirm": "Znovu načíst stránku? Neuložené změny v tomto okně se ztratí.",
     "tableHorizontalScroll": "Vodorovné posouvání tabulky",
     "show": "Zobrazit",
     "reset_sort": "Obnovit výchozí řazení",
@@ -21907,6 +22513,7 @@
     "close": "Zavřít",
     "preview_side_title": "Náhled originálu",
     "preview_side_close": "Zavřít náhled",
+    "preview_side_empty": "Doklad nemá přiložený originál.",
     "of": "z",
     "from": "Od",
     "to": "Do",
@@ -22137,8 +22744,10 @@
     "item_account": {
       "show": "Účty položek",
       "hide": "Skrýt účty položek",
-      "hint": "Výnosový účet jednotlivých položek. Prázdné pole = účet produktu, jeho kategorie, jinak předkontace faktury.",
-      "label": "Výnosový účet",
+      "open": "Zobrazit účet položky",
+      "close": "Skrýt účet položky",
+      "hint": "Účet jednotlivých položek: výnosový, u přefakturace i rozvahový (kromě saldokontních, daňových a peněžních účtů). Prázdné pole = účet produktu, jeho kategorie, pravidlo výnosů, jinak předkontace faktury.",
+      "label": "Účet položky",
       "placeholder": "podle produktu / dokladu"
     },
     "title": "Vydané faktury",
@@ -22665,6 +23274,26 @@
       "proforma": "Zálohová faktura",
       "parent": "Původní faktura"
     },
+    "convert_to_tax_document": {
+      "action": "Změnit na daňový doklad k platbě",
+      "confirm": "Koncept faktury se odstraní a místo něj vznikne koncept daňového dokladu k přijaté platbě s DUZP ke dni platby. Pokračovat?",
+      "done": "Koncept faktury byl nahrazen daňovým dokladem k přijaté platbě."
+    },
+    "advance_drawdown": {
+      "action": "Odečíst zálohu",
+      "tooltip": "Odečíst část zaplacené zálohy (postupné čerpání)",
+      "remove": "Odebrat čerpání zálohy",
+      "remove_confirm": "Odebrat odpočet zálohy z této faktury?",
+      "modal_title": "Odečíst zálohu",
+      "no_candidates": "Žádná záloha k čerpání (nutná zaplacená záloha se daňovým dokladem pro stejného odběratele a měnu).",
+      "total": "celkem",
+      "available": "k čerpání",
+      "amount": "Odečítaná částka (s DPH)",
+      "amount_hint": "Maximálně zbývající nečerpaná částka vybrané zálohy.",
+      "confirm": "Odečíst",
+      "applied": "Záloha byla odečtena.",
+      "removed": "Čerpání zálohy bylo odebráno."
+    },
     "advance_link": {
       "none": "Není propojeno se zálohovou fakturou.",
       "none_final": "Není propojeno s daňovým dokladem.",
@@ -22785,7 +23414,28 @@
     "language": "Jazyk",
     "reverse_charge": "Reverse charge",
     "doc_payment_calendar": "Platební / splátkový kalendář",
-    "payment_calendar_hint": "Kalendář je daňovým dokladem jen s rozpisem plateb na předem stanovené období (§ 31 a § 31a ZDPH). Ke splátkám se pak už jednotlivé doklady nevystavují.",
+    "doc_rent_calendar": "Splátkový kalendář (§ 31 ZDPH, nájem)",
+    "doc_advance_calendar": "Platební kalendář (§ 31a ZDPH, zálohy)",
+    "rent_calendar_hint": "Jen pro nájem (§ 31 ZDPH). Každá splátka je samostatné dílčí plnění s vlastním DUZP podle smlouvy. Odběrateli se posílá kalendář, úhrady a daň se evidují na interních dokladech splátek.",
+    "advance_calendar_hint": "Zálohy placené předem, typicky energie (§ 31a ZDPH). DUZP se neuvádí, daň vzniká dnem přijetí platby. Odběrateli se posílá kalendář, úhrady a daň se evidují na interních dokladech splátek.",
+    "payment_calendar_legacy_hint": "Tento původní společný typ už vystavit nejde. Vyberte splátkový kalendář (nájem), nebo platební kalendář (zálohy).",
+    "calendar_contract_ref": "Nájemní smlouva",
+    "calendar_contract_ref_placeholder": "Číslo nebo označení smlouvy",
+    "calendar_contract_ref_hint": "Bez odkazu na nájemní smlouvu kalendář nepůjde vystavit.",
+    "calendar_tax_date_rent": "DUZP má každá splátka zvlášť, zadáte ho v rozpisu plateb.",
+    "calendar_tax_date_advance": "Platební kalendář DUZP nemá, daň vzniká dnem přijetí platby.",
+    "calendar_foreign_currency": "Kalendář v cizí měně zatím nejde vystavit: kurz se váže ke dni každé splátky.",
+    "calendar": {
+      "instalments": "Splátky kalendáře",
+      "instalment_document": "Splátka",
+      "instalment_n": "Splátka {n}",
+      "instalment_badge": "Splátka",
+      "instalment_notice": "Interní doklad splátky kalendáře. Odběrateli se posílá kalendář, opravu udělejte dobropisem.",
+      "payment_document_notice": "Daňový doklad k úhradě splátky kalendáře. Odběrateli se neposílá.",
+      "open_calendar": "Otevřít kalendář",
+      "cancel_action": "Stornovat kalendář",
+      "cancel_hint": "Spolu s kalendářem se stornují i jeho neuhrazené splátky. Kalendář s uhrazenou nebo dobropisovanou splátkou stornovat nejde."
+    },
     "payment_schedule": "Rozpis plateb",
     "payment_schedule_add": "Přidat splátku",
     "payment_schedule_generate_12": "Rozpustit na 12 měsíců",
@@ -22794,6 +23444,9 @@
     "payment_schedule_note": "Poznámka",
     "payment_schedule_total": "Součet rozpisu",
     "payment_schedule_mismatch": "Součet rozpisu ({total}) nesedí na celkovou částku dokladu ({invoice}). Vystavení bude odmítnuto.",
+    "payment_schedule_mismatch_base": "Součet základů rozpisu ({total}) nesedí na základ dokladu ({invoice}). Vystavení bude odmítnuto.",
+    "payment_schedule_mismatch_vat": "Součet DPH rozpisu ({total}) nesedí na DPH dokladu ({invoice}). Vystavení bude odmítnuto.",
+    "payment_schedule_tax_date_hint": "Prázdné DUZP splátky znamená den její splatnosti.",
     "price_level": {
       "label": "Cenová hladina dokladu",
       "from_client": "Podle odběratele ({name})",
@@ -23161,7 +23814,10 @@
     "credit_note": "Dobropis",
     "cancellation": "Storno",
     "tax_document": "Daňový doklad k platbě",
-    "penalty": "Penalizační faktura"
+    "penalty": "Penalizační faktura",
+    "payment_calendar": "Platební / splátkový kalendář",
+    "rent_calendar": "Splátkový kalendář",
+    "advance_calendar": "Platební kalendář"
   },
   "client": {
     "title": "Klienti",
@@ -23470,7 +24126,7 @@
     "note": "Poznámka",
     "edit_title": "Upravit zakázku",
     "new_title": "Nová zakázka",
-    "delete_warning": "Smazat zakázku \"{name}\"? Akce je nevratná.\n\nFunguje jen pokud na zakázce nejsou žádné faktury - jinak ji použijte Archivovat.",
+    "delete_warning": "Smazat zakázku \"{name}\"? Akce je nevratná.\n\nFaktury a výkazy práce zůstanou bez zakázky. Chcete-li vazbu zachovat, použijte Archivovat.",
     "status_paused": "Pozastavené",
     "status_closed": "Uzavřené",
     "stats_title": "Statistiky zakázek",
@@ -23572,6 +24228,7 @@
     "upload_batch_attached": "{n}× PDF přiloženo k existujícímu výpisu.",
     "pdf_attached_to_existing": "Výpis už byl v systému z GPC - PDF se k němu přiložilo.",
     "warning": {
+      "imported_balances_rebased": "Stavy {statements} převzatých výpisů účtu se podle výpisu banky posunuly o {shift}. Počáteční stav účtu vychází {opening}, deník se nemění: zkontrolujte počáteční stav účtu v účetnictví.",
       "transactions_skipped_as_duplicate": "Ve výpisu bylo {parsed} pohybů, založeno {inserted}. {skipped} pohybů se shoduje s už evidovanými (překrývající se výpis) a nebylo založeno - zkontrolujte prosím, že jde skutečně o duplicity.",
       "transactions_skipped_as_duplicate_batch": "Z nahraných výpisů bylo přeskočeno {count} pohybů jako duplicity s už evidovanými - zkontrolujte prosím, že jde skutečně o duplicity.",
       "processing_failed": "Výpis je uložený, ale párování a zaúčtování jeho pohybů se nepodařilo dokončit. Otevřete výpis a použijte „Přepárovat výpis“.",
@@ -26367,7 +27024,9 @@
   "template_tools": {
     "journal": "Šablony zápisů",
     "expense": "Pravidla nákladů",
+    "revenue": "Pravidla výnosů",
     "posting": "Pravidla účtování",
+    "rule_templates": "Šablony pravidel",
     "requires_double_entry": "Šablony jsou k účtování do deníku",
     "requires_double_entry_hint": "Předkontace, pravidla nákladů i zaúčtování banky se používají při účtování do deníku, takže v daňové evidenci nemají co nabídnout. Firma vede daňovou evidenci.",
     "open_accounting_settings": "Otevřít Nastavení → Daně a účetnictví"
@@ -31910,6 +32569,8 @@
     "reconciliation_ok": "Účetní kontrola souhlasí",
     "reconciliation_failed": "Účetní kontrola nesouhlasí",
     "no_protocol_warnings": "Protokol neobsahuje další upozornění.",
+    "ico_mismatch_title": "Připojená firma v ABRA Flexi není tato firma",
+    "ico_mismatch": "V ABRA Flexi je připojená {source} (IČO {source_ico}), převádět ale chcete do firmy {target} (IČO {target_ico}). Převod se nespustí. Přepněte se do správné firmy, případně ji založte, nebo připojte jinou firmu v ABRA Flexi.",
     "issue_unknown": "Protokol obsahuje upozornění vyžadující kontrolu.",
     "issue_code": "Důvod vyžadující kontrolu: {code}",
     "issues": {
@@ -31966,6 +32627,9 @@
       "document_vendor_number_collision_requires_review": "Několik přijatých faktur má stejného dodavatele, číslo a datum. Cílové číslo bylo rozlišeno; původní číslo je v poznámce dokladu.",
       "zero_amount_link_skipped": "Vazby bez částky jsou vztahy mezi doklady, ne úhrady. Účetní deník zůstává zachován.",
       "unsupported_document_link": "Některé vazby k objednávkám, skladovým nebo interním dokladům se do úhrad nepřevádějí. Účetní deník zůstává zachován.",
+      "other_item_requires_review": "Některé ostatní pohledávky nebo závazky nešlo bezpečně převést do agendy Ostatní pohledávky a závazky (DPH, cizí měna, storno nebo nejednoznačná kontace). Zůstaly jen v účetním deníku.",
+      "other_item_payment_requires_review": "Některou úhradu ostatní pohledávky nebo závazku nešlo přiřadit (platba je už spárovaná jinde, nebo nesedí částka či zaúčtování). Spárujte ji ručně v agendě Ostatní pohledávky a závazky.",
+      "bank_loan_account_not_transferred": "Úvěrové účty (231, 232, 461) se nepřevádějí jako bankovní účty, jejich zůstatek je nesplacená jistina. Splátky a jistina zůstávají v účetním deníku.",
       "payment_currency_conversion_requires_review": "Úhrada mezi různými měnami vyžaduje ruční spárování. Bankovní pohyb, faktura i účetní deník zůstaly zachované.",
       "payment_cash_allocation_requires_review": "Pokladní pohyb je na doklad přiřazen jen částečně. Úhrada nebyla propojena, aby se nepřevzala celá částka.",
       "payment_cancelled_document_requires_review": "Vazba úhrady míří na stornovaný doklad v cílové firmě. Doklad zůstal stornovaný a vazba vyžaduje kontrolu.",
@@ -33577,6 +34241,11 @@
       "open_person": "Otevřít kartu osoby"
     },
     "sample_badge": "Vzor",
+    "template": {
+      "download": "Stáhnout šablonu XLSX",
+      "hint": "Prázdná šablona pro Vzor MyÚčto: jeden řádek = osoba za měsíc, s ukázkovými řádky a návodem. Vyplněnou ji nahrajte do importu docházky.",
+      "failed": "Šablonu se nepodařilo stáhnout."
+    },
     "profiles_load_failed": "Profily mapování se nepodařilo načíst. Import docházky může pokračovat s automatickým návrhem podle hlaviček.",
     "relation_types": {
       "employment": "Pracovní poměr",
@@ -33961,7 +34630,11 @@
       "position": "Pozice",
       "weekly_hours": "Týdenní úvazek",
       "start_end_note": "Nástup / ukončení",
+      "start_date": "Datum nástupu",
       "monthly_wage": "Měsíční mzda (mzdový výměr)",
+      "hourly_rate": "Hodinová sazba",
+      "end_date": "Konec dohody",
+      "bank_account": "Číslo účtu",
       "worked_hours": "Odpracováno",
       "overtime_hours": "Přesčas",
       "night_hours": "Noční práce",
@@ -34141,6 +34814,14 @@
         "last_name": "Příjmení",
         "swap_names": "Prohodit jméno a příjmení",
         "remove_from_create": "Nezakládat",
+        "details": {
+          "start_on": "Nástup",
+          "agreed_end_on": "Konec dohody",
+          "hourly_rate": "Hodinová sazba",
+          "monthly_wage": "Měsíční mzda",
+          "bank_account": "Účet",
+          "unreadable": "„{value}“ nejde přečíst, nepřevezme se"
+        },
         "create_submit": "Založit osoby ({count})",
         "create_no_permission": "Nemáte oprávnění zakládat osoby.",
         "create_none": "Vyberte osoby k založení.",
@@ -34357,6 +35038,7 @@
       "state_dirty": "Neuložené změny",
       "updated_at": "Upraveno {date}",
       "sample_hint": "Ukázkový profil pro docházkový systém GIRITON, který dostane každá firma. Upravte ho podle svých souborů, nebo si ho duplikujte a upravujte kopii.",
+      "sample_hint_myucto": "Obecný ukázkový profil pro podklady ze šablony XLSX MyÚčto (list Podklady, jeden řádek = osoba za měsíc). Hodí se pro firmy bez docházkového systému, třeba s brigádníky na DPP a DPČ. Neznámé sloupce ignoruje.",
       "upgrade_badge": "Nová verze vzoru",
       "upgrade_title": "K dispozici je nová verze vzoru",
       "upgrade_hint": "Profil vznikl ze starší verze vzoru a upravili jste ho, proto se sám neaktualizoval. Aktualizace nahradí pravidla a složky profilu novou verzí vzoru a vlastní úpravy se ztratí. Chcete-li je zachovat, profil nejdřív duplikujte.",
@@ -34378,6 +35060,8 @@
       "duplicated": "Vznikla kopie profilu. Upravte název a uložte ji.",
       "restore_sample": "Obnovit vzor GIRITON",
       "restore_sample_hint": "Znovu založí vzorový profil GIRITON v aktuální verzi, třeba po omylem smazaném.",
+      "restore_sample_myucto": "Obnovit vzor MyÚčto",
+      "restore_sample_myucto_hint": "Znovu založí obecný Vzor MyÚčto v aktuální verzi, třeba po omylem smazaném.",
       "sample_restored": "Vzor „{name}“ byl obnoven.",
       "sample_exists": "Vzor „{name}“ ve firmě už je.",
       "sample_restore_failed": "Vzor se nepodařilo obnovit.",
@@ -39748,6 +40432,9 @@
       "fx_to_eet": "Do EET: {amount} (kurz {rate} Kč/{currency})",
       "foreign_hint": "Platba v {currency} se do EET zaeviduje v Kč, přepočtená kurzem, jakým se úhrada zaúčtuje ke dni přijetí. QR platba na místě je jen pro faktury v Kč.",
       "stored_value_hint": "Zákazník platí dříve zakoupeným hodnotovým poukazem nebo kreditem. Do EET se zaeviduje jako čerpání kreditu. Úhrada faktury se zapíše jako zápočet; zúčtování přijaté zálohy na poukaz řeší účetní ručně.",
+      "warnings": {
+        "voucher_balance_insufficient": "Zůstatek prodaných poukazů a kreditu ({balance}) nestačí, ověřte, zda nejde o jednoúčelový poukaz (ten se při uplatnění neúčtuje)."
+      },
       "credit_topup": "Z toho určeno k čerpání (kredit, poukaz): {amount}.",
       "credit_draw": "Z toho čerpání kreditu: {amount}.",
       "delegation_single": "Zařízení eviduje tržbu v pověření poplatníka {eic}.",

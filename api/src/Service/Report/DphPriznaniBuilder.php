@@ -9,6 +9,7 @@ use MyInvoice\Repository\TaxSubmissionRepository;
 use MyInvoice\Repository\VatCoefficientRepository;
 use MyInvoice\Repository\TaxConstantsRepository;
 use MyInvoice\Service\Accounting\PostingException;
+use MyInvoice\Service\Invoice\MultiPurposeVoucher;
 use MyInvoice\Service\Tax\BadDebt\Section46Service;
 use MyInvoice\Service\Tax\BadDebt\Section74bService;
 
@@ -974,13 +975,17 @@ final class DphPriznaniBuilder
         $textFilter = $this->db->hasColumn('invoice_items', 'item_kind')
             ? "AND ii.item_kind <> 'text'"
             : '';
+        // Prodej víceúčelového poukazu není předmětem daně záměrně: daní se až plnění
+        // při uplatnění poukazu (MultiPurposeVoucher). Nejde o zapomenutou klasifikaci.
         $unclassifiedZero = $this->db->pdo()->prepare(
             "SELECT DISTINCT i.varsymbol
                FROM invoices i
                JOIN invoice_items ii ON ii.invoice_id = i.id
+          " . MultiPurposeVoucher::stockJoinSql('ii', 'si', 'i.supplier_id') . "
               WHERE i.supplier_id = ?
+                AND NOT " . MultiPurposeVoucher::untaxedLineSql('ii', 'si') . "
                 AND i.status NOT IN ('draft', 'cancelled')
-                AND i.invoice_type <> 'proforma'
+                AND i.invoice_type NOT IN ('proforma','rent_calendar','advance_calendar')
                 AND COALESCE(i.tax_date, i.issue_date) BETWEEN ? AND ?
                 AND COALESCE(i.reverse_charge, 0) = 0
                 AND ii.vat_rate_snapshot = 0

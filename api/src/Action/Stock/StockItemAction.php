@@ -421,7 +421,38 @@ final class StockItemAction
                 ['suggestion' => 'deactivate'],
             );
         }
-        $this->items->delete($supplierId, $id);
+        // Řádky objednávek si nesou vlastní popis a kartu nepotřebují. Rezervace, expedice,
+        // inventury, sestavy a varianty bez karty smysl nemají a mazání zastaví cizí klíč.
+        $pdo = $this->db->pdo();
+        $ownTx = !$pdo->inTransaction();
+        if ($ownTx) {
+            $pdo->beginTransaction();
+        }
+        try {
+            $this->items->delete($supplierId, $id);
+            if ($ownTx) {
+                $pdo->commit();
+            }
+        } catch (\PDOException $e) {
+            if ($ownTx && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            if (($e->errorInfo[0] ?? null) !== '23000') {
+                throw $e;
+            }
+            return Json::error(
+                $response,
+                'item_in_use',
+                'Skladovou kartu nelze smazat — používají ji rezervace, expedice, inventura, sestava nebo varianta. Deaktivujte ji místo mazání.',
+                409,
+                ['suggestion' => 'deactivate'],
+            );
+        } catch (\Throwable $e) {
+            if ($ownTx && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
+        }
         $this->log($request, 'stock.item_deleted', $id, []);
         return Json::ok($response, ['deleted' => true]);
     }
@@ -710,8 +741,12 @@ final class StockItemAction
         }
 
         $itemType = (string) ($body['item_type'] ?? $existing['item_type'] ?? 'goods');
-        if (!in_array($itemType, ['material', 'goods', 'product'], true)) {
-            return [[], Json::error($response, 'validation_failed', "item_type musí být 'material', 'goods' nebo 'product'.", 400)];
+        if (!in_array($itemType, ['material', 'goods', 'product', 'service'], true)) {
+            return [[], Json::error($response, 'validation_failed', "item_type musí být 'material', 'goods', 'product' nebo 'service'.", 400)];
+        }
+        if ($itemType === 'service' && $existing !== null && ($existing['item_type'] ?? '') !== 'service'
+            && $this->items->hasMovements((int) $existing['supplier_id'], (int) $existing['id'])) {
+            return [[], Json::error($response, 'item_has_movements', 'Kartu se skladovými pohyby nelze změnit na službu.', 409)];
         }
 
         $unit = trim((string) ($body['unit'] ?? $existing['unit'] ?? 'ks'));
@@ -722,6 +757,9 @@ final class StockItemAction
         $trackingMode = (string) ($body['tracking_mode'] ?? $existing['tracking_mode'] ?? 'none');
         if (!in_array($trackingMode, ['none', 'lot', 'serial'], true)) {
             return [[], Json::error($response, 'validation_failed', "tracking_mode musí být 'none', 'lot' nebo 'serial'.", 400)];
+        }
+        if ($itemType === 'service') {
+            $trackingMode = 'none';
         }
 
         try {

@@ -6,6 +6,7 @@ namespace MyInvoice\Service\Migration\Pohoda;
 
 use MyInvoice\Infrastructure\Database\Connection;
 use MyInvoice\Repository\PohodaImportRepository;
+use MyInvoice\Service\Migration\Shared\MigratedOtherItemPolicy;
 use PDO;
 
 /**
@@ -26,9 +27,6 @@ use PDO;
 final class OtherItemImporter
 {
     public const STEP = 'other_items';
-
-    /** Saldokontní účty, jejichž předpisy vlastní mzdy, DPH a daň z příjmů. */
-    private const MODULE_ACCOUNTS = ['331', '336', '341', '342', '343'];
 
     /** Účet záloh na daň z příjmů: evidenční závazek na něm je předpis zálohy. */
     private const TAX_ADVANCE_ACCOUNT = '341';
@@ -63,6 +61,7 @@ final class OtherItemImporter
                 if (isset($mapped[$key])) {
                     // Úhrady se párují i při opakovaném převodu - mohly mezitím přibýt.
                     self::captureLiquidations($ctx, 'other_item', (int) $mapped[$key], $number, $record);
+                    self::rememberSourcePaid($ctx, (int) $mapped[$key], self::candidate($record, $agenda, $ctx->vat), $record);
                     $p->count(self::STEP, 'existing');
                     continue;
                 }
@@ -120,6 +119,7 @@ final class OtherItemImporter
                     if ($id !== null) {
                         $this->map->put($ctx->supplierId, PohodaImportRepository::KIND_OTHER_ITEM, $key, $id, $ctx->runId);
                         self::captureLiquidations($ctx, 'other_item', $id, $number, $record);
+                        self::rememberSourcePaid($ctx, $id, $candidate, $record);
                         $p->count(self::STEP, 'created_unposted');
                         $p->count(self::STEP, $candidate['remaining'] >= 0.005 ? 'open' : 'settled');
                     }
@@ -160,6 +160,7 @@ final class OtherItemImporter
                 }
                 $this->map->put($ctx->supplierId, PohodaImportRepository::KIND_OTHER_ITEM, $key, $id, $ctx->runId);
                 self::captureLiquidations($ctx, 'other_item', $id, $number, $record);
+                self::rememberSourcePaid($ctx, $id, $candidate, $record);
                 $p->count(self::STEP, 'created');
                 $p->count(self::STEP, $candidate['remaining'] >= 0.005 ? 'open' : 'settled');
             }
@@ -379,44 +380,13 @@ final class OtherItemImporter
     }
 
     /**
-     * Kontace dokladu z jeho zápisu v deníku: na straně pohledávky (MD) či závazku (D)
-     * jediný rozvahový účet v celé částce dokladu, na druhé straně protiúčty se stejným
-     * součtem. Protiúčty se slučují podle účtu v pořadí řádků.
-     *
      * @param list<array{side:string,amount:string|float,account_code:string,account_type?:string}> $rows
      * @return array{account:string,lines:list<array{account_code:string,amount:float}>}|null
      */
     public static function postingLines(array $rows, string $agenda, float $amount): ?array
     {
-        if (!in_array($agenda, ['receivable', 'commitment'], true) || $rows === []) return null;
-        $balanceSide = $agenda === 'receivable' ? 'debit' : 'credit';
-        $balanceType = $agenda === 'receivable' ? 'asset' : 'liability';
-        $balance = null;
-        $balanceSum = 0;
-        $counter = [];
-        $counterSum = 0;
-        foreach ($rows as $row) {
-            $code = (string) $row['account_code'];
-            $cents = (int) round((float) $row['amount'] * 100);
-            if ($row['side'] === $balanceSide) {
-                if ($balance !== null && $balance !== $code) return null;
-                if (($row['account_type'] ?? $balanceType) !== $balanceType) return null;
-                $balance = $code;
-                $balanceSum += $cents;
-            } else {
-                $counter[$code] = ($counter[$code] ?? 0) + $cents;
-                $counterSum += $cents;
-            }
-        }
-        $total = (int) round($amount * 100);
-        if ($balance === null || $balanceSum !== $total || $counterSum !== $total) return null;
-        $lines = [];
-        foreach ($counter as $code => $cents) {
-            $code = (string) $code;
-            if ($code === $balance || preg_match('/^(315|325)(?:$|[.\-])/', $code) === 1 || $cents <= 0) return null;
-            $lines[] = ['account_code' => $code, 'amount' => $cents / 100.0];
-        }
-        return ['account' => $balance, 'lines' => $lines];
+        if (!in_array($agenda, ['receivable', 'commitment'], true)) return null;
+        return MigratedOtherItemPolicy::postingLines($rows, $agenda === 'receivable' ? 'receivable' : 'payable', $amount);
     }
 
     /**
@@ -435,7 +405,27 @@ final class OtherItemImporter
 
     public static function moduleOwned(string $account): bool
     {
-        return in_array(substr($account, 0, 3), self::MODULE_ACCOUNTS, true);
+        return MigratedOtherItemPolicy::moduleOwned($account);
+    }
+
+    /**
+     * Uhrazená část podle POHODY. Úhrada v roce, který se nepřevádí, se nepočítá: její pohyb
+     * v převodu není a doplní ji až opakovaný převod s tímto rokem.
+     *
+     * @param array{amount:float,remaining:float}|null $candidate
+     */
+    private static function rememberSourcePaid(PohodaContext $ctx, int $id, ?array $candidate, array $record): void
+    {
+        if ($candidate === null) {
+            return;
+        }
+        $skipped = 0.0;
+        foreach (PohodaXml::all($record, 'liquidations/liquidation') as $l) {
+            if ($ctx->skipsDate(PohodaXml::date($l, 'date'))) {
+                $skipped += abs(PohodaXml::num($l, 'amount'));
+            }
+        }
+        $ctx->otherItemPaid[$id] = max(0.0, round($candidate['amount'] - $candidate['remaining'] - $skipped, 2));
     }
 
     /** @param 'other_item'|'tax_advance' $doc */

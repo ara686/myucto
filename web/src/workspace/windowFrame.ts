@@ -13,6 +13,8 @@ import { shortcutFromEvent, useKeyboardShortcuts } from '@/composables/useKeyboa
 import { paneCountFromShortcut, panelIndexFromShortcut } from '@/workspace/panelShortcuts'
 import { installFrameNavigation, internalAnchorNavigation } from '@/workspace/frameNavigation'
 import { windowContextKey } from '@/workspace/windowContext'
+import { installWindowDataRefresh } from '@/workspace/windowDataRefresh'
+import WindowStaleNotice from '@/components/workspace/WindowStaleNotice.vue'
 import Toaster from '@/components/Toaster.vue'
 import WebAuthnCeremonyPrompt from '@/components/WebAuthnCeremonyPrompt.vue'
 import TableViewportScrollbars from '@/components/ui/TableViewportScrollbars.vue'
@@ -118,6 +120,12 @@ export async function startWindowFrame(frame: WindowFrameBootstrap): Promise<voi
   let suppliedSubtitle: string | null = null
   let routeMessageQueued = false
   let lastRouteMessage: { fullPath: string; title: string; subtitle: string | null } | undefined
+  const viewKey = ref(0)
+  const dataRefresh = installWindowDataRefresh({
+    path: () => router.currentRoute.value.path,
+    visible: computed(() => paneId.value !== null),
+    remount: () => { viewKey.value++ },
+  })
   const mountElement = document.getElementById('app')
   if (!mountElement) throw new Error('Missing window frame mount element.')
   const root: HTMLElement = mountElement
@@ -153,6 +161,7 @@ export async function startWindowFrame(frame: WindowFrameBootstrap): Promise<voi
       const context = {
         paneId: computed(() => active.value ? paneId.value : null),
         active: computed(() => active.value),
+        visible: computed(() => paneId.value !== null),
         root,
         portal: document.body,
         navigate: async (to: RouteLocationRaw) => {
@@ -165,7 +174,7 @@ export async function startWindowFrame(frame: WindowFrameBootstrap): Promise<voi
         },
       }
       provide(windowContextKey, context)
-      return () => h(Fragment, [h(RouterView), h(Toaster), h(WebAuthnCeremonyPrompt), h(TableViewportScrollbars)])
+      return () => h(Fragment, [h(RouterView, { key: viewKey.value }), dataRefresh.showNotice.value ? h(WindowStaleNotice, { onReload: dataRefresh.reload }) : null, h(Toaster), h(WebAuthnCeremonyPrompt), h(TableViewportScrollbars)])
     },
   })
 
@@ -174,6 +183,7 @@ export async function startWindowFrame(frame: WindowFrameBootstrap): Promise<voi
     if (_to.path !== from.path) {
       suppliedTitle = ''
       suppliedSubtitle = null
+      dataRefresh.routeChanged()
     }
     queueRouteMessage()
   })

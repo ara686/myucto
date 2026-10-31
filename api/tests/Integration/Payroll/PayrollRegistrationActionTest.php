@@ -75,6 +75,9 @@ final class PayrollRegistrationActionTest extends TestCase
     private const TODAY = '2026-08-17';
     private const START_ON = '2026-08-22';
 
+    /** Den zmrazených hodin pro test, který potřebuje jiný den než {@see self::TODAY}. */
+    private static ?string $todayOverride = null;
+
     private Connection $db;
     private PayrollSensitiveData $sensitive;
     private PayrollRegistrationIdentityService $identities;
@@ -147,6 +150,7 @@ final class PayrollRegistrationActionTest extends TestCase
 
     protected function tearDown(): void
     {
+        self::$todayOverride = null;
         if (isset($this->db)) {
             if ($this->db->pdo()->inTransaction()) {
                 $this->db->pdo()->rollBack();
@@ -282,7 +286,7 @@ final class PayrollRegistrationActionTest extends TestCase
             (int) $event['id'],
         );
         self::assertSame(
-            'jmhz-xsd-1.4.3.6_dictionary-1.4.1.6_controls-source-1.4.2.10_manifest-v1',
+            'jmhz-xsd-1.4.3.6_dictionary-1.4.1.6_controls-source-1.4.2.11_manifest-v1',
             $snapshot['jmhz_codebook']['package_key'] ?? null,
         );
         self::assertMatchesRegularExpression(
@@ -1904,6 +1908,78 @@ final class PayrollRegistrationActionTest extends TestCase
         self::assertSame($body['artifact_sha256'], hash('sha256', $xml));
     }
 
+    /**
+     * Přihláška před nástupem 4. 1. 2027 podaná 28. 12. 2026: balík
+     * „PREZEC27_podani_1.5" (30. 9. 2026) má jmenný prostor `/PREZEC/2026`,
+     * takže věta zůstává PREZEC26 a jde podat v prosinci, osm dnů před nástupem.
+     */
+    public function testPreRegistrationForStartIn2027IsPreparedAsPrezec26(): void
+    {
+        self::$todayOverride = '2026-12-28';
+        $this->db->pdo()->prepare(
+            'UPDATE payroll_employments SET start_date = ? WHERE supplier_id = ? AND id = ?',
+        )->execute(['2027-01-04', $this->supplierId, $this->employmentId]);
+
+        $response = $this->post();
+        $body = $this->json($response);
+
+        self::assertSame(201, $response->getStatusCode(), (string) json_encode($body));
+        self::assertSame('PREZEC26', $body['agenda_code']);
+        $xml = $this->storedArtifactXml((int) $body['submission_id']);
+        self::assertStringContainsString('xmlns="' . PayrollRegistrationSchemaCatalog::NS_PREZEC_2026 . '"', $xml);
+        self::assertStringContainsString('predat="2027-01-04"', $xml);
+    }
+
+    /**
+     * Plná přihláška s nástupem 4. 1. 2027 je REGZEC27. Testovací ČSSZ ji
+     * přijímá už v prosinci, ostrá až od 1. 1. 2027 (developers.mpsv.cz,
+     * Testování: „1.1.2027 – REGZEC"); REGZEC25 by ostrá ČSSZ pro takový
+     * nástup odmítla (EDV 1.4.0.7, Slovník).
+     */
+    public function testFullRegistrationForStartIn2027IsRegzec27AndWaitsForProductionStart(): void
+    {
+        self::$todayOverride = '2026-12-28';
+        $startOn = '2027-01-04';
+        $this->db->pdo()->prepare(
+            'UPDATE payroll_employments SET start_date = ? WHERE supplier_id = ? AND id = ?',
+        )->execute([$startOn, $this->supplierId, $this->employmentId]);
+        $this->seedRegistrationEventPrerequisites('1', '1', $startOn, null, null, true);
+        $this->saveA1ProfileFor($startOn, '1', '1');
+
+        $production = ($this->action)->prepare(
+            $this->request('POST')->withParsedBody([
+                'environment' => 'production',
+                'registration_mode' => 'full',
+            ]),
+            new Response(),
+            ['employmentId' => (string) $this->employmentId],
+        );
+        self::assertSame(422, $production->getStatusCode(), (string) $production->getBody());
+        self::assertSame('registration_regzec27_not_yet_accepted', $this->json($production)['error']['code']);
+        // Cizinec nemůže být přihlášen částečně (§ 19 odst. 2 z. 323/2025 Sb.).
+        self::assertStringContainsString(
+            'U zahraničního zaměstnance částečné přihlášení nelze',
+            (string) $this->json($production)['error']['message'],
+        );
+        self::assertSame(0, $this->countSubmissions());
+
+        $test = ($this->action)->prepare(
+            $this->request('POST')->withParsedBody([
+                'environment' => 'test',
+                'registration_mode' => 'full',
+            ]),
+            new Response(),
+            ['employmentId' => (string) $this->employmentId],
+        );
+        self::assertSame(201, $test->getStatusCode(), (string) $test->getBody());
+        $body = $this->json($test);
+        self::assertSame('REGZEC25', $body['agenda_code']);
+        $xml = $this->storedArtifactXml((int) $body['submission_id']);
+        self::assertStringContainsString('xmlns="' . PayrollRegistrationSchemaCatalog::NS_REGZEC_2027 . '"', $xml);
+        self::assertStringContainsString(' version="1.5"', $xml);
+        self::assertStringContainsString(' fro="' . $startOn . '"', $xml);
+    }
+
     /** A7: ukončení českých právních předpisů vyžaduje identifikátor nositele. */
     public function testA7CzechLegislationEndIsValidatedAndFrozenForTransport(): void
     {
@@ -2855,6 +2931,82 @@ final class PayrollRegistrationActionTest extends TestCase
         self::assertSame('REGZEC25', $body['agenda_code']);
         self::assertFalse($body['before_start_choice']);
         self::assertSame(self::START_ON, $body['deadline']['due_on']);
+    }
+
+    /**
+     * Cizinec mimo EHP s nástupem 4. 1. 2027 (REGZEC27): platnost pobytu
+     * 10568/10569 je povinná. Bez ní se přihláška nepřipraví, s ní ji profil
+     * uloží, ověří a věta ji nese.
+     */
+    public function testForeignerOutsideEeaFrom2027NeedsStayValidityInTheProfile(): void
+    {
+        self::$todayOverride = '2027-01-02';
+        $startOn = '2027-01-04';
+        $this->db->pdo()->prepare(
+            'UPDATE payroll_employments SET start_date = ? WHERE supplier_id = ? AND id = ?',
+        )->execute([$startOn, $this->supplierId, $this->employmentId]);
+        $this->identities->saveIdentityFacts(
+            $this->supplierId,
+            $this->employeeId,
+            $this->identityId,
+            2,
+            [
+                'title_prefix' => 'Ing.',
+                'birth_date' => '1991-02-03',
+                'birth_place' => 'Testov',
+                'birth_country_code' => 'UA',
+                'citizenship_country_code' => 'UA',
+                'sex' => 'female',
+            ],
+        );
+        $this->seedRegistrationEventPrerequisites('1', '1', $startOn, null, null, true);
+        $payload = $this->completeA1Payload();
+        $payload['effective_on'] = $startOn;
+        $payload['employment']['actual_start_on'] = $startOn;
+        $payload['employment']['contract_start_on'] = $startOn;
+        $payload['employment']['expected_workplaces'] = 'Sídlo zaměstnavatele';
+        $payload['employment']['required_education_code'] = 'T';
+        $payload['proof_identity'] = [
+            'type_code' => 'P',
+            'number' => 'SYN000001',
+            'foreign_issuer' => 'Municipal office, Testov',
+            'country_code' => 'UA',
+        ];
+        $payload['foreign_worker'] = [
+            'free_access' => true,
+            'free_access_reason_code' => '7',
+            'permit_type_code' => null,
+            'issuing_labour_office_code' => null,
+            'permit_identifier' => null,
+            'permit_from' => null,
+            'permit_to' => null,
+        ];
+        $save = fn (array $body) => ($this->action)->saveA1Profile(
+            $this->request('PUT')->withParsedBody($body),
+            new Response(),
+            ['employmentId' => (string) $this->employmentId],
+        );
+        $prepare = fn () => ($this->action)->prepare(
+            $this->request('POST')->withParsedBody(['environment' => 'test']),
+            new Response(),
+            ['employmentId' => (string) $this->employmentId],
+        );
+
+        self::assertSame(200, $save($payload)->getStatusCode());
+        $missing = $prepare();
+        self::assertSame(422, $missing->getStatusCode(), (string) $missing->getBody());
+        self::assertSame('registration_regzec27_stay_validity_missing', $this->json($missing)['error']['code']);
+
+        $payload['foreign_worker']['stay_valid_from'] = '2026-06-01';
+        $payload['foreign_worker']['stay_valid_to'] = '2028-05-31';
+        $payload['row_version'] = 1;
+        $saved = $save($payload);
+        self::assertSame('verified', $this->json($saved)['profile']['status'], (string) $saved->getBody());
+        $response = $prepare();
+        self::assertSame(201, $response->getStatusCode(), (string) $response->getBody());
+        $xml = $this->storedArtifactXml((int) $this->json($response)['submission_id']);
+        self::assertStringContainsString('xmlns="' . PayrollRegistrationSchemaCatalog::NS_REGZEC_2027 . '"', $xml);
+        self::assertStringContainsString('stayvalidfro="2026-06-01" stayvalidto="2028-05-31"', $xml);
     }
 
     /**
@@ -5743,7 +5895,7 @@ final class PayrollRegistrationActionTest extends TestCase
 
     public static function todayAtNoon(): string
     {
-        return self::TODAY . ' 12:00:00';
+        return (self::$todayOverride ?? self::TODAY) . ' 12:00:00';
     }
 
     private function seedEmployer(PDO $pdo): void

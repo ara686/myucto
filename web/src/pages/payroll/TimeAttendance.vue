@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { workSummaryRemediation } from './payrollRemediation'
+import { groupWorkSummaryIssues, workSummaryRemediation } from './payrollRemediation'
 import { revealField } from '@/utils/revealField'
 import { formatPeriod } from '@/composables/useFormat'
 import { useI18n } from 'vue-i18n'
@@ -3287,7 +3287,7 @@ onMounted(async () => {
           v-if="approvalItem.jmhz_work_summary.preview?.issues.length"
           class="space-y-1 rounded-lg border border-danger-200 bg-danger-50 p-3 text-sm text-danger-700"
         >
-          <li v-for="issue in approvalItem.jmhz_work_summary.preview.issues" :key="issue.code">
+          <li v-for="issue in groupWorkSummaryIssues(approvalItem.jmhz_work_summary.preview.issues)" :key="issue.code">
             <div data-test="work-summary-guidance">
               <p class="font-medium">{{ t(workSummaryRemediation(issue.code, approvalItem.employment.id, period).problemKey) }}</p>
               <p class="mt-1">{{ t(workSummaryRemediation(issue.code, approvalItem.employment.id, period).stepKey) }}</p>
@@ -3300,7 +3300,7 @@ onMounted(async () => {
                 {{ t(workSummaryRemediation(issue.code, approvalItem.employment.id, period).actionKey) }}
               </button>
             </div>
-            <details class="mt-2 text-xs"><summary>{{ t('payroll.remediation.technical') }}</summary><p>{{ issue.code }}</p><p>{{ issue.message }}</p></details>
+            <details class="mt-2 text-xs"><summary>{{ t('payroll.remediation.technical') }}</summary><p>{{ issue.code }}</p><p v-for="message in issue.messages" :key="message">{{ message }}</p></details>
           </li>
         </ul>
         <p

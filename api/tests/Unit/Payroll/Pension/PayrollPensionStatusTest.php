@@ -53,10 +53,12 @@ final class PayrollPensionStatusTest extends TestCase
     }
 
     /**
-     * Starobní důchod přiznaný uprostřed měsíce se počítá od dalšího celého
-     * měsíce; v měsíci přiznání tedy ELDP běží dál.
+     * Starobní důchod přiznaný uprostřed měsíce náleží k výplatě od měsíce
+     * přiznání. List se vede do tohoto měsíce včetně (Všeobecné zásady ELDP;
+     * Metodická pomůcka ELDP, příklad 8a), takže důchod od 15. 7. ukončí list
+     * červencem, ne srpnem.
      */
-    public function testOldAgePensionCountsFromFirstWholeMonth(): void
+    public function testOldAgePensionCountsFromMonthOfPaymentStart(): void
     {
         $evidence = PayrollPensionStatus::normalize([], [
             self::pension('1', '2026-07-15', null),
@@ -64,7 +66,7 @@ final class PayrollPensionStatusTest extends TestCase
         ]);
 
         self::assertSame(
-            '2026-08',
+            '2026-07',
             PayrollPensionStatus::forInterval($evidence, '2026-07-01', '2026-07-31')['full_pension_paid_from'],
         );
         $firstDay = PayrollPensionStatus::normalize([], [self::pension('1', '2026-07-01', null)]);

@@ -482,4 +482,37 @@ final class AiLayerSecurityTest extends TestCase
         self::assertFalse($result['ok']);
         self::assertSame('rule_matched', $result['error']);
     }
+
+    /**
+     * Pohyb kartou, ke kterému párování našlo doklad ke kontrole, se účtuje přes doklad.
+     * Kontace z popisu (typicky náklad místo 321) by účetní jen mátla.
+     */
+    public function testTransactionAwaitingDocumentMatchIsNotClassified(): void
+    {
+        $pdo = $this->db->pdo();
+        $pdo->prepare("UPDATE supplier SET ai_assist_enabled=1,ai_assist_scope='bank_tx' WHERE id=?")
+            ->execute([$this->supplierId]);
+        $pdo->prepare(
+            'INSERT INTO bank_statements
+                (supplier_id,file_name,file_hash,account_number,bank_code,currency,statement_date)
+             VALUES (?,?,?,?,?,?,?)'
+        )->execute([
+            $this->supplierId, '__test_ai_document_match.gpc', hash('sha256', random_bytes(16)),
+            '1000000005', '0100', 'CZK', '2026-07-14',
+        ]);
+        $statementId = (int) $pdo->lastInsertId();
+        $pdo->prepare(
+            "INSERT INTO bank_transactions (statement_id,posted_at,amount,currency,card_last4,description,match_reason)
+             VALUES (?,'2026-07-14',-250.37,'CZK','6801','SYNTHETIC SHOP','card_match_requires_review')"
+        )->execute([$statementId]);
+        $txId = (int) $pdo->lastInsertId();
+
+        $result = $this->suggestionService->suggestBankNow($this->supplierId, $txId);
+
+        self::assertFalse($result['ok']);
+        self::assertSame('document_match', $result['error']);
+        self::assertSame(0, (int) $pdo->query(
+            'SELECT COUNT(*) FROM bank_posting_suggestions WHERE bank_transaction_id=' . $txId
+        )->fetchColumn());
+    }
 }

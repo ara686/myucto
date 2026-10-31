@@ -236,6 +236,8 @@ final readonly class JmhzContentCorrectionSubmissionService
                 $officeId,
                 $selection,
             );
+            // Oprava jde ve verzi období řádného hlášení (za 2026 i v roce 2027).
+            JmhzSpecPackageCatalog::requireBuildable($identity->specVersion);
             $set = $this->effective->resolve(
                 $supplierId,
                 $environment,

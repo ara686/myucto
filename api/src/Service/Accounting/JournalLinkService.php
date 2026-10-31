@@ -900,7 +900,7 @@ final class JournalLinkService
                     'amount'   => (float) $r['total_with_vat'],
                     'currency' => (string) $r['currency'],
                     'route'    => ['name' => 'invoice-detail', 'params' => ['id' => $id]],
-                    'postable' => (string) $r['invoice_type'] !== 'proforma',
+                    'postable' => !in_array((string) $r['invoice_type'], ['proforma', 'payment_calendar', ...\MyInvoice\Service\Invoice\InvoiceCalendar::TYPES], true),
                 ];
             }
             return $out;

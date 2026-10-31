@@ -48,6 +48,7 @@ final class PristineChart500
         'cash_documents' => ['counter_account_code'],
         'cash_registers' => ['account_code'],
         'expense_classification_rules' => ['target_account_code'],
+        'revenue_classification_rules' => ['target_account_code'],
         'internal_document_lines' => ['account_code'],
         'other_items' => ['account_code', 'counter_account_code'],
         'other_item_posting_lines' => ['account_code'],

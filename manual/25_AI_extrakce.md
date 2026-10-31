@@ -79,6 +79,21 @@ Volitelné kroky:
 - **Model pro dotaz účetnímu asistentovi.** V `Účetnictví → AI asistent` vyberete u vstupu dotazu **Model** aktivního
   poskytovatele, například `gpt-5.5` místo `gpt-5.4-mini`. Volba platí pro další odesílané dotazy na této stránce a nemění
   výchozí model firmy. U každé odpovědi je uveden použitý model, také při otevření uložené konverzace.
+  Navrhne-li asistent v odpovědi ostatní pohledávku nebo závazek, nabídne tlačítko **Založit v Ostatních pohledávkách
+  a závazcích**. Po potvrzení vznikne pouze koncept, který po kontrole zaúčtujete sami. K založení potřebujete právo
+  zapisovat do Ostatních pohledávek a závazků.
+- **Interní doklad od asistenta.** Na vnitřní účetní operace („přeúčtuj 5 000 z 518 na 501", „zaúčtuj odpisy",
+  „dohadná položka na energie", zápočet, kurzový rozdíl) asistent v podvojném účetnictví navrhne interní doklad: druh,
+  popis, datum účetního případu, datum dokladu a řádky MD a D s částkami, případně s dimenzemi firmy. Půjčky, nájem,
+  kauce a jiné pohledávky či závazky se sledováním úhrad navrhne jako ostatní pohledávku nebo závazek. Když z dotazu
+  nepozná, kam operace patří, nebo chybí částka či datum, zeptá se. Návrh zkontroluje server stejnými pravidly jako
+  zaúčtování ručního interního dokladu: účty musí být v účtové osnově firmy a aktivní k datu, strany MD a D vyrovnané,
+  účetní období otevřené a datum mimo zámek účtování, závěrkové účty ani podrozvaha proti rozvaze projít nemohou.
+  Nalezené chyby asistent vypíše u návrhu a tlačítka zůstanou neaktivní. Platný návrh uložíte tlačítkem **Uložit jako
+  koncept**, nebo ho tlačítkem **Založit a zaúčtovat** rovnou zaúčtujete s číslem z řady ID; po založení vede odkaz
+  **Otevřít doklad** na jeho detail. Dokumenty přiložené k dotazu se na doklad navážou. Návrh interního dokladu asistent
+  nabídne jen uživateli s právem zapisovat ruční zápisy, zaúčtovat ho lze jen s oprávněním zaúčtovat v deníku. Viz
+  [Interní doklady](52_Ucetni_denik.md#521415-interni-doklady).
 - **Smazání klíče.** Tlačítko **koš** u poskytovatele smaže jeho uložené přihlašovací údaje (po potvrzení). Pokud byl aktivní,
   extrakce přestane fungovat, dokud nenastavíte jiného poskytovatele nebo klíč nevložíte znovu.
 
@@ -114,6 +129,9 @@ Po AI importu se otevře okno **Kontrola vytěžených dokladů**. Prochází do
 potřebují: mají hlášení z vytěžení, nebo jim chybí dimenze povinná podle
 [pravidel dimenzí](114_Dimenze.md#1141110-pravidla-dimenzi-podle-uctu) (bez ní by doklad nešel zaúčtovat). Když takový doklad není,
 okno jen oznámí, že není co kontrolovat.
+
+Vedle formuláře (na užší obrazovce pod ním) okno ukazuje **Náhled originálu** právě kontrolovaného dokladu, takže vytěžené údaje
+porovnáte s PDF bez přepínání; tlačítkem **Skrýt PDF** / **Zobrazit PDF** v patičce ho schováte nebo znovu zobrazíte.
 
 1. Nahoře zkontrolujte dodavatele, číslo dokladu, datum, stav a částku. Odkaz **Otevřít doklad** otevře editor.
 2. Projděte ostatní části hlášení (reverse charge, nesouhlasící součty apod.). U každé, kterou jste ověřili, klikněte na **Vyřešeno**.

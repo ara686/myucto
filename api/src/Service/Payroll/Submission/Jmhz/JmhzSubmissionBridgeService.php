@@ -205,6 +205,14 @@ final readonly class JmhzSubmissionBridgeService
             $preparationId,
             $officeId,
         );
+        // Ročník hlášení určuje vykazované období, ne den odeslání. Verze bez
+        // připnuté specifikace se nezmrazí a nezaloží ani povinnost. Brána
+        // běží před výčtem blokací přípravy: za 01/2027 má účetní slyšet, že
+        // verze 2027 ještě není, ne nálezy, po jejichž opravě by skončila tady.
+        $candidatePeriod = $resolution->candidate?->payload['scope']['period_start'] ?? null;
+        if (is_string($candidatePeriod) && preg_match('/^\d{4}-\d{2}-\d{2}$/D', $candidatePeriod) === 1) {
+            JmhzSpecPackageCatalog::requireBuildable(JmhzSpecVersion::forPeriodStart($candidatePeriod));
+        }
         if ($resolution->status() !== 'resolved') {
             throw new JmhzXmlException(
                 'jmhz_submission_preparation_blocked',

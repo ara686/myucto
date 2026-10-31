@@ -14,10 +14,15 @@ import { apiErrorMessage } from '@/api/errors'
 import { ICONS, btnFilled, btnOutline } from '@/components/ui/buttonStyles'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import Statement504Table from '@/components/accounting/Statement504Table.vue'
+import AccrualSpreadToggle from '@/components/accounting/AccrualSpreadToggle.vue'
+import AccrualSpreadNote from '@/components/accounting/AccrualSpreadNote.vue'
+import { useAccrualSpread } from '@/composables/useAccrualSpread'
 
 const { t } = useI18n()
 const auth = useAuthStore()
 const toast = useToast()
+const accrualSpread = useAccrualSpread()
+const accrualSpreadOn = accrualSpread.enabled
 
 const today = new Date()
 const period = ref(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`)
@@ -42,7 +47,7 @@ async function loadPreview() {
   loading.value = true
   error.value = ''
   try {
-    report.value = await monthlyReportApi.preview(year, month, comment.value || undefined)
+    report.value = await monthlyReportApi.preview(year, month, comment.value || undefined, accrualSpread.param())
   } catch (e) {
     error.value = apiErrorMessage(e)
     report.value = null
@@ -62,7 +67,20 @@ async function loadHistory() {
   }
 }
 
+function onAccrualSpread(value: boolean) {
+  accrualSpread.set(value)
+  void loadPreview()
+}
+
+// Rámec 504 volbu neuplatní, stejně jako na samostatných výkazech.
+const accrualSpreadAvailable = computed(() => report.value?.accounting_framework !== 'cz_504')
+const accrualSpreadNote = computed(() => {
+  const r = report.value
+  return r && r.accounting_framework !== 'cz_504' ? r.income_statement_ytd.accrual_spread : undefined
+})
+
 onMounted(async () => {
+  await accrualSpread.restore()
   await loadPreview()
   loadHistory()
 })
@@ -73,7 +91,7 @@ async function downloadPdf() {
   if (!year || !month) return
   downloading.value = true
   try {
-    const r = await monthlyReportApi.exportPdf(year, month, comment.value || undefined)
+    const r = await monthlyReportApi.exportPdf(year, month, comment.value || undefined, accrualSpread.param())
     downloadBlob(r.data as unknown as Blob, `mesicni-prehled-${period.value}.pdf`)
   } catch (e) {
     toast.error(apiErrorMessage(e))
@@ -119,6 +137,7 @@ async function sendToClient() {
       comment: comment.value || undefined,
       to,
       cc: splitEmails(sendCc.value),
+      ...accrualSpread.param(),
     })
     toast.success(t('monthly_report.sent', { n: res.sent_to.length }))
     sendPanelOpen.value = false
@@ -166,6 +185,8 @@ function historyPeriodLabel(item: MonthlyReportSendHistoryItem): string {
             class="w-full h-9 px-3 border border-neutral-300 rounded-md bg-surface text-sm" />
         </div>
       </div>
+
+      <AccrualSpreadToggle v-if="accrualSpreadAvailable" :model-value="accrualSpreadOn" @update:model-value="onAccrualSpread" />
 
       <div class="flex items-center gap-2 flex-wrap">
         <button type="button" @click="loadPreview" :disabled="loading" :class="btnOutline('neutral')">
@@ -219,6 +240,8 @@ function historyPeriodLabel(item: MonthlyReportSendHistoryItem): string {
     </div>
 
     <template v-else-if="report">
+      <AccrualSpreadNote v-if="accrualSpreadNote" :spread="accrualSpreadNote" :format="format504" />
+
       <!-- KPI dlaždice -->
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
         <div class="bg-surface border border-neutral-200 rounded-lg shadow-sm p-3">

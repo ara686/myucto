@@ -116,6 +116,11 @@ final class AbraMigrationAction extends AbstractMigrationAction
             $this->connection->assertIdle($supplierId);
             $status = $this->connection->status($supplierId);
             if (!$status['configured']) throw new AbraException('not_configured', 'Nejprve nastavte připojení k ABRA Flexi.');
+            if ($status['ico_mismatch']) {
+                throw new AbraException('source_target_ico_mismatch', sprintf(
+                    'Připojená firma v ABRA Flexi (IČO %s) není firma, do které převádíte (IČO %s). Přepněte se do správné firmy, případně ji založte, nebo připojte jinou firmu v ABRA Flexi.',
+                    ($status['source_company']['ico'] ?? '') ?: '?', $status['target_company']['ico'] ?: '?'), [], 409);
+            }
             if ($status['imported'] !== $sync) {
                 throw new AbraException('invalid_mode', $sync ? 'Nejprve proveďte první převod.' : 'Firma již byla převzata. Použijte Načíst nová data.', [], 409);
             }

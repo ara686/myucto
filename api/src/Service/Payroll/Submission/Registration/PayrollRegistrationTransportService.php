@@ -27,13 +27,19 @@ final readonly class PayrollRegistrationTransportService
     private const DOCUMENTS = [
         'PREZEC26' => [
             'root' => 'PREZEC',
-            'namespace' => 'http://schemas.cssz.cz/PREZEC/2026',
+            'namespaces' => [PayrollRegistrationSchemaCatalog::NS_PREZEC_2026],
             'class' => 'CSSZ_PREZEC',
             'actions' => [9, 10],
         ],
+        // Agenda REGZEC25 nese obě verze datové věty: REGZEC25 (události do
+        // 31. 12. 2026) i REGZEC27 (od 1. 1. 2027). Ročník `eType` obálky se
+        // bere z jmenného prostoru zmrazené věty (JmhzGovTalkRequestShape::forPayload()).
         'REGZEC25' => [
             'root' => 'REGZEC',
-            'namespace' => 'http://schemas.cssz.cz/REGZEC/2025',
+            'namespaces' => [
+                PayrollRegistrationSchemaCatalog::NS_REGZEC_2026,
+                PayrollRegistrationSchemaCatalog::NS_REGZEC_2027,
+            ],
             'class' => 'CSSZ_REGZEC',
             'actions' => [1, 2, 3, 4, 5, 6, 7, 8],
         ],
@@ -349,7 +355,7 @@ final readonly class PayrollRegistrationTransportService
         if (!$loaded
             || !$root instanceof DOMElement
             || $root->localName !== $document['root']
-            || $root->namespaceURI !== $document['namespace']
+            || !in_array($root->namespaceURI, $document['namespaces'], true)
         ) {
             // Výjimka zůstává: poslední brána před odesláním. Poslat obsah,
             // který neodpovídá ohlášenému formuláři, znamená jistou chybu
@@ -362,7 +368,7 @@ final readonly class PayrollRegistrationTransportService
             );
         }
         $xpath = new DOMXPath($dom);
-        $xpath->registerNamespace('r', $document['namespace']);
+        $xpath->registerNamespace('r', (string) $root->namespaceURI);
         $employees = $xpath->query(
             '/r:' . $document['root'] . '/r:employees/r:employee',
         );

@@ -10,7 +10,7 @@ import { downloadApiFilePost } from '@/utils/downloadFile'
  * Vše pod `X-Supplier-Id` hlavičkou (auto přes api/client.ts interceptor).
  */
 
-export type StockItemType = 'material' | 'goods' | 'product'
+export type StockItemType = 'material' | 'goods' | 'product' | 'service'
 /** Druh položky pro EET: běžné zboží, dárkový poukaz na konkrétní plnění, hodnotový poukaz / kredit. */
 export type StockItemEetKind = 'standard' | 'specific_voucher' | 'stored_value'
 export type StockItemLifecycleStatus = 'draft' | 'ready' | 'retired'
@@ -209,6 +209,7 @@ export interface ProductAssemblyListResponse {
 }
 
 export interface StockItemSearchResult extends StockItemEffectivePrice {
+  item_type?: StockItemType
   id: number
   sku: string
   name: string

@@ -1105,7 +1105,28 @@
         "2201_stock_history_import.sql",
         "2202_cash_journal_offset_notes.sql",
         "2203_readonly_seat_policy.sql",
-        "2204_supplier_receipt_payable_account.sql"
+        "2204_supplier_receipt_payable_account.sql",
+        "2205_bank_rule_template_vat_refund.sql",
+        "2206_payroll_import_profile_sample_key.sql",
+        "2207_other_item_settled_outside.sql",
+        "2208_payroll_annual_settlement_claims.sql",
+        "2209_payroll_deduction_agreement_jmhz_target.sql",
+        "2210_payroll_component_jmhz_catalog_1_4_2_11_package.sql",
+        "2211_payroll_student_tax_credit.sql",
+        "2212_payroll_2027_preschool_benefits_tips.sql",
+        "2213_payroll_jmhz_2027_sources.sql",
+        "2214_payroll_preschool_credit_documents.sql",
+        "2215_bank_card_original_amount_merchant_map.sql",
+        "2216_revenue_classification_rules.sql",
+        "2217_voucher_liability_rule.sql",
+        "2218_accrual_period_indexes.sql",
+        "2219_payment_order_item_invoice_fk.sql",
+        "2220_stock_item_type_service.sql",
+        "2221_invoice_calendar_types.sql",
+        "2222_vat_classification_travel_service_line26.sql",
+        "2223_statement_map_349_358.sql",
+        "2224_journal_period_source_index.sql",
+        "2225_purchase_settled_outside.sql"
     ],
     "tables": {
         "abra_flexi_connections": {
@@ -2731,6 +2752,31 @@
             },
             "checks": []
         },
+        "bank_card_merchant_map": {
+            "type": "BASE TABLE",
+            "engine": "InnoDB",
+            "collation": "utf8mb4_unicode_ci",
+            "columns": {
+                "client_id": "bigint(20) unsigned NOT NULL",
+                "created_at": "timestamp NOT NULL DEFAULT current_timestamp()",
+                "id": "int(10) unsigned NOT NULL AUTO_INCREMENT",
+                "last_match_at": "datetime NULL DEFAULT NULL",
+                "manual_count": "smallint(5) unsigned NOT NULL DEFAULT 0",
+                "merchant_key": "varchar(190) NOT NULL",
+                "supplier_id": "int(10) unsigned NOT NULL",
+                "updated_at": "timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE CURRENT_TIMESTAMP()"
+            },
+            "indexes": {
+                "PRIMARY": "UNIQUE BTREE (id)",
+                "fk_bcmm_client": "BTREE (client_id)",
+                "uq_bcmm_merchant_client": "UNIQUE BTREE (supplier_id, merchant_key, client_id)"
+            },
+            "foreign_keys": {
+                "fk_bcmm_client": "(client_id) -> clients (id) ON UPDATE RESTRICT ON DELETE CASCADE",
+                "fk_bcmm_supplier": "(supplier_id) -> supplier (id) ON UPDATE RESTRICT ON DELETE CASCADE"
+            },
+            "checks": []
+        },
         "bank_connections": {
             "type": "BASE TABLE",
             "engine": "InnoDB",
@@ -3560,6 +3606,8 @@
                 "matched_at": "timestamp NULL DEFAULT NULL",
                 "matched_by": "bigint(20) unsigned NULL DEFAULT NULL",
                 "matched_invoice_id": "bigint(20) unsigned NULL DEFAULT NULL",
+                "original_amount": "decimal(14,2) NULL DEFAULT NULL",
+                "original_currency": "char(3) NULL DEFAULT NULL",
                 "portable_fingerprint": "char(64) NULL DEFAULT NULL",
                 "posted_at": "date NOT NULL",
                 "processing_error": "varchar(500) NULL DEFAULT NULL",
@@ -7068,6 +7116,7 @@
                 "oss_vat_amount_return": "decimal(14,2) NULL DEFAULT NULL",
                 "quantity": "decimal(10,3) NOT NULL DEFAULT 1.000",
                 "revenue_account_code": "varchar(10) NULL DEFAULT NULL",
+                "seller_item_code": "varchar(64) NULL DEFAULT NULL",
                 "small_asset_id": "bigint(20) unsigned NULL DEFAULT NULL",
                 "stock_item_id": "bigint(20) unsigned NULL DEFAULT NULL",
                 "total_vat": "decimal(12,2) NOT NULL",
@@ -7087,6 +7136,7 @@
                 "fk_ii_vat": "BTREE (vat_rate_id)",
                 "fk_ii_warehouse": "BTREE (warehouse_id)",
                 "fk_ii_wr": "BTREE (linked_work_report_id)",
+                "idx_ii_accrual_to": "BTREE (accrual_to)",
                 "idx_ii_asset": "BTREE (asset_id)",
                 "idx_ii_invoice": "BTREE (invoice_id, order_index)",
                 "idx_ii_small_asset": "BTREE (small_asset_id)",
@@ -7115,19 +7165,23 @@
                 "created_at": "timestamp NOT NULL DEFAULT current_timestamp()",
                 "due_on": "date NOT NULL",
                 "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
+                "instalment_invoice_id": "bigint(20) unsigned NULL DEFAULT NULL",
                 "invoice_id": "bigint(20) unsigned NOT NULL",
                 "note": "varchar(255) NULL DEFAULT NULL",
                 "order_index": "smallint(5) unsigned NOT NULL DEFAULT 0",
                 "supplier_id": "int(10) unsigned NOT NULL",
+                "tax_date": "date NULL DEFAULT NULL",
                 "total_amount": "decimal(14,2) NOT NULL",
                 "vat_amount": "decimal(14,2) NOT NULL DEFAULT 0.00"
             },
             "indexes": {
                 "PRIMARY": "UNIQUE BTREE (id)",
+                "fk_ips_instalment": "BTREE (instalment_invoice_id)",
                 "fk_ips_invoice": "BTREE (invoice_id)",
                 "ix_ips_invoice": "BTREE (supplier_id, invoice_id, order_index)"
             },
             "foreign_keys": {
+                "fk_ips_instalment": "(instalment_invoice_id) -> invoices (id) ON UPDATE RESTRICT ON DELETE SET NULL",
                 "fk_ips_invoice": "(invoice_id) -> invoices (id) ON UPDATE RESTRICT ON DELETE CASCADE",
                 "fk_ips_supplier": "(supplier_id) -> supplier (id) ON UPDATE RESTRICT ON DELETE CASCADE"
             },
@@ -7259,6 +7313,8 @@
                 "booked_at": "timestamp NULL DEFAULT NULL",
                 "booked_by": "bigint(20) unsigned NULL DEFAULT NULL",
                 "branding_profile_id": "int(10) unsigned NULL DEFAULT NULL",
+                "calendar_contract_ref": "varchar(190) NULL DEFAULT NULL",
+                "calendar_id": "bigint(20) unsigned NULL DEFAULT NULL",
                 "cancelled_at": "timestamp NULL DEFAULT NULL",
                 "cash_register_id": "bigint(20) unsigned NULL DEFAULT NULL",
                 "client_id": "bigint(20) unsigned NOT NULL",
@@ -7284,7 +7340,7 @@
                 "imported_pdf_size_bytes": "bigint(20) unsigned NULL DEFAULT NULL",
                 "income_tax_exempt": "tinyint(1) NOT NULL DEFAULT 0",
                 "income_tax_exempt_reason": "varchar(190) NULL DEFAULT NULL",
-                "invoice_type": "enum('invoice','proforma','credit_note','cancellation','tax_document','penalty','payment_calendar') NOT NULL",
+                "invoice_type": "enum('invoice','proforma','credit_note','cancellation','tax_document','penalty','payment_calendar','rent_calendar','advance_calendar') NOT NULL",
                 "is_simplified": "tinyint(1) NOT NULL DEFAULT 0",
                 "issue_date": "date NOT NULL",
                 "issued_by": "bigint(20) unsigned NULL DEFAULT NULL",
@@ -7335,6 +7391,7 @@
             },
             "indexes": {
                 "PRIMARY": "UNIQUE BTREE (id)",
+                "fk_inv_calendar": "BTREE (calendar_id)",
                 "fk_inv_cash_register": "BTREE (cash_register_id)",
                 "fk_inv_currency": "BTREE (currency_id)",
                 "fk_inv_issued_by": "BTREE (issued_by)",
@@ -7350,6 +7407,7 @@
                 "idx_inv_reminders": "BTREE (status, due_date, last_reminder_at)",
                 "idx_inv_status": "BTREE (status, due_date)",
                 "idx_inv_supplier": "BTREE (supplier_id)",
+                "idx_inv_supplier_calendar": "BTREE (supplier_id, calendar_id)",
                 "idx_inv_supplier_efftax": "BTREE (supplier_id, effective_tax_date)",
                 "idx_inv_supplier_payment_vs": "BTREE (supplier_id, payment_variable_symbol)",
                 "idx_inv_supplier_payment_vs_key": "BTREE (supplier_id, payment_variable_symbol_match_key)",
@@ -7369,6 +7427,7 @@
                 "uq_invoices_idoklad": "UNIQUE BTREE (supplier_id, idoklad_id)"
             },
             "foreign_keys": {
+                "fk_inv_calendar": "(calendar_id) -> invoices (id) ON UPDATE RESTRICT ON DELETE CASCADE",
                 "fk_inv_cash_register": "(cash_register_id) -> cash_registers (id) ON UPDATE RESTRICT ON DELETE SET NULL",
                 "fk_inv_client": "(client_id) -> clients (id) ON UPDATE RESTRICT ON DELETE RESTRICT",
                 "fk_inv_currency": "(currency_id) -> currencies (id) ON UPDATE RESTRICT ON DELETE RESTRICT",
@@ -7694,6 +7753,7 @@
                 "fk_je_reversed_by": "BTREE (reversed_by)",
                 "idx_je_supplier_entry_date": "BTREE (supplier_id, entry_date, id)",
                 "idx_je_supplier_period": "BTREE (supplier_id, period_id)",
+                "idx_je_supplier_period_source": "BTREE (supplier_id, period_id, source_type)",
                 "idx_je_supplier_reversed_by": "BTREE (supplier_id, reversed_by)",
                 "idx_je_supplier_source": "BTREE (supplier_id, source_type, source_id)",
                 "uq_je_supplier_active_source": "UNIQUE BTREE (supplier_id, source_type, active_source_id)",
@@ -10174,6 +10234,7 @@
                 "posted_at": "datetime NULL DEFAULT NULL",
                 "reversal_entry_id": "bigint(20) unsigned NULL DEFAULT NULL",
                 "row_version": "int(10) unsigned NOT NULL DEFAULT 1",
+                "settled_outside_amount": "decimal(14,2) NOT NULL DEFAULT 0.00",
                 "side": "enum('receivable','payable') NOT NULL",
                 "status": "enum('draft','confirmed','posted','reversed','cancelled') NOT NULL DEFAULT 'draft'",
                 "supplier_id": "int(10) unsigned NOT NULL",
@@ -10206,7 +10267,8 @@
             "checks": {
                 "chk_other_item_amount": "`amount` > 0",
                 "chk_other_item_currency": "`currency` regexp '^[A-Z]{3}$'",
-                "chk_other_item_rate": "`exchange_rate` is null or `exchange_rate` > 0"
+                "chk_other_item_rate": "`exchange_rate` is null or `exchange_rate` > 0",
+                "chk_other_item_settled_outside": "`settled_outside_amount` >= 0 and `settled_outside_amount` <= `amount`"
             }
         },
         "password_resets": {
@@ -10436,7 +10498,6 @@
                 "idx_poi_tax_submission": "BTREE (tax_submission_id)"
             },
             "foreign_keys": {
-                "fk_poi_invoice": "(invoice_id) -> invoices (id) ON UPDATE RESTRICT ON DELETE RESTRICT",
                 "fk_poi_tax_submission": "(tax_submission_id) -> tax_submissions (id) ON UPDATE RESTRICT ON DELETE RESTRICT"
             },
             "checks": {
@@ -10828,6 +10889,48 @@
                 "chk_payroll_certificate_employment_period": "`employment_from` is null or `employment_to` is null or `employment_to` >= `employment_from`"
             }
         },
+        "payroll_annual_settlement_deductions": {
+            "type": "BASE TABLE",
+            "engine": "InnoDB",
+            "collation": "utf8mb4_unicode_ci",
+            "columns": {
+                "amount_minor": "bigint(20) NULL DEFAULT NULL",
+                "counterparty_name": "varchar(191) NULL DEFAULT NULL",
+                "created_at": "timestamp NOT NULL DEFAULT current_timestamp()",
+                "created_by": "bigint(20) unsigned NULL DEFAULT NULL",
+                "employee_id": "bigint(20) unsigned NOT NULL",
+                "evidence_reference": "varchar(500) NULL DEFAULT NULL",
+                "evidence_status": "enum('unverified','verified') NOT NULL DEFAULT 'unverified'",
+                "housing_acquired_before_2021": "tinyint(1) NOT NULL DEFAULT 0",
+                "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
+                "kind": "enum('donation','blood_donation','organ_donation','stem_cell_donation','housing_interest','pension_savings','life_insurance','long_term_investment','long_term_care_insurance','enforcement_stop') NOT NULL",
+                "months_mask": "smallint(5) unsigned NULL DEFAULT NULL",
+                "note": "varchar(500) NULL DEFAULT NULL",
+                "quantity": "smallint(5) unsigned NULL DEFAULT NULL",
+                "sort_order": "smallint(5) unsigned NOT NULL DEFAULT 0",
+                "supplier_id": "int(10) unsigned NOT NULL",
+                "tax_year": "smallint(5) unsigned NOT NULL",
+                "updated_at": "timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE CURRENT_TIMESTAMP()",
+                "updated_by": "bigint(20) unsigned NULL DEFAULT NULL"
+            },
+            "indexes": {
+                "PRIMARY": "UNIQUE BTREE (id)",
+                "fk_payroll_annual_settlement_deduction_creator": "BTREE (created_by)",
+                "fk_payroll_annual_settlement_deduction_editor": "BTREE (updated_by)",
+                "idx_payroll_annual_settlement_deduction_scope": "BTREE (supplier_id, employee_id, tax_year)",
+                "uq_payroll_annual_settlement_deduction_supplier_id": "UNIQUE BTREE (supplier_id, id)"
+            },
+            "foreign_keys": {
+                "fk_payroll_annual_settlement_deduction_creator": "(created_by) -> users (id) ON UPDATE RESTRICT ON DELETE SET NULL",
+                "fk_payroll_annual_settlement_deduction_editor": "(updated_by) -> users (id) ON UPDATE RESTRICT ON DELETE SET NULL",
+                "fk_payroll_annual_settlement_deduction_employee": "(supplier_id, employee_id) -> payroll_employees (supplier_id, id) ON UPDATE RESTRICT ON DELETE CASCADE"
+            },
+            "checks": {
+                "chk_payroll_annual_settlement_deduction_amount": "`amount_minor` is null or `amount_minor` > 0",
+                "chk_payroll_annual_settlement_deduction_evidence": "`evidence_status` <> 'verified' or `evidence_reference` is not null and `evidence_reference` <> ''",
+                "chk_payroll_annual_settlement_deduction_year": "`tax_year` between 2000 and 2199"
+            }
+        },
         "payroll_annual_settlement_other_caregivers": {
             "type": "BASE TABLE",
             "engine": "InnoDB",
@@ -10912,12 +11015,64 @@
                 "chk_payroll_annual_settlement_outcome_year": "`tax_year` between 2000 and 2199"
             }
         },
+        "payroll_annual_settlement_preschool_claims": {
+            "type": "BASE TABLE",
+            "engine": "InnoDB",
+            "collation": "utf8mb4_unicode_ci",
+            "columns": {
+                "agreed_cap_minor": "bigint(20) NULL DEFAULT NULL",
+                "agreement_reference": "varchar(500) NULL DEFAULT NULL",
+                "child_dependant_id": "bigint(20) unsigned NOT NULL",
+                "claimed_as_business_expense": "tinyint(1) NOT NULL DEFAULT 0",
+                "claimed_by_other_taxpayer": "tinyint(1) NOT NULL DEFAULT 0",
+                "created_at": "timestamp NOT NULL DEFAULT current_timestamp()",
+                "created_by": "bigint(20) unsigned NULL DEFAULT NULL",
+                "employee_id": "bigint(20) unsigned NOT NULL",
+                "evidence_reference": "varchar(500) NULL DEFAULT NULL",
+                "evidence_status": "enum('unverified','verified') NOT NULL DEFAULT 'unverified'",
+                "expenses_minor": "bigint(20) NOT NULL",
+                "facility_kind": "enum('kindergarten','children_group','licensed_care') NOT NULL",
+                "facility_name": "varchar(191) NULL DEFAULT NULL",
+                "grandchild_care_replaces_parents": "tinyint(1) NOT NULL DEFAULT 0",
+                "households_count": "tinyint(3) unsigned NOT NULL DEFAULT 1",
+                "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
+                "note": "varchar(500) NULL DEFAULT NULL",
+                "other_supporting_taxpayer": "tinyint(1) NOT NULL DEFAULT 0",
+                "other_taxpayer_claimed_minor": "bigint(20) NULL DEFAULT NULL",
+                "other_taxpayer_confirmation_reference": "varchar(500) NULL DEFAULT NULL",
+                "other_taxpayer_name": "varchar(191) NULL DEFAULT NULL",
+                "supplier_id": "int(10) unsigned NOT NULL",
+                "tax_year": "smallint(5) unsigned NOT NULL",
+                "updated_at": "timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE CURRENT_TIMESTAMP()",
+                "updated_by": "bigint(20) unsigned NULL DEFAULT NULL"
+            },
+            "indexes": {
+                "PRIMARY": "UNIQUE BTREE (id)",
+                "fk_payroll_annual_settlement_preschool_child": "BTREE (supplier_id, child_dependant_id)",
+                "fk_payroll_annual_settlement_preschool_creator": "BTREE (created_by)",
+                "fk_payroll_annual_settlement_preschool_editor": "BTREE (updated_by)",
+                "uq_payroll_annual_settlement_preschool_scope": "UNIQUE BTREE (supplier_id, employee_id, tax_year, child_dependant_id)",
+                "uq_payroll_annual_settlement_preschool_supplier_id": "UNIQUE BTREE (supplier_id, id)"
+            },
+            "foreign_keys": {
+                "fk_payroll_annual_settlement_preschool_child": "(supplier_id, child_dependant_id) -> payroll_dependants (supplier_id, id) ON UPDATE RESTRICT ON DELETE RESTRICT",
+                "fk_payroll_annual_settlement_preschool_creator": "(created_by) -> users (id) ON UPDATE RESTRICT ON DELETE SET NULL",
+                "fk_payroll_annual_settlement_preschool_editor": "(updated_by) -> users (id) ON UPDATE RESTRICT ON DELETE SET NULL",
+                "fk_payroll_annual_settlement_preschool_employee": "(supplier_id, employee_id) -> payroll_employees (supplier_id, id) ON UPDATE RESTRICT ON DELETE CASCADE"
+            },
+            "checks": {
+                "chk_payroll_annual_settlement_preschool_amounts": "`expenses_minor` > 0 and `households_count` between 1 and 9 and (`agreed_cap_minor` is null or `agreed_cap_minor` >= 0) and (`other_taxpayer_claimed_minor` is null or `other_taxpayer_claimed_minor` >= 0)",
+                "chk_payroll_annual_settlement_preschool_evidence": "`evidence_status` <> 'verified' or `evidence_reference` is not null and `evidence_reference` <> ''",
+                "chk_payroll_annual_settlement_preschool_flags": "`claimed_by_other_taxpayer` in (0,1) and `claimed_as_business_expense` in (0,1) and `grandchild_care_replaces_parents` in (0,1) and `other_supporting_taxpayer` in (0,1)",
+                "chk_payroll_annual_settlement_preschool_year": "`tax_year` between 2027 and 2199"
+            }
+        },
         "payroll_annual_settlement_requests": {
             "type": "BASE TABLE",
             "engine": "InnoDB",
             "collation": "utf8mb4_unicode_ci",
             "columns": {
-                "annual_claims": "enum('unknown','none','present_unsupported') NOT NULL DEFAULT 'unknown'",
+                "annual_claims": "enum('unknown','none','present','present_unsupported') NOT NULL DEFAULT 'unknown'",
                 "annual_claims_note": "varchar(500) NULL DEFAULT NULL",
                 "created_at": "timestamp NOT NULL DEFAULT current_timestamp()",
                 "created_by": "bigint(20) unsigned NULL DEFAULT NULL",
@@ -10953,6 +11108,51 @@
             },
             "checks": {
                 "chk_payroll_annual_settlement_request_year": "`tax_year` between 2000 and 2199"
+            }
+        },
+        "payroll_annual_settlement_spouse_claims": {
+            "type": "BASE TABLE",
+            "engine": "InnoDB",
+            "collation": "utf8mb4_unicode_ci",
+            "columns": {
+                "child_dependant_id": "bigint(20) unsigned NOT NULL",
+                "created_at": "timestamp NOT NULL DEFAULT current_timestamp()",
+                "created_by": "bigint(20) unsigned NULL DEFAULT NULL",
+                "employee_id": "bigint(20) unsigned NOT NULL",
+                "evidence_reference": "varchar(500) NULL DEFAULT NULL",
+                "evidence_status": "enum('unverified','verified') NOT NULL DEFAULT 'unverified'",
+                "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
+                "months_mask": "smallint(5) unsigned NOT NULL",
+                "note": "varchar(500) NULL DEFAULT NULL",
+                "spouse_dependant_id": "bigint(20) unsigned NOT NULL",
+                "spouse_income_minor": "bigint(20) NULL DEFAULT NULL",
+                "supplier_id": "int(10) unsigned NOT NULL",
+                "tax_year": "smallint(5) unsigned NOT NULL",
+                "updated_at": "timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE CURRENT_TIMESTAMP()",
+                "updated_by": "bigint(20) unsigned NULL DEFAULT NULL",
+                "ztp_p_months_mask": "smallint(5) unsigned NOT NULL DEFAULT 0"
+            },
+            "indexes": {
+                "PRIMARY": "UNIQUE BTREE (id)",
+                "fk_payroll_annual_settlement_spouse_child": "BTREE (supplier_id, child_dependant_id)",
+                "fk_payroll_annual_settlement_spouse_creator": "BTREE (created_by)",
+                "fk_payroll_annual_settlement_spouse_editor": "BTREE (updated_by)",
+                "fk_payroll_annual_settlement_spouse_spouse": "BTREE (supplier_id, spouse_dependant_id)",
+                "uq_payroll_annual_settlement_spouse_scope": "UNIQUE BTREE (supplier_id, employee_id, tax_year)",
+                "uq_payroll_annual_settlement_spouse_supplier_id": "UNIQUE BTREE (supplier_id, id)"
+            },
+            "foreign_keys": {
+                "fk_payroll_annual_settlement_spouse_child": "(supplier_id, child_dependant_id) -> payroll_dependants (supplier_id, id) ON UPDATE RESTRICT ON DELETE RESTRICT",
+                "fk_payroll_annual_settlement_spouse_creator": "(created_by) -> users (id) ON UPDATE RESTRICT ON DELETE SET NULL",
+                "fk_payroll_annual_settlement_spouse_editor": "(updated_by) -> users (id) ON UPDATE RESTRICT ON DELETE SET NULL",
+                "fk_payroll_annual_settlement_spouse_employee": "(supplier_id, employee_id) -> payroll_employees (supplier_id, id) ON UPDATE RESTRICT ON DELETE CASCADE",
+                "fk_payroll_annual_settlement_spouse_spouse": "(supplier_id, spouse_dependant_id) -> payroll_dependants (supplier_id, id) ON UPDATE RESTRICT ON DELETE RESTRICT"
+            },
+            "checks": {
+                "chk_payroll_annual_settlement_spouse_evidence": "`evidence_status` <> 'verified' or `evidence_reference` is not null and `evidence_reference` <> ''",
+                "chk_payroll_annual_settlement_spouse_income": "`spouse_income_minor` is null or `spouse_income_minor` >= 0",
+                "chk_payroll_annual_settlement_spouse_months": "`months_mask` between 1 and 4095 and `ztp_p_months_mask` between 0 and 4095",
+                "chk_payroll_annual_settlement_spouse_year": "`tax_year` between 2000 and 2199"
             }
         },
         "payroll_attendance_import_rows": {
@@ -11278,7 +11478,7 @@
                 "created_at": "timestamp NOT NULL DEFAULT current_timestamp()",
                 "enforcement_treatment": "enum('included','excluded','manual_review') NOT NULL",
                 "exemption_basis": "enum('not_subject_to_tax','statutory_exempt','benefit_basket','periodic_benefit_limit') NULL DEFAULT NULL",
-                "exemption_basket": "enum('non_cash_health','non_cash_leisure','old_age_savings','meal_per_shift','temporary_accommodation') NULL DEFAULT NULL",
+                "exemption_basket": "enum('non_cash_health','non_cash_leisure','old_age_savings','meal_per_shift','temporary_accommodation','recreation','food_service_tips') NULL DEFAULT NULL",
                 "frequency_kind": "enum('regular','one_off') NOT NULL",
                 "health_participation_treatment": "enum('included','excluded','manual_review') NOT NULL",
                 "health_treatment": "enum('included','excluded','manual_review') NOT NULL",
@@ -11379,11 +11579,13 @@
                 "basis_points": "int(10) unsigned NULL DEFAULT NULL",
                 "change_kind": "enum('created','updated','activated','paused','resumed','ended','cancelled','reopened') NOT NULL",
                 "created_at": "timestamp NOT NULL DEFAULT current_timestamp()",
+                "creditor_is_employer": "tinyint(1) NULL DEFAULT NULL",
                 "deduction_kind": "enum('advance','meal','contribution','damage','other','imported') NOT NULL",
                 "delivered_on": "date NULL DEFAULT NULL",
                 "effective_from": "date NOT NULL",
                 "employee_id": "bigint(20) unsigned NOT NULL",
                 "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
+                "jmhz_target": "enum('10350','10351','10352','10353') NULL DEFAULT NULL",
                 "legal_basis": "enum('agreement','zp_147_1_c','zp_147_1_d','zp_147_1_e') NOT NULL DEFAULT 'agreement'",
                 "note": "varchar(500) NULL DEFAULT NULL",
                 "priority_no": "int(10) unsigned NOT NULL",
@@ -11427,10 +11629,12 @@
                 "basis_points": "int(10) unsigned NULL DEFAULT NULL",
                 "created_at": "timestamp NOT NULL DEFAULT current_timestamp()",
                 "created_by": "bigint(20) unsigned NULL DEFAULT NULL",
+                "creditor_is_employer": "tinyint(1) NULL DEFAULT NULL",
                 "deduction_kind": "enum('advance','meal','contribution','damage','other','imported') NOT NULL",
                 "delivered_on": "date NULL DEFAULT NULL",
                 "employee_id": "bigint(20) unsigned NOT NULL",
                 "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
+                "jmhz_target": "enum('10350','10351','10352','10353') NULL DEFAULT NULL",
                 "legal_basis": "enum('agreement','zp_147_1_c','zp_147_1_d','zp_147_1_e') NOT NULL DEFAULT 'agreement'",
                 "note": "varchar(500) NULL DEFAULT NULL",
                 "priority_no": "int(10) unsigned NOT NULL DEFAULT 100",
@@ -11465,6 +11669,7 @@
             },
             "checks": {
                 "chk_payroll_deduction_agreement_interval": "`valid_to` is null or `valid_to` >= `valid_from`",
+                "chk_payroll_deduction_agreement_jmhz_target": "(`creditor_is_employer` = 1 and `jmhz_target` is not null or coalesce(`creditor_is_employer`,0) = 0 and `jmhz_target` is null) and (`legal_basis` = 'agreement' or `creditor_is_employer` is null and `jmhz_target` is null)",
                 "chk_payroll_deduction_agreement_limit": "`total_limit_minor` is null or `withheld_total_minor` <= `total_limit_minor`",
                 "chk_payroll_deduction_agreement_percentage": "`basis_points` is null or `basis_points` between 0 and 10000 and `basis_amount_minor` is not null",
                 "chk_payroll_deduction_agreement_statutory_basis": "`legal_basis` = 'agreement' or `delivered_on` is not null and `deduction_kind` <> 'damage'"
@@ -12778,9 +12983,15 @@
                 "jmhz_relationship_detail_code": "char(1) NULL DEFAULT NULL COLLATE ascii_bin",
                 "jmhz_risk_categorization_code": "enum('6','7') NULL DEFAULT NULL",
                 "jmhz_specific_legal_fact_applies": "tinyint(1) NOT NULL DEFAULT 0",
+                "jmhz_state_prosecutor": "tinyint(1) NULL DEFAULT NULL",
                 "jmhz_temporary_assignment_status": "enum('unverified','no','yes') NOT NULL DEFAULT 'unverified'",
+                "jmhz_workplace_address_point_code": "varchar(9) NULL DEFAULT NULL",
                 "jmhz_workplace_country_code": "char(2) NULL DEFAULT NULL COLLATE ascii_bin",
+                "jmhz_workplace_house_number": "varchar(4) NULL DEFAULT NULL",
                 "jmhz_workplace_municipality_code": "char(6) NULL DEFAULT NULL COLLATE ascii_bin",
+                "jmhz_workplace_orientation_number": "varchar(12) NULL DEFAULT NULL",
+                "jmhz_workplace_postal_code": "char(5) NULL DEFAULT NULL",
+                "jmhz_workplace_street": "varchar(50) NULL DEFAULT NULL",
                 "leave_entitlement_weeks_override": "smallint(5) unsigned NULL DEFAULT NULL",
                 "monthly_gross_minor": "bigint(20) unsigned NULL DEFAULT NULL",
                 "office_id": "bigint(20) unsigned NULL DEFAULT NULL",
@@ -13672,6 +13883,64 @@
                 "chk_payroll_external_jmhz_type": "`submission_type` is null or `submission_type` in ('R','O','S')"
             }
         },
+        "payroll_food_service_tip_allocations": {
+            "type": "BASE TABLE",
+            "engine": "InnoDB",
+            "collation": "utf8mb4_unicode_ci",
+            "columns": {
+                "employee_id": "bigint(20) unsigned NOT NULL",
+                "exempt_cap_minor": "bigint(20) NOT NULL",
+                "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
+                "supplier_id": "int(10) unsigned NOT NULL",
+                "tip_month_id": "bigint(20) unsigned NOT NULL"
+            },
+            "indexes": {
+                "PRIMARY": "UNIQUE BTREE (id)",
+                "fk_payroll_food_service_tip_allocation_employee": "BTREE (supplier_id, employee_id)",
+                "uq_payroll_food_service_tip_allocation": "UNIQUE BTREE (supplier_id, tip_month_id, employee_id)"
+            },
+            "foreign_keys": {
+                "fk_payroll_food_service_tip_allocation_employee": "(supplier_id, employee_id) -> payroll_employees (supplier_id, id) ON UPDATE RESTRICT ON DELETE CASCADE",
+                "fk_payroll_food_service_tip_allocation_month": "(supplier_id, tip_month_id) -> payroll_food_service_tip_months (supplier_id, id) ON UPDATE RESTRICT ON DELETE CASCADE"
+            },
+            "checks": {
+                "chk_payroll_food_service_tip_allocation_cap": "`exempt_cap_minor` >= 0"
+            }
+        },
+        "payroll_food_service_tip_months": {
+            "type": "BASE TABLE",
+            "engine": "InnoDB",
+            "collation": "utf8mb4_unicode_ci",
+            "columns": {
+                "allocation_mode": "enum('per_capita','employer_determined') NOT NULL",
+                "created_at": "timestamp NOT NULL DEFAULT current_timestamp()",
+                "created_by": "bigint(20) unsigned NULL DEFAULT NULL",
+                "evidence_reference": "varchar(500) NULL DEFAULT NULL",
+                "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
+                "note": "varchar(500) NULL DEFAULT NULL",
+                "period_start": "date NOT NULL",
+                "recipients_count": "smallint(5) unsigned NULL DEFAULT NULL",
+                "revenue_minor": "bigint(20) NOT NULL",
+                "supplier_id": "int(10) unsigned NOT NULL",
+                "updated_at": "timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE CURRENT_TIMESTAMP()",
+                "updated_by": "bigint(20) unsigned NULL DEFAULT NULL"
+            },
+            "indexes": {
+                "PRIMARY": "UNIQUE BTREE (id)",
+                "fk_payroll_food_service_tip_month_creator": "BTREE (created_by)",
+                "fk_payroll_food_service_tip_month_editor": "BTREE (updated_by)",
+                "uq_payroll_food_service_tip_month_period": "UNIQUE BTREE (supplier_id, period_start)",
+                "uq_payroll_food_service_tip_month_supplier_id": "UNIQUE BTREE (supplier_id, id)"
+            },
+            "foreign_keys": {
+                "fk_payroll_food_service_tip_month_creator": "(created_by) -> users (id) ON UPDATE RESTRICT ON DELETE SET NULL",
+                "fk_payroll_food_service_tip_month_editor": "(updated_by) -> users (id) ON UPDATE RESTRICT ON DELETE SET NULL",
+                "fk_payroll_food_service_tip_month_supplier": "(supplier_id) -> supplier (id) ON UPDATE RESTRICT ON DELETE CASCADE"
+            },
+            "checks": {
+                "chk_payroll_food_service_tip_month": "`period_start` >= '2027-01-01' and dayofmonth(`period_start`) = 1 and `revenue_minor` >= 0 and (`allocation_mode` = 'per_capita' and `recipients_count` >= 1 or `allocation_mode` = 'employer_determined' and `recipients_count` is null)"
+            }
+        },
         "payroll_generated_document_hidden": {
             "type": "BASE TABLE",
             "engine": "InnoDB",
@@ -13859,6 +14128,7 @@
                 "name": "varchar(120) NOT NULL",
                 "row_version": "int(10) unsigned NOT NULL DEFAULT 1",
                 "rules_json": "longtext NOT NULL",
+                "sample_key": "varchar(32) NULL DEFAULT NULL",
                 "sample_rules_sha256": "char(64) NULL DEFAULT NULL",
                 "sample_version": "int(11) NULL DEFAULT NULL",
                 "source_system": "varchar(32) NOT NULL",
@@ -14007,7 +14277,7 @@
                 "approved_at": "datetime NULL DEFAULT NULL",
                 "approved_by": "bigint(20) unsigned NULL DEFAULT NULL",
                 "benefit_allocation_json": "longtext NULL DEFAULT NULL",
-                "benefit_basket": "enum('non_cash_health','non_cash_leisure','old_age_savings','meal_per_shift','temporary_accommodation') NULL DEFAULT NULL",
+                "benefit_basket": "enum('non_cash_health','non_cash_leisure','old_age_savings','meal_per_shift','temporary_accommodation','recreation','food_service_tips') NULL DEFAULT NULL",
                 "benefit_exempt_minor": "bigint(20) NULL DEFAULT NULL",
                 "benefit_taxable_minor": "bigint(20) NULL DEFAULT NULL",
                 "component_id": "bigint(20) unsigned NOT NULL",
@@ -17361,7 +17631,7 @@
             "columns": {
                 "created_at": "timestamp NOT NULL DEFAULT current_timestamp()",
                 "created_by": "bigint(20) unsigned NULL DEFAULT NULL",
-                "credit_kind": "enum('taxpayer','disability-basic','disability-extended','ztp-p') NOT NULL",
+                "credit_kind": "enum('taxpayer','disability-basic','disability-extended','ztp-p','student','student-doctoral') NOT NULL",
                 "effective_from": "date NOT NULL",
                 "effective_to": "date NULL DEFAULT NULL",
                 "employee_id": "bigint(20) unsigned NOT NULL",
@@ -17406,6 +17676,7 @@
                 "evidence_reference": "varchar(500) NULL DEFAULT NULL",
                 "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
                 "row_version": "int(10) unsigned NOT NULL DEFAULT 1",
+                "signed_on": "date NULL DEFAULT NULL",
                 "status": "enum('signed','not-signed','unverified') NOT NULL",
                 "supplier_id": "int(10) unsigned NOT NULL",
                 "updated_at": "timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE CURRENT_TIMESTAMP()",
@@ -22164,6 +22435,7 @@
                 "fk_pii_pol": "BTREE (purchase_order_line_id)",
                 "fk_pii_stock_item": "BTREE (stock_item_id)",
                 "fk_pii_vat": "BTREE (vat_rate_id)",
+                "idx_pii_accrual_to": "BTREE (accrual_to)",
                 "idx_pii_expense_rule": "BTREE (expense_rule_id)",
                 "idx_pii_invoice": "BTREE (purchase_invoice_id, order_index)"
             },
@@ -22352,6 +22624,7 @@
                 "received_at_source": "enum('manual','import') NOT NULL DEFAULT 'import'",
                 "reverse_charge": "tinyint(1) NOT NULL DEFAULT 0",
                 "rounding": "decimal(6,2) NOT NULL DEFAULT 0.00",
+                "settled_outside_amount": "decimal(15,2) NOT NULL DEFAULT 0.00",
                 "source_format": "enum('isdoc','isdocx','pdf','pohoda_xml','idoklad_json','fakturoid_json') NULL DEFAULT NULL",
                 "source_hash": "char(64) NULL DEFAULT NULL",
                 "source_original_name": "varchar(255) NULL DEFAULT NULL",
@@ -22428,6 +22701,7 @@
             },
             "checks": {
                 "chk_pi_card_last4": "`card_last4` is null or `card_last4` regexp '^[0-9]{4}$'",
+                "chk_purchase_settled_outside": "`settled_outside_amount` >= 0",
                 "extraction_review": "json_valid(`extraction_review`)",
                 "own_snapshot": "json_valid(`own_snapshot`)",
                 "vat_overrides": "json_valid(`vat_overrides`)",
@@ -22823,6 +23097,39 @@
                 "fk_rc_supplier": "(supplier_id) -> supplier (id) ON UPDATE RESTRICT ON DELETE RESTRICT"
             },
             "checks": []
+        },
+        "revenue_classification_rules": {
+            "type": "BASE TABLE",
+            "engine": "InnoDB",
+            "collation": "utf8mb4_unicode_ci",
+            "columns": {
+                "created_at": "timestamp NOT NULL DEFAULT current_timestamp()",
+                "created_by": "bigint(20) unsigned NULL DEFAULT NULL",
+                "description_contains": "varchar(120) NULL DEFAULT NULL",
+                "hit_count": "int(10) unsigned NOT NULL DEFAULT 0",
+                "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
+                "is_active": "tinyint(1) NOT NULL DEFAULT 1",
+                "item_code": "varchar(64) NULL DEFAULT NULL",
+                "last_hit_at": "datetime NULL DEFAULT NULL",
+                "name": "varchar(120) NOT NULL",
+                "priority": "smallint(5) unsigned NOT NULL DEFAULT 100",
+                "supplier_id": "int(10) unsigned NOT NULL",
+                "target_account_code": "varchar(10) NOT NULL",
+                "updated_at": "timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE CURRENT_TIMESTAMP()",
+                "vat_rate": "decimal(5,2) NULL DEFAULT NULL"
+            },
+            "indexes": {
+                "PRIMARY": "UNIQUE BTREE (id)",
+                "fk_rcr_user": "BTREE (created_by)",
+                "idx_rcr_supplier": "BTREE (supplier_id, is_active, priority)"
+            },
+            "foreign_keys": {
+                "fk_rcr_supplier": "(supplier_id) -> supplier (id) ON UPDATE RESTRICT ON DELETE CASCADE",
+                "fk_rcr_user": "(created_by) -> users (id) ON UPDATE RESTRICT ON DELETE SET NULL"
+            },
+            "checks": {
+                "chk_rcr_criteria": "`item_code` is not null or `description_contains` is not null or `vat_rate` is not null"
+            }
         },
         "role_permissions": {
             "type": "BASE TABLE",
@@ -24566,7 +24873,7 @@
                 "intrastat_supplementary_unit_coefficient": "decimal(18,6) NULL DEFAULT NULL",
                 "is_active": "tinyint(1) NOT NULL DEFAULT 1",
                 "is_stocked": "tinyint(1) NOT NULL DEFAULT 1",
-                "item_type": "enum('material','goods','product') NOT NULL DEFAULT 'goods'",
+                "item_type": "enum('material','goods','product','service') NOT NULL DEFAULT 'goods'",
                 "lifecycle_status": "enum('draft','ready','retired') NOT NULL DEFAULT 'ready'",
                 "manufacturer_id": "bigint(20) unsigned NULL DEFAULT NULL",
                 "min_qty": "decimal(14,3) NULL DEFAULT NULL",
@@ -25759,6 +26066,7 @@
                 "payment_thanks_default_checked": "tinyint(1) NOT NULL DEFAULT 0",
                 "payment_thanks_enabled": "tinyint(1) NOT NULL DEFAULT 0",
                 "payment_thanks_max_age_days": "smallint(5) unsigned NOT NULL DEFAULT 30",
+                "payroll_attendance_myucto_sample_seeded_at": "datetime NULL DEFAULT NULL",
                 "payroll_attendance_sample_seeded_at": "datetime NULL DEFAULT NULL",
                 "payroll_enabled": "tinyint(1) NOT NULL DEFAULT 0",
                 "pdf_logo_show_name": "tinyint(1) NOT NULL DEFAULT 0",
@@ -29369,7 +29677,7 @@
         "sp_find_invoices_with_bad_dates": "PROCEDURE #9ea7d88cfd5a2314ab0f86e82e5c0c02708b0c16",
         "sp_recompute_all_caches": "PROCEDURE #3fbcc3f79484d6f5d6075ebecc62f9aefe700b60",
         "sp_recompute_client_revenue": "PROCEDURE #e86306608ecd95463bcfa58ab027e3724dfe9ad6",
-        "sp_recompute_crm_monthly_summary": "PROCEDURE #ee99ee4a046191894cb413cc9346ce6ffd3f8f59",
+        "sp_recompute_crm_monthly_summary": "PROCEDURE #a705b83514c2b0650a79ecd6cd173f5d2558e253",
         "sp_recompute_project_revenue": "PROCEDURE #ea7a59d4390ae5568b4d31bb49398947ad822d5f"
     }
 }

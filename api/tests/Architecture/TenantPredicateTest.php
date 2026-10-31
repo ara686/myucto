@@ -160,6 +160,8 @@ final class TenantPredicateTest extends TestCase
         // §DM (1093_expense_classification_rules.sql) — per-tenant pravidla klasifikace
         // druhu výdaje.
         'expense_classification_rules',
+        // Pravidla výnosů (2217): účet položky vydané faktury.
+        'revenue_classification_rules',
         // §DM (1094_small_assets.sql) — karty evidence drobného majetku (§28/5 ZoÚ).
         'small_assets',
         // NEMPRI/HZUPN (1654, 1655) — případy dávek nemocenského pojištění.

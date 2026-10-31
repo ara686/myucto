@@ -26,12 +26,14 @@ use MyInvoice\Service\Payroll\PayrollPersonStatutoryEvidenceValidator;
  *
  * - `early_pension_from` je začátek předčasného starobního důchodu, který
  *   s intervalem sdílí aspoň den,
- * - `full_pension_paid_from` je první CELÝ měsíc starobního důchodu (druh 1 bez
- *   příznaku předčasnosti), který s intervalem sdílí aspoň den. Důchod přiznaný
- *   uprostřed měsíce se počítá až od následujícího měsíce: v měsíci přiznání
- *   pojištěnec první dny důchod nepobírá, a vynechat třídu ELDP někomu, kdo
- *   důchod nepobírá, by znamenalo ztrátu doby pojištění. Opačný omyl (ELDP
- *   u důchodce) metodika nepovažuje za chybu.
+ * - `full_pension_paid_from` je měsíc, od něhož náleží výplata starobního
+ *   důchodu (druh 1 bez příznaku předčasnosti), který s intervalem sdílí aspoň
+ *   den; u důchodu přiznaného uprostřed měsíce je to měsíc přiznání. List se
+ *   vede „do měsíce, od něhož pojištěnci náleží výplata starobního důchodu
+ *   v plné výši" (Všeobecné zásady ELDP, Hlavní zásady; Metodická pomůcka
+ *   ELDP, příklad 8a) a tento měsíc ještě nese, takže doba pojištění před
+ *   přiznáním se neztratí. Sleva na pojistném (§ 7d zákona č. 589/1992 Sb.)
+ *   začíná až prvním celým měsícem výplaty, tedy měsícem, který list už nevede.
  *
  * Invalidní a cizí důchody (2, 8, A, B, C) kód D nezakládají; evidují se kvůli
  * registraci a dávkám nemocenského pojištění.
@@ -166,7 +168,7 @@ final class PayrollPensionStatus
                 $early = $early === null ? $pension['effective_from'] : min($early, $pension['effective_from']);
                 continue;
             }
-            $month = self::firstWholeMonth($pension['effective_from']);
+            $month = substr($pension['effective_from'], 0, 7);
             $full = $full === null ? $month : min($full, $month);
         }
 
@@ -204,16 +206,6 @@ final class PayrollPensionStatus
         }
 
         return $mismatched;
-    }
-
-    /** `RRRR-MM` prvního celého měsíce od daného dne. */
-    private static function firstWholeMonth(string $date): string
-    {
-        $day = new DateTimeImmutable($date);
-
-        return $day->format('d') === '01'
-            ? $day->format('Y-m')
-            : $day->modify('first day of next month')->format('Y-m');
     }
 
     private static function assertReference(mixed $value): void

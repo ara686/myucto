@@ -76,16 +76,16 @@ api.interceptors.response.use(
     // H-10: stav diskové kvóty jede v hlavičkách každé odpovědi, ať se admin
     // o blížícím se zámku dozví dřív, než mu přestane jít uložit doklad.
     readStorageQuotaHeaders(response.headers)
-    // Zapisující požadavek ohlásí změnu dat, aby si ji zaparkovaná okna
-    // pracovní plochy obnovila při návratu (`useWindowRefresh`). Okno v iframe
-    // ji pošle správci oken, hlavní dokument ji vyvolá jako událost, kterou
-    // správce oken rozešle stejně.
+    // Zapisující požadavek ohlásí změnu dat správci oken, který podle cesty pozná
+    // dotčená okna (`workspace/dataDependencies.ts`). Okno v iframe mu ji pošle,
+    // hlavní dokument ji vyvolá jako událost.
     if (!['get', 'head', 'options'].includes(response.config.method?.toLowerCase() ?? 'get')) {
-      const resource = new URL(response.config.url ?? '', window.location.origin).pathname.replace(/^\/api\//, '/').split('/')[1]
+      const path = new URL(response.config.url ?? '', window.location.origin).pathname.replace(/^\/api\//, '/')
+      const resource = path.split('/')[1]
       if (resource && /^[a-z0-9-]+$/.test(resource)) {
         const scope = getWindowSupplierScope()
-        if (scope) postWindowFrameMessage({ type: 'myucto-window-mutation', id: scope.windowId, resource })
-        else window.dispatchEvent(new CustomEvent('myucto:data-mutation', { detail: { resource } }))
+        if (scope) postWindowFrameMessage({ type: 'myucto-window-mutation', id: scope.windowId, resource, path })
+        else window.dispatchEvent(new CustomEvent('myucto:data-mutation', { detail: { resource, path } }))
       }
     }
     return response

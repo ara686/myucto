@@ -5,6 +5,8 @@ import type { CashRegister } from '@/api/cash'
 const m = vi.hoisted(() => ({
   accountingMode: 'double_entry',
   routeParams: {} as Record<string, string>,
+  routeQuery: {} as Record<string, string>,
+  replace: vi.fn(),
   listRegisters: vi.fn(),
   listRulePresets: vi.fn(),
   createDocument: vi.fn(),
@@ -64,8 +66,8 @@ vi.mock('vue-i18n', () => ({
 }))
 vi.mock('vue-router', () => ({
   RouterLink: { name: 'RouterLink', props: ['to'], template: '<a><slot /></a>' },
-  useRoute: () => ({ query: {}, params: m.routeParams }),
-  useRouter: () => ({ push: m.push }),
+  useRoute: () => ({ query: m.routeQuery, params: m.routeParams }),
+  useRouter: () => ({ push: m.push, replace: m.replace }),
 }))
 
 import CashDocumentEditor from '@/pages/accounting/CashDocumentEditor.vue'
@@ -95,6 +97,7 @@ describe('CashDocumentEditor.vue', () => {
     vi.clearAllMocks()
     m.accountingMode = 'double_entry'
     for (const key of Object.keys(m.routeParams)) delete m.routeParams[key]
+    for (const key of Object.keys(m.routeQuery)) delete m.routeQuery[key]
     m.listRegisters.mockResolvedValue([register()])
     m.listRulePresets.mockResolvedValue([])
     m.listAccounts.mockResolvedValue([])
@@ -465,6 +468,63 @@ describe('CashDocumentEditor.vue', () => {
     await vm.save()
     expect(vm.error).toBe('cash.validation.description')
     expect(vm.error).not.toBe('cash.col.description')
+  })
+
+  // ── N-04: Vystavit a další ────────────────────────────────────────────────
+  it('„Vystavit a další" vystaví doklad a otevře prázdný se stejnou pokladnou, typem a datem', async () => {
+    m.listRegisters.mockResolvedValue([register(), register({ id: 2, name: 'Druhá', is_default: false })])
+    const wrapper = await mountEditor()
+    const vm = wrapper.vm as any
+    vm.form.register_id = 2
+    vm.form.doc_type = 'out'
+    await flushPromises()
+    vm.form.purpose = 'purchase'
+    vm.form.issue_date = '2093-03-15'
+    vm.form.total_amount = 250
+    vm.form.description = 'Poštovné'
+    vm.form.partner_name = 'Pošta'
+    await flushPromises()
+
+    await wrapper.get('[data-test="cash-post-and-next"]').trigger('click')
+    await flushPromises()
+
+    expect(m.createDocument).toHaveBeenCalledWith(expect.objectContaining({ register_id: 2, doc_type: 'out', post: true }))
+    expect(m.toastSuccess).toHaveBeenCalledWith('cash.new_document PPD-1')
+    expect(m.push).not.toHaveBeenCalled()
+    expect(m.replace).toHaveBeenCalledWith({
+      path: '/accounting/cash/new',
+      query: { register_id: '2', doc_type: 'out', issue_date: '2093-03-15' },
+    })
+    expect(vm.form).toMatchObject({
+      register_id: 2, doc_type: 'out', issue_date: '2093-03-15', tax_date: '2093-03-15',
+      purpose: 'purchase', description: '', total_amount: null, partner_name: '',
+    })
+  })
+
+  it('„Vystavit a další" u úpravy draftu není', async () => {
+    m.routeParams.id = '42'
+    m.getDocument.mockResolvedValue({
+      id: 42, register_id: 1, doc_type: 'in', purpose: 'sale', doc_number: null,
+      issue_date: '2093-03-01', tax_date: null, partner_name: null, partner_ic: null, partner_dic: null,
+      description: 'Prodej', total_amount: 500, currency_code: 'CZK', vat_mode: 'none', vat_lines: [],
+      invoice_id: null, purchase_invoice_id: null, rule_key: null, counter_account_code: null,
+      status: 'draft', journal_entry_id: null, reversal_entry_id: null, created_by: null, created_at: '2093-03-01',
+    })
+    const wrapper = await mountEditor()
+    expect(wrapper.find('[data-test="cash-post-and-next"]').exists()).toBe(false)
+  })
+
+  it('datum z query převezme jen otevření z „Vystavit a další", jinak je dnešní', async () => {
+    m.routeQuery.issue_date = '2093-03-15'
+    m.routeQuery.doc_type = 'out'
+    const fromNext = (await mountEditor()).vm as any
+    expect(fromNext.form.issue_date).toBe('2093-03-15')
+    expect(fromNext.form.doc_type).toBe('out')
+
+    for (const key of Object.keys(m.routeQuery)) delete m.routeQuery[key]
+    const plain = (await mountEditor()).vm as any
+    expect(plain.form.issue_date).not.toBe('2093-03-15')
+    expect(plain.form.issue_date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
   })
 
   it('catch-all `validation` ukáže konkrétní hlášku backendu', async () => {

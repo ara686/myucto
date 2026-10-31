@@ -65,4 +65,10 @@ describe('Správce instance — oddělený router', () => {
     signIn('superadmin')
     expect(await authorizationGuard(resolve('/instance-admin'))).toBe(true)
   })
+
+  it('na spravované instalaci superadmina na technickou plochu nepustí', async () => {
+    const auth = signIn('superadmin')
+    auth.setupStatus = { needs_setup: false, managed: true } as never
+    expect(await authorizationGuard(resolve('/instance-admin'))).toEqual({ name: 'home' })
+  })
 })

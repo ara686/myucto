@@ -38,6 +38,9 @@ use Psr\Log\NullLogger;
  */
 final class AiPdfExtractor
 {
+    /** Příznak v datech extrakce: datum vystavení na dokladu chybělo a bylo doplněno. */
+    public const ISSUE_DATE_FALLBACK = '_issue_date_fallback';
+
     private readonly LoggerInterface $logger;
 
     public function __construct(
@@ -240,7 +243,7 @@ final class AiPdfExtractor
                 }
             }
         }
-        $data = $extracted['data'];
+        $data = self::withIssueDateFallback($extracted['data'], date('Y-m-d'));
 
         $validationError = $this->validateAiData($data);
         if ($validationError !== null) {
@@ -481,6 +484,27 @@ final class AiPdfExtractor
         } catch (\Throwable) {
             // ignore — dávkové označení není kritické
         }
+    }
+
+    /**
+     * Účtenka bez data (paragon z pokladny, která datum netiskne, nebo nečitelná
+     * fotka) by jinak celou extrakci shodila na validaci. Doplní se DUZP, a když
+     * chybí i to, den importu; koncept pak nese varování ({@see self::ISSUE_DATE_FALLBACK})
+     * a datum zkontroluje účetní. Datum rozhoduje o období DPH, proto nejde mlčky.
+     *
+     * @param array<string,mixed> $data
+     * @return array<string,mixed>
+     */
+    public static function withIssueDateFallback(array $data, string $today): array
+    {
+        $valid = static fn (mixed $v): bool => is_string($v) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $v) === 1;
+        if ($valid($data['issue_date'] ?? null)) {
+            return $data;
+        }
+        $data['issue_date'] = $valid($data['tax_date'] ?? null) ? (string) $data['tax_date'] : $today;
+        $data[self::ISSUE_DATE_FALLBACK] = true;
+
+        return $data;
     }
 
     /**
@@ -1036,11 +1060,6 @@ final class AiPdfExtractor
             $supplierId, $vendorId, (string) $payload['vendor_invoice_number'], (string) $payload['issue_date'],
         );
         $id = $this->repo->createDraft($payload, $userId, $supplierId);
-        // Doklad bez jediného čitelného data → datum přijetí je NÁHRADA, ne údaj z dokladu.
-        // Uživatel to musí vidět (žluté upozornění), ne se to dozvědět až v knize DPH.
-        if ($receivedAt['fell_back']) {
-            $this->repo->appendExtractionWarning($id, $supplierId, ImportedReceivedDatePolicy::fallbackWarning());
-        }
         // párování platby kartou. Čte se přes týž SSOT jako u skenů; ruční hodnotu nepřepíše.
         $cardLast4 = \MyInvoice\Service\Document\ScanAttach\ScanExtractionNormalizer::cardLast4($data['card_last4'] ?? null);
         if ($cardLast4 !== null) {
@@ -1121,6 +1140,20 @@ final class AiPdfExtractor
         // samotná záloha ('advance'), která se na nic nenavazuje.
         if ($documentKind !== 'advance') {
             $this->maybeSuggestAdvanceLink($id, $supplierId, $vendorId, $data);
+        }
+        // Doplněné datum (doklad žádné nenesl) je NÁHRADA, ne údaj z dokladu. Uživatel to
+        // musí vidět (žluté upozornění), ne se to dozvědět až v knize DPH. Append až po
+        // setExtractionWarning() zápisech výš, které by hlášku přepsaly.
+        if (($data[self::ISSUE_DATE_FALLBACK] ?? false) === true) {
+            $this->repo->appendExtractionWarning($id, $supplierId, sprintf(
+                'Na dokladu jsme nenašli datum vystavení, nastavili jsme %s (%s). '
+                . 'Zkontrolujte datum vystavení i DUZP podle originálu, rozhodují o období DPH.',
+                (new \DateTimeImmutable((string) $data['issue_date']))->format('j. n. Y'),
+                isset($data['tax_date']) && $data['tax_date'] === $data['issue_date'] ? 'DUZP z dokladu' : 'den importu',
+            ));
+        }
+        if ($receivedAt['fell_back']) {
+            $this->repo->appendExtractionWarning($id, $supplierId, ImportedReceivedDatePolicy::fallbackWarning());
         }
         // Varování z rekapitulace DPH (seed) přidáme až teď — po mismatch/neplátce
         // zápisech, které používají setExtractionWarning() (overwrite); append ho

@@ -248,7 +248,11 @@ final class JmhzPreparationSnapshotBuilder
                             ? $selection['evidence']['scenario_key']
                             : null,
                     );
-                    if ($deferredType === '1' && $selection['supported']) {
+                    if (in_array(
+                        $deferredType,
+                        \MyInvoice\Repository\Payroll\PayrollDeferredIncomeRepository::SUPPORTED_TYPES,
+                        true,
+                    ) && $selection['supported']) {
                         $selection['preparation_supported'] = true;
                     }
                     if (!$selection['supported']) {
@@ -732,6 +736,16 @@ final class JmhzPreparationSnapshotBuilder
                 'supplier',
                 $supplierId,
                 ['10038', '10039', '10452'],
+            );
+        } elseif ($employerAnnualEvidence === null
+            && JmhzSpecVersion::forPeriodStart($periodStart) === JmhzSpecVersion::V2027
+        ) {
+            // Verze 2027: typy kolektivních smluv (10214) v souhrnu každý měsíc.
+            $issues[] = $this->issue(
+                'jmhz_employer_annual_collective_agreement_missing',
+                'supplier',
+                $supplierId,
+                ['10214'],
             );
         } elseif ($employerAnnualEvidence !== null) {
             if (($employerAnnualEvidence['schema_reference'] ?? null)

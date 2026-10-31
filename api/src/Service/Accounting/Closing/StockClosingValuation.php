@@ -148,7 +148,8 @@ final class StockClosingValuation
                 AND pi.status NOT IN ('draft','cancelled')
                 AND EXISTS (
                     SELECT 1 FROM purchase_invoice_items pii
-                     WHERE pii.purchase_invoice_id = pi.id AND pii.stock_item_id IS NOT NULL
+                     JOIN stock_items si ON si.id = pii.stock_item_id AND si.supplier_id = pi.supplier_id
+                     WHERE pii.purchase_invoice_id = pi.id AND si.item_type <> 'service'
                 )
                 AND NOT EXISTS (
                     SELECT 1 FROM stock_documents d

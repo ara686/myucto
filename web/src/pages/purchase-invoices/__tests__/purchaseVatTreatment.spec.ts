@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  headerDiffersFromAllocations, isNoClaimCode, itemConflictsWithHeader, itemVatState, type HeaderVat,
+  allocationsHaveMixedDeduction, headerDiffersFromAllocations, isNoClaimCode, itemConflictsWithHeader, itemVatState, type HeaderVat,
 } from '@/pages/purchase-invoices/purchaseVatTreatment'
 
 const list = [
@@ -39,5 +39,13 @@ describe('purchaseVatTreatment — stav položky v evidenci DPH', () => {
     expect(itemConflictsWithHeader('40', h, true, list)).toBe(false)
     expect(headerDiffersFromAllocations(h, [{ vat_deduction: 'full', vat_deduction_percent: 100 }])).toBe(true)
     expect(headerDiffersFromAllocations(header(), [{ vat_deduction: 'full', vat_deduction_percent: 100 }])).toBe(false)
+  })
+
+  it('smíšený nárok poznají jen alokace s různým nárokem', () => {
+    const full = { vat_deduction: 'full' as const, vat_deduction_percent: 100 }
+    expect(allocationsHaveMixedDeduction([full, full])).toBe(false)
+    expect(allocationsHaveMixedDeduction([full, { vat_deduction: 'none', vat_deduction_percent: 0 }])).toBe(true)
+    expect(allocationsHaveMixedDeduction([{ vat_deduction: 'proportional', vat_deduction_percent: 60 }, { vat_deduction: 'proportional', vat_deduction_percent: 70 }])).toBe(true)
+    expect(allocationsHaveMixedDeduction([])).toBe(false)
   })
 })

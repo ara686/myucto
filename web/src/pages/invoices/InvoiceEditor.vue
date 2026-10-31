@@ -39,6 +39,7 @@ import SearchableSelect from '@/components/ui/SearchableSelect.vue'
 import CountrySelect from '@/components/ui/CountrySelect.vue'
 import { rowKey } from '@/utils/rowKey'
 import { varsymbolSeriesType } from '@/utils/varsymbol'
+import { hasPaymentSchedule, isCalendarType } from '@/utils/invoiceCalendar'
 import { defaultNoteFor, noteAfterLanguageChange } from '@/pages/invoices/invoiceDefaultNote'
 import StockDescriptionField from '@/components/ui/StockDescriptionField.vue'
 import InvoiceTrackingPicker from './InvoiceTrackingPicker.vue'
@@ -57,6 +58,7 @@ import { appIsoDate, addDaysIso } from '@/utils/date'
 import DateInput from '@/components/ui/DateInput.vue'
 import ItemAccrualFields from '@/components/invoice/ItemAccrualFields.vue'
 import ChartAccountSelect from '@/components/accounting/ChartAccountSelect.vue'
+import { ICONS } from '@/components/ui/buttonStyles'
 import { useResultAccounts } from '@/composables/useResultAccounts'
 import DurationInput from '@/components/ui/DurationInput.vue'
 import DimensionFields from '@/components/dimensions/DimensionFields.vue'
@@ -383,7 +385,8 @@ const cashRegisters = ref<CashRegister[]>([])
 const showCashSettlement = computed(() =>
   form.value.payment_method === 'cash'
   && !auth.isClientRole
-  && !['proforma', 'payment_calendar'].includes(form.value.invoice_type),
+  && form.value.invoice_type !== 'proforma'
+  && !hasPaymentSchedule(form.value.invoice_type),
 )
 
 async function loadCashRegisters() {
@@ -473,6 +476,11 @@ async function onStockSearch(rowIndex: number, q: string) {
 function rememberPackaging(si: { id: number; unit: string; units?: StockItemPackagingUnit[] | null; has_customer_prices?: boolean }) {
   if (si.units) stockPackagingById[si.id] = { base_unit: si.unit, units: si.units }
   stockFeaturesById[si.id] = usesStockPricingFeatures(si)
+}
+
+/** Karta typu služba zásobu nevede: řádek nemá sklad ani dostupnost a nic se z něj nevydá. */
+function rowIsService(item: InvoiceItem): boolean {
+  return item.stock_item_id != null && stockItemsCache.get(item.stock_item_id)?.item_type === 'service'
 }
 
 /** Řádek karty s balením / individuálními cenami při zapnutém skladu. */
@@ -888,7 +896,7 @@ function stockRowPriceBadge(item: InvoiceItem): { label: string; cls: string } |
 
 /** Dostupné množství (string, DECIMAL) pro řádek — undefined = žádný stav (bez karty na skladě). */
 function rowAvailability(item: InvoiceItem): string | null {
-  if (!item.stock_item_id) return null
+  if (!item.stock_item_id || rowIsService(item)) return null
   return availabilityMap.value[invoiceStockAvailabilityKey(item.stock_item_id, rowWarehouseId(item))] ?? null
 }
 function rowAvailabilityInsufficient(item: InvoiceItem): boolean {
@@ -919,7 +927,7 @@ async function hydrateStockSelections() {
         effective_price: si.effective_price, promo_price: si.promo_price,
         promo_label: si.promo_label, promo_qty_available: si.promo_qty_available,
         units: pack?.units, default_sale_unit: pack?.default_sale_unit ?? si.default_sale_unit ?? null,
-        has_customer_prices: si.has_customer_prices, tracking_mode: si.tracking_mode,
+        has_customer_prices: si.has_customer_prices, tracking_mode: si.tracking_mode, item_type: si.item_type,
       })
       rememberTrackingMode(si.id, si.tracking_mode)
       rememberSelection(it)
@@ -1022,19 +1030,27 @@ function hydrateAssetSelections() {
   if (form.value.items.some(it => it.accrual_from || it.accrual_to)) {
     showAccrual.value = true
   }
-  if (form.value.items.some(it => it.revenue_account_code)) {
-    showItemAccounts.value = true
+  for (const it of form.value.items) {
+    if (it.revenue_account_code) itemAccountOpen.add(it)
   }
 }
 
 // ─── ÚČET A DIMENZE POLOŽKY Z PRODUKTU (F1) ─────────────────────────────
-// Volitelný výnosový účet položky je „pokročilá" volba: pole se ukážou až po zapnutí
-// odkazem (nebo samy, když už některá položka účet má). Prázdné pole = účet produktu,
-// jeho kategorie, jinak předkontace dokladu — totéž rozhodne zaúčtování.
+// Volitelný účet položky je „pokročilá" volba: pole se u řádku otevře šipkou stejně jako
+// u přijaté faktury (samo, když už položka účet má). Prázdné pole = účet produktu, jeho
+// kategorie, pravidlo výnosů, jinak předkontace dokladu — totéž rozhodne zaúčtování.
 const resultAccounts = useResultAccounts()
-const showItemAccounts = ref(false)
+const itemAccountOpen = reactive(new Set<InvoiceItem>())
 const itemAccountsAvailable = computed(() => assetSaleAvailable.value && resultAccounts.available.value)
 onMounted(() => { void resultAccounts.load() })
+
+function itemAccountEditable(item: InvoiceItem): boolean {
+  return itemAccountsAvailable.value && !item.asset_id && !item.small_asset_id
+}
+function toggleItemAccount(item: InvoiceItem) {
+  if (itemAccountOpen.has(item)) itemAccountOpen.delete(item)
+  else itemAccountOpen.add(item)
+}
 
 /**
  * Výběr karty předvyplní prázdný účet a prázdné dimenze položky z produktu (produkt >
@@ -1052,7 +1068,7 @@ function applyProductDefaults(item: InvoiceItem, account: string | null, dims: R
   if (!item.revenue_account_code && account && itemAccountsAvailable.value) {
     item.revenue_account_code = account
     productPrefilledAccount.set(item, account)
-    showItemAccounts.value = true
+    itemAccountOpen.add(item)
   }
   if (docDims.enabled.value && docDims.canEdit.value) {
     const result = applyPrefill(docDims.itemDimsOf(item), productPrefilledDims.get(item) ?? {}, dims)
@@ -1115,7 +1131,7 @@ const nonPayerTotalLabel = computed(() =>
 const docDims = useDocumentDimensions('invoices')
 
 const form = ref<{
-  invoice_type: 'invoice' | 'proforma' | 'credit_note' | 'payment_calendar'
+  invoice_type: 'invoice' | 'proforma' | 'credit_note' | 'payment_calendar' | 'rent_calendar' | 'advance_calendar'
   parent_invoice_id: number | null
   client_id: number | null
   project_id: number | null
@@ -1152,6 +1168,8 @@ const form = ref<{
   items: InvoiceItem[]
   /** § 31/31a ZDPH — rozpis plateb kalendáře. Prázdné u ostatních typů dokladu. */
   payment_schedule: PaymentScheduleRow[]
+  /** § 31 ZDPH — nájemní smlouva splátkového kalendáře. */
+  calendar_contract_ref: string
 }>({
   invoice_type: 'invoice',
   parent_invoice_id: null,
@@ -1188,6 +1206,7 @@ const form = ref<{
   revenue_category_id: null,
   items: [],
   payment_schedule: [],
+  calendar_contract_ref: '',
 })
 
 // Per-faktura přepínač automatických upomínek má smysl jen když je posílá dodavatel
@@ -1553,7 +1572,7 @@ onMounted(async () => {
     editedType.value = inv.invoice_type
     Object.assign(form.value, {
       invoice_type: (inv.invoice_type === 'proforma' || inv.invoice_type === 'credit_note'
-        || inv.invoice_type === 'payment_calendar')
+        || hasPaymentSchedule(inv.invoice_type))
         ? inv.invoice_type
         : 'invoice',
       parent_invoice_id: inv.parent_invoice_id,
@@ -1592,6 +1611,7 @@ onMounted(async () => {
       revenue_category: (inv as any).revenue_category ?? null,
       revenue_category_id: (inv as any).revenue_category_id ?? null,
       payment_schedule: (inv.payment_schedule ?? []).map(r => ({ ...r })),
+      calendar_contract_ref: inv.calendar_contract_ref ?? '',
     })
     rememberLoadedStockPrices()
     // Pořadí položek bez slevových řádků = pořadí na serveru (sleva se generuje na konec).
@@ -2046,23 +2066,37 @@ const simplifiedBlockedReason = computed<string | null>(() => {
 /**
  * § 31 a § 31a ZDPH — rozpis plateb splátkového a platebního kalendáře.
  *
- * Kalendář je SÁM O SOBĚ daňovým dokladem právě proto, že rozpis obsahuje — proto se
- * nevystavuje doklad ke každé splátce. Bez rozpisu ho server odmítne vystavit
- * (`payment_schedule_missing`) a součet rozpisu musí sedět na celkovou částku dokladu.
+ * Kalendář je SÁM O SOBĚ daňovým dokladem právě proto, že rozpis obsahuje, odběratel
+ * jiný doklad nedostane. Bez rozpisu ho server odmítne vystavit (`payment_schedule_missing`)
+ * a základ, DPH i celková částka rozpisu musí sedět na doklad (`payment_schedule_mismatch`).
  */
-const isPaymentCalendar = computed(() => form.value.invoice_type === 'payment_calendar')
+const isPaymentCalendar = computed(() => hasPaymentSchedule(form.value.invoice_type))
+/** Kalendář, který se vystavuje po splátkách a nemá DUZP v hlavičce. */
+const isInstalmentCalendar = computed(() => isCalendarType(form.value.invoice_type))
+const isRentCalendar = computed(() => form.value.invoice_type === 'rent_calendar')
 
-const scheduleTotal = computed(() =>
-  form.value.payment_schedule.reduce((sum, r) => sum + (Number(r.total_amount) || 0), 0))
+function scheduleCents(column: 'base_amount' | 'vat_amount' | 'total_amount'): number {
+  return form.value.payment_schedule.reduce((sum, r) => sum + Math.round((Number(r[column]) || 0) * 100), 0)
+}
 
-/** Rozdíl proti celkové částce dokladu — nenulový blokuje vystavení na serveru. */
+const scheduleTotal = computed(() => scheduleCents('total_amount') / 100)
+const scheduleBase = computed(() => scheduleCents('base_amount') / 100)
+const scheduleVat = computed(() => scheduleCents('vat_amount') / 100)
+
+/** Nenulový rozdíl proti dokladu blokuje vystavení na serveru. */
 const scheduleDiff = computed(() =>
   Math.round((scheduleTotal.value - computed_totals.value.with_vat) * 100) / 100)
+const scheduleBaseDiff = computed(() =>
+  Math.round((scheduleBase.value - computed_totals.value.without_vat) * 100) / 100)
+const scheduleVatDiff = computed(() =>
+  Math.round((scheduleVat.value - computed_totals.value.vat) * 100) / 100)
 
 function addScheduleRow(): void {
   const last = form.value.payment_schedule[form.value.payment_schedule.length - 1]
+  const dueOn = last ? nextMonth(last.due_on) : form.value.due_date
   form.value.payment_schedule.push({
-    due_on: last ? nextMonth(last.due_on) : form.value.due_date,
+    due_on: dueOn,
+    tax_date: isRentCalendar.value ? dueOn : null,
     base_amount: 0,
     vat_amount: 0,
     total_amount: 0,
@@ -2078,20 +2112,27 @@ function removeScheduleRow(index: number): void {
  * Rozpustí celkovou částku dokladu do N stejných měsíčních splátek.
  *
  * Zbytek po dělení jde do POSLEDNÍ splátky, ne rovnoměrně — jinak by se součet rozpisu
- * rozešel s dokladem o haléře a server by vystavení odmítl.
+ * rozešel s dokladem o haléře a server by vystavení odmítl. Platí pro základ, DPH i celek;
+ * zaokrouhlení dokladu tak zůstává v rozdílu celku a základu s DPH poslední splátky.
  */
 function generateMonthlySchedule(count: number): void {
-  const total = computed_totals.value.with_vat
-  const vatShare = computed_totals.value.with_vat === 0
-    ? 0
-    : computed_totals.value.vat / computed_totals.value.with_vat
-  const per = Math.round((total / count) * 100) / 100
+  const totalCents = Math.round(computed_totals.value.with_vat * 100)
+  const baseCents = Math.round(computed_totals.value.without_vat * 100)
+  const vatCents = Math.round(computed_totals.value.vat * 100)
+  const perBase = Math.round(baseCents / count)
+  const perVat = Math.round(vatCents / count)
   const rows: PaymentScheduleRow[] = []
   let due = form.value.due_date
   for (let i = 0; i < count; i++) {
-    const amount = i === count - 1 ? Math.round((total - per * (count - 1)) * 100) / 100 : per
-    const vat = Math.round(amount * vatShare * 100) / 100
-    rows.push({ due_on: due, base_amount: Math.round((amount - vat) * 100) / 100, vat_amount: vat, total_amount: amount, note: null })
+    const isLast = i === count - 1
+    rows.push({
+      due_on: due,
+      tax_date: isRentCalendar.value ? due : null,
+      base_amount: (isLast ? baseCents - perBase * (count - 1) : perBase) / 100,
+      vat_amount: (isLast ? vatCents - perVat * (count - 1) : perVat) / 100,
+      total_amount: (isLast ? totalCents - (perBase + perVat) * (count - 1) : perBase + perVat) / 100,
+      note: null,
+    })
     due = nextMonth(due)
   }
   form.value.payment_schedule = rows
@@ -2627,7 +2668,7 @@ async function submit() {
       client_id: form.value.client_id ?? null,
       project_id: form.value.project_id,
       issue_date: form.value.issue_date,
-      tax_date: form.value.invoice_type === 'proforma' ? null : form.value.tax_date,
+      tax_date: form.value.invoice_type === 'proforma' || isInstalmentCalendar.value ? null : form.value.tax_date,
       due_date: form.value.due_date,
       currency_id: form.value.currency_id,
       reverse_charge: form.value.reverse_charge,
@@ -2636,8 +2677,12 @@ async function submit() {
       price_level_id: form.value.price_level_id,
       // Rozpis se posílá JEN u kalendáře. U ostatních typů by prázdné pole smazalo
       // rozpis dokladu, který se na kalendář teprve překlápí zpátky.
-      payment_schedule: form.value.invoice_type === 'payment_calendar'
+      payment_schedule: isPaymentCalendar.value
         ? form.value.payment_schedule.filter(r => r.due_on)
+          .map(r => ({ ...r, tax_date: isRentCalendar.value ? (r.tax_date || null) : null }))
+        : undefined,
+      calendar_contract_ref: isInstalmentCalendar.value
+        ? (isRentCalendar.value ? form.value.calendar_contract_ref.trim() || null : null)
         : undefined,
       prices_include_vat: form.value.prices_include_vat,
       income_tax_exempt: form.value.income_tax_exempt,
@@ -2690,6 +2735,7 @@ async function submit() {
         accrual_to: it.accrual_to || null,
         // Výnosový účet položky (F1) — round-trip jako ostatní pole položky.
         revenue_account_code: (it.revenue_account_code ?? '').trim() || null,
+        seller_item_code: it.seller_item_code ?? null,
         oss_applicable: it.oss_applicable ?? false,
         oss_consumer_country: it.oss_applicable ? (it.oss_consumer_country || null) : null,
         // Prázdný typ sazby se posílá jako null, ne jako „standard" — dosazení základní
@@ -2899,10 +2945,18 @@ useWindowTitle(
                 <option value="credit_note">{{ t('invoice.doc_credit_note') }}</option>
                 <!-- § 31/31a — kalendář má vlastní typ, ne příznak: jiné náležitosti
                      (rozpis plateb místo plnění) i jiná pravidla pro DUZP. -->
-                <option value="payment_calendar">{{ t('invoice.doc_payment_calendar') }}</option>
+                <option value="rent_calendar">{{ t('invoice.doc_rent_calendar') }}</option>
+                <option value="advance_calendar">{{ t('invoice.doc_advance_calendar') }}</option>
+                <option v-if="editedType === 'payment_calendar'" value="payment_calendar">{{ t('invoice.doc_payment_calendar') }}</option>
               </select>
-              <p v-if="isPaymentCalendar" class="text-xs text-neutral-500 mt-1">
-                {{ t('invoice.payment_calendar_hint') }}
+              <p v-if="isRentCalendar" class="text-xs text-neutral-500 mt-1">
+                {{ t('invoice.rent_calendar_hint') }}
+              </p>
+              <p v-else-if="form.invoice_type === 'advance_calendar'" class="text-xs text-neutral-500 mt-1">
+                {{ t('invoice.advance_calendar_hint') }}
+              </p>
+              <p v-else-if="form.invoice_type === 'payment_calendar' && editedStatus === 'draft'" class="text-xs text-warning-600 mt-1">
+                {{ t('invoice.payment_calendar_legacy_hint') }}
               </p>
               <p v-if="form.invoice_type === 'credit_note'" class="text-xs text-warning-600 mt-1">
                 {{ t('invoice.credit_note_warning') }}
@@ -2910,6 +2964,13 @@ useWindowTitle(
               <p v-if="typeWillRenumber" class="text-xs text-warning-600 mt-1">
                 {{ t('invoice.type_change_renumber', { varsymbol: editedVarsymbol ?? '' }) }}
               </p>
+            </div>
+            <div v-if="isRentCalendar">
+              <label class="block text-sm font-medium text-neutral-700 mb-1">{{ t('invoice.calendar_contract_ref') }} *</label>
+              <input v-model="form.calendar_contract_ref" type="text" maxlength="190"
+                :placeholder="t('invoice.calendar_contract_ref_placeholder')"
+                class="w-full h-10 px-3 border border-neutral-300 rounded-md" />
+              <p class="text-xs text-neutral-500 mt-1">{{ t('invoice.calendar_contract_ref_hint') }}</p>
             </div>
             <div>
               <label class="block text-sm font-medium text-neutral-700 mb-1">{{ t('invoice.client') }}{{ form.is_simplified ? '' : ' *' }}</label>
@@ -3157,7 +3218,10 @@ useWindowTitle(
               <label class="block text-sm font-medium text-neutral-700 mb-1">{{ t('invoice.issue_date') }} *</label>
               <DateInput v-model="form.issue_date" required class="w-full h-10 px-3 border border-neutral-300 rounded-md" />
             </div>
-            <div v-if="form.invoice_type !== 'proforma'">
+            <div v-if="isInstalmentCalendar" class="rounded-md bg-accent-50 border border-accent-100 p-3 text-sm text-accent-600">
+              {{ isRentCalendar ? t('invoice.calendar_tax_date_rent') : t('invoice.calendar_tax_date_advance') }}
+            </div>
+            <div v-else-if="form.invoice_type !== 'proforma'">
               <label class="block text-sm font-medium text-neutral-700 mb-1">{{ t('invoice.tax_date') }} *</label>
               <DateInput v-model="form.tax_date" required class="w-full h-10 px-3 border border-neutral-300 rounded-md" />
             </div>
@@ -3198,11 +3262,6 @@ useWindowTitle(
               :class="showAccrual ? 'text-danger-600' : 'text-primary-700'"
               :title="t('accrual_period.hint')" data-test="accrual-toggle" @click="showAccrual = !showAccrual">
               {{ showAccrual ? t('accrual_period.hide') : t('accrual_period.show') }}
-            </button>
-            <button v-if="itemAccountsAvailable" type="button" class="cursor-pointer text-xs hover:underline whitespace-nowrap mr-1"
-              :class="showItemAccounts ? 'text-danger-600' : 'text-primary-700'"
-              :title="t('invoice.item_account.hint')" data-test="item-accounts-toggle" @click="showItemAccounts = !showItemAccounts">
-              {{ showItemAccounts ? t('invoice.item_account.hide') : t('invoice.item_account.show') }}
             </button>
             <label v-if="assetSaleAvailable" class="inline-flex items-center gap-1.5 text-sm text-neutral-700 mr-1"
               :title="t('invoice.asset_sale.hint')">
@@ -3287,7 +3346,7 @@ useWindowTitle(
                   :options="stockRowOptions[i] ?? []"
                   :loading="stockRowLoading[i]"
                   :selected-option="stockSelectedFor(item)"
-                  :availability-text="item.stock_item_id ? t('stock.availability.in_stock', { qty: rowAvailability(item), unit: rowAvailabilityUnit(item) }) : null"
+                  :availability-text="item.stock_item_id && !rowIsService(item) ? t('stock.availability.in_stock', { qty: rowAvailability(item), unit: rowAvailabilityUnit(item) }) : null"
                   :availability-insufficient="rowAvailabilityInsufficient(item)"
                   :placeholder="t('invoice.items_table.description')"
                   multiline
@@ -3303,7 +3362,7 @@ useWindowTitle(
                   :open="docDims.isItemOpen(item)" :filled="docDims.itemHasDims(item)" :disabled="!docDims.canEdit.value"
                   @toggle="docDims.toggleItem(item)" />
                 </div>
-                <label v-if="stockEnabled && item.stock_item_id && stockWarehouses.length > 0"
+                <label v-if="stockEnabled && item.stock_item_id && !rowIsService(item) && stockWarehouses.length > 0"
                   class="mt-1.5 flex items-center gap-2 text-xs text-neutral-500">
                   <span class="whitespace-nowrap">{{ t('stock.receipt.field_warehouse') }}</span>
                   <select v-model.number="item.warehouse_id" @change="onRowWarehouseChange(item)"
@@ -3329,10 +3388,10 @@ useWindowTitle(
                   @update:model-value="(v) => onTrackingChange(item, v)" />
                 <ItemAccrualFields v-if="showAccrual" :description="item.description"
                   v-model:from="item.accrual_from" v-model:to="item.accrual_to" />
-                <label v-if="showItemAccounts && itemAccountsAvailable && !item.asset_id && !item.small_asset_id"
+                <label v-if="itemAccountEditable(item) && itemAccountOpen.has(item)" :title="t('invoice.item_account.hint')"
                   class="mt-1.5 flex items-start gap-2 text-xs text-neutral-500" data-test="invoice-item-account">
                   <span class="whitespace-nowrap pt-2">{{ t('invoice.item_account.label') }}</span>
-                  <ChartAccountSelect v-model="item.revenue_account_code" :accounts="resultAccounts.revenueAccounts.value"
+                  <ChartAccountSelect v-model="item.revenue_account_code" :accounts="resultAccounts.issuedItemAccounts.value"
                     class="w-56 max-w-full" compact :placeholder="t('invoice.item_account.placeholder')" />
                 </label>
                 <div v-if="stockRowBaseQtyText(item) || stockRowPriceBadge(item)" data-test="stock-row-meta"
@@ -3392,6 +3451,17 @@ useWindowTitle(
                       @change="onOssApplicableChange(item)" />
                     <span>{{ t('invoice.oss.enabled') }}</span>
                   </label>
+                  <button v-if="itemAccountEditable(item)" type="button" data-test="item-account-toggle"
+                    :title="itemAccountOpen.has(item) ? t('invoice.item_account.close') : t('invoice.item_account.open')"
+                    :aria-label="itemAccountOpen.has(item) ? t('invoice.item_account.close') : t('invoice.item_account.open')"
+                    :aria-expanded="itemAccountOpen.has(item)"
+                    class="shrink-0 w-7 h-7 inline-flex items-center justify-center rounded border"
+                    :class="item.revenue_account_code
+                      ? 'border-primary-300 bg-primary-50 text-primary-700'
+                      : itemAccountOpen.has(item) ? 'border-neutral-300 bg-neutral-100 text-neutral-700' : 'border-transparent text-neutral-400 hover:text-neutral-700 hover:border-neutral-300'"
+                    @click="toggleItemAccount(item)">
+                    <svg class="w-4 h-4 transition-transform" :class="itemAccountOpen.has(item) ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" :d="ICONS.chevron" /></svg>
+                  </button>
                   <button type="button" @click="removeItem(i)" class="text-danger-500 hover:text-danger-600 text-lg leading-none">×</button>
                 </div>
               </td>
@@ -3505,6 +3575,15 @@ useWindowTitle(
                 <ItemDimensionsToggle v-if="docDims.enabled.value && !isTextItem(item)"
                   :open="docDims.isItemOpen(item)" :filled="docDims.itemHasDims(item)" :disabled="!docDims.canEdit.value"
                   @toggle="docDims.toggleItem(item)" />
+                <button v-if="!isTextItem(item) && itemAccountEditable(item)" type="button" data-test="item-account-toggle-mobile"
+                  :title="itemAccountOpen.has(item) ? t('invoice.item_account.close') : t('invoice.item_account.open')"
+                  :aria-label="itemAccountOpen.has(item) ? t('invoice.item_account.close') : t('invoice.item_account.open')"
+                  :aria-expanded="itemAccountOpen.has(item)"
+                  class="cursor-pointer w-8 h-8 inline-flex items-center justify-center border rounded"
+                  :class="item.revenue_account_code ? 'border-primary-300 bg-primary-50 text-primary-700' : 'border-neutral-300 hover:bg-neutral-50'"
+                  @click="toggleItemAccount(item)">
+                  <svg class="w-4 h-4 transition-transform" :class="itemAccountOpen.has(item) ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" :d="ICONS.chevron" /></svg>
+                </button>
                 <button type="button" @click="moveUp(i)" :disabled="i === 0" class="cursor-pointer w-8 h-8 inline-flex items-center justify-center border border-neutral-300 rounded hover:bg-neutral-50 disabled:opacity-30 disabled:cursor-not-allowed">▲</button>
                 <button type="button" @click="moveDown(i)" :disabled="i === form.items.length - 1" class="cursor-pointer w-8 h-8 inline-flex items-center justify-center border border-neutral-300 rounded hover:bg-neutral-50 disabled:opacity-30 disabled:cursor-not-allowed">▼</button>
                 <button type="button" @click="removeItem(i)" class="cursor-pointer w-8 h-8 inline-flex items-center justify-center border border-danger-500/40 text-danger-500 hover:bg-danger-50 rounded text-lg leading-none">×</button>
@@ -3531,7 +3610,7 @@ useWindowTitle(
                 :options="stockRowOptions[i] ?? []"
                 :loading="stockRowLoading[i]"
                 :selected-option="stockSelectedFor(item)"
-                :availability-text="item.stock_item_id ? t('stock.availability.in_stock', { qty: rowAvailability(item), unit: rowAvailabilityUnit(item) }) : null"
+                :availability-text="item.stock_item_id && !rowIsService(item) ? t('stock.availability.in_stock', { qty: rowAvailability(item), unit: rowAvailabilityUnit(item) }) : null"
                 :availability-insufficient="rowAvailabilityInsufficient(item)"
                 :placeholder="t('invoice.items_table.description')"
                 multiline
@@ -3543,7 +3622,7 @@ useWindowTitle(
                 @search="(q: string) => onStockSearch(i, q)"
                 @select="(v: number | null) => onStockSelect(i, v)"
               />
-              <label v-if="stockEnabled && item.stock_item_id && stockWarehouses.length > 0"
+              <label v-if="stockEnabled && item.stock_item_id && !rowIsService(item) && stockWarehouses.length > 0"
                 class="mt-1.5 block text-xs font-medium text-neutral-600">
                 <span class="mb-1 block">{{ t('stock.receipt.field_warehouse') }}</span>
                 <select v-model.number="item.warehouse_id" @change="onRowWarehouseChange(item)"
@@ -3569,10 +3648,10 @@ useWindowTitle(
                 @update:model-value="(v) => onTrackingChange(item, v)" />
               <ItemAccrualFields v-if="showAccrual" stacked :description="item.description"
                 v-model:from="item.accrual_from" v-model:to="item.accrual_to" />
-              <label v-if="showItemAccounts && itemAccountsAvailable && !item.asset_id && !item.small_asset_id"
+              <label v-if="itemAccountEditable(item) && itemAccountOpen.has(item)" :title="t('invoice.item_account.hint')"
                 class="mt-1.5 block text-xs font-medium text-neutral-600">
                 <span class="mb-1 block">{{ t('invoice.item_account.label') }}</span>
-                <ChartAccountSelect v-model="item.revenue_account_code" :accounts="resultAccounts.revenueAccounts.value"
+                <ChartAccountSelect v-model="item.revenue_account_code" :accounts="resultAccounts.issuedItemAccounts.value"
                   compact :placeholder="t('invoice.item_account.placeholder')" />
               </label>
               <div v-if="stockRowBaseQtyText(item) || stockRowPriceBadge(item)" class="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
@@ -3830,19 +3909,22 @@ useWindowTitle(
       <div v-if="isPaymentCalendar" class="bg-surface border border-neutral-200 rounded-lg shadow-sm overflow-hidden">
         <header class="px-5 py-3 border-b border-neutral-200 flex items-center justify-between flex-wrap gap-2">
           <h3 class="text-sm font-semibold uppercase tracking-wide text-neutral-500">{{ t('invoice.payment_schedule') }}</h3>
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-2 flex-wrap">
             <button type="button" @click="generateMonthlySchedule(12)"
-              class="cursor-pointer px-4 h-9 text-sm border border-neutral-300 text-neutral-700 hover:bg-neutral-50 font-medium rounded-md">
+              class="cursor-pointer px-4 h-9 text-sm border border-neutral-300 text-neutral-700 hover:bg-neutral-50 font-medium rounded-md whitespace-nowrap">
               {{ t('invoice.payment_schedule_generate_12') }}
             </button>
             <button type="button" @click="addScheduleRow"
-              class="cursor-pointer px-4 h-9 text-sm border border-primary-500/40 text-primary-700 hover:bg-primary-50 font-medium rounded-md inline-flex items-center gap-1.5">
+              class="cursor-pointer px-4 h-9 text-sm border border-primary-500/40 text-primary-700 hover:bg-primary-50 font-medium rounded-md inline-flex items-center gap-1.5 whitespace-nowrap">
               <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
               {{ t('invoice.payment_schedule_add') }}
             </button>
           </div>
         </header>
         <div class="p-5 space-y-3">
+          <p v-if="isInstalmentCalendar && form.currency !== 'CZK'" class="text-sm text-warning-700 bg-warning-50 border border-warning-200 rounded-md px-3 py-2">
+            {{ t('invoice.calendar_foreign_currency') }}
+          </p>
           <p v-if="form.payment_schedule.length === 0" class="text-sm text-warning-700 bg-warning-50 border border-warning-200 rounded-md px-3 py-2">
             {{ t('invoice.payment_schedule_required') }}
           </p>
@@ -3851,6 +3933,7 @@ useWindowTitle(
               <thead>
                 <tr class="text-left text-xs uppercase tracking-wide text-neutral-500">
                   <th class="py-2 pr-3 font-medium">{{ t('invoice.payment_schedule_due_on') }}</th>
+                  <th v-if="isRentCalendar" class="py-2 pr-3 font-medium">{{ t('invoice.tax_date') }}</th>
                   <th class="py-2 pr-3 font-medium text-right">{{ t('invoice.totals.without_vat') }}</th>
                   <th class="py-2 pr-3 font-medium text-right">{{ t('invoice.totals.vat') }}</th>
                   <th class="py-2 pr-3 font-medium text-right">{{ t('invoice.totals.total') }}</th>
@@ -3862,6 +3945,9 @@ useWindowTitle(
                 <tr v-for="(row, i) in form.payment_schedule" :key="rowKey(row)" class="border-t border-neutral-200">
                   <td class="py-2 pr-3">
                     <DateInput v-model="row.due_on" class="w-36 h-9 px-2 border border-neutral-300 rounded-md bg-surface" />
+                  </td>
+                  <td v-if="isRentCalendar" class="py-2 pr-3">
+                    <DateInput v-model="row.tax_date" class="w-36 h-9 px-2 border border-neutral-300 rounded-md bg-surface" />
                   </td>
                   <td class="py-2 pr-3">
                     <input v-model.number="row.base_amount" type="number" step="0.01"
@@ -3889,8 +3975,11 @@ useWindowTitle(
               </tbody>
             </table>
           </div>
-          <!-- Součet rozpisu musí sedět na celkovou částku dokladu; rozejde-li se, není
-               z čeho určit, kolik bylo sjednáno — server vystavení odmítne. -->
+          <p v-if="isRentCalendar && form.payment_schedule.length > 0" class="text-xs text-neutral-500">
+            {{ t('invoice.payment_schedule_tax_date_hint') }}
+          </p>
+          <!-- Základ, DPH i celek rozpisu musí sedět na doklad, zrcadlo serverového
+               `payment_schedule_mismatch`: rozdělené splátky nesou daň do evidence. -->
           <div class="flex justify-between text-sm border-t border-neutral-200 pt-3">
             <span class="text-neutral-600">{{ t('invoice.payment_schedule_total') }}</span>
             <span class="font-mono font-semibold">{{ formatMoney(scheduleTotal, form.currency) }}</span>
@@ -3900,6 +3989,20 @@ useWindowTitle(
             {{ t('invoice.payment_schedule_mismatch', {
               total: formatMoney(scheduleTotal, form.currency),
               invoice: formatMoney(computed_totals.with_vat, form.currency),
+            }) }}
+          </p>
+          <p v-if="form.payment_schedule.length > 0 && scheduleBaseDiff !== 0"
+             class="text-xs text-warning-700 bg-warning-50 border border-warning-200 rounded-md px-3 py-2">
+            {{ t('invoice.payment_schedule_mismatch_base', {
+              total: formatMoney(scheduleBase, form.currency),
+              invoice: formatMoney(computed_totals.without_vat, form.currency),
+            }) }}
+          </p>
+          <p v-if="form.payment_schedule.length > 0 && scheduleVatDiff !== 0"
+             class="text-xs text-warning-700 bg-warning-50 border border-warning-200 rounded-md px-3 py-2">
+            {{ t('invoice.payment_schedule_mismatch_vat', {
+              total: formatMoney(scheduleVat, form.currency),
+              invoice: formatMoney(computed_totals.vat, form.currency),
             }) }}
           </p>
         </div>

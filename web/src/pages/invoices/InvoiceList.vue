@@ -9,7 +9,9 @@ import { useRouter, useRoute, RouterLink } from 'vue-router'
 import { invoicesApi, type MonthGroup, type InvoiceListItem, type InvoiceItem,
   type OssBulkResult, type OssBulkScope, type OssBulkSet, type OssBulkFailure, type OssReviewScope } from '@/api/invoices'
 import { formatMoney, formatMoneyWhole, formatDate, formatMonth, formatNumber, statusLabel, typeLabel, statusBadgeClass, isOverdue, invoiceRowClass, displayStatus, taxDateClass } from '@/composables/useFormat'
+import { isCalendarType } from '@/utils/invoiceCalendar'
 import { useRowLink } from '@/composables/useRowLink'
+import { useListNavigationSource } from '@/composables/useListNavigation'
 import { useToast } from '@/composables/useToast'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
@@ -581,6 +583,7 @@ const sendableSelected = computed(() => {
       ids.has(inv.id)
       && ['issued', 'sent', 'reminded', 'paid'].includes(inv.status)
       && inv.invoice_type !== 'cancellation'
+      && !inv.calendar_id
     )
 })
 
@@ -602,6 +605,7 @@ const markPayableSelected = computed(() => {
       ids.has(inv.id)
       && ['issued', 'sent', 'reminded'].includes(inv.status)
       && inv.invoice_type !== 'cancellation'
+      && !isCalendarType(inv.invoice_type)
       && hasPositiveAmountToPay(inv)
       && !rowLockedForMe(inv)
     )
@@ -741,6 +745,7 @@ const postableSelected = computed(() => {
       && !inv.booked_at
       && ['issued', 'sent', 'reminded', 'paid'].includes(inv.status)
       && inv.invoice_type !== 'cancellation'
+      && !isCalendarType(inv.invoice_type)
     )
 })
 
@@ -860,38 +865,9 @@ async function load(reset = true) {
     page.value++
   }
   try {
-    const result = await invoicesApi.listGrouped({
-      q: search.value || undefined,
-      status: statusFilter.value || undefined,
-      type: typeFilter.value || undefined,
-      client_id: clientFilter.value === '' ? undefined : Number(clientFilter.value),
-      year: dateFrom.value || dateTo.value ? undefined : (yearFilter.value === '' ? undefined : Number(yearFilter.value)),
-      month: dateFrom.value || dateTo.value || yearFilter.value === '' || monthFilter.value === '' ? undefined : Number(monthFilter.value),
-      date_from: dateFrom.value || undefined,
-      date_to:   dateTo.value || undefined,
-      currency:  currencyFilter.value || undefined,
-      overdue: overdueOnly.value || undefined,
-      unpaid_only: unpaidOnly.value || undefined,
-      unpaid_as_of: unpaidAsOf.value || undefined,
-      booked: bookedFilter.value || undefined,
-      oss_review: ossReviewFilter.value || undefined,
-      revenue_category_id: revenueCategoryMode.value === 'include' && revenueCategoryIds.value.length
-        ? revenueCategoryIds.value : undefined,
-      revenue_category_exclude: revenueCategoryMode.value === 'exclude' && revenueCategoryIds.value.length
-        ? revenueCategoryIds.value : undefined,
-      page: page.value,
-      per_page: 50,
-      sort_key: tbl.sort.value?.key,
-      sort_dir: tbl.sort.value?.dir,
-      group_by_month: groupByMonth.value,
-      include_kh: tbl.isVisible('kh'),
-      include_vat_classification: tbl.isVisible('vat_classification') || tbl.isVisible('vat_return_lines'),
-      include_journal_notes: auth.canRead('accounting') && tbl.isVisible('journal_notes'),
-      include_document_tags: auth.canRead('documents') && tbl.isVisible('document_tags'),
-      include_vat_breakdown: tbl.isVisible('vat_breakdown'),
-      include_posting_accounts: tbl.isVisible('debit_accounts') || tbl.isVisible('credit_accounts'),
-      include_dimensions: tbl.isVisible('dimensions'),
-    })
+    const params = listParams()
+    loadedParams = params
+    const result = await invoicesApi.listGrouped({ ...params, page: page.value })
     if (seq !== loadSeq) return
     if (reset) {
       groups.value = result.data
@@ -918,6 +894,66 @@ async function load(reset = true) {
     }
   }
 }
+
+// Obnova po změně dat jinde: skeleton a návrat na první stránku by uživateli vzaly
+// pozici v seznamu, rozbalené řádky i dočtené stránky. Bez mazání se přepíše obsah.
+const REFRESH_PAGE_LIMIT = 5
+async function refreshLoadedPages() {
+  const seq = loadSeq
+  const count = Math.min(Math.max(page.value, 1), REFRESH_PAGE_LIMIT)
+  const params = listParams()
+  const results = await Promise.all(Array.from({ length: count }, (_, index) => invoicesApi.listGrouped({ ...params, page: index + 1 })))
+  if (seq !== loadSeq) return
+  groups.value = results.slice(1).reduce((merged, result) => mergeGroups(merged, result.data), results[0]!.data)
+  page.value = count
+  total.value = results[0]!.meta.total
+  pages.value = results[0]!.meta.pages ?? 1
+  flashedIds.value = consumeFlashedRows('invoice')
+}
+
+// Parametry dotazu seznamu bez čísla stránky. Stejné parametry použije detail
+// při listování za hranici načtených řádků (useListNavigation).
+type InvoiceListParams = NonNullable<Parameters<typeof invoicesApi.listGrouped>[0]>
+let loadedParams: InvoiceListParams = {}
+function listParams(): InvoiceListParams {
+  return {
+    q: search.value || undefined,
+    status: statusFilter.value || undefined,
+    type: typeFilter.value || undefined,
+    client_id: clientFilter.value === '' ? undefined : Number(clientFilter.value),
+    year: dateFrom.value || dateTo.value ? undefined : (yearFilter.value === '' ? undefined : Number(yearFilter.value)),
+    month: dateFrom.value || dateTo.value || yearFilter.value === '' || monthFilter.value === '' ? undefined : Number(monthFilter.value),
+    date_from: dateFrom.value || undefined,
+    date_to:   dateTo.value || undefined,
+    currency:  currencyFilter.value || undefined,
+    overdue: overdueOnly.value || undefined,
+    unpaid_only: unpaidOnly.value || undefined,
+    unpaid_as_of: unpaidAsOf.value || undefined,
+    booked: bookedFilter.value || undefined,
+    oss_review: ossReviewFilter.value || undefined,
+    revenue_category_id: revenueCategoryMode.value === 'include' && revenueCategoryIds.value.length
+      ? revenueCategoryIds.value : undefined,
+    revenue_category_exclude: revenueCategoryMode.value === 'exclude' && revenueCategoryIds.value.length
+      ? revenueCategoryIds.value : undefined,
+    per_page: 50,
+    sort_key: tbl.sort.value?.key,
+    sort_dir: tbl.sort.value?.dir,
+    group_by_month: groupByMonth.value,
+    include_kh: tbl.isVisible('kh'),
+    include_vat_classification: tbl.isVisible('vat_classification') || tbl.isVisible('vat_return_lines'),
+    include_journal_notes: auth.canRead('accounting') && tbl.isVisible('journal_notes'),
+    include_document_tags: auth.canRead('documents') && tbl.isVisible('document_tags'),
+    include_vat_breakdown: tbl.isVisible('vat_breakdown'),
+    include_posting_accounts: tbl.isVisible('debit_accounts') || tbl.isVisible('credit_accounts'),
+    include_dimensions: tbl.isVisible('dimensions'),
+  }
+}
+const listNav = useListNavigationSource('invoices', () => ({
+  ids: flatRows.value.map(inv => inv.id),
+  page: page.value,
+  pages: pages.value,
+  params: loadedParams as Record<string, unknown>,
+}), () => route.fullPath, () => supplierStore.currentSupplierId)
 
 // Sync filtrů s URL query (stejný pattern jako PurchaseInvoiceList) — detekuje menu
 // link click přes route.query change z !empty na empty → reset.
@@ -1190,6 +1226,7 @@ const loadedCount = computed(() => groups.value.reduce((s, g) => s + g.count, 0)
 
 const navigateRow = useRowLink()
 function openInvoice(inv: InvoiceListItem, e?: MouseEvent) {
+  listNav.markOpen(inv.id)
   navigateRow(`/invoices/${inv.id}`, e)
 }
 
@@ -1208,8 +1245,8 @@ const yearOptions = useYearOptions('invoices', yearFilter)
 // `tm()` vrací raw translation message (pole), kdežto `t()` na poli vrátí stringified verzi.
 // `rt()` zformátuje jednotlivé položky pole (pro případnou interpolaci).
 const monthOptions = computed(() => (tm('common.months_short') as unknown as string[]).map(m => rt(m)))
-useWindowRefresh(['invoices', 'clients', 'bank', 'bank-transactions', 'cash', 'accounting'], () => load(),
-  () => !bulkBusy.value && !bulkPdfOpen.value && !ossBulkOpen.value && !wrModalOpen.value && selectedIds.value.length === 0)
+useWindowRefresh(refreshLoadedPages,
+  () => !loading.value && !loadingMore.value && !bulkBusy.value && !bulkPdfOpen.value && !ossBulkOpen.value && !wrModalOpen.value && selectedIds.value.length === 0)
 </script>
 
 <template>
@@ -1384,6 +1421,8 @@ useWindowRefresh(['invoices', 'clients', 'bank', 'bank-transactions', 'cash', 'a
           <option value="invoice">{{ t('type.invoice') }}</option>
           <option value="proforma">{{ t('type.proforma') }}</option>
           <option value="credit_note">{{ t('type.credit_note') }}</option>
+          <option value="rent_calendar">{{ t('type.rent_calendar') }}</option>
+          <option value="advance_calendar">{{ t('type.advance_calendar') }}</option>
         </select>
         <div class="min-w-48 flex-1 max-w-xs">
           <SearchableSelect
@@ -1578,12 +1617,13 @@ useWindowRefresh(['invoices', 'clients', 'bank', 'bank-transactions', 'cash', 'a
                 </td>
                 <template v-for="c in tbl.orderedColumns.value.filter(c => tbl.isVisible(c.key))" :key="c.key">
                 <td v-if="c.key === 'number'" :data-custom-color="!!colors.color('number')" :style="colors.cellStyle('number')" class="px-3 py-2.5 font-mono text-xs">
-                  <RouterLink class="row-link" :to="`/invoices/${inv.id}`" @click.stop @auxclick.stop>
+                  <RouterLink class="row-link" :to="`/invoices/${inv.id}`" @click.stop="listNav.markOpen(inv.id)" @auxclick.stop="listNav.markOpen(inv.id)">
                     <span v-if="inv.varsymbol">{{ inv.varsymbol }}</span>
                     <span v-else class="text-neutral-400">{{ t('invoice.draft_id_short', { id: inv.id }) }}</span>
                   </RouterLink>
                   <!-- Štítek říká, KTERÝ konec nejistoty doklad nese. Bez něj by filtr
                        „vše nejisté" byl nerozlišený seznam dvou různých otázek. -->
+                  <span v-if="inv.calendar_id" class="ml-1 px-1 py-0.5 rounded bg-neutral-100 text-neutral-600 text-[10px] font-sans font-semibold whitespace-nowrap">{{ t('invoice.calendar.instalment_badge') }}</span>
                   <span v-if="inv.oss_review_oss" class="ml-1 px-1 py-0.5 rounded bg-warning-50 text-warning-700 text-[10px] font-sans font-semibold whitespace-nowrap"
                     :title="t('invoice.oss_review_badge.oss_hint')">{{ t('invoice.oss_review_badge.oss') }}</span>
                   <span v-if="inv.oss_review_domestic" class="ml-1 px-1 py-0.5 rounded bg-warning-50 text-warning-700 text-[10px] font-sans font-semibold whitespace-nowrap"
@@ -1598,7 +1638,7 @@ useWindowRefresh(['invoices', 'clients', 'bank', 'bank-transactions', 'cash', 'a
                   <span :class="taxDateClass(inv.tax_date, inv.issue_date)">{{ formatDate(inv.tax_date || inv.issue_date) }}</span>
                 </td>
                 <td v-else-if="c.key === 'due'" :data-custom-color="!!colors.color('due')" :style="colors.cellStyle('due')" class="px-3 py-2.5 text-center text-xs">
-                  <span :class="isOverdue(inv.due_date, inv.status) ? 'text-danger-500 font-medium' : 'text-neutral-600'">
+                  <span :class="isOverdue(inv.due_date, inv.status) && !isCalendarType(inv.invoice_type) ? 'text-danger-500 font-medium' : 'text-neutral-600'">
                     {{ formatDate(inv.due_date) }}
                   </span>
                 </td>
@@ -1775,12 +1815,13 @@ useWindowRefresh(['invoices', 'clients', 'bank', 'bank-transactions', 'cash', 'a
                 </div>
                 <div class="flex items-baseline justify-between gap-2 mt-0.5 text-xs text-neutral-500">
                   <div class="truncate">
-                    <RouterLink class="row-link font-mono" :data-custom-color="!!colors.color('number')" :style="colors.cellStyle('number')" :to="`/invoices/${inv.id}`" @click.stop @auxclick.stop>
+                    <RouterLink class="row-link font-mono" :data-custom-color="!!colors.color('number')" :style="colors.cellStyle('number')" :to="`/invoices/${inv.id}`" @click.stop="listNav.markOpen(inv.id)" @auxclick.stop="listNav.markOpen(inv.id)">
                       <span v-if="inv.varsymbol">{{ inv.varsymbol }}</span>
                       <span v-else class="text-neutral-400">{{ t('invoice.draft_id_short', { id: inv.id }) }}</span>
                     </RouterLink>
                     <span class="text-neutral-400"> · </span>
                     <span :data-custom-color="!!colors.color('type')" :style="colors.cellStyle('type')">{{ typeLabel(inv.invoice_type) }}</span>
+                    <span v-if="inv.calendar_id" class="ml-1 px-1 py-0.5 rounded bg-neutral-100 text-neutral-600 text-[10px] font-semibold whitespace-nowrap">{{ t('invoice.calendar.instalment_badge') }}</span>
                     <span v-if="inv.project_name" class="text-neutral-400"> · </span>
                     <span v-if="inv.project_name" class="truncate" :data-custom-color="!!colors.color('project')" :style="colors.cellStyle('project')">{{ inv.project_name }}</span>
                     <span v-if="inv.oss_review_oss" class="ml-1 px-1 py-0.5 rounded bg-warning-50 text-warning-700 text-[10px] font-semibold whitespace-nowrap"
@@ -1793,7 +1834,7 @@ useWindowRefresh(['invoices', 'clients', 'bank', 'bank-transactions', 'cash', 'a
                   <div class="text-xs text-neutral-600 whitespace-nowrap">
                     <span :class="taxDateClass(inv.tax_date, inv.issue_date)" :data-custom-color="!!colors.color('issued')" :style="colors.cellStyle('issued')">{{ formatDate(inv.tax_date || inv.issue_date) }}</span>
                     <span class="text-neutral-400"> → </span>
-                    <span :class="isOverdue(inv.due_date, inv.status) ? 'text-danger-500 font-medium' : ''" :data-custom-color="!!colors.color('due')" :style="colors.cellStyle('due')">
+                    <span :class="isOverdue(inv.due_date, inv.status) && !isCalendarType(inv.invoice_type) ? 'text-danger-500 font-medium' : ''" :data-custom-color="!!colors.color('due')" :style="colors.cellStyle('due')">
                       {{ formatDate(inv.due_date) }}
                     </span>
                   </div>

@@ -82,6 +82,7 @@ use MyInvoice\Action\Payroll\PayrollActivationAction;
 use MyInvoice\Action\Payroll\PayrollAccountOptionsAction;
 use MyInvoice\Action\Payroll\PayrollAbsenceAction;
 use MyInvoice\Action\Payroll\PayrollBenefitBasketOverviewAction;
+use MyInvoice\Action\Payroll\PayrollFoodServiceTipAction;
 use MyInvoice\Action\Payroll\PayrollCapabilitiesAction;
 use MyInvoice\Action\Payroll\PayrollComponentsAction;
 use MyInvoice\Action\Payroll\PayrollComponentJmhzMappingsAction;
@@ -127,6 +128,7 @@ use MyInvoice\Action\Payroll\PayrollInstitutionAccountsAction;
 use MyInvoice\Action\Payroll\PayrollInsuranceBreakdownAction;
 use MyInvoice\Action\Payroll\PayrollJmhzCorrectionAction;
 use MyInvoice\Action\Payroll\PayrollJmhzDeferralAction;
+use MyInvoice\Action\Payroll\PayrollJmhzPost20Action;
 use MyInvoice\Action\Payroll\PayrollJmhzIdentityAction;
 use MyInvoice\Action\Payroll\PayrollJmhzProtocolImportAction;
 use MyInvoice\Action\Payroll\PayrollJmhzExternalSubmissionAction;
@@ -706,6 +708,7 @@ final class Routes
         $app->post   ('/api/invoices/{id:[0-9]+}/payments', CreatePaymentAction::class);
         $app->delete ('/api/invoices/{id:[0-9]+}/payments/{paymentId:[0-9]+}', DeletePaymentAction::class);
         $app->post   ('/api/invoices/{id:[0-9]+}/payments/{paymentId:[0-9]+}/tax-document', CreatePaymentTaxDocumentAction::class);
+        $app->post   ('/api/invoices/{id:[0-9]+}/convert-to-tax-document', \MyInvoice\Action\Invoice\ConvertFinalDraftToTaxDocumentAction::class);
         $app->post   ('/api/invoices/{id:[0-9]+}/cancel',    CancelInvoiceAction::class);
         $app->post   ('/api/invoices/{id:[0-9]+}/uncancel',  \MyInvoice\Action\Invoice\UncancelInvoiceAction::class);
         // Ruční book/unbook (Epic F6, §4.6) — zámek pro roli client u tax_evidence firem.
@@ -735,6 +738,10 @@ final class Routes
         $app->get    ('/api/invoices/{id:[0-9]+}/final-candidates',   FinalCandidatesAction::class);
         $app->post   ('/api/invoices/{id:[0-9]+}/link-advance',       LinkInvoiceAdvanceAction::class);
         $app->delete ('/api/invoices/{id:[0-9]+}/link-advance',       UnlinkInvoiceAdvanceAction::class);
+        // Postupné čerpání zálohy konceptem faktury (milníky smlouvy o dílo)
+        $app->get    ('/api/invoices/{id:[0-9]+}/advance-drawdown', [\MyInvoice\Action\Invoice\AdvanceDrawdownAction::class, 'candidates']);
+        $app->post   ('/api/invoices/{id:[0-9]+}/advance-drawdown', [\MyInvoice\Action\Invoice\AdvanceDrawdownAction::class, 'apply']);
+        $app->delete ('/api/invoices/{id:[0-9]+}/advance-drawdown', [\MyInvoice\Action\Invoice\AdvanceDrawdownAction::class, 'remove']);
         $app->post   ('/api/invoices/bulk-reissue',          BulkReissueAction::class);
         $app->post   ('/api/invoices/bulk-reminder',         BulkSendRemindersAction::class);
         // Hromadné nastavení OSS nad výběrem dokladů (OSS-7). Náhled je povinný, proto
@@ -1049,6 +1056,15 @@ final class Routes
                 '/benefit-baskets',
                 [PayrollBenefitBasketOverviewAction::class, 'list'],
             );
+            // Spropitné ze stravovacích služeb (§ 6 odst. 9 písm. g) ZDP, od 2027).
+            $g->get(
+                '/food-service-tips/{period:[0-9]{4}-[0-9]{2}}',
+                [PayrollFoodServiceTipAction::class, 'show'],
+            );
+            $g->put(
+                '/food-service-tips/{period:[0-9]{4}-[0-9]{2}}',
+                [PayrollFoodServiceTipAction::class, 'save'],
+            );
             $g->get('/inputs', [PayrollInputsAction::class, 'list']);
             // Export celého filtru výpisu; parametry filtru jsou tytéž jako u `/inputs`.
             $g->get('/inputs/export.{format:xlsx|pdf}', [PayrollInputsExportAction::class, 'export']);
@@ -1105,6 +1121,7 @@ final class Routes
             $g->get('/imports/attendance/profiles/{id:[0-9]+}/export', [\MyInvoice\Action\Payroll\PayrollAttendanceImportAction::class, 'exportProfile']);
             $g->post('/imports/attendance/profiles/import', [\MyInvoice\Action\Payroll\PayrollAttendanceImportAction::class, 'importProfile']);
             $g->post('/imports/attendance/profiles/sample', [\MyInvoice\Action\Payroll\PayrollAttendanceImportAction::class, 'restoreSampleProfile']);
+            $g->get('/imports/attendance/template', [\MyInvoice\Action\Payroll\PayrollAttendanceImportAction::class, 'template']);
             // Dodatečné hromadné schválení pracovních měsíců z použité dávky docházky.
             $g->post('/time/imports/attendance/{id:[0-9]+}/apply', [\MyInvoice\Action\Payroll\PayrollAttendanceImportAction::class, 'approveTimeMonths']);
             $g->get('/payments/liabilities', [PayrollPaymentAction::class, 'listLiabilities']);
@@ -1425,6 +1442,12 @@ final class Routes
                 '/annual-settlements/{year:[0-9]{4}}/people/{employeeId:[0-9]+}/certificates',
                 [PayrollAnnualSettlementAction::class, 'saveCertificates'],
             );
+            // Ročně uplatňované položky (§ 38h odst. 6): nezdanitelné části, sleva
+            // za exekuci a sleva na manžela. Celá sada za rok jedním PUT.
+            $g->put(
+                '/annual-settlements/{year:[0-9]{4}}/people/{employeeId:[0-9]+}/annual-claims',
+                [PayrollAnnualSettlementAction::class, 'saveAnnualClaims'],
+            );
             $g->post(
                 '/annual-settlements/{year:[0-9]{4}}/people/{employeeId:[0-9]+}/settle',
                 [PayrollAnnualSettlementAction::class, 'settle'],
@@ -1653,6 +1676,15 @@ final class Routes
                 '/statutory-evidence/health-insurer-bulk/apply',
                 [\MyInvoice\Action\Payroll\PayrollHealthInsurerBulkAction::class, 'apply'],
             );
+            // Hromadný zápis podepsaných prohlášení poplatníka.
+            $g->post(
+                '/statutory-evidence/declaration-signed-bulk/preview',
+                [\MyInvoice\Action\Payroll\PayrollTaxDeclarationBulkSignAction::class, 'preview'],
+            );
+            $g->post(
+                '/statutory-evidence/declaration-signed-bulk/apply',
+                [\MyInvoice\Action\Payroll\PayrollTaxDeclarationBulkSignAction::class, 'apply'],
+            );
             // Hromadné doplnění místa výkonu práce (obec a stát pro JMHZ).
             $g->post(
                 '/employments/workplace-bulk/preview',
@@ -1661,6 +1693,15 @@ final class Routes
             $g->post(
                 '/employments/workplace-bulk/apply',
                 [\MyInvoice\Action\Payroll\PayrollEmploymentWorkplaceBulkFillAction::class, 'apply'],
+            );
+            // Hromadné ukončení skončených dohod a archivace dávno ukončených vztahů.
+            $g->post(
+                '/employments/bulk-closure/preview',
+                [\MyInvoice\Action\Payroll\PayrollEmploymentBulkClosureAction::class, 'preview'],
+            );
+            $g->post(
+                '/employments/bulk-closure/apply',
+                [\MyInvoice\Action\Payroll\PayrollEmploymentBulkClosureAction::class, 'apply'],
             );
             $g->get(
                 '/people/{id:[0-9]+}/foreign-permits',
@@ -2240,6 +2281,18 @@ final class Routes
                 [PayrollJmhzCorrectionAction::class, 'freezeContentCorrection'],
             );
             $g->get(
+                '/submissions/jmhz-post20/{employmentId:[0-9]+}',
+                PayrollJmhzPost20Action::class,
+            );
+            $g->get(
+                '/submissions/{submissionId:[0-9]+}/jmhz-zero-amendment',
+                [PayrollJmhzCorrectionAction::class, 'zeroAmendmentCandidates'],
+            );
+            $g->post(
+                '/submissions/{submissionId:[0-9]+}/jmhz-zero-amendment',
+                [PayrollJmhzCorrectionAction::class, 'freezeZeroAmendment'],
+            );
+            $g->get(
                 '/submissions/jmhz-protocol-import',
                 [PayrollJmhzProtocolImportAction::class, 'history'],
             );
@@ -2796,6 +2849,12 @@ final class Routes
             $g->put   ('/expense-rules/{id:[0-9]+}',                [\MyInvoice\Action\Accounting\ExpenseClassificationRuleAction::class, 'update']);
             $g->delete('/expense-rules/{id:[0-9]+}',                [\MyInvoice\Action\Accounting\ExpenseClassificationRuleAction::class, 'delete']);
             $g->get   ('/purchase-invoices/{id:[0-9]+}/expense-suggestions', [\MyInvoice\Action\Accounting\ExpenseClassificationRuleAction::class, 'suggestions']);
+            // Pravidla výnosů (2217): účet položky vydané faktury podle kódu, textu nebo sazby.
+            $g->get   ('/revenue-rules',                            [\MyInvoice\Action\Accounting\RevenueClassificationRuleAction::class, 'list']);
+            $g->get   ('/revenue-rules/{id:[0-9]+}',                [\MyInvoice\Action\Accounting\RevenueClassificationRuleAction::class, 'get']);
+            $g->post  ('/revenue-rules',                            [\MyInvoice\Action\Accounting\RevenueClassificationRuleAction::class, 'create']);
+            $g->put   ('/revenue-rules/{id:[0-9]+}',                [\MyInvoice\Action\Accounting\RevenueClassificationRuleAction::class, 'update']);
+            $g->delete('/revenue-rules/{id:[0-9]+}',                [\MyInvoice\Action\Accounting\RevenueClassificationRuleAction::class, 'delete']);
             // Karty evidence drobného majetku (§DM krok 3) — §28/5 ZoÚ a ČÚS 013 chtějí
             // evidenci majetku účtovaného rovnou do spotřeby. Karta NIC neúčtuje; náklad
             // na 501 vzniká už zaúčtováním dokladu podle expense_kind (1092).

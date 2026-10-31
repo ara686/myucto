@@ -321,6 +321,9 @@ final class EetReviewFixesTest extends TestCase
         $service->post($this->supplierId, (int) $yesterday['id'], $this->userId);
 
         $old = $service->create($this->supplierId, $this->sale($registerId, 400.00, '2026-10-29') + ['post' => false], $this->userId);
+        // Pevné created_at mimo den dokladu: z výchozího CURRENT_TIMESTAMP by test spadl
+        // právě v den, kdy reálné datum = datum dokladu (hodiny testu jsou zafixované).
+        $this->db->pdo()->prepare("UPDATE cash_documents SET created_at = '2026-10-31 09:00:00' WHERE id = ?")->execute([$old['id']]);
         $service->post($this->supplierId, (int) $old['id'], $this->userId);
 
         $stmt = $this->db->pdo()->prepare(

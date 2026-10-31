@@ -45,7 +45,7 @@ final class PurchaseVatTreatmentTest extends TestCase
         self::assertSame('mixed', $summary['effective']);
         self::assertCount(2, $summary['parts']);
         self::assertSame(60.0, $summary['parts'][1]['vat_deduction_percent']);
-        self::assertSame(['header_differs_from_allocations'], $summary['warnings']);
+        self::assertSame([], $summary['warnings'], 'Smíšený nárok hlavička vyjádřit neumí, upozornění by nešlo odstranit.');
         self::assertSame('allocations', $summary['items'][0]['state']);
     }
 

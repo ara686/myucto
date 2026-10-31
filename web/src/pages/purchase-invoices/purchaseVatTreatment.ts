@@ -46,6 +46,14 @@ export function headerDiffersFromAllocations(header: HeaderVat, allocations: Pic
 }
 
 /**
+ * Mají alokace rozpisu různý nárok na odpočet (smíšený nárok)? Pak hlavička nárok neurčuje:
+ * změnu hlavičky systém do rozpisu nepromítne a do evidence jde nárok z alokací.
+ */
+export function allocationsHaveMixedDeduction(allocations: Pick<PurchaseVatAllocation, 'vat_deduction' | 'vat_deduction_percent'>[]): boolean {
+  return new Set(allocations.map(a => deductionKey(a.vat_deduction, a.vat_deduction_percent))).size > 1
+}
+
+/**
  * Stav položky v evidenci DPH: `effectiveCode` je kód, se kterým položka do evidence jde
  * (vlastní, jinak kód hlavičky, stejně jako evidence DPH).
  */

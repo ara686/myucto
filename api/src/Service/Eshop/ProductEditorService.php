@@ -135,13 +135,20 @@ final class ProductEditorService
             throw new EshopException('sku_taken', 'Skladová karta s tímto SKU už existuje.', 409);
         }
         $itemType = (string) (array_key_exists('item_type', $input) ? ($input['item_type'] ?? 'goods') : ($existing['item_type'] ?? 'goods'));
-        if (!in_array($itemType, ['material', 'goods', 'product'], true)) {
+        if (!in_array($itemType, ['material', 'goods', 'product', 'service'], true)) {
             throw new EshopException('validation_failed', 'Neplatný typ skladové karty.', 400);
+        }
+        if ($itemType === 'service' && ($existing['item_type'] ?? '') !== 'service' && $itemId > 0
+            && $this->items->hasMovements($supplierId, $itemId)) {
+            throw new EshopException('item_has_movements', 'Kartu se skladovými pohyby nelze změnit na službu.', 409);
         }
         $unit = trim((string) (array_key_exists('unit', $input) ? ($input['unit'] ?? 'ks') : ($existing['unit'] ?? 'ks')));
         $trackingMode = (string) ($input['tracking_mode'] ?? $existing['tracking_mode'] ?? 'none');
         if (!in_array($trackingMode, ['none', 'lot', 'serial'], true)) {
             throw new EshopException('validation_failed', 'Neplatný režim sledování skladové karty.', 400);
+        }
+        if ($itemType === 'service') {
+            $trackingMode = 'none';
         }
         if ($trackingMode !== ($existing['tracking_mode'] ?? 'none')) {
             $stmt = $this->db->pdo()->prepare('SELECT 1 FROM stock_tracking_units WHERE supplier_id = ? AND stock_item_id = ? LIMIT 1');

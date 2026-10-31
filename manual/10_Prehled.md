@@ -263,6 +263,8 @@ Na desktopu má aplikace dvě stálé lišty:
 
 Máte-li víc firem, hledání (**Alt+Q**) i paleta příkazů (**Ctrl+K**) nabízí ve skupině **Přepnout firmu** i firmy podle názvu nebo IČ. Aktuální firma se nenabízí.
 
+Hledání (**Alt+Q**) najde také zaměstnance podle jména, příjmení nebo osobního čísla, a to ve všech firmách, kde smíte číst mzdy. U zaměstnance z jiné firmy je uveden její název; jeho volbou se firma přepne a otevře se karta osoby.
+
 Otevřete-li odkaz na doklad jiné firmy (vydaná či přijatá faktura, zápis v deníku, pokladní doklad, ostatní položka, bankovní výpis, dokument, skladový doklad nebo objednávka) a máte do té firmy přístup, aplikace na ni přepne sama a doklad otevře. Do firmy, ke které přístup nemáte, se nepřepíná a doklad se nezobrazí.
 
 Pokud v sekci **Systém** zůstane pouze **Nápověda (manuál)**, horní menu tuto sekci nezobrazuje. Nápověda je dál dostupná přes kontextovou ikonu.
@@ -285,10 +287,10 @@ Na menší obrazovce lze tlačítkem **Menu vlevo** ve spodní liště nahradit 
 | **Dokumenty** | Dokumenty a Kniha jízd |
 | **Sklad** | Skladové karty, příjemky a výdejky, E-shop, inventury a sestavy |
 | **Daně** | Daňové výkazy, Daňový optimalizátor a samostatný **Hromadný export** |
-| **Účetnictví** | **Přehled firem**, Účetní deník, Automat, K doúčtování, účetní výkazy, kontroly, mzdy a majetek |
+| **Účetnictví** | Účetní deník, Automat, K doúčtování, účetní výkazy, kontroly, mzdy a majetek |
 | **Nástroje** | Šablony, Účtový rozvrh, Zápočty, Aktivace a doúčtování, Inventarizace účtů, výkazy kapitálu, Spojené osoby, Uzávěrka, Účetní nastavení a jako poslední **EPO podání a archív** |
 | **Firma** | Nastavení firmy, integrace, AI nastavení, branding, kategorie, API tokeny a Chybějící doklady |
-| **Systém** | Sazby a číselníky, samostatné **Daňové konstanty**, dodavatelé, uživatelé, role, e-maily, log, plánované úlohy, aktualizace a licenční položky |
+| **Systém** | **Přehled firem** (jen s přístupem k více firmám), Sazby a číselníky, samostatné **Daňové konstanty**, dodavatelé, uživatelé, role, e-maily, log, plánované úlohy, aktualizace a licenční položky |
 
 ### 10.10.10 Více panelů pracovního prostoru
 
@@ -308,7 +310,7 @@ Ikona hvězdičky **Oblíbené** vlevo od obnovy okna otevře seznam oblíbenýc
 
 Uložíte-li nebo odešlete-li něco v jednom okně, ostatní okna stejné firmy se při návratu do nich sama obnoví. Týká se to přehledů, ve kterých by jinak zůstal starý stav: Přehled, vydané a přijaté faktury, klienti, banka, Datová schránka a Mzdová podání (Měsíc, K odeslání, Odesláno a přehledy agend). Například JMHZ odeslané datovou schránkou ze Mzdových podání se po přepnutí do okna Datové schránky objeví v Odchozích podáních bez obnovení stránky. Obsah zůstává vidět a jen se přepíše novými údaji. Otevřený dialog, rozepsaný formulář nebo probíhající odesílání se nepřepisují; obnova proběhne, až je zavřete nebo dokončíte.
 
-Při otevření šestnáctého okna aplikace požádá o potvrzení zavření nejstaršího skrytého okna. Odmítnutím zachováte všechna rozpracovaná data. Obsah oken se uchovává pouze v paměti této záložky. Obnovení stránky, zavření záložky nebo odhlášení jej vymaže; po obnovení se otevře jeden panel na adrese prvního panelu. Okna nenahrazují ukládání dokladů.
+Najednou může být otevřeno nejvýše 20 oken. Při otevření dvacátého prvního okna aplikace bez dotazu zavře nejstarší skryté okno i s jeho rozpracovaným obsahem. Jsou-li všechna okna zobrazená v panelech, nové okno se neotevře. Obsah oken se uchovává pouze v paměti této záložky. Obnovení stránky, zavření záložky nebo odhlášení jej vymaže; po obnovení se otevře jeden panel na adrese prvního panelu. Okna nenahrazují ukládání dokladů.
 
 Každé okno si pamatuje vlastní firmu. Výběr okna jiné firmy automaticky přepne aktivní firmu; rozpracovaná okna předchozí firmy zůstanou v přepínači. Zobrazované panely patří vždy aktivní firmě. Ruční přepnutí firmy obnoví její poslední otevřené okno, případně Homepage, pokud ještě žádné nemá. Prakticky lze například ponechat seznam přijatých faktur v prvním panelu, otevřít detail dokladu ve druhém a účetní deník ve třetím. **Ctrl+klik** na interní odkaz uvnitř panelu jej otevře v prvním prázdném panelu napravo a tento panel aktivuje. Po zaplnění všech panelů napravo se další odkaz otevře v bezprostředním panelu **+1**. Ctrl+klik v posledním panelu, Cmd+klik a prostřední tlačítko myši zachovávají běžné otevření nové záložky prohlížeče.
 

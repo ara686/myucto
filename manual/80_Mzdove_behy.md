@@ -66,7 +66,9 @@ Kapitolu otevřete, když:
 9. Klikněte na **Schválit**.
 
 **Jak poznáte, že je hotovo:** Běh má stav **Schváleno** a hlavní tlačítko
-nabízí **Zaúčtovat**. Každý zaměstnanec má výplatní pásku a v podvojném
+nabízí **Zaúčtovat**. Výplatní pásky zaměstnanců se generují na pozadí
+(viz [§ 83.3](83_Dokumenty_a_vystupy.md#833-krok-za-krokem-mesicni-dokumenty))
+a v podvojném
 účetnictví vznikl mzdový deník.
 
 > [!TIP]
@@ -148,7 +150,9 @@ pro JMHZ. Aplikace nabízí tři hromadné akce.
    nezapisuje.
 3. Chcete-li chybějící prohlášení zapsat jako nepodepsané, zaškrtněte
    **Zapsat chybějící prohlášení jako nepodepsané (N osob)**. Nejdřív si
-   přečtěte, komu by to přepnulo zdanění na srážkovou daň.
+   přečtěte, komu by to přepnulo zdanění na srážkovou daň. Podepsaná
+   prohlášení zapíšete odkazem **Podepsaná prohlášení hromadně**
+   ([§ 86.4.1](86_Zamestnanci.md#8641-podepsana-prohlaseni-hromadne)).
 4. Údaje uložte a pokračujte krokem, který nabídne dialog (**Spočítat mzdy**,
    **Obnovit podklady**, nová revize nebo **Vyžádat opravu**).
 
@@ -362,7 +366,8 @@ Oprava nepřepíše původní pohyb: zvýšení přidá jen rozdíl a snížení
 reverzi navázanou na původní sražení. Opakované schválení částku nezapíše
 podruhé.
 
-Schválení zároveň vytvoří výplatní pásku každé zpracované osoby a v podvojném
+Schválení zároveň zařadí generování výplatní pásky každé zpracované osoby
+(vzniknou na pozadí) a v podvojném
 účetnictví rozdílový mzdový deník. Použijí se předkontace zmrazené při
 uzamknutí vstupů, takže pozdější změna nastavení nezmění zkontrolovanou
 revizi. Je-li účetní období uzamčené, datum deníku se posune na první otevřený
@@ -484,7 +489,9 @@ Skrývat a obnovovat smí uživatel s právem schvalovat mzdové běhy.
 
 Skrýt nejde blokující chyby, varování s výjimkou ani překročení zákonných
 limitů (dohoda o provedení práce nad 300 hodin, průměr dohody o pracovní
-činnosti, přesčasy, exekuce, sleva na pojistném).
+činnosti, přesčasy, exekuce, sleva na pojistném). Upozornění, že se dohoda
+o provedení práce blíží limitu (od 240 hodin), skrýt jde po vztazích. Až
+hodiny limit překročí, objeví se samostatné varování, které skrýt nejde.
 
 ### 80.11.12 Převzaté měsíce roku přechodu
 

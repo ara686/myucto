@@ -125,6 +125,7 @@ final class RoutePermissionMap
         ['POST', '#^/api/invoices/bulk-reminder$#', 'invoices.reminder', AccessLevel::WRITE],
         ['POST', '#^/api/invoices/bulk-reissue$#', 'invoices.clone', AccessLevel::WRITE],
         ['DELETE', '#^/api/invoices/[0-9]+$#', 'invoices.delete', AccessLevel::WRITE],
+        ['POST', '#^/api/invoices/[0-9]+/convert-to-tax-document$#', 'invoices.delete', AccessLevel::WRITE],
         ['*', '#^/api/invoices/[0-9]+/(request-approval|request-approval-test|approval-status)$#', 'invoices.approval', AccessLevel::WRITE],
         ['POST', '#^/api/invoices$#', 'invoices.create', AccessLevel::WRITE],
         ['GET', '#^/api/invoices(/|$)#', 'invoices', AccessLevel::READ],
@@ -257,9 +258,12 @@ final class RoutePermissionMap
         // údaje celé firmy, proto stejné právo jako zápis.
         ['POST', '#^/api/payroll/statutory-evidence/bulk-defaults/(preview|apply)$#', 'payroll.person.write', AccessLevel::WRITE],
         ['POST', '#^/api/payroll/statutory-evidence/health-insurer-bulk/(preview|apply)$#', 'payroll.person.write', AccessLevel::WRITE],
+        ['POST', '#^/api/payroll/statutory-evidence/declaration-signed-bulk/(preview|apply)$#', 'payroll.person.write', AccessLevel::WRITE],
         // Hromadné doplnění pracoviště — tentýž zápis jako oprava podmínek na
         // kartě vztahu, jen pro víc vztahů. Náhled je POST se seznamem vztahů.
         ['POST', '#^/api/payroll/employments/workplace-bulk/(preview|apply)$#', 'payroll.employment.write', AccessLevel::WRITE],
+        // Hromadné ukončení a archivace — tentýž přechod stavu jako na kartě vztahu.
+        ['POST', '#^/api/payroll/employments/bulk-closure/(preview|apply)$#', 'payroll.employment.write', AccessLevel::WRITE],
         // Počáteční stavy kumulací: zápis je táž operace jako PUT
         // /people/{id}/statutory-openings, jen za víc osob naráz (soubor za celou
         // firmu). Vzorový soubor je prázdná šablona bez dat, tedy jen čtení.
@@ -511,6 +515,9 @@ final class RoutePermissionMap
         ['GET', '#^/api/payroll/submissions/[0-9]+/jmhz-content-correction-preparations$#', 'payroll.submissions', AccessLevel::WRITE],
         ['GET', '#^/api/payroll/submissions/[0-9]+/jmhz-content-correction$#', 'payroll.submissions', AccessLevel::WRITE],
         ['POST', '#^/api/payroll/submissions/[0-9]+/jmhz-content-correction$#', 'payroll.submissions', AccessLevel::WRITE],
+        ['GET', '#^/api/payroll/submissions/jmhz-post20/[0-9]+$#', 'payroll.submissions', AccessLevel::READ],
+        ['GET', '#^/api/payroll/submissions/[0-9]+/jmhz-zero-amendment$#', 'payroll.submissions', AccessLevel::WRITE],
+        ['POST', '#^/api/payroll/submissions/[0-9]+/jmhz-zero-amendment$#', 'payroll.submissions', AccessLevel::WRITE],
         ['POST', '#^/api/payroll/submissions/[0-9]+/jmhz-cancel(?:-components)?$#', 'payroll.submissions', AccessLevel::WRITE],
         ['GET', '#^/api/payroll/submissions/jmhz-protocol-import$#', 'payroll.submissions', AccessLevel::READ],
         ['POST', '#^/api/payroll/submissions/jmhz-protocol-import$#', 'payroll.submissions', AccessLevel::WRITE],
@@ -551,6 +558,9 @@ final class RoutePermissionMap
         // jdou přímo do úhrnu, ze kterého vychází přeplatek, takže kdo je smí
         // zadat, ten rozhoduje o penězích stejně jako ten, kdo zúčtování provede.
         ['PUT', '#^/api/payroll/annual-settlements/[0-9]{4}/people/[0-9]+/certificates$#', 'payroll.approve', AccessLevel::WRITE],
+        // Roční nároky (§ 15, § 35 odst. 4, sleva na manžela) jdou rovnou do
+        // základu a daně, ze kterých vychází přeplatek — stejně citlivé jako potvrzení.
+        ['PUT', '#^/api/payroll/annual-settlements/[0-9]{4}/people/[0-9]+/annual-claims$#', 'payroll.approve', AccessLevel::WRITE],
         ['POST', '#^/api/payroll/annual-settlements/[0-9]{4}/people/[0-9]+/settle$#', 'payroll.approve', AccessLevel::WRITE],
         // Hromadné zúčtování žadatelů přes frontu ročních dokumentů — týž úkon.
         ['POST', '#^/api/payroll/documents/annual-batches/annual-settlement/[0-9]{4}$#', 'payroll.approve', AccessLevel::WRITE],
@@ -582,6 +592,11 @@ final class RoutePermissionMap
         // v catch-all pravidle níž: kdo cestu založil, musí umět svůj překlep uklidit.
         ['POST', '#^/api/payroll/travel/trips/[0-9]+/(approve|materialize|cancel)$#', 'payroll.approve', AccessLevel::WRITE],
         ['*', '#^/api/payroll/travel(?:/.*)?$#', 'payroll.inputs.write', AccessLevel::WRITE],
+        // Evidence tržeb pro osvobozené spropitné (§ 6 odst. 9 písm. g) ZDP).
+        // Strop se zmrazuje do schválených vstupů a mění daň i pojistné, proto
+        // zápis pod `payroll.approve` jako ostatní daňové podklady.
+        ['GET', '#^/api/payroll/food-service-tips/[0-9]{4}-[0-9]{2}$#', 'payroll', AccessLevel::READ],
+        ['PUT', '#^/api/payroll/food-service-tips/[0-9]{4}-[0-9]{2}$#', 'payroll.approve', AccessLevel::WRITE],
         ['GET', '#^/api/payroll/deduction-agreements(?:/|$)#', 'payroll', AccessLevel::READ],
         ['*', '#^/api/payroll/deduction-agreements(?:/|$)#', 'payroll.inputs.write', AccessLevel::WRITE],
         ['GET', '#^/api/payroll/revisions/[0-9]+/net-results/[0-9]+$#', 'payroll', AccessLevel::READ],
@@ -606,9 +621,10 @@ final class RoutePermissionMap
         // Založení chybějících osob z podkladů je personální zápis, ne mzdový vstup.
         ['POST', '#^/api/payroll/imports/attendance/persons$#', 'payroll.person.write', AccessLevel::WRITE],
         // Profily mapování sloupců jsou nastavení firmy; číst je smí každý, kdo importuje.
-        ['POST', '#^/api/payroll/imports/attendance/profiles(?:/import|/[0-9]+/copy)?$#', 'payroll.settings', AccessLevel::WRITE],
+        ['POST', '#^/api/payroll/imports/attendance/profiles(?:/import|/sample|/[0-9]+/copy)?$#', 'payroll.settings', AccessLevel::WRITE],
         ['DELETE', '#^/api/payroll/imports/attendance/profiles/[0-9]+$#', 'payroll.settings', AccessLevel::WRITE],
-        ['GET', '#^/api/payroll/imports/attendance/(batches(?:/[0-9]+)?|profiles(?:/[0-9]+/export)?)$#', 'payroll.inputs.write', AccessLevel::READ],
+        // Šablona XLSX Vzoru MyÚčto je bez dat firmy; stáhne si ji každý, kdo importuje.
+        ['GET', '#^/api/payroll/imports/attendance/(batches(?:/[0-9]+)?|profiles(?:/[0-9]+/export)?|template)$#', 'payroll.inputs.write', AccessLevel::READ],
         ['POST', '#^/api/payroll/imports/attendance/(preview|apply)$#', 'payroll.inputs.write', AccessLevel::WRITE],
         ['GET', '#^/api/payroll/settings/activation$#', 'payroll.settings', AccessLevel::READ],
         ['*', '#^/api/payroll/settings/activation$#', 'payroll.settings', AccessLevel::WRITE],

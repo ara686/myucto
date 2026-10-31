@@ -212,6 +212,8 @@
     "currency": "Currency",
     "exchange_rate": "Exchange rate to CZK",
     "paid_amount": "Paid",
+    "settled_outside": "of which outside bank and cash",
+    "settled_outside_hint": "Settled by offset, internal document or payment status taken over from another program.",
     "remaining": "Remaining",
     "variable_symbol": "Payment reference",
     "accounting": "Accounting",
@@ -799,6 +801,11 @@
     "light": "Light",
     "dark": "Dark"
   },
+  "list_nav": {
+    "group": "Browse the list",
+    "previous": "Previous document in the list ({key})",
+    "next": "Next document in the list ({key})"
+  },
   "app": {
     "title": "MyÚčto.cz",
     "subtitle": "Invoicing system"
@@ -865,7 +872,13 @@
     "upload": "Upload",
     "upload_original": "Upload original file",
     "retake": "Take again",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "crop_toggle": "Crop to the document",
+    "crop_hint": "We found the document in the photo. You can move the corners.",
+    "crop_manual_hint": "Move the corners to the edges of the document.",
+    "crop_off_hint": "The whole photo will be uploaded.",
+    "crop_not_found": "The document could not be found in the photo. You can mark the crop manually.",
+    "corner": "Document corner {n}"
   },
   "documents": {
     "ai": {
@@ -1249,7 +1262,10 @@
     "company_switch": "Switch to this company",
     "group_clients": "Clients / vendors",
     "group_invoices": "Issued invoices",
-    "group_purchase": "Received invoices"
+    "group_purchase": "Received invoices",
+    "group_employees": "Employees",
+    "employee_code": "No. {code}",
+    "employee_inactive": "inactive"
   },
   "command": {
     "title": "Command palette",
@@ -3282,6 +3298,67 @@
       "apply_failed": "Could not save the insurers.",
       "retry": "Try again"
     },
+    "declaration_sign_bulk": {
+      "title": "Signed taxpayer declarations in bulk",
+      "intro": "Records the taxpayer declaration as Signed in the statutory records of the selected people, the same way as the person card. This applies the basic taxpayer credit; record other credits and children on the person card. A signed declaration is never overwritten and nothing is written into months closed by an approved payroll.",
+      "warning_one_payer": "An employee may sign the declaration for the same period with one payer only. If they signed it elsewhere, do not record it.",
+      "warning_responsibility": "The employee is responsible for the truthfulness of the declaration. The application cannot verify the signature or the declared data, so record only declarations you hold signed.",
+      "year": "Tax year",
+      "signed_on": "Signature date",
+      "reload": "Load preview",
+      "effective_from": "Valid from {date}",
+      "basis": {
+        "year_start": "from the start of the year, the declaration was signed before the year or in January",
+        "signing_month": "from the month of signature, the credit does not apply to earlier months",
+        "after_frozen_period": "only after the period closed by an approved payroll (until {date})"
+      },
+      "year_frozen": "The whole year {year} is closed by an approved payroll (until {date}). Nothing is written retroactively into a closed calculation.",
+      "recalculate_title": "Payrolls in progress to recalculate",
+      "recalculate_hint": "These payrolls were calculated without the signature. Recalculate them after recording.",
+      "summary": {
+        "people": "People",
+        "ready": "Will be recorded",
+        "already_signed": "Already signed",
+        "skipped": "Cannot be recorded"
+      },
+      "state": {
+        "ready": "Will be recorded",
+        "already_signed": "Already signed for the year, skipped",
+        "period_frozen": "Period closed by an approved payroll",
+        "timeline_gap": "The previous record ends earlier, record it on the person card",
+        "employee_not_found": "Person not found"
+      },
+      "change": {
+        "add": "New record",
+        "close_previous": "Ends the previous one ({status})",
+        "replace": "Replaces ({status})"
+      },
+      "status": {
+        "not-signed": "Not signed",
+        "unverified": "Unverified",
+        "signed": "Signed"
+      },
+      "select_all": "Select all",
+      "select_none": "Clear selection",
+      "select_person": "Select: {name}",
+      "empty": "Nobody has an ongoing employment in {year}.",
+      "confirm": "I confirm that I hold the signed declarations of the selected people.",
+      "apply": "Record signature ({count})",
+      "nothing_selected": "Select at least one person to record the signature for.",
+      "confirm_required": "Confirm that you hold the signed declarations.",
+      "applied_toast": "Signed declaration recorded for {count} people.",
+      "result_title": "Result",
+      "result": {
+        "applied": "Recorded",
+        "skipped": "Skipped",
+        "failed": "Error"
+      },
+      "applied_item": "from {date}",
+      "person_fallback": "Person no. {id}",
+      "load_failed": "Could not load the preview.",
+      "apply_failed": "Could not record the signed declarations.",
+      "retry": "Try again"
+    },
     "statutory_bulk": {
       "title": "Fill in default statutory data",
       "intro": "For people without a foreign element, fills in the missing data that follows from having no ties abroad: Czech tax residence, Czech insurance jurisdiction without an A1 form and, for people under 60, the working pensioner discount not claimed. An existing record is never overwritten. The health insurer is never filled in bulk; only the registration or the employee knows it.",
@@ -3316,6 +3393,7 @@
       "declaration_label": "Record the missing declarations as not signed ({count} people)",
       "declaration_hint": "Records the state “not signed”. Without a signed declaration neither the taxpayer credit nor other credits apply. Turn this on only when you know the declarations really were not signed.",
       "declaration_on": "This does not create a signature. When the employee signs the declaration, record it on their card.",
+      "declaration_signed_link": "Signed declarations in bulk",
       "withholding_title": "Withholding tax risk ({count})",
       "withholding_hint": "Without a signed declaration, withholding tax applies in any month where the total income from you stays below the decisive amount. This applies to every relationship type, including regular employment, not just agreements. Review them before writing.",
       "and_more": "and {count} more",
@@ -3396,6 +3474,64 @@
       "failed_title": "Could not be filled in ({count})",
       "recalculate_notice": "The payroll run for which you filled in the workplace needs to be recalculated and approved as a new revision for the new value to be reflected in the report."
     },
+    "bulk_closure": {
+      "open": "End finished agreements",
+      "open_count": "End finished agreements ({count})",
+      "title": "End finished agreements",
+      "intro": "Preview of relationships that are no longer running according to their agreed end or to payroll. Each selected relationship is ended exactly as with the button on its card, including the exit checklist (deregistration, exit documents). Nothing changes until you confirm the selection.",
+      "inactivity_months": "Without activity (months)",
+      "archive_after_months": "Archive after (months)",
+      "reload": "Load preview",
+      "retry": "Try again",
+      "load_failed": "The preview could not be loaded.",
+      "apply_failed": "The bulk ending could not be completed.",
+      "empty": "No relationship to end or archive.",
+      "summary_blocked": "Needs review",
+      "groups": {
+        "expired": {
+          "summary": "Agreed end has passed",
+          "title": "Agreed end has passed",
+          "hint": "Active relationships whose agreed end has already passed. They will be ended as of the agreed end date."
+        },
+        "inactive": {
+          "summary": "Agreements without activity",
+          "title": "Agreements without activity",
+          "hint": "DPP and DPČ agreements without an agreed end that have no payroll input or attendance in the last {months} months. They will be ended as of the last day of the month of their last activity."
+        },
+        "archive": {
+          "summary": "To archive",
+          "title": "Ended relationships to archive",
+          "hint": "Relationships ended more than {months} months ago. Archiving only tidies up the list and can be undone."
+        }
+      },
+      "detail": {
+        "expired": "Agreed end {date}",
+        "inactive": "Last activity {period}",
+        "never_active": "No payroll input or attendance",
+        "archive": "Ended {date}"
+      },
+      "blocked": {
+        "activity_after_end": "Has payroll input or attendance after the end date ({period}). Check the end date.",
+        "settled_after_end": "Has settled payroll after the end date ({period}). Check the end date."
+      },
+      "select_all": "Select all",
+      "end_on": "End as of",
+      "archive_on": "Archive as of {date}",
+      "nothing_selected": "Select at least one relationship.",
+      "too_many": "At most {max} relationships can be processed at once.",
+      "date_required": "Fill in a date for every selected relationship.",
+      "apply": "Continue ({count})",
+      "confirm_text": "{end} relationships will be ended and {archive} archived. Continue?",
+      "confirm_apply": "Confirm",
+      "back": "Back to selection",
+      "applied_toast": "Relationships processed: {count}.",
+      "result_title": "Result",
+      "result": {
+        "applied": "Done",
+        "failed": "Failed"
+      },
+      "failed_title": "Failed ({count})"
+    },
     "warning_suppressions": {
       "title": "Hidden warnings",
       "intro": "Warnings you permanently hid on a payroll run. They are not counted in run checks or their totals until you restore them. Blocking errors cannot be hidden.",
@@ -3424,6 +3560,7 @@
         "tax_declaration_not_signed_summary": "Unsigned taxpayer declaration",
         "time_month_missing": "Approved working time missing",
         "employment_without_inputs": "Employment without payroll inputs",
+        "dpp_annual_hours_approaching": "Agreement to perform work approaching the 300-hour limit",
         "recurring_component_without_input": "Recurring payroll component without input"
       }
     },
@@ -3525,7 +3662,7 @@
         "hint": "Only checks that prevent approval are shown. {count} more warnings do not stop approval; find them under All checks, grouped by kind."
       },
       "missing_previous": {
-        "title": "Before {period}, a payroll run is missing for {count} months since payroll started in MyÚčto",
+        "title": "Before {period}, payroll runs are missing for {count} months since payroll started in MyÚčto | Before {period}, a payroll run is missing for {count} month since payroll started in MyÚčto | Before {period}, payroll runs are missing for {count} months since payroll started in MyÚčto",
         "hint": "Payroll builds on previous months (annual totals, averages, advance tax). Calculate the missing months first. If the previous program processed them, move the payroll start in the payroll settings past them and take them over as taken-over months.",
         "settings": "Payroll start",
         "hint_takeover": "The previous payroll program processed these months (MyÚčto has their payroll from the migration) and MyÚčto has no run of its own for them. Move the payroll start and take the months over in the Taken-over months panel below with Take over all months.",
@@ -3884,9 +4021,13 @@
           "negative-relationship-tax-base": "An employment relationship has a negative tax base.",
           "nonresident-monthly-credit-not-supported": "A non-resident monthly credit requires professional review.",
           "nonresident-monthly-child-credit-not-supported": "A non-resident monthly child benefit requires professional review.",
+          "nonresident-student-credit-not-allowed": "A tax non-resident is not entitled to the student tax credit.",
           "other-withholding-eligibility-unverified": "Eligibility for withholding tax has not been verified.",
           "prior-period-tax-correction-requires-revision": "A prior-period tax correction requires a separate revision.",
           "relationship-tax-classification-conflict": "Employment relationship tax classifications conflict with each other.",
+          "student-credit-conflict": "The student tax credit is recorded both as regular and as doctoral study.",
+          "student-credit-interval-open": "The student tax credit claim has no end date, although the age limit always ends it.",
+          "student-credit-not-in-ruleset": "The student tax credit does not exist in this year; the law introduces it from 2027.",
           "tax-credit-evidence-unverified": "The tax credit claim lacks verified evidence.",
           "tax-credit-requires-signed-declaration": "The credit requires an effective signed tax declaration.",
           "tax-declaration-conflict": "Tax declaration evidence conflicts with each other.",
@@ -4451,6 +4592,7 @@
         "empty": "There are no payroll inputs in this period",
         "empty_hint": "Add a one-off input, import a file or materialize recurring assignments.",
         "basket_usage": "Basket {basket} under {statute}: after this benefit {used} of {limit} is used, {remaining} remains.",
+        "basket_usage_unlimited": "Basket {basket} under {statute} is exempt without a limit this year, {used} provided after this benefit.",
         "basket_over_limit": "The statutory basket limit is exceeded: {exempt} exempt, {taxable} taxable — the excess enters income tax and both insurance assessment bases.",
         "meal_entitlement_summary": "{count} entitlements in total: {qualifying} primary and {second} second contributions.",
         "meal_allocation_uniform": "Audit allocation: {count} entitlements × {amount}; per entitlement limit {limit}, {exempt} exempt and {taxable} taxable.",
@@ -4685,10 +4827,12 @@
       "exemption_basket": {
         "none": "No statutory basket",
         "non_cash_health": "Health benefits (§ 6(9)(d)(1))",
-        "non_cash_leisure": "Recreation, sport and culture (§ 6(9)(d)(2))",
+        "non_cash_leisure": "Sport, culture and leisure, until 2026 also recreation (§ 6(9)(d)(2), unlimited from 2027)",
         "old_age_savings": "Old-age savings and long-term care (§ 6(9)(m))",
         "meal_per_shift": "Meal contribution per shift (§ 6(9)(b))",
-        "temporary_accommodation": "Temporary accommodation per month (§ 6(9)(i))"
+        "temporary_accommodation": "Temporary accommodation per month (§ 6(9)(i))",
+        "recreation": "Recreation and holidays from 2027 (§ 6(9)(d)(3))",
+        "food_service_tips": "Food service tips from 2027 (§ 6(9)(g))"
       },
       "exemption_basis": {
         "none": "No basis stated",
@@ -4983,7 +5127,7 @@
       "filing_obligation_reason": "Why they file a return",
       "filing_obligation_reason_placeholder": "For example self-employment income above CZK 20,000…",
       "annual_claims": "Claims items that can only be applied annually",
-      "annual_claims_hint": "Gifts, mortgage interest, pension and life insurance, the spouse credit or the halted-enforcement credit. The application cannot compute these yet.",
+      "annual_claims_hint": "Gifts, housing loan interest, pension and life insurance, the spouse credit or the halted-enforcement credit are recorded in the section below. For any remaining items the application does not record, choose \"does not record\".",
       "annual_claims_note": "What exactly they claim",
       "annual_claims_note_placeholder": "For example mortgage interest…",
       "other_caregiver_status": "Did another person in the shared household claim the child in any month?",
@@ -5098,7 +5242,8 @@
       "annual_claims_options": {
         "unknown": "Unknown",
         "none": "No, none",
-        "present_unsupported": "Yes, they do"
+        "present": "Yes, claimed (recorded below)",
+        "present_unsupported": "Yes, claims something the application does not record"
       },
       "outcome": {
         "overpayment": "Overpayment to return",
@@ -5133,7 +5278,138 @@
         "tax_year_not_finished": "The tax year has not ended yet. The annual settlement can only be performed from 1 January of the following year.",
         "taxpayer_credit_evidence_missing": "The employee has signed the taxpayer declaration, but the basic taxpayer credit is missing from their claim records. Add it on the employee card — without it the settlement would compute the tax without the annual credit.",
         "request_date_missing": "The request is recorded as submitted but has no submission date. Without it there is no proof the request arrived by 15 February. The record is saved — fill in the request date.",
-        "prior_documents_date_missing": "The prior employers' documents are recorded as provided but have no receipt date. Without it the 15 February deadline cannot be evidenced. The record is saved — fill in the receipt date."
+        "prior_documents_date_missing": "The prior employers' documents are recorded as provided but have no receipt date. Without it the 15 February deadline cannot be evidenced. The record is saved — fill in the receipt date.",
+        "annual_claims_inconsistent": "The answer about annually claimed items does not match the records. Either choose \"Yes, claimed (recorded below)\" and save the items, or remove the records.",
+        "annual_claim_evidence_unverified": "An annually claimed item has no evidence. Only an evidenced item may affect the tax base and credits - add the evidence in the Annually claimed items section.",
+        "spouse_credit_conditions_not_met": "The conditions of the spouse credit are not met. Correct the credit record or remove it.",
+        "preschool_credit_conditions_not_met": "The conditions of the childcare placement credit are not met. Correct the credit record or remove it."
+      },
+      "row_base_before_deductions": "Tax base before deductions",
+      "row_non_taxable": "Non-taxable parts of the tax base (Sec. 15)",
+      "row_enforcement_credit": "Halted-enforcement credit",
+      "trace": {
+        "donation": "Gifts: claimed {claimed}, cap {cap}",
+        "threshold_not_met": "minimum gift threshold not met",
+        "housing_interest": "Housing loan interest: claimed {claimed}, {months} mo., limit {cap}",
+        "retirement_and_care": "Pension, life insurance, long-term investment and care: claimed {claimed}, limit {cap}"
+      },
+      "spouse_failure": {
+        "spouse_relation": "The selected person is not recorded as a spouse.",
+        "child_relation": "The selected child is not recorded as a child of the employee or the spouse.",
+        "spouse_income_missing": "The spouse's own annual income is missing, so the limit cannot be checked.",
+        "spouse_income_over_limit": "The spouse's own income exceeded the CZK 68,000 limit.",
+        "ztp_p_month_outside_claim": "A month with the ZTP/P increase is not among the months the credit is claimed for.",
+        "ztp_p_not_in_evidence": "The ZTP/P increase is claimed, but the spouse has no ZTP/P card in the records.",
+        "child_not_under_three": "The child was not under 3 years old in one of the claimed months.",
+        "spouse_not_in_evidence": "The spouse is not in the employee's dependants records."
+      },
+      "preschool_failure": {
+        "statute_not_effective": "The childcare placement credit can be claimed only from tax year 2027.",
+        "minimum_wage_unavailable": "The calculation rules for this year have no minimum wage to derive the credit cap from.",
+        "child_relation": "The selected person is not a dependent child. A grandchild only in care replacing parental care.",
+        "child_not_in_household": "The child did not live in the employee's household in this year.",
+        "claimed_by_other_taxpayer": "Another taxpayer in the same household claims the credit for the child.",
+        "claimed_as_business_expense": "The expenses are claimed as a business expense.",
+        "agreement_without_shared_care": "An agreement on the credit cap applies only when the child lives in more households.",
+        "agreed_cap_over_minimum_wage": "The agreed cap exceeds the minimum wage.",
+        "agreement_document_missing": "The reference to the parents' written agreement on the credit cap is missing (Section 38l(2)(g)(3) of the Income Tax Act).",
+        "other_taxpayer_confirmation_missing": "Another taxpayer supports the same child. Their confirmation with their name and the amount of the credit they claim, even zero, is missing (Section 38l(2)(g)(2) of the Income Tax Act).",
+        "combined_credit_over_minimum_wage": "The employee's credit together with the credit confirmed by the other taxpayer exceeds the minimum wage."
+      },
+      "claims": {
+        "section": "Annually claimed items",
+        "hint": "Non-taxable parts of the tax base, the spouse credit and the halted-enforcement credit for this year. The whole set is saved at once and the result is recalculated.",
+        "empty": "No item recorded yet.",
+        "new_kind": "Item type",
+        "add": "Add item",
+        "save": "Save items",
+        "saved": "Annually claimed items were saved.",
+        "save_failed": "Annually claimed items could not be saved.",
+        "amount": "Amount (CZK)",
+        "quantity": "Number of donations",
+        "quantity_evaluation": "Valued at {rate} per donation, total {total}",
+        "months": "Months the interest was paid for",
+        "housing_before_2021": "Housing need acquired before 1 Jan 2021 (limit CZK 300,000)",
+        "evidence_reference": "Evidenced by",
+        "note": "Note",
+        "kind": {
+          "donation": "Gift",
+          "blood_donation": "Unpaid blood donation",
+          "organ_donation": "Organ donation",
+          "stem_cell_donation": "Haematopoietic cell donation",
+          "housing_interest": "Housing loan interest",
+          "pension_savings": "Pension savings",
+          "life_insurance": "Private life insurance",
+          "long_term_investment": "Long-term investment product (DIP)",
+          "long_term_care_insurance": "Long-term care insurance",
+          "enforcement_stop": "Halted enforcement"
+        },
+        "kind_hint": {
+          "donation": "A gift must be at least 2 % of the tax base or CZK 1,000; at most 15 % of the tax base can be deducted.",
+          "blood_donation": "Valued at CZK 3,000 per donation.",
+          "organ_donation": "Valued at CZK 20,000 per donation.",
+          "stem_cell_donation": "Valued at CZK 20,000 per donation.",
+          "housing_interest": "Limit CZK 150,000 per year, 1/12 for each month.",
+          "pension_savings": "Enter the amount to deduct from the fund's confirmation: only the employee's contributions above the maximum state contribution threshold, not the employer's contribution. A shared limit of CZK 48,000 applies to pension, life insurance, long-term investment and long-term care.",
+          "life_insurance": "A shared limit of CZK 48,000 applies to pension, life insurance, long-term investment and long-term care.",
+          "long_term_investment": "A shared limit of CZK 48,000 applies to pension, life insurance, long-term investment and long-term care.",
+          "long_term_care_insurance": "A shared limit of CZK 48,000 applies to pension, life insurance, long-term investment and long-term care.",
+          "enforcement_stop": "The halted-enforcement credit is claimed as an amount."
+        },
+        "counterparty": {
+          "donation": "Recipient of the gift",
+          "blood_donation": "Facility of the donation",
+          "organ_donation": "Facility of the donation",
+          "stem_cell_donation": "Facility of the donation",
+          "housing_interest": "Bank",
+          "pension_savings": "Pension fund",
+          "life_insurance": "Insurer",
+          "long_term_investment": "Product provider",
+          "long_term_care_insurance": "Insurer",
+          "enforcement_stop": "Enforcement officer"
+        },
+        "spouse_section": "Spouse credit",
+        "spouse_hint": "Credit for a spouse living in the same household who cares for a child under 3. The spouse's own income must not exceed CZK 68,000.",
+        "spouse_missing": "The employee has no spouse in the dependants records. Add one in the employee card.",
+        "spouse_add": "Claim spouse credit",
+        "spouse_remove": "Remove spouse credit",
+        "spouse_person": "Spouse",
+        "spouse_child": "Child under 3",
+        "spouse_months": "Months the credit is claimed",
+        "spouse_ztp_p_months": "Months the spouse holds a ZTP/P card",
+        "spouse_income": "Spouse's own annual income (CZK)",
+        "spouse_income_hint": "Limit CZK 68,000.",
+        "preschool_section": "Childcare placement credit",
+        "preschool_hint": "Expenses actually paid and evidenced for a kindergarten, children's group or comparable facility for this year, excluding meals. Up to the minimum wage per child. Only one parent per household may claim it.",
+        "preschool_missing": "The employee has no child in the dependants records. Add one in the employee card.",
+        "preschool_add": "Claim childcare placement credit",
+        "preschool_remove": "Remove childcare placement credit",
+        "preschool_child": "Child",
+        "preschool_facility_kind": "Facility type",
+        "preschool_facility": {
+          "kindergarten": "Kindergarten",
+          "children_group": "Children's group",
+          "licensed_care": "Licensed childcare business"
+        },
+        "preschool_facility_name": "Facility name",
+        "preschool_expenses": "Annual expenses per the facility's confirmation (CZK)",
+        "preschool_expenses_hint": "Excluding meals. The credit is capped at the minimum wage.",
+        "preschool_households": "Number of households the child lives in",
+        "preschool_households_hint": "With shared care the cap is divided by the number of households.",
+        "preschool_agreed_cap": "Cap under a written agreement of the parents (CZK)",
+        "preschool_agreed_cap_hint": "Leave empty without an agreement. The parents' caps must add up to the minimum wage.",
+        "preschool_other_taxpayer": "Another person in the same household claims the credit for this child",
+        "preschool_business_expense": "The expenses are claimed as a business expense",
+        "preschool_grandchild_care": "The grandchild is in care replacing parental care",
+        "preschool_evidence_placeholder": "Facility's confirmation of the expenses paid",
+        "preschool_agreement_reference": "Written agreement of the parents",
+        "preschool_agreement_reference_placeholder": "Reference to the agreement on the credit cap",
+        "preschool_other_supporting": "Another taxpayer also supports the same child in the year (other parent, spouse)",
+        "preschool_other_confirmation_hint": "The other taxpayer's confirmation of the childcare credit they claim. If they are employed and their employer performs their annual settlement, the employer issues it. If they claim no credit, enter 0.",
+        "preschool_other_taxpayer_name": "Name of the other taxpayer",
+        "preschool_other_taxpayer_claimed": "Credit they claim (CZK)",
+        "preschool_other_confirmation_reference": "Other taxpayer's confirmation",
+        "preschool_other_confirmation_placeholder": "Reference to the confirmation"
       },
       "open_employee_card": "Open employee card",
       "settle_read_only": "Only a user allowed to approve payroll can perform the settlement.",
@@ -5485,6 +5761,7 @@
       "filter": "View",
       "quick_inputs": "Monthly payroll entry",
       "statutory_bulk_action": "Fill in default statutory data",
+      "declaration_sign_bulk_action": "Signed declarations in bulk",
       "workplace_bulk_action": "Fill in place of work",
       "no_results_title": "No employee matches the filter",
       "no_results_description": "Change the search text or choose another view.",
@@ -5493,7 +5770,15 @@
         "all": "All",
         "needs_setup": "Setup required",
         "needs_data": "Data to add",
-        "blocking_data": "Blocks filing"
+        "blocking_data": "Blocks filing",
+        "dpp_hours_limit": "DPP near the 300 h limit"
+      },
+      "dpp_hours": {
+        "label": "DPP {hours} / {limit} h",
+        "title_ok": "Worked on DPP agreements in {year}: {hours} h of {limit} h. {remaining} h remaining.",
+        "title_approaching": "Approaching the limit: worked on DPP agreements in {year}: {hours} h of {limit} h. {remaining} h remaining.",
+        "title_exceeded": "Limit exceeded: worked on DPP agreements in {year}: {hours} h, more than {limit} h. Work above the limit cannot be done under a DPP.",
+        "takeover": "Including {hours} h taken over from the previous system."
       },
       "create": {
         "action": "Add employee",
@@ -5528,6 +5813,16 @@
       "empty_description": "People will appear here with their employment relationships as soon as they are available in payroll.",
       "columns": {
         "person": "Employee",
+        "last_name": "Last name",
+        "first_name": "First name",
+        "full_name": "Full name",
+        "personal_number": "Personal number",
+        "start_date": "Start",
+        "end_date": "End",
+        "birth_date": "Date of birth",
+        "position": "Job position",
+        "email": "E-mail",
+        "phone": "Phone",
         "status": "Status",
         "relations": "Employment relationships",
         "count": "Relationship count",
@@ -6109,6 +6404,16 @@
         "municipality_name": "Workplace municipality",
         "municipality_code": "Municipality code (CISOB)",
         "country_code": "Country code",
+        "address_hint": "The monthly report includes the full workplace address from January 2027. Fill in at least the house number and postcode; leave it empty for a workplace abroad.",
+        "street": "Street",
+        "house_number": "House number",
+        "orientation_number": "Street number",
+        "postal_code": "Postcode",
+        "address_point_code": "Address point code (RÚIAN, optional)",
+        "state_prosecutor": "Public prosecutor (reported from January 2027)",
+        "state_prosecutor_unset": "Not stated",
+        "state_prosecutor_yes": "Yes",
+        "state_prosecutor_no": "No",
         "apz_status": "Labour office contribution (active employment policy)",
         "apz_instrument": "Active employment policy instrument",
         "functional_benefits": "Functional benefits under Section 6(10) of the Income Tax Act",
@@ -6159,9 +6464,14 @@
         "period": "Settlement month",
         "period_hint": "The month in which you settle the income in the payroll run. Insurance is paid for this month.",
         "period_invalid": "Deferred income belongs to a month after the relationship ended, {first} at the earliest.",
+        "period_annual_invalid": "Annual settlement after termination is reported only for January, February or March.",
         "type_label": "Kind of deferred income",
-        "type_hint": "The application handles income after the employment ended. Other kinds (for example back pay for earlier months of an ongoing relationship) are filed as a corrective report on the CSSZ ePortal.",
+        "type_hint": "The application handles income after the employment ended, annual settlement after termination and both together. File wage compensation after invalid termination as a corrective report on the CSSZ ePortal.",
         "type_1": "Income after the employment ended (1)",
+        "type_4": "Annual settlement after the employment ended (4)",
+        "type_5": "Income after termination with annual settlement (5)",
+        "type_5_hint": "For January to March, when you pay extra income for the ended employment and report annual totals or the result of the annual tax settlement at the same time. The pension record is reported as for income after termination (code with P, 0 days, assessment base of the payment). For agreements and small-scale employment file the report manually through the ČSSZ ePortal.",
+        "type_4_hint": "For January to March, when annual totals or the result of the annual tax settlement are reported for the ended employment and no income is paid in the month. The payroll run takes the employment even without payroll inputs and the report carries zero income, 0 insured days and a pension record without a code. For agreements (DPP, DPČ) file the report manually through the ČSSZ ePortal.",
         "type_other": "Kind {code}",
         "note": "Note",
         "confirm": "Confirm",
@@ -6187,7 +6497,8 @@
         "specific_legal_fact_applies": "A specific legal event reportable in JMHZ may occur",
         "ozp_employment_support_applies": "The employer may claim supported employment funding for a person with a disability",
         "deep_mining_work_applies": "The work is performed in deep mining",
-        "monthly_hint": "Automatic JMHZ preparation cannot yet handle these flagged exceptions. If one actually applies, contact support; do not disable correct information to submit a report. Enforcement, insolvency and deduction agreements are taken from their respective records."
+        "monthly_hint": "Automatic JMHZ preparation cannot yet handle these flagged exceptions. If one actually applies, contact support; do not disable correct information to submit a report. Enforcement, insolvency and deduction agreements are taken from their respective records.",
+        "ozp_employment_support_hint": "Only for an employer recognised on the protected labour market. The monthly report then carries the disability wage data: confirm the payment date and cash payment in Payroll submissions; deductions in favour of the employer are derived from deduction agreements."
       },
       "cz_isco_code": "CZ-ISCO code",
       "cz_isco": {
@@ -6525,6 +6836,7 @@
         },
         "field": {
           "status": "Status",
+          "signed_on": "Date signed",
           "evidence_reference": "Supporting reference (optional)",
           "credit_kind": "Credit kind",
           "evidence_status": "Documented",
@@ -6566,7 +6878,9 @@
             "taxpayer": "Taxpayer",
             "disability-basic": "First- and second-degree disability",
             "disability-extended": "Third-degree disability",
-            "ztp-p": "ZTP/P card holder"
+            "ztp-p": "ZTP/P card holder",
+            "student": "Student (up to age 26)",
+            "student-doctoral": "Student, full-time doctoral programme (up to age 28)"
           },
           "evidence_status": {
             "verified": "Documented",
@@ -6944,6 +7258,59 @@
         "taxable_income_confirmation": "Taxable income confirmation",
         "takeover_deductions_review": "Deductions from taken-over report",
         "takeover_sickness_review": "Sickness from taken-over report"
+      },
+      "post20": {
+        "title": "Remedy after the 20th (REGZEC and corrective reports)",
+        "subtitle": "After the 20th, a component cancellation is no longer possible. An invalid employment, a forgotten deregistration or a change of the start or end date is remedied by a pair of filings: a REGZEC registration action and corrective monthly reports for the affected months.",
+        "situation_label": "Situation",
+        "situation_placeholder": "Choose a situation",
+        "situations": {
+          "late_termination": "Forgotten or retroactive deregistration",
+          "date_change": "Change or correction of the start or end date",
+          "invalid_employment": "Invalid employment (court decision, wrong activity type or variable symbol)"
+        },
+        "situation_hints": {
+          "late_termination": "REGZEC action 2 (deregistration) and zero corrective reports for the months after the end. First record the actual end date and file the corrective reports, then the deregistration.",
+          "date_change": "REGZEC action 3 (change) or 4 (correction) and corrective reports for the affected months. First correct the dates on the employment and file the corrective reports, then REGZEC.",
+          "invalid_employment": "REGZEC action 8 (cancellation) with an attachment stating the reason and corrective reports to zero values for all periods of the employment. The application does not zero the months within the employment by itself; this is a manual step."
+        },
+        "environment_label": "Environment",
+        "environments": {
+          "production": "Production",
+          "test": "ČSSZ test"
+        },
+        "load": "Show the procedure",
+        "load_failed": "The procedure after the 20th could not be loaded.",
+        "status": {
+          "open": "Waiting for filing",
+          "partially_done": "Partially filed",
+          "complete": "Both parts filed"
+        },
+        "order": {
+          "together": "ČSSZ recommends filing REGZEC and the corrective reports at once.",
+          "amendments_first": "Methodically the corrective reports first, then REGZEC; ideally both at once."
+        },
+        "registration_title": "REGZEC registration (action {actions})",
+        "registration_missing": "No registration event with this action exists for the employment yet. Prepare it in the registration section above.",
+        "registration_event": "Action {action} as of {date}: {state}",
+        "registration_prepared": "prepared",
+        "registration_submitted": "included in a submission",
+        "months_title": "Monthly reports (last {months} months)",
+        "months_empty": "No filed monthly report concerns this employment in the affected months.",
+        "actions": {
+          "annul": "annul with a zero corrective report",
+          "amended": "corrective report filed",
+          "review": "boundary month: review and correct with a content correction if needed",
+          "manual": "the application does not correct it by itself, proceed manually",
+          "choose_variant": "the form carried income or contributions: choose how to correct it"
+        },
+        "variants_title": "The form cannot be annulled by a zero report because it carried income or contributions. Choose the procedure depending on whether the employee returned the payment (JMHZ submission rules, table of typical situations):",
+        "variants": {
+          "returned": "Payment returned: correct the payroll run of the month and send a content correction from a new preparation. The form, the summary part and the contribution part for all employees of the month are corrected.",
+          "not_returned": "Payment not returned: a zeroed form and the original values 1:1 in the Deferred income form, the summary and contribution parts stay unchanged. The application cannot build this variant yet; file it manually on the ePortal."
+        },
+        "variants_note": "In both variants also file REGZEC. After the deadline always file a correction report, never a cancellation; wait 48 hours between corrections.",
+        "open_submissions": "Open the submission history"
       },
       "termination": {
         "title": "Termination",
@@ -7528,6 +7895,7 @@
           },
           "employment": {
             "activity_code": "Activity type",
+            "election_commission_hint": "An election commission member with a tax-exempt fee and no other income from the employer is neither registered nor reported. Activity type 13 is only for a member with taxable income (above-limit meal allowance): fill in the tax attributes only and register within 8 days of taking the oath. For a local referendum commission the fee is not exempt, use activity type 1.",
             "relationship_detail_code": "Relationship detail",
             "actual_start_on": "Start date",
             "contract_start_on": "Contractual start date",
@@ -7603,7 +7971,9 @@
             "issuing_labour_office_code": "Issuing labour office",
             "permit_identifier": "Decision number",
             "permit_from": "Permit from",
-            "permit_to": "Permit to"
+            "permit_to": "Permit to",
+            "stay_valid_from": "Residence valid from (start from 1 January 2027)",
+            "stay_valid_to": "Residence valid to (start from 1 January 2027)"
           },
           "health_insurance_select": "Select a health insurer",
           "health_insurance_no_results": "No insurer matches",
@@ -7666,6 +8036,11 @@
           "employment_type": "Employment type in the evidence",
           "employment_type_1": "Employment relation",
           "employment_type_2": "Civil-service relation",
+          "employment_type_3": "Civil service under Act No. 361/2003 Coll.",
+          "employment_type_4": "Civil service under Act No. 221/1999 Coll.",
+          "state_employee_hint": "From 1 Nov 2026 state employees work under an employment contract (Act No. 195/2026 Coll.). For terminations from that day choose Employment relationship and its termination reason, otherwise 15 (Other). Choose Civil-service relation for terminations up to 31 Oct 2026 and for a relation ending on 1 Nov 2026 under Section 95(19) (reason 5, Other).",
+          "state_employee_warning_service_1_11": "A civil-service relation ending on 1 Nov 2026 is reported only for terminations under Section 95(19) of Act No. 195/2026 Coll., with reason 5 (Other). If the employment contract of a state employee ended, choose Employment relationship.",
+          "state_employee_warning_service_after": "Under Act No. 195/2026 Coll. state employees work under an employment contract from 1 Nov 2026. For a state employee choose Employment relationship; keep Civil-service relation only for other service relations. This notice is informational only.",
           "termination_reason": "Numeric termination reason",
           "entitlement": "Severance entitlement arose",
           "paid_in_full": "Paid in full",
@@ -8884,7 +9259,13 @@
             "activity_invalid": "The activity type in the saved payroll revision is not valid in the JMHZ code list.",
             "detail_missing": "The selected activity type requires a more detailed employment classification.",
             "detail_invalid": "The detailed employment classification is not valid in the JMHZ code list.",
-            "detail_not_applicable": "The detailed employment classification cannot be used with the selected activity type."
+            "detail_not_applicable": "The detailed employment classification cannot be used with the selected activity type.",
+            "ozp_wage": "The employee has disability employment support and the wage payment date and cash payment flag are missing.",
+            "ozp_payment_date": "The wage payment date including contributions is out of the allowed range.",
+            "risk_shifts": "Work classified in category 4 is missing the number of shifts worked in the month (10580).",
+            "ozp_profile": "Disability employment support in the confirmation does not match the employment settings.",
+            "ozp_deductions": "A deduction agreement has no decision whether the employer is the creditor and how it is reported in JMHZ.",
+            "ozp_employer": "The employer registration does not mark the employer as recognised on the protected labour market."
           },
           "steps": {
             "specification": "Open payroll for this period. For a new preparation or an actually required correction, create and approve a new correction revision and prepare the report from it. Do not resend accepted reports solely because of this warning. Contact support if a new revision has the same problem.",
@@ -8919,7 +9300,13 @@
             "activity_invalid": "Open this employment and its effective terms. In the basic details check Activity type and Detailed employment classification against the actual contract. Save the correct terms effective for the reporting month, then recalculate payroll and approve a new revision. Do not substitute incorrect values just to pass validation.",
             "detail_missing": "Open this employment and its effective terms. In the basic details check Activity type and Detailed employment classification against the actual contract. Save the correct terms effective for the reporting month, then recalculate payroll and approve a new revision. Do not substitute incorrect values just to pass validation.",
             "detail_invalid": "Open this employment and its effective terms. In the basic details check Activity type and Detailed employment classification against the actual contract. Save the correct terms effective for the reporting month, then recalculate payroll and approve a new revision. Do not substitute incorrect values just to pass validation.",
-            "detail_not_applicable": "Open this employment and its effective terms. In the basic details check Activity type and Detailed employment classification against the actual contract. Save the correct terms effective for the reporting month, then recalculate payroll and approve a new revision. Do not substitute incorrect values just to pass validation."
+            "detail_not_applicable": "Open this employment and its effective terms. In the basic details check Activity type and Detailed employment classification against the actual contract. Save the correct terms effective for the reporting month, then recalculate payroll and approve a new revision. Do not substitute incorrect values just to pass validation.",
+            "ozp_wage": "Below, enter the payment date (the latest of paying the wage, social and health contributions) and whether any part was paid in cash, then confirm.",
+            "ozp_payment_date": "Enter the day the wage including contributions was actually paid; it must not be in the future or before the start of the month.",
+            "risk_shifts": "Below, enter the number of shifts the employee worked in risk work during the month, then confirm. Payroll does not record shifts.",
+            "ozp_profile": "Check the disability employment support flag on the employment card and prepare the report again.",
+            "ozp_deductions": "On the agreement choose the creditor (employer or third party) and, for a deduction in favour of the employer, its category 10350 to 10353; then prepare the report again.",
+            "ozp_employer": "Check the protected labour market recognition in the employer settings, or switch off disability employment support on the employment."
           },
           "actions": {
             "run": "Open payroll for this month",
@@ -8927,7 +9314,8 @@
             "employment": "Check employment terms",
             "deductions": "Open person’s enforcement and deductions",
             "agreements": "Open person’s deduction agreements",
-            "support": "Open support"
+            "support": "Open support",
+            "employer": "Open employer settings"
           },
           "fields": {
             "orchard_discount_eligible": "Insurance discount for fruit or vegetable growing",
@@ -8938,6 +9326,27 @@
           "technical_details": "Technical details for support",
           "xsd_versions": "Report format: saved version {old}, current version {current}.",
           "control_versions": "Validation rules: saved version {old}, current version {current}."
+        },
+        "jmhz_ozp_wage": {
+          "hint": "The payment date (10347) is the latest of: wage payment day, social contribution remittance day, health contribution remittance day. Deductions in favour of the employer (10349 to 10353) are derived from the payroll run.",
+          "payment_date": "Wage payment date including contributions",
+          "cash_paid": "Part of the wage paid in cash",
+          "social_paid_on": "Social contribution remittance day (from January 2027)",
+          "health_paid_on": "Health contribution remittance day (from January 2027)",
+          "dates_hint": "From January 2027 the report carries the wage payment date (10589) and separately the social (10570) and health (10571) contribution remittance days; fill in both.",
+          "cash_select": "Select",
+          "cash_yes": "Yes",
+          "cash_no": "No",
+          "confirm": "Confirm disability wage data",
+          "failed": "The disability wage data could not be confirmed.",
+          "summary": "Disability wage data (employment {employment}): paid {date}, cash {cash}.",
+          "no_deductions": "No deductions in favour of the employer.",
+          "deduction": "{attribute}: CZK {amount}"
+        },
+        "jmhz_risk_shifts": {
+          "label": "Number of shifts in risk work (10580)",
+          "confirm": "Confirm number of shifts",
+          "failed": "The number of shifts could not be confirmed."
         }
       },
       "manual_acceptance": {
@@ -9079,9 +9488,9 @@
         "ageReachedOn": "Date retirement age was reached",
         "ageReachedOnHint": "Only if it happened by the end of the reported year. From this date the activity has code D (e.g. 1D+).",
         "earlyPensionFrom": "Recipient of early old-age pension from",
-        "earlyPensionFromHint": "From this date the activity also has code D. The record is still kept.",
+        "earlyPensionFromHint": "An early pension does not give code D; that applies only from reaching retirement age. The record is still kept for an early pensioner.",
         "fullPensionPaidFrom": "First month of full old-age pension payment",
-        "fullPensionPaidFromHint": "From 2025 no pension record is kept for a recipient of a full old-age pension; months from this month are left out of the record.",
+        "fullPensionPaidFromHint": "The month from which the pension is payable, even when it starts mid-month. From 2025 the record is kept up to and including this month; later months are left out of the record.",
         "foreignInsurance": "The employee participates or participated in pension insurance abroad (the record is then kept even for a full pension recipient).",
         "confirm": "I confirm the employee's pension details for the reported year (empty fields are taken from the person's statutory records)."
       },
@@ -10225,7 +10634,8 @@
         "employee": "Select the employee the agreement belongs to.",
         "title": "Fill in the agreement name — the deduction appears under it on the payslip.",
         "read_only": "You only have read access to payroll inputs, so you cannot save the agreement.",
-        "started_on": "For a statutory deduction, fill in the day deductions started — it sets its rank against garnishments and agreements."
+        "started_on": "For a statutory deduction, fill in the day deductions started — it sets its rank against garnishments and agreements.",
+        "jmhz_target": "For a deduction in favour of the employer, choose how it is reported in JMHZ."
       },
       "legal_basis_label": "Legal basis of the deduction",
       "legal_basis_hint_agreement": "Wage deduction agreement with the employee (Section 146(b) of the Labour Code). The day the agreement was delivered sets its rank against garnishments.",
@@ -10282,6 +10692,29 @@
         "reversed": "Deduction reversal",
         "paid": "Remitted to recipient",
         "payment_reversed": "Remittance reversal"
+      },
+      "section_jmhz": "JMHZ monthly report (employees with disabilities)",
+      "jmhz_hint": "Fill in for an employee for whom an employer recognised on the protected labour market claims disability employment support. Only deductions in favour of the employer are reported; enforcement and statutory deductions are not.",
+      "jmhz_creditor": "Deduction creditor",
+      "jmhz_creditor_options": {
+        "undecided": "Not decided",
+        "employer": "Employer",
+        "third_party": "Third party"
+      },
+      "jmhz_target": "Report in JMHZ as",
+      "jmhz_target_select": "Select category",
+      "jmhz_target_badge": "JMHZ {attribute}",
+      "jmhz_targets": {
+        "10350": "10350 Employer claim under the Civil Code",
+        "10351": "10351 Damage compensation",
+        "10352": "10352 Workplace catering (s. 236 Labour Code)",
+        "10353": "10353 Other obligation (s. 146(b) Labour Code)"
+      },
+      "jmhz_target_hints": {
+        "10350": "Deduction agreement under s. 2045 of the Civil Code in favour of the employer, e.g. an employee loan or repayment of an advance above entitlement.",
+        "10351": "Deduction to compensate damage the employee is liable for (s. 250 et seq. Labour Code), always by agreement.",
+        "10352": "Employee contribution to catering provided by the employer, not the meal allowance.",
+        "10353": "Another obligation of the employee towards the employer, e.g. paying for benefits or a loan instalment."
       }
     },
     "insolvency": {
@@ -11272,6 +11705,30 @@
         "official_form_own": "Own readable report"
       }
     },
+    "food_service_tips": {
+      "title": "Food service tips",
+      "hint": "From 2027, tips paid to employees are exempt per month up to 7 % of the monthly food service revenue, split equally among the employees who received tips or as determined by the employer. The part above the cap is taxed and counts towards the insurance assessment base.",
+      "load_failed": "The tip records could not be loaded.",
+      "save_failed": "The tip records could not be saved.",
+      "saved": "The tip records were saved.",
+      "locked": "Tips in this month are already approved (employees: {count}) and their cap is frozen. The records can be changed only after the approved tip inputs are reversed.",
+      "revenue": "Monthly food service revenue (CZK)",
+      "mode": "Split of exempt tips",
+      "mode_per_capita": "Equally among employees with tips",
+      "mode_employer_determined": "As determined by the employer",
+      "recipients": "Number of employees who received tips this month",
+      "recipients_hint": "The cap per employee is 7 % of the revenue divided by this number.",
+      "allocations": "Exempt tip cap per employee",
+      "employee": "Employee",
+      "cap": "Cap (CZK)",
+      "add_allocation": "Add employee",
+      "remove_allocation": "Remove",
+      "evidence_reference": "Revenue evidenced by",
+      "note": "Note",
+      "employer_cap": "Total exemption cap (7 %)",
+      "per_capita_cap": "Cap per employee",
+      "save": "Save tip records"
+    },
     "benefit_baskets": {
       "title": "Benefit exemption baskets",
       "subtitle_annual": "How much of the annual limit under Section 6(9) of the Income Tax Act each employee has used up this year, and how much of it has already been taxed.",
@@ -11311,17 +11768,20 @@
       },
       "basket": {
         "non_cash_health": "Health benefits",
-        "non_cash_leisure": "Recreation, sport and culture",
+        "non_cash_leisure": "Sport, culture and leisure",
         "old_age_savings": "Old-age savings and long-term care",
         "meal_per_shift": "Meal contribution",
-        "temporary_accommodation": "Temporary accommodation"
+        "temporary_accommodation": "Temporary accommodation",
+        "recreation": "Recreation and holidays",
+        "food_service_tips": "Tips"
       },
       "status": {
         "ok": "Within limit",
         "approaching": "Approaching limit",
         "exceeded": "Above limit",
         "incomplete": "Incomplete data",
-        "limit_unavailable": "Limit unavailable"
+        "limit_unavailable": "Limit unavailable",
+        "unlimited": "No limit"
       },
       "limit_basis": {
         "tax_year": "The limit applies per tax period.",
@@ -11931,6 +12391,7 @@
         "employer_annual": "Complete employer annual data",
         "office": "Open payroll offices",
         "annual_settlement": "Open annual settlement",
+        "deferred_income": "Open deferred income",
         "takeover": "Open payroll takeover review",
         "workplace": "Complete the workplace",
         "correction": "Open submission status",
@@ -11956,6 +12417,7 @@
         "employer_annual": "In Payroll settings, on the Submissions tab, complete the employer annual data for the December report.",
         "office": "In Payroll settings, complete or correct the OSSZ registration and variable symbol of the payroll office.",
         "annual_settlement": "In Annual settlement, record the request or the result of the settlement.",
+        "deferred_income": "On the card of the ended employment, in the Deferred income section, correct the confirmation type for the reported month, recalculate the run and prepare the report again.",
         "takeover": "In Imports, on the Takeover review tab, complete the missing value of the taken-over payroll.",
         "workplace": "Fill in the municipality and country of the workplace from the codebook and prepare the report again.",
         "correction": "Open the Sent tab and review the regular report the correction relates to.",
@@ -12042,6 +12504,20 @@
         "frozen": "The cancellation of selected employments is prepared as submission no. {id}; send it the same way as the regular report.",
         "already": "The cancellation of selected employments already exists as submission no. {id}."
       },
+      "zero_amendment": {
+        "mode": "Annul the month with a zero correction",
+        "description": "For an employment that no longer lasted in this month (forgotten deregistration, shortened employment), a corrective form with zero values is filed according to the JMHZ submission rules. After the 20th and for January to March 2026 this is the only way; a component cancellation is no longer possible. The annulment belongs together with a REGZEC deregistration or registration change; file both at once.",
+        "cancellation_still_allowed": "The deadline for a component cancellation is still running. Cancelling the selected employments is the simpler way for this situation.",
+        "employment_period": "Employment on record: {start} to {end}",
+        "situation": "I confirm that the employment did not last in this month and the month should not have been reported. This is not an employment in which the person merely did not work.",
+        "impact": "I understand that the annulment is an irreversible corrective report and ČSSZ will cancel the insurance of the selected employees for this month.",
+        "disabled_reason": "Select at least one employment and confirm both the situation and the impact of the annulment.",
+        "confirm": "Annul the month for selected employments ({count})",
+        "load_failed": "The employments of the regular report could not be loaded for the annulment.",
+        "failed": "The zero corrective report could not be prepared.",
+        "frozen": "The zero corrective report is prepared as submission no. {id}; send it the same way as the regular report.",
+        "already": "The zero corrective report already exists as submission no. {id}."
+      },
       "codes": {
         "eldp_correction_reference_invalid": "The corrective pension record does not refer to the frozen record it corrects. The application cannot build such a record; contact support.",
         "eldp_correction_without_change": "The pension record data have not changed since the frozen record, so the corrective record has nothing to correct.",
@@ -12052,7 +12528,7 @@
         "eldp_authority_request_due_on_invalid": "The deadline stated in the ČSSZ or ÚSSZ request is not a valid date, or it precedes the day the request was received. Correct it in the pension record form.",
         "eldp_authority_request_due_on_missing": "For this year the deadline for a pension record on request is set by the request itself, not by law. Enter the deadline stated in the request in the form.",
         "eldp_not_kept_full_old_age_pension": "No pension record is kept for this year: the employee is entitled to payment of the old-age pension in full and does not participate in pension insurance abroad.",
-        "eldp_pension_age_mid_month_unsupported": "The ELDP code changes in the middle of a month (retirement age reached or early old-age pension) and the application does not keep an assessment base for part of a month. File the pension record outside the application.",
+        "eldp_pension_age_mid_month_unsupported": "The ELDP code changes in the middle of a month (retirement age reached) and the application does not keep an assessment base for part of a month. File the pension record outside the application.",
         "eldp_pension_status_conflict": "The statutory records show a verified working pensioner discount, but the pension record confirmation states no old-age pension. Complete the pension details in the form.",
         "eldp_pension_status_evidence_mismatch": "The pension details in the record confirmation differ from the person's statutory records. Correct the records on the person card (sections Retirement age and Pension received), or leave the confirmation fields empty.",
         "eldp_pension_status_invalid": "The employee's pension details are not in a valid format. Correct them in the pension record form.",
@@ -12154,6 +12630,7 @@
         "eldp_xml_snapshot_mismatch": "The pension record XML does not match the exact source snapshot. Prepare the pension record again.",
         "eldp_xml_source_invalid": "The source used to build the pension record XML has an invalid or incomplete format; support must investigate this technical error.",
         "eldp_xsd_validation_failed": "The generated pension record XML did not pass the pinned XSD schema; support must investigate this technical error.",
+        "jmhz_2027_source_missing": "The report for periods from January 2027 requires a new item that payroll does not yet have a source for; the report cannot be built without it.",
         "jmhz_acknowledgement_class_mismatch": "The VREP acknowledgement refers to a different submission class than the one that was sent.",
         "jmhz_acknowledgement_correlation_missing": "The VREP acknowledgement carries no usable CorrelationID; the submission could no longer be traced or closed.",
         "jmhz_acknowledgement_endpoint_untrusted": "The VREP acknowledgement refers to a query address outside HTTPS.",
@@ -12167,6 +12644,7 @@
         "jmhz_annual_request_source_missing": "It is not documented whether the employee requested the annual tax settlement. Open Payroll → Annual settlement and record explicitly requested or not requested.",
         "jmhz_annual_request_status_unresolved": "The status of the annual tax settlement request is not decided. Open Payroll → Annual settlement and decide the request status.",
         "jmhz_annual_settlement_child_details_unsupported": "The annual settlement claims the child tax credit, but the frozen source does not yet carry the mandatory JMHZ identification data for the children.",
+        "jmhz_annual_settlement_spouse_details_unsupported": "The annual settlement claims the spouse credit, but the frozen source does not carry complete JMHZ identification data for the spouse and the child.",
         "jmhz_annual_settlement_performance_source_missing": "It is not documented whether the annual tax settlement was performed. Refresh the JMHZ preparation over the locked annual settlement result records.",
         "jmhz_annual_settlement_request_source_inconsistent": "The performed annual tax settlement does not have a matching locked request and record of annual claims.",
         "jmhz_annual_settlement_result_incomplete": "The annual tax settlement result cannot be safely converted to whole crowns for JMHZ.",
@@ -12258,7 +12736,9 @@
         "jmhz_eldp_code_activity_mismatch": "The pension insurance record code does not match the employment's activity type.",
         "jmhz_eldp_confirmation_note_invalid": "The optional note on the pension insurance record confirmation may have at most 500 characters.",
         "jmhz_eldp_days_mismatch": "The number of days on the pension insurance record does not match the length of the reported insurance interval.",
-        "jmhz_eldp_deducted_days_unsupported": "An employee past retirement age who does not draw an old-age pension has sickness, care, maternity, paternity, unpaid leave or unexcused absence in the month. These are reported as deducted periods (10375), which the application does not yet build into the monthly report. File this employment's report manually through the ČSSZ ePortal, or defer the employment.",
+        "jmhz_eldp_deducted_days_invalid_termination_unsupported": "An employee past retirement age who does not draw an old-age pension has a period after an invalid termination of employment in the month (Section 16(4)(j) of Act No. 155/1995). Deducted periods have no breakdown item for it and the excluded period must lie within the deducted periods, so the application does not build such a month. File this employment's report manually through the ČSSZ ePortal.",
+        "jmhz_eldp_deducted_days_split_month_unsupported": "The employee reached retirement age during the month and has deducted periods (sickness, care, unpaid leave, unexcused absence) after that day. The check catalogue does not specify how to compute insured days with deducted periods for a month split into two sections. File this employment's report manually through the ČSSZ ePortal.",
+        "jmhz_eldp_deducted_days_without_component_unsupported": "An employee past retirement age who does not draw an old-age pension has days in the month without insurance participation that no absence with a deducted-period item explains. The submission rules require the items 10462 to 10469 to add up to 10375, and there is no item for such days. File this employment's report manually through the ČSSZ ePortal.",
         "jmhz_eldp_employment_not_found": "The employment relationship is not included in the source payroll revision of the pension insurance record.",
         "jmhz_eldp_employment_scope_mismatch": "The employment relationship cannot be uniquely identified in the source snapshot.",
         "jmhz_eldp_environment_invalid": "The pension insurance record's environment (production or test) is not valid.",
@@ -12420,6 +12900,7 @@
         "jmhz_projection_form_unbound": "The person's form in the XML submission has no parent submission component.",
         "jmhz_projection_path_ambiguous": "The attribute path belongs to more than one attribute in the JMHZ dictionary at once.",
         "jmhz_projection_path_unknown": "An element of the JMHZ monthly report XML has no counterpart in the JMHZ dictionary.",
+        "jmhz_projection_version_mismatch": "The JMHZ monthly report XML belongs to a different JMHZ specification year than the one it is checked against.",
         "jmhz_projection_xml_unreadable": "The JMHZ monthly report XML cannot be loaded to process its attributes.",
         "jmhz_protocol_ambiguous": "The CSSZ response contains protocols for several submissions, and without the expected CorrelationID it cannot be determined which one belongs to this submission.",
         "jmhz_protocol_anchor_unreadable": "The trusted CSSZ certificate (trust anchor) could not be loaded, so the protocol cannot be verified. Contact support.",
@@ -12574,6 +13055,10 @@
         "jmhz_signing_serial_unreadable": "The signing certificate's serial number cannot be read. Re-upload the certificate or choose a different one in the signing profile.",
         "jmhz_signing_unavailable": "The server does not support the CMS/PKCS#7 signing required for JMHZ submissions; this is a technical issue for support to investigate.",
         "jmhz_snapshot_hash_mismatch": "The frozen JMHZ preparation's fingerprint does not match the stored data. Prepare the report again.",
+        "jmhz_spec_version_mismatch": "The report's data message uses a different specification year than the one that applies to its reporting period. ČSSZ would reject it; contact support.",
+        "jmhz_spec_version_period_invalid": "The reporting period or event date of the submission is not a valid date, so the specification year cannot be determined. Check the period and prepare the submission again.",
+        "jmhz_spec_version_unavailable": "Submissions for periods from 01/2027 (registrations with an event from 1 January 2027) follow the JMHZ 2027 specification, which this version of the application cannot build yet. Reports, corrections and cancellations for periods up to 12/2026 work as before.",
+        "jmhz_spec_version_unknown": "The frozen submission carries an unknown JMHZ specification year, so it will not be built or sent. Contact support.",
         "jmhz_snapshot_invalid": "The saved JMHZ preparation has an invalid format and cannot be read. Prepare the report again.",
         "jmhz_snapshot_missing": "The saved JMHZ preparation needed for this report is missing. Prepare the report again.",
         "jmhz_social_multiple_offices": "The payroll run includes employments from several payroll offices. The insurance part (PVPOJ) is filed separately per office; choose which one to build it for.",
@@ -12630,12 +13115,16 @@
         "jmhz_work_month_not_approved": "The month's working time has not been approved.",
         "jmhz_work_summary_v2_missing": "The approved monthly work summary is missing.",
         "jmhz_workplace_codebooks_unverified": "Verified workplace code-list data is missing.",
+        "jmhz_xml_2027_attribute_missing": "Reports for periods from January 2027 need data the preparation does not carry yet (the attributes are listed in the message). Prepare the report again; contact support if the problem persists.",
+        "jmhz_xml_2027_value_inconsistent": "The payroll data does not meet the 2027 report rules (for example the annual settlement result, or both the advance income and the income under section 6(4) being positive). Check the payroll run and prepare the report again.",
         "jmhz_xml_attribute_unresolved": "The frozen JMHZ document does not have evidence for a required attribute, and it must not be auto-filled with zero or false. Prepare and freeze the report again; contact support if the problem persists.",
         "jmhz_xml_bonus_without_declaration": "The monthly tax bonus cannot be reported without a signed taxpayer declaration. Add the taxpayer declaration for the employee.",
         "jmhz_xml_child_credit_without_children": "The monthly child tax credit cannot be reported if the employee has no recorded dependent children. Add the dependent children for the employee.",
         "jmhz_xml_credit_without_declaration": "A claimed tax credit cannot be reported without a signed taxpayer declaration. Add the taxpayer declaration for the employee.",
         "jmhz_xml_document_version_unsupported": "The JMHZ serializer can only process the current version of the scenario 1 normalized document. Prepare the report again.",
         "jmhz_xml_eldp_code_required": "An ELDP pension insurance record section with a nonzero number of days must have an ELDP code. Prepare the evidence sheet again; contact support if the problem persists.",
+        "jmhz_xml_eldp_deducted_days_sum_mismatch": "The total deducted periods after retirement age (10375) in the pension record do not match the sum of their items 10462 to 10469. Check the absences in the period and prepare the report again.",
+        "jmhz_xml_eldp_deducted_days_without_code": "Deducted periods after retirement age can only be reported in a pension record section with an ELDP code that has D in the second position. Check the employee's pension data and prepare the report again.",
         "jmhz_xml_eldp_excluded_days_sum_mismatch": "The total excluded periods in the pension record do not match their breakdown by type (Section 16(4) of Act No. 155/1995). Check the absences in the period.",
         "jmhz_xml_eldp_excluded_days_without_code": "Excluded periods cannot be reported in the pension record without an excluded-period type code. Check the absences in the period.",
         "jmhz_xml_eldp_missing": "A submission component must contain at least one ELDP pension record section. Prepare the report again; contact support if the problem persists.",
@@ -12653,7 +13142,8 @@
         "jmhz_xml_paid_unworked_hours_below_sickness": "The paid non-worked hours in the work summary do not cover the hours of sickness with wage compensation. Check the sickness records and working time for the month.",
         "jmhz_xml_period_invalid": "The JMHZ submission's reporting period is out of the valid range; it must be a valid calendar month matching the pinned schema. Check the reporting period of the report or the cancellation.",
         "jmhz_xml_primary_employment_invalid": "The employee must have exactly one employment marked as primary, on which the summary data is reported. Check and correct the primary-employment marking on the employee's card.",
-        "jmhz_xml_prisoner_excluded_days_unsupported": "The prisoner form carries only sick leave and maternity among excluded periods. Family member care, paternity or another excluded period cannot be entered there; file this employment's report manually through the ČSSZ ePortal.",
+        "jmhz_xml_prisoner_deducted_days_unsupported": "The prisoner form carries only sick leave and maternity among deducted periods after retirement age. Care, paternity, unpaid leave or unexcused absence cannot be entered there; file this employment's report manually through the ČSSZ ePortal.",
+        "jmhz_xml_prisoner_excluded_days_unsupported":"The prisoner form carries only sick leave and maternity among excluded periods. Family member care, paternity or another excluded period cannot be entered there; file this employment's report manually through the ČSSZ ePortal.",
         "jmhz_xml_pvpoj_missing": "A regular JMHZ submission must contain the insurance part (PVPOJ). Check the social insurance calculation in the payroll run.",
         "jmhz_xml_resolution_blocked": "The JMHZ document has unresolved blocking findings, so it cannot be serialized into a submission or a content correction. Fix the earlier findings listed in the report check.",
         "jmhz_xml_scenario_3_profile_unsupported": "An employment with activity type K through S only supports the statutory profile S with detail 1; any other combination requires individual handling and filing through the ČSSZ ePortal.",
@@ -12664,17 +13154,51 @@
         "jmhz_xml_surcharge_total_missing": "The surcharge breakdown cannot be reported without the total surcharge amount (field 10332). Check the surcharge payroll components in the payroll run.",
         "jmhz_xml_temporary_assignment_user_invalid": "The temporary assignment user is not filled in correctly (the company ID must have eight digits). Correct it on the employment card.",
         "jmhz_xml_risk_categorization_invalid": "The risk categorization must come from the ČSSZ code list (1, 6 or 7). Correct it on the employment card.",
+        "jmhz_xml_risk_shift_count_forbidden": "The number of shifts in risky work is reported only for category 4 work with hours worked in risky work. Contact support.",
         "jmhz_xml_deferred_income_type_invalid": "The deferred income type must come from the ČSSZ code list (1 to 6). Contact support.",
         "jmhz_xml_deferred_income_periods_unsupported": "Type 1 deferred income carries exactly one ELDP period; the application cannot build another layout. File the report manually through the ČSSZ ePortal.",
         "jmhz_xml_deferred_income_period_invalid": "The deferred income month must be 1 to 12. Contact support.",
-        "jmhz_deferred_income_type_unsupported": "The application processes only type 1 deferred income on its own. File other types manually through the ČSSZ ePortal.",
+        "jmhz_deferred_income_type_unsupported": "The application processes only type 1, 4 and 5 deferred income on its own. File wage compensation after invalid termination manually through the ČSSZ ePortal.",
+        "jmhz_deferred_annual_settlement_income_present": "Annual settlement after termination (type 4) is reported without paid income, but the employment has income in the month. Confirm income paid in the same month as type 5 deferred income.",
+        "jmhz_deferred_annual_settlement_period_invalid": "Annual settlement after termination (type 4) is reported only for January, February or March. Correct the month of the deferred income confirmation.",
         "jmhz_eldp_deferred_section_invalid": "The deferred income ELDP does not match the frozen run result. Prepare the report again.",
         "jmhz_xml_variable_symbol_invalid": "The employer's variable symbol must have exactly ten digits. Check the variable symbol setting for the payroll office or the OSSZ registration.",
         "jmhz_xml_wage_breakdown_without_wage": "The wage breakdown cannot be reported when the processed wage is zero. Check the payroll components in the payroll run.",
         "jmhz_xml_work_summary_missing": "The submission component has no frozen monthly work summary. Approve the working time for the month and prepare the report again.",
+        "jmhz_xml_workplace_address_invalid": "The place of work address does not match the 2027 report format (house number, postal code, address point code), or a Czech address is filled in for a place of work abroad. Correct the place of work in the employment terms.",
         "jmhz_xsd_validation_failed": "The monthly JMHZ report XML failed validation against the pinned XSD schema; this is a technical issue for support to investigate.",
+        "jmhz_post20_employment_identifier_missing": "The employment has no ČSSZ employment ID (ID PPV), so its filed monthly reports cannot be found.",
+        "jmhz_post20_end_date_missing": "Forgotten deregistration: first record the actual end date on the employment.",
+        "jmhz_post20_situation_unknown": "Choose the situation after the 20th: invalid employment, forgotten deregistration, or a change of the start or end date.",
+        "jmhz_post20_submission_unreadable": "A filed report could not be read; this is a technical issue for support to investigate.",
+        "jmhz_zero_amendment_annual_summary_unsupported": "The annulled form carries annual totals for the previous year, which a zero report does not correct. The application does not build an annulment of such a month; proceed manually according to the submission rules.",
+        "jmhz_zero_amendment_concurrent_employment_unsupported": "The person has a concurrent employment in the report, so their summary data would have to be recalculated after the annulment. The application does not build an annulment of such a form.",
+        "jmhz_zero_amendment_controls_failed": "The report after the annulment failed the ČSSZ control catalogue. Review the listed controls.",
+        "jmhz_zero_amendment_employment_active_in_month": "According to the records, the employment lasts in the annulled month. First correct the end or start date and file the deregistration or registration change.",
+        "jmhz_zero_amendment_employment_unknown": "The form cannot be matched to an employment in the records, so it cannot be verified that the employment did not last in the month. Add the employment ID (ID PPV).",
+        "jmhz_zero_amendment_form_already_amended": "A correction or cancellation already exists for this form. An annulment is built only from a form nobody changed since the regular report.",
+        "jmhz_zero_amendment_interval_invalid": "The first insured day of the original form is not in the annulled month; this is a technical issue for support to investigate.",
+        "jmhz_zero_amendment_original_incomplete": "The original form lacks a mandatory value carried into the annulment; this is a technical issue for support to investigate.",
+        "jmhz_zero_amendment_original_not_zero": "The annulled form reports income or contributions. Annulling it would also change the summary and insurance parts of the report. If the employee returned the payment, correct the payroll run and use a content correction from a new preparation; if not, file a correction report with a Deferred income form manually.",
+        "jmhz_zero_amendment_root_not_accepted": "A month can be annulled only after ČSSZ fully accepted the regular report.",
+        "jmhz_zero_amendment_scenario_unsupported": "Only a form without a special flag can be annulled by a zero correction for now; the submission rules give no zero-report table for other data scenarios.",
+        "jmhz_zero_amendment_situation_required": "The annulment must be explicitly confirmed as a month that should not have been reported.",
+        "jmhz_zero_amendment_target_invalid": "Only a form of a regular monthly report can be annulled by a zero correction.",
         "jmhz_zero_report_attribute_unknown": "The requested zero-report JMHZ attribute is not defined in the application; this is a technical issue for support to investigate.",
-        "jmhz_zero_report_situation_unknown": "The zero-report situation for JMHZ is not described in the application's rules; this is a technical issue for support to investigate."
+        "jmhz_zero_report_situation_unknown": "The zero-report situation for JMHZ is not described in the application's rules; this is a technical issue for support to investigate.",
+        "jmhz_ordinary_evidence_ozp_deduction_unclassified": "A wage deduction agreement of an employee with disability employment support has no decision whether the employer is the creditor and how the deduction is reported in JMHZ (10350 to 10353).",
+        "jmhz_ordinary_evidence_ozp_employer_not_protected": "Disability employment support is reported only by an employer recognised on the protected labour market; the employer registration does not say so.",
+        "jmhz_ordinary_evidence_ozp_payment_date_invalid": "The date of paying the wage including contributions (10347) must fall between the start of the reported month and today; the report is filed only after payment.",
+        "jmhz_ordinary_evidence_ozp_profile_mismatch": "Disability employment support in the confirmation does not match the employment settings.",
+        "jmhz_ordinary_evidence_ozp_wage_invalid": "The disability wage data must contain a valid payment date and an explicit Yes or No for cash payment.",
+        "jmhz_ordinary_evidence_ozp_wage_required": "For an employee with disability employment support, the date of paying the wage including contributions (10347) and the cash payment flag (10348) are missing.",
+        "jmhz_ordinary_evidence_ozp_wage_unexpected": "Disability wage data (10347 to 10349) is reported only for an employment with disability employment support.",
+        "jmhz_ordinary_evidence_risk_shifts_invalid": "The number of shifts in risk work (10580) must be a whole number from 0 to 999.",
+        "jmhz_ordinary_evidence_risk_shifts_required": "Work classified in category 4 is missing the number of shifts worked in the month (10580); payroll does not record shifts, please enter it.",
+        "jmhz_ordinary_evidence_risk_shifts_unexpected": "The number of shifts in risk work (10580) is reported only for an employment with work classified in category 4.",
+        "jmhz_ozp_wage_primary_mismatch": "Only a secondary employment of the person has disability employment support, but the disability wage data belongs to the summary of the primary employment.",
+        "jmhz_xml_ozp_deductions_inconsistent": "The flag of deductions in favour of the employer (10349) does not match amounts 10350 to 10353 (control 258).",
+        "jmhz_xml_ozp_wage_form_unsupported": "This form type does not carry the disability wage data and deductions in favour of the employer (10347 to 10353); process the report manually."
       }
     },
     "server_codes": {
@@ -12874,6 +13398,27 @@
       "registration_tax_residence_address_missing": "When tax residency changes to a country other than Czechia, the filing must also carry the residence address in that country, otherwise ČSSZ rejects it. Fill it in the A1 registration profile and report the change from the proposal in the Changes to report block.",
       "registration_schema_integrity_failed": "The ČSSZ form templates in this installation are missing or differ from the verified versions. The submission cannot be checked as a result - this is not an error in your data, contact support.",
       "registration_schema_unavailable": "This ČSSZ form cannot be prepared by this version of the application. Only REGZEC25 registrations and notices and partial PREZEC26 registrations are supported - file others through the ČSSZ portal.",
+      "registration_spec_version_unavailable": "The event must be reported on a ČSSZ form under the JMHZ 2027 specification, which this version of the application cannot prepare. The filing is not prepared.",
+      "registration_spec_version_mismatch": "The registration filing uses a different form vintage than the decisive event date requires (boundary 1 January 2027). Prepare the filing again.",
+      "registration_regzec27_not_yet_accepted": "An event from 1 January 2027 is reported on form REGZEC27, which the production ČSSZ accepts only from 1 January 2027. Prepare and send the filing on 1 January 2027 or later. Employees with Czech citizenship can be partially registered in December via PREZEC (at the earliest eight days before they start). Partial registration is not possible for a foreign employee: file the registration on 1 January 2027 or later, always before they start work; if they start on 1 January 2027, file it that day before work begins.",
+      "registration_regzec25_value_from_2027": "The data contain a codebook value that ČSSZ accepts only for events from 1 January 2027. Choose another value for an earlier date.",
+      "registration_regzec27_change_in_future": "A change or correction cannot be filed with a future effective date. Prepare the filing on the day it takes effect at the earliest.",
+      "registration_regzec27_orientation_number_too_long": "From 1 January 2027 the orientation number may have at most four characters in every address.",
+      "registration_regzec27_ruian_point_invalid": "The RÚIAN address point code must have 1 to 9 digits.",
+      "registration_regzec27_foreign_legislation_missing": "From 1 January 2027 a registration of an employee with a special activity type must state whether foreign legislation applies.",
+      "registration_regzec27_a3_foreign_legislation_forbidden": "From 1 January 2027 a change of applicable foreign legislation cannot be reported as a data change (A3). File notice A6 or A7.",
+      "registration_regzec27_foreign_legislation_cz": "The state of foreign legislation cannot be Czechia.",
+      "registration_regzec27_proof_identity_incomplete": "An identity document is sent in a change or correction only in full: type, number, issuing authority and issuing state.",
+      "registration_regzec27_stay_validity_forbidden": "Residence validity is not stated for an employee with Czech citizenship.",
+      "registration_regzec27_eu_free_access": "An EU citizen has free access to the labour market with reason 1. Correct the foreign worker data.",
+      "registration_regzec27_family_member_citizenship": "Free access reason 3 (family member of an EU citizen) cannot be used for an EU citizen.",
+      "registration_regzec27_stay_validity_incomplete": "Residence validity must be stated in full: from and to.",
+      "registration_regzec27_stay_validity_order": "Residence validity from must be earlier than residence validity to.",
+      "registration_regzec27_stay_validity_missing": "From 1 January 2027 ČSSZ requires residence validity (from and to) for a citizen of a non-EEA state.",
+      "registration_regzec27_foreign_worker_forbidden": "Labour market access data are not sent for an employee with Czech citizenship.",
+      "registration_regzec27_foreign_worker_set_incomplete": "Foreign worker data are sent in a change or correction only as a complete set with citizenship and free access or work permit.",
+      "registration_regzec27_service_termination_reason": "The service termination reason does not belong to the selected employment type.",
+      "registration_regzec27_replacement_not_employment": "The one-off compensation under Section 271ca of the Labour Code applies only to an employment relationship.",
       "registration_serializer_unavailable": "This ČSSZ registration form cannot be filled in by this version of the application. Only REGZEC25 and PREZEC26 are supported - file others through the ČSSZ portal.",
       "registration_start_date_missing": "The employment's start date is missing, so the registration deadline cannot be calculated or the registration filed. Fill it in and prepare the registration again.",
       "registration_supplier_missing": "The company the registration is being filed for was not found. Switch to the correct company and prepare the registration again.",
@@ -13558,6 +14103,7 @@
     "edit_document": "Edit cash document",
     "save_draft": "Save as draft",
     "post_document": "Post",
+    "post_and_next": "Post and next",
     "post_confirm": "Post document {number}? A series number will be assigned and the document posted.",
     "balance": "Balance",
     "balance_as_of": "balance as of {date}",
@@ -14076,7 +14622,8 @@
     "item_type": {
       "material": "Material",
       "goods": "Goods",
-      "product": "Product"
+      "product": "Product",
+      "service": "Service"
     },
     "doc_type": {
       "receipt": "Goods receipt",
@@ -14357,6 +14904,7 @@
       "empty": "No stock item yet.",
       "field_sku": "SKU",
       "field_sku_hint": "Leave empty to auto-generate from the name.",
+      "field_type_service_hint": "A service keeps no stock: an invoice issues nothing from it and on a purchase order it stays a line without a card.",
       "field_name": "Name",
       "field_type": "Type",
       "field_unit": "Unit",
@@ -14548,7 +15096,7 @@
         "stored_value": "Stored-value voucher / credit top-up",
         "hint_standard": "The sale is recorded as a regular sale.",
         "hint_specific_voucher": "A voucher for a predetermined supply (e.g. a back massage) is a regular sale of that supply. Redeeming it later is not recorded.",
-        "hint_stored_value": "A voucher for unspecified goods or a credit top-up (wallet, prepaid pass). Its share of the sale goes to EET as \"intended for later use\"; redemption is then recorded as credit use (payment method Voucher / credit)."
+        "hint_stored_value": "A voucher for unspecified goods or a credit top-up (wallet, prepaid pass). Its share of the sale goes to EET as \"intended for later use\"; redemption is then recorded as credit use (payment method Voucher / credit). A line at 0 % VAT is posted to advances received (324); VAT is charged only on the supply paid for with the voucher."
       }
     },
     "item_detail": {
@@ -16560,7 +17108,7 @@
         "daily_limit": "The daily AI limit has been reached. Try again tomorrow."
       },
       "intro_title": "What you can ask",
-      "intro_body": "Describe the situation in your own words and optionally attach files from disk or documents from Documents. The assistant explains how to book it, offers journal entries and suggests where to store the file in Documents. Nothing is posted without your confirmation.",
+      "intro_body": "Describe the situation in your own words and optionally attach files from disk or documents from Documents. The assistant explains how to book it, offers journal entries, internal documents or other receivables and payables and suggests where to store the file in Documents. Nothing is posted without your confirmation.",
       "intro_example": "For example: \"I uploaded a notarial deed and cash receipts to Documents, I need to create receivables for subscribed share capital.\"",
       "placeholder": "Type your bookkeeping question…",
       "model": "Model",
@@ -16627,6 +17175,27 @@
         "installments_failed": "The item was created, but the instalment schedule could not be saved.",
         "link_failed": "The item was created, but some documents could not be linked to it.",
         "no_permission": "Creating requires permission to write to Other receivables and payables."
+      },
+      "internal_document": {
+        "heading": "Proposed internal documents",
+        "entry_date": "Transaction date",
+        "document_date": "Document date",
+        "partner": "Partner",
+        "partner_matched": "found in contacts",
+        "note": "Note",
+        "save_draft": "Save as draft",
+        "save_and_post": "Create and post",
+        "confirm_draft": "Create the proposed internal document as a draft? Nothing will be posted.",
+        "confirm_post": "Create the proposed internal document and post it to the journal right away?",
+        "draft_hint": "Review and post the draft in the document detail.",
+        "created": "The internal document draft has been created.",
+        "posted": "Internal document {no} has been posted.",
+        "post_failed": "The draft was created, but it could not be posted: {message}",
+        "created_label": "Created as an internal document",
+        "open": "Open document",
+        "link_failed": "The document was created, but some documents could not be linked to it.",
+        "problems_reason": "The proposal cannot be created until the issues found are fixed (ask the assistant again or create the document manually).",
+        "no_permission": "Creating requires permission to write to the journal."
       },
       "history": {
         "title": "Question history",
@@ -18128,6 +18697,13 @@
       "account": "Account",
       "total": "Total"
     },
+    "accrual_spread": {
+      "toggle": "Interim accruals",
+      "toggle_hint": "Counts expenses and revenues of documents with a from–to period only pro rata by days up to the reporting date and shows the rest as prepaid expenses (381) and deferred revenue (384). Nothing is posted to the journal.",
+      "note_title": "Interim accruals outside the journal.",
+      "note": "Expenses and revenues of documents with a from–to period are spread pro rata by days up to the reporting date. Prepaid expenses (381): {prepaid}, deferred revenue (384): {deferred}, documents adjusted: {documents}. The adjustment is not posted to the journal; the Accruals step of the year-end closing posts it.",
+      "skipped_dimension": "A statement filtered by a dimension value does not apply interim accruals and shows the journal balances."
+    },
     "balance_sheet": {
       "title": "Balance sheet",
       "subtitle": "Balance sheet in the structure of annex 1 of decree no. 500/2002 Coll.",
@@ -18405,6 +18981,27 @@
       "deductible_no": "Non-deductible expense",
       "err_target_account_tax_evidence": "In tax evidence a rule sets no account, only the kind and tax deductibility of the expense.",
       "err_recurring_prepaid_tax_evidence": "Prepaid annual subscriptions are not accrued in tax evidence."
+    },
+    "revenue_rules": {
+      "title": "Revenue rules",
+      "subtitle": "Set the account of an issued invoice line by item code, text or VAT rate. Applied when importing invoices and when posting lines that have no own account and no product account.",
+      "empty": "No revenue rules.",
+      "col_target": "Account",
+      "form_help": "A rule applies when ALL filled-in criteria match. The first one by priority wins. An account set on the line or product takes precedence.",
+      "criteria_group": "Criteria (at least one is required)",
+      "form_item_code": "Item code",
+      "item_code_hint": "Exact match with the imported item code (ISDOC SellersItemIdentification), case-insensitive.",
+      "form_description_contains": "Line text contains",
+      "form_vat_rate": "VAT rate (%)",
+      "criteria_hint": "Fill in at least one of: item code, line text or VAT rate.",
+      "form_target_account": "Line account",
+      "target_account_hint": "A revenue account (601, 602, 604…), or a balance sheet account for rebilling. Receivable, payable, tax and cash accounts are not allowed.",
+      "code_label": "code",
+      "vat_label": "rate {rate} %",
+      "target_required": "Select the line account.",
+      "err_criteria_missing": "Fill in at least one criterion: item code, line text or VAT rate.",
+      "err_vat_rate": "The VAT rate must be a number between 0 and 100.",
+      "err_generic": "The operation could not be completed."
     },
     "assets": {
       "revision": {
@@ -19198,6 +19795,7 @@
         "vat_343_vs_return": "Account 343 balance vs. VAT return for the period",
         "vat_clearing_stale": "VAT clearing does not match the period turnover",
         "deposits_314_324_open": "Unsettled advance accounts 314/324 at the balance-sheet date",
+        "voucher_balance_negative": "Negative balance of sold vouchers and credit (more redeemed than sold)",
         "paid_invoices_open_saldo": "Paid issued invoices with an open balance on 311 (payment missing in the journal)",
         "paid_purchases_open_saldo": "Paid purchase invoices with an open balance on 321 (payment missing in the journal)",
         "clearing_accounts_open": "Clearing (suspense) accounts with an open balance at the balance-sheet date",
@@ -20070,6 +20668,8 @@
       "vat_state_no_claim_header": "{code}, no deduction per the header - not in VAT",
       "vat_state_no_claim_header_short": "no deduction per the header",
       "vat_state_allocations": "VAT per the VAT split",
+      "expense_account_allocations": "The debit account is set by the accounting allocations in the VAT recap.",
+      "vat_deduction_allocations": "The VAT deduction is set by the accounting allocations in the VAT recap (mixed deduction). The VAT return and control statement use the allocation split.",
       "expense_kind_hint": "Drives the expense account: Service → 518, Material (incl. fuel) → 501, Small asset → 501 + asset record, Fixed asset → 042 and depreciation. Unspecified behaves as before (518).",
       "accrual_show": "Time accrual",
       "accrual_hide": "Hide time accrual",
@@ -20163,8 +20763,11 @@
     "vat_allocation": {
       "enable": "Split deduction and posting",
       "disable": "Remove accounting allocations",
-      "hint": "Allocations do not change the supplier's VAT recap. They only define the VAT deduction and debit account for each part. The first business row is calculated as the remainder.",
-      "add": "Add allocation",
+      "hint": "Allocations do not change the supplier's VAT recap. They only define the VAT deduction and debit account for each part. One row per rate is calculated as the remainder: the first business row without a personal part, the personal part once added. You can split the business part into several rows with different accounts; the \"=\" button selects which row is calculated.",
+      "add": "Add personal or other part",
+      "add_business": "Add business part",
+      "make_residual": "Calculate this row as the remainder of the rate",
+      "residual": "Calculated as the remainder",
       "business": "Business part",
       "personal": "Personal use",
       "description": "Description",
@@ -21807,6 +22410,9 @@
     }
   },
   "common": {
+    "window_data_changed": "The data has changed in the meantime.",
+    "window_data_changed_reload": "Reload",
+    "window_data_changed_confirm": "Reload the page? Unsaved changes in this window will be lost.",
     "tableHorizontalScroll": "Scroll table horizontally",
     "show": "Show",
     "reset_sort": "Restore default order",
@@ -21907,6 +22513,7 @@
     "close": "Close",
     "preview_side_title": "Original preview",
     "preview_side_close": "Close preview",
+    "preview_side_empty": "The document has no original attached.",
     "of": "of",
     "from": "From",
     "to": "To",
@@ -22137,8 +22744,10 @@
     "item_account": {
       "show": "Line accounts",
       "hide": "Hide line accounts",
-      "hint": "Revenue account of individual lines. Empty = product account, its category, otherwise the invoice posting template.",
-      "label": "Revenue account",
+      "open": "Show line account",
+      "close": "Hide line account",
+      "hint": "Account of individual lines: a revenue account, or a balance sheet account for rebilling (except receivable, payable, tax and cash accounts). Empty = product account, its category, a revenue rule, otherwise the invoice posting template.",
+      "label": "Line account",
       "placeholder": "by product / document"
     },
     "title": "Issued invoices",
@@ -22665,6 +23274,26 @@
       "proforma": "Advance (proforma) invoice",
       "parent": "Original invoice"
     },
+    "convert_to_tax_document": {
+      "action": "Change to tax document for payment",
+      "confirm": "The draft invoice will be removed and replaced by a draft tax document for the received payment, dated on the payment day. Continue?",
+      "done": "The draft invoice was replaced by a tax document for the received payment."
+    },
+    "advance_drawdown": {
+      "action": "Deduct advance",
+      "tooltip": "Deduct part of a paid advance (partial drawdown)",
+      "remove": "Remove advance drawdown",
+      "remove_confirm": "Remove the advance deduction from this invoice?",
+      "modal_title": "Deduct advance",
+      "no_candidates": "No advance available (a paid advance with a tax document for the same client and currency is required).",
+      "total": "total",
+      "available": "available",
+      "amount": "Amount to deduct (incl. VAT)",
+      "amount_hint": "At most the remaining undrawn amount of the selected advance.",
+      "confirm": "Deduct",
+      "applied": "Advance deducted.",
+      "removed": "Advance drawdown removed."
+    },
     "advance_link": {
       "none": "Not linked to any advance invoice.",
       "none_final": "Not linked to any tax document.",
@@ -22785,7 +23414,28 @@
     "language": "Language",
     "reverse_charge": "Reverse charge",
     "doc_payment_calendar": "Payment / instalment calendar",
-    "payment_calendar_hint": "A calendar is a tax document only with a schedule of payments for a predetermined period (§ 31 and § 31a of the Czech VAT Act). Individual documents are then not issued for each instalment.",
+    "doc_rent_calendar": "Rent instalment calendar (§ 31 of the Czech VAT Act)",
+    "doc_advance_calendar": "Payment calendar (§ 31a of the Czech VAT Act, advances)",
+    "rent_calendar_hint": "For rent only (§ 31 of the Czech VAT Act). Each instalment is a separate partial supply with its own tax point under the contract. The customer receives the calendar; payments and VAT are recorded on internal instalment documents.",
+    "advance_calendar_hint": "Advances paid before supply, typically energy (§ 31a of the Czech VAT Act). No tax point is stated; VAT arises on the day the payment is received. The customer receives the calendar; payments and VAT are recorded on internal instalment documents.",
+    "payment_calendar_legacy_hint": "This original shared type can no longer be issued. Choose a rent instalment calendar or a payment calendar (advances).",
+    "calendar_contract_ref": "Lease agreement",
+    "calendar_contract_ref_placeholder": "Agreement number or reference",
+    "calendar_contract_ref_hint": "The calendar cannot be issued without a reference to the lease agreement.",
+    "calendar_tax_date_rent": "Each instalment has its own tax point, enter it in the payment schedule.",
+    "calendar_tax_date_advance": "A payment calendar has no tax point; VAT arises on the day the payment is received.",
+    "calendar_foreign_currency": "A calendar in a foreign currency cannot be issued yet: the exchange rate depends on the day of each instalment.",
+    "calendar": {
+      "instalments": "Calendar instalments",
+      "instalment_document": "Instalment",
+      "instalment_n": "Instalment {n}",
+      "instalment_badge": "Instalment",
+      "instalment_notice": "Internal document of a calendar instalment. The customer receives the calendar; correct it with a credit note.",
+      "payment_document_notice": "Tax document for a calendar instalment payment. It is not sent to the customer.",
+      "open_calendar": "Open calendar",
+      "cancel_action": "Cancel calendar",
+      "cancel_hint": "The calendar's unpaid instalments are cancelled along with it. A calendar with a paid or credited instalment cannot be cancelled."
+    },
     "payment_schedule": "Payment schedule",
     "payment_schedule_add": "Add instalment",
     "payment_schedule_generate_12": "Split into 12 months",
@@ -22794,6 +23444,9 @@
     "payment_schedule_note": "Note",
     "payment_schedule_total": "Schedule total",
     "payment_schedule_mismatch": "The schedule total ({total}) does not match the document total ({invoice}). Issuing will be rejected.",
+    "payment_schedule_mismatch_base": "The schedule base total ({total}) does not match the document base ({invoice}). Issuing will be rejected.",
+    "payment_schedule_mismatch_vat": "The schedule VAT total ({total}) does not match the document VAT ({invoice}). Issuing will be rejected.",
+    "payment_schedule_tax_date_hint": "An empty instalment tax point means its due date.",
     "price_level": {
       "label": "Document price level",
       "from_client": "From customer ({name})",
@@ -23161,7 +23814,10 @@
     "credit_note": "Credit note",
     "cancellation": "Cancellation",
     "tax_document": "Tax document for payment",
-    "penalty": "Penalty invoice"
+    "penalty": "Penalty invoice",
+    "payment_calendar": "Payment / instalment calendar",
+    "rent_calendar": "Rent instalment calendar",
+    "advance_calendar": "Payment calendar"
   },
   "client": {
     "title": "Clients",
@@ -23470,7 +24126,7 @@
     "note": "Note",
     "edit_title": "Edit project",
     "new_title": "New project",
-    "delete_warning": "Delete project \"{name}\"? This cannot be undone.\n\nOnly works if the project has no invoices — otherwise use Archive.",
+    "delete_warning": "Delete project \"{name}\"? This cannot be undone.\n\nInvoices and work reports will stay without a project. To keep the link, use Archive.",
     "status_paused": "Paused",
     "status_closed": "Closed",
     "stats_title": "Project statistics",
@@ -23572,6 +24228,7 @@
     "upload_batch_attached": "{n} PDF attached to an existing statement.",
     "pdf_attached_to_existing": "The statement was already imported from GPC — the PDF was attached to it.",
     "warning": {
+      "imported_balances_rebased": "Balances of {statements} imported statements of this account were shifted by {shift} to match the bank statement. The account opening balance comes to {opening}; the journal does not change, please check the opening balance in accounting.",
       "transactions_skipped_as_duplicate": "The statement had {parsed} transactions, {inserted} were imported. {skipped} matched transactions already on record (overlapping statement) and were not imported — please verify these are genuine duplicates.",
       "transactions_skipped_as_duplicate_batch": "{count} transactions from the uploaded statements were skipped as duplicates of already recorded ones — please verify these are genuine duplicates.",
       "processing_failed": "The statement was saved, but matching and posting of its transactions could not be completed. Open the statement and use “Re-match statement”.",
@@ -26367,7 +27024,9 @@
   "template_tools": {
     "journal": "Entry templates",
     "expense": "Expense rules",
+    "revenue": "Revenue rules",
     "posting": "Posting rules",
+    "rule_templates": "Rule templates",
     "requires_double_entry": "Templates belong to journal posting",
     "requires_double_entry_hint": "Posting templates, expense rules and bank posting rules are used when posting to the journal, so they have nothing to offer in tax evidence. This company keeps tax evidence.",
     "open_accounting_settings": "Open Settings → Taxes and accounting"
@@ -31910,6 +32569,8 @@
     "reconciliation_ok": "Accounting reconciliation passed",
     "reconciliation_failed": "Accounting reconciliation failed",
     "no_protocol_warnings": "The protocol contains no additional warnings.",
+    "ico_mismatch_title": "The connected ABRA Flexi company is not this company",
+    "ico_mismatch": "ABRA Flexi is connected to {source} (company ID {source_ico}), but you are transferring into {target} (company ID {target_ico}). The transfer will not start. Switch to the correct company, create it if needed, or connect a different ABRA Flexi company.",
     "issue_unknown": "The protocol contains a warning requiring review.",
     "issue_code": "Reason requiring review: {code}",
     "issues": {
@@ -31966,6 +32627,9 @@
       "document_vendor_number_collision_requires_review": "Several received invoices share a vendor, number, and date. The target number was disambiguated; the original is in the document note.",
       "zero_amount_link_skipped": "Zero amount relations connect documents; they are not payments. The accounting journal remains intact.",
       "unsupported_document_link": "Some links to orders, stock or internal documents are not converted into payments. The accounting journal remains intact.",
+      "other_item_requires_review": "Some other receivables or payables could not be safely transferred to Other receivables and payables (VAT, foreign currency, cancellation or ambiguous posting). They remain in the accounting journal only.",
+      "other_item_payment_requires_review": "A payment of another receivable or payable could not be allocated (the payment is already matched elsewhere, or the amount or posting does not fit). Match it manually in Other receivables and payables.",
+      "bank_loan_account_not_transferred": "Loan accounts (231, 232, 461) are not transferred as bank accounts because their balance is the outstanding principal. Instalments and principal remain in the accounting journal.",
       "payment_currency_conversion_requires_review": "A payment between different currencies requires manual matching. The bank movement, invoice, and accounting journal remain intact.",
       "payment_cash_allocation_requires_review": "A cash movement is only partly allocated to this document. The payment was not linked to avoid importing the full amount.",
       "payment_cancelled_document_requires_review": "A payment link points to a cancelled target document. It remains cancelled and the link requires review.",
@@ -33577,6 +34241,11 @@
       "open_person": "Open person card"
     },
     "sample_badge": "Sample",
+    "template": {
+      "download": "Download XLSX template",
+      "hint": "Blank template for the MyÚčto sample: one row = one person per month, with sample rows and instructions. Upload it filled in to the attendance import.",
+      "failed": "The template could not be downloaded."
+    },
     "profiles_load_failed": "Mapping profiles could not be loaded. The attendance import can continue with the automatic suggestion from headers.",
     "relation_types": {
       "employment": "Employment",
@@ -33961,7 +34630,11 @@
       "position": "Position",
       "weekly_hours": "Weekly hours",
       "start_end_note": "Start / end",
+      "start_date": "Start date",
       "monthly_wage": "Monthly wage (wage assessment)",
+      "hourly_rate": "Hourly rate",
+      "end_date": "Agreement end",
+      "bank_account": "Bank account",
       "worked_hours": "Worked",
       "overtime_hours": "Overtime",
       "night_hours": "Night work",
@@ -34141,6 +34814,14 @@
         "last_name": "Last name",
         "swap_names": "Swap first and last name",
         "remove_from_create": "Do not create",
+        "details": {
+          "start_on": "Start",
+          "agreed_end_on": "Agreement end",
+          "hourly_rate": "Hourly rate",
+          "monthly_wage": "Monthly wage",
+          "bank_account": "Account",
+          "unreadable": "“{value}” cannot be read and will not be taken over"
+        },
         "create_submit": "Create people ({count})",
         "create_no_permission": "You are not allowed to create people.",
         "create_none": "Select the people to create.",
@@ -34357,6 +35038,7 @@
       "state_dirty": "Unsaved changes",
       "updated_at": "Updated {date}",
       "sample_hint": "Sample profile for the GIRITON attendance system that every company gets. Adjust it to your files, or duplicate it and edit the copy.",
+      "sample_hint_myucto": "General sample profile for data from the MyÚčto XLSX template (sheet Podklady, one row = one person per month). Suits companies without an attendance system, e.g. with temporary workers on DPP and DPČ agreements. Unknown columns are ignored.",
       "upgrade_badge": "New sample version",
       "upgrade_title": "A new sample version is available",
       "upgrade_hint": "The profile was created from an older sample version and you edited it, so it was not updated automatically. Updating replaces the profile rules and components with the new sample version and your own changes are lost. To keep them, duplicate the profile first.",
@@ -34378,6 +35060,8 @@
       "duplicated": "A copy of the profile was created. Adjust its name and save it.",
       "restore_sample": "Restore GIRITON sample",
       "restore_sample_hint": "Creates the GIRITON sample profile again in the current version, e.g. after it was deleted by mistake.",
+      "restore_sample_myucto": "Restore MyÚčto sample",
+      "restore_sample_myucto_hint": "Creates the general MyÚčto sample profile again in the current version, e.g. after it was deleted by mistake.",
       "sample_restored": "Sample “{name}” was restored.",
       "sample_exists": "Sample “{name}” already exists in the company.",
       "sample_restore_failed": "The sample could not be restored.",
@@ -39748,6 +40432,9 @@
       "fx_to_eet": "To EET: {amount} (rate {rate} CZK/{currency})",
       "foreign_hint": "A payment in {currency} is recorded in EET in CZK, converted at the rate used to post the payment on the day it was received. In-person QR payment is available only for CZK invoices.",
       "stored_value_hint": "The customer pays with a previously bought stored-value voucher or credit. EET records it as credit use. The invoice payment is booked as an offset; the accountant settles the advance received for the voucher manually.",
+      "warnings": {
+        "voucher_balance_insufficient": "The balance of sold vouchers and credit ({balance}) is not enough; check whether this is a single-purpose voucher (it is not booked on redemption)."
+      },
       "credit_topup": "Of which intended for later use (credit, voucher): {amount}.",
       "credit_draw": "Of which credit use: {amount}.",
       "delegation_single": "This device records the sale on authorisation of taxpayer {eic}.",

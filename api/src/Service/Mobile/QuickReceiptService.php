@@ -179,14 +179,19 @@ final class QuickReceiptService
             error_log('Přepočet statistik po rychlé účtence #' . $invoiceId . ' selhal: ' . $e->getMessage());
         }
 
-        return $this->present($supplierId, $userId, $this->findById($supplierId, $created['id']) ?? [], false, $in['public_link']);
+        $out = $this->present($supplierId, $userId, $this->findById($supplierId, $created['id']) ?? [], false, $in['public_link']);
+        // Uplatnění poukazu nad zůstatek prodaných poukazů: účtenka vznikla, jen se upozorní.
+        if ($created['warnings'] !== []) {
+            $out['warnings'] = $created['warnings'];
+        }
+        return $out;
     }
 
     /**
      * @param array<string,mixed> $in
      * @param array{id:int, cash_register_id:?int}|null $device
      * @param array<string,mixed>|null $client
-     * @return array{id:int, invoice_id:int, varsymbol:string, amount:string, cash_document_id:?int}
+     * @return array{id:int, invoice_id:int, varsymbol:string, amount:string, cash_document_id:?int, warnings:list<array<string,mixed>>}
      */
     private function createInTransaction(
         int $supplierId,
@@ -330,6 +335,7 @@ final class QuickReceiptService
 
         $cashDocumentId = null;
         $eventId = null;
+        $warnings = [];
         if ($registerId !== null) {
             $settlement = $this->cashSettlement->syncInvoice($supplierId, $invoiceId, $userId > 0 ? $userId : null, $device['id'] ?? null);
             if ($settlement['status'] !== CashSettlementService::CREATED) {
@@ -351,12 +357,13 @@ final class QuickReceiptService
                     'note' => $in['note'],
                 ]);
             $eventId = $accepted['event_id'];
+            $warnings = $accepted['warnings'];
         }
 
         $pdo->prepare('UPDATE quick_receipts SET invoice_id = ?, payment_event_id = ?, cash_document_id = ? WHERE id = ? AND supplier_id = ?')
             ->execute([$invoiceId, $eventId, $cashDocumentId, $receiptId, $supplierId]);
 
-        return ['id' => $receiptId, 'invoice_id' => $invoiceId, 'varsymbol' => $varsymbol, 'amount' => $amount, 'cash_document_id' => $cashDocumentId];
+        return ['id' => $receiptId, 'invoice_id' => $invoiceId, 'varsymbol' => $varsymbol, 'amount' => $amount, 'cash_document_id' => $cashDocumentId, 'warnings' => $warnings];
     }
 
     /**
