@@ -15,6 +15,22 @@ use PHPUnit\Framework\TestCase;
  */
 final class EnvironmentCheckServiceTest extends TestCase
 {
+    public function testManagedReportDropsDiskSpaceIncludingItsEffectOnVerdict(): void
+    {
+        $report = EnvironmentCheckService::withoutDiskSpace([
+            'summary' => ['status' => 'fail', 'ok' => 1, 'warn' => 0, 'fail' => 1, 'skip' => 0],
+            'checks'  => [
+                ['id' => 'php_version', 'status' => 'ok'],
+                EnvironmentCheckService::diskSpaceCheck(1024, 2048),
+            ],
+            'facts'   => ['storage' => ['free_bytes' => 1024, 'total_bytes' => 2048, 'log_bytes' => 5]],
+        ]);
+
+        self::assertSame(['php_version'], array_column($report['checks'], 'id'));
+        self::assertSame(['status' => 'ok', 'ok' => 1, 'warn' => 0, 'fail' => 0, 'skip' => 0], $report['summary']);
+        self::assertSame(['log_bytes' => 5], $report['facts']['storage']);
+    }
+
     public function testDiskSpaceShowsFreeAndTotalAndOnlyFreeDecidesStatus(): void
     {
         $gb = 1024 ** 3;
