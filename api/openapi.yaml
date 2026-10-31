@@ -15045,6 +15045,9 @@ paths:
         k platbě) a `tax_document_id`; `remaining_czk` je základ zálohy se znaménkem
         (součet položek = zůstatek hlavní knihy) a `days_overdue` je 0.
 
+        `other_doc_no` = druhé číslo přijaté faktury vedle `doc_no` (naše číslo nebo číslo
+        dodavatele); `null`, když doklad druhé číslo nemá nebo je stejné.
+
         `settleable` = vydaný nebo přijatý doklad s vlastním předpisem na účtu, který lze
         vyrovnat přiřazením zápisu v deníku (`/api/v1/accounting/saldo-settlements/*`).
         Doklady zastoupené jen v počátečních stavech a úhrady před zaúčtováním ho nemají.
