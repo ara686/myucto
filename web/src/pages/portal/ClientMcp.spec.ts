@@ -63,7 +63,10 @@ describe('client domain MCP connections', () => {
     m.get.mockRejectedValue(new Error('Synthetic settings failure'))
     const wrapper = mount(ClientMcp)
     await flushPromises()
-    expect(wrapper.get('[role="alert"]').text()).toBe('client_mcp.load_error')
+    expect(wrapper.get('[role="alert"]').text()).toContain('client_mcp.load_error')
+    expect(wrapper.get('[data-empty-state]').attributes('data-empty-state')).toBe('failed')
+    expect(wrapper.text()).not.toContain('client_mcp.disabled')
+    expect(wrapper.text()).not.toContain('client_mcp.empty')
     expect(wrapper.find('code').exists()).toBe(false)
     expect(wrapper.findAll('button').some(button => button.text() === 'mcp_server_page.connection.copy_url')).toBe(false)
     wrapper.unmount()
@@ -105,6 +108,39 @@ describe('client domain MCP connections', () => {
     expect(wrapper.text()).not.toContain('client_mcp.instructions')
     expect(wrapper.get('code').text()).toBe('https://app.example.test/mcp')
     expect(wrapper.text()).toContain('client_mcp.canonical_endpoint_hint')
+    expect(wrapper.text()).toContain('client_mcp.description_main_domain')
+    expect(wrapper.text()).toContain('client_mcp.step_copy_main_domain')
+    expect(wrapper.text()).toContain('client_mcp.step_authorize_main_domain')
+    expect(wrapper.text()).toContain('client_mcp.empty_main_domain')
+    expect(wrapper.text()).not.toMatch(/client_mcp\.(description|step_copy|step_authorize|empty)(?!_main_domain)/)
+    wrapper.unmount()
+  })
+
+  it('shows the list as the only connection data, without tokens or logs', async () => {
+    m.get.mockImplementation(async (path: string) => ({ data: path === '/mcp/settings'
+      ? { enabled: true, node_available: true, endpoint: 'https://portal.example.test/mcp' }
+      : { grants: [
+        { id: 7, client_name: 'Synthetic assistant', resource: 'https://portal.example.test/mcp', scope: 'read_write', is_active: true, last_used_at: null },
+        { id: 8, client_name: 'Synthetic revoked', resource: 'https://portal.example.test/mcp', scope: 'read', is_active: false, last_used_at: null },
+      ] },
+    }))
+    const wrapper = mount(ClientMcp)
+    await flushPromises()
+    expect(m.get.mock.calls.map(call => call[0]).sort()).toEqual(['/mcp/grants', '/mcp/settings'])
+    expect(m.get).toHaveBeenCalledWith('/mcp/grants')
+    expect(wrapper.text()).toContain('Synthetic revoked')
+    expect(wrapper.text()).toContain('client_mcp.inactive')
+    expect(wrapper.findAll('button').filter(button => button.text() === 'client_mcp.revoke')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('uses the shared card and button styles without theme-specific classes', async () => {
+    const wrapper = mount(ClientMcp)
+    await flushPromises()
+    expect(wrapper.html()).not.toContain('dark:')
+    expect(wrapper.classes()).toContain('max-w-5xl')
+    expect(wrapper.get('h1').classes()).toEqual(expect.arrayContaining(['text-2xl', 'font-semibold']))
+    for (const button of wrapper.findAll('button')) expect(button.classes()).toContain('whitespace-nowrap')
     wrapper.unmount()
   })
 

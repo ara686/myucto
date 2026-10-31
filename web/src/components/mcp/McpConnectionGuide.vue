@@ -1,8 +1,21 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-withDefaults(defineProps<{ clientDomain?: boolean }>(), { clientDomain: false })
+const props = withDefaults(defineProps<{ clientDomain?: boolean; mainDomain?: boolean }>(), {
+  clientDomain: false,
+  mainDomain: false,
+})
 const { t } = useI18n()
+
+const stepCopy = computed(() => {
+  if (!props.clientDomain) return 'mcp_server_page.connection.step_copy'
+  return props.mainDomain ? 'client_mcp.step_copy_main_domain' : 'client_mcp.step_copy'
+})
+const stepAuthorize = computed(() => {
+  if (!props.clientDomain) return 'mcp_server_page.connection.step_authorize'
+  return props.mainDomain ? 'client_mcp.step_authorize_main_domain' : 'client_mcp.step_authorize'
+})
 </script>
 
 <template>
@@ -11,9 +24,9 @@ const { t } = useI18n()
       <h2 class="text-lg font-semibold mb-3">{{ t('mcp_server_page.connection.how_to_title') }}</h2>
       <p v-if="clientDomain" class="mb-3 text-sm text-neutral-700">{{ t('client_mcp.endpoint_hint') }}</p>
       <ol class="list-decimal pl-5 space-y-2 text-sm text-neutral-700">
-        <li>{{ t(clientDomain ? 'client_mcp.step_copy' : 'mcp_server_page.connection.step_copy') }}</li>
+        <li>{{ t(stepCopy) }}</li>
         <li>{{ t('mcp_server_page.connection.step_add') }}</li>
-        <li>{{ t(clientDomain ? 'client_mcp.step_authorize' : 'mcp_server_page.connection.step_authorize') }}</li>
+        <li>{{ t(stepAuthorize) }}</li>
         <li>{{ t(clientDomain ? 'client_mcp.step_verify' : 'mcp_server_page.connection.step_verify') }}</li>
       </ol>
       <p class="mt-3 rounded-md bg-primary-50 border border-primary-600/40 px-3 py-2 text-sm text-primary-700">
