@@ -40771,7 +40771,8 @@
   "instance_admin": {
     "title": "Správa instance",
     "overview": "Přehled",
-    "back_to_app": "Zpět do aplikace",
+    "menu_theme": "Vzhled",
+    "menu_language": "Jazyk",
     "subtitle": "Technická správa bez přístupu k obchodním a účetním datům.",
     "runtime": "Provozní stav",
     "app_version": "Verze aplikace",
