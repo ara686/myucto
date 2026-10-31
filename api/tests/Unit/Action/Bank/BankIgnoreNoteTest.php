@@ -265,9 +265,10 @@ final class BankIgnoreNoteTest extends TestCase
 
     private function createAllocationTables(PDO $sqlite): void
     {
-        foreach (['invoice_payments', 'payment_matches', 'payroll_payment_matches', 'other_item_allocations'] as $table) {
+        foreach (['invoice_payments', 'payment_matches', 'payroll_payment_matches'] as $table) {
             $sqlite->exec('CREATE TABLE ' . $table . ' (bank_transaction_id INTEGER)');
         }
+        $sqlite->exec('CREATE TABLE other_item_allocations (bank_transaction_id INTEGER, reversed_on TEXT)');
         $sqlite->exec('CREATE TABLE tax_advance_schedules (matched_transaction_id INTEGER)');
         $sqlite->exec('CREATE TABLE bank_transfer_matches (in_transaction_id INTEGER, out_transaction_id INTEGER)');
         $sqlite->exec('CREATE TABLE gopay_clearings (bank_transaction_id INTEGER, payout_match_transaction_id INTEGER)');

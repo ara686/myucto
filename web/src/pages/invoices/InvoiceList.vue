@@ -9,6 +9,7 @@ import { useRouter, useRoute, RouterLink } from 'vue-router'
 import { invoicesApi, type MonthGroup, type InvoiceListItem, type InvoiceItem,
   type OssBulkResult, type OssBulkScope, type OssBulkSet, type OssBulkFailure, type OssReviewScope } from '@/api/invoices'
 import { formatMoney, formatMoneyWhole, formatDate, formatMonth, formatNumber, statusLabel, typeLabel, statusBadgeClass, isOverdue, invoiceRowClass, displayStatus, taxDateClass } from '@/composables/useFormat'
+import { isCalendarType } from '@/utils/invoiceCalendar'
 import { useRowLink } from '@/composables/useRowLink'
 import { useListNavigationSource } from '@/composables/useListNavigation'
 import { useToast } from '@/composables/useToast'
@@ -582,6 +583,7 @@ const sendableSelected = computed(() => {
       ids.has(inv.id)
       && ['issued', 'sent', 'reminded', 'paid'].includes(inv.status)
       && inv.invoice_type !== 'cancellation'
+      && !inv.calendar_id
     )
 })
 
@@ -603,6 +605,7 @@ const markPayableSelected = computed(() => {
       ids.has(inv.id)
       && ['issued', 'sent', 'reminded'].includes(inv.status)
       && inv.invoice_type !== 'cancellation'
+      && !isCalendarType(inv.invoice_type)
       && hasPositiveAmountToPay(inv)
       && !rowLockedForMe(inv)
     )
@@ -742,6 +745,7 @@ const postableSelected = computed(() => {
       && !inv.booked_at
       && ['issued', 'sent', 'reminded', 'paid'].includes(inv.status)
       && inv.invoice_type !== 'cancellation'
+      && !isCalendarType(inv.invoice_type)
     )
 })
 
@@ -889,6 +893,22 @@ async function load(reset = true) {
       }
     }
   }
+}
+
+// Obnova po změně dat jinde: skeleton a návrat na první stránku by uživateli vzaly
+// pozici v seznamu, rozbalené řádky i dočtené stránky. Bez mazání se přepíše obsah.
+const REFRESH_PAGE_LIMIT = 5
+async function refreshLoadedPages() {
+  const seq = loadSeq
+  const count = Math.min(Math.max(page.value, 1), REFRESH_PAGE_LIMIT)
+  const params = listParams()
+  const results = await Promise.all(Array.from({ length: count }, (_, index) => invoicesApi.listGrouped({ ...params, page: index + 1 })))
+  if (seq !== loadSeq) return
+  groups.value = results.slice(1).reduce((merged, result) => mergeGroups(merged, result.data), results[0]!.data)
+  page.value = count
+  total.value = results[0]!.meta.total
+  pages.value = results[0]!.meta.pages ?? 1
+  flashedIds.value = consumeFlashedRows('invoice')
 }
 
 // Parametry dotazu seznamu bez čísla stránky. Stejné parametry použije detail
@@ -1225,8 +1245,8 @@ const yearOptions = useYearOptions('invoices', yearFilter)
 // `tm()` vrací raw translation message (pole), kdežto `t()` na poli vrátí stringified verzi.
 // `rt()` zformátuje jednotlivé položky pole (pro případnou interpolaci).
 const monthOptions = computed(() => (tm('common.months_short') as unknown as string[]).map(m => rt(m)))
-useWindowRefresh(['invoices', 'clients', 'bank', 'bank-transactions', 'cash', 'accounting'], () => load(),
-  () => !bulkBusy.value && !bulkPdfOpen.value && !ossBulkOpen.value && !wrModalOpen.value && selectedIds.value.length === 0)
+useWindowRefresh(refreshLoadedPages,
+  () => !loading.value && !loadingMore.value && !bulkBusy.value && !bulkPdfOpen.value && !ossBulkOpen.value && !wrModalOpen.value && selectedIds.value.length === 0)
 </script>
 
 <template>
@@ -1401,6 +1421,8 @@ useWindowRefresh(['invoices', 'clients', 'bank', 'bank-transactions', 'cash', 'a
           <option value="invoice">{{ t('type.invoice') }}</option>
           <option value="proforma">{{ t('type.proforma') }}</option>
           <option value="credit_note">{{ t('type.credit_note') }}</option>
+          <option value="rent_calendar">{{ t('type.rent_calendar') }}</option>
+          <option value="advance_calendar">{{ t('type.advance_calendar') }}</option>
         </select>
         <div class="min-w-48 flex-1 max-w-xs">
           <SearchableSelect
@@ -1601,6 +1623,7 @@ useWindowRefresh(['invoices', 'clients', 'bank', 'bank-transactions', 'cash', 'a
                   </RouterLink>
                   <!-- Štítek říká, KTERÝ konec nejistoty doklad nese. Bez něj by filtr
                        „vše nejisté" byl nerozlišený seznam dvou různých otázek. -->
+                  <span v-if="inv.calendar_id" class="ml-1 px-1 py-0.5 rounded bg-neutral-100 text-neutral-600 text-[10px] font-sans font-semibold whitespace-nowrap">{{ t('invoice.calendar.instalment_badge') }}</span>
                   <span v-if="inv.oss_review_oss" class="ml-1 px-1 py-0.5 rounded bg-warning-50 text-warning-700 text-[10px] font-sans font-semibold whitespace-nowrap"
                     :title="t('invoice.oss_review_badge.oss_hint')">{{ t('invoice.oss_review_badge.oss') }}</span>
                   <span v-if="inv.oss_review_domestic" class="ml-1 px-1 py-0.5 rounded bg-warning-50 text-warning-700 text-[10px] font-sans font-semibold whitespace-nowrap"
@@ -1615,7 +1638,7 @@ useWindowRefresh(['invoices', 'clients', 'bank', 'bank-transactions', 'cash', 'a
                   <span :class="taxDateClass(inv.tax_date, inv.issue_date)">{{ formatDate(inv.tax_date || inv.issue_date) }}</span>
                 </td>
                 <td v-else-if="c.key === 'due'" :data-custom-color="!!colors.color('due')" :style="colors.cellStyle('due')" class="px-3 py-2.5 text-center text-xs">
-                  <span :class="isOverdue(inv.due_date, inv.status) ? 'text-danger-500 font-medium' : 'text-neutral-600'">
+                  <span :class="isOverdue(inv.due_date, inv.status) && !isCalendarType(inv.invoice_type) ? 'text-danger-500 font-medium' : 'text-neutral-600'">
                     {{ formatDate(inv.due_date) }}
                   </span>
                 </td>
@@ -1798,6 +1821,7 @@ useWindowRefresh(['invoices', 'clients', 'bank', 'bank-transactions', 'cash', 'a
                     </RouterLink>
                     <span class="text-neutral-400"> · </span>
                     <span :data-custom-color="!!colors.color('type')" :style="colors.cellStyle('type')">{{ typeLabel(inv.invoice_type) }}</span>
+                    <span v-if="inv.calendar_id" class="ml-1 px-1 py-0.5 rounded bg-neutral-100 text-neutral-600 text-[10px] font-semibold whitespace-nowrap">{{ t('invoice.calendar.instalment_badge') }}</span>
                     <span v-if="inv.project_name" class="text-neutral-400"> · </span>
                     <span v-if="inv.project_name" class="truncate" :data-custom-color="!!colors.color('project')" :style="colors.cellStyle('project')">{{ inv.project_name }}</span>
                     <span v-if="inv.oss_review_oss" class="ml-1 px-1 py-0.5 rounded bg-warning-50 text-warning-700 text-[10px] font-semibold whitespace-nowrap"
@@ -1810,7 +1834,7 @@ useWindowRefresh(['invoices', 'clients', 'bank', 'bank-transactions', 'cash', 'a
                   <div class="text-xs text-neutral-600 whitespace-nowrap">
                     <span :class="taxDateClass(inv.tax_date, inv.issue_date)" :data-custom-color="!!colors.color('issued')" :style="colors.cellStyle('issued')">{{ formatDate(inv.tax_date || inv.issue_date) }}</span>
                     <span class="text-neutral-400"> → </span>
-                    <span :class="isOverdue(inv.due_date, inv.status) ? 'text-danger-500 font-medium' : ''" :data-custom-color="!!colors.color('due')" :style="colors.cellStyle('due')">
+                    <span :class="isOverdue(inv.due_date, inv.status) && !isCalendarType(inv.invoice_type) ? 'text-danger-500 font-medium' : ''" :data-custom-color="!!colors.color('due')" :style="colors.cellStyle('due')">
                       {{ formatDate(inv.due_date) }}
                     </span>
                   </div>

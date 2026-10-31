@@ -259,6 +259,8 @@ final class InstanceAdminAction
     private function guard(Request $request, Response $response, bool $superadminOnly = false): ?Response
     {
         if (!RequestAuthorization::isSessionAuth($request)) return Json::sessionRequired($response);
+        // Na spravované instalaci se o provoz stará provozovatel, plocha tam neexistuje pro nikoho.
+        if ($this->managed->isManaged()) return Json::error($response, 'not_found', 'Správa instance není na této instalaci dostupná.', 404);
         if (RequestAuthorization::canManageInstance($request)
             && (!$superadminOnly || RequestAuthorization::isSuperadmin($request))) return null;
         return Json::error($response, 'forbidden_permission', 'Pro tuto akci nemáš oprávnění.', 403);

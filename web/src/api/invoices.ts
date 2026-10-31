@@ -4,7 +4,7 @@ import type { DocumentLock } from './locks'
 import type { EetCreditNoteRefundResult } from './eet'
 import { appIsoDate } from '@/utils/date'
 
-export type InvoiceType = 'invoice' | 'proforma' | 'credit_note' | 'cancellation' | 'tax_document' | 'penalty' | 'payment_calendar'
+export type InvoiceType = 'invoice' | 'proforma' | 'credit_note' | 'cancellation' | 'tax_document' | 'penalty' | 'payment_calendar' | 'rent_calendar' | 'advance_calendar'
 
 /** Jeden segment výpočtu úroku z prodlení (rozpad jen kvůli hranici kalendářního roku — sazba je napříč segmenty stejná). */
 export interface PenaltyInterestSegment {
@@ -254,6 +254,10 @@ export interface InvoiceCashDocument {
 export interface PaymentScheduleRow {
   id?: number
   due_on: string
+  /** DUZP splátky splátkového kalendáře (§ 21 odst. 7 ZDPH); prázdné = den splatnosti. Platební kalendář DUZP nemá. */
+  tax_date?: string | null
+  /** Interní doklad splátky, vzniká při vystavení kalendáře. */
+  instalment_invoice_id?: number | null
   base_amount: number
   vat_amount: number
   total_amount: number
@@ -269,6 +273,10 @@ export interface Invoice {
   payment_varsymbol?: string
   invoice_type: InvoiceType
   parent_invoice_id: number | null
+  /** Kalendář, ke kterému patří interní doklad splátky nebo daňový doklad k její úhradě. */
+  calendar_id?: number | null
+  /** Nájemní smlouva splátkového kalendáře (§ 31 ZDPH). */
+  calendar_contract_ref?: string | null
   client_id: number
   project_id: number | null
   branding_profile_id: number | null
@@ -487,6 +495,8 @@ export interface InvoiceListItem {
   supplier_order_number?: string | null
   invoice_type: InvoiceType
   parent_invoice_id: number | null
+  /** Kalendář, ke kterému patří interní doklad splátky nebo daňový doklad k její úhradě. */
+  calendar_id?: number | null
   recurring_template_id?: number | null
   client_id: number
   project_id: number | null
@@ -574,6 +584,8 @@ export interface InvoicePayload {
   price_level_id?: number | null
   /** § 31/31a ZDPH; chybějící klíč rozpis NEMĚNÍ, prázdné pole ho smaže. */
   payment_schedule?: PaymentScheduleRow[]
+  /** Nájemní smlouva splátkového kalendáře; chybějící klíč hodnotu NEMĚNÍ. */
+  calendar_contract_ref?: string | null
   prices_include_vat?: boolean
   income_tax_exempt?: boolean
   income_tax_exempt_reason?: string | null
@@ -870,7 +882,7 @@ export const invoicesApi = {
    * Používá se v editoru jako placeholder „automaticky: JD2026-01".
    */
   previewVarsymbol: (
-    type: 'invoice' | 'proforma' | 'credit_note' | 'payment_calendar',
+    type: 'invoice' | 'proforma' | 'credit_note' | 'payment_calendar' | 'rent_calendar' | 'advance_calendar',
     issueDate: string,
     clientId?: number,
     revenueCategoryId?: number,

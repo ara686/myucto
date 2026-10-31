@@ -21,6 +21,7 @@ vi.mock('@/api/paymentCards', () => ({
   paymentCardsApi: { unmatchedPayments: m.unmatchedPayments, uploadReceipt: m.uploadReceipt, rematch: m.rematch, writeOff: m.writeOff },
 }))
 vi.mock('@/api/accounting', () => ({ accountingApi: { listAccounts: m.listAccounts } }))
+vi.mock('@/api/otherItems', () => ({ otherItemsApi: { bankCandidates: vi.fn().mockResolvedValue([]) } }))
 vi.mock('@/api/bank', () => ({ bankApi: { matchCandidates: m.matchCandidates, splitSuggestions: m.splitSuggestions, matchManual: m.matchManual } }))
 vi.mock('@/components/ui/Modal.vue', () => ({ default: { props: ['title', 'widthClass'], template: '<div><slot /><slot name="footer" /></div>' } }))
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({

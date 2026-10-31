@@ -38,7 +38,7 @@ nebo z detailu klienta či zakázky).
 
 1. Klikněte na **Nová faktura**.
 2. V poli **Typ dokladu** zvolte typ (**Faktura - daňový doklad**, **Zálohová faktura
-   (proforma)**, **Opravný daňový doklad (dobropis)** nebo **Platební / splátkový kalendář**).
+   (proforma)**, **Opravný daňový doklad (dobropis)**, **Splátkový kalendář** nebo **Platební kalendář**).
 3. Vyberte **Klienta**. Případně vyberte **Zakázku** klienta.
 4. Zkontrolujte data **Vystaveno**, **DUZP** a **Splatnost** a **Měnu**.
 5. V části **Položky** klikněte na **+ Přidat položku** a vyplňte popis, množství, jednotku,
@@ -231,14 +231,52 @@ Editor je rozdělený na tři bloky:
 Změna typu rozpracovaného dokladu ho přečísluje: stávající číslo se uvolní z původní řady
 a uloží se nové číslo z řady cílového typu.
 
-Typ **Platební / splátkový kalendář** je daňovým dokladem jen s rozpisem plateb na předem
-stanovené období (§ 31 a § 31a ZDPH). Splátky zadáte v části **Rozpis plateb** tlačítkem
-**Přidat splátku** nebo **Rozpustit na 12 měsíců**. Bez rozpisu, nebo když součet rozpisu
-nesedí na celkovou částku dokladu, kalendář vystavit nelze. Ke splátkám se pak už jednotlivé
-doklady nevystavují.
-
 Dobropis vztahující se k jiné faktuře nezakládejte ručně přes **Typ dokladu**, ale akcí
 **Storno / dobropis** v detailu té faktury.
+
+#### Splátkový a platební kalendář
+
+Kalendář je daňovým dokladem jen s rozpisem plateb na předem stanovené období. Vyberte typ
+podle toho, co kalendář rozepisuje:
+
+| Typ | Kdy | DUZP |
+|---|---|---|
+| **Splátkový kalendář** (§ 31 ZDPH) | Jen nájem. Vyplňte **Nájemní smlouva**, bez ní kalendář nepůjde vystavit | Každá splátka je samostatné dílčí plnění a má vlastní DUZP v rozpisu plateb. Prázdné DUZP znamená den splatnosti splátky |
+| **Platební kalendář** (§ 31a ZDPH) | Zálohy placené před plněním, typicky energie | Žádné. Daň vzniká dnem přijetí platby |
+
+Pole DUZP v hlavičce dokladu se u obou typů nezobrazuje. Splátky zadáte v části **Rozpis
+plateb** tlačítkem **Přidat splátku** nebo **Rozpustit na 12 měsíců**. Součet základu, DPH
+i celkové částky rozpisu musí sedět na doklad, jinak editor zobrazí upozornění a kalendář
+nepůjde vystavit. Vystavit nejde ani kalendář v cizí měně, protože kurz se váže ke dni každé
+splátky, a splátkový kalendář, jehož DUZP splátky spadá do období s podaným přiznáním
+k DPH nebo jehož sazba DPH v den DUZP splátky neplatí.
+
+Starší koncept typu **Platební / splátkový kalendář** vystavit nejde. Otevřete ho a vyberte
+jeden z obou typů. Už vystavené doklady tohoto typu zůstávají beze změny.
+
+**Po vystavení** vznikne ke každému řádku rozpisu interní doklad splátky s číslem
+`<číslo kalendáře>/01`, `/02` a dál: u nájmu faktura, u záloh zálohová faktura. V seznamu
+faktur je poznáte podle štítku **Splátka**, v detailu kalendáře je tabulka **Splátky
+kalendáře** s odkazy na ně.
+
+- **Odběrateli se posílá jen kalendář.** Doklad splátky poslat nejde a jeho PDF je PDF kalendáře.
+- **Úhrady, párování s bankou a upomínky** běží na dokladech splátek. Kalendář sám úhrady
+  nepřijímá. Zaplacený je, až když jsou zaplacené všechny splátky, a jeho uhrazená částka je
+  součtem splátek.
+- **Úhrada splátky platebního kalendáře** sama založí zaplacený daňový doklad k přijaté platbě
+  s číslem `KP-<číslo platby>` a datem povinnosti přiznat daň v den přijetí platby. Odběrateli
+  se neposílá, daňovým dokladem je pro něj kalendář.
+- **Oprava splátky** se dělá dobropisem přes **Storno / dobropis** v detailu splátky. Doklad
+  splátky nejde upravit ani interně stornovat.
+- **Storno kalendáře** je jen interní a zruší i všechny neuhrazené splátky. Má-li kalendář
+  uhrazenou nebo dobropisovanou splátku, stornovat nejde: nejdřív odeberte úhrady a stornujte
+  dobropisy. Zrušit storno kalendáře nejde, vystavte nový.
+
+**Konečné vyúčtování záloh.** Skutečnou dodávku vyúčtujete běžnou fakturou. Zaplacená splátka
+platebního kalendáře je záloha s daňovým dokladem k platbě, takže ji odečtete stejně jako
+jinou zálohu: akcí **Vystavit fakturu k záloze** v detailu splátky, nebo **Odečíst zálohu**
+v detailu konceptu faktury ([§ 15.4.2](#1542-cerpat-jednu-zalohu-postupne-vic-fakturami-milniky)).
+Jedna faktura odečítá vždy jen jednu zálohu.
 
 #### Klient a zakázka
 
@@ -455,7 +493,7 @@ Kde hotovostní vyrovnání nefunguje:
 <!-- cols: 30 70 -->
 | Případ | Chování |
 |---|---|
-| **Zálohová (proforma) faktura**, storno faktura, platební kalendář | Výběr pokladny se vůbec nezobrazí. Úhrada zálohy totiž zakládá navazující finální doklad nebo daňový doklad k platbě, a ten by pozdější zrušení volby neumělo vzít zpět. Zálohu inkasujte hotově přímo v [Pokladně](32_Pokladna.md#32113-hlavicka-dokladu-a-ucel) |
+| **Zálohová (proforma) faktura**, storno faktura, splátkový a platební kalendář | Výběr pokladny se vůbec nezobrazí. Úhrada zálohy totiž zakládá navazující finální doklad nebo daňový doklad k platbě, a ten by pozdější zrušení volby neumělo vzít zpět. Zálohu inkasujte hotově přímo v [Pokladně](32_Pokladna.md#32113-hlavicka-dokladu-a-ucel) |
 | **Pravidelné (opakované) fakturace** | Šablona pole „Pokladna“ nemá. Vygenerovaná faktura sice zdědí způsob úhrady „Hotově“, ale pokladnu ne, takže **žádný doklad nevznikne a faktura zůstane neuhrazená**. Totéž platí pro finální fakturu vystavenou ze zálohy |
 | **Cizoměnová faktura** | Vyrovnání se přeskočí („Cizoměnový doklad z pokladny hradit nelze.“) |
 | **Valutová pokladna** | Nenabízí se |

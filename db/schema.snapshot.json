@@ -1119,7 +1119,14 @@
         "2215_bank_card_original_amount_merchant_map.sql",
         "2216_revenue_classification_rules.sql",
         "2217_voucher_liability_rule.sql",
-        "2218_accrual_period_indexes.sql"
+        "2218_accrual_period_indexes.sql",
+        "2219_payment_order_item_invoice_fk.sql",
+        "2220_stock_item_type_service.sql",
+        "2221_invoice_calendar_types.sql",
+        "2222_vat_classification_travel_service_line26.sql",
+        "2223_statement_map_349_358.sql",
+        "2224_journal_period_source_index.sql",
+        "2225_purchase_settled_outside.sql"
     ],
     "tables": {
         "abra_flexi_connections": {
@@ -7158,19 +7165,23 @@
                 "created_at": "timestamp NOT NULL DEFAULT current_timestamp()",
                 "due_on": "date NOT NULL",
                 "id": "bigint(20) unsigned NOT NULL AUTO_INCREMENT",
+                "instalment_invoice_id": "bigint(20) unsigned NULL DEFAULT NULL",
                 "invoice_id": "bigint(20) unsigned NOT NULL",
                 "note": "varchar(255) NULL DEFAULT NULL",
                 "order_index": "smallint(5) unsigned NOT NULL DEFAULT 0",
                 "supplier_id": "int(10) unsigned NOT NULL",
+                "tax_date": "date NULL DEFAULT NULL",
                 "total_amount": "decimal(14,2) NOT NULL",
                 "vat_amount": "decimal(14,2) NOT NULL DEFAULT 0.00"
             },
             "indexes": {
                 "PRIMARY": "UNIQUE BTREE (id)",
+                "fk_ips_instalment": "BTREE (instalment_invoice_id)",
                 "fk_ips_invoice": "BTREE (invoice_id)",
                 "ix_ips_invoice": "BTREE (supplier_id, invoice_id, order_index)"
             },
             "foreign_keys": {
+                "fk_ips_instalment": "(instalment_invoice_id) -> invoices (id) ON UPDATE RESTRICT ON DELETE SET NULL",
                 "fk_ips_invoice": "(invoice_id) -> invoices (id) ON UPDATE RESTRICT ON DELETE CASCADE",
                 "fk_ips_supplier": "(supplier_id) -> supplier (id) ON UPDATE RESTRICT ON DELETE CASCADE"
             },
@@ -7302,6 +7313,8 @@
                 "booked_at": "timestamp NULL DEFAULT NULL",
                 "booked_by": "bigint(20) unsigned NULL DEFAULT NULL",
                 "branding_profile_id": "int(10) unsigned NULL DEFAULT NULL",
+                "calendar_contract_ref": "varchar(190) NULL DEFAULT NULL",
+                "calendar_id": "bigint(20) unsigned NULL DEFAULT NULL",
                 "cancelled_at": "timestamp NULL DEFAULT NULL",
                 "cash_register_id": "bigint(20) unsigned NULL DEFAULT NULL",
                 "client_id": "bigint(20) unsigned NOT NULL",
@@ -7327,7 +7340,7 @@
                 "imported_pdf_size_bytes": "bigint(20) unsigned NULL DEFAULT NULL",
                 "income_tax_exempt": "tinyint(1) NOT NULL DEFAULT 0",
                 "income_tax_exempt_reason": "varchar(190) NULL DEFAULT NULL",
-                "invoice_type": "enum('invoice','proforma','credit_note','cancellation','tax_document','penalty','payment_calendar') NOT NULL",
+                "invoice_type": "enum('invoice','proforma','credit_note','cancellation','tax_document','penalty','payment_calendar','rent_calendar','advance_calendar') NOT NULL",
                 "is_simplified": "tinyint(1) NOT NULL DEFAULT 0",
                 "issue_date": "date NOT NULL",
                 "issued_by": "bigint(20) unsigned NULL DEFAULT NULL",
@@ -7378,6 +7391,7 @@
             },
             "indexes": {
                 "PRIMARY": "UNIQUE BTREE (id)",
+                "fk_inv_calendar": "BTREE (calendar_id)",
                 "fk_inv_cash_register": "BTREE (cash_register_id)",
                 "fk_inv_currency": "BTREE (currency_id)",
                 "fk_inv_issued_by": "BTREE (issued_by)",
@@ -7393,6 +7407,7 @@
                 "idx_inv_reminders": "BTREE (status, due_date, last_reminder_at)",
                 "idx_inv_status": "BTREE (status, due_date)",
                 "idx_inv_supplier": "BTREE (supplier_id)",
+                "idx_inv_supplier_calendar": "BTREE (supplier_id, calendar_id)",
                 "idx_inv_supplier_efftax": "BTREE (supplier_id, effective_tax_date)",
                 "idx_inv_supplier_payment_vs": "BTREE (supplier_id, payment_variable_symbol)",
                 "idx_inv_supplier_payment_vs_key": "BTREE (supplier_id, payment_variable_symbol_match_key)",
@@ -7412,6 +7427,7 @@
                 "uq_invoices_idoklad": "UNIQUE BTREE (supplier_id, idoklad_id)"
             },
             "foreign_keys": {
+                "fk_inv_calendar": "(calendar_id) -> invoices (id) ON UPDATE RESTRICT ON DELETE CASCADE",
                 "fk_inv_cash_register": "(cash_register_id) -> cash_registers (id) ON UPDATE RESTRICT ON DELETE SET NULL",
                 "fk_inv_client": "(client_id) -> clients (id) ON UPDATE RESTRICT ON DELETE RESTRICT",
                 "fk_inv_currency": "(currency_id) -> currencies (id) ON UPDATE RESTRICT ON DELETE RESTRICT",
@@ -7737,6 +7753,7 @@
                 "fk_je_reversed_by": "BTREE (reversed_by)",
                 "idx_je_supplier_entry_date": "BTREE (supplier_id, entry_date, id)",
                 "idx_je_supplier_period": "BTREE (supplier_id, period_id)",
+                "idx_je_supplier_period_source": "BTREE (supplier_id, period_id, source_type)",
                 "idx_je_supplier_reversed_by": "BTREE (supplier_id, reversed_by)",
                 "idx_je_supplier_source": "BTREE (supplier_id, source_type, source_id)",
                 "uq_je_supplier_active_source": "UNIQUE BTREE (supplier_id, source_type, active_source_id)",
@@ -10481,7 +10498,6 @@
                 "idx_poi_tax_submission": "BTREE (tax_submission_id)"
             },
             "foreign_keys": {
-                "fk_poi_invoice": "(invoice_id) -> invoices (id) ON UPDATE RESTRICT ON DELETE RESTRICT",
                 "fk_poi_tax_submission": "(tax_submission_id) -> tax_submissions (id) ON UPDATE RESTRICT ON DELETE RESTRICT"
             },
             "checks": {
@@ -22608,6 +22624,7 @@
                 "received_at_source": "enum('manual','import') NOT NULL DEFAULT 'import'",
                 "reverse_charge": "tinyint(1) NOT NULL DEFAULT 0",
                 "rounding": "decimal(6,2) NOT NULL DEFAULT 0.00",
+                "settled_outside_amount": "decimal(15,2) NOT NULL DEFAULT 0.00",
                 "source_format": "enum('isdoc','isdocx','pdf','pohoda_xml','idoklad_json','fakturoid_json') NULL DEFAULT NULL",
                 "source_hash": "char(64) NULL DEFAULT NULL",
                 "source_original_name": "varchar(255) NULL DEFAULT NULL",
@@ -22684,6 +22701,7 @@
             },
             "checks": {
                 "chk_pi_card_last4": "`card_last4` is null or `card_last4` regexp '^[0-9]{4}$'",
+                "chk_purchase_settled_outside": "`settled_outside_amount` >= 0",
                 "extraction_review": "json_valid(`extraction_review`)",
                 "own_snapshot": "json_valid(`own_snapshot`)",
                 "vat_overrides": "json_valid(`vat_overrides`)",
@@ -24855,7 +24873,7 @@
                 "intrastat_supplementary_unit_coefficient": "decimal(18,6) NULL DEFAULT NULL",
                 "is_active": "tinyint(1) NOT NULL DEFAULT 1",
                 "is_stocked": "tinyint(1) NOT NULL DEFAULT 1",
-                "item_type": "enum('material','goods','product') NOT NULL DEFAULT 'goods'",
+                "item_type": "enum('material','goods','product','service') NOT NULL DEFAULT 'goods'",
                 "lifecycle_status": "enum('draft','ready','retired') NOT NULL DEFAULT 'ready'",
                 "manufacturer_id": "bigint(20) unsigned NULL DEFAULT NULL",
                 "min_qty": "decimal(14,3) NULL DEFAULT NULL",
@@ -29659,7 +29677,7 @@
         "sp_find_invoices_with_bad_dates": "PROCEDURE #9ea7d88cfd5a2314ab0f86e82e5c0c02708b0c16",
         "sp_recompute_all_caches": "PROCEDURE #3fbcc3f79484d6f5d6075ebecc62f9aefe700b60",
         "sp_recompute_client_revenue": "PROCEDURE #e86306608ecd95463bcfa58ab027e3724dfe9ad6",
-        "sp_recompute_crm_monthly_summary": "PROCEDURE #ee99ee4a046191894cb413cc9346ce6ffd3f8f59",
+        "sp_recompute_crm_monthly_summary": "PROCEDURE #a705b83514c2b0650a79ecd6cd173f5d2558e253",
         "sp_recompute_project_revenue": "PROCEDURE #ea7a59d4390ae5568b4d31bb49398947ad822d5f"
     }
 }

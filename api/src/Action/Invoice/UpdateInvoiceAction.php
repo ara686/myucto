@@ -119,6 +119,11 @@ final class UpdateInvoiceAction
         $isForce = $request->getQueryParams()['force'] ?? null;
         $canEditIssued = RequestAuthorization::canEditIssuedInvoice($request);
 
+        // Splátka sedí na řádek vytištěného kalendáře, opravuje se dobropisem.
+        if (!empty($existing['calendar_id'])) {
+            return Json::error($response, 'calendar_instalment_locked', 'Doklad splátky kalendáře nejde upravit. Opravte ho dobropisem.', 409);
+        }
+
         $body = (array) ($request->getParsedBody() ?? []);
         // effective_tax_date je generovaný sloupec (COALESCE(tax_date, issue_date)) a z těla se
         // neukládá. invoiceRefDate() ho bere přednostně, takže podvržená hodnota by zámek
@@ -236,7 +241,7 @@ final class UpdateInvoiceAction
         $validTypes    = ['invoice', 'proforma', 'credit_note'];
         // Kalendář (§ 31) smí měnit typ jen DRAFT: vlastní číselnou řadu nemá, takže
         // přečíslování vystaveného dokladu na kalendář by spadlo na generátoru varsymbolu.
-        $draftTypes    = [...$validTypes, 'payment_calendar'];
+        $draftTypes    = [...$validTypes, 'payment_calendar', 'rent_calendar', 'advance_calendar'];
         $requestedType = (string) ($body['invoice_type'] ?? '');
         $isIssued      = $existing['status'] !== 'draft';
         $existingType  = (string) $existing['invoice_type'];

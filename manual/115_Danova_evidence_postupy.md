@@ -68,6 +68,8 @@ jako samostatný řádek (stejné číslo dokladu, jiné datum povinnosti přizn
   k úhradě pak zůstane jen rozdíl a výdaj se nezapočte dvakrát.
 - **Vydaná záloha (zálohová faktura odběrateli):** přijatá platba zálohové faktury je příjmem ke dni úhrady. Konečnou fakturu
   vystavte ze zálohové, odečte zaplacenou zálohu.
+- **Vydaný splátkový nebo platební kalendář:** příjem vzniká úhradou dokladu splátky, ne kalendáře. Platby párujte s doklady
+  splátek, jak se kalendář chová po vystavení, popisuje [§ 15.9.2](15_Faktura_editor.md#1592-hlavicka).
 
 ## 115.6 Krok za krokem: bankovní poplatky, převody mezi účty, vklady a výběry
 

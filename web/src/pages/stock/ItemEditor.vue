@@ -1526,7 +1526,9 @@ function onImgError(e: Event) {
                 <option value="material">{{ t('stock.item_type.material') }}</option>
                 <option value="goods">{{ t('stock.item_type.goods') }}</option>
                 <option value="product">{{ t('stock.item_type.product') }}</option>
+                <option value="service">{{ t('stock.item_type.service') }}</option>
               </select>
+              <p v-if="form.item_type === 'service'" class="text-xs text-neutral-500 mt-1" data-test="item-type-service-hint">{{ t('stock.items.field_type_service_hint') }}</p>
             </div>
           </div>
 
@@ -1554,7 +1556,7 @@ function onImgError(e: Event) {
               <label class="block text-sm font-medium text-neutral-700 mb-1">{{ t('stock.items.field_ean') }}</label>
               <input v-model="form.ean" maxlength="20" class="w-full h-10 px-3 border border-neutral-300 rounded-md font-mono focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 outline-none" />
             </div>
-            <div>
+            <div v-if="form.item_type !== 'service'">
               <label class="block text-sm font-medium text-neutral-700 mb-1">{{ t('stock.tracking.mode') }}</label>
               <select v-model="form.tracking_mode" class="w-full h-10 px-3 border border-neutral-300 rounded-md bg-surface focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 outline-none">
                 <option value="none">{{ t('stock.tracking.mode_none') }}</option>
@@ -1634,7 +1636,7 @@ function onImgError(e: Event) {
               <input v-model="form.sale_price_without_vat" type="number" step="0.01" min="0"
                 class="w-full h-10 px-3 border border-neutral-300 rounded-md font-mono text-right focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 outline-none" />
             </div>
-            <div>
+            <div v-if="form.item_type !== 'service'">
               <label class="block text-sm font-medium text-neutral-700 mb-1">{{ t('stock.items.field_min_qty') }}</label>
               <input v-model="form.min_qty" type="number" step="0.001" min="0"
                 class="w-full h-10 px-3 border border-neutral-300 rounded-md font-mono text-right focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 outline-none" />
@@ -1688,7 +1690,7 @@ function onImgError(e: Event) {
               </div>
             </div>
             <div class="flex flex-wrap items-center gap-5 mt-3">
-              <label class="inline-flex items-center gap-2 text-sm cursor-pointer">
+              <label v-if="form.item_type !== 'service'" class="inline-flex items-center gap-2 text-sm cursor-pointer">
                 <input v-model="eshop.is_stocked" type="checkbox" class="rounded border-neutral-300 text-primary-600" />
                 {{ t('eshop.item.field_is_stocked') }}
               </label>

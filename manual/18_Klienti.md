@@ -326,7 +326,7 @@ Formát je text se zástupnými znaky ve složených závorkách:
 | Zástupný znak | Hodnota |
 |---|---|
 | `{VS}` | Variabilní symbol (číslo dokladu) |
-| `{TYP}` | Druh dokladu v jazyce klienta: Faktura, Zálohová faktura, Opravný daňový doklad, Daňový doklad k přijaté platbě, Platební kalendář |
+| `{TYP}` | Druh dokladu v jazyce klienta: Faktura, Zálohová faktura, Opravný daňový doklad, Daňový doklad k přijaté platbě, Splátkový kalendář, Platební kalendář |
 | `{KLIENT}` | Název klienta |
 | `{DODAVATEL}` | Název dodavatele |
 | `{MM}`, `{YYYY}`, `{YY}` | Měsíc a rok vystavení |

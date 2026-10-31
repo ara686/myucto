@@ -190,7 +190,7 @@ final class DocumentPostingGroup
         if ($document->fetchColumn() === false) throw new PostingException('document_not_found', 'Doklad skupiny zaúčtování neexistuje.', 404);
         $entryIds = array_values(array_unique(array_map('intval', $entryIds)));
         if ($entryIds === []) return;
-        $entries = (new DimensionPeriodGuard($this->db))->lockEntries($supplierId, $entryIds);
+        $entries = (new DimensionPeriodGuard($this->db))->lockEntries($supplierId, $entryIds, false);
         if (count($entries) !== count($entryIds)) throw new PostingException('entry_not_found', 'Zápis skupiny zaúčtování neexistuje.', 404);
         foreach ($entries as $entry) {
             if (!((in_array($entry['source_type'], ['manual', $docType], true) && $entry['source_id'] === null)

@@ -59,6 +59,21 @@ final class ChartAccountUsage
     ];
 
     /**
+     * Cizí klíče na účet přes id: tabulka => [sloupce, název místa]. Nastavení GoPay se
+     * neuvolňuje samo, tiše by přestalo fungovat zaúčtování plateb.
+     *
+     * @var array<string, array{0:list<string>, 1:string}>
+     */
+    private const ID_COLUMNS = [
+        'gopay_settings' => [
+            ['clearing_account_id', 'destination_bank_account_id', 'fee_account_id', 'gopay_account_id', 'receivable_account_id'],
+            'nastavení GoPay',
+        ],
+        'invoice_settlements' => [['account_id'], 'zápočty faktur'],
+        'nonprofit_membership_charge_operations' => [['receivable_account_id', 'revenue_account_id'], 'členské příspěvky'],
+    ];
+
+    /**
      * Tabulky bez vlastního `supplier_id` — firmu drží až rodič. Bez JOINu by
      * kontrola hlásila použití cizí firmy, nebo naopak žádné.
      *
@@ -106,6 +121,18 @@ final class ChartAccountUsage
         $stmt->execute([$supplierId, $accountId]);
         if ((bool) $stmt->fetchColumn()) {
             $found[] = 'podřízené analytiky';
+        }
+
+        foreach (self::ID_COLUMNS as $table => [$columns, $label]) {
+            if (!$this->tableExists($table)) {
+                continue;
+            }
+            $conditions = implode(' OR ', array_map(static fn (string $c): string => $c . ' = ?', $columns));
+            $stmt = $pdo->prepare("SELECT EXISTS (SELECT 1 FROM {$table} WHERE supplier_id = ? AND ({$conditions}))");
+            $stmt->execute(array_merge([$supplierId], array_fill(0, count($columns), $accountId)));
+            if ((bool) $stmt->fetchColumn()) {
+                $found[] = $label;
+            }
         }
 
         foreach (self::CODE_COLUMNS as $table => $columns) {

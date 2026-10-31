@@ -15,6 +15,7 @@ use MyInvoice\Repository\WorkReportRepository;
 use MyInvoice\Service\Bank\VariableSymbolNormalizer;
 use MyInvoice\Service\Branding\AccentColor;
 use MyInvoice\Service\Export\IsdocExporter;
+use MyInvoice\Service\Invoice\InvoiceCalendar;
 use MyInvoice\Service\Invoice\SimplifiedDocumentPolicy;
 use MyInvoice\Service\Invoice\CzkRecap;
 use MyInvoice\Service\Invoice\RefundDocument;
@@ -77,6 +78,10 @@ final class InvoicePdfRenderer
         $invoice = $invoiceData ?? $this->repo->find($invoiceId);
         if ($invoice === null) {
             throw new \RuntimeException("Faktura #{$invoiceId} nenalezena");
+        }
+        // Interní doklad splátky odběratel nedostává, daňovým dokladem je kalendář (§ 31, § 31a).
+        if (!empty($invoice['calendar_id'])) {
+            return $this->render((int) $invoice['calendar_id'], $forceRegenerate, $userId);
         }
 
         $cachedPath = $this->cachePath($invoice);
@@ -323,7 +328,7 @@ final class InvoicePdfRenderer
         // Platební kalendář QR kód nedostane. Žádná jedna platba se na něm nekoná —
         // rozpis jich má dvanáct — takže QR na celkovou částku by vyzýval k úhradě
         // celého roku najednou, přesně proti tomu, co doklad sjednává.
-        $isPaymentCalendar = ($invoice['invoice_type'] ?? '') === 'payment_calendar';
+        $isPaymentCalendar = InvoiceCalendar::hasSchedule($invoice['invoice_type'] ?? null);
         if ($hasAmount && $bankData !== null && (!$isCzk || $hasVs) && !$isPaid && $isBankTransfer && !$isPaymentCalendar) {
             $qrSettings = $this->paymentQrSettings->find((int) ($invoice['supplier_id'] ?? 0));
             $qrUri = $this->qr->generate(
@@ -440,7 +445,7 @@ final class InvoicePdfRenderer
             // z platebního kalendáře daňový doklad; bez něj se doklad tiskl jako běžná
             // faktura s jediným datem splatnosti, tedy bez toho jediného, kvůli čemu
             // vzniká. U ostatních typů dokladu zůstává prázdný.
-            'payment_schedule'  => ($invoice['invoice_type'] ?? '') === 'payment_calendar'
+            'payment_schedule'  => InvoiceCalendar::hasSchedule($invoice['invoice_type'] ?? null)
                 ? $this->paymentSchedule->forInvoice((int) $invoice['supplier_id'], (int) $invoice['id'])
                 : [],
             // Sloupce „Cena/j před slevou | Sleva | Cena/j po slevě" (migrace 2035).
@@ -660,7 +665,7 @@ final class InvoicePdfRenderer
                 AND c.code = "CZK"
                 AND i.status <> "paid"
                 AND i.payment_method = "bank_transfer"
-                AND i.invoice_type <> "payment_calendar"
+                AND i.invoice_type NOT IN ("payment_calendar", "rent_calendar", "advance_calendar")
                 AND i.varsymbol IS NOT NULL AND i.varsymbol <> ""
                 AND (i.pdf_path IS NOT NULL OR i.pdf_generated_at IS NOT NULL)'
         );
@@ -988,6 +993,8 @@ final class InvoicePdfRenderer
                 // na předem stanovené období. Bez vlastního popisku se tiskl jako „Faktura"
                 // a příjemce z něj nepoznal, o jaký doklad jde.
                 'payment_calendar' => $isVatPayer ? 'Platební kalendář — daňový doklad' : 'Platební kalendář',
+                'rent_calendar' => $isVatPayer ? 'Splátkový kalendář — daňový doklad' : 'Splátkový kalendář',
+                'advance_calendar' => $isVatPayer ? 'Platební kalendář — daňový doklad' : 'Platební kalendář',
             ],
             'en' => [
                 'invoice'      => $isVatPayer ? 'Invoice — Tax document' : 'Invoice',
@@ -996,6 +1003,8 @@ final class InvoicePdfRenderer
                 'cancellation' => 'Cancellation (internal)',
                 'tax_document' => 'Tax document for payment received',
                 'payment_calendar' => $isVatPayer ? 'Payment calendar — Tax document' : 'Payment calendar',
+                'rent_calendar' => $isVatPayer ? 'Rent instalment calendar — Tax document' : 'Rent instalment calendar',
+                'advance_calendar' => $isVatPayer ? 'Payment calendar — Tax document' : 'Payment calendar',
             ],
         ];
         // § 30 ZDPH: zjednodušený daňový doklad se jako takový označí, jinak by příjemce
@@ -1014,7 +1023,8 @@ final class InvoicePdfRenderer
             'credit_note'  => 'Dobropis',
             'cancellation' => 'Storno',
             'tax_document' => 'Daňový doklad k platbě',
-            'payment_calendar' => 'Platební kalendář',
+            'payment_calendar', 'advance_calendar' => 'Platební kalendář',
+            'rent_calendar' => 'Splátkový kalendář',
             default        => !empty($invoice['is_simplified']) ? 'Zjednodušený daňový doklad' : 'Faktura',
         };
         return "$t $vs";
@@ -1253,7 +1263,8 @@ final class InvoicePdfRenderer
             'credit_note'  => 'Dobropis',
             'cancellation' => 'Storno',
             'tax_document' => 'DanovyDoklad',
-            'payment_calendar' => 'PlatebniKalendar',
+            'payment_calendar', 'advance_calendar' => 'PlatebniKalendar',
+            'rent_calendar' => 'SplatkovyKalendar',
             default        => 'Faktura',
         };
         return "$dir/$type-$vs.pdf";

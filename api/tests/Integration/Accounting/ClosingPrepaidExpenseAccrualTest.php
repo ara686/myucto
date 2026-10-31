@@ -359,6 +359,190 @@ final class ClosingPrepaidExpenseAccrualTest extends TestCase
         self::assertEqualsWithDelta((float) $schedule[1]['amount'], $this->balance381AsOf('2092-12-31'), 0.005, '381 nese zbytek pro 2093.');
     }
 
+    // ── neodpočitatelná DPH je součástí odkládaného nákladu (issue #276) ────────
+
+    /**
+     * Neplátce: 1 000 + 210 DPH, 1. 7. 2091 – 30. 6. 2092 (366 dnů), přesah 182 dnů.
+     * Odkládá se 1 210 × 182/366 = 601,69 Kč, ne 497,27 Kč ze samotného základu.
+     * Náhled, zápis na 381, rozpuštění i zůstatek musí vyjít ze stejné částky.
+     */
+    public function testNonPayerDefersCostIncludingVatFromPreviewToRelease(): void
+    {
+        $this->setNonPayer();
+        $pi = $this->purchaseWithVat('PF-2091-NEPLATCE', 1000.00, 210.00, self::YEAR . '-07-01', 'full');
+        $this->itemWithVat($pi, 1000.00, 210.00, '2091-07-01', '2092-06-30', '518');
+        $this->postDocument($pi);
+        self::assertEqualsWithDelta(1210.00, $this->documentExpense($pi, '518'), 0.001, 'Doklad účtuje náklad včetně daně.');
+
+        $preview = $this->closing->prepaidExpenseAccrualPreview($this->supplierId, $this->periodId);
+        self::assertEqualsWithDelta(1210.00, (float) $preview['items'][0]['total_czk'], 0.001);
+        self::assertEqualsWithDelta(1000.00, (float) $preview['items'][0]['total_without_vat'], 0.001);
+        self::assertEqualsWithDelta(601.69, (float) $preview['total'], 0.001);
+
+        $this->driveCloseWithAccrual();
+        $defer = $this->journal->findBySource($this->supplierId, 'prepaid_expense_accrual', ClosingSourceId::prepaidExpenseAccrual($this->periodId));
+        $deferLines = $this->entryLines((int) $defer['id']);
+        self::assertEqualsWithDelta(601.69, $this->sideAmount($deferLines, '381', 'debit'), 0.001);
+        self::assertEqualsWithDelta(601.69, $this->sideAmount($deferLines, '518', 'credit'), 0.001);
+
+        $this->closing->closeBooks($this->supplierId, $this->periodId, $this->rv(), $this->meta());
+        $open = $this->closing->openNext($this->supplierId, $this->periodId, $this->rv(), $this->meta());
+        $releaseLines = $this->entryLines((int) $open['prepaid_expense_release_entry_id']);
+        self::assertEqualsWithDelta(601.69, $this->sideAmount($releaseLines, '381', 'credit'), 0.001);
+        self::assertEqualsWithDelta(601.69, $this->sideAmount($releaseLines, '518', 'debit'), 0.001);
+        self::assertEqualsWithDelta(0.0, $this->balance381AsOf('2092-12-31'), 0.005);
+    }
+
+    /** Příklad z issue: 1. 7. 2026 – 30. 6. 2027 (365 dnů), přesah 181 dnů, odklad 600,03 Kč. */
+    public function testNonPayerIssueExampleDefersSixHundredCrowns(): void
+    {
+        $periodId = $this->periods->create($this->supplierId, 2026, '2026-01-01', '2026-12-31');
+        $this->setNonPayer();
+        $pi = $this->purchaseWithVat('PF-2026-NEPLATCE', 1000.00, 210.00, '2026-07-01', 'none');
+        $this->itemWithVat($pi, 1000.00, 210.00, '2026-07-01', '2027-06-30', '518');
+
+        $preview = $this->closing->prepaidExpenseAccrualPreview($this->supplierId, $periodId);
+        self::assertEqualsWithDelta(1210.00, (float) $preview['items'][0]['total_czk'], 0.001);
+        self::assertEqualsWithDelta(600.03, (float) $preview['total'], 0.001);
+    }
+
+    /** Plátce s plným nárokem: daň je na 343, odkládá se jen základ jako dosud. */
+    public function testPayerWithFullDeductionDefersBaseOnly(): void
+    {
+        $this->setPayerSince(self::STARTS_ON);
+        $pi = $this->purchaseWithVat('PF-2091-PLNY', 1000.00, 210.00, self::YEAR . '-07-01', 'full');
+        $this->itemWithVat($pi, 1000.00, 210.00, '2091-07-01', '2092-06-30', '518');
+
+        $preview = $this->closing->prepaidExpenseAccrualPreview($this->supplierId, $this->periodId);
+        self::assertEqualsWithDelta(1000.00, (float) $preview['items'][0]['total_czk'], 0.001);
+        self::assertEqualsWithDelta(497.27, (float) $preview['total'], 0.001);
+    }
+
+    /** Plátce bez nároku na konkrétní doklad: daň je v nákladu i přes aktivní registraci. */
+    public function testPayerWithoutDeductionDefersCostIncludingVat(): void
+    {
+        $this->setPayerSince(self::STARTS_ON);
+        $pi = $this->purchaseWithVat('PF-2091-BEZNAROKU', 1000.00, 210.00, self::YEAR . '-07-01', 'none');
+        $this->itemWithVat($pi, 1000.00, 210.00, '2091-07-01', '2092-06-30', '518');
+
+        $preview = $this->closing->prepaidExpenseAccrualPreview($this->supplierId, $this->periodId);
+        self::assertEqualsWithDelta(1210.00, (float) $preview['items'][0]['total_czk'], 0.001);
+        self::assertEqualsWithDelta(601.69, (float) $preview['total'], 0.001);
+    }
+
+    /** Poměrný odpočet 60 %: do nákladu patří 40 % daně, tedy 1 000 + 84 Kč. */
+    public function testProportionalDeductionDefersOnlyNonDeductibleVat(): void
+    {
+        $this->setPayerSince(self::STARTS_ON);
+        $pi = $this->purchaseWithVat('PF-2091-POMER', 1000.00, 210.00, self::YEAR . '-07-01', 'proportional', 60.0);
+        $this->itemWithVat($pi, 1000.00, 210.00, '2091-07-01', '2092-06-30', '518');
+        $this->postDocument($pi);
+        self::assertEqualsWithDelta(1084.00, $this->documentExpense($pi, '518'), 0.001);
+
+        $preview = $this->closing->prepaidExpenseAccrualPreview($this->supplierId, $this->periodId);
+        self::assertEqualsWithDelta(1084.00, (float) $preview['items'][0]['total_czk'], 0.001);
+        self::assertEqualsWithDelta(539.04, (float) $preview['total'], 0.001);
+    }
+
+    /** Status plátce se čte k datu plnění: faktura z doby před registrací má daň v nákladu. */
+    public function testVatStatusIsReadAtDocumentDate(): void
+    {
+        $this->setPayerSince('2091-10-01');
+        $before = $this->purchaseWithVat('PF-2091-PRED', 1000.00, 210.00, '2091-09-01', 'full');
+        $this->itemWithVat($before, 1000.00, 210.00, '2091-09-01', '2092-08-31', '518');
+        $after = $this->purchaseWithVat('PF-2091-PO', 1000.00, 210.00, '2091-11-01', 'full');
+        $this->itemWithVat($after, 1000.00, 210.00, '2091-11-01', '2092-10-31', '518');
+
+        $byDocument = [];
+        foreach ($this->closing->prepaidExpenseAccrualPreview($this->supplierId, $this->periodId)['items'] as $item) {
+            $byDocument[$item['vendor_invoice_number']] = (float) $item['total_czk'];
+        }
+        self::assertEqualsWithDelta(1210.00, $byDocument['PF-2091-PRED'], 0.001);
+        self::assertEqualsWithDelta(1000.00, $byDocument['PF-2091-PO'], 0.001);
+    }
+
+    /** Cizí měna: 100 EUR + 21 EUR DPH v kurzu 25 = náklad 3 025 Kč, přesah 182 z 366 dnů. */
+    public function testForeignCurrencyCostUsesDocumentRate(): void
+    {
+        if ($this->eurId === 0) {
+            self::markTestSkipped('Měna EUR není v číselníku.');
+        }
+        $this->setNonPayer();
+        $pi = $this->purchaseWithVat('PF-2091-EUR-DPH', 100.00, 21.00, self::YEAR . '-07-01', 'none', 100.0, 'invoice', $this->eurId, 25.0);
+        $this->itemWithVat($pi, 100.00, 21.00, '2091-07-01', '2092-06-30', '518');
+
+        $preview = $this->closing->prepaidExpenseAccrualPreview($this->supplierId, $this->periodId);
+        self::assertEqualsWithDelta(3025.00, (float) $preview['items'][0]['total_czk'], 0.001);
+        self::assertEqualsWithDelta(1504.23, (float) $preview['total'], 0.001);
+    }
+
+    /** Dobropis s obdobím odkládá zápornou částku včetně daně, odklad faktury tak vynuluje. */
+    public function testCreditNoteReducesDeferralIncludingVat(): void
+    {
+        $this->setNonPayer();
+        $invoice = $this->purchaseWithVat('PF-2091-FA', 1000.00, 210.00, self::YEAR . '-07-01', 'none');
+        $this->itemWithVat($invoice, 1000.00, 210.00, '2091-07-01', '2092-06-30', '518');
+        $credit = $this->purchaseWithVat('PF-2091-DOB', -1000.00, -210.00, self::YEAR . '-08-01', 'none', 100.0, 'credit_note');
+        $this->itemWithVat($credit, -1000.00, -210.00, '2091-07-01', '2092-06-30', '518');
+
+        $preview = $this->closing->prepaidExpenseAccrualPreview($this->supplierId, $this->periodId);
+        $byDocument = [];
+        foreach ($preview['items'] as $item) {
+            $byDocument[$item['vendor_invoice_number']] = (float) $item['deferred_amount'];
+        }
+        self::assertEqualsWithDelta(601.69, $byDocument['PF-2091-FA'], 0.001);
+        self::assertEqualsWithDelta(-601.69, $byDocument['PF-2091-DOB'], 0.001);
+        self::assertEqualsWithDelta(0.0, (float) $preview['total'], 0.001);
+    }
+
+    /**
+     * Uzávěrka zaúčtovaná před opravou odložila jen základ a neuložila ocenění položek.
+     * Rozpuštění musí vyjít z téhož základu, jinak by 381 přečerpalo o daň.
+     */
+    public function testReleaseOfDeferralClosedWithoutCostSnapshotStaysOnBase(): void
+    {
+        $this->setNonPayer();
+        $pi = $this->purchaseWithVat('PF-2091-STARY', 1000.00, 210.00, self::YEAR . '-07-01', 'none');
+        $this->itemWithVat($pi, 1000.00, 210.00, '2091-07-01', '2092-06-30', '518');
+        $this->postDocument($pi);
+        $this->driveCloseWithAccrual();
+        $this->db->pdo()->prepare(
+            "UPDATE accounting_closing_steps
+                SET payload = JSON_REMOVE(payload, '$.prepaid_expense_accrual.item_costs')
+              WHERE supplier_id = ? AND period_id = ? AND step_key = 'deferrals'"
+        )->execute([$this->supplierId, $this->periodId]);
+
+        $this->closing->closeBooks($this->supplierId, $this->periodId, $this->rv(), $this->meta());
+        $open = $this->closing->openNext($this->supplierId, $this->periodId, $this->rv(), $this->meta());
+
+        $releaseLines = $this->entryLines((int) $open['prepaid_expense_release_entry_id']);
+        self::assertEqualsWithDelta(497.27, $this->sideAmount($releaseLines, '381', 'credit'), 0.001);
+    }
+
+    /** Víceletý odklad: tranše se počítají z nákladu včetně daně a 381 po poslední dojde na nulu. */
+    public function testMultiYearReleaseOfNonDeductibleVatTelescopesToDeferredAmount(): void
+    {
+        $this->setNonPayer();
+        $pi = $this->purchaseWithVat('PF-2091-2R', 1000.00, 210.00, self::YEAR . '-07-01', 'none');
+        $this->itemWithVat($pi, 1000.00, 210.00, '2091-07-01', '2093-06-30', '518');
+        $this->postDocument($pi);
+
+        $item = $this->closing->prepaidExpenseAccrualPreview($this->supplierId, $this->periodId)['items'][0];
+        $schedule = $item['release_schedule'];
+        self::assertEqualsWithDelta(
+            (float) $item['deferred_amount'],
+            round((float) $schedule[0]['amount'] + (float) $schedule[1]['amount'], 2),
+            0.005,
+        );
+
+        $this->driveCloseWithAccrual();
+        $this->closing->closeBooks($this->supplierId, $this->periodId, $this->rv(), $this->meta());
+        $open = $this->closing->openNext($this->supplierId, $this->periodId, $this->rv(), $this->meta());
+        $releaseLines = $this->entryLines((int) $open['prepaid_expense_release_entry_id']);
+        self::assertEqualsWithDelta((float) $schedule[0]['amount'], $this->sideAmount($releaseLines, '381', 'credit'), 0.005);
+        self::assertEqualsWithDelta((float) $schedule[1]['amount'], $this->balance381AsOf('2092-12-31'), 0.005);
+    }
+
     // ── Task 10 předpoklad: accrual vstupuje do VH před zdaněním ────────────────
 
     public function testAccrualIncreasesProfitBeforeTax(): void
@@ -417,6 +601,89 @@ final class ClosingPrepaidExpenseAccrualTest extends TestCase
         );
         $stmt->execute([$purchaseId, $base, $this->vatRateId, $base, $base, $account, $from, $to]);
         return (int) $this->db->pdo()->lastInsertId();
+    }
+
+    private function purchaseWithVat(
+        string $number,
+        float $base,
+        float $vat,
+        string $date,
+        string $deduction,
+        float $deductionPercent = 100.0,
+        string $kind = 'invoice',
+        ?int $currencyId = null,
+        ?float $exchangeRate = null,
+    ): int {
+        $total = round($base + $vat, 2);
+        $stmt = $this->db->pdo()->prepare(
+            'INSERT INTO purchase_invoices
+                (supplier_id, vendor_id, vendor_invoice_number, document_kind, issue_date, tax_date,
+                 due_date, received_at, currency_id, exchange_rate, reverse_charge, vendor_snapshot,
+                 total_without_vat, total_vat, total_with_vat, status, vat_classification_code,
+                 vat_deduction, vat_deduction_percent, created_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, "{}", ?, ?, ?, "received", "40", ?, ?, ?)'
+        );
+        $stmt->execute([
+            $this->supplierId, $this->vendorId, $number, $kind, $date, $date, $date, $date,
+            $currencyId ?? $this->currencyId, $exchangeRate, $base, $vat, $total,
+            $deduction, $deductionPercent, $this->userId,
+        ]);
+        return (int) $this->db->pdo()->lastInsertId();
+    }
+
+    private function itemWithVat(int $purchaseId, float $base, float $vat, string $from, string $to, string $account): int
+    {
+        $stmt = $this->db->pdo()->prepare(
+            'INSERT INTO purchase_invoice_items
+                (purchase_invoice_id, description, quantity, unit, unit_price_without_vat, vat_rate_id,
+                 vat_rate_snapshot, total_without_vat, total_vat, total_with_vat, order_index,
+                 expense_account_code, accrual_from, accrual_to)
+             VALUES (?, "Služba", 1, "ks", ?, ?, 21.00, ?, ?, ?, 0, ?, ?, ?)'
+        );
+        $stmt->execute([$purchaseId, $base, $this->vatRateId, $base, $vat, round($base + $vat, 2), $account, $from, $to]);
+        return (int) $this->db->pdo()->lastInsertId();
+    }
+
+    /** Zaúčtuje doklad skutečnou účtovací cestou, aby test porovnával odklad se zápisem dokladu. */
+    private function postDocument(int $purchaseId): void
+    {
+        $stmt = $this->db->pdo()->prepare('SELECT issue_date FROM purchase_invoices WHERE id = ?');
+        $stmt->execute([$purchaseId]);
+        $date = (string) $stmt->fetchColumn();
+        $lines = $this->posting->buildFromPurchaseInvoice($this->supplierId, $purchaseId);
+        $this->posting->postDocument($this->supplierId, 'purchase_invoice', $purchaseId, $lines, [
+            'entry_date' => $date,
+            'posted' => true,
+            'posted_by' => $this->userId,
+            'user_id' => $this->userId,
+        ]);
+    }
+
+    /** Částka na nákladovém účtu ze zápisu dokladu. */
+    private function documentExpense(int $purchaseId, string $account): float
+    {
+        $entry = $this->journal->findBySource($this->supplierId, 'purchase_invoice', $purchaseId);
+        self::assertNotNull($entry);
+        return $this->sideAmount($this->entryLines((int) $entry['id']), $account, 'debit');
+    }
+
+    private function setNonPayer(): void
+    {
+        $pdo = $this->db->pdo();
+        $pdo->prepare('UPDATE supplier SET is_vat_payer = 0, is_identified = 0 WHERE id = ?')->execute([$this->supplierId]);
+        $pdo->prepare('DELETE FROM supplier_vat_status_history WHERE supplier_id = ?')->execute([$this->supplierId]);
+    }
+
+    private function setPayerSince(string $date): void
+    {
+        $pdo = $this->db->pdo();
+        $pdo->prepare('UPDATE supplier SET is_vat_payer = 1, is_identified = 0 WHERE id = ?')->execute([$this->supplierId]);
+        $pdo->prepare('DELETE FROM supplier_vat_status_history WHERE supplier_id = ?')->execute([$this->supplierId]);
+        $history = $pdo->prepare(
+            'INSERT INTO supplier_vat_status_history (supplier_id, effective_from, is_vat_payer, is_identified) VALUES (?, ?, ?, 0)'
+        );
+        $history->execute([$this->supplierId, '1900-01-01', 0]);
+        $history->execute([$this->supplierId, $date, 1]);
     }
 
     /** Kumulativní zůstatek 381 (MD − D) ke dni včetně. */

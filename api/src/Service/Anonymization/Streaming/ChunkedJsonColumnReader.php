@@ -4,14 +4,17 @@ declare(strict_types=1);
 
 namespace MyInvoice\Service\Anonymization\Streaming;
 
+use MyInvoice\Infrastructure\Database\TransactionFailure;
 use PDO;
 
 final class ChunkedJsonColumnReader
 {
     public const CHUNK_BYTES = 524_288;
 
-    /** @var array<int,list<string>> */
+    /** @var array<int,array<string,bool>> Pořadí markerů; true = reader již skončil. */
     private static array $open = [];
+    /** @var array<int,true> SQL a evidence markerů se nesmí proložit úklidem z GC. */
+    private static array $busy = [];
 
     public function __construct(private readonly PDO $pdo) {}
 
@@ -25,10 +28,7 @@ final class ChunkedJsonColumnReader
         $metadataSql = "SELECT OCTET_LENGTH({$column}) AS bytes, SHA2({$column},256) AS sha256 FROM {$table} WHERE id=? AND supplier_id=? FOR UPDATE";
         $metadata = $this->metadata($metadataSql, $id, $supplierId);
         $savepoint = 'json_chunk_' . bin2hex(random_bytes(12));
-        $connection = spl_object_id($this->pdo);
-        $this->pdo->exec('SAVEPOINT ' . $savepoint);
-        self::$open[$connection][] = $savepoint;
-        $activeSavepoint = true;
+        $this->openSavepoint($savepoint);
         try {
             for ($offset = 1; $offset <= $metadata['bytes']; $offset += self::CHUNK_BYTES) {
                 $this->advanceSavepoint($savepoint);
@@ -43,20 +43,9 @@ final class ChunkedJsonColumnReader
             $this->advanceSavepoint($savepoint);
             $current = $this->metadata($metadataSql, $id, $supplierId);
             if ($current !== $metadata) throw new \RuntimeException('Archivní JSON se během čtení změnil.');
-            $this->pdo->exec('RELEASE SAVEPOINT ' . $savepoint);
-            $activeSavepoint = false;
+            $this->finishSavepoint($savepoint);
         } finally {
-            // Rozečtený generátor se uklízí až garbage collectorem, klidně uprostřed jiného čtení.
-            // RELEASE by v MariaDB zrušil i všechny novější savepointy, proto jen ten poslední.
-            $newest = end(self::$open[$connection]) === $savepoint;
-            self::$open[$connection] = array_values(array_diff(self::$open[$connection], [$savepoint]));
-            if (self::$open[$connection] === []) unset(self::$open[$connection]);
-            if ($activeSavepoint && $newest && $this->pdo->inTransaction()) {
-                try {
-                    $this->pdo->exec('RELEASE SAVEPOINT ' . $savepoint);
-                } catch (\Throwable) {
-                }
-            }
+            $this->retireSavepoint($savepoint);
         }
     }
 
@@ -72,14 +61,122 @@ final class ChunkedJsonColumnReader
         return ['bytes' => (int) $row['bytes'], 'sha256' => strtolower($row['sha256'])];
     }
 
+    /**
+     * Plain PDO používá i izolovaný streamovací worker, proto zde nelze vyžadovat
+     * TransactionSavepointToken nad LoggingPdo. Společný poslední SQL marker dokazuje
+     * nepřerušenou transakci všech readerů; uvolnění staršího by v MariaDB zrušilo novější.
+     * Nespravuje cizí savepointy založené mezi chunky: obnova posledního markeru při otevření
+     * dalšího readeru i při dalším chunku je zruší a ROLLBACK TO cizího savepointu označí
+     * živý reader za nahrazený. Čtení proto nesmí proplétat cizí savepointy.
+     */
+    private function openSavepoint(string $savepoint): void
+    {
+        $this->critical(function (int $connection) use ($savepoint): void {
+            if (!empty(self::$open[$connection])) {
+                try {
+                    $this->renewNewest($connection);
+                } catch (\PDOException $failure) {
+                    if ((int) ($failure->errorInfo[1] ?? 0) !== 1305) throw $failure;
+                    // Nová transakce smí dostat nový reader; staré náhodné tokeny
+                    // už v evidenci nejsou a žádná stará instance tím neožije.
+                    unset(self::$open[$connection]);
+                }
+            }
+            self::$open[$connection][$savepoint] = false;
+            try {
+                $this->pdo->exec('SAVEPOINT ' . $savepoint);
+            } catch (\Throwable $failure) {
+                unset(self::$open[$connection][$savepoint]);
+                throw $failure;
+            }
+        });
+    }
+
     private function advanceSavepoint(string $savepoint): void
     {
+        $this->critical(fn (int $connection) => $this->assertSavepoint($connection, $savepoint));
+    }
+
+    /** Úspěch vyžaduje důkaz až po posledních metadatech, i když jiný reader ještě žije. */
+    private function finishSavepoint(string $savepoint): void
+    {
+        $this->critical(function (int $connection) use ($savepoint): void {
+            $this->assertSavepoint($connection, $savepoint);
+            self::$open[$connection][$savepoint] = true;
+        }, strictCleanup: true);
+    }
+
+    private function assertSavepoint(int $connection, string $savepoint): void
+    {
         if (!$this->pdo->inTransaction()) throw new \RuntimeException('Transakce archivního JSON byla ukončena.');
-        try {
-            $this->pdo->exec('RELEASE SAVEPOINT ' . $savepoint);
-        } catch (\Throwable $exception) {
-            throw new \RuntimeException('Transakce archivního JSON byla nahrazena.', 0, $exception);
+        if (!array_key_exists($savepoint, self::$open[$connection] ?? [])) {
+            throw new \RuntimeException('Transakce archivního JSON byla nahrazena.');
         }
-        $this->pdo->exec('SAVEPOINT ' . $savepoint);
+        try {
+            $this->renewNewest($connection);
+        } catch (\Throwable $failure) {
+            unset(self::$open[$connection]);
+            if (TransactionFailure::aborted($failure)) throw $failure;
+            throw new \RuntimeException('Transakce archivního JSON byla nahrazena.', 0, $failure);
+        }
+    }
+
+    private function renewNewest(int $connection): void
+    {
+        $newest = array_key_last(self::$open[$connection]);
+        $this->pdo->exec('RELEASE SAVEPOINT ' . $newest);
+        $this->pdo->exec('SAVEPOINT ' . $newest);
+    }
+
+    private function retireSavepoint(string $savepoint): void
+    {
+        $connection = spl_object_id($this->pdo);
+        if (!array_key_exists($savepoint, self::$open[$connection] ?? [])) return;
+        self::$open[$connection][$savepoint] = true;
+        if (!isset(self::$busy[$connection])) $this->critical(static function (int $connection): void {});
+    }
+
+    private function critical(callable $work, bool $strictCleanup = false): void
+    {
+        $connection = spl_object_id($this->pdo);
+        if (isset(self::$busy[$connection])) throw new \LogicException('Vnořená SQL operace archivního JSON není povolena.');
+        self::$busy[$connection] = true;
+        try {
+            $work($connection);
+        } catch (\Throwable $failure) {
+            if (TransactionFailure::aborted($failure)) unset(self::$open[$connection]);
+            throw $failure;
+        } finally {
+            try {
+                $this->releaseRetired($connection, $strictCleanup);
+            } finally {
+                unset(self::$busy[$connection]);
+            }
+        }
+    }
+
+    /** Uklízí pouze hotový suffix; GC uvnitř exec smí jen označit další markery. */
+    private function releaseRetired(int $connection, bool $strict): void
+    {
+        while (!empty(self::$open[$connection])) {
+            if (!$this->pdo->inTransaction()) {
+                unset(self::$open[$connection]);
+                if ($strict) throw new \RuntimeException('Transakce archivního JSON byla ukončena.');
+                break;
+            }
+            $newest = array_key_last(self::$open[$connection]);
+            if (!self::$open[$connection][$newest]) break;
+            try {
+                $this->pdo->exec('RELEASE SAVEPOINT ' . $newest);
+            } catch (\Throwable $failure) {
+                unset(self::$open[$connection]);
+                // Jen opuštěný generátor může tolerovat neexistující marker.
+                // Úspěšné dočtení ani odvolanou transakci nesmí úklid zamaskovat.
+                if ($strict || TransactionFailure::aborted($failure)) throw $failure;
+                break;
+            }
+            unset(self::$open[$connection][$newest]);
+        }
+        if (empty(self::$open[$connection])) unset(self::$open[$connection]);
     }
 }

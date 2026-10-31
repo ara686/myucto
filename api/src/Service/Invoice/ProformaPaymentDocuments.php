@@ -94,15 +94,21 @@ final class ProformaPaymentDocuments
     {
         try {
             $stmt = $pdo->prepare(
-                'SELECT s.proforma_payment_document
+                'SELECT s.proforma_payment_document, i.calendar_id
                    FROM invoices i JOIN supplier s ON s.id = i.supplier_id
                   WHERE i.id = ?'
             );
             $stmt->execute([$invoiceId]);
-            $mode = $stmt->fetchColumn();
+            $row = $stmt->fetch(\PDO::FETCH_ASSOC);
         } catch (\PDOException) {
             return null;
         }
+        // Splátka platebního kalendáře: daň vzniká přijetím úplaty bez ohledu na volbu firmy
+        // (§ 20a odst. 2). Vyúčtovací faktura ze splátky by plnění uskutečnila předčasně.
+        if (!empty($row['calendar_id'])) {
+            return self::MODE_ALWAYS_TAX_DOCUMENT;
+        }
+        $mode = $row['proforma_payment_document'] ?? null;
 
         return is_string($mode) && in_array($mode, self::modes(), true) ? $mode : null;
     }

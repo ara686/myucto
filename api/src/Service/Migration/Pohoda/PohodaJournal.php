@@ -85,6 +85,17 @@ final class PohodaJournal
     }
 
     /**
+     * Partner řádku deníku: `act:address` v XML (accountancy.xsd), v datovém souboru `pUD.Firma`,
+     * `Jmeno`, `ParICO` a navíc vazba na adresář `RefAD`.
+     *
+     * @return array{pohoda_id:string,name:string,ico:string,dic:string,street:string,city:string,zip:string,country:string}
+     */
+    public static function partner(array $item): array
+    {
+        return PartnerImporter::snapshot(['id' => PohodaXml::text($item, 'addressbookId'), 'address' => PohodaXml::get($item, 'address')]);
+    }
+
+    /**
      * Zkratka agendy do popisu zápisu v deníku. Zrcadlí zkratky, kterými doklady
      * pojmenovává {@see \MyInvoice\Service\Accounting\JournalDescriptionBuilder}, ať
      * se převzatý zápis čte stejně jako zápis vzniklý v MyÚčtu. Neznámá agenda si

@@ -2043,7 +2043,15 @@ final class SettingsAction
             return Json::error($response, 'has_dependencies',
                 "Sazbu nelze smazat — používá ji $count položek faktur. Nastav jí konec platnosti (valid_to).", 409);
         }
-        $this->db->pdo()->prepare('DELETE FROM vat_rates WHERE id = ?')->execute([$id]);
+        try {
+            $this->db->pdo()->prepare('DELETE FROM vat_rates WHERE id = ?')->execute([$id]);
+        } catch (\PDOException $e) {
+            if ($e->getCode() !== '23000') {
+                throw $e;
+            }
+            return Json::error($response, 'has_dependencies',
+                'Sazbu nelze smazat — používají ji jiné záznamy (klienti, karty, ceník, doklady). Nastav jí konec platnosti (valid_to).', 409);
+        }
         $this->log($request, 'vat_rate.deleted', $id, []);
         return Json::ok($response, ['deleted' => true]);
     }

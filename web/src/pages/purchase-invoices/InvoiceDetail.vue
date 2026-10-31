@@ -988,7 +988,7 @@ useWindowTitle(
   () => invoice.value ? [t(`purchase_invoice.document_kind.${invoice.value.document_kind}`), invoice.value.varsymbol || invoice.value.vendor_invoice_number].filter(Boolean).join(' ') : null,
   () => invoice.value?.vendor_company_name ?? null,
 )
-useWindowRefresh(['purchase-invoices', 'clients', 'bank', 'bank-transactions', 'cash', 'accounting', 'stock'], async () => {
+useWindowRefresh(async () => {
   const generation = loadGeneration
   const invoiceId = id.value
   const [updated, events] = await Promise.all([purchaseInvoicesApi.get(invoiceId), purchaseInvoicesApi.activity(invoiceId)])

@@ -49,8 +49,9 @@ final class InterimAccrualAdjustment
 
         try {
             $accountsByInvoice = [];
+            $costsByInvoice = [];
             foreach ($this->accruals->prepaidExpenseRows($supplierId, $asOf, $periodStartsOn, $asOf, $asOf) as $row) {
-                $netCzk = $this->accruals->prepaidExpenseNetCzk($row);
+                $netCzk = $this->accruals->prepaidExpenseCostCzk($supplierId, $row, $costsByInvoice);
                 $deferred = AccrualDeferralService::deferredAmount($netCzk, (string) $row['accrual_from'], (string) $row['accrual_to'], $asOf);
                 if ((int) round($deferred * 100) === 0) {
                     continue;
