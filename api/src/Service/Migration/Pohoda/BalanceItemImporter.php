@@ -11,6 +11,7 @@ use MyInvoice\Service\Accounting\JournalSettlementException;
 use MyInvoice\Service\Accounting\JournalSettlementService;
 use MyInvoice\Service\Accounting\Reports\ReportException;
 use MyInvoice\Service\Accounting\Reports\SaldoService;
+use MyInvoice\Support\Sql\PayablePredicate;
 use PDO;
 
 /**
@@ -321,12 +322,20 @@ final class BalanceItemImporter
         if ($item['doc_type'] === 'purchase_invoice') {
             $pdo->prepare('UPDATE purchase_invoices SET settled_outside_amount = settled_outside_amount + ? WHERE supplier_id = ? AND id = ?')
                 ->execute([number_format($amount, 2, '.', ''), $ctx->supplierId, (int) $item['doc_id']]);
+            // Stav jako u úhrady z POHODY, jinak by vyrovnaný doklad zůstal mezi neuhrazenými.
+            $pdo->prepare("UPDATE purchase_invoices SET status = 'paid', paid_at = COALESCE(paid_at, ?)
+                  WHERE supplier_id = ? AND id = ? AND status IN ('received', 'booked')" . PayablePredicate::excludeAdvanceVatDocument(''))
+                ->execute([$asOf, $ctx->supplierId, (int) $item['doc_id']]);
             return true;
         }
         $pdo->prepare(
             "INSERT INTO invoice_payments (supplier_id, invoice_id, paid_on, amount, currency, note, source, created_by)
              VALUES (?, ?, ?, ?, ?, 'Převzato z POHODY, skupina salda je vyrovnaná', 'settlement', ?)"
         )->execute([$ctx->supplierId, (int) $item['doc_id'], $asOf, number_format($amount, 2, '.', ''), $item['currency_code'], $ctx->userOrNull()]);
+        // Bez stavu by na vyrovnanou fakturu dál chodily upomínky.
+        $pdo->prepare("UPDATE invoices SET paid_total = paid_total + ?, status = 'paid', paid_at = COALESCE(paid_at, ?)
+              WHERE supplier_id = ? AND id = ? AND status IN ('issued', 'sent', 'reminded')")
+            ->execute([number_format($amount, 2, '.', ''), $asOf, $ctx->supplierId, (int) $item['doc_id']]);
         return true;
     }
 
