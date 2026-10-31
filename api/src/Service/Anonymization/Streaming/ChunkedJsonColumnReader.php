@@ -65,7 +65,9 @@ final class ChunkedJsonColumnReader
      * Plain PDO používá i izolovaný streamovací worker, proto zde nelze vyžadovat
      * TransactionSavepointToken nad LoggingPdo. Společný poslední SQL marker dokazuje
      * nepřerušenou transakci všech readerů; uvolnění staršího by v MariaDB zrušilo novější.
-     * Stejně jako původní SQL kontrola nespravuje cizí savepointy založené mezi chunky.
+     * Nespravuje cizí savepointy založené mezi chunky: obnova posledního markeru při otevření
+     * dalšího readeru i při dalším chunku je zruší a ROLLBACK TO cizího savepointu označí
+     * živý reader za nahrazený. Čtení proto nesmí proplétat cizí savepointy.
      */
     private function openSavepoint(string $savepoint): void
     {
