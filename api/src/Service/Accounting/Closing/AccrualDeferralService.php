@@ -101,10 +101,17 @@ final class AccrualDeferralService
         $stmt = $this->db->pdo()->prepare(
             'SELECT pii.id AS item_id, pii.total_without_vat,
                     pii.accrual_from, pii.accrual_to, pii.purchase_invoice_id,
-                    pi.exchange_rate, cur.code AS currency_code
+                    pi.exchange_rate, cur.code AS currency_code,
+                    JSON_VALUE(cs.payload, CONCAT(\'$.prepaid_expense_accrual.item_costs."\', pii.id, \'"\')) AS closing_cost_czk
                FROM purchase_invoice_items pii
                JOIN purchase_invoices pi ON pi.id = pii.purchase_invoice_id
                JOIN currencies cur       ON cur.id = pi.currency_id
+               LEFT JOIN accounting_periods oap
+                      ON oap.supplier_id = pi.supplier_id
+                     AND pi.effective_cost_date >= oap.starts_on
+                     AND pi.effective_cost_date <= oap.ends_on
+               LEFT JOIN accounting_closing_steps cs
+                      ON cs.period_id = oap.id AND cs.step_key = \'deferrals\'
               WHERE pi.supplier_id = ?
                 AND pi.status NOT IN (\'draft\', \'cancelled\')
                 AND pii.accrual_from IS NOT NULL
@@ -120,12 +127,47 @@ final class AccrualDeferralService
     }
 
     /**
+     * Účetní náklad řádku přijaté faktury v Kč, ze kterého se počítá odklad na 381: základ
+     * a neodpočitatelná část daně ({@see PostingService::purchaseItemCostsCzk()}, SSOT), jinak
+     * by budoucí část daně zůstala v nákladu roku pořízení.
+     *
+     * @param array<string,mixed> $row
+     * @param array<int,array<int,float>> $costsByInvoice cache jednoho průchodu (faktura => položka => náklad)
+     */
+    public function prepaidExpenseCostCzk(int $supplierId, array $row, array &$costsByInvoice): float
+    {
+        $netCzk = $this->prepaidExpenseNetCzk($row);
+        $purchaseInvoiceId = (int) $row['purchase_invoice_id'];
+        if (!isset($costsByInvoice[$purchaseInvoiceId])) {
+            try {
+                $costsByInvoice[$purchaseInvoiceId] = $this->posting->purchaseItemCostsCzk($supplierId, $purchaseInvoiceId);
+            } catch (PostingException $e) {
+                throw new ClosingException($e->errorCode, $e->getMessage());
+            }
+        }
+        return $costsByInvoice[$purchaseInvoiceId][(int) $row['item_id']] ?? $netCzk;
+    }
+
+    /**
+     * Částka, ze které se rozpouští odklad řádku z {@see prepaidExpenseReleaseRows}: ocenění
+     * uložené uzávěrkou, která odklad zaúčtovala. Rozpouštět se musí tatáž hodnota, jinak by 381
+     * nedošlo na nulu. Uzávěrka bez uloženého ocenění odložila jen základ, zůstává proto
+     * na základu i v dalších letech a zaúčtovaný odklad se zpětně nemění.
+     *
+     * @param array<string,mixed> $row
+     */
+    public function prepaidExpenseReleaseBasisCzk(array $row): float
+    {
+        return isset($row['closing_cost_czk']) ? round((float) $row['closing_cost_czk'], 2) : $this->prepaidExpenseNetCzk($row);
+    }
+
+    /**
      * Základ řádku přijaté faktury v Kč kurzem dokladu (§4/12 ZoÚ): CZK → 1.0, cizí měna
      * → exchange_rate (>0 nutný).
      *
      * @param array<string,mixed> $row
      */
-    public function prepaidExpenseNetCzk(array $row): float
+    private function prepaidExpenseNetCzk(array $row): float
     {
         return round((float) $row['total_without_vat'] * $this->prepaidExpenseRate($row), 2);
     }
