@@ -132,7 +132,7 @@ final class PurchaseBankRematchingTest extends TestCase
 
     private function cleanup(): void
     {
-        foreach (['bank_match_audit','bank_counterparty_map','payment_matches','bank_match_suggestions','bank_statements','purchase_invoices','clients'] as $table) {
+        foreach (['bank_match_audit','bank_counterparty_map','payment_matches','bank_match_suggestions','bank_statements','purchase_invoices','invoices','clients'] as $table) {
             $this->pdo->prepare("DELETE FROM {$table} WHERE supplier_id=?")->execute([$this->supplier]);
         }
         $this->pdo->prepare('DELETE FROM users WHERE id=?')->execute([$this->user]);
@@ -240,6 +240,38 @@ final class PurchaseBankRematchingTest extends TestCase
         $this->retry();
         self::assertCount(0,$this->read()['suggestions']);
         self::assertSame(0,$this->paymentCount());
+    }
+
+    public static function completedSuggestionStates(): iterable
+    {
+        yield 'accepted' => ['accepted'];
+        yield 'superseded' => ['superseded'];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('completedSuggestionStates')]
+    public function testFreePaymentCanGetNewProposalAfterEarlierMatchWasRemoved(string $status): void
+    {
+        $this->pdo->exec("UPDATE bank_transactions SET variable_symbol='9999' WHERE id={$this->transaction}");
+        $this->pdo->exec("UPDATE clients SET company_name='Alfa Services' WHERE id={$this->vendor}");
+        $this->pdo->exec("UPDATE bank_transactions SET counterparty_name='Harbor Marketplace', description='Card purchase' WHERE id={$this->transaction}");
+        $this->retry();
+        $shown = $this->read()['suggestions'][0];
+        self::assertArrayNotHasKey('name_fuzzy', $shown['candidate']['signals']);
+        // Stav po odpárování: pohyb je volný, ale historie přijatého návrhu zůstala.
+        $this->pdo->prepare("UPDATE bank_match_suggestions SET status=?, accepted_candidate=0, reviewed_by=?, reviewed_at=NOW() WHERE id=?")
+            ->execute([$status, $this->user, $shown['id']]);
+        $this->retry();
+        $rows = $this->read()['suggestions'];
+        self::assertCount(1, $rows);
+        self::assertSame($this->invoice, $rows[0]['candidate']['purchase_invoice_id']);
+        self::assertSame(0, $this->paymentCount());
+        self::assertNotSame($shown['id'], $rows[0]['id']);
+        $this->retry();
+        self::assertCount(1, $this->read()['suggestions']);
+        $review = $this->pdo->query("SELECT accepted_candidate,reviewed_by,reviewed_at FROM bank_match_suggestions WHERE id=".(int)$shown['id'])->fetch(PDO::FETCH_ASSOC);
+        self::assertSame(0, $review['accepted_candidate']);
+        self::assertSame($this->user, $review['reviewed_by']);
+        self::assertNotNull($review['reviewed_at']);
     }
 
     public function testReceiptSuggestionCanBeAcceptedOnce(): void

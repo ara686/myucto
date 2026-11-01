@@ -157,8 +157,17 @@ final class MatchSuggestionService
         if ($candidates === []) return;
         foreach ($candidates as &$candidate) $candidate['origin'] = 'purchase_ready';
         unset($candidate);
-        // Neztratit jiné kandidáty již existujícího návrhu a neoživit zamítnutí.
-        $stmt = $this->db->pdo()->prepare('SELECT candidates_json, status FROM bank_match_suggestions WHERE supplier_id = ? AND bank_transaction_id = ? FOR UPDATE');
+        // Přijaté a nahrazené návrhy jsou historie. Po odpárování může volný
+        // pohyb dostat nový návrh s vlastním ID; odmítnutí se ale neobnovuje.
+        $free = $this->db->pdo()->prepare('SELECT 1 FROM bank_transactions bt
+            JOIN bank_statements bs ON bs.id = bt.statement_id WHERE bt.id = ? AND '
+            . \MyInvoice\Repository\BankStatementOwnershipResolver::sql() . ' AND '
+            . \MyInvoice\Service\Bank\BankPaymentCandidateScope::sql($supplierId) . ' FOR UPDATE');
+        $free->execute([(int) $tx['id'], ...\MyInvoice\Repository\BankStatementOwnershipResolver::params($supplierId)]);
+        if ($free->fetchColumn() === false) return;
+        $stmt = $this->db->pdo()->prepare("SELECT candidates_json, status FROM bank_match_suggestions
+            WHERE supplier_id = ? AND bank_transaction_id = ? AND status IN ('pending','rejected')
+            ORDER BY (status = 'rejected') DESC, id DESC LIMIT 1 FOR UPDATE");
         $stmt->execute([$supplierId, (int) $tx['id']]);
         $existing = $stmt->fetch(PDO::FETCH_ASSOC);
         if ($existing && $existing['status'] !== 'pending') return;
