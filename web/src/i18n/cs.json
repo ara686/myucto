@@ -24465,6 +24465,7 @@
     "candidate_search_placeholder": "Číslo, VS, dodavatel, odběratel nebo částka",
     "invoice_match": {
       "action": "Spárovat s bankou",
+      "action_with_count": "Spárovat s bankou ({count})",
       "title": "Spárování bankovní úhrady",
       "close": "Zavřít",
       "document": "Doklad: {ref}",

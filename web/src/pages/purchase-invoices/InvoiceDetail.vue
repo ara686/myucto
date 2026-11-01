@@ -100,6 +100,13 @@ const postingPanelRef = ref<InstanceType<typeof DocumentPostingPanel> | null>(nu
 // nic neodvozuje. Blokuje mutace jen roli client; staff UI zůstává (autorita je BE).
 const lockedForMe = computed(() => !!invoice.value?.locked?.is_locked && auth.isClientRole)
 const bankMatchTarget = ref<{ id: number; ref: string | null } | null>(null)
+const bankMatchingPanel = ref<{ reveal: () => void } | null>(null)
+const bankMatchSuggestionCount = ref(0)
+function openBankMatching() {
+  if (!canMatchBankPayment.value) return
+  if (bankMatchSuggestionCount.value > 0 && bankMatchingPanel.value) bankMatchingPanel.value.reveal()
+  else openBankMatch()
+}
 const canMatchBankPayment = computed(() => !!invoice.value && !lockedForMe.value
   && !auth.isClientRole && auth.canRead('bank') && auth.canWrite('bank.match')
   && Number(invoice.value.amount_to_pay) !== 0
@@ -110,7 +117,7 @@ const canMatchBankPayment = computed(() => !!invoice.value && !lockedForMe.value
 function openBankMatch() {
   if (invoice.value && canMatchBankPayment.value) bankMatchTarget.value = { id: invoice.value.id, ref: invoice.value.vendor_invoice_number || invoice.value.varsymbol }
 }
-watch(() => [route.params.id, supplierStore.currentSupplierId], () => { bankMatchTarget.value = null })
+watch(() => [route.params.id, supplierStore.currentSupplierId], () => { bankMatchTarget.value = null; bankMatchSuggestionCount.value = 0 })
 const loading = ref(true)
 const error = ref('')
 const acting = ref(false)
@@ -881,8 +888,8 @@ const purchaseActions = computed<ActionItem[]>(() => {
   const canDeletePermission = auth.canWrite('purchase_invoices.delete')
   const items: ActionItem[] = []
 
-  items.push({ key: 'bank-match', label: t('bank.invoice_match.action'), icon: 'link', tier: 'secondary', variant: 'success',
-    show: canMatchBankPayment.value, disabled: acting.value, run: openBankMatch })
+  items.push({ key: 'bank-match', label: bankMatchSuggestionCount.value > 0 ? t('bank.invoice_match.action_with_count', { count: bankMatchSuggestionCount.value }) : t('bank.invoice_match.action'), icon: 'link', tier: 'secondary', variant: 'success',
+    show: canMatchBankPayment.value, disabled: acting.value, run: openBankMatching })
 
   items.push({ key: 'edit', label: t('common.edit'), icon: 'edit', tier: 'secondary', variant: 'success',
     show: canEdit.value && w && !lockedForMe.value, to: `/purchase-invoices/${inv.id}/edit` })
@@ -1992,9 +1999,9 @@ useWindowRefresh(async () => {
         <p v-else class="text-sm text-neutral-500">{{ t('purchase_invoice.pdf.no_pdf') }}</p>
       </div>
 
-      <PurchaseBankMatchingPanel v-if="auth.canRead('bank') && ['received', 'booked', 'paid'].includes(invoice.status) && ['invoice', 'receipt', 'advance'].includes(invoice.document_kind)"
+      <PurchaseBankMatchingPanel ref="bankMatchingPanel" v-if="auth.canRead('bank') && ['received', 'booked', 'paid'].includes(invoice.status) && ['invoice', 'receipt', 'advance'].includes(invoice.document_kind)"
         :invoice-id="invoice.id" :revision="`${invoice.status}:${invoice.updated_at}`" :can-review="!lockedForMe && auth.canWrite('bank.match') && (!auth.isClientRole || auth.canWrite('purchase_invoices.transition'))" :can-manual="canMatchBankPayment"
-        @changed="load" @manual="openBankMatch" />
+        @changed="load" @manual="openBankMatch" @suggestions-count="bankMatchSuggestionCount = $event" />
 
       <!-- ═══ Poznámky (jen pokud existují) ═══ -->
       <div v-if="invoice.note_above_items || invoice.note_below_items" class="bg-surface border border-neutral-200 rounded-lg p-5 shadow-sm">

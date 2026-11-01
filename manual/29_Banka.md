@@ -109,6 +109,10 @@ rovnou přijatý či evidenčně zaplacený doklad.
 
 V detailu dokladu je sekce **Párování s bankou**. Jednoznačná shoda se propojí
 podle stávajících pravidel; samotná částka a blízké datum vytvoří návrh k potvrzení.
+**Spárovat s bankou (1)** v horní liště ukazuje počet čekajících návrhů. Kliknutím
+na tlačítko přejdete přímo k návrhům v této sekci. Bez návrhů tlačítko otevře
+ruční výběr bankovní platby.
+
 Návrh obsahuje popis, datum a částku platby. Lze jej potvrdit nebo odmítnout;
 odmítnutý návrh se při opakování automaticky neobnoví. Stav „zaplaceno“ bez
 skutečné úhrady propojení nebrání. Existující banka, pokladna, zápočet a jiné

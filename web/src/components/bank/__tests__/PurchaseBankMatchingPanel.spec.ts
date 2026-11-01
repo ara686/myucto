@@ -34,6 +34,21 @@ describe('Párování v detailu přijatého dokladu', () => {
     expect(w.text()).not.toContain('purchase_invoice.bank_matching.none')
     expect(w.text()).toContain('purchase_invoice.bank_matching.retry')
   })
+  it('předá počet návrhů a po odmítnutí ho vynuluje', async () => {
+    m.get.mockResolvedValueOnce({ data: { ...empty, suggestions: [suggestion] } })
+    const w = await open()
+    expect(w.emitted('suggestionsCount')?.at(-1)).toEqual([1])
+    await w.findAll('button').find(b => b.text().includes('bank.match_v2.reject'))!.trigger('click')
+    await flushPromises()
+    expect(w.emitted('suggestionsCount')?.at(-1)).toEqual([0])
+  })
+  it('při chybě čtení odstraní starý počet návrhů', async () => {
+    m.get.mockResolvedValueOnce({ data: { ...empty, suggestions: [suggestion] } })
+    const w = await open()
+    m.get.mockRejectedValueOnce(new Error('network'))
+    await w.setProps({ revision: 'changed' }); await flushPromises()
+    expect(w.emitted('suggestionsCount')?.at(-1)).toEqual([0])
+  })
   it('ukáže spárovaný pohyb s odkazem na jeho detail', async () => {
     m.get.mockResolvedValue({ data: { ...empty, matches: [{ ...suggestion, id: 9, statement_id: 3 }] } })
     const w = await open()

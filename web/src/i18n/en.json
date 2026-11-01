@@ -24465,6 +24465,7 @@
     "candidate_search_placeholder": "Number, payment reference, supplier, customer or amount",
     "invoice_match": {
       "action": "Match bank payment",
+      "action_with_count": "Match bank payment ({count})",
       "title": "Match a bank payment",
       "close": "Close",
       "document": "Document: {ref}",

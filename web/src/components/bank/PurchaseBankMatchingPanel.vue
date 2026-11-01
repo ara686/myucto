@@ -11,12 +11,18 @@ import { btnOutline, ICONS } from '@/components/ui/buttonStyles'
 import MatchSuggestionCandidateCard from './MatchSuggestionCandidateCard.vue'
 
 const props = defineProps<{ invoiceId: number; canReview: boolean; canManual?: boolean; revision?: string }>()
-const emit = defineEmits<{ changed: []; manual: [] }>()
+const emit = defineEmits<{ changed: []; manual: []; suggestionsCount: [count: number] }>()
 const { t } = useI18n()
 const supplier = useSupplierStore()
 interface Payment { id: number; statement_id: number; posted_at: string; amount: number; currency: string; description: string }
 interface Suggestion extends Payment { bank_transaction_id: number; candidate_index: number; candidate: MatchSuggestionCandidate }
 interface Result { matches: Payment[]; suggestions: Suggestion[]; last_attempt: { outcome: string; checked_at: string } | null }
+const section = ref<HTMLElement | null>(null)
+function reveal() {
+  section.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  section.value?.focus({ preventScroll: true })
+}
+defineExpose({ reveal })
 const result = ref<Result | null>(null)
 const busy = ref(false)
 const error = ref('')
@@ -32,9 +38,13 @@ async function load(retry = false) {
     const response = retry ? await api.post(`${path}/retry`) : await api.get(path)
     if (version !== generation || disposed) return
     result.value = response.data
+    emit('suggestionsCount', result.value?.suggestions.length ?? 0)
     if (retry) emit('changed')
   } catch (e) {
-    if (version === generation && !disposed) error.value = apiErrorMessage(e, t('purchase_invoice.bank_matching.failed'))
+    if (version === generation && !disposed) {
+      error.value = apiErrorMessage(e, t('purchase_invoice.bank_matching.failed'))
+      emit('suggestionsCount', 0)
+    }
   } finally {
     if (version === generation) busy.value = false
   }
@@ -56,15 +66,15 @@ async function review(row: Suggestion, accept: boolean) {
     if (version === generation && !disposed) busy.value = false
   }
 }
-watch(() => [props.invoiceId, props.revision, supplier.currentSupplierId], () => { result.value = null; void load() }, { immediate: true })
+watch(() => [props.invoiceId, props.revision, supplier.currentSupplierId], () => { result.value = null; emit('suggestionsCount', 0); void load() }, { immediate: true })
 onActivated(() => { void load() })
 useWindowRefresh(() => load(), () => !busy.value, { partial: true })
 onBeforeUnmount(() => { disposed = true; ++generation })
 </script>
 
 <template>
-  <section class="bg-surface border border-neutral-200 rounded-lg p-5 shadow-sm space-y-3">
-    <h3 class="text-sm font-medium text-neutral-700">{{ t('purchase_invoice.bank_matching.title') }}</h3>
+  <section ref="section" tabindex="-1" aria-labelledby="purchase-bank-matching-title" class="scroll-mt-4 focus:outline-none bg-surface border border-neutral-200 rounded-lg p-5 shadow-sm space-y-3">
+    <h3 id="purchase-bank-matching-title" class="text-sm font-medium text-neutral-700">{{ t('purchase_invoice.bank_matching.title') }}</h3>
     <p v-if="error" role="alert" class="text-sm text-danger-700">{{ error }}</p>
     <p v-if="result?.last_attempt?.outcome === 'failed'" role="alert" class="text-sm text-warning-700">{{ t('purchase_invoice.bank_matching.failed') }}</p>
     <p v-else-if="result?.last_attempt?.outcome === 'limited'" role="alert" class="text-sm text-warning-700">{{ t('purchase_invoice.bank_matching.limited') }}</p>
