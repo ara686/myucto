@@ -21229,19 +21229,6 @@
       "kind_success": "Typ dokladu změněn u {n} dokladů.",
       "set_project": "Zařadit k zakázce ({n})",
       "project_success": "Zakázka nastavena u {n} dokladů."
-    },
-    "bank_matching": {
-      "title": "Párování s bankou",
-      "matched": "Spárováno",
-      "open": "Zobrazit pohyb",
-      "suggested": "Nalezen návrh",
-      "reason": "Částka a blízké datum odpovídají dokladu. Před potvrzením ověřte popis platby.",
-      "none": "Nebyla nalezena volná platba ani návrh. Pokud platba teprve dorazí, banka ji zkusí spárovat při načtení.",
-      "failed": "Dohledání platby se nezdařilo. Doklad zůstal přijatý; hledání můžete zopakovat.",
-      "limited": "Bylo nalezeno více než 200 vhodných pohybů. Automatické párování se neprovedlo; použijte ruční vyhledání.",
-      "locked": "Párování nebylo provedeno, protože doklad nebo platba patří do uzamčeného období.",
-      "retry": "Znovu vyhledat",
-      "manual": "Vybrat platbu ručně"
     }
   },
   "payment_order": {

@@ -86,15 +86,54 @@ final class BankMatchSearchTest extends BankPostingTestCase
         self::assertSame(1234.50, $body['items'][0]['amount']);
     }
 
+    public function testPreferredPaymentMovesToFirstPageWithoutChangingEligibilityOrTotals(): void
+    {
+        $purchase = $this->purchaseInvoice('SYN-PREFERRED', $this->client('Syntetický příjemce'), 100);
+        $statement = $this->statement();
+        $preferred = $this->transaction($statement, -400);
+        for ($i = 0; $i < 30; ++$i) $this->transaction($statement, -100);
+        $action = $this->container->get(BankPaymentCandidatesAction::class);
+        $read = function (array $extra = []) use ($action, $purchase): array {
+            $response = $action->list($this->request(['purchase_invoice_id'=>$purchase] + $extra), new Response());
+            self::assertSame(200, $response->getStatusCode());
+            return json_decode((string) $response->getBody(), true);
+        };
+        $original = $read();
+        self::assertNotContains($preferred, array_column($original['items'], 'id'));
+        $ranked = $read(['preferred_transaction_id'=>$preferred]);
+        self::assertSame($preferred, $ranked['items'][0]['id']);
+        self::assertSame($original['total'], $ranked['total']);
+        self::assertSame($original['pages'], $ranked['pages']);
+        foreach (['ignored','manual'] as $status) {
+            $this->db->pdo()->prepare('UPDATE bank_transactions SET match_status=? WHERE id=?')->execute([$status,$preferred]);
+            self::assertNotContains($preferred, array_column($read(['preferred_transaction_id'=>$preferred])['items'],'id'));
+        }
+        $foreign = $this->transaction($this->statement('1000000005','0100',$this->otherSupplierId()), -100);
+        self::assertNotContains($foreign, array_column($read(['preferred_transaction_id'=>$foreign])['items'],'id'));
+        self::assertSame(0, (int)$this->db->pdo()->query('SELECT COUNT(*) FROM payment_matches WHERE purchase_invoice_id='.$purchase)->fetchColumn());
+    }
+
+    public function testPreferredPaymentParameterMustBePositiveInteger(): void
+    {
+        $purchase = $this->purchaseInvoice('SYN-PREFERRED-INVALID', $this->client('Syntetický příjemce'), 100);
+        $action = $this->container->get(BankPaymentCandidatesAction::class);
+        foreach (['0','-1','invalid',['1']] as $value) {
+            self::assertSame(400, $action->list($this->request(['purchase_invoice_id'=>$purchase,'preferred_transaction_id'=>$value]), new Response())->getStatusCode());
+        }
+    }
+
     public function testReverseMatchReusesPurchaseAllocationAndPreservesOuterTransaction(): void
     {
         $purchase = $this->purchaseInvoice('SYN-REVERSE-PARTIAL', $this->client('Syntetický dodavatel úhrady'), 1200);
         $tx = $this->transaction($this->statement(), -500);
+        $this->db->pdo()->prepare("INSERT INTO bank_match_suggestions (supplier_id,bank_transaction_id,kind,reason,candidates_json,top_score,status) VALUES (?,?,'single','amount_date_requires_review','[]',0.35,'pending')")
+            ->execute([$this->supplierId,$tx]);
         $action = $this->container->get(BankPaymentCandidatesAction::class);
         $result = $this->callAction($action, 'match', 'POST', 'admin', ['purchase_invoice_id' => $purchase], ['id' => $tx]);
         self::assertSame(200, $result['status'], json_encode($result['body']));
         self::assertTrue($this->db->pdo()->inTransaction());
         self::assertTrue($result['body']['partial_payment']);
+        self::assertSame('superseded', $this->db->pdo()->query('SELECT status FROM bank_match_suggestions WHERE bank_transaction_id='.$tx)->fetchColumn());
         self::assertSame(700.0, (float) $result['body']['remaining']);
         $query = $this->db->pdo()->prepare('SELECT amount FROM payment_matches WHERE bank_transaction_id = ? AND purchase_invoice_id = ?');
         $query->execute([$tx, $purchase]);

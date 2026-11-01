@@ -47,9 +47,15 @@ final class BankPaymentCandidatesAction
         } catch (\DomainException $exception) {
             return Json::error($response, 'payment_candidates_unavailable', $exception->getMessage(), $exception->getCode());
         }
+        $preferred = null;
+        if (array_key_exists('preferred_transaction_id', $query)) {
+            $value = filter_var($query['preferred_transaction_id'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+            if ($value === false) return Json::error($response, 'invalid_preferred_transaction', 'Doporučený pohyb musí mít kladné celočíselné ID.', 400);
+            $preferred = $value;
+        }
         $search = is_string($query['search'] ?? null) ? mb_substr(trim($query['search']), 0, 100) : '';
         return Json::ok($response, $this->search->payments(
-            SupplierGuard::currentId($request), $type, $document, $search, max(1, (int) ($query['page'] ?? 1)),
+            SupplierGuard::currentId($request), $type, $document, $search, max(1, (int) ($query['page'] ?? 1)), null, $preferred,
         ));
     }
 
@@ -92,6 +98,13 @@ final class BankPaymentCandidatesAction
                 if ($own) $pdo->rollBack();
                 else { $pdo->exec('ROLLBACK TO SAVEPOINT bank_document_match'); $pdo->exec('RELEASE SAVEPOINT bank_document_match'); }
                 return $result;
+            }
+            if ($type === 'purchase_invoice') {
+                // Ruční potvrzení vyřídí návrh; úhradu i účetní zpracování výše
+                // stále provádí původní manualMatch.
+                $pdo->prepare("UPDATE bank_match_suggestions SET status = 'superseded', updated_at = NOW()
+                    WHERE supplier_id = ? AND bank_transaction_id = ? AND status = 'pending'")
+                    ->execute([$supplierId, $transactionId]);
             }
             if ($own) $pdo->commit();
             else $pdo->exec('RELEASE SAVEPOINT bank_document_match');

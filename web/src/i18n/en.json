@@ -21229,19 +21229,6 @@
       "kind_success": "Document type changed for {n} documents.",
       "set_project": "Assign to project ({n})",
       "project_success": "Project set for {n} documents."
-    },
-    "bank_matching": {
-      "title": "Bank matching",
-      "matched": "Matched",
-      "open": "View transaction",
-      "suggested": "Match suggested",
-      "reason": "The amount and a nearby date match this document. Check the payment description before confirming.",
-      "none": "No available payment or suggestion found. If the payment arrives later, the bank import will try to match it.",
-      "failed": "The payment search failed. The document is still accepted; you can retry the search.",
-      "limited": "More than 200 suitable transactions found. No automatic matching was performed; use manual search.",
-      "locked": "Matching was skipped because the document or payment belongs to a locked period.",
-      "retry": "Search again",
-      "manual": "Select payment manually"
     }
   },
   "payment_order": {

@@ -85,7 +85,7 @@ final class BankMatchSearch
         }, $query->fetchAll(PDO::FETCH_ASSOC));
     }
 
-    public function payments(int $supplierId, string $type, array $document, string $search, int $page, ?int $transactionId = null): array
+    public function payments(int $supplierId, string $type, array $document, string $search, int $page, ?int $transactionId = null, ?int $preferredTransactionId = null): array
     {
         $direction = ((float) $document['amount_to_pay'] > 0) === ($type === 'invoice') ? '>' : '<';
         $where = BankStatementOwnershipResolver::sql('bs') . ' AND ' . BankPaymentCandidateScope::sql($supplierId) . " AND bt.amount $direction 0";
@@ -112,13 +112,16 @@ final class BankMatchSearch
         $rate = (float) $document['exchange_rate'];
         if ($rate <= 0) $rate = 1.0;
         $effectiveCurrency = "UPPER(COALESCE(NULLIF(bt.currency,''), NULLIF(bs.currency,''), 'CZK'))";
+        $preferredOrder = $preferredTransactionId !== null && $preferredTransactionId > 0
+            ? 'CASE WHEN bt.id = ? THEN 0 ELSE 1 END,' : '';
+        $preferredParams = $preferredOrder !== '' ? [$preferredTransactionId] : [];
         $query = $this->db->pdo()->prepare("SELECT bt.id, bt.statement_id, bt.posted_at, bt.amount,
             $effectiveCurrency AS currency, bt.counterparty_name, bt.variable_symbol, bt.description, bt.bank_ref,
-            bs.account_number, bs.bank_code" . $from . " ORDER BY
+            bs.account_number, bs.bank_code" . $from . " ORDER BY {$preferredOrder}
             CASE WHEN $effectiveCurrency = ? THEN 0 WHEN $effectiveCurrency = 'CZK' THEN 1 ELSE 2 END,
             ABS(ABS(bt.amount) - CASE WHEN $effectiveCurrency = 'CZK' AND ? <> 'CZK' THEN ? ELSE ? END),
             ABS(DATEDIFF(bt.posted_at, ?)), bt.id DESC LIMIT $limit OFFSET $offset");
-        $query->execute([...$params, $currency, $currency, $expected * $rate, $expected, $document['due_date'] ?? $document['issue_date']]);
+        $query->execute([...$params, ...$preferredParams, $currency, $currency, $expected * $rate, $expected, $document['due_date'] ?? $document['issue_date']]);
         $items = array_map(static function (array $row): array {
             $row['id'] = (int) $row['id'];
             $row['statement_id'] = (int) $row['statement_id'];

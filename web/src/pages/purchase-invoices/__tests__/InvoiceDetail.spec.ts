@@ -5,7 +5,7 @@ import type { StockDocument } from '@/api/stock'
 
 // ── Mockovaný stav (hoisted) ──────────────────────────────────────────────────
 const m = vi.hoisted(() => ({
-  revealBankMatching: vi.fn(),
+  bankMatchingSummary: vi.fn(),
   get: vi.fn(),
   activity: vi.fn(),
   receiptPropose: vi.fn(),
@@ -38,6 +38,7 @@ vi.mock('vue-i18n', () => ({
 vi.mock('@/api/purchaseInvoices', () => ({
   purchaseInvoicesApi: {
     get: m.get,
+    bankMatchingSummary: m.bankMatchingSummary,
     activity: m.activity,
     pdfUrl: () => '',
     sourceUrl: () => '',
@@ -222,7 +223,6 @@ function makeStockDocument(id: number, status: StockDocument['status'], number: 
 }
 
 const stubs = {
-  PurchaseBankMatchingPanel: { name: 'PurchaseBankMatchingPanel', emits: ['suggestionsCount'], methods: { reveal() { m.revealBankMatching() } }, template: '<section />' },
   ActionBar: { name: 'ActionBar', props: ['actions'], template: '<div />' },
   LockedBadge: true,
   PostingBadge: true,
@@ -247,7 +247,8 @@ const bankLinks = (wrapper: ReturnType<typeof mount>) =>
 
 describe('InvoiceDetail.vue — bankovní úhrady', () => {
   beforeEach(() => {
-    m.revealBankMatching.mockReset()
+    m.bankMatchingSummary.mockReset()
+    m.bankMatchingSummary.mockResolvedValue({ suggestions: [] })
     m.get.mockReset()
     m.activity.mockReset()
     m.activity.mockResolvedValue([])
@@ -305,29 +306,29 @@ describe('InvoiceDetail.vue — bankovní úhrady', () => {
     }
   })
 
-  it('ukáže počet v horní akci a otevře návrhy, při nule ruční výběr', async () => {
+  it('ukáže počet a vždy otevře původní dialog, sekce v detailu není', async () => {
     m.get.mockResolvedValue(makeInvoice({ status: 'received' }))
+    m.bankMatchingSummary.mockResolvedValue({ suggestions: [{bank_transaction_id:31}] })
     const w = mount(InvoiceDetail, { global: { stubs } })
     await flushPromises()
-    const panel = w.findComponent({ name: 'PurchaseBankMatchingPanel' })
-    panel.vm.$emit('suggestionsCount', 1); await flushPromises()
-    const action = () => w.findComponent({ name: 'ActionBar' }).props('actions').find((a: { key: string }) => a.key === 'bank-match')
-    expect(action().label).toBe('bank.invoice_match.action (1)')
-    action().run(); await flushPromises()
-    expect(m.revealBankMatching).toHaveBeenCalledOnce()
-    expect(w.findComponent({ name: 'InvoiceBankMatchModal' }).exists()).toBe(false)
-    panel.vm.$emit('suggestionsCount', 0); await flushPromises()
-    expect(action().label).toBe('bank.invoice_match.action')
-    action().run(); await flushPromises()
+    expect(m.bankMatchingSummary).toHaveBeenCalledWith(258)
+    expect(w.text()).not.toContain('purchase_invoice.bank_matching.title')
+    const action = w.findComponent({ name: 'ActionBar' }).props('actions').find((a: { key: string }) => a.key === 'bank-match')
+    expect(action.label).toBe('bank.invoice_match.action (1)')
+    action.run(); await flushPromises()
     expect(w.findComponent({ name: 'InvoiceBankMatchModal' }).exists()).toBe(true)
+    expect(w.findComponent({ name: 'InvoiceBankMatchModal' }).attributes('allow-suggested-preselection')).toBe('true')
+    m.bankMatchingSummary.mockResolvedValue({suggestions:[]})
+    w.findComponent({name:'InvoiceBankMatchModal'}).vm.$emit('done'); await flushPromises()
+    const refreshed = w.findComponent({name:'ActionBar'}).props('actions').find((a:{key:string}) => a.key==='bank-match')
+    expect(refreshed.label).toBe('bank.invoice_match.action')
     w.unmount()
   })
 
   it('nepřenese počet návrhů na jiný doklad', async () => {
     m.get.mockResolvedValue(makeInvoice({ status: 'received' }))
+    m.bankMatchingSummary.mockResolvedValueOnce({ suggestions: [{bank_transaction_id:31}, {bank_transaction_id:32}] })
     const w = mount(InvoiceDetail, { global: { stubs } })
-    await flushPromises()
-    w.findComponent({ name: 'PurchaseBankMatchingPanel' }).vm.$emit('suggestionsCount', 2)
     await flushPromises()
     const action = () => w.findComponent({ name: 'ActionBar' }).props('actions').find((a: { key: string }) => a.key === 'bank-match')
     expect(action().label).toBe('bank.invoice_match.action (2)')

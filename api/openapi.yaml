@@ -24856,18 +24856,21 @@ paths:
         firmě, které nejsou spárované ani přidělené jiné evidenci. Otevřený karetní
         mezičlen lze spárovat. Neomezuje datum na automatické časové okno.
         Přednost mají odpovídající měna, blízká částka a datum splatnosti.
+        Nepovinný preferred_transaction_id posune dostupný pohyb na začátek.
+        Nemění dostupnost pohybů, celkové počty ani neprovádí spárování.
       parameters:
         - { in: query, name: invoice_id, schema: { type: integer, minimum: 1 } }
         - { in: query, name: purchase_invoice_id, schema: { type: integer, minimum: 1 } }
         - { in: query, name: search, schema: { type: string, maxLength: 100 }, description: 'Protistrana, VS, popis, bankovní reference nebo přesná částka, například 1 234,50.' }
         - { in: query, name: page, schema: { type: integer, minimum: 1, default: 1 } }
+        - { in: query, name: preferred_transaction_id, schema: { type: integer, format: int64, minimum: 1 }, description: 'Volitelná přednost dostupného pohybu v původním řazení. Cizí, použitý či ignorovaný pohyb se tím do výsledků nedostane.' }
       responses:
         '200':
           description: OK
           content:
             application/json:
               schema: { $ref: '#/components/schemas/BankPaymentCandidatePage' }
-        '400': { description: 'Zadejte právě jeden doklad.' }
+        '400': { description: 'Zadejte právě jeden doklad a případně kladné celé preferred_transaction_id.' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
   /api/v1/bank-transactions/{id}/match-document:

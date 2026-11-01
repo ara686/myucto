@@ -543,9 +543,9 @@ export const bankApi = {
   matchCandidates: (txId: number, search?: string) =>
     api.get<{ candidates: MatchCandidate[]; fallback: boolean }>(`/bank-transactions/${txId}/match-candidates`, { params: { search } })
       .then(r => r.data),
-  paymentCandidates: (params: { invoiceId?: number; purchaseInvoiceId?: number; search?: string; page?: number }) =>
+  paymentCandidates: (params: { invoiceId?: number; purchaseInvoiceId?: number; search?: string; page?: number; preferredTransactionId?: number }) =>
     api.get<{ items: BankPaymentCandidate[]; total: number; page: number; pages: number; limit: number }>('/bank-transactions/payment-candidates', {
-      params: { invoice_id: params.invoiceId, purchase_invoice_id: params.purchaseInvoiceId, search: params.search, page: params.page },
+      params: { invoice_id: params.invoiceId, purchase_invoice_id: params.purchaseInvoiceId, search: params.search, page: params.page, ...(params.preferredTransactionId ? { preferred_transaction_id: params.preferredTransactionId } : {}) },
     }).then(r => r.data),
   matchDocument: (txId: number, ref: { invoiceId?: number; purchaseInvoiceId?: number; forceAdvanceFinal?: boolean }) =>
     api.post<{

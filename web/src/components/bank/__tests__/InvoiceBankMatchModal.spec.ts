@@ -4,12 +4,13 @@ import { nextTick, reactive, type Ref } from 'vue'
 import InvoiceBankMatchModal from '../InvoiceBankMatchModal.vue'
 
 const m = vi.hoisted(() => ({
-  paymentCandidates: vi.fn(), matchDocument: vi.fn(),
+  paymentCandidates: vi.fn(), matchDocument: vi.fn(), bankMatchingSummary: vi.fn(),
   supplier: null as null | { currentSupplierId: number },
   permissions: null as null | { read: boolean; write: boolean },
   actions: null as null | { purchaseShortfall: Ref<unknown>; matchError: Ref<string> },
   reload: null as null | (() => void),
 }))
+vi.mock('@/api/purchaseInvoices', () => ({ purchaseInvoicesApi: { bankMatchingSummary: m.bankMatchingSummary } }))
 vi.mock('@/api/bank', () => ({ bankApi: { paymentCandidates: m.paymentCandidates } }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string, params?: Record<string, unknown>) => params ? `${key}:${JSON.stringify(params)}` : key }) }))
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ canRead: () => m.permissions!.read, canWrite: () => m.permissions!.write }) }))
@@ -44,6 +45,7 @@ beforeEach(() => {
   m.supplier = reactive({ currentSupplierId: 1 })
   m.permissions = reactive({ read: true, write: true })
   m.paymentCandidates.mockResolvedValue(result())
+  m.bankMatchingSummary.mockResolvedValue({ suggestions: [] })
   m.matchDocument.mockResolvedValue(false)
 })
 afterEach(() => {
@@ -52,8 +54,8 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-async function open(docType: 'invoice' | 'purchase_invoice' = 'invoice') {
-  wrapper = mount(InvoiceBankMatchModal, { props: { docType, docId: 19, docRef: 'TEST-DOC-19' } })
+async function open(docType: 'invoice' | 'purchase_invoice' = 'invoice', allowSuggestedPreselection = false) {
+  wrapper = mount(InvoiceBankMatchModal, { props: { docType, docId: 19, docRef: 'TEST-DOC-19', allowSuggestedPreselection } })
   await flushPromises()
   return wrapper
 }
@@ -72,6 +74,86 @@ describe('InvoiceBankMatchModal', () => {
     await flushPromises()
     expect(m.matchDocument).toHaveBeenCalledWith(31, { id: 19, type: 'purchase_invoice', ref: 'TEST-DOC-19' })
     expect(w.find('[role="dialog"]').exists()).toBe(true)
+  })
+
+  it('preselects one fresh purchase proposal but confirms only when requested', async () => {
+    m.bankMatchingSummary.mockResolvedValue({ suggestions: [{bank_transaction_id:31}] })
+    const w = await open('purchase_invoice', true)
+    expect(m.bankMatchingSummary).toHaveBeenCalledWith(19)
+    expect(m.paymentCandidates).toHaveBeenCalledWith(expect.objectContaining({preferredTransactionId:31}))
+    expect((w.get('input[type="radio"]').element as HTMLInputElement).checked).toBe(true)
+    expect(m.matchDocument).not.toHaveBeenCalled()
+    await w.get('[data-testid="confirm-match"]').trigger('click'); await flushPromises()
+    expect(m.matchDocument).toHaveBeenCalledOnce()
+  })
+  it.each([{suggestions: []}, {suggestions: [{bank_transaction_id:31},{bank_transaction_id:32}]}])('does not preselect without a unique proposal', async ({suggestions}) => {
+    m.bankMatchingSummary.mockResolvedValue({suggestions})
+    const w = await open('purchase_invoice', true)
+    expect(m.paymentCandidates).toHaveBeenCalledWith(expect.not.objectContaining({preferredTransactionId: expect.anything()}))
+    expect((w.get('input[type="radio"]').element as HTMLInputElement).checked).toBe(false)
+    expect(w.get('[data-testid="confirm-match"]').attributes('disabled')).toBeDefined()
+  })
+  it('keeps original manual search when recommendations fail or are no longer eligible', async () => {
+    m.bankMatchingSummary.mockRejectedValueOnce(new Error('recommendations unavailable'))
+    let w = await open('purchase_invoice', true)
+    expect(w.find('input[type="radio"]').exists()).toBe(true)
+    expect(w.get('[data-testid="confirm-match"]').attributes('disabled')).toBeDefined()
+    w.unmount()
+    m.bankMatchingSummary.mockResolvedValueOnce({suggestions:[{bank_transaction_id:99}]})
+    w = await open('purchase_invoice', true)
+    expect(w.get('[data-testid="confirm-match"]').attributes('disabled')).toBeDefined()
+  })
+  it('does not override a manual selection after searching', async () => {
+    vi.useFakeTimers()
+    m.bankMatchingSummary.mockResolvedValue({suggestions:[{bank_transaction_id:31}]})
+    const w = await open('purchase_invoice', true)
+    await w.get('input[type="search"]').setValue('another')
+    await vi.advanceTimersByTimeAsync(300); await flushPromises()
+    expect(m.bankMatchingSummary).toHaveBeenCalledTimes(1)
+    expect(m.paymentCandidates).toHaveBeenLastCalledWith(expect.objectContaining({preferredTransactionId:31}))
+    expect(w.get('[data-testid="confirm-match"]').attributes('disabled')).toBeDefined()
+  })
+  it('lets the user replace the recommended selection', async () => {
+    m.bankMatchingSummary.mockResolvedValue({suggestions:[{bank_transaction_id:31}]})
+    m.paymentCandidates.mockResolvedValue(result([candidate, {...candidate, id:32}]))
+    const w = await open('purchase_invoice', true)
+    await w.findAll('input[type="radio"]')[1]!.setValue()
+    await w.get('[data-testid="confirm-match"]').trigger('click'); await flushPromises()
+    expect(m.matchDocument).toHaveBeenCalledWith(32, expect.objectContaining({id:19}))
+  })
+  it('keeps preferred ordering across pages without selecting again', async () => {
+    m.bankMatchingSummary.mockResolvedValue({suggestions:[{bank_transaction_id:31}]})
+    m.paymentCandidates.mockResolvedValueOnce(result([candidate], 1, 2))
+    const w = await open('purchase_invoice', true)
+    m.paymentCandidates.mockResolvedValueOnce(result([candidate], 2, 2))
+    await w.findAll('button').find(button => button.text() === 'bank.invoice_match.next')!.trigger('click')
+    await flushPromises()
+    expect(m.paymentCandidates).toHaveBeenLastCalledWith(expect.objectContaining({page:2, preferredTransactionId:31}))
+    expect((w.get('input[type="radio"]').element as HTMLInputElement).checked).toBe(false)
+    expect(m.bankMatchingSummary).toHaveBeenCalledTimes(1)
+  })
+  it('discards a recommendation returned after switching supplier', async () => {
+    let resolveSummary!: (v: {suggestions:{bank_transaction_id:number}[]}) => void
+    m.bankMatchingSummary.mockImplementationOnce(() => new Promise(resolve => {resolveSummary=resolve}))
+    const w = await open('purchase_invoice', true)
+    m.supplier!.currentSupplierId=2; await nextTick()
+    resolveSummary({suggestions:[{bank_transaction_id:31}]}); await flushPromises()
+    expect(m.paymentCandidates).not.toHaveBeenCalled()
+    expect(w.emitted('close')).toHaveLength(1)
+  })
+  it('discards a recommendation returned for the previous document', async () => {
+    let resolveSummary!: (v: {suggestions:{bank_transaction_id:number}[]}) => void
+    m.bankMatchingSummary.mockImplementationOnce(() => new Promise(resolve => {resolveSummary=resolve}))
+    const w = await open('purchase_invoice', true)
+    await w.setProps({docId:20}); await flushPromises()
+    resolveSummary({suggestions:[{bank_transaction_id:31}]}); await flushPromises()
+    expect(m.paymentCandidates).toHaveBeenCalledTimes(1)
+    expect(m.paymentCandidates).toHaveBeenCalledWith(expect.objectContaining({purchaseInvoiceId:20}))
+    expect(w.get('[data-testid="confirm-match"]').attributes('disabled')).toBeDefined()
+  })
+  it('does not read purchase recommendations for issued invoices', async () => {
+    await open('invoice', true)
+    expect(m.bankMatchingSummary).not.toHaveBeenCalled()
   })
 
   it('ignores obsolete search responses and debounces a new search', async () => {

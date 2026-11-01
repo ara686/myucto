@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { bankApi, type BankPaymentCandidate } from '@/api/bank'
+import { purchaseInvoicesApi } from '@/api/purchaseInvoices'
 import { apiErrorMessage } from '@/api/errors'
 import { useAuthStore } from '@/stores/auth'
 import { useSupplierStore } from '@/stores/supplier'
@@ -15,6 +16,7 @@ const props = defineProps<{
   docType: 'invoice' | 'purchase_invoice'
   docId: number
   docRef: string | null
+  allowSuggestedPreselection?: boolean
 }>()
 const emit = defineEmits<{ close: []; done: [] }>()
 const { t } = useI18n()
@@ -36,6 +38,7 @@ const pages = ref(1)
 const total = ref(0)
 let generation = 0
 let disposed = false
+let preferredOrderingId: number | undefined
 let searchTimer: ReturnType<typeof setTimeout> | undefined
 const actions = useBankTransactionActions({
   reload: () => {
@@ -48,7 +51,7 @@ function close() {
   if (!matching.value) emit('close')
 }
 
-async function load(targetPage = 1) {
+async function load(targetPage = 1, preselect = false) {
   clearTimeout(searchTimer)
   const requestGeneration = ++generation
   candidates.value = []
@@ -58,14 +61,30 @@ async function load(targetPage = 1) {
   if (!canMatch.value || completed.value || supplier.currentSupplierId !== supplierId) return
   loading.value = true
   try {
+    let preferredTransactionId = preferredOrderingId
+    if (preselect && props.docType === 'purchase_invoice' && props.allowSuggestedPreselection) {
+      try {
+        const summary = await purchaseInvoicesApi.bankMatchingSummary(props.docId)
+        const only = summary.suggestions.length === 1 ? Number(summary.suggestions[0]?.bank_transaction_id) : 0
+        if (Number.isSafeInteger(only) && only > 0) preferredTransactionId = only
+      } catch {
+        // Nedostupné doporučení nesmí zablokovat původní ruční výběr.
+      }
+      if (disposed || requestGeneration !== generation || supplier.currentSupplierId !== supplierId) return
+    }
     const result = await bankApi.paymentCandidates({
       invoiceId: props.docType === 'invoice' ? props.docId : undefined,
       purchaseInvoiceId: props.docType === 'purchase_invoice' ? props.docId : undefined,
       search: search.value.trim() || undefined,
       page: targetPage,
+      ...(preferredTransactionId ? { preferredTransactionId } : {}),
     })
     if (disposed || requestGeneration !== generation) return
     candidates.value = result.items
+    if (preselect) preferredOrderingId = result.items.some(candidate => candidate.id === preferredTransactionId) ? preferredTransactionId : undefined
+    if (preselect && preferredTransactionId && result.items.some(candidate => candidate.id === preferredTransactionId)) {
+      selectedId.value = preferredTransactionId
+    }
     page.value = result.page
     pages.value = result.pages
     total.value = result.total
@@ -103,7 +122,7 @@ watch(search, () => {
   clearTimeout(searchTimer)
   searchTimer = setTimeout(() => { void load() }, 300)
 })
-watch(() => [props.docType, props.docId], () => { void load() })
+watch(() => [props.docType, props.docId, props.allowSuggestedPreselection], () => { preferredOrderingId = undefined; void load() })
 watch(() => supplier.currentSupplierId, () => {
   generation++
   clearTimeout(searchTimer)
@@ -127,7 +146,7 @@ onMounted(() => {
     emit('close')
     return
   }
-  void load()
+  void load(1, true)
   void nextTick(() => searchInput.value?.focus())
 })
 onBeforeUnmount(() => {

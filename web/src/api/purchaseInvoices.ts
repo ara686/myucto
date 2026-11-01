@@ -841,7 +841,13 @@ export interface PurchaseRenumberPlan {
   blocked: PurchaseRenumberRow[]
 }
 
+export interface PurchaseBankMatchingSummary {
+  suggestions: { bank_transaction_id: number }[]
+}
+
 export const purchaseInvoicesApi = {
+  bankMatchingSummary: (id: number) =>
+    api.get<PurchaseBankMatchingSummary>(`/purchase-invoices/${id}/bank-matching`).then(r => r.data),
   listGrouped: (filters: PurchaseListFilters = {}) => {
     const params: Record<string, string | number> = {}
     if (filters.q) params.q = filters.q

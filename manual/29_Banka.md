@@ -107,21 +107,22 @@ volné odchozí pohyby stejné firmy. Koncept hledání nespouští. Není potř
 na další synchronizaci banky. Stejné hledání proběhne u importu, který vytvoří
 rovnou přijatý či evidenčně zaplacený doklad.
 
-V detailu dokladu je sekce **Párování s bankou**. Jednoznačná shoda se propojí
-podle stávajících pravidel; samotná částka a blízké datum vytvoří návrh k potvrzení.
-**Spárovat s bankou (1)** v horní liště ukazuje počet čekajících návrhů. Kliknutím
-na tlačítko přejdete přímo k návrhům v této sekci. Bez návrhů tlačítko otevře
-ruční výběr bankovní platby.
+Jednoznačná shoda se propojí podle stávajících pravidel. Nejisté shody, například
+samotná částka a blízké datum, čekají na potvrzení. Počet čekajících návrhů je
+u původního tlačítka **Spárovat s bankou**, například **Spárovat s bankou (1)**.
 
-Návrh obsahuje popis, datum a částku platby. Lze jej potvrdit nebo odmítnout;
-odmítnutý návrh se při opakování automaticky neobnoví. Stav „zaplaceno“ bez
-skutečné úhrady propojení nebrání. Existující banka, pokladna, zápočet a jiné
-vypořádání se při kontrole zůstatku započítají.
+Kliknutím vždy otevřete původní dialog výběru bankovní platby. Pokud je právě
+jeden aktuální návrh, jeho pohyb se zobrazí nahoře a bude předvybraný. Můžete
+vybrat jiný pohyb; vazba a úhrada vzniknou až po kliknutí na **Spárovat úhradu**.
+Při více návrzích nebo bez návrhu není předvybraný žádný pohyb. Původní hledání
+a stránkování zůstávají dostupné. Otevření dialogu samo nic nepáruje.
 
-**Znovu vyhledat** opakuje hledání. U slabších shod se prohledává 90 dní před
-vystavením či splatností a 90 dní po nich; shodný platební symbol se hledá i mimo
-toto okno. Při více než 200 vhodných pohybech se automatické spojení neprovede
-a aplikace nabídne ruční vyhledání. Chyba hledání neruší přijetí dokladu.
+Stav „zaplaceno“ bez skutečné úhrady propojení nebrání. Existující banka,
+pokladna, zápočet a jiné vypořádání se při kontrole zůstatku započítají.
+U slabších shod automat prohledává 90 dní před vystavením či splatností a 90 dní
+po nich; shodný platební symbol hledá i mimo toto okno. Při více než 200 vhodných
+pohybech se automatické spojení neprovede. Chyba hledání neruší přijetí dokladu;
+původní ruční dialog lze použít i tehdy, když se doporučení nepodaří načíst.
 Párování respektuje oprávnění a uzamčená období. Běžné párování nevyžaduje
 placené podvojné účetnictví.
 

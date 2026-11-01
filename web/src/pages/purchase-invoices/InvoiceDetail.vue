@@ -52,7 +52,6 @@ const PurchaseForceModeDialog = defineAsyncComponent(() => import('@/components/
 const PaymentMethodModal = defineAsyncComponent(() => import('@/components/invoices/PaymentMethodModal.vue'))
 const ExpenseRuleTemplateModal = defineAsyncComponent(() => import('@/components/accounting/ExpenseRuleTemplateModal.vue'))
 const RuleFormModal = defineAsyncComponent(() => import('@/components/bank/RuleFormModal.vue'))
-const PurchaseBankMatchingPanel = defineAsyncComponent(() => import('@/components/bank/PurchaseBankMatchingPanel.vue'))
 const InvoiceBankMatchModal = defineAsyncComponent(() => import('@/components/bank/InvoiceBankMatchModal.vue'))
 const StockReceiptModal = defineAsyncComponent(() => import('@/components/stock/StockReceiptModal.vue'))
 
@@ -100,13 +99,8 @@ const postingPanelRef = ref<InstanceType<typeof DocumentPostingPanel> | null>(nu
 // nic neodvozuje. Blokuje mutace jen roli client; staff UI zůstává (autorita je BE).
 const lockedForMe = computed(() => !!invoice.value?.locked?.is_locked && auth.isClientRole)
 const bankMatchTarget = ref<{ id: number; ref: string | null } | null>(null)
-const bankMatchingPanel = ref<{ reveal: () => void } | null>(null)
 const bankMatchSuggestionCount = ref(0)
-function openBankMatching() {
-  if (!canMatchBankPayment.value) return
-  if (bankMatchSuggestionCount.value > 0 && bankMatchingPanel.value) bankMatchingPanel.value.reveal()
-  else openBankMatch()
-}
+const supportsBankSuggestions = computed(() => !!invoice.value && ['invoice', 'receipt', 'advance'].includes(invoice.value.document_kind))
 const canMatchBankPayment = computed(() => !!invoice.value && !lockedForMe.value
   && !auth.isClientRole && auth.canRead('bank') && auth.canWrite('bank.match')
   && Number(invoice.value.amount_to_pay) !== 0
@@ -118,6 +112,20 @@ function openBankMatch() {
   if (invoice.value && canMatchBankPayment.value) bankMatchTarget.value = { id: invoice.value.id, ref: invoice.value.vendor_invoice_number || invoice.value.varsymbol }
 }
 watch(() => [route.params.id, supplierStore.currentSupplierId], () => { bankMatchTarget.value = null; bankMatchSuggestionCount.value = 0 })
+// Čtení počtu návrhů nemění úhrady ani nevytváří nové návrhy.
+watch([invoice, () => route.params.id, () => supplierStore.currentSupplierId, canMatchBankPayment], async (_, __, onCleanup) => {
+  bankMatchSuggestionCount.value = 0
+  let current = true
+  onCleanup(() => { current = false })
+  const doc = invoice.value
+  if (!doc || !canMatchBankPayment.value || !supportsBankSuggestions.value || String(doc.id) !== String(route.params.id)) return
+  try {
+    const summary = await purchaseInvoicesApi.bankMatchingSummary(doc.id)
+    if (current) bankMatchSuggestionCount.value = summary.suggestions.length
+  } catch {
+    // Původní dialog zůstává dostupný i bez doporučení.
+  }
+}, { immediate: true })
 const loading = ref(true)
 const error = ref('')
 const acting = ref(false)
@@ -889,7 +897,7 @@ const purchaseActions = computed<ActionItem[]>(() => {
   const items: ActionItem[] = []
 
   items.push({ key: 'bank-match', label: bankMatchSuggestionCount.value > 0 ? t('bank.invoice_match.action_with_count', { count: bankMatchSuggestionCount.value }) : t('bank.invoice_match.action'), icon: 'link', tier: 'secondary', variant: 'success',
-    show: canMatchBankPayment.value, disabled: acting.value, run: openBankMatching })
+    show: canMatchBankPayment.value, disabled: acting.value, run: openBankMatch })
 
   items.push({ key: 'edit', label: t('common.edit'), icon: 'edit', tier: 'secondary', variant: 'success',
     show: canEdit.value && w && !lockedForMe.value, to: `/purchase-invoices/${inv.id}/edit` })
@@ -1999,9 +2007,7 @@ useWindowRefresh(async () => {
         <p v-else class="text-sm text-neutral-500">{{ t('purchase_invoice.pdf.no_pdf') }}</p>
       </div>
 
-      <PurchaseBankMatchingPanel ref="bankMatchingPanel" v-if="auth.canRead('bank') && ['received', 'booked', 'paid'].includes(invoice.status) && ['invoice', 'receipt', 'advance'].includes(invoice.document_kind)"
-        :invoice-id="invoice.id" :revision="`${invoice.status}:${invoice.updated_at}`" :can-review="!lockedForMe && auth.canWrite('bank.match') && (!auth.isClientRole || auth.canWrite('purchase_invoices.transition'))" :can-manual="canMatchBankPayment"
-        @changed="load" @manual="openBankMatch" @suggestions-count="bankMatchSuggestionCount = $event" />
+
 
       <!-- ═══ Poznámky (jen pokud existují) ═══ -->
       <div v-if="invoice.note_above_items || invoice.note_below_items" class="bg-surface border border-neutral-200 rounded-lg p-5 shadow-sm">
@@ -2151,7 +2157,7 @@ useWindowRefresh(async () => {
       <RuleFormModal v-if="postingRuleOpen && invoice"
         :prefill="{ name: invoice.vendor_company_name || invoice.vendor_invoice_number || '', direction: invoice.total_with_vat < 0 ? 'incoming' : 'outgoing', applies_currency: invoice.currency, variable_symbol: invoice.payment_variable_symbol || invoice.varsymbol || null }"
         @close="postingRuleOpen = false" @saved="postingRuleOpen = false" />
-      <InvoiceBankMatchModal v-if="bankMatchTarget" doc-type="purchase_invoice" :doc-id="bankMatchTarget.id" :doc-ref="bankMatchTarget.ref"
+      <InvoiceBankMatchModal v-if="bankMatchTarget" doc-type="purchase_invoice" :doc-id="bankMatchTarget.id" :doc-ref="bankMatchTarget.ref" :allow-suggested-preselection="supportsBankSuggestions"
         @close="bankMatchTarget = null" @done="load" />
     </WorkspaceTeleport>
 
